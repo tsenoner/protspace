@@ -47,11 +47,11 @@ Single entry point: `protspace = protspace.cli.app:app`
 |---------|---------|
 | `protspace prepare` | Full pipeline: embed → reduce → annotate → bundle |
 | `protspace embed` | FASTA → HDF5 embeddings (Biocentral API or local GPU/CPU via `--backend local`). Exits non-zero on an incomplete embedding; capability-limited sequences (`--max-length`, GPU OOM) are skipped and named instead |
-| `protspace project` | HDF5 → dimensionality reduction |
+| `protspace project` | HDF5 → dimensionality reduction (3-D `*3` methods deprecated: warn, removed in 5.0.0) |
 | `protspace annotate` | Fetch protein annotations |
 | `protspace bundle` | Combine projections + annotations → .parquetbundle |
 | `protspace stats` | Compute projection quality statistics (annotation-based cluster-validity + faithfulness) |
-| `protspace serve` | Launch Dash web frontend |
+| `protspace serve` | Launch Dash web frontend — **deprecated** (`deprecated=True` + registry warning pointing to protspace.app/explore), removed in 5.0.0 |
 | `protspace style` | Add annotation colors/styles |
 | `protspace transfer` | Fill missing annotations from nearest reference embeddings (EAT) |
 | `protspace convert` | Rewrite a v1/v2 .parquetbundle as v3 (`INPUT OUTPUT` or `INPUT --in-place`); a v3 input is left untouched |
@@ -131,7 +131,7 @@ src/protspace/
 │   ├── annotate.py             # Annotation fetching
 │   ├── bundle.py               # Combine into .parquetbundle
 │   ├── stats.py                # Projection quality statistics command
-│   ├── serve.py                # Dash web frontend
+│   ├── serve.py                # Dash web frontend (deprecated, removed in 5.0.0)
 │   ├── transfer.py             # Embedding Annotation Transfer (EAT) command
 │   ├── style.py                # Annotation styling
 │   └── convert.py              # v1/v2 → v3 bundle conversion
@@ -191,7 +191,8 @@ src/protspace/
 ├── ui/                         # Dash UI components
 ├── visualization/              # Plotly visualization builders
 ├── app.py                      # Dash app factory
-└── main.py                     # Main entry point (launches Dash)
+├── main.py                     # Main entry point (launches Dash)
+└── deprecations.py             # Scheduled removals registry (stdlib only): warnings, -m/serve help, tripwire test, release gate
 ```
 
 ### uv workspace: `protlabel` (EAT engine)
@@ -232,6 +233,7 @@ Six methods supported, all in `src/protspace/utils/reducers.py`:
 - **EC name resolution:** `uniprot_transforms.py` appends enzyme names to EC numbers using the ExPASy ENZYME database (`enzyme.dat` for fully specified ECs, `enzclass.txt` for partial ECs like `3.4.-.-`). Both files are downloaded and cached together in `~/.cache/protspace/enzyme/` with a 7-day TTL.
 - **Warning suppression:** `base_processor.py` suppresses harmless sklearn RuntimeWarnings (randomized SVD overflow) and umap/pacmap UserWarnings during `fit_transform`.
 - **Config validation:** `DimensionReductionConfig` (frozen dataclass in `utils/constants.py`) validates all parameters on init.
+- **3-D is deprecated (removed in 5.0.0):** `pipeline.parse_methods_arg` (the one parse every `-m` goes through: `prepare`, `project`, the Colab notebook) logs one registry warning per call naming the requested `*3` methods and the 2-D variant; the projection still runs. In `prepare` that is after embedding, since methods are parsed there. Reading 3-D projections from existing bundles (`z` axis, `stats`) is not deprecated.
 - **Reducer registry:** `REDUCERS` dict in `utils/__init__.py` maps method names to reducer classes (lazy-loaded).
 - **Logging:** `setup_logging()` in `cli/app.py` uses a tqdm-aware handler to avoid garbling progress bars. Third-party loggers (`urllib3`, `requests`) are capped at WARNING even with `-vv`.
 
@@ -261,7 +263,7 @@ HDF5 file (float16 embeddings)
 
 Every write from here emits **six** parts (format v3): `core(3) + settings + statistics + payloads`, with zero bytes in the settings or statistics slot when absent, because the browser reads the payloads positionally from `parts[5]`. `replace_settings_in_bundle` (`protspace style`) keeps a v3 input's other parts byte for byte and writes a legacy (v1/v2) input as v3, encoded exactly as `convert_bundle` would, with one warning naming the input's version.
 
-Legacy (v1/v2) containers still read, but that is **deprecated and removed in protspace 5.0.0**: every public read (`read_tables`, `read_bundle`, `extract_bundle_to_dir`, `read_settings_from_bundle`, `read_statistics_from_bundle`) logs one warning naming `protspace convert`, emitted in `_parse_bundle`. The writers read their input with `warn_legacy=False`, so a command that reads then rewrites a bundle (`transfer`, `style`) warns once; `convert_bundle()` (`protspace convert`) never warns. Positional layout `core(3) + settings? + statistics?`, 3 to 5 parts. When statistics are present but settings are absent, the settings slot is written as **zero bytes** so statistics stay at position five (readers branch on emptiness, not part count). Every unbundled directory (`prepare --no-bundled`, `extract_bundle_to_dir`, `protspace project`, `protspace style <dir>`, `ArrowReader.save_data`) is written by one helper, `bundle.write_directory`, keyed on `CORE_FILENAMES` / `SETTINGS_FILENAME` / `STATISTICS_FILENAME`: atomic writes, a part passed as a table or as stored bytes, and `settings.parquet` / `statistics.parquet` when present. When it writes settings it also removes a `VISUALIZATION_STATE_FILENAME` (`visualization_state.json`, written by an older `style`), which would otherwise win over them on read. `style` on a directory goes through `replace_settings_in_directory`, the counterpart of `replace_settings_in_bundle`: same styling pass (`_styled_settings`); in place only `settings.parquet` is written, into another directory the other parts are copied and any the input lacks removed. `ArrowReader` carries a directory's `statistics.parquet` through as unread bytes, so a corrupt one never stops a load. `rewrap_settings` overlays the rebuilt annotations on the stored settings in both shapes (flat and frontend envelope), so `style` keeps the settings of every annotation it does not style.
+Legacy (v1/v2) containers still read, but that is **deprecated and removed in protspace 5.0.0** (`deprecations.LEGACY_BUNDLE_READ`; `LEGACY_REMOVAL_VERSION` reads it): every public read (`read_tables`, `read_bundle`, `extract_bundle_to_dir`, `read_settings_from_bundle`, `read_statistics_from_bundle`) logs one warning naming `protspace convert`, emitted in `_parse_bundle`. The writers read their input with `warn_legacy=False`, so a command that reads then rewrites a bundle (`transfer`, `style`) warns once; `convert_bundle()` (`protspace convert`) never warns. Positional layout `core(3) + settings? + statistics?`, 3 to 5 parts. When statistics are present but settings are absent, the settings slot is written as **zero bytes** so statistics stay at position five (readers branch on emptiness, not part count). Every unbundled directory (`prepare --no-bundled`, `extract_bundle_to_dir`, `protspace project`, `protspace style <dir>`, `ArrowReader.save_data`) is written by one helper, `bundle.write_directory`, keyed on `CORE_FILENAMES` / `SETTINGS_FILENAME` / `STATISTICS_FILENAME`: atomic writes, a part passed as a table or as stored bytes, and `settings.parquet` / `statistics.parquet` when present. When it writes settings it also removes a `VISUALIZATION_STATE_FILENAME` (`visualization_state.json`, written by an older `style`), which would otherwise win over them on read. `style` on a directory goes through `replace_settings_in_directory`, the counterpart of `replace_settings_in_bundle`: same styling pass (`_styled_settings`); in place only `settings.parquet` is written, into another directory the other parts are copied and any the input lacks removed. `ArrowReader` carries a directory's `statistics.parquet` through as unread bytes, so a corrupt one never stops a load. `rewrap_settings` overlays the rebuilt annotations on the stored settings in both shapes (flat and frontend envelope), so `style` keeps the settings of every annotation it does not style.
 
 `read_tables()` / `read_bundle()` / `extract_bundle_to_dir()` decode v3 back to the v2-shaped tables (all-string cells, long projections, stamped `protspace_format_version=2`), so every consumer above `data/io/` is unchanged. Two footer keys: `protspace_container_version=3` marks a v3 part 1 (and only that), `protspace_format_version` (`BUNDLE_FORMAT_VERSION = 2`) is the annotation cell grammar of legacy parts and v2-shaped tables, absent = v1. `encode_v3`/`write_bundle`/`replace_annotations_in_bundle` refuse a table not stamped v2; callers holding v1 cells migrate explicitly (`migrate_legacy_annotation_table`, or `upgrade_cell_grammar(table, version)` when a `rename_columns` dropped the stamp). See `docs/guide/data-format.md`.
 
@@ -344,6 +346,8 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_uniprot_parser_encoding.py` | UniProtEntry free-text emit points percent-encode reserved chars |
 | `test_cath_names.py` | CATH names file parsing |
 | `test_cli_no_frontend.py` | CLI imports without the optional `frontend` extra (plotly, dash) |
+| `test_deprecations.py` | The deprecation registry: **tripwire** failing once `__version__` reaches any `remove_in`; version parsing; removal notes name existing files; module is stdlib-only; the 3-D warning (once per parse, none for 2-D, `project -m pca2,pca3` still writes both) and `-m` help; `serve` marked deprecated, warns with the explore URL, then starts; v1/v2 removal version pinned in `bundle.py`, the CLI guide and the web's TypeScript sources |
+| `test_check_deprecations.py` | `scripts/check_deprecations.py` release gate: no release due (next == current) passes, earlier than every `remove_in` passes, at/after fails listing every removal note, non-version input exits 2, GitHub `::error` annotation; `protspace-release.yml` runs `--print` → gate → `version --commit` in that order |
 | `test_cli_no_similarity.py` | `-s/--similarity` without the optional `similarity` extra: up-front CLI guard (before any load/embed), loader `ImportError` backstop, `EMBEDDER_MODELS` pinned to the embedder registry |
 | `test_docs_extras_sync.py` | `README.md` (PyPI) and `docs/guide/python-cli.md` (protspace.app) hold the same extras section; the guide's embedder shortcut list matches `EMBEDDER_MODELS` |
 | `test_notebooks.py` | Colab notebooks: cell magics only on line 1, every code cell compiles after IPython transformation, cell ids present for `nbformat >= 4.5`, no notebook imports a private `protspace` name (cell 1 installs the *released* package, so a private name added this release breaks setup until the next one), each Generate action names its bundle distinctly, `except ImportError` fallback sets equal the package constants they stand in for — read structurally off the guarded import, so a fallback that is missing, emptied or written in an unrecognised shape fails instead of matching nothing |
@@ -365,7 +369,7 @@ Located in `notebooks/`:
 
 **Core:** h5py, scikit-learn, umap-learn, pacmap, numpy, pandas, pyarrow, tqdm, requests, biocentral-api (`>=2.0.0,<3`), typer, rich, protlabel (workspace member)
 
-**Frontend (optional):** dash, plotly, dash-bootstrap-components, dash-molstar
+**Frontend (optional, deprecated with `serve`, removed in 5.0.0):** dash, plotly, dash-bootstrap-components, dash-molstar
 
 **Similarity (optional, `[similarity]` extra):** pymmseqs, only reached via `-s/--similarity`. Install with `pip install "protspace[similarity]"`.
 
@@ -383,5 +387,6 @@ The two reasons it was moved out of core are **fixed upstream as of pymmseqs 1.2
 - **Imports:** src-layout (`src/protspace/`; `protlabel` at `packages/protlabel/src/`). Tests import from `protspace.*` / `src.protspace.*` and `protlabel.*`.
 - **Linting:** ruff with py312 target, 88 char line length. Run `ruff check src/ packages/ tests/`.
 - **Versioning:** python-semantic-release via `pyproject.toml`, lock-step across `protspace` + `protlabel`. Versions in `pyproject.toml`, `packages/protlabel/pyproject.toml`, and `src/protspace/__init__.py`.
+- **Deprecations:** declare every scheduled removal in `src/protspace/deprecations.py` (`Deprecation(key, feature, remove_in, message, removal)`) and warn through `deprecations.warn(key, logger, **fields)` — never hard-code the version. Due in 5.0.0 (#544): 3-D projections, `serve` + the `frontend` extra, v1/v2 bundle reads. **A 5.0.0 bump is blocked until they are removed:** `test_deprecations.py` turns every PR red once `__version__` reaches a `remove_in`, and `protspace-release.yml` runs `semantic-release version --print` then `scripts/check_deprecations.py --next-version` before releasing, failing with the removal list. Delete an entry once its removal lands; the full v5 inventory is in the `deprecate-3d-and-serve` OpenSpec design.
 - **Build:** hatchling backend; uv workspace (`uv build --all-packages`).
 - **Git workflow:** Always create a feature branch and open a PR — never push directly to `main`.
