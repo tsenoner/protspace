@@ -326,10 +326,10 @@ def _styled_settings(
 
     # Compute value frequencies once (used for validation below and for
     # frequency-based zOrder). Its keys are the display values a style file is
-    # keyed by — the same set style_keys builds — so it
-    # doubles as the validation set without a second full-protein scan. Style
-    # updates only mutate visualization_state, not annotation values, so the
-    # frequencies stay valid for the zOrder pass afterwards.
+    # keyed by — the same set style_keys builds — so it doubles as the
+    # validation set without a second full-protein scan. Style updates only
+    # mutate visualization_state, not annotation values, so the frequencies
+    # stay valid for the zOrder pass afterwards.
     value_frequencies = compute_value_frequencies(reader)
 
     for annotation, styles in annotation_styles.items():
@@ -379,13 +379,14 @@ def add_annotation_styles_parquet(
 ) -> None:
     """Add annotation styles to a ProtSpace parquet directory.
 
-    The styles land in the output directory's settings.parquet, as they land
-    in a bundle's settings part; every other file is written back alongside.
+    The directory counterpart of :func:`add_annotation_styles_bundle`: the
+    styles land in settings.parquet and every other file is kept as stored.
     """
+    from protspace.data.io.bundle import replace_settings_in_directory
+
     reader = ArrowReader(Path(parquet_dir))
-    reader.save_data(
-        Path(output_dir), settings=_styled_settings(reader, annotation_styles)
-    )
+    new_settings = _styled_settings(reader, annotation_styles)
+    replace_settings_in_directory(Path(parquet_dir), Path(output_dir), new_settings)
 
 
 def add_annotation_styles_bundle(
@@ -433,14 +434,18 @@ def dump_settings(input_file: str) -> None:
         else:
             print(json.dumps(settings, indent=2))
     elif data_format == "parquet":
-        viz_state_path = Path(input_file) / "visualization_state.json"
-        settings_path = Path(input_file) / "settings.parquet"
+        from protspace.data.io.bundle import (
+            SETTINGS_FILENAME,
+            VISUALIZATION_STATE_FILENAME,
+            read_settings_from_file,
+        )
+
+        viz_state_path = Path(input_file) / VISUALIZATION_STATE_FILENAME
+        settings_path = Path(input_file) / SETTINGS_FILENAME
         if viz_state_path.exists():
             with open(viz_state_path) as f:
                 print(f.read())
         elif settings_path.exists():
-            from protspace.data.io.bundle import read_settings_from_file
-
             settings = read_settings_from_file(settings_path)
             print(json.dumps(settings, indent=2))
         else:

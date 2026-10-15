@@ -1,8 +1,9 @@
 """The unbundled parquet directory: one writer, one file layout.
 
-`prepare --no-bundled`, `extract_bundle_to_dir` and `protspace style <dir>` all
-write a directory that `ArrowReader` and `protspace style` read back, so they
-have to agree on the file names and on carrying settings and statistics.
+`prepare --no-bundled`, `extract_bundle_to_dir`, `protspace project` and
+`protspace style <dir>` all write a directory that `ArrowReader` and
+`protspace style` read back, so they have to agree on the file names and on
+carrying settings and statistics.
 """
 
 import json
@@ -18,6 +19,7 @@ from protspace.data.io.bundle import (
     CORE_FILENAMES,
     SETTINGS_FILENAME,
     STATISTICS_FILENAME,
+    VISUALIZATION_STATE_FILENAME,
     extract_bundle_to_dir,
     read_settings_from_bundle,
     read_settings_from_file,
@@ -34,8 +36,7 @@ STYLES = {"organism": {"colors": {"A": "#ff0000"}, "shapes": {"B": "diamond"}}}
 
 
 def _tables() -> dict[str, pa.Table]:
-    processor = BaseProcessor({}, {})
-    return processor.create_output(
+    return BaseProcessor({}, {}).create_output(
         pd.DataFrame({"identifier": IDS, "organism": ["A", "B", "A"]}),
         [
             {
@@ -47,6 +48,16 @@ def _tables() -> dict[str, pa.Table]:
         ],
         IDS,
     )
+
+
+def _core() -> list[pa.Table]:
+    """The three core tables in bundle part order."""
+    tables = _tables()
+    return [
+        tables["protein_annotations"],
+        tables["projections_metadata"],
+        tables["projections_data"],
+    ]
 
 
 def _project_dir(tmp_path):
@@ -69,7 +80,7 @@ def _style(source, target):
 
 
 def test_write_directory_writes_the_layout_the_reader_reads(tmp_path):
-    tables = list(_tables().values())
+    tables = _core()
     write_directory(tables, tmp_path, settings=SETTINGS, statistics=STATISTICS)
 
     for table, name in zip(tables, CORE_FILENAMES, strict=True):
@@ -82,10 +93,19 @@ def test_write_directory_writes_the_layout_the_reader_reads(tmp_path):
 def test_write_directory_skips_absent_parts(tmp_path):
     """A projections-only directory (`protspace project`) holds no annotations,
     settings or statistics file."""
-    _, metadata, projections = _tables().values()
+    _, metadata, projections = _core()
     write_directory([None, metadata, projections], tmp_path)
 
     assert sorted(p.name for p in tmp_path.iterdir()) == sorted(CORE_FILENAMES[1:])
+
+
+def test_write_directory_clears_a_stale_visualization_state(tmp_path):
+    """A visualization_state.json an older `style` left would win over the
+    settings just written, so any rewrite of the directory removes it."""
+    (tmp_path / VISUALIZATION_STATE_FILENAME).write_text("{}")
+    write_directory(_core(), tmp_path, settings=SETTINGS)
+
+    assert not (tmp_path / VISUALIZATION_STATE_FILENAME).exists()
 
 
 def test_extracted_bundle_matches_unbundled_output(tmp_path):
@@ -95,9 +115,7 @@ def test_extracted_bundle_matches_unbundled_output(tmp_path):
     the pipeline wrote it as null, one of its documented canonicalisations.
     """
     bundle = tmp_path / "data.parquetbundle"
-    write_bundle(
-        list(_tables().values()), bundle, settings=SETTINGS, statistics=STATISTICS
-    )
+    write_bundle(_core(), bundle, settings=SETTINGS, statistics=STATISTICS)
     extracted = tmp_path / "extracted"
     extract_bundle_to_dir(bundle, extracted)
     unbundled = _project_dir(tmp_path)
@@ -112,15 +130,14 @@ def test_extracted_bundle_matches_unbundled_output(tmp_path):
 
 
 def test_style_directory_keeps_every_part(tmp_path):
-    """`protspace style <dir> -o <newdir>` writes a directory that reads back as
-    the same data and still carries its statistics."""
+    """`protspace style <dir> <newdir>` keeps every other part byte for byte, as
+    styling a bundle does, statistics included."""
     source = _project_dir(tmp_path)
     target = tmp_path / "styled"
     _style(source, target)
 
-    for name in CORE_FILENAMES:
-        assert (target / name).exists(), name
-    assert pq.read_table(target / STATISTICS_FILENAME).equals(STATISTICS)
+    for name in [*CORE_FILENAMES, STATISTICS_FILENAME]:
+        assert (target / name).read_bytes() == (source / name).read_bytes(), name
     assert sorted(ArrowReader(target).get_protein_ids()) == IDS
 
 
@@ -128,16 +145,14 @@ def test_style_directory_writes_the_settings_a_bundle_gets(tmp_path):
     """Styling a directory lands the same settings as styling the bundle of the
     same data, in settings.parquet, keeping what the settings held before."""
     bundle = tmp_path / "data.parquetbundle"
-    write_bundle(
-        list(_tables().values()), bundle, settings=SETTINGS, statistics=STATISTICS
-    )
+    write_bundle(_core(), bundle, settings=SETTINGS, statistics=STATISTICS)
     styled_bundle = tmp_path / "styled.parquetbundle"
     _style(bundle, styled_bundle)
 
     target = tmp_path / "styled"
     _style(_project_dir(tmp_path), target)
 
-    assert not (target / "visualization_state.json").exists()
+    assert not (target / VISUALIZATION_STATE_FILENAME).exists()
     assert read_settings_from_file(
         target / SETTINGS_FILENAME
     ) == read_settings_from_bundle(styled_bundle)
@@ -152,12 +167,12 @@ def test_style_directory_in_place_is_not_shadowed_by_old_state(tmp_path):
     """A visualization_state.json an older `style` left behind would win over
     the new settings.parquet on read, so restyling replaces it."""
     source = _project_dir(tmp_path)
-    (source / "visualization_state.json").write_text(
+    (source / VISUALIZATION_STATE_FILENAME).write_text(
         '{"annotation_colors": {"organism": {"A": "#00ff00"}}, "marker_shapes": {}}'
     )
     _style(source, source)
 
-    assert not (source / "visualization_state.json").exists()
+    assert not (source / VISUALIZATION_STATE_FILENAME).exists()
     # settings store colours as rgba; the old state's #00ff00 is gone
     assert ArrowReader(source).get_annotation_colors("organism") == {
         "A": "rgba(255, 0, 0, 0.8)"

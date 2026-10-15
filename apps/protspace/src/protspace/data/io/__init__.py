@@ -19,6 +19,7 @@ from protspace.data.io.bundle import (
     read_statistics_from_bundle,
     read_tables,
     replace_settings_in_bundle,
+    replace_settings_in_directory,
     write_bundle,
     write_directory,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "write_bundle",
     "write_directory",
     "replace_settings_in_bundle",
+    "replace_settings_in_directory",
     "create_settings_parquet",
     "read_settings_from_bytes",
     "read_settings_from_file",
