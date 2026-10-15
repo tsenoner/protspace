@@ -44,6 +44,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from protspace.core.constants import MISSING_VALUE_TOKENS, is_missing_value
 from protspace.data.annotations.encoding import encode_field, stamp_format_version
 from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER, create_settings_parquet
 from protspace.stats.base import STATS_SCHEMA
@@ -95,6 +96,23 @@ BOOLEAN_VALUES = [True, False, None, True, False, True]
 # ±2**53 edge, which it still stores as numbers.
 HASH_VALUES = [2**60 + 1, 5, None, 2**62, -(2**61), 7]
 EDGE_VALUES = [2**53, 1, None, -(2**53), 2, 3]
+
+
+# Spellings around the missing-value rule, each published with Python's verdict:
+# every token as written, upper-cased, title-cased and padded, blank cells, and
+# near misses (TMbed's negative among them; the display forms `stats` drops on
+# its own, which the web shows as categories). The reader asserts its own
+# verdict on each, so a change in how either side matches fails, not only a
+# token added on one side.
+MISSING_VALUE_PROBES = sorted(
+    {
+        spelling
+        for token in MISSING_VALUE_TOKENS
+        for spelling in (token, token.upper(), token.title(), f"  {token}\t")
+    }
+    | {"", " ", "\t\n", "\u00a0", "non-transmembrane", "nan%", "n.a.", "NA_"}
+    | {"<N/A>", "<NA>", "0", "False"}
+)
 
 
 def protein_ids(count: int) -> list[str]:
@@ -551,6 +569,12 @@ def main(out_dir: Path) -> None:
                         strict=True,
                     )
                 ),
+                # What Python reads as a missing annotation value; the web reader
+                # must read exactly the same cells as N/A.
+                "missingValueTokens": sorted(MISSING_VALUE_TOKENS),
+                "missingValueVerdicts": [
+                    [probe, is_missing_value(probe)] for probe in MISSING_VALUE_PROBES
+                ],
             }
         ),
         encoding="utf-8",

@@ -36,7 +36,11 @@ import {
   getProteinAnnotationValues,
   getProteinScores,
 } from '../../packages/utils/src/visualization/plot-data-accessors';
-import { NA_VALUE } from '../../packages/utils/src/visualization/missing-values';
+import {
+  MISSING_VALUE_TOKENS,
+  NA_VALUE,
+  normalizeMissingValue,
+} from '../../packages/utils/src/visualization/missing-values';
 import { generateDatasetHash } from '../../packages/utils/src/storage/data-hash';
 import type { VisualizationData } from '../../packages/utils/src/types';
 
@@ -67,6 +71,10 @@ interface Manifest {
   annotationOnlyFamily: string;
   projectionOnlyId: string;
   booleanById: Record<string, boolean | null>;
+  /** Python's missing-value spellings (`MISSING_VALUE_TOKENS`), sorted. */
+  missingValueTokens: string[];
+  /** `[spelling, is_missing_value(spelling)]` for each probe spelling. */
+  missingValueVerdicts: [string, boolean][];
 }
 
 /** The format the producer writes today: six slots, payloads last. */
@@ -539,4 +547,25 @@ describe('bundles the web app exports, read by the Python tooling', () => {
       expect(reexported.hasSettings).toBe(written.hasSettings);
     },
   );
+});
+
+// Python's readers (the Dash plot, `protspace stats`, `protspace transfer`) and the
+// web reader each decide which cells are missing. When they disagree, a value one
+// side shows as a category the other shows as N/A, which is how TMbed's negative
+// prediction, `none`, came to be displayed as N/A (#339).
+describe('what counts as a missing annotation value', () => {
+  it('names the same missing-value spellings as the producer', () => {
+    expect([...MISSING_VALUE_TOKENS].sort()).toEqual(manifest.missingValueTokens);
+  });
+
+  it('reads each probe spelling as missing exactly when the producer does', () => {
+    const verdicts = manifest.missingValueVerdicts;
+    // Both answers occur, so neither side can pass by calling everything one thing.
+    expect(new Set(verdicts.map(([, missing]) => missing))).toEqual(new Set([true, false]));
+
+    const disagreements = verdicts.filter(
+      ([probe, missing]) => (normalizeMissingValue(probe) === null) !== missing,
+    );
+    expect(disagreements).toEqual([]);
+  });
 });
