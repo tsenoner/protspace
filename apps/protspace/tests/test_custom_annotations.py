@@ -28,6 +28,7 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
 from protspace.data.io.bundle import read_tables
 from protspace.data.processors.custom_annotations import (
     CUSTOM_ANNOTATION_SUFFIXES,
+    RESERVED_COLUMNS,
     load_custom_annotations,
     resolve_id_column,
     split_annotation_args,
@@ -35,7 +36,11 @@ from protspace.data.processors.custom_annotations import (
 from tests.cli_output import plain
 
 HEADERS = ["P1", "P2", "P3", "P4"]
-GUIDE = Path(__file__).resolve().parents[3] / "docs" / "guide" / "python-cli.md"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+GUIDE = REPO_ROOT / "docs" / "guide" / "python-cli.md"
+VIEWER_CONVERSION = (
+    REPO_ROOT / "packages/core/src/components/data-loader/utils/conversion.ts"
+)
 
 
 def _write(path, text: str) -> str:
@@ -98,6 +103,23 @@ def test_the_guide_lists_the_accepted_suffixes():
     assert listed - {".xlsx"} == set(CUSTOM_ANNOTATION_SUFFIXES)
 
 
+def test_the_guide_lists_the_reserved_names():
+    section = GUIDE.read_text().split("### Custom annotation files")[1]
+    bullet = section.split("**Reserved names.**")[1].split("\n- ")[0]
+    listed = set(re.findall(r"`(\w+)`", bullet.split("(exactly")[0]))
+    assert listed == RESERVED_COLUMNS
+
+
+def test_the_guide_and_the_notebook_state_the_first_column_rule():
+    section = GUIDE.read_text().split("### Custom annotation files")[1]
+    assert "The first column holds the protein ids" in section
+    notebook = (
+        REPO_ROOT / "apps/protspace/notebooks/ProtSpace_Preparation.ipynb"
+    ).read_text()
+    hint = notebook.split("Optional: a CSV/TSV with custom annotations")[1][:80]
+    assert "first column, whatever its name" in hint
+
+
 # ---------------------------------------------------------------------------
 # Parsing one file
 # ---------------------------------------------------------------------------
@@ -123,14 +145,71 @@ class TestDelimiter:
 
 
 class TestIdColumn:
+    """The first column holds the ids, whatever its header; no name outranks it."""
+
+    @pytest.mark.parametrize(
+        "header, kept",
+        [
+            ("family,protein_id,group", ["protein_id_annotation", "group"]),
+            ("seq,identifier,group", ["identifier_annotation", "group"]),
+            ("accession,id,family", ["id_annotation", "family"]),
+            ("ProteinID,family", ["family"]),
+            ("protein_id,identifier", ["identifier_annotation"]),
+            ("id,family", ["family"]),
+        ],
+    )
+    def test_the_first_column_is_the_id(self, tmp_path, header, kept):
+        row = ",".join(["P1", "a", "b"][: len(kept) + 1])
+        frame = _load(tmp_path, f"{header}\n{row}\n")
+        assert list(frame.columns) == ["identifier", *kept]
+        assert frame["identifier"].tolist() == HEADERS
+        assert _column(frame, kept[0])["P1"] == "a"
+
+    def test_a_reserved_name_is_renamed_with_a_warning(self, tmp_path, caplog):
+        with caplog.at_level(logging.WARNING):
+            _load(tmp_path, "seq,protein_id\nP1,x\n", names=["labels.csv"])
+        assert "'protein_id' is kept as the annotation 'protein_id_annotation'" in (
+            caplog.text
+        )
+        assert "labels.csv" in caplog.text and "'seq'" in caplog.text
+
+    def test_two_reserved_names_are_both_kept(self, tmp_path):
+        frame = _load(tmp_path, "accession,identifier,protein_id\nP1,a,b\n")
+        assert _column(frame, "identifier_annotation")["P1"] == "a"
+        assert _column(frame, "protein_id_annotation")["P1"] == "b"
+
+    def test_a_taken_new_name_is_numbered(self, tmp_path):
+        frame = _load(tmp_path, "seq,id,id_annotation\nP1,a,b\n")
+        assert list(frame.columns) == ["identifier", "id_annotation_2", "id_annotation"]
+        assert _column(frame, "id_annotation_2")["P1"] == "a"
+
+    @pytest.mark.parametrize("name", ["Protein_ID", "ID", "Identifier", "ids"])
+    def test_names_that_collide_with_nothing_are_kept(self, tmp_path, name, caplog):
+        with caplog.at_level(logging.WARNING):
+            frame = _load(tmp_path, f"seq,{name}\nP1,a\n")
+        assert list(frame.columns) == ["identifier", name]
+        assert "reserves" not in caplog.text
+
+    def test_the_reserved_names_are_the_viewers_id_columns(self):
+        # The viewer drops these from the annotation columns by exact name, so a custom
+        # column keeping one would be lost there; the bundle's two are among them.
+        source = VIEWER_CONVERSION.read_text()
+        literal = re.search(r"const ID_COLUMNS = \[(.*?)\] as const;", source, re.S)
+        assert literal, f"ID_COLUMNS not found in {VIEWER_CONVERSION}"
+        assert set(re.findall(r"'([^']+)'", literal.group(1))) == RESERVED_COLUMNS
+
+
+class TestParquetIdColumn:
+    """A parquet keeps the name-based rule: every table ProtSpace writes names its ids."""
+
     @pytest.mark.parametrize(
         "columns, expected",
         [
             (["family", "protein_id", "group"], "protein_id"),
-            (["family", "identifier", "group"], "identifier"),
-            (["family", "Protein_ID"], "Protein_ID"),
-            (["family", "ID"], "ID"),
+            (["family", "identifier"], "identifier"),
             (["ProteinID", "family"], "ProteinID"),
+            (["family", "id"], "family"),
+            (["family", "Protein_ID"], "family"),
         ],
     )
     def test_rule(self, columns, expected):
@@ -139,16 +218,6 @@ class TestIdColumn:
     def test_identifier_and_protein_id_both_named_is_an_error(self):
         with pytest.raises(ValueError, match="identifier.*protein_id"):
             resolve_id_column(["identifier", "protein_id", "family"])
-
-    def test_protein_id_not_first_reaches_the_output(self, tmp_path):
-        frame = _load(tmp_path, "family,protein_id,group\na,P1,g\n")
-        assert _column(frame, "family")["P1"] == "a"
-        assert _column(frame, "group")["P1"] == "g"
-        assert "protein_id" not in frame.columns
-
-    def test_identifier_not_first(self, tmp_path):
-        frame = _load(tmp_path, "family,identifier\na,P2\n")
-        assert _column(frame, "family")["P2"] == "a"
 
 
 class TestCells:
@@ -331,6 +400,24 @@ class TestPrepare:
         frame = _bundle_annotations(out / "data.parquetbundle")
         assert frame.loc["P1", "family"] == "a"
 
+    @pytest.mark.parametrize("reserved", ["identifier", "protein_id"])
+    def test_a_later_id_named_column_reaches_the_bundle(
+        self, tmp_path, monkeypatch, reserved
+    ):
+        # Once a duplicate-column error: the first column becomes `identifier`, and the
+        # bundle writer renames that `protein_id`.
+        _forbid_uniprot(monkeypatch)
+        csv = _write(tmp_path / "labels.csv", f"seq,{reserved},group\nP1,x,g\n")
+        out = tmp_path / "out"
+        result = _invoke(
+            "prepare", "-i", f"{_h5(tmp_path)}:E", "-a", csv, "--no-log", "-o", out
+        )
+        assert result.exit_code == 0, result.output
+        frame = _bundle_annotations(out / "data.parquetbundle")
+        assert frame.loc["P1", f"{reserved}_annotation"] == "x"
+        assert frame.loc["P1", "group"] == "g"
+        assert reserved == "protein_id" or reserved not in frame.columns
+
     def test_a_missing_file_fails_before_anything_is_embedded(
         self, tmp_path, monkeypatch
     ):
@@ -357,7 +444,7 @@ class TestPrepare:
 class TestAnnotate:
     def test_a_csv_alone_fetches_nothing(self, tmp_path, monkeypatch):
         _forbid_uniprot(monkeypatch)
-        csv = _write(tmp_path / "labels.tsv", "family\tidentifier\na\tP1\n")
+        csv = _write(tmp_path / "labels.tsv", "identifier\tfamily\nP1\ta\n")
         output = tmp_path / "ann.parquet"
         result = _invoke("annotate", "-i", _h5(tmp_path), "-a", csv, "-o", output)
         assert result.exit_code == 0, result.output
@@ -385,6 +472,16 @@ class TestAnnotate:
         assert result.exit_code == 0, result.output
         lengths = pd.read_parquet(output).set_index("identifier")["length"]
         assert lengths["P1"] == "99"
+
+    def test_a_later_protein_id_column_is_kept_renamed(self, tmp_path, monkeypatch):
+        _forbid_uniprot(monkeypatch)
+        csv = _write(tmp_path / "labels.csv", "seq,protein_id\nP2,x\n")
+        output = tmp_path / "ann.parquet"
+        result = _invoke("annotate", "-i", _h5(tmp_path), "-a", csv, "-o", output)
+        assert result.exit_code == 0, result.output
+        frame = pd.read_parquet(output)
+        assert list(frame.columns) == ["identifier", "protein_id_annotation"]
+        assert frame.set_index("identifier").loc["P2", "protein_id_annotation"] == "x"
 
     def test_an_unknown_source_is_a_usage_error(self, tmp_path):
         result = _invoke("annotate", "-i", _h5(tmp_path), "-a", "not_a_source")
@@ -448,6 +545,31 @@ class TestStats:
         assert result.exit_code == 0, result.output
         assert {"grp", cluster[0]} <= set(_bundle_annotations(bundle).columns)
 
+    def test_a_later_protein_id_column_survives_stats_and_bundle(self, tmp_path):
+        # stats writes the ids to `identifier`; a `protein_id` column kept beside them
+        # would give `bundle -a` two id columns.
+        h5, proj, headers = _project(tmp_path)
+        rows = "".join(f"{h},v{i},{'ab'[i % 2]}\n" for i, h in enumerate(headers))
+        csv = _write(tmp_path / "labels.csv", "seq,protein_id,grp\n" + rows)
+        result = _invoke(
+            "stats", "-i", f"{h5}:E", "-p", proj, "-a", csv, "-o", proj / "s.parquet"
+        )
+        assert result.exit_code == 0, result.output
+        enriched = proj / "labels.annotations.parquet"
+        written = pd.read_parquet(enriched)
+        assert written.columns[0] == "identifier"
+        assert "protein_id" not in written.columns
+        assert (
+            written.set_index("identifier").loc["p3", "protein_id_annotation"] == "v3"
+        )
+        bundle = tmp_path / "out.parquetbundle"
+        result = _invoke("bundle", "-p", proj, "-a", enriched, "-o", bundle)
+        assert result.exit_code == 0, result.output
+        frame = _bundle_annotations(bundle)
+        assert frame.loc["p1", "grp"] == "b"
+        assert frame.loc["p1", "protein_id_annotation"] == "v1"
+        assert any(c.startswith("cluster_elbow_") for c in frame.columns)
+
     def test_a_csv_leaves_the_directory_annotations_alone(self, tmp_path):
         # An unbundled `prepare` directory keeps its fetched annotations under this name.
         h5, proj, headers = _project(tmp_path)
@@ -477,7 +599,7 @@ class TestStats:
 class TestBundle:
     def test_a_csv_is_bundled(self, tmp_path):
         _, proj, headers = _project(tmp_path)
-        csv = _write(tmp_path / "labels.csv", f"family;protein_id\na;{headers[0]}\n")
+        csv = _write(tmp_path / "labels.csv", f"protein_id;family\n{headers[0]};a\n")
         bundle = tmp_path / "out.parquetbundle"
         result = _invoke("bundle", "-p", proj, "-a", csv, "-o", bundle)
         assert result.exit_code == 0, result.output
@@ -508,6 +630,14 @@ class TestBundle:
         frame = _bundle_annotations(bundle)
         assert frame.loc[headers[1], "grp"] == "b"
         assert any(c.startswith("cluster_elbow_") for c in frame.columns)
+
+    def test_a_parquet_naming_its_ids_twice_is_a_usage_error(self, tmp_path):
+        _, proj, headers = _project(tmp_path)
+        ann = tmp_path / "ann.parquet"
+        pq.write_table(pa.table({"identifier": headers, "protein_id": headers}), ann)
+        result = _invoke("bundle", "-p", proj, "-a", ann, "-o", tmp_path / "o")
+        assert result.exit_code == 2
+        assert "'identifier', 'protein_id'" in plain(result.output)
 
 
 class TestProject:

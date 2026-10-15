@@ -99,7 +99,7 @@ Opt_Annotations = Annotated[
     typer.Option(
         "-a",
         "--annotations",
-        help=f"Annotation groups (default,all,uniprot,interpro,taxonomy,ted,biocentral), individual names, or custom .csv/.tsv/.txt files (merged on their id column). Repeatable. See {ANNOTATIONS_URL}",
+        help=f"Annotation groups (default,all,uniprot,interpro,taxonomy,ted,biocentral), individual names, or custom .csv/.tsv/.txt files (ids in the first column; several are merged on it). Repeatable. See {ANNOTATIONS_URL}",
         rich_help_panel="Annotations",
     ),
 ]

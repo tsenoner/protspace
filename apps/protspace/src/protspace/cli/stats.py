@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_id_col(frame) -> str:
-    """The identifier column, by the rule `bundle -a` and custom annotation files use."""
+    """The id column of the ``-a`` table, by the parquet rule ``bundle -a`` uses too.
+
+    A custom annotation file comes back from its loader with the ids in ``identifier``.
+    """
     from protspace.data.processors.custom_annotations import resolve_id_column
 
     return resolve_id_column(list(frame.columns))

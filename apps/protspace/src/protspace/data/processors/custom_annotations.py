@@ -5,8 +5,8 @@ thing to each of them:
 
 - ``.csv``, ``.tsv`` and ``.txt`` (any case) are files; every other ``-a`` value is a source name.
 - The delimiter is read off the header line (tab, comma or semicolon), not the extension.
-- The id column is ``identifier`` or ``protein_id`` wherever it sits, else ``id``, else the first
-  column (:func:`resolve_id_column`).
+- The first column holds the ids, whatever its header. A later column with a name ProtSpace
+  reserves (:data:`RESERVED_COLUMNS`) is kept as an annotation under ``<name>_annotation``.
 - Cells are text: an empty cell stays empty, and the plain text is encoded into the v2 cell
   grammar the way ``bundle -a`` encodes a hand-written table.
 - Several files are joined on the id column; a column two files both define is an error.
@@ -28,9 +28,25 @@ logger = logging.getLogger(__name__)
 CUSTOM_ANNOTATION_SUFFIXES = (".csv", ".tsv", ".txt")
 ID_COLUMN = "identifier"
 
-# Header names that say "this column holds the ids", by precedence. The first group is ProtSpace's
-# own spelling (`identifier` in the pipeline, `protein_id` in a bundle), the second a common one.
-_ID_NAMES = ({"identifier", "protein_id"}, {"id"})
+#: Names a later column of a custom file cannot keep, compared exactly: the pipeline's and the
+#: bundle's id column (``identifier``, ``protein_id``), and every name the web viewer reads as an
+#: id or projection column and so never shows as an annotation (``ID_COLUMNS`` in
+#: packages/core/src/components/data-loader/utils/conversion.ts; pinned by a test).
+RESERVED_COLUMNS = frozenset(
+    {
+        "identifier",
+        "protein_id",
+        "id",
+        "uniprot",
+        "entry",
+        "projection_name",
+        "x",
+        "y",
+        "z",
+    }
+)
+# The id column of a parquet ProtSpace writes: `identifier` in the pipeline, `protein_id` in a bundle.
+_PARQUET_ID_NAMES = ("protein_id", "identifier")
 _DELIMITERS = {"\t": "tab", ",": "comma", ";": "semicolon"}
 _EXAMPLES = 3
 
@@ -78,23 +94,52 @@ def split_annotation_args(items: Iterable[str]) -> tuple[list[str], list[Path]]:
 
 
 def resolve_id_column(columns: Sequence[str]) -> str:
-    """The column holding the protein ids.
+    """The column holding the protein ids of an annotations parquet (``stats -a``, ``bundle -a``).
 
-    ``identifier`` or ``protein_id`` in any position (case-insensitive), else ``id``, else the
-    first column. Two columns of the same rank are an error rather than a guess.
+    ``protein_id`` or ``identifier``, the names every table ProtSpace writes gives it, else the
+    first column. Both is an error rather than a guess. A custom annotation file does not use
+    this: its first column is the id column, always (:func:`_read_file`).
     """
-    for names in _ID_NAMES:
-        matches = [c for c in columns if str(c).strip().lower() in names]
-        if len(matches) > 1:
-            raise ValueError(
-                f"Several id columns: {', '.join(map(repr, matches))}. Keep one, "
-                "or rename the others."
-            )
-        if matches:
-            return matches[0]
+    matches = [c for c in columns if c in _PARQUET_ID_NAMES]
+    if len(matches) > 1:
+        raise ValueError(
+            f"Several id columns: {', '.join(map(repr, matches))}. Keep one, "
+            "or rename the others."
+        )
+    if matches:
+        return matches[0]
     if not len(columns):
         raise ValueError("The table has no columns.")
     return columns[0]
+
+
+def _unreserved(path: Path, id_header: str, columns: Sequence[str]) -> list[str]:
+    """*columns* (a file's non-first columns), each reserved name renamed ``<name>_annotation``.
+
+    The column stays an annotation: before, such a file failed with a duplicate-column error, or
+    the viewer hid the column.
+    """
+    taken = {*columns, ID_COLUMN}
+    names: list[str] = []
+    for column in columns:
+        if column not in RESERVED_COLUMNS:
+            names.append(column)
+            continue
+        new, n = f"{column}_annotation", 2
+        while new in taken:
+            new, n = f"{column}_annotation_{n}", n + 1
+        taken.add(new)
+        logger.warning(
+            "%s: column '%s' is kept as the annotation '%s'. The first column, '%s', "
+            "holds the ids, and ProtSpace reserves the name '%s'.",
+            path,
+            column,
+            new,
+            id_header,
+            column,
+        )
+        names.append(new)
+    return names
 
 
 def _read_text(path: Path) -> str:
@@ -128,7 +173,7 @@ def _sniff_delimiter(path: Path, header: str) -> str:
 
 
 def _read_file(path: Path) -> pd.DataFrame:
-    """One file as text, its id column renamed to :data:`ID_COLUMN`, one row per id."""
+    """One file as text, its first column renamed to :data:`ID_COLUMN`, one row per id."""
     text = _read_text(path)
     header = next((line for line in text.split("\n") if line.strip()), "")
     if not header:
@@ -142,9 +187,8 @@ def _read_file(path: Path) -> pd.DataFrame:
         )
     except pd.errors.ParserError as exc:
         raise ValueError(f"{path}: {exc}") from exc
-    frame.columns = [str(c).strip() for c in frame.columns]
-    id_col = resolve_id_column(list(frame.columns))
-    frame = frame.rename(columns={id_col: ID_COLUMN})
+    id_header, *rest = (str(c).strip() for c in frame.columns)
+    frame.columns = [ID_COLUMN, *_unreserved(path, id_header, rest)]
     frame[ID_COLUMN] = frame[ID_COLUMN].str.strip()
     frame = frame[frame[ID_COLUMN] != ""]
 

@@ -154,7 +154,8 @@ def bundle(
             annotations,
         )
 
-    # The id column, chosen by the rule `stats -a` uses, is protein_id in a bundle.
+    # The id column, chosen by the parquet rule `stats -a` uses (a custom file's loader
+    # puts its first column in `identifier`), is protein_id in a bundle.
     if id_col != "protein_id":
         annotations_table = annotations_table.rename_columns(
             [

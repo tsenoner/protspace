@@ -63,16 +63,16 @@ Browser performance varies by device and GPU capabilities.
 
 ### Can I add custom annotations?
 
-Yes. Put your columns in a CSV or TSV file with one row per protein and a column of protein ids
-matching your embeddings, then pass it with `-a` when you build the bundle:
+Yes. Put your columns in a CSV or TSV file with one row per protein and the protein ids, matching
+your embeddings, in the first column, then pass it with `-a` when you build the bundle:
 
 ```bash
 protspace prepare -i embeddings.h5 -a annotations.csv -m umap2 -o output
 ```
 
 Repeat `-a` to merge several files. `annotate`, `stats` and `bundle` take the same files. See
-[Custom annotation files](/guide/python-cli#custom-annotation-files) for how the id column and the
-delimiter are found. The [Colab notebook](/guide/data-preparation) takes an upload too.
+[Custom annotation files](/guide/python-cli#custom-annotation-files) for how the delimiter is found
+and the other rules. The [Colab notebook](/guide/data-preparation) takes an upload too.
 
 ### How do I include 3D structures?
 

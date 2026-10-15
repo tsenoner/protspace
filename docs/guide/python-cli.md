@@ -339,9 +339,12 @@ Q54321,Eukaryota,Kinase,Transferase
   value is a source name. Other formats, such as `.xlsx`, are refused: export them to CSV first.
 - **Delimiter.** Comma, tab or semicolon, read from the header line whatever the extension. A file
   whose header holds none of them parses to a single column, and ProtSpace warns about it.
-- **Id column.** A column named `identifier` or `protein_id`, in any case and any position, holds
-  the protein ids; otherwise a column named `id`; otherwise the first column. A file with both
-  `identifier` and `protein_id` is refused.
+- **Id column.** The first column holds the protein ids, whatever its header. No column name takes
+  precedence over it, so put the ids first.
+- **Reserved names.** A later column named `identifier`, `protein_id`, `id`, `uniprot`, `entry`,
+  `projection_name`, `x`, `y` or `z` (exactly, in lower case) is kept as an annotation but renamed
+  `<name>_annotation`, for example `protein_id_annotation`, and ProtSpace warns about the rename.
+  ProtSpace uses those names for its own id and projection columns, and the web app would hide them.
 - **Ids match exactly.** They are compared verbatim with your input's identifiers (the `.h5` keys,
   or the FASTA identifiers). When some of a file's ids match no input protein, ProtSpace warns and
   shows examples of both, so `P12345` against `sp|P12345|KIN_HUMAN` is reported instead of leaving
@@ -764,9 +767,10 @@ the web app renders that table, see
 [Separation Scores](/explore/separation-scores).
 
 The annotations parquet can be the output of `protspace annotate`, the annotation cache `prepare`
-keeps (`tmp/all_annotations.parquet`), or a table of your own. Its id column is chosen as for a
-[custom annotation file](#custom-annotation-files), the rule `stats -a` follows too, so a table
-`stats` enriched is one `bundle` accepts. `annotate` and the cache hold
+keeps (`tmp/all_annotations.parquet`), or a table of your own. Its id column is the column named
+`protein_id` or `identifier`, as in every table ProtSpace writes, or else its first column; a table
+with both is refused. `stats -a` follows the same rule, so a table `stats` enriched is one `bundle`
+accepts. `annotate` and the cache hold
 percent-encoded v2 cells, stamped `protspace_format_version` = `2`, and those pass through
 unchanged; a cache written before the cache carried that stamp is recognised as one and read the
 same way. Any other table without the stamp, for example one you built with pandas, is read as
@@ -1067,10 +1071,9 @@ Coming from ProtSpace 4.4, or from the v3 `protspace-local` command:
   were never part of `project`.
 - **`transfer` arrived in 4.6.** [Embedding Annotation Transfer](#protspace-transfer) fills an
   annotation for unlabelled proteins from their nearest labelled neighbour in embedding space.
-- **A column named `id` can now be the id column.** The id column used to be the first column,
-  always. Now a column named `identifier`, `protein_id` or `id`, in any case and any position,
-  takes precedence. If your file has, say, `accession,id,family` with the accessions as ids,
-  rename the `id` column; ProtSpace warns when a file's ids match no input protein.
+- **The id column is still the first column**, as in 4.4 and `protspace-local`, whatever its
+  header. A later column named `identifier` or `protein_id`, which used to fail the run with a
+  duplicate-column error, is now kept as `identifier_annotation` or `protein_id_annotation`.
 - **3D projections and `protspace serve` are deprecated.** Both still work, with a warning, and
   are removed in protspace 5.0.0 (tracked in
   [#544](https://github.com/tsenoner/protspace/issues/544)). If you used `umap3`, `tsne3` or any
