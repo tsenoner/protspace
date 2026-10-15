@@ -32,6 +32,7 @@ from protspace.deprecations import (
     EXPLORE_URL,
     LEGACY_BUNDLE_READ,
     SERVE_COMMAND,
+    THREE_D_PROJECTION_READ,
     THREE_D_PROJECTIONS,
     due,
     release_core,
@@ -72,7 +73,21 @@ def test_the_scheduled_removals():
         THREE_D_PROJECTIONS: "5.0.0",
         SERVE_COMMAND: "5.0.0",
         LEGACY_BUNDLE_READ: "5.0.0",
+        THREE_D_PROJECTION_READ: "5.0.0",
     }
+
+
+def test_convert_is_not_scheduled_for_removal():
+    """`protspace convert` outlives 5.0.0 as the upgrade path, with its own reader
+    for v1/v2 and 3-D: nothing in the registry may ask for it to go."""
+    for entry in DEPRECATIONS.values():
+        for note in entry.removal:
+            path, _, what = note.partition(":")
+            if path.endswith("cli/convert.py"):
+                assert "delete" not in what
+    legacy = " ".join(DEPRECATIONS[LEGACY_BUNDLE_READ].removal)
+    assert "protspace convert keeps a legacy reader" in legacy
+    assert "upgrade path" in deprecations.__doc__
 
 
 @pytest.mark.parametrize("entry", list(DEPRECATIONS.values()), ids=list(DEPRECATIONS))
@@ -87,7 +102,12 @@ def test_every_removal_note_names_a_file_that_exists(entry):
 
 @pytest.mark.parametrize("entry", list(DEPRECATIONS.values()), ids=list(DEPRECATIONS))
 def test_every_warning_names_its_removal_version(entry):
-    fields = {"example": "umap2 instead of umap3", "methods": "umap3", "name": "x"}
+    fields = {
+        "example": "umap2 instead of umap3",
+        "methods": "umap3",
+        "name": "x",
+        "projections": "UMAP 3",
+    }
     text = entry.text(**fields)
     assert "deprecated" in text
     assert f"protspace {entry.remove_in}" in text
@@ -132,9 +152,9 @@ def test_legacy_bundle_removal_version_comes_from_the_registry():
     assert LEGACY_REMOVAL_VERSION == DEPRECATIONS[LEGACY_BUNDLE_READ].remove_in
 
 
-#: The browser's own copies of the v1/v2 removal version: the notice users see
-#: on importing a legacy bundle, and the decoder's deprecation notes. TypeScript
-#: cannot import the registry, so this pins them to it.
+#: The browser's own copies of the removal versions: the notices users see on
+#: importing a legacy bundle or 3-D projections, and the decoder's deprecation
+#: notes. TypeScript cannot import the registry, so this pins them to it.
 WEB_LEGACY_SOURCES = (
     "apps/web/src/explore/notifications.ts",
     "packages/core/src/components/data-loader/utils/bundle.ts",
@@ -153,7 +173,20 @@ def test_web_legacy_notices_name_the_registered_removal_version(source):
 
     versions = _WEB_REMOVAL_VERSION.findall(path.read_text())
     assert versions, f"{source} no longer names the v1/v2 removal version"
-    assert set(versions) == {DEPRECATIONS[LEGACY_BUNDLE_READ].remove_in}
+    # notifications.ts also holds the 3-D notice, pinned on its own below.
+    allowed = {DEPRECATIONS[LEGACY_BUNDLE_READ].remove_in}
+    if source.endswith("notifications.ts"):
+        allowed.add(DEPRECATIONS[THREE_D_PROJECTION_READ].remove_in)
+    assert DEPRECATIONS[LEGACY_BUNDLE_READ].remove_in in versions
+    assert set(versions) <= allowed
+
+
+def test_the_web_3d_notice_names_the_3d_reading_removal_version():
+    path = REPO_ROOT / WEB_LEGACY_SOURCES[0]
+    if not path.exists():
+        pytest.skip("the web app is not part of this checkout")
+    remove_in = DEPRECATIONS[THREE_D_PROJECTION_READ].remove_in
+    assert f"Reading 3-D projections ends in ProtSpace {remove_in}." in path.read_text()
 
 
 def test_the_web_notice_users_see_names_the_removal_version():
