@@ -405,3 +405,280 @@ def test_transfer_notebook_shows_only_the_predicted_rows(tmp_path, monkeypatch):
     (frame,) = shown
     assert frame["fam__pred_value"].tolist() == ["a"]
     assert frame["fam__pred_source"].tolist() == ["p0"]
+
+
+# --- The Preparation panel, run for real ------------------------------------------
+#
+# Cells 1-3 (install, upload, panel) with the installed ipywidgets and a mocked
+# `google.colab`; pip is stubbed and the network is refused, so the panel and
+# Generate run against this package exactly as in Colab, minus the browser.
+# Colab ships ipywidgets 7, the dev lock 8: run this file once more with
+# `uv run --with ipywidgets==7.7.1 pytest tests/test_notebooks.py` to cover both.
+
+
+@pytest.fixture(autouse=True)
+def _restore_protspace_logger():
+    """The panel routes the `protspace` logger into its output and stops it
+    propagating; left that way, every later caplog test would see nothing."""
+    import logging
+
+    logger = logging.getLogger("protspace")
+    handlers, propagate, level = list(logger.handlers), logger.propagate, logger.level
+    yield
+    logger.handlers[:] = handlers
+    logger.propagate = propagate
+    logger.setLevel(level)
+
+
+def _preparation_cell(marker: str) -> str:
+    (source,) = [
+        source
+        for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb")
+        if source.startswith(marker)
+    ]
+    return source
+
+
+def _clickthrough_h5(path: Path, n: int = 40, dim: int = 16) -> Path:
+    """An HDF5 as the Embeddings notebook wrote it before it stamped model_name."""
+    import h5py
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    with h5py.File(path, "w") as f:
+        for i in range(n):
+            f.create_dataset(
+                f"prot{i:03d}", data=rng.normal(size=dim).astype(np.float32)
+            )
+    return path
+
+
+def _run_preparation_panel(monkeypatch, tmp_path, *, uploads=None):
+    """Run cells 1-3 and return (namespace, downloads, network calls)."""
+    pytest.importorskip("ipywidgets")
+    pytest.importorskip("IPython")
+    import subprocess
+    import sys
+    import types
+    import urllib.request
+
+    monkeypatch.chdir(tmp_path)
+    downloads, network = [], []
+
+    def _upload():
+        # files.upload() writes what it receives into the working directory.
+        for name, data in (uploads or {}).items():
+            Path(name).write_bytes(data)
+        return dict(uploads or {})
+
+    colab = types.ModuleType("google.colab")
+    colab.files = types.SimpleNamespace(download=downloads.append, upload=_upload)
+    try:
+        import google
+    except ImportError:
+        google = types.ModuleType("google")
+        monkeypatch.setitem(sys.modules, "google", google)
+    monkeypatch.setattr(google, "colab", colab, raising=False)
+    monkeypatch.setitem(sys.modules, "google.colab", colab)
+
+    def _refuse(*args, **_kwargs):
+        network.append(args[0] if args else None)
+        raise OSError("network refused in tests")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _refuse)
+    monkeypatch.setattr(urllib.request, "urlretrieve", _refuse)
+
+    namespace = {"__name__": "__notebook__"}
+    real_run = subprocess.run
+
+    def _pip_or_real(cmd, *args, **kwargs):
+        # Only the install is stubbed: imports below may shell out themselves.
+        if "pip" in cmd:
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        return real_run(cmd, *args, **kwargs)
+
+    with monkeypatch.context() as pip:
+        pip.setattr(subprocess, "run", _pip_or_real)
+        exec(compile(_preparation_cell("# @title 1."), "prep:1", "exec"), namespace)
+    namespace["display"] = lambda *_a, **_k: None
+    namespace["clear_output"] = lambda *_a, **_k: None
+
+    upload = _preparation_cell("# @title Optional: upload")
+    if uploads:
+        upload = upload.replace(
+            "upload_from_computer = False", "upload_from_computer = True"
+        )
+    exec(compile(upload, "prep:upload", "exec"), namespace)
+    exec(compile(_preparation_cell("# @title 2."), "prep:2", "exec"), namespace)
+    return namespace, downloads, network
+
+
+def _generate_pca_from_csv(namespace, csv: Path):
+    """Generate PCA only, annotations from the CSV alone: nothing to fetch."""
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method == "PCA"
+    namespace["ann_preset"].value = namespace["_CSV_ONLY"]
+    namespace["csv_path_field"].value = str(csv)
+    namespace["_on_gen"](None)
+
+
+def _projection_names(bundle) -> list[str]:
+    from protspace.data.io.bundle import read_tables
+
+    return read_tables(bundle)[1].column("projection_name").to_pylist()
+
+
+def test_preparation_panel_is_built_without_the_network(monkeypatch, tmp_path):
+    """Run all used to end in an example fetch with no timeout, leaving a dead
+    panel behind a slow connection; the fetch now waits for Generate."""
+    namespace, _, network = _run_preparation_panel(monkeypatch, tmp_path)
+    assert network == []
+    assert namespace["input_args"][0]["type"] == "example"
+
+
+def test_preparation_names_an_unnamed_h5_and_generates(monkeypatch, tmp_path, capsys):
+    """The Upload-H5 tab never passed a name, so every file without model_name --
+    every file the Embeddings notebook wrote -- failed at Generate."""
+    namespace, downloads, network = _run_preparation_panel(monkeypatch, tmp_path)
+    h5 = _clickthrough_h5(tmp_path / "toxins_esm2_650m.h5")
+    csv = tmp_path / "custom.csv"
+    csv.write_text(
+        "identifier,group\n" + "".join(f"prot{i:03d},g{i % 3}\n" for i in range(40))
+    )
+
+    namespace["h5_path_field"].value = str(h5)
+    namespace["_on_h5_load"]()
+    namespace["tabs"].selected_index = 1
+    _generate_pca_from_csv(namespace, csv)
+
+    output = capsys.readouterr().out
+    assert "embedding name 'esm2_650m'" in output
+    assert "Running on toxins_esm2_650m.h5 (40 proteins" in output
+    (bundle,) = downloads
+    assert _projection_names(bundle) == ["ESM2-650M — PCA 2"]
+    assert network == []
+    assert namespace["gen_btn"].disabled is False
+
+
+def test_preparation_uses_the_embedder_picked_for_an_h5(monkeypatch, tmp_path):
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    csv = tmp_path / "custom.csv"
+    csv.write_text("identifier,group\nprot000,a\n")
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["_on_h5_load"]()
+    namespace["h5_name"].value = "prot_t5"
+    namespace["tabs"].selected_index = 1
+    _generate_pca_from_csv(namespace, csv)
+
+    (bundle,) = downloads
+    assert _projection_names(bundle) == ["ProtT5 — PCA 2"]
+
+
+def test_preparation_upload_cell_hands_the_file_to_the_panel(monkeypatch, tmp_path):
+    h5 = _clickthrough_h5(tmp_path / "source.h5")
+    namespace, _, _ = _run_preparation_panel(
+        monkeypatch, tmp_path, uploads={"seqs_prot_t5.h5": h5.read_bytes()}
+    )
+    assert namespace["tabs"].selected_index == 1
+    assert namespace["input_args"][1]["name"] == "prot_t5"
+
+
+def test_preparation_refuses_an_empty_tab_instead_of_the_example(
+    monkeypatch, tmp_path, capsys
+):
+    """A failed upload used to leave the auto-selected example as the input, and
+    Generate processed 536 example proteins without a word."""
+    namespace, downloads, network = _run_preparation_panel(monkeypatch, tmp_path)
+    namespace["tabs"].selected_index = 1
+
+    namespace["_on_gen"](None)
+
+    assert "Upload H5 tab has no file loaded" in capsys.readouterr().out
+    assert downloads == [] and network == []
+
+
+def test_preparation_says_when_no_file_arrived(monkeypatch, tmp_path, capsys):
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    namespace["h5_path_field"].value = str(tmp_path / "missing.h5")
+    namespace["_on_h5_load"]()
+    assert "No file received at" in capsys.readouterr().out
+    assert 1 not in namespace["input_args"]
+
+
+def test_preparation_parameter_defaults_are_the_clis(monkeypatch, tmp_path):
+    """The same data should give the same UMAP in Colab and in the CLI; the panel's
+    min_dist once defaulted to 0.4 against the CLI's 0.1."""
+    from dataclasses import asdict
+
+    from protspace.data.processors.pipeline import ReducerParams
+
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    cli = asdict(ReducerParams())
+    assert {k: w.value for k, w in namespace["pw"].items()} == {
+        k: cli[k] for k in namespace["pw"]
+    }
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"ann.csv": {"content": b"identifier\n", "metadata": {}}},  # ipywidgets 7
+        ({"name": "ann.csv", "content": memoryview(b"identifier\n")},),  # ipywidgets 8
+    ],
+    ids=["ipywidgets7", "ipywidgets8"],
+)
+def test_preparation_reads_both_fileupload_value_shapes(monkeypatch, tmp_path, value):
+    import types
+
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    upload = types.SimpleNamespace(value=value)
+    assert namespace["_first_upload"](upload) == ("ann.csv", b"identifier\n")
+
+
+def test_preparation_csv_upload_fills_the_path_field(monkeypatch, tmp_path):
+    """Through the installed ipywidgets' own FileUpload, as the browser sends it."""
+    import ipywidgets
+
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    upload, content = namespace["csv_upload"], b"identifier,group\nprot000,a\n"
+    if ipywidgets.__version__.startswith("7."):
+        meta = {"name": "ann.csv", "type": "", "size": len(content), "lastModified": 0}
+        upload.set_trait("metadata", [meta])
+        upload.set_trait("data", [content])
+        upload.set_trait("_counter", upload._counter + 1)
+    else:
+        from datetime import UTC, datetime
+
+        upload.value = (
+            {
+                "name": "ann.csv",
+                "type": "text/csv",
+                "size": len(content),
+                "last_modified": datetime.now(UTC),
+                "content": memoryview(content),
+            },
+        )
+
+    assert namespace["csv_path_field"].value == str(tmp_path / "ann.csv")
+    assert (tmp_path / "ann.csv").read_bytes() == content
+
+
+def test_clickthrough_stamps_the_model_name():
+    """Without the attribute, ProtSpace can only guess the model from the file name."""
+    stamped = [
+        node
+        for _, source in _code_cells(
+            NOTEBOOK_DIR / "ClickThrough_GenerateEmbeddings.ipynb"
+        )
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(t, ast.Subscript)
+            and isinstance(t.value, ast.Attribute)
+            and t.value.attr == "attrs"
+            and isinstance(t.slice, ast.Constant)
+            and t.slice.value == "model_name"
+            for t in node.targets
+        )
+    ]
+    assert stamped, "the Embeddings notebook writes no model_name attribute"

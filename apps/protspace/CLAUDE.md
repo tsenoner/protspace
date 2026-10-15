@@ -347,7 +347,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_cli_no_frontend.py` | CLI imports without the optional `frontend` extra (plotly, dash) |
 | `test_cli_no_similarity.py` | `-s/--similarity` without the optional `similarity` extra: up-front CLI guard (before any load/embed), loader `ImportError` backstop, `EMBEDDER_MODELS` pinned to the embedder registry |
 | `test_docs_extras_sync.py` | `README.md` (PyPI) and `docs/guide/python-cli.md` (protspace.app) hold the same extras section; the guide's embedder shortcut list matches `EMBEDDER_MODELS` |
-| `test_notebooks.py` | Colab notebooks: cell magics only on line 1, every code cell compiles after IPython transformation, cell ids present for `nbformat >= 4.5`, no notebook imports a private `protspace` name (cell 1 installs the *released* package, so a private name added this release breaks setup until the next one), each Generate action names its bundle distinctly, `except ImportError` fallback sets equal the package constants they stand in for — read structurally off the guarded import, so a fallback that is missing, emptied or written in an unrecognised shape fails instead of matching nothing |
+| `test_notebooks.py` | Colab notebooks: cell magics only on line 1, every code cell compiles after IPython transformation, cell ids present for `nbformat >= 4.5`, no notebook imports a private `protspace` name (cell 1 installs the *released* package, so a private name added this release breaks setup until the next one), each Generate action names its bundle distinctly, `except ImportError` fallback sets equal the package constants they stand in for — read structurally off the guarded import, so a fallback that is missing, emptied or written in an unrecognised shape fails instead of matching nothing; the Preparation panel run for real (cells 1-3 with the installed ipywidgets, a mocked `google.colab`, pip stubbed, network refused): built without fetching, an attribute-less Embeddings-notebook H5 named from its file name and generated, a picked embedder used, the upload cell handing its file to the panel, an empty selected tab refused instead of the example, a missing path reported, both `FileUpload` value shapes and the real widget, slider defaults equal to `ReducerParams`; the Embeddings notebook stamps `model_name`. CI has ipywidgets 8; Colab ships 7, so also run `uv run --with ipywidgets==7.7.1 pytest tests/test_notebooks.py` when changing the panel |
 | `test_scores_ted.py` | `--no-scores` strips TED domains |
 
 **Markers:** `@pytest.mark.slow` (database downloads), `@pytest.mark.integration` (external APIs)
@@ -358,7 +358,7 @@ Located in `notebooks/`:
 
 | Notebook | Purpose |
 |----------|---------|
-| `ProtSpace_Preparation.ipynb` | Google Colab — upload embeddings, configure DR methods, generate .parquetbundle |
+| `ProtSpace_Preparation.ipynb` | Google Colab — optional upload cell, then one panel: pick an input tab (example, H5 by path, FASTA by path, UniProt query), configure 2-D DR methods and annotations, generate .parquetbundle |
 | `ClickThrough_GenerateEmbeddings.ipynb` | Google Colab — generate embeddings from FASTA using ESM models |
 | `ProtSpace_Transfer.ipynb` | Google Colab — Embedding Annotation Transfer (EAT): fill missing annotations from nearest reference proteins |
 

@@ -1,9 +1,9 @@
 ## 1. Failing tests first
 
-- [ ] 1.1 `tests/test_notebooks.py`: run cells 1-2 with real ipywidgets and a mocked `google.colab`; loading an attribute-less `*_esm2_650m.h5` and clicking Generate writes a bundle labelled `ESM2-650M`
-- [ ] 1.2 Generate on an empty selected tab refuses and does not process the example; building the panel performs no network I/O
-- [ ] 1.3 The CSV upload helper reads both the ipywidgets 7 and 8 `FileUpload` value shapes
-- [ ] 1.4 The Embeddings notebook writes `model_name` (structural check)
+- [x] 1.1 `tests/test_notebooks.py`: run cells 1-2 with real ipywidgets and a mocked `google.colab`; loading an attribute-less `*_esm2_650m.h5` and clicking Generate writes a bundle labelled `ESM2-650M`
+- [x] 1.2 Generate on an empty selected tab refuses and does not process the example; building the panel performs no network I/O
+- [x] 1.3 The CSV upload helper reads both the ipywidgets 7 and 8 `FileUpload` value shapes
+- [x] 1.4 The Embeddings notebook writes `model_name` (structural check)
 
 ## 2. Preparation notebook
 
@@ -22,10 +22,10 @@
 ## 4. Docs
 
 - [ ] 4.1 `docs/guide/data-preparation.md`: four-tab panel, upload routes and size caveat, Run all, 2-D only, MDS CLI-only, taxonomy tip removed, naming no longer needed
-- [ ] 4.2 `apps/protspace/CLAUDE.md`: `test_notebooks.py` row
+- [x] 4.2 `apps/protspace/CLAUDE.md`: `test_notebooks.py` row
 
 ## 5. Verify
 
-- [ ] 5.1 `uv run pytest tests/test_notebooks.py` with the locked ipywidgets 8 and with `--with ipywidgets==7.7.1`
+- [x] 5.1 `uv run pytest tests/test_notebooks.py` with the locked ipywidgets 8 and with `--with ipywidgets==7.7.1`
 - [ ] 5.2 Full `apps/protspace` suite, ruff, `pnpm precommit`, `pnpm format:check`
 - [ ] 5.3 `openspec validate notebook-input-handling --strict`
