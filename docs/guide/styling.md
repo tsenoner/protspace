@@ -118,11 +118,15 @@ settings, so editing the per-annotation `shapeSize` of such a bundle has no visi
 
 ### N/A values
 
-Missing values (`""`, `"<NA>"`, `"NaN"`, `"__NA__"`, `"None"`) are normalized automatically, use any
-form in the styles file. A missing cell of a v3 bundle, from the web app or from Python, reads back
-as `""`. `"None"` is how one reads back from a v2 bundle exported by a web build before v3, which
-wrote the cell as a Parquet NULL. In the output bundle N/A is stored with the key `__NA__` (the
-frontend's internal format).
+Every value the web app shows as N/A is one legend entry, so it is one entry in the styles file
+too. Name it by any spelling the web reads as missing (see
+[Missing Values](./data-format.md#missing-values): `""`, `"N/A"`, `"None"`, `"null"`, `"NaN"`,
+`"__NA__"`, in any case), or `"<NA>"`, whichever the data uses. This holds for `colors`, `shapes`,
+`pinnedValues` and `hiddenValues`. A missing cell of a v3 bundle, from the web app or from Python,
+reads back as `""`; `"None"` is how one reads back from a v2 bundle exported by a web build before
+v3, which wrote the cell as a Parquet NULL. In the output bundle N/A is stored once, with the key
+`__NA__` (the frontend's internal format), and a new N/A style replaces the one already stored.
+`--generate-template` lists it as `__NA__`.
 
 ### Example: custom colors and shapes
 
@@ -207,7 +211,7 @@ with `sortMode: "manual"`.
   requires `maxVisibleValues: 13`.
 - Colors are auto-assigned from Kelly's 21 Colors of Maximum Contrast when no explicit `colors` are
   provided. N/A gets a lighter gray (`#DDDDDD`).
-- Use `""` for N/A in `pinnedValues`.
+- Name N/A in `pinnedValues` by any of its spellings (`""` or `"__NA__"` work for any data).
 
 ### `__REST__` auto-fill marker
 
