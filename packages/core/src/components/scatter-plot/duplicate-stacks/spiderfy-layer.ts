@@ -68,9 +68,10 @@ export class SpiderfyLayer {
 
   constructor(private readonly deps: SpiderfyLayerDeps) {}
 
-  /** Clear any tracked presses (called on collapse / data swap). */
+  /** Forget tracked presses and the built ring (called on collapse / data swap). */
   reset(): void {
     this.pressByPointerId.clear();
+    this.built = null;
   }
 
   /** Render the ring for `stack` into `layer`, scaled to `k` so it stays screen-constant. */
