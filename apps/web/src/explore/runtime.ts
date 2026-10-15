@@ -47,7 +47,7 @@ import { loadLastImportedFile, readStoredImportSummary } from './opfs-dataset-st
 import { createSelectionController } from './selection-controller';
 import { createStatusController } from './status-controller';
 import { createStructureController } from './structure-controller';
-import { bindPhoneDim } from './phone-dim';
+import { bindPhoneDim, touchDarkSource } from './phone-dim';
 import { bindTouchTooltipInsets } from './touch-tooltip-insets';
 import { createUndoController, type UndoEntry } from './undo-controller';
 import {
@@ -411,7 +411,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   });
   lifecycle.addCleanup(() => viewController.dispose());
   lifecycle.addCleanup(
-    bindPhoneDim(plotElement, { get: getLayoutMode, subscribe: subscribeLayoutMode }),
+    bindPhoneDim(
+      plotElement,
+      { get: getLayoutMode, subscribe: subscribeLayoutMode },
+      touchDarkSource(),
+    ),
   );
 
   // The Filter panel counts only while it is on screen: open on the desktop sidebar's Filter
