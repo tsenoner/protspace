@@ -97,18 +97,6 @@ class TestTransmembraneExtraction:
         result = BiocentralPredictionRetriever._extract_transmembrane(preds)
         assert result == ""
 
-    @pytest.mark.parametrize("value", ["", None], ids=["empty", "none"])
-    def test_an_empty_payload_is_missing_not_negative(self, value):
-        """A TMbed entry with no topology predicted nothing.
-
-        Before the negative got a name it came out as `none`, which displays as
-        N/A; `non-transmembrane` would turn it into a confident negative.
-        """
-        preds = [_make_prediction("TMbed", value)]
-        assert BiocentralPredictionRetriever._extract_transmembrane(preds) == ""
-        # Nor is it a confident "no signal peptide".
-        assert BiocentralPredictionRetriever._extract_signal_peptide(preds) == ""
-
 
 class TestNoTransmembraneIsACategory:
     """A protein without a TM segment is a prediction, not a missing value.
@@ -134,14 +122,19 @@ class TestNoTransmembraneIsACategory:
 class TestTmbedPayloadValidation:
     @pytest.mark.parametrize(
         "value",
-        [0, [], {}, "   ", b"abc", "garbage"],
-        ids=["zero", "list", "dict", "blank", "bytes", "unsupported-labels"],
+        ["", None, 0, [], {}, "   ", b"abc", "garbage"],
+        ids=["empty", "none", "zero", "list", "dict", "blank", "bytes", "labels"],
     )
-    def test_malformed_payload_is_missing_for_derived_annotations(self, value):
-        preds = [_make_prediction("TMbed", value)]
+    def test_an_unusable_payload_is_missing_not_negative(self, value):
+        """A TMbed entry with no usable topology predicted nothing.
 
-        assert BiocentralPredictionRetriever._extract_signal_peptide(preds) == ""
+        Before the negative got a name it came out as `none`, which displays as
+        N/A; `non-transmembrane`, or signal peptide `False`, would turn it into a
+        confident negative.
+        """
+        preds = [_make_prediction("TMbed", value)]
         assert BiocentralPredictionRetriever._extract_transmembrane(preds) == ""
+        assert BiocentralPredictionRetriever._extract_signal_peptide(preds) == ""
 
 
 class TestPerSequenceExtraction:

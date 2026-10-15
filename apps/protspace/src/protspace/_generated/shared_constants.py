@@ -39,8 +39,8 @@ NA_VALUE = "__NA__"
 NA_DEFAULT_COLOR = "#DDDDDD"
 
 # Kelly's 21 colours of maximum contrast, in the order categories take them
-# (the category in slot i gets colour i). Medium gray (#848482) is left out:
-# it is reserved for special categories (Other, N/A). Very light and very
+# (the category in slot i gets colour i). Medium gray (#848482) is left out,
+# too close to the greys of Other (#999999) and N/A. Very light and very
 # dark gray come last, for the least frequent categories. In order: vivid
 # yellow, strong purple, vivid orange, very light blue, vivid red, grayish
 # yellow, vivid green, strong purplish pink, strong blue, strong yellowish

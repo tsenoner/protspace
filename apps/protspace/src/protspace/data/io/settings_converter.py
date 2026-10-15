@@ -47,11 +47,10 @@ def _fold_na(by_key: dict) -> dict:
     order.
     """
     folded = {k: v for k, v in by_key.items() if not is_na_label(k)}
-    na_keys = sorted(
-        (k for k in by_key if is_na_label(k)), key=lambda k: (k != NA_INTERNAL, k)
-    )
+    na_keys = [k for k in by_key if is_na_label(k)]
     if na_keys:
-        folded[NA_INTERNAL] = by_key[na_keys[0]]
+        winner = min(na_keys, key=lambda k: (k != NA_INTERNAL, k))
+        folded[NA_INTERNAL] = by_key[winner]
     return folded
 
 
@@ -357,7 +356,7 @@ def visualization_state_to_settings(
             all_values = set(freqs.keys())
 
         if pinned_values:
-            # Resolve pinned values against all_values (with NA alias matching).
+            # Resolve pinned values against all_values (N/A spellings folded).
             # ONLY pinned values go into categories — this ensures the
             # frontend's _visibleValues matches exactly the pinned set.
             #

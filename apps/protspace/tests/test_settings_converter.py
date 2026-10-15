@@ -185,7 +185,7 @@ class TestVisualizationStateToSettings:
         assert cat["shape"] == "circle"
         assert "zOrder" in cat
 
-    def test_na_gets_gray(self):
+    def test_na_color_is_stored_under_the_na_key(self):
         viz = {
             "annotation_colors": {
                 "ann": {"val": "rgba(255,0,0,0.8)", "<NA>": "rgba(192,192,192,0.8)"}
