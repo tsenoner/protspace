@@ -86,12 +86,16 @@ def bundle(
         read_format_version,
         upgrade_cell_grammar,
     )
-    from protspace.data.io.bundle import write_bundle
+    from protspace.data.io.bundle import (
+        PROJECTIONS_DATA_FILENAME,
+        PROJECTIONS_METADATA_FILENAME,
+        write_bundle,
+    )
 
     settings_obj = json.loads(settings.read_text()) if settings is not None else None
 
-    metadata_path = projections / "projections_metadata.parquet"
-    data_path = projections / "projections_data.parquet"
+    metadata_path = projections / PROJECTIONS_METADATA_FILENAME
+    data_path = projections / PROJECTIONS_DATA_FILENAME
 
     if not metadata_path.exists():
         raise typer.BadParameter(f"Missing: {metadata_path}")
