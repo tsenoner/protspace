@@ -54,8 +54,10 @@ three rules (explicit, attribute, file name) and its own error, worded without a
 for Python callers; the CLI always hands it a name.
 
 **5. The info line is the override instruction.** `No embedding name for x.h5 (no 'model_name'
-attribute, no known model in the file name); using 'x'. Name it with -i x.h5:<model>.` A
-file-name match logs `Embedding name 'esm2_650m' taken from the file name x_esm2_650m.h5`.
+attribute, no known model in the file name); using 'x'. To name it, append the model:
+x.h5:<model>, e.g. x.h5:esm2_650m.` It names no flag, since `transfer` takes the file as `-e`.
+A file-name match logs `Embedding name 'esm2_650m' taken from the file name x_esm2_650m.h5`.
+Both are INFO, like `prepare`'s other inferred defaults, so they show at `-v`.
 
 **6. `stats` adopts a single source only for file-name names.** An explicit or attribute name is
 the user's statement and is left alone. A file-name name is a guess about a file whose

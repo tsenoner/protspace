@@ -30,10 +30,10 @@ documentation or report that the picker renders and replies there; a picker that
 would block the kernel with no timeout, which is the very symptom being fixed. A top-level cell
 is the documented use, and it is what the Embeddings notebook does. The cell sits above the
 panel so the order reads "get the file in, then configure"; it runs `files.upload()` only when
-its `upload_from_computer` checkbox is ticked, so _Run all_ passes straight through. It writes
-the file to `/content`, gunzips a `.gz`, and puts the path into the H5, FASTA or CSV path field
-by extension (and into `uploaded_paths`, which the panel reads when it is built after the
-upload).
+its `upload_from_computer` checkbox is ticked, so _Run all_ passes straight through. `files.upload()`
+writes the file to the working directory; the cell puts its path into the H5, FASTA or CSV path
+field by extension, and loads it, when the panel exists, or into `uploaded_paths`, which the
+panel reads when it is built. _Load_ gunzips a `.gz`, whichever route brought it.
 _Alternative — a button calling `files.upload()`:_ rejected as unverified and, if wrong,
 kernel-blocking. _Alternative — keep `FileUpload` with a size warning:_ rejected; the failure is
 silent, so a warning would be the only signal and it cannot be shown at the moment it matters.
@@ -83,7 +83,8 @@ tested against both value shapes directly.
 
 - [Two steps for a computer upload: tick, run] → stated in the cell and the docs; Files-pane
   drag-and-drop and Drive need neither.
-- [A ticked checkbox makes the next Run all wait at the picker] → the picker has a Cancel
-  button and the cell says to untick it; the panel is already built by then only if the user
-  re-runs, since the upload cell comes first.
-- [INFO logging is chattier] → it is shown only inside the panel's output, during Generate.
+- [A ticked checkbox makes the next Run all wait at the picker] → the cell says to untick it
+  afterwards, and the picker can be cancelled; the panel is built once it returns.
+- [INFO logging is chattier] → it is shown only inside the panel's outputs.
+- [The panel stops `protspace` log records propagating to the root logger] → the notebook
+  configures no other handler, so nothing is lost; the notebook tests restore the logger.

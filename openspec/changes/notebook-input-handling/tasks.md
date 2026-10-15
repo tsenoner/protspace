@@ -21,11 +21,11 @@
 
 ## 4. Docs
 
-- [ ] 4.1 `docs/guide/data-preparation.md`: four-tab panel, upload routes and size caveat, Run all, 2-D only, MDS CLI-only, taxonomy tip removed, naming no longer needed
+- [x] 4.1 `docs/guide/data-preparation.md`: four-tab panel, upload routes and size caveat, Run all, 2-D only, MDS CLI-only, taxonomy tip removed, naming no longer needed
 - [x] 4.2 `apps/protspace/CLAUDE.md`: `test_notebooks.py` row
 
 ## 5. Verify
 
 - [x] 5.1 `uv run pytest tests/test_notebooks.py` with the locked ipywidgets 8 and with `--with ipywidgets==7.7.1`
-- [ ] 5.2 Full `apps/protspace` suite, ruff, `pnpm precommit`, `pnpm format:check`
-- [ ] 5.3 `openspec validate notebook-input-handling --strict`
+- [x] 5.2 Full `apps/protspace` suite, ruff, `pnpm precommit`, `pnpm format:check`
+- [x] 5.3 `openspec validate notebook-input-handling --strict`

@@ -8,8 +8,9 @@ The easiest way to prepare your data for ProtSpace - no local installation requi
 
 The Colab notebook converts protein embeddings into a visualization-ready `.parquetbundle` file:
 
-1. Reads your embeddings from an HDF5 file (.h5)
-2. Applies dimensionality reduction (PCA, UMAP, t-SNE, PaCMAP, MDS, LocalMAP)
+1. Reads your input: an example dataset, embeddings from an HDF5 file (.h5), sequences from a FASTA
+   file (embedded for you), or a UniProt query
+2. Applies 2-D dimensionality reduction (PCA, UMAP, t-SNE, PaCMAP, MDS, LocalMAP)
 3. Retrieves annotations from UniProt, InterPro, Taxonomy, TED, and Biocentral
 4. Creates the `.parquetbundle` file ready for ProtSpace
 
@@ -77,11 +78,36 @@ This notebook:
 
 For advanced users with custom embeddings, save them as an HDF5 file where each protein is stored as a dataset named by its identifier.
 
+You do not need to name the model behind any of these files. The notebook's **Embedder** choice
+defaults to **Auto-detect**, which reads the file's `model_name` attribute (the Embeddings notebook
+writes it), else a model key at the end of the file name (`toxins_esm2_650m.h5` is `esm2_650m`),
+else the file name itself. The name labels the projections; pick the embedder by hand if the
+label comes out wrong. The same rules apply in the [CLI](/guide/python-cli#model-name-resolution-i-file-h5-name).
+
 ## Step 2: Run the Notebook
 
 1. Click the Colab badge at the top of this page to open the notebook
-2. Run the first cell to install dependencies (~1 minute)
-3. Upload your `.h5` embeddings file
+2. Choose **Runtime → Run all**. Setup takes about 30 seconds, then the control panel appears.
+   Run all never stops to ask for a file, and building the panel downloads nothing: the
+   example dataset is fetched when you click **Generate**
+3. Get your file into the Colab runtime, if you use one, in any of three ways:
+   - **Upload cell**: tick the box in **Optional: upload a file from your computer**, run that
+     cell and pick the file. Its path fills the matching field in the panel. Untick it
+     afterwards, or the next Run all asks for a file again
+   - **Files pane**: drag the file into the folder icon in Colab's left sidebar; it lands in
+     `/content/`
+   - **Google Drive**: mount it from the Files pane and use the `/content/drive/MyDrive/...` path
+
+   Large files are fine on all three routes. The panel itself never uploads an `.h5` or FASTA
+   through a widget, because widget uploads of about 10 MB and up fail without an error.
+
+4. In the panel's **1 · Input data** section, open the tab you want:
+   - **Example Dataset**: one of the pre-computed ProtT5 datasets
+   - **Upload H5**: enter the file's path, click **Load**, and check the **Ready** line, which
+     shows the protein count, the dimensions and the embedding name
+   - **Upload FASTA**: enter the path and click **Load**, then select the embedder(s) and the
+     embedding backend below the tabs
+   - **UniProt Query**: type a query and click **Set Query**, then select the embedder(s)
 
 ## Step 3: Configure Options
 
@@ -93,13 +119,13 @@ and Biocentral (predicted).
 See the [Annotations reference](/guide/annotations) for the complete per-column catalogue: what each
 annotation means, where it comes from, and which ones are predicted.
 
-::: tip
-First-time taxonomy selection downloads a database (~1 minute).
-:::
+To add your own columns, give a CSV or TSV whose first column holds the protein IDs: enter its path,
+or choose it with **Choose CSV/TSV**. Pick **CSV only (no UniProt fetch)** to use just those
+columns, for example when your IDs are not UniProt accessions.
 
 ### Dimensionality Reduction
 
-Choose which 2D projections to generate:
+Choose which 2-D projections to generate:
 
 - **PCA** - Fast, initial overview
 - **UMAP** - Best balance of speed and quality (recommended)
@@ -110,15 +136,15 @@ Choose which 2D projections to generate:
 
 ### Parameters (Optional)
 
-Fine-tune settings for each method:
+Fine-tune settings for each method. The defaults are the CLI's:
 
-| Method   | Parameters                      |
-| -------- | ------------------------------- |
-| UMAP     | N Neighbors, Min Dist           |
-| t-SNE    | Perplexity, Learning Rate       |
-| PaCMAP   | N Neighbors, MN Ratio, FP Ratio |
-| MDS      | N Init, Max Iter                |
-| LocalMAP | N Neighbors, MN Ratio, FP Ratio |
+| Method   | Parameters                                                              |
+| -------- | ----------------------------------------------------------------------- |
+| UMAP     | N Neighbors, Min Dist, Metric                                           |
+| t-SNE    | Perplexity, Learning Rate, Metric                                       |
+| PaCMAP   | N Neighbors, MN Ratio, FP Ratio                                         |
+| MDS      | None in the notebook; `--n-init`, `--max-iter` and `--eps` are CLI-only |
+| LocalMAP | N Neighbors, MN Ratio, FP Ratio                                         |
 
 ### Quality statistics (Optional)
 
@@ -131,9 +157,12 @@ ProtSpace renders these scores in the legend and the projection metadata panel. 
 
 ## Step 4: Generate and Download
 
-1. Click **Generate**
-2. Wait for processing (time depends on dataset size)
-3. Download your `.parquetbundle` file
+1. Click **Generate**. It runs on the input tab that is open; if that tab has nothing loaded it
+   says so and runs nothing. It first prints the input it runs on, with the protein count
+2. Wait for processing (time depends on dataset size). The button is disabled until the run
+   ends, and progress lines appear below it
+3. The `.parquetbundle` downloads to your computer. If the browser blocks it, take it from the
+   Colab Files pane under `output/`
 
 ## Optional: fill missing annotations (EAT)
 
