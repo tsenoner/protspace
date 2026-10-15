@@ -63,6 +63,8 @@ type SvgG = Selection<SVGGElement, unknown, null, undefined>;
  */
 export class SpiderfyLayer {
   private readonly pressByPointerId = new Map<number, { x: number; y: number; t: number }>();
+  /** The ring last built, and what it was built for. */
+  private built: { group: SVGGElement; signature: string } | null = null;
 
   constructor(private readonly deps: SpiderfyLayerDeps) {}
 
@@ -73,13 +75,36 @@ export class SpiderfyLayer {
 
   /** Render the ring for `stack` into `layer`, scaled to `k` so it stays screen-constant. */
   render(layer: SvgG, stack: ViewportDuplicateStack, k: number): void {
-    layer.selectAll('*').remove();
     const nodes = computeSpiderNodes(stack.points);
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    const signature = `${coarse}|${stack.key}|${stack.points.map((p) => p.id).join('\u0000')}`;
+    const transform = `translate(${stack.px},${stack.py}) scale(${1 / k})`;
+
+    // The same ring again (a hover, a theme or a zoom redraw): move and recolour it in place. A
+    // rebuilt node under a resting mouse fires mouseenter, whose hover redraws the ring: a loop
+    // that also detaches the node a click is about to land on.
+    const existing = layer.select<SVGGElement>('g.dup-spiderfy');
+    if (
+      !existing.empty() &&
+      existing.node() === this.built?.group &&
+      signature === this.built.signature
+    ) {
+      existing.attr('transform', transform);
+      existing
+        .selectAll<SVGGElement, SpiderNode>('g.dup-spiderfy-node')
+        .data(nodes)
+        .select('circle.dup-spiderfy-node-circle')
+        .attr('fill', (d) => this.deps.getColor(d.point));
+      return;
+    }
+
+    layer.selectAll('*').remove();
     const spiderGroup = layer
       .append('g')
       .attr('class', 'dup-spiderfy')
       // Keep spiderfy UI constant-size in screen pixels via scale(1/k)
-      .attr('transform', `translate(${stack.px},${stack.py}) scale(${1 / k})`);
+      .attr('transform', transform);
+    this.built = { group: spiderGroup.node()!, signature };
 
     // Leader lines
     spiderGroup
@@ -104,7 +129,7 @@ export class SpiderfyLayer {
 
     // A fingertip is far wider than the dot: under a coarse pointer an invisible disc behind each
     // dot takes the tap. Mouse rendering is unchanged.
-    if (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) {
+    if (coarse) {
       gNodes
         .append('circle')
         .attr('class', 'dup-spiderfy-node-hit')
@@ -170,6 +195,8 @@ export class SpiderfyLayer {
       })
       // Show the real tooltip for the hovered protein (not the stack centroid)
       .on('mouseenter', (event: MouseEvent, d: SpiderNode) => this.deps.onHover(event, d.point))
-      .on('mouseleave', () => this.deps.onHoverEnd());
+      .on('mouseleave', () => this.deps.onHoverEnd())
+      // The plot's own hover finds no point under a node and would clear the node's tooltip.
+      .on('mousemove', (event: MouseEvent) => event.stopPropagation());
   }
 }
