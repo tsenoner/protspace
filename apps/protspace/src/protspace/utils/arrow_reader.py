@@ -213,9 +213,24 @@ class ArrowReader:
                 "Failed to load visualization state from settings", exc_info=True
             )
 
-    def save_data(self, output_path: Path = None):
-        """Save the current data back to parquet files."""
+    def save_data(self, output_path: Path | None = None):
+        """Save the current data back to parquet files.
+
+        Defaults to the directory the data was read from. A reader built from
+        a .parquetbundle needs an explicit ``output_path``: the bundle is a
+        file, not a directory the tables could be written into.
+        """
+        if self._protein_annotations_df is None:
+            raise ValueError(
+                "save_data writes the parquet tables a reader loaded; this "
+                "reader was built from a dict and holds none."
+            )
         if output_path is None:
+            if not self.data_path.is_dir():
+                raise ValueError(
+                    f"'{self.data_path}' is a bundle file, not a directory; "
+                    "pass save_data an output directory."
+                )
             output_path = self.data_path
         else:
             output_path = Path(output_path)

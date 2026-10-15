@@ -76,3 +76,29 @@ def test_annotations_only_directory_still_loads(tmp_path):
     reader = ArrowReader(tmp_path)
     assert sorted(reader.get_protein_ids()) == ["P1", "P2"]
     assert reader.get_projection_names() == []
+
+
+def test_bundle_saves_to_a_directory_that_reads_back_alike(bundle, tmp_path):
+    from_bundle = ArrowReader(bundle)
+    from_bundle.save_data(tmp_path / "saved")
+
+    assert ArrowReader(tmp_path / "saved").get_data() == from_bundle.get_data()
+
+
+def test_bundle_save_without_an_output_directory_is_refused(bundle):
+    """The default target is where the data came from; for a bundle that is a
+    file, so there is nowhere to write the parquet tables, and the bundle is
+    left untouched."""
+    before = bundle.read_bytes()
+    with pytest.raises(ValueError, match="output directory"):
+        ArrowReader(bundle).save_data()
+    assert bundle.read_bytes() == before
+
+
+def test_dict_reader_save_is_refused_before_anything_is_written(tmp_path):
+    reader = ArrowReader({"protein_data": {}, "projections": []})
+    with pytest.raises(ValueError, match="parquet"):
+        reader.save_data()
+    with pytest.raises(ValueError, match="parquet"):
+        reader.save_data(tmp_path / "out")
+    assert not (tmp_path / "out").exists()
