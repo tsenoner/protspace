@@ -207,8 +207,8 @@ def _read_annotations(path: Path, reductions: list[dict]):
     """The ``-a`` table as a DataFrame, read as a parquet or a custom annotation file.
 
     A custom file comes back with one row per projected protein, so the proteins it does not
-    annotate still get cluster columns. A parquet's id column is checked here too, so a table
-    naming its ids twice is a usage error rather than a traceback later.
+    annotate still get cluster columns. A parquet's id column is resolved here too, so a table
+    with no columns is a usage error rather than a traceback later.
     """
     import pyarrow.parquet as pq
     from pyarrow import ArrowInvalid

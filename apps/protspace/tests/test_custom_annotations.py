@@ -204,9 +204,8 @@ class TestParquetIdColumn:
     def test_rule(self, columns, expected):
         assert resolve_id_column(columns) == expected
 
-    def test_identifier_and_protein_id_both_named_is_an_error(self):
-        with pytest.raises(ValueError, match="identifier.*protein_id"):
-            resolve_id_column(["identifier", "protein_id", "family"])
+    def test_protein_id_wins_over_identifier(self):
+        assert resolve_id_column(["identifier", "protein_id", "family"]) == "protein_id"
 
 
 class TestCells:
@@ -620,13 +619,16 @@ class TestBundle:
         assert frame.loc[headers[1], "grp"] == "b"
         assert any(c.startswith("cluster_elbow_") for c in frame.columns)
 
-    def test_a_parquet_naming_its_ids_twice_is_a_usage_error(self, tmp_path):
+    def test_a_parquet_with_both_id_names_keys_on_protein_id(self, tmp_path):
+        # The bundle contract's coverage variant builds this table.
         _, proj, headers = _project(tmp_path)
         ann = tmp_path / "ann.parquet"
-        pq.write_table(pa.table({"identifier": headers, "protein_id": headers}), ann)
-        result = _invoke("bundle", "-p", proj, "-a", ann, "-o", tmp_path / "o")
-        assert result.exit_code == 2
-        assert "'identifier', 'protein_id'" in plain(result.output)
+        aliases = [f"alias-{h}" for h in headers]
+        pq.write_table(pa.table({"identifier": aliases, "protein_id": headers}), ann)
+        bundle = tmp_path / "out.parquetbundle"
+        result = _invoke("bundle", "-p", proj, "-a", ann, "-o", bundle)
+        assert result.exit_code == 0, result.output
+        assert _bundle_annotations(bundle).loc[headers[1], "identifier"] == aliases[1]
 
 
 class TestProject:

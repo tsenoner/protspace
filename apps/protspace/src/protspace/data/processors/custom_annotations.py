@@ -33,7 +33,7 @@ ID_COLUMN = "identifier"
 #: never shows as an annotation (shared with it through contracts/shared-constants.json), which
 #: include the pipeline's and the bundle's id column (``identifier``, ``protein_id``).
 RESERVED_COLUMNS = NON_ANNOTATION_COLUMNS
-# The id column of a parquet ProtSpace writes: `identifier` in the pipeline, `protein_id` in a bundle.
+# A parquet's id column, by precedence: `protein_id` (a bundle), then `identifier` (the pipeline).
 _PARQUET_ID_NAMES = ("protein_id", "identifier")
 _DELIMITERS = {"\t": "tab", ",": "comma", ";": "semicolon"}
 _EXAMPLES = 3
@@ -84,18 +84,14 @@ def split_annotation_args(items: Iterable[str]) -> tuple[list[str], list[Path]]:
 def resolve_id_column(columns: Sequence[str]) -> str:
     """The column holding the protein ids of an annotations parquet (``stats -a``, ``bundle -a``).
 
-    ``protein_id`` or ``identifier``, the names every table ProtSpace writes gives it, else the
-    first column. Both is an error rather than a guess. A custom annotation file does not use
-    this: its first column is the id column, always (:func:`_read_file`).
+    ``protein_id``, else ``identifier`` (the names every table ProtSpace writes gives it), else
+    the first column. Beside ``protein_id``, an ``identifier`` column is an annotation, as the
+    bundle encoder reads it. A custom annotation file does not use this: its first column is the
+    id column, always (:func:`_read_file`).
     """
-    matches = [c for c in columns if c in _PARQUET_ID_NAMES]
-    if len(matches) > 1:
-        raise ValueError(
-            f"Several id columns: {', '.join(map(repr, matches))}. Keep one, "
-            "or rename the others."
-        )
-    if matches:
-        return matches[0]
+    for name in _PARQUET_ID_NAMES:
+        if name in columns:
+            return name
     if not len(columns):
         raise ValueError("The table has no columns.")
     return columns[0]

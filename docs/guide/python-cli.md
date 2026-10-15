@@ -771,8 +771,8 @@ the web app renders that table, see
 
 The annotations parquet can be the output of `protspace annotate`, the annotation cache `prepare`
 keeps (`tmp/all_annotations.parquet`), or a table of your own. Its id column is the column named
-`protein_id` or `identifier`, as in every table ProtSpace writes, or else its first column; a table
-with both is refused. `stats -a` follows the same rule, so a table `stats` enriched is one `bundle`
+`protein_id`, else `identifier`, as in every table ProtSpace writes, or else its first column;
+beside `protein_id`, an `identifier` column is an annotation. `stats -a` follows the same rule, so a table `stats` enriched is one `bundle`
 accepts. `annotate` and the cache hold
 percent-encoded v2 cells, stamped `protspace_format_version` = `2`, and those pass through
 unchanged; a cache written before the cache carried that stamp is recognised as one and read the
