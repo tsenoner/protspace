@@ -437,7 +437,7 @@ def transfer(
 
     # Translate input-driven errors from the core into clean CLI errors rather
     # than leaking raw KeyError/ValueError tracebacks to the user.
-    report_rows = [] if report is not None else None
+    neighbour_rows = [] if report is not None else None
     try:
         augmented = run_transfer(
             annotations=annotations,
@@ -448,7 +448,7 @@ def transfer(
             k=k,
             metric=metric,
             format_version=input_format_version,
-            report=report_rows,
+            report=neighbour_rows,
             max_distance=cutoff,
             skip_distant=skip_distant,
         )
@@ -478,5 +478,5 @@ def transfer(
         raise typer.BadParameter(f"cannot write {output}: {exc}") from exc
     logger.info("Wrote transferred bundle to %s", output)
     if report is not None:
-        write_report(report, report_rows)
-        logger.info("Wrote %d neighbour row(s) to %s", len(report_rows), report)
+        write_report(report, neighbour_rows)
+        logger.info("Wrote %d neighbour row(s) to %s", len(neighbour_rows), report)
