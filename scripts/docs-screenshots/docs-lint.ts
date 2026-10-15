@@ -63,7 +63,6 @@ const STALE_TERMS: readonly RegExp[] = [
  * shrinks: each page task removes what it replaces, and Task 7.16 deletes the set.
  */
 export const LEGACY_IMAGES: ReadonlySet<string> = new Set([
-  'duplicate-badges.gif',
   'eat-connectors.gif',
   'eat-legend-section.png',
   'eat-reliability.gif',
@@ -74,8 +73,6 @@ export const LEGACY_IMAGES: ReadonlySet<string> = new Set([
   'legend-others.gif',
   'legend-reorder.gif',
   'legend-toggle.gif',
-  'select-box.gif',
-  'select-single.gif',
 ]);
 
 /**
@@ -86,7 +83,6 @@ export const STALE_PAGES: ReadonlySet<string> = new Set([
   'explore/figure-editor.md',
   'explore/importing-data.md',
   'explore/legend.md',
-  'explore/scatterplot.md',
   'guide/faq.md',
 ]);
 
