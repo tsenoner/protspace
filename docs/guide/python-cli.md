@@ -351,13 +351,13 @@ A column from your file overrides a fetched annotation of the same name. With `-
 fetched annotations are cached and your files are read fresh on every run, so rerunning `prepare`
 after editing a CSV reuses the cached projections and takes seconds.
 
-| Command    | What it does with `-a annotations.csv`                                                                               |
-| ---------- | -------------------------------------------------------------------------------------------------------------------- |
-| `prepare`  | Merges it with any sources named beside it into the bundle. A file alone fetches nothing.                            |
-| `annotate` | Writes it to the output parquet, merged with any sources named beside it. A file alone fetches nothing.              |
-| `stats`    | Scores it, leaving the file as is; its columns and the cluster columns go to `selected_annotations.parquet` in `-p`. |
-| `bundle`   | Bundles it in place of an annotations parquet.                                                                       |
-| `project`  | Refuses it, naming these commands: `project` only computes projections.                                              |
+| Command    | What it does with `-a annotations.csv`                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| `prepare`  | Merges it with any sources named beside it into the bundle. A file alone fetches nothing.                          |
+| `annotate` | Writes it to the output parquet, merged with any sources named beside it. A file alone fetches nothing.            |
+| `stats`    | Scores it, leaving the file as is; its columns and the cluster columns go to `<name>.annotations.parquet` in `-p`. |
+| `bundle`   | Bundles it in place of an annotations parquet.                                                                     |
+| `project`  | Refuses it, naming these commands: `project` only computes projections.                                            |
 
 ### Step by step
 
@@ -374,9 +374,9 @@ protspace bundle   -p proj/ -a proj/annotations.parquet -s proj/statistics.parqu
 ```
 
 `stats` adds the `cluster_*` columns to `proj/annotations.parquet` in place. Given the CSV itself,
-it leaves the CSV alone and writes `proj/selected_annotations.parquet` instead, which is then the
-file for `bundle -a`. Without statistics, `protspace bundle -p proj/ -a annotations.csv -o
-out.parquetbundle` bundles the CSV directly.
+it leaves the CSV alone and writes `proj/annotations.annotations.parquet` instead (named after the
+CSV), which is then the file for `bundle -a`. Without statistics,
+`protspace bundle -p proj/ -a annotations.csv -o out.parquetbundle` bundles the CSV directly.
 
 ## Combining Multiple Inputs
 
@@ -913,8 +913,13 @@ Coming from ProtSpace 4.4, or from the v3 `protspace-local` command:
   were never part of `project`.
 - **`transfer` arrived in 4.6.** [Embedding Annotation Transfer](#protspace-transfer) fills an
   annotation for unlabelled proteins from their nearest labelled neighbour in embedding space.
-- **3-D projections are no longer supported going forward.** If you used `umap3` or `tsne3`, switch
-  to `umap2` and `tsne2`.
+- **A column named `id` can now be the id column.** The id column used to be the first column,
+  always. Now a column named `identifier`, `protein_id` or `id`, in any case and any position,
+  takes precedence. If your file has, say, `accession,id,family` with the accessions as ids,
+  rename the `id` column; ProtSpace warns when a file's ids match no input protein.
+- **Plan for 2-D projections.** 3-D dimensionality reduction is not supported going forward: the
+  `*3` methods still run for now, but nothing new is built for them. If you used `umap3` or
+  `tsne3`, switch to `umap2` and `tsne2`.
 
 ## See Also
 
