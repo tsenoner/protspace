@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 import { EXAMPLE_DATASETS } from '../../../apps/web/src/explore/example-datasets';
+import { curatedViewOf, getViewState } from '../../../apps/web/tests/helpers/explore';
 import { legendRowValues } from '../../../apps/web/tests/helpers/legend';
 import type { CaptureEntry } from '../capture-plan';
 
@@ -17,6 +18,7 @@ export const EXAMPLE_CAPTURES: CaptureEntry[] = EXAMPLE_DATASETS.map((example) =
   dataset: example.id,
   ...(example.large && { timeoutMs: 240_000 }),
   steps: async (page) => {
+    await expect.poll(() => getViewState(page)).toEqual(curatedViewOf(example));
     await expect.poll(async () => (await legendRowValues(page)).length).toBeGreaterThan(0);
   },
   target: (page) => page.locator('[data-workbench="body"]'),

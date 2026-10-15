@@ -20,7 +20,7 @@ first time someone adds a capture without updating it.
 
 - Screenshots: the entries in `manifest.ts` (grouped in `scenes/`), captured by `runner.ts` and
   named by the entry (`-dark` for the dark variant)
-- Animated GIFs: `capture-animations.spec.ts`, converted by `convert-to-gif.ts`
+- Animated GIFs: `capture-gif.spec.ts` (scenes in `scenes/*.ts`), converted by `gif.ts`
 
 To find which pages use an image, grep the docs for its filename.
 
@@ -35,8 +35,7 @@ by `toxin_class`. Its bundle is a release asset, so fetch it first:
 pnpm examples:fetch
 ```
 
-They live in `capture-eat-static.spec.ts` and `capture-eat-animations.spec.ts`, with shared setup in
-`eat-helpers.ts`.
+EAT captures move to `scenes/eat.ts` in Task 7.14.
 
 ## The capture server
 

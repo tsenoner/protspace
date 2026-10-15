@@ -77,12 +77,12 @@ const DEVICES: Record<ViewportName, Device> = {
 function contextOptions({ entry, theme }: CaptureVariant): BrowserContextOptions {
   const { viewport } = entry;
   const base = typeof viewport === 'object' ? { ...DEVICES.desktop, viewport } : DEVICES[viewport];
-  const desktopLike = typeof viewport === 'object' || viewport === 'desktop';
   return {
     ...base,
-    // Phones and tablets at 2, not Pixel 7's 2.625: touch comes from isMobile/hasTouch, and the
-    // docs show these 240-320 px wide.
-    deviceScaleFactor: entry.kind === 'gif' ? 1 : desktopLike ? (entry.scale ?? 2) : 2,
+    // GIFs at 1; screenshots at 2 unless a desktop one sets `scale` (validateManifest allows it
+    // nowhere else). Phones and tablets at 2, not Pixel 7's 2.625: touch comes from
+    // isMobile/hasTouch, and the docs show these 240-320 px wide.
+    deviceScaleFactor: entry.kind === 'gif' ? 1 : viewport === 'desktop' ? (entry.scale ?? 2) : 2,
     colorScheme: theme,
     reducedMotion: entry.kind === 'png' ? 'reduce' : 'no-preference',
   };
@@ -248,9 +248,9 @@ const recording = (name: string, extension: 'webm' | 'json') =>
   path.join(TEMP_VIDEOS_DIR, `${name}.${extension}`);
 
 /**
- * Records a GIF scene in a context of its own, sized to the viewport at 1×. Saves the video and
- * its sidecar only when the scene passes; a failed one also removes an older recording of the
- * same name, so `gif.ts` never converts a stale one.
+ * Records a GIF scene in a context of its own, sized to the viewport at 1×. Removes an older
+ * recording of the same name first and saves the video and its sidecar only when the scene
+ * passes, so a failed or timed-out scene leaves nothing for `gif.ts` to convert.
  */
 async function recordGif(
   browser: Browser,
@@ -259,6 +259,9 @@ async function recordGif(
   outputDir: string,
 ): Promise<void> {
   const { entry, theme } = variant;
+  // Before the context: a timeout tears the test down without running its catch.
+  fs.rmSync(recording(entry.name, 'webm'), { force: true });
+  fs.rmSync(recording(entry.name, 'json'), { force: true });
   const options = contextOptions(variant);
   if (!options.viewport) throw new Error(`${variant.file}: no viewport`);
   const context = await browser.newContext({
@@ -280,8 +283,6 @@ async function recordGif(
     await entry.steps?.(page, cap);
   } catch (error) {
     await context.close();
-    fs.rmSync(recording(entry.name, 'webm'), { force: true });
-    fs.rmSync(recording(entry.name, 'json'), { force: true });
     throw error;
   }
   await context.close();
@@ -289,6 +290,8 @@ async function recordGif(
   if (!video) throw new Error(`${variant.file}: the context recorded no video`);
   fs.mkdirSync(TEMP_VIDEOS_DIR, { recursive: true });
   await video.saveAs(recording(entry.name, 'webm'));
+  // saveAs copies: drop the original from test-results.
+  await video.delete();
   const sidecar: GifSidecar = {
     name: entry.name,
     trimStartMs,

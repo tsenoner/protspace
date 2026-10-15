@@ -27,12 +27,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   reporter: 'list',
 
-  // Each capture sets its own (90 s unless its entry says otherwise).
-  timeout: 60_000,
-
   use: {
     baseURL: BASE_URL,
-    trace: 'on-first-retry',
     // The runner shoots each image itself.
     screenshot: 'off',
     // Headed on macOS for the system GPU's WebGL; CI runs headless on SwiftShader.

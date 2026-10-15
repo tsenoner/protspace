@@ -85,6 +85,10 @@ describe('validateManifest', () => {
     ['GIF settings on a screenshot', [entry({ name: 'shot', gif: { fps: 15 } })]],
     ['a scale on a GIF', [entry({ name: 'zoom', kind: 'gif', scale: 1 })]],
     ['a scale on a phone screenshot', [entry({ name: 'shot', viewport: 'phone', scale: 2 })]],
+    [
+      'a scale on a custom-size screenshot',
+      [entry({ name: 'shot', viewport: { width: 600, height: 400 }, scale: 1 })],
+    ],
     ['no docs page', [entry({ name: 'shot', docs: [] })]],
     ['a docs page that is not markdown', [entry({ name: 'shot', docs: ['explore/index'] })]],
   ])('reports %s once', (_, entries) => {
@@ -146,6 +150,13 @@ describe('the capture code', () => {
       .filter(([, text]) => text.includes('waitForTimeout') || text.includes('.evaluate('))
       .map(([file]) => file);
     expect(offenders).toEqual([]);
+  });
+
+  it('removes an older recording before a GIF starts recording', () => {
+    const runner = CAPTURE_SOURCES[`${SCRIPTS}runner.ts`];
+    const removed = runner.indexOf("fs.rmSync(recording(entry.name, 'webm')");
+    expect(removed).toBeGreaterThan(-1);
+    expect(removed).toBeLessThan(runner.indexOf('browser.newContext('));
   });
 
   it("waits on a timer only in the runner's hold", () => {
