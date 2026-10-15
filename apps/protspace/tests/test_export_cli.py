@@ -67,12 +67,30 @@ def test_read_bundle_table_holds_display_values_in_bundle_order(tmp_path):
 def test_read_bundle_table_adds_the_coordinates_asked_for(tmp_path):
     table = read_bundle_table(_bundle(tmp_path), ["UMAP 2"])
     assert list(table.columns[:3]) == ["protein_id", "UMAP 2_x", "UMAP 2_y"]
-    assert "UMAP 2_z" not in table.columns  # a 2D projection has no z
+    assert "UMAP 2_z" not in table.columns
     assert table["UMAP 2_x"].tolist()[:2] == [1.5, -2.0]
     assert table["UMAP 2_y"].tolist()[:2] == [0.25, 3.0]
     # p2 is not placed: no coordinates, annotations still there.
     assert pd.isna(table.loc[2, "UMAP 2_x"])
     assert table.loc[2, "fam"] == "A;B"
+
+
+def test_read_bundle_table_writes_no_z_for_a_legacy_3d_projection(tmp_path):
+    annotations = stamp_format_version(pa.table({"protein_id": ["p0"]}))
+    metadata = pa.table({"projection_name": ["PCA 3"], "dimensions": [3]})
+    coordinates = pa.table(
+        {
+            "projection_name": ["PCA 3"],
+            "identifier": ["p0"],
+            "x": pa.array([1.0], pa.float32()),
+            "y": pa.array([2.0], pa.float32()),
+            "z": pa.array([3.0], pa.float32()),
+        }
+    )
+    path = tmp_path / "data.parquetbundle"
+    write_bundle([annotations, metadata, coordinates], path)
+    table = read_bundle_table(path, ["PCA 3"])
+    assert list(table.columns) == ["protein_id", "PCA 3_x", "PCA 3_y"]
 
 
 def test_read_bundle_table_names_the_id_column_protein_id(tmp_path):

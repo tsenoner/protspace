@@ -456,6 +456,19 @@ describe('exportTable', () => {
     ]);
   });
 
+  it('writes no z column for a legacy 3D projection', async () => {
+    const data: ExportableData = {
+      ...tableData,
+      projections: [
+        { name: 'PCA 3', dimension: 3, data: Float32Array.from({ length: 12 }, (_, i) => i) },
+      ],
+    };
+    const [header, first] = await callExportTable(data, 'species');
+    expect(header.slice(0, 3)).toEqual(['protein_id', 'PCA 3_x', 'PCA 3_y']);
+    expect(header).not.toContain('PCA 3_z');
+    expect(first.slice(0, 3)).toEqual(['P1', '0', '1']);
+  });
+
   it('holds the proteins the ID export holds', async () => {
     for (const hidden of [['mouse'], [NA_VALUE], ['human', NA_VALUE]]) {
       const [, ...rows] = await callExportTable(tableData, 'species', hidden);

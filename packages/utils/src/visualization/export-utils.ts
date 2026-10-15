@@ -1002,7 +1002,7 @@ function buildProteinTable(
   const projection = data.projections?.[projectionIndex];
   if (projection?.data && projection.dimension) {
     const { data: coords, dimension } = projection;
-    ['x', 'y', 'z'].slice(0, dimension).forEach((axis, offset) => {
+    ['x', 'y'].forEach((axis, offset) => {
       columns.push({
         name: `${projection.name}_${axis}`,
         cell: (row) => formatFloat32(coords[row * dimension + offset]),

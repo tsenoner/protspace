@@ -318,9 +318,8 @@ def read_bundle_table(
 ) -> pd.DataFrame:
     """A bundle as one table, one row per protein, as the app displays it.
 
-    ``protein_id`` comes first, then ``<projection>_x`` / ``_y`` (and ``_z`` when
-    the projection has z values) for each name in ``projections``, then every
-    annotation column in bundle order.  Text cells are display values (score and
+    ``protein_id`` comes first, then ``<projection>_x`` / ``_y`` for each name
+    in ``projections``, then every annotation column in bundle order.  Text cells are display values (score and
     evidence suffixes dropped, a v2 cell percent-decoded, hits joined with
     ``;``); numeric columns keep their numbers.  A protein a projection does not
     place gets missing coordinates.  The rows are those the web app shows for a
@@ -355,9 +354,7 @@ def read_bundle_table(
         long = coordinates.to_pandas()
         for name in projections:
             placed = long[long["projection_name"] == name].set_index("identifier")
-            has_z = "z" in placed and placed["z"].notna().any()
-            axes = ["x", "y", "z"] if has_z else ["x", "y"]
-            for axis in axes:
+            for axis in ("x", "y"):
                 table[f"{name}_{axis}"] = ids.map(placed[axis]).to_numpy()
     return pd.concat([table, frame], axis=1)
 

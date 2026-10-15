@@ -28,8 +28,9 @@ values of the coloured annotation are all hidden in the legend.
   keys and the `style` template) strips `|score` / `|evidence`, decodes v2 percent-encoding and
   re-joins hits with `;`. The table is for reading; the stored grammar is in the bundle.
 - **Projections opt-in with `-p NAME` (repeatable), wide columns `<name>_x`, `<name>_y`.** A bundle
-  can hold many projections; all of them by default would bury the annotations. `_z` is written
-  only for a projection that has z values. An unknown name is a usage error that lists the
+  can hold many projections; all of them by default would bury the annotations. No `_z` column,
+  even for a legacy projection stored with a third axis: 3-D reduction is no longer supported, so
+  the table does not offer it. An unknown name is a usage error that lists the
   available ones. A protein a projection does not place gets empty coordinates.
 - **Column order: id, coordinates, annotations in bundle order.** The id column is always called
   `protein_id`, whatever the bundle names it (`protein_id` or `identifier`), in both CLI and web.

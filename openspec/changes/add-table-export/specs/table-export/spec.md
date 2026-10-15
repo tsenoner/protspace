@@ -4,8 +4,7 @@
 
 `protspace export INPUT OUTPUT` SHALL write a tab-separated table with a header and one row per
 protein of the bundle's annotations: `protein_id` first, then `<projection>_x` and
-`<projection>_y` (and `_z` when the projection has z values) for each projection named with
-`-p/--projection`, then every annotation column in bundle order, `cluster_*` and EAT `__pred_*`
+`<projection>_y` for each projection named with `-p/--projection`, then every annotation column in bundle order, `cluster_*` and EAT `__pred_*`
 columns included.
 
 #### Scenario: With a projection
@@ -65,7 +64,7 @@ included), isolation and hidden legend categories of the coloured annotation.
 ### Requirement: The web table holds coordinates and annotations
 
 The web table SHALL have a `protein_id` column, the selected projection's coordinates as
-`<projection>_x`, `<projection>_y` (and `_z` for a 3D projection), and one column per annotation:
+`<projection>_x` and `<projection>_y`, and one column per annotation:
 categorical labels joined with `;`, numeric raw values, missing values empty. The synthetic
 EAT-confidence view SHALL NOT be a column; an annotation with EAT predictions SHALL hold curated
 values only and be followed by its `__pred_value`, `__pred_confidence` and `__pred_source`

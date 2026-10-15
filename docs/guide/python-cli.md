@@ -880,9 +880,8 @@ protspace export data.parquetbundle data.tsv -p "ProtT5 — UMAP 2"
 | `-p, --projection` | Also write this projection's coordinates (repeatable). Default: none. |
 | `-v, --verbose`    | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                |
 
-The columns are `protein_id`, then `<projection>_x` and `<projection>_y` for each `--projection`
-(and `<projection>_z` for one with a third axis), then every annotation in the order the bundle
-stores them. That includes the `cluster_*` membership columns [`stats`](#protspace-stats) writes
+The columns are `protein_id`, then `<projection>_x` and `<projection>_y` for each `--projection`,
+then every annotation in the order the bundle stores them. That includes the `cluster_*` membership columns [`stats`](#protspace-stats) writes
 and the `__pred_*` and `__neighbor` columns of [`transfer`](#protspace-transfer). A cell holds what
 the web app shows: score and evidence suffixes are dropped, encoded characters are decoded, and the
 values of a multi-valued cell are joined with `;`. Missing values, and the coordinates of a protein
