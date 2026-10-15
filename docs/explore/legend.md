@@ -38,7 +38,7 @@ the focused row, and **i** shows only it.
 Drag a row by its handle up or down to change the draw order in the scatterplot. Items near the top
 are drawn on top of items below them.
 
-![Dragging a row to the top, then sorting by count again](./images/legend-reorder.gif)
+![Dragging a row to the top, then sorting the legend by count](./images/legend-reorder.gif)
 
 Dragging switches the annotation's order to **Your order**. On a touch screen, hold the handle for a
 moment, then drag. From the keyboard, focus a row's handle, press **Space** to pick the row up, move
@@ -81,7 +81,8 @@ See [Separation Scores](/explore/separation-scores) for what the numbers mean an
 
 ## Sorting
 
-The sort button in the legend's header names the active order, such as `By count`. Press it to open
+The sort button in the legend's header shows the active order in its tooltip, such as
+`Sort: By count, largest first`. Press it to open
 the **Sort legend** menu:
 
 - **By count**, largest first (categorical annotations)
@@ -99,12 +100,12 @@ the **Sort legend** menu:
 
 ## Settings
 
-The gear in the legend's header opens **Legend settings** for the selected annotation. Changes apply
+The sliders button in the legend's header opens **Legend settings** for the selected annotation. Changes apply
 as you make them: there is no Save button. A number applies a moment after you stop typing, or at
 once on **Enter** or when you leave the field.
 
-![The Legend settings popover open beside the legend](./images/legend-settings.png){.light-only}
-![The Legend settings popover open beside the legend](./images/legend-settings-dark.png){.dark-only}
+![The Legend settings popover open over the legend: palettes, Max legend items, Shape size, duplicate counts and Reset](./images/legend-settings.png){.light-only}
+![The Legend settings popover open over the legend: palettes, Max legend items, Shape size, duplicate counts and Reset](./images/legend-settings-dark.png){.dark-only}
 
 **Reset**, at the bottom, restores the defaults for the selected annotation: its colours, order,
 hidden categories, palette and item count, and the dataset's point size. It is unavailable while

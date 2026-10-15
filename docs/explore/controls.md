@@ -131,13 +131,14 @@ Switch between the projections your bundle carries:
 
 ![The Projection menu open under its button, listing the bundle's projections with the current one checked](./images/projection-menu.png)
 
-| Method     | Best For                           |
-| ---------- | ---------------------------------- |
-| **PCA**    | Initial overview, finding outliers |
-| **UMAP**   | General exploration, balanced view |
-| **t-SNE**  | Finding clusters                   |
-| **PaCMAP** | Fast alternative to t-SNE          |
-| **MDS**    | Preserving distances               |
+| Method       | Best For                           |
+| ------------ | ---------------------------------- |
+| **PCA**      | Initial overview, finding outliers |
+| **UMAP**     | General exploration, balanced view |
+| **t-SNE**    | Finding clusters                   |
+| **PaCMAP**   | Fast alternative to t-SNE          |
+| **LocalMAP** | Local structure, PaCMAP variant    |
+| **MDS**      | Preserving distances               |
 
 Different projections reveal different patterns, so try switching between them. The button beside
 **Projection** opens the projection's details: how it was made and how faithful it is to the
@@ -224,9 +225,9 @@ annotation to see which proteins those are, and to get the `Predicted (transferr
 ### Contours
 
 **Contours** draws density rings over the points, so you can see where each category concentrates
-even where its points pile on top of each other. While Auto or Always is selected, the button is
-highlighted and names the mode: **Contours: Auto** or **Contours: Always**. On a narrow window the
-modes are in **More**.
+even where its points pile on top of each other. The button names the current mode, such as
+**Contours Off** or **Contours Auto**. When the window is narrow it shows only the mode, and on a
+narrower one the modes move into **More**.
 
 ![The Contours menu open under its button, with Always checked among Off, Auto and Always](./images/contours-menu.png)
 
