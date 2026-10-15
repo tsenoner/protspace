@@ -3,19 +3,17 @@ import logging
 from collections.abc import Iterable
 from pathlib import Path
 
+from protspace._generated.shared_constants import (
+    CATEGORICAL_PALETTE_IDS,
+    GRADIENT_PALETTE_IDS,
+    POINT_SHAPES,
+)
 from protspace.data.annotations.encoding import to_display_value
 from protspace.utils.arrow_reader import ArrowReader
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_SHAPES = [
-    "circle",
-    "square",
-    "diamond",
-    "triangle-up",
-    "triangle-down",
-    "plus",
-]
+ALLOWED_SHAPES = list(POINT_SHAPES)
 
 # Settings-level keys that are passed through to the bundle settings
 # (everything except "colors" and "shapes" which are applied via the reader).
@@ -31,15 +29,11 @@ _SETTINGS_KEYS = {
     "pinnedValues",
 }
 
-# Built-in palette IDs, mirrored from the web frontend — the source of truth:
-# packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES) and
-# numeric-binning.ts (GRADIENT_COLOR_SCHEME_IDS). `selectedPaletteId` may only be a
-# categorical id; numeric gradients are chosen in the UI (see https://protspace.app/docs/guide/styling).
-# Keep this list in sync with those files.
-_CATEGORICAL_PALETTE_IDS = frozenset(
-    {"kellys", "okabeIto", "tolBright", "set2", "dark2", "tableau10"}
-)
-_GRADIENT_PALETTE_IDS = frozenset({"batlow", "viridis", "cividis", "inferno", "plasma"})
+# Built-in palette IDs, shared with the web app through
+# contracts/shared-constants.json. `selectedPaletteId` may only be a categorical id;
+# numeric gradients are chosen in the UI (see https://protspace.app/docs/guide/styling).
+_CATEGORICAL_PALETTE_IDS = frozenset(CATEGORICAL_PALETTE_IDS)
+_GRADIENT_PALETTE_IDS = frozenset(GRADIENT_PALETTE_IDS)
 
 
 def load_annotation_styles(
