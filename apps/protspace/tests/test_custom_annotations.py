@@ -300,3 +300,145 @@ class TestPrepare:
         )
         assert result.exit_code == 1
         assert "family" in plain(result.output)
+
+
+class TestAnnotate:
+    def test_a_csv_alone_fetches_nothing(self, tmp_path, monkeypatch):
+        _forbid_uniprot(monkeypatch)
+        csv = _write(tmp_path / "labels.tsv", "family\tidentifier\na\tP1\n")
+        output = tmp_path / "ann.parquet"
+        result = _invoke("annotate", "-i", _h5(tmp_path), "-a", csv, "-o", output)
+        assert result.exit_code == 0, result.output
+        frame = pd.read_parquet(output)
+        assert frame["identifier"].tolist() == HEADERS
+        assert frame["family"].tolist() == ["a", "", "", ""]
+        # Stamped v2, so `bundle -a` passes the cells through.
+        meta = pq.read_schema(output).metadata
+        assert meta[b"protspace_format_version"] == b"2"
+
+    def test_a_file_column_overrides_a_fetched_one(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            UniProtRetriever,
+            "fetch_annotations",
+            lambda self: [
+                ProteinAnnotations(identifier=h, annotations={"length": "10"})
+                for h in self.headers
+            ],
+        )
+        csv = _write(tmp_path / "labels.csv", "identifier,length\nP1,99\n")
+        output = tmp_path / "ann.parquet"
+        result = _invoke(
+            "annotate", "-i", _h5(tmp_path), "-a", f"length,{csv}", "-o", output
+        )
+        assert result.exit_code == 0, result.output
+        lengths = pd.read_parquet(output).set_index("identifier")["length"]
+        assert lengths["P1"] == "99"
+
+    def test_an_unknown_source_is_a_usage_error(self, tmp_path):
+        result = _invoke("annotate", "-i", _h5(tmp_path), "-a", "not_a_source")
+        assert result.exit_code == 2
+        assert "Unknown annotation 'not_a_source'" in plain(result.output)
+        assert "Traceback" not in result.output
+
+
+def _project(tmp_path, n=40):
+    """An HDF5 and the `project` directory built from it."""
+    headers = [f"p{i}" for i in range(n)]
+    h5 = _h5(tmp_path, headers=headers)
+    proj = tmp_path / "proj"
+    result = _invoke("project", "-i", f"{h5}:E", "-m", "pca2", "-o", proj)
+    assert result.exit_code == 0, result.output
+    return h5, proj, headers
+
+
+class TestStats:
+    def test_a_csv_is_scored_and_written_beside_the_projections(self, tmp_path):
+        h5, proj, headers = _project(tmp_path)
+        rows = "".join(f"{h},{'ab'[i % 2]}\n" for i, h in enumerate(headers[:30]))
+        csv = tmp_path / "labels.csv"
+        _write(csv, "identifier,grp\n" + rows)
+        before = csv.read_bytes()
+        result = _invoke(
+            "stats",
+            "-i",
+            f"{h5}:E",
+            "-p",
+            proj,
+            "-a",
+            csv,
+            "-o",
+            proj / "statistics.parquet",
+            "--settings-out",
+            proj / "styles.json",
+        )
+        assert result.exit_code == 0, result.output
+        assert csv.read_bytes() == before
+        written = pd.read_parquet(proj / "selected_annotations.parquet")
+        assert sorted(written["identifier"]) == sorted(headers)
+        cluster = [c for c in written.columns if c.startswith("cluster_elbow_")]
+        assert cluster and (written[cluster[0]] != "").all()
+        assert written.set_index("identifier").loc["p35", "grp"] == ""
+        assert json.loads((proj / "styles.json").read_text())
+
+        # The step route ends in a bundle carrying both.
+        bundle = tmp_path / "out.parquetbundle"
+        result = _invoke(
+            "bundle",
+            "-p",
+            proj,
+            "-a",
+            proj / "selected_annotations.parquet",
+            "-s",
+            proj / "statistics.parquet",
+            "-o",
+            bundle,
+        )
+        assert result.exit_code == 0, result.output
+        assert {"grp", cluster[0]} <= set(_bundle_annotations(bundle).columns)
+
+    def test_a_non_parquet_file_is_a_usage_error(self, tmp_path):
+        h5, proj, _ = _project(tmp_path)
+        junk = tmp_path / "labels.json"
+        junk.write_text("{}")
+        result = _invoke(
+            "stats", "-i", f"{h5}:E", "-p", proj, "-a", junk, "-o", tmp_path / "s.pq"
+        )
+        assert result.exit_code == 2
+        assert ".csv" in plain(result.output)
+        assert "Traceback" not in result.output
+
+
+class TestBundle:
+    def test_a_csv_is_bundled(self, tmp_path):
+        _, proj, headers = _project(tmp_path)
+        csv = _write(tmp_path / "labels.csv", f"family;protein_id\na;{headers[0]}\n")
+        bundle = tmp_path / "out.parquetbundle"
+        result = _invoke("bundle", "-p", proj, "-a", csv, "-o", bundle)
+        assert result.exit_code == 0, result.output
+        frame = _bundle_annotations(bundle)
+        assert frame.loc[headers[0], "family"] == "a"
+        assert frame.loc[headers[1], "family"] == ""
+
+    def test_a_non_parquet_file_is_a_usage_error(self, tmp_path):
+        _, proj, _ = _project(tmp_path)
+        junk = tmp_path / "labels.json"
+        junk.write_text("{}")
+        result = _invoke("bundle", "-p", proj, "-a", junk, "-o", tmp_path / "o")
+        assert result.exit_code == 2
+        assert ".csv" in plain(result.output)
+
+    def test_stats_and_bundle_key_a_parquet_alike(self, tmp_path):
+        h5, proj, headers = _project(tmp_path)
+        ann = tmp_path / "ann.parquet"
+        groups = ["ab"[i % 2] for i in range(len(headers))]
+        pq.write_table(pa.table({"ProteinID": headers, "grp": groups}), ann)
+        result = _invoke(
+            "stats", "-i", f"{h5}:E", "-p", proj, "-a", ann, "-o", tmp_path / "s.pq"
+        )
+        assert result.exit_code == 0, result.output
+        bundle = tmp_path / "out.parquetbundle"
+        result = _invoke("bundle", "-p", proj, "-a", ann, "-o", bundle)
+        assert result.exit_code == 0, result.output
+        frame = _bundle_annotations(bundle)
+        assert frame.loc[headers[1], "grp"] == "b"
+        assert any(c.startswith("cluster_elbow_") for c in frame.columns)

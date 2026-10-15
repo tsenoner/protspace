@@ -22,8 +22,10 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_id_col(frame) -> str:
-    """The identifier column: ``identifier`` if present, else the first column."""
-    return "identifier" if "identifier" in frame.columns else frame.columns[0]
+    """The identifier column, by the rule `bundle -a` and custom annotation files use."""
+    from protspace.data.processors.custom_annotations import resolve_id_column
+
+    return resolve_id_column(list(frame.columns))
 
 
 def _parse_info_json(raw) -> dict:
@@ -161,6 +163,50 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
     _atomic_write_table(table, meta_path)
 
 
+def _read_annotations(path: Path, reductions: list[dict]):
+    """The ``-a`` table as a DataFrame, read as a parquet or a custom annotation file.
+
+    A custom file comes back with one row per projected protein, so the proteins it does not
+    annotate still get cluster columns. A parquet's id column is checked here too, so a table
+    naming its ids twice is a usage error rather than a traceback later.
+    """
+    import pyarrow.parquet as pq
+    from pyarrow import ArrowInvalid
+
+    from protspace.data.processors.custom_annotations import (
+        is_custom_annotation_file,
+        load_custom_annotations,
+    )
+
+    try:
+        if is_custom_annotation_file(path):
+            ids = dict.fromkeys(i for r in reductions for i in r["ids"])
+            return load_custom_annotations([path], list(ids))
+        frame = pq.read_table(str(path)).to_pandas()
+        _resolve_id_col(frame)
+        return frame
+    except ArrowInvalid as exc:
+        raise typer.BadParameter(
+            f"{path} is not a parquet file. -a takes an annotations parquet or a "
+            ".csv/.tsv/.txt file.",
+            param_hint="'-a/--annotations'",
+        ) from exc
+    except (FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="'-a/--annotations'") from exc
+
+
+def _write_custom_annotations(frame, path: Path) -> None:
+    """Write a custom file's frame, cluster columns included, as a stamped parquet."""
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+
+    table = stamp_format_version(
+        pa.Table.from_pandas(frame.fillna(""), preserve_index=False)
+    )
+    _atomic_write_table(table, path)
+
+
 def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> list[str]:
     """Merge the report's per-protein ``AnnotationColumn``s into ``ann_path``.
 
@@ -234,7 +280,10 @@ def stats(
             "-a",
             "--annotations",
             help="Annotations parquet to enrich in place with per-protein "
-            "cluster-membership columns. Omit to skip per-protein outputs.",
+            "cluster-membership columns, or a custom .csv/.tsv/.txt file, which is "
+            "left as is: its columns and the cluster columns go to "
+            "selected_annotations.parquet in the projections directory. Omit to skip "
+            "per-protein outputs.",
             rich_help_panel="Input",
         ),
     ] = None,
@@ -299,13 +348,20 @@ def stats(
     import pyarrow.parquet as pq
 
     from protspace.cli.prepare import _parse_input_specs
-    from protspace.data.io.bundle import PROJECTIONS_METADATA_FILENAME
+    from protspace.data.io.bundle import (
+        ANNOTATIONS_FILENAME,
+        PROJECTIONS_METADATA_FILENAME,
+    )
     from protspace.data.loaders import load_h5
     from protspace.data.loaders.embedding_set import merge_same_name_sets
+    from protspace.data.processors.custom_annotations import (
+        is_custom_annotation_file,
+    )
     from protspace.stats import compute_statistics
     from protspace.stats.annotation_select import build_annotation_labels
     from protspace.stats.carriage import (
         build_cluster_legend_settings,
+        merge_annotation_columns,
         route_faithfulness_to_metadata,
     )
 
@@ -328,7 +384,7 @@ def stats(
     annotation_labels = None
     ann_frame = None
     if annotations is not None:
-        ann_frame = pq.read_table(str(annotations)).to_pandas()
+        ann_frame = _read_annotations(annotations, reductions)
         annotation_labels = build_annotation_labels(
             ann_frame, stats_annotation, id_col=_resolve_id_col(ann_frame)
         )
@@ -355,18 +411,30 @@ def stats(
     )
 
     added_cols: list[str] = []
-    if annotations is not None:
+    if annotations is not None and is_custom_annotation_file(annotations):
+        # The user's own file is not rewritten; the table it became is written
+        # where `bundle -p` already looks for the other parts.
+        added_cols = merge_annotation_columns(
+            report, ann_frame, id_col=_resolve_id_col(ann_frame)
+        )
+        enriched = projections / ANNOTATIONS_FILENAME
+        _write_custom_annotations(ann_frame, enriched)
+        typer.echo(
+            f"Wrote {annotations.name} with the cluster columns to {enriched}; "
+            "pass it to `protspace bundle -a`."
+        )
+    elif annotations is not None:
         # Reuse the frame already read for label-building — nothing has rewritten
         # the annotations parquet since (only projections_metadata was touched).
         added_cols = _merge_annotations_with_columns(
             annotations, report, frame=ann_frame
         )
-        if settings_out is not None:
-            # Style only the columns that actually landed values (id mismatches are
-            # dropped in the merge), so we never write a legend for a phantom column.
-            cluster_settings = build_cluster_legend_settings(report, columns=added_cols)
-            settings_out.parent.mkdir(parents=True, exist_ok=True)
-            settings_out.write_text(json.dumps(cluster_settings))
+    if settings_out is not None:
+        # Style only the columns that actually landed values (id mismatches are
+        # dropped in the merge), so we never write a legend for a phantom column.
+        cluster_settings = build_cluster_legend_settings(report, columns=added_cols)
+        settings_out.parent.mkdir(parents=True, exist_ok=True)
+        settings_out.write_text(json.dumps(cluster_settings))
     n_cols = len(added_cols)
 
     table = report.to_arrow()
