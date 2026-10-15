@@ -78,7 +78,7 @@ protspace prepare -i sequences.fasta -e prot_t5,esm2_650m -m pca2,umap2 -o outpu
 # With sequence similarity (MMseqs2)
 protspace prepare -i emb.h5 -f seq.fasta -s -m pca2,mds2 -o output
 
-# External HDF5 without a model_name attribute, use colon syntax
+# Name the embedding yourself (otherwise it comes from the file, see below)
 protspace prepare -i external.h5:prot_t5 -m pca2 -o output
 
 # Compare UMAP parameters in a single run
@@ -87,11 +87,11 @@ protspace prepare -i emb.h5 -m "umap2:n_neighbors=15" -m "umap2:n_neighbors=50" 
 
 ### Input
 
-| Flag          | Description                                                                    | Default |
-| ------------- | ------------------------------------------------------------------------------ | ------- |
-| `-i, --input` | HDF5/FASTA file(s). Repeat for multi-embedding. Name override: `-i f.h5:name`. | -       |
-| `-q, --query` | UniProt query (alternative to `-i`).                                           | -       |
-| `-f, --fasta` | FASTA for `-s/--similarity` when the input is HDF5.                            | -       |
+| Flag          | Description                                                                     | Default |
+| ------------- | ------------------------------------------------------------------------------- | ------- |
+| `-i, --input` | HDF5/FASTA file(s). Repeat for multi-embedding. Embedding name: `-i f.h5:name`. | -       |
+| `-q, --query` | UniProt query (alternative to `-i`).                                            | -       |
+| `-f, --fasta` | FASTA for `-s/--similarity` when the input is HDF5.                             | -       |
 
 ### Embedding
 
@@ -324,28 +324,45 @@ protspace prepare -i human.h5:prot_t5 -i drosophila.h5:prot_t5 -m umap2 -o outpu
 protspace prepare -i prot_t5.h5 -i esm2_650m.h5 -m pca2 -o output
 ```
 
+The second example needs no `:name` because each file name ends in a model key. With several
+inputs, a file whose name cannot be resolved is an error rather than a guess, since the name
+decides between union and intersection.
+
 Duplicate proteins across same-name inputs are deduplicated when their embeddings match within
 tolerance; conflicting embeddings for the same protein ID raise an error.
 
 ## Model Name Resolution (`-i file.h5:name`)
 
-HDF5 files need a model name for projection labels. It is resolved in this order:
+Every HDF5 input has an embedding name. It labels the projections (`esm2_650m` shows as
+`ESM2-650M — UMAP 2`) and decides how several `-i` inputs combine (see above). It is resolved in
+this order:
 
-1. **Colon syntax**, `-i file.h5:prot_t5` (highest priority)
+1. **Colon syntax**, `-i file.h5:esm2_650m` (highest priority)
 2. **HDF5 attribute**, `model_name` in the root attributes, set automatically by
-   `protspace embed`/`prepare`
-3. **Error**, the command exits with a copy-pasteable fix
+   `protspace embed`/`prepare` and by the
+   [Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
+3. **File name**, a model key the file name ends in: `seqs_esm2_650m.h5`, `Ss_mSCR_esm2_650m.h5`
+   and `esm2_650m.h5` are all `esm2_650m`. The keys are the [embedder models](#embedder-models)
+   (plus `esm3_open`); the longest match wins, and only the end of the name counts
+4. **File stem**, only when the file is the command's only input: `results.h5` is named `results`
+5. **Error**, when several inputs are given and one of them is still unnamed. The message says
+   what the name decides for that command and shows the corrected command line with your paths
 
-Use the colon syntax for HDF5 files created outside ProtSpace (bio_embeddings, custom scripts,
-Colab). Files produced by `protspace embed`/`prepare` already carry the attribute.
+Rules 3 and 4 log the name they picked at `-v`. Use the colon syntax whenever the file name does
+not say which model made it and you combine files, or when you want a different label.
 
 ```bash
-# External files, need colon syntax
-protspace prepare -i my_embeddings.h5:prot_t5 -m pca2 -o output
+# One file: no name needed (named by its file name, or by its stem)
+protspace prepare -i seqs_esm2_650m.h5 -m pca2 -o output
 
-# ProtSpace-generated files, just work
-protspace prepare -i embeddings/prot_t5.h5 -m pca2 -o output
+# Several files without a usable name: name each one
+protspace prepare -i human.h5:esm2_650m -i fly.h5:esm2_650m -m umap2 -o output
 ```
+
+`protspace stats` matches each projection to its embedding by this name. When you pass one file
+whose name came from rule 3 or 4 and the projections were all built from one embedding, it takes
+that embedding's name; when they come from several and none matches, it stops and asks you to
+name the input. `protspace transfer -e` reads only the vectors, so it never needs a name.
 
 Check whether a file has the attribute:
 
@@ -569,7 +586,7 @@ protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
 
 | Flag                  | Description                                                                                                                                                     | Default     |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `-i, --input`         | HDF5 embedding file(s), required. Repeatable; `-i file.h5:name` to override the name.                                                                           | -           |
+| `-i, --input`         | HDF5 embedding file(s), required. Repeatable; `-i file.h5:name` names the embedding (see [Model Name Resolution](#model-name-resolution-i-file-h5-name)).       | -           |
 | `-p, --projections`   | Directory with `projections_metadata.parquet` and `projections_data.parquet`, required.                                                                         | -           |
 | `-o, --output`        | Output `statistics.parquet` path, required.                                                                                                                     | -           |
 | `-a, --annotations`   | Annotations parquet, enriched in place with per-protein `cluster_*` membership columns and scored for annotation-based validity plus ARI/NMI agreement.         | -           |
@@ -697,18 +714,18 @@ protspace transfer \
   --reference-where 'protein_category~neurotoxin'
 ```
 
-| Flag                    | Description                                                            | Default                      |
-| ----------------------- | ---------------------------------------------------------------------- | ---------------------------- |
-| `-b, --bundle`          | Input `.parquetbundle`, required.                                      | -                            |
-| `-e, --embeddings`      | HDF5 embeddings; `:name` suffix for external files. Required.          | -                            |
-| `-t, --transfer`        | Annotation column to transfer (repeatable), required.                  | -                            |
-| `-o, --output`          | Output `.parquetbundle` (may overwrite the input), required.           | -                            |
-| `--k`                   | Number of nearest neighbours considered.                               | `1`                          |
-| `--metric`              | Distance metric: `cosine` or `euclidean`.                              | `cosine`                     |
-| `--query-id-prefix`     | Only transfer to query IDs with this prefix (repeatable).              | any protein missing a value  |
-| `--query-where`         | Restrict queries to rows where `col` contains `substr` (`col~substr`). | any protein missing a value  |
-| `--reference-id-prefix` | Only use references whose ID has this prefix (repeatable).             | any protein that has a value |
-| `--reference-where`     | Restrict references the same way (`col~substr`).                       | any protein that has a value |
+| Flag                    | Description                                                             | Default                      |
+| ----------------------- | ----------------------------------------------------------------------- | ---------------------------- |
+| `-b, --bundle`          | Input `.parquetbundle`, required.                                       | -                            |
+| `-e, --embeddings`      | HDF5 embeddings, required. A `:name` suffix is accepted but not needed. | -                            |
+| `-t, --transfer`        | Annotation column to transfer (repeatable), required.                   | -                            |
+| `-o, --output`          | Output `.parquetbundle` (may overwrite the input), required.            | -                            |
+| `--k`                   | Number of nearest neighbours considered.                                | `1`                          |
+| `--metric`              | Distance metric: `cosine` or `euclidean`.                               | `cosine`                     |
+| `--query-id-prefix`     | Only transfer to query IDs with this prefix (repeatable).               | any protein missing a value  |
+| `--query-where`         | Restrict queries to rows where `col` contains `substr` (`col~substr`).  | any protein missing a value  |
+| `--reference-id-prefix` | Only use references whose ID has this prefix (repeatable).              | any protein that has a value |
+| `--reference-where`     | Restrict references the same way (`col~substr`).                        | any protein that has a value |
 
 A bundle carrying these columns renders the transferred proteins as ringed markers with their own
 legend section, see [Transferred Annotations (EAT)](/explore/eat).
