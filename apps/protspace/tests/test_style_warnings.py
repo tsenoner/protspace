@@ -15,6 +15,7 @@ import logging
 import pyarrow as pa
 import pytest
 
+from protspace._generated.shared_constants import DEFAULT_CATEGORICAL_PALETTE_ID
 from protspace.data.annotations.encoding import stamp_format_version
 from protspace.data.io.bundle import extract_bundle_to_dir, write_bundle
 from protspace.utils.add_annotation_style import (
@@ -107,6 +108,23 @@ def test_generate_template_warns_only_on_numeric_column(tmp_path, caplog):
     assert not any("family" in m for m in warned)
     # the template is still produced for both columns
     assert {"length", "family"} <= set(template)
+
+
+def test_template_gives_only_a_categorical_column_the_categorical_palette(tmp_path):
+    """A numeric column reads ``selectedPaletteId`` as its gradient, so the
+    categorical default would reset a gradient chosen in the web app."""
+    bundle = _make_bundle(
+        tmp_path,
+        ["P1", "P2", "P3"],
+        {
+            "length": ["100", "200", "300"],
+            "family": ["kinase", "phosphatase", "kinase"],
+        },
+    )
+    template = generate_template(str(bundle))
+
+    assert template["family"]["selectedPaletteId"] == DEFAULT_CATEGORICAL_PALETTE_ID
+    assert "selectedPaletteId" not in template["length"]
 
 
 def test_apply_styles_warns_on_numeric_column(tmp_path, caplog):

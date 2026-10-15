@@ -271,7 +271,7 @@ def generate_template(input_file: str) -> dict:
 
     for annotation in sorted(reader.get_all_annotations()):
         freqs = frequencies.get(annotation, {})
-        _warn_if_numeric(annotation, freqs.keys())
+        numeric = _warn_if_numeric(annotation, freqs.keys())
         # Sort values by frequency descending
         sorted_values = sorted(
             freqs.keys(), key=lambda v: freqs.get(v, 0), reverse=True
@@ -287,7 +287,11 @@ def generate_template(input_file: str) -> dict:
             "sortMode": "size-desc",
             "maxVisibleValues": 10,
             "shapeSize": 10,
-            "selectedPaletteId": DEFAULT_CATEGORICAL_PALETTE_ID,
+            # A numeric column reads selectedPaletteId as its gradient, where the
+            # categorical default would reset any gradient chosen in the web app.
+            **(
+                {} if numeric else {"selectedPaletteId": DEFAULT_CATEGORICAL_PALETTE_ID}
+            ),
             "hiddenValues": [],
             "colors": colors,
             "shapes": {},

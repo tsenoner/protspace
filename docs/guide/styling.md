@@ -30,7 +30,9 @@ workflow above is meant for categorical columns (e.g. `major_group`, `ec`, `supe
 it to a **numeric** column (`length`, pLDDT, a score) does not do what you expect:
 
 - `--generate-template` lists **every distinct number as its own category**, hundreds to thousands
-  of rows to hand-color.
+  of rows to hand-color. It leaves `selectedPaletteId` out of a numeric column's entry: the column
+  reads it as its gradient, so the categorical default would reset a gradient chosen in the web
+  app to `batlow`.
 - `colors` / `shapes` / `pinnedValues` match one existing value at a time, so a range like
   `"200-300"` or an interpolated `"3.5"` raises `Value '…' does not exist`. A key that is a number
   is resolved numerically rather than textually, so `"100.0"` still finds the value `100` in a
