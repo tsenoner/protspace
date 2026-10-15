@@ -15,8 +15,8 @@ rules both sides implement stay pinned by running both on the same inputs.
 Every constant both sides must agree on SHALL be defined once, in the shared source
 `contracts/shared-constants.json`, together with the reason it is shared. This covers the
 missing-value tokens, the `__NA__` sentinel, the N/A swatch colour, Kelly's colours in slot
-order, the categorical and gradient palette ids, the default numeric palette, the labels of
-an Arrow boolean column, and the point shapes. Neither language SHALL hold a hand-written
+order, the categorical and gradient palette ids, the default categorical and numeric palettes,
+the labels of an Arrow boolean column, and the point shapes. Neither language SHALL hold a hand-written
 copy of these values. Each SHALL read them from its generated module, and the names existing
 code imports SHALL stay importable from where they were.
 
@@ -84,7 +84,8 @@ The generator SHALL refuse to write when the source is malformed (an unknown kin
 the wrong type, a duplicate entry, a name that is not upper snake case, a doc line over 80
 characters) or breaks an invariant. The invariants are: every missing-value token is trimmed
 and lower-case; `NA_VALUE`, lower-cased, is a missing-value token; no palette id is both
-categorical and gradient; `DEFAULT_NUMERIC_PALETTE_ID` is a gradient palette id;
+categorical and gradient; `DEFAULT_CATEGORICAL_PALETTE_ID` is a categorical palette id;
+`DEFAULT_NUMERIC_PALETTE_ID` is a gradient palette id;
 `ARROW_BOOLEAN_LABELS` is exactly the false label then the true label.
 
 #### Scenario: An upper-case token is added
@@ -96,6 +97,11 @@ categorical and gradient; `DEFAULT_NUMERIC_PALETTE_ID` is a gradient palette id;
 #### Scenario: The numeric default is not a gradient
 
 - **WHEN** `DEFAULT_NUMERIC_PALETTE_ID` names a categorical palette
+- **THEN** the generator exits non-zero and writes nothing
+
+#### Scenario: The categorical default is not a categorical palette
+
+- **WHEN** `DEFAULT_CATEGORICAL_PALETTE_ID` names a gradient or unknown palette
 - **THEN** the generator exits non-zero and writes nothing
 
 ### Requirement: Behaviour stays pinned by running both implementations
