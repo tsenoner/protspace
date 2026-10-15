@@ -23,7 +23,6 @@ from protspace._generated.shared_constants import (
 )
 from protspace.core.constants import is_missing_value
 
-NA_COLOR = "#C0C0C0"  # light gray for missing / <NA> values
 NA_INTERNAL = NA_VALUE  # frontend internal key for N/A categories
 NA_PINNED_COLOR = NA_DEFAULT_COLOR  # the web's N/A swatch, used for a pinned N/A
 REST_MARKER = "__REST__"  # auto-fill remaining slots from top values by frequency

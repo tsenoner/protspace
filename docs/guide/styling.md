@@ -126,7 +126,8 @@ too. Name it by any spelling the web reads as missing (see
 reads back as `""`; `"None"` is how one reads back from a v2 bundle exported by a web build before
 v3, which wrote the cell as a Parquet NULL. In the output bundle N/A is stored once, with the key
 `__NA__` (the frontend's internal format), and a new N/A style replaces the one already stored.
-`--generate-template` lists it as `__NA__`.
+`--generate-template` lists it as `__NA__`, pre-filled with the web app's default N/A gray
+(`#DDDDDD`).
 
 ### Example: custom colors and shapes
 
@@ -137,7 +138,7 @@ v3, which wrote the cell as a Parquet NULL. In the output bundle N/A is stored o
     "colors": {
       "Short-chain": "#63CBE5",
       "Long-chain": "#24638F",
-      "<NA>": "#C0C0C0"
+      "<NA>": "#DDDDDD"
     },
     "shapes": {
       "Short-chain": "circle",

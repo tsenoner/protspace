@@ -6,11 +6,11 @@ from pathlib import Path
 from protspace._generated.shared_constants import (
     CATEGORICAL_PALETTE_IDS,
     GRADIENT_PALETTE_IDS,
+    NA_DEFAULT_COLOR,
     POINT_SHAPES,
 )
 from protspace.data.annotations.encoding import to_display_value
 from protspace.data.io.settings_converter import (
-    NA_COLOR,
     NA_INTERNAL,
     is_na_label,
     visualization_state_to_settings,
@@ -258,7 +258,8 @@ def generate_template(input_file: str) -> dict:
 
     Reads annotations, computes value frequencies, and outputs a template
     with values in frequency-descending order. N/A, whatever the data spells
-    it, is one ``__NA__`` entry, last, with a default light-gray color.
+    it, is one ``__NA__`` entry, last, with the web's default N/A colour,
+    ``NA_DEFAULT_COLOR``.
     """
     detect_data_format(input_file)
     reader = ArrowReader(Path(input_file))
@@ -275,10 +276,10 @@ def generate_template(input_file: str) -> dict:
         )
 
         # Every N/A spelling is the web's one N/A entry: listed once, last, as
-        # the legend places it.
+        # the legend places it, in the colour the web gives an unstyled N/A.
         colors: dict[str, str] = {v: "" for v in sorted_values if not is_na_label(v)}
         if any(is_na_label(v) for v in sorted_values):
-            colors[NA_INTERNAL] = NA_COLOR
+            colors[NA_INTERNAL] = NA_DEFAULT_COLOR
 
         template[annotation] = {
             "sortMode": "size-desc",

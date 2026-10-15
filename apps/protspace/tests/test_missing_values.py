@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from protspace._generated.shared_constants import NA_DEFAULT_COLOR
 from protspace.core.constants import (
     MISSING_VALUE_TOKENS,
     is_missing_value,
@@ -242,7 +243,10 @@ def test_style_hides_and_pins_na_by_any_spelling(tmp_path):
 def test_style_template_lists_na_once(tmp_path):
     template = generate_template(str(_bundle(tmp_path, ["A", None, "N/A", "null"])))
 
-    assert list(template["organism"]["colors"]) == ["A", NA_INTERNAL]
+    colors = template["organism"]["colors"]
+    assert list(colors) == ["A", NA_INTERNAL]
+    # The web's own N/A swatch, so a filled-in template looks like the default.
+    assert colors[NA_INTERNAL] == NA_DEFAULT_COLOR
 
 
 # ---------------------------------------------------------------------------

@@ -34,7 +34,8 @@ NA_VALUE = "__NA__"
 
 # Default swatch colour of the N/A category, which a saved category colour
 # overrides (categorical annotations only). Python gives a pinned N/A this
-# colour, so a CLI-styled legend matches the web's default.
+# colour, and `protspace style --generate-template` pre-fills it for N/A, so
+# a CLI-styled legend matches the web's default.
 NA_DEFAULT_COLOR = "#DDDDDD"
 
 # Kelly's 21 colours of maximum contrast, in the order categories take them
