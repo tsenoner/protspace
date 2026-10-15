@@ -2,6 +2,7 @@
 
 import logging
 from collections import Counter
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -289,46 +290,46 @@ class TestResolveAnnotationNames:
         return pipeline._resolve_annotation_names()
 
     def test_none(self):
-        assert self._resolve(None) == ([], None)
+        assert self._resolve(None) == ([], [])
 
     def test_empty_list(self):
-        assert self._resolve([]) == ([], None)
+        assert self._resolve([]) == ([], [])
 
     def test_single(self):
-        assert self._resolve(["organism_name"]) == (["organism_name"], None)
+        assert self._resolve(["organism_name"]) == (["organism_name"], [])
 
     def test_comma_separated(self):
         assert self._resolve(["organism_name,ec_number"]) == (
             ["organism_name", "ec_number"],
-            None,
+            [],
         )
 
     def test_multiple_items(self):
         assert self._resolve(["organism_name", "ec_number"]) == (
             ["organism_name", "ec_number"],
-            None,
+            [],
         )
 
     def test_strips_whitespace(self):
         assert self._resolve(["  organism_name , ec_number  "]) == (
             ["organism_name", "ec_number"],
-            None,
+            [],
         )
 
     def test_skips_empty_parts(self):
-        assert self._resolve(["a,,b", ""]) == (["a", "b"], None)
+        assert self._resolve(["a,,b", ""]) == (["a", "b"], [])
 
     def test_csv_path(self):
-        assert self._resolve(["metadata.csv"]) == ([], "metadata.csv")
+        assert self._resolve(["metadata.csv"]) == ([], [Path("metadata.csv")])
 
     def test_csv_with_annotations(self):
         assert self._resolve(["metadata.csv", "default,pfam"]) == (
             ["default", "pfam"],
-            "metadata.csv",
+            [Path("metadata.csv")],
         )
 
     def test_tsv_path(self):
-        assert self._resolve(["data.tsv", "ec"]) == (["ec"], "data.tsv")
+        assert self._resolve(["data.tsv", "ec"]) == (["ec"], [Path("data.tsv")])
 
 
 def _cache_pipeline(tmp_path, **overrides):
