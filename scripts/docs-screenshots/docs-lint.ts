@@ -27,6 +27,8 @@ export interface ImageRef {
   lazy: boolean;
   /** 1-based. */
   line: number;
+  /** A raw `<img>` whose inline `style` sets `display`, which beats the light/dark head rule. */
+  inlineDisplay?: true;
 }
 
 /** One file the capture manifest writes, and the pages that must show it. */
@@ -45,7 +47,7 @@ export interface ImageFile {
 }
 
 /** Names of removed UI the user guide must not use any more. */
-export const STALE_TERMS: readonly RegExp[] = [
+const STALE_TERMS: readonly RegExp[] = [
   /control bar/i,
   /isolate button/i,
   /apply & isolate/i,
@@ -187,10 +189,9 @@ export function imageRefs(page: DocsPage): ImageRef[] {
       if (file === null) continue;
       const classes = (attribute(match[0], 'class') ?? '').split(/\s+/).filter(Boolean);
       const lazy = attribute(match[0], 'loading') === 'lazy';
-      found.push({
-        at: match.index ?? 0,
-        ref: { page: page.path, file, classes, lazy, line: index + 1 },
-      });
+      const ref: ImageRef = { page: page.path, file, classes, lazy, line: index + 1 };
+      if (/(^|;)\s*display\s*:/i.test(attribute(match[0], 'style') ?? '')) ref.inlineDisplay = true;
+      found.push({ at: match.index ?? 0, ref });
     }
     found.sort((a, b) => a.at - b.at).forEach(({ ref }) => refs.push(ref));
   });
@@ -314,13 +315,12 @@ function staleProblems(pages: readonly DocsPage[]): string[] {
   const problems: string[] = [];
   for (const page of pages) {
     if (!USER_GUIDE.test(page.path) || STALE_PAGES.has(page.path)) continue;
-    const lines = page.text.split('\n');
-    for (const term of STALE_TERMS) {
-      const index = lines.findIndex((line) => term.test(line));
-      if (index < 0) continue;
-      const words = term.exec(lines[index])?.[0] ?? '';
-      problems.push(`${page.path}:${index + 1}: "${words}" names removed UI`);
-    }
+    prose(page.text).forEach((line, index) => {
+      for (const term of STALE_TERMS) {
+        const words = term.exec(line)?.[0];
+        if (words) problems.push(`${page.path}:${index + 1}: "${words}" names removed UI`);
+      }
+    });
   }
   return problems;
 }
@@ -377,7 +377,13 @@ function imageProblems(pages: readonly DocsPage[], files: readonly ImageFile[]):
         continue;
       }
       i++; // the pair consumes its dark twin
-      if (!ref.classes.includes('light-only')) {
+      const styled = [ref, next].find((r) => r.inlineDisplay);
+      if (styled) {
+        note(
+          styled,
+          `${styled.file} sets display in its inline style, which shows both twins in either theme; style it with a class`,
+        );
+      } else if (!ref.classes.includes('light-only')) {
         note(ref, `${ref.file} needs {.light-only} (class="light-only") in its pair`);
       } else if (!next.classes.includes('dark-only')) {
         note(next, `${twin} needs {.dark-only} (class="dark-only") in its pair`);

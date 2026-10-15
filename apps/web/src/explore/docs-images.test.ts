@@ -15,7 +15,6 @@ import {
   lintManifest,
   pageAnchors,
   STALE_PAGES,
-  STALE_TERMS,
   type DocsPage,
   type ImageFile,
   type ImageRef,
@@ -356,6 +355,22 @@ describe('docs lint: light and dark pairs', () => {
     expect(messages[0]).toMatch(message);
   });
 
+  it('fails a raw pair with an inline display, which shows both twins', () => {
+    const page = lintPage(
+      'explore/a.md',
+      '<img src="./images/a.png" class="light-only" style="max-width: 50%; display: block">',
+      '<img src="./images/a-dark.png" class="dark-only" loading="lazy">',
+    );
+    expect(lintDocs([page], files)).toEqual([
+      'explore/a.md:1: a.png sets display in its inline style, which shows both twins in either theme; style it with a class',
+    ]);
+  });
+
+  it('leaves an inline display alone on an image with no dark twin', () => {
+    const page = lintPage('explore/a.md', '<img src="./images/b.png" style="display: block">');
+    expect(lintDocs([page], onDisk('b.png'))).toEqual([]);
+  });
+
   it('fails a -dark image shown without its light twin before it', () => {
     const pages = [lintPage('explore/a.md', ...PAIR), lintPage('explore/b.md', PAIR[1])];
     expect(lintDocs(pages, files)).toEqual([
@@ -420,6 +435,24 @@ describe('docs lint: stale terms', () => {
     expect(
       lintDocs([lintPage('explore/new-page.md', '# New', 'Open the Control Bar.')], []),
     ).toEqual(['explore/new-page.md:2: "Control Bar" names removed UI']);
+  });
+
+  it('reports every line that names removed UI, and skips code and front matter', () => {
+    const page = lintPage(
+      'explore/new-page.md',
+      'Use the control bar.',
+      '---',
+      'The control bar again.',
+      '```',
+      'control bar settings dialog',
+      '```',
+    );
+    expect(lintDocs([page], [])).toEqual([
+      'explore/new-page.md:1: "control bar" names removed UI',
+      'explore/new-page.md:3: "control bar" names removed UI',
+    ]);
+    const frontMatter = lintPage('explore/x.md', '---', 'title: The settings dialog', '---', '# X');
+    expect(lintDocs([frontMatter], [])).toEqual([]);
   });
 
   it('leaves the developer docs alone', () => {
@@ -545,8 +578,10 @@ describe('docs lint: the real docs', () => {
 
   it('STALE_PAGES lists only pages that still use a stale term', () => {
     const stillStale = (path: string) => {
+      // Read as a page outside STALE_PAGES, so the check itself decides (prose only).
       const text = REAL_PAGES.find((page) => page.path === path)?.text ?? '';
-      return STALE_TERMS.some((term) => term.test(text));
+      const probe = { path: 'explore/stale-probe.md', text };
+      return lintDocs([probe], []).some((problem) => problem.endsWith('names removed UI'));
     };
     expect([...STALE_PAGES].filter((path) => !stillStale(path))).toEqual([]);
   });
