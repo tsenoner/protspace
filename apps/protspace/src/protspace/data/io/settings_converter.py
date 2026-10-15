@@ -326,10 +326,9 @@ def visualization_state_to_settings(
             for key, val in style_overrides[annotation_name].items():
                 if key in _SETTINGS_KEYS:
                     ann_settings[key] = val
-            if "hiddenValues" in style_overrides[annotation_name]:
-                ann_settings["hiddenValues"] = _fold_na_list(
-                    ann_settings["hiddenValues"]
-                )
+        # Overridden or already stored: the web hides N/A by its one key.
+        if ann_settings.get("hiddenValues"):
+            ann_settings["hiddenValues"] = _fold_na_list(ann_settings["hiddenValues"])
 
         # Pop processing-only keys (not stored in output settings).
         # "zOrderSort" overrides "sortMode" for zOrder computation only

@@ -238,6 +238,15 @@ class TestVisualizationStateToSettings:
         )
         assert result["ann"]["hiddenValues"] == ["A", "__NA__"]
 
+    def test_stored_hidden_na_is_renamed_when_only_colours_change(self):
+        # A bundle styled before the fold stored the data's own N/A spelling.
+        existing = {"ann": {"hiddenValues": ["None", "A"], "categories": {}}}
+        result = visualization_state_to_settings(
+            {"annotation_colors": {"ann": {"A": "#00FF00"}}, "marker_shapes": {}},
+            existing_settings=existing,
+        )
+        assert result["ann"]["hiddenValues"] == ["__NA__", "A"]
+
     def test_defaults_when_no_existing(self):
         viz = {
             "annotation_colors": {"ann": {"A": "rgba(255,0,0,0.8)"}},
