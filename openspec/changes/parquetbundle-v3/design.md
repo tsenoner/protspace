@@ -366,8 +366,10 @@ deprecated alongside legacy read support.
 2. Release as a minor from the merged PR. Do not squash-merge it (it touches `apps/protspace/`).
 3. Convert the served bundles (default and example datasets) to v3 in this change; the legacy e2e
    and unit fixtures stay v1/v2 until 5.0.0 removes the reader they test.
-4. In 5.0.0, remove the legacy readers, `extractRowsFromParquetBundle` and the notice, and make
-   `protspace convert` point to the last 4.x release for anyone still holding v1/v2 files.
+4. In 5.0.0, remove the legacy readers, `extractRowsFromParquetBundle` and the notice, except
+   `protspace convert`, which keeps a legacy reader of its own and stays the upgrade path for anyone
+   still holding v1/v2 files (maintainer decision 2026-10-15, recorded in `deprecate-3d-and-serve`;
+   this replaces the earlier plan of pointing them to the last 4.x release).
 
 Rollback is a revert of the merge. Files written as v3 in the meantime then need a 4.x build that
 reads v3, which is why the reader lands in the same release as the writer.

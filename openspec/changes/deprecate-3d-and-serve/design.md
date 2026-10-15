@@ -6,6 +6,8 @@ See proposal.md for why (tracking issue #544). The current state that shapes the
 - `protspace serve` is the only entry into the Dash app (`main.py` → `app.py` → `ui/`, `visualization/`, `assets/`), which needs the `frontend` extra. The CLI already imports without that extra (`test_cli_no_frontend.py`).
 - One deprecation already exists: reading v1/v2 bundles, due for removal in 5.0.0 (`bundle.LEGACY_REMOVAL_VERSION`, warned from `_parse_bundle`). Nothing checks that date.
 - Versions come from python-semantic-release v10.6.1 in `protspace-release.yml`, run from `apps/protspace` with the `conventional-monorepo` parser. `released` is decided from the step's output, because PSR exits 0 on "No release will be made".
+- Every reader shows a 3-D projection as its X/Y view in the browser (`docs/explore/control-bar.md`); Python reads keep `z` (`read_tables`, `ArrowReader`, `stats`). A projection is 3-D when its rows hold a finite `z`: the data decides, as in the v3 encoder and the browser's legacy reader.
+- `protspace convert` (from `parquetbundle-v3`) upgrades v1/v2 to v3 and leaves a v3 input untouched; that change's 5.0.0 follow-up said convert would stop reading v1/v2 too.
 - The CLI reports warnings through `logging` (`setup_logging` prints `WARNING: …` on stderr); it uses no Python `warnings` for user-facing messages.
 
 ## Goals / Non-Goals
@@ -18,7 +20,7 @@ See proposal.md for why (tracking issue #544). The current state that shapes the
 **Non-Goals:**
 
 - Removing anything. 3-D, `serve` and v1/v2 reading all keep working until the 5.0.0 change.
-- Reading 3-D projections. Bundles keep their `z` axis, the web viewer keeps reading 3-D projections as their X/Y view, and `protspace stats` keeps scoring 3-D projections in an existing project. Only producing them is deprecated.
+- Changing how 3-D projections are read or shown before 5.0.0. They keep loading everywhere, with a warning.
 - Gating the web app's own legacy-bundle readers. The gate guards the PyPI package; `deploy.yml` has no version to compare.
 
 ## Decisions
@@ -54,6 +56,33 @@ Its removal version moves from `bundle.LEGACY_REMOVAL_VERSION` into the registry
 ### The web app's copies of the v1/v2 version are pinned, not shared
 
 The browser restates 5.0.0 in TypeScript: the legacy-format notice users see (`apps/web/src/explore/notifications.ts`) and the decoder's deprecation notes (`packages/core/.../utils/bundle.ts`, `data-loader.ts`). TypeScript cannot import the Python registry, and generating a TS constant from it would add a build step for one string. Instead `tests/test_deprecations.py` reads those three files and asserts every removal version they name (after "protspace", "ends in" or "until") equals the registry's, and that the user-facing notice says "stop opening in ProtSpace <remove_in>". The files join `protspace-ci.yml`'s path filter so an edit to only the web copy runs the test. The release gate still guards only the PyPI package; the web removal is `parquetbundle-v3` task 6.3, tracked in #544.
+
+### Reading 3-D projections warns where the projections are read
+
+Maintainer decision (2026-10-15): 5.0.0 stops reading 3-D projections as well as producing them. The warning goes where a bundle's projections become tables: `read_tables`, `read_bundle_contents` (which `ArrowReader` uses), `read_bundle` and `extract_bundle_to_dir`, each logging one registry warning (`3d-projection-read`) per read through the bundle logger, after the v1/v2 warning when both apply. A helper, `bundle.three_d_projection_names(projections)`, lists the projections whose rows hold a finite `z`, in first-seen order, from the v2-shaped table every read produces. `protspace stats` reads a projection directory directly, so it warns with the same entry.
+
+Not warned: `read_settings_from_bundle` / `read_statistics_from_bundle` never touch projections (so `protspace style`, which only rewrites settings, stays quiet), the writers read their input without decoding projections, `convert` prints its own message (below), and `protspace bundle` passing a `project` directory through (that directory's 3-D projections were warned about when `project` made them). `read_bundle_contents(..., warn_3d=False)` exists for callers that read such files on purpose, like `warn_legacy`.
+
+Alternative: one warning in `decode_v3`. It would miss legacy bundles and fire inside `convert`.
+
+### The web notice reuses the legacy-format notice
+
+`getThreeDProjectionNotification(names)` in `apps/web/src/explore/notifications.ts` builds an info notice, deduped on `three-d-projections`. `dataset-controller.ts` shows it under the same rule as the legacy-format notice (a user's own import only, since a visitor cannot convert a dataset the app serves), counting `data.projections` with `dimension === 3`. Both notices can show for one file; each has its own dedupe key. The core decoder shows no UI. The Python pin test reads the notice's version as it reads the v1/v2 ones.
+
+### `protspace convert` stays, and learns `--flatten-3d`
+
+Maintainer decision (2026-10-15): `convert` survives 5.0.0 as the upgrade path. In 5.0.0 the general readers drop v1/v2 and 3-D; `convert` keeps a reader of its own for both and always writes v3 with 2-D projections. That retained reader is by design, so it is **not** a registry entry and the gate never asks for its removal. The registry's v1/v2 removal notes say so, and `parquetbundle-v3` task 6.2 and its Migration Plan step 4 are amended.
+
+`--flatten-3d` does the 5.0.0 behaviour now, on request:
+
+- each 3-D projection becomes 2-D with its X and Y (what the web viewer shows today, so the picture does not change) and its `z` dropped;
+- it is renamed `<name> (X/Y)`, and its `info_json` gains `"flattened_from_3d": true`, so a reader sees it is not a 2-D fit; a name that would collide with an existing projection is refused;
+- its `info_json.quality` (faithfulness) and its `statistics` rows (`space_kind == "projection"`, `space_name == <name>`) are dropped, because they describe the 3-D layout; other statistics rows and settings are kept byte for byte;
+- it applies to v3 inputs too. Without the flag (or with nothing to flatten) a v3 input is still left untouched, as `parquetbundle-v3`'s `bundle-conversion` spec requires; with the flag and a 3-D projection present, a v3 input is rewritten.
+
+Without the flag, `convert` keeps 3-D projections and prints a warning naming them, the removal version and `--flatten-3d`; in 5.0.0 flattening becomes automatic. `convert_bundle` returns a `Conversion` (input version, 3-D names found, names flattened, whether it wrote) instead of a bare version, so the command can report all of it; its only caller is `cli/convert.py` (tests ignore the return).
+
+Alternatives: keep the projection name and mark only the metadata (the projection menu would show a 2-D layout under a 3-D method's name with nothing visible to tell them apart); project to the first two principal axes of the 3-D coordinates (changes the picture users have been looking at).
 
 ### The release gate: `semantic-release version --print`, then a script
 
@@ -116,11 +145,39 @@ Not deleted, but worth a pass afterwards: `utils/arrow_reader.ArrowReader` stays
 - `src/protspace/cli/common_options.py`: the deprecation sentence in `-m` help.
 - `docs/guide/python-cli.md`: the 3D column and dimension-suffix wording under "Projection Methods", and the `project` row ("2D projections").
 - Tests: the 3-D warning tests in `tests/test_deprecations.py` become rejection tests.
-- Kept: the bundle `z` axis (`base_processor`, `bundle_v3`, the v3 fixtures with `umap3`), `cli/stats.py`'s 3-D branch, and the web viewer's 3-D handling, which read 3-D projections from existing bundles (see Non-Goals).
+
+### Reading 3-D projections
+
+Verified by grepping both languages for `z`, `dimension === 3`, `is3D`, `projectionPlane`, `has_z` and `__z` on this branch. In 5.0.0 every general reader treats a bundle as 2-D; `protspace convert` keeps reading `z` to flatten (see Decisions).
+
+Python:
+
+- `src/protspace/data/io/bundle_v3.py`: the encoder's 3-D branch (`z` column, finite-`z` dimension detection, `__z` axis), the decoder's axis list (`("x", "y", "z")[:dimension]`) and the long-format `z` column.
+- `src/protspace/data/io/bundle.py`: the 3-D read warning and `three_d_projection_names` (convert keeps the latter).
+- `src/protspace/data/processors/base_processor.py`: the `z` column it writes (the producer side, gone with 3-D methods).
+- `src/protspace/utils/arrow_reader.py`: the empty frame's `z` column and the `z` coordinate it reads per point.
+- `src/protspace/cli/stats.py`: the 3-D branch of `_load_reductions` and its warning.
+- `src/protspace/cli/convert.py`: `--flatten-3d` becomes the default (the flag can stay as a no-op or go).
+- Scripts: `scripts/generate_examples/build_showcase.py` (`z` axis when rebuilding a bundle), `scripts/generate_examples/write_manifest.py` (the `z` column in its schema list), `scripts/generate_v3_fixture.py` (the `umap3` projection of the golden fixture).
+- Tests that read 3-D bundles as a supported case: `test_bundle_v3_fixture.py`, `test_bundle_v3_encode.py`, `test_bundle_v3_decode.py`, `test_bundle_v3_container.py`, `test_arrow_reader.py`, `test_stats.py`, `test_stats_cli.py`, `test_directory_io.py`, plus the read-warning tests in `test_deprecations.py`.
+
+Web (TypeScript):
+
+- `packages/core/src/components/data-loader/utils/bundle-v3.ts`: manifest dimension 3 and the `__z` interleave.
+- `packages/utils/src/parquet/v3-format.ts`: `V3_AXES` includes `z`.
+- `packages/core/src/components/data-loader/utils/conversion.ts`: the `z` column and the `dimension === 3` path of the row reader.
+- `packages/utils/src/types.ts`: `dimension: 2 | 3` and `metadata.dimension`; `packages/core/src/components/control-bar/{control-bar,types}.ts` repeat it.
+- `packages/utils/src/visualization/data-processor.ts` and `packages/core/src/components/scatter-plot/scatter-plot.ts`: `projectionPlane` (`xy`/`xz`/`yz`) and the 3-D coordinate paths.
+- `packages/utils/src/parquet/bundle-writer.ts`: writes as many axes as a projection has (generic, nothing to delete once nothing is 3-D).
+- `packages/core/src/components/publish/publish-state.ts`: the figure editor's `dimensionality` fingerprint.
+- `apps/web/src/explore/notifications.ts` / `dataset-controller.ts`: the 3-D notice and its trigger.
+- Fixtures and tests: the `umap3` projection in `packages/core/.../__fixtures__/v3-sample.parquetbundle` and the tests asserting it (`bundle-v3.test.ts`, `v3-equivalence.test.ts`, `bundle-roundtrip.test.ts`, `decode-transferables.test.ts`), `slice-visualization-data.test.ts`, `data-processor.test.ts`, the scatter-plot tests using `projectionPlane`, `bundle-writer.test.ts`, `tests/contract/bundle.contract.test.ts` (`PCA_3`), and the e2e 3-D notice test in `apps/web/tests/dataset-reload.spec.ts`.
+
+Docs and specs: `docs/explore/control-bar.md` (3D tip), `docs/explore/figure-editor.md` (2D/3D fingerprint), `docs/explore/scatterplot.md` ("2D or 3D layout"), `docs/developers/api/index.md` (`projectionPlane`), `docs/guide/data-format.md` (`<name>__z`, "A projection is 3D when…"), `docs/guide/python-cli.md`; the `bundle-format-contract` spec's "A three-dimensional projection is read" scenario and `eat-provenance-connectors`'s "Projection or 3-D plane change" scenario need MODIFIED deltas in the 5.0.0 change.
 
 ### Reading v1/v2 bundles
 
-Owned by the in-flight `parquetbundle-v3` change (its design, "v1/v2 read-only until 5.0.0"): the 3-to-5-part branch of `data/io/bundle._split` and the legacy warning in `_parse_bundle`, the legacy-read tests in `tests/test_convert.py`, and the web app's legacy readers (not gated here). Whether `protspace convert` stays in 5.0.0 is that change's decision.
+Owned by the in-flight `parquetbundle-v3` change (its design, "v1/v2 read-only until 5.0.0"): the 3-to-5-part branch of `data/io/bundle._split` for the general readers and the legacy warning in `_parse_bundle`, the legacy-read tests in `tests/test_convert.py`, and the web app's legacy readers (not gated here). `protspace convert` keeps a legacy reader of its own (maintainer decision 2026-10-15; that change's task 6.2 is amended), so the v1 cell migration and the v2 id-column fallback move into it rather than going.
 
 ### The registry itself
 
@@ -134,4 +191,4 @@ For 5.0.0: land the removals above, delete their registry entries, then let a `B
 
 ## Open Questions
 
-- Whether 5.0.0 should also stop reading 3-D projections in `protspace stats` (it reads existing projects); deferred, does not affect this change.
+- When both changes archive, `parquetbundle-v3`'s `bundle-conversion` requirement "SHALL leave a v3 input untouched" needs the `--flatten-3d` exception this change adds to `deprecation-policy`; whichever archives second should reconcile the wording.

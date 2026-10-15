@@ -1,6 +1,6 @@
 ## Purpose
 
-How the protspace Python package announces a feature it will remove, and how its release process refuses to publish a version that still contains a feature past the version it was promised to be removed in.
+How protspace announces a feature it will remove, in the Python package and the web app, how its release process refuses to publish a version that still contains a feature past the version it was promised to be removed in, and which upgrade path outlives the removals.
 
 ## ADDED Requirements
 
@@ -16,16 +16,83 @@ The package SHALL keep one registry of scheduled removals. Each entry SHALL name
 #### Scenario: The scheduled removals
 
 - **WHEN** the registry is read
-- **THEN** it holds 3-D projections, `protspace serve`, and reading v1/v2 bundles, each due for removal in 5.0.0
+- **THEN** it holds producing 3-D projections, `protspace serve`, reading v1/v2 bundles, and reading 3-D projections, each due for removal in 5.0.0
 
-### Requirement: The web app names the same removal version for v1/v2 bundles
+### Requirement: The web app names the same removal versions as the registry
 
-Wherever the web app tells users, or its code documents, when reading v1/v2 bundles ends, it SHALL name the removal version the registry holds for reading v1/v2 bundles, and the package's tests SHALL fail when the two differ.
+Wherever the web app tells users, or its code documents, when reading v1/v2 bundles or 3-D projections ends, it SHALL name the removal version the registry holds for that feature, and the package's tests SHALL fail when the two differ.
 
 #### Scenario: The registry's removal version changes
 
 - **WHEN** the registered removal version for reading v1/v2 bundles is changed and the web app's legacy-format notice is not
 - **THEN** the package's tests fail, naming the web source that differs
+
+#### Scenario: The 3-D notice drifts
+
+- **WHEN** the web app's 3-D projection notice names a release other than the registered removal version for reading 3-D projections
+- **THEN** the package's tests fail
+
+### Requirement: Reading a bundle with 3-D projections warns that it is deprecated
+
+Each Python read of a bundle's projections SHALL log one deprecation warning when the bundle holds a projection with finite `z` values, naming the bundle, its 3-D projections, the removal version, and `protspace convert --flatten-3d`. `protspace stats` SHALL warn the same way for a projection directory with 3-D projections. The projections SHALL still be read as before. Reads that do not touch projections, and the writers' own reads of their input, SHALL NOT warn.
+
+#### Scenario: Transferring annotations on a 3-D bundle
+
+- **WHEN** a user runs `protspace transfer` on a bundle holding `UMAP 3`
+- **THEN** one WARNING line names the bundle and `UMAP 3`, says reading 3-D projections ends in protspace 5.0.0, and names `protspace convert --flatten-3d`
+
+#### Scenario: A 2-D bundle
+
+- **WHEN** a bundle holding only 2-D projections is read
+- **THEN** no 3-D deprecation warning is logged
+
+### Requirement: The web app tells a user who imports 3-D projections
+
+When a user imports a bundle holding one or more 3-D projections, the web app SHALL show a non-blocking notice that 3-D projections are shown as their X/Y view, that reading them ends in ProtSpace 5.0.0, and that `protspace convert --flatten-3d` turns them into 2-D. The bundle SHALL load as before. Datasets the app serves itself SHALL NOT show the notice.
+
+#### Scenario: Importing a 3-D bundle
+
+- **WHEN** a user imports a bundle holding a 3-D projection
+- **THEN** the notice names the 3-D projections, the X/Y view, ProtSpace 5.0.0 and `protspace convert --flatten-3d`
+- **AND** the bundle is shown as before
+
+#### Scenario: A served dataset or a 2-D import
+
+- **WHEN** the default dataset, an example, or a user's 2-D bundle loads
+- **THEN** no 3-D notice is shown
+
+### Requirement: `protspace convert --flatten-3d` turns 3-D projections into 2-D
+
+With `--flatten-3d`, `protspace convert` SHALL write each 3-D projection as a 2-D projection holding its X and Y coordinates, named with an ` (X/Y)` suffix and marked as flattened from 3-D in its metadata, and SHALL drop the quality figures computed on the 3-D layout (its faithfulness in the metadata and its statistics rows). It SHALL do this for v3 inputs as well as v1/v2 inputs, and leave 2-D projections untouched.
+
+#### Scenario: Flattening a v3 bundle
+
+- **WHEN** a user runs `protspace convert in.parquetbundle out.parquetbundle --flatten-3d` on a v3 bundle holding `PCA 2` and `UMAP 3`
+- **THEN** `out.parquetbundle` is v3 with `PCA 2` unchanged and a 2-D `UMAP 3 (X/Y)` whose coordinates are the X and Y of `UMAP 3`
+- **AND** the output names each flattened projection
+
+#### Scenario: A v3 bundle with nothing to flatten
+
+- **WHEN** `--flatten-3d` is given for a v3 bundle holding only 2-D projections
+- **THEN** nothing is written and the command says the bundle is already current
+
+### Requirement: `protspace convert` warns about 3-D projections it keeps
+
+Without `--flatten-3d`, `protspace convert` SHALL keep 3-D projections as they are and SHALL print a warning naming them, the removal version for reading 3-D projections, and `--flatten-3d`.
+
+#### Scenario: Converting a v2 bundle with a 3-D projection
+
+- **WHEN** a user converts a v2 bundle holding `UMAP 3` without `--flatten-3d`
+- **THEN** the v3 output keeps `UMAP 3` as 3-D and a warning names it and `--flatten-3d`
+
+### Requirement: `protspace convert` remains the upgrade path after the removals
+
+`protspace convert` SHALL keep its own reader for v1/v2 bundles and 3-D projections when the general readers drop them, so a file written by any earlier release can still be upgraded. That retained reader SHALL NOT be a registry entry, and the release checks SHALL NOT require its removal.
+
+#### Scenario: The release gate at 5.0.0
+
+- **WHEN** the release gate lists what must be removed before 5.0.0
+- **THEN** the list does not include `protspace convert` or its legacy reader
 
 ### Requirement: Requesting a 3-D projection warns that it is deprecated
 
