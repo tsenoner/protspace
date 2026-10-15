@@ -4,8 +4,15 @@
  * Ported from the old static captures (interface-overview 177, scatterplot-example 186,
  * legend-panel 195, structure-viewer 204 at a8cb13ca), on the workbench's helpers.
  */
-import { expect, type Page } from '@playwright/test';
-import { appBar, plotArea, viewBar } from '../../../apps/web/tests/helpers/explore';
+import { expect, type Locator, type Page } from '@playwright/test';
+import {
+  appBar,
+  filterButton,
+  plotArea,
+  projectionTrigger,
+  proteinSearch,
+  viewBar,
+} from '../../../apps/web/tests/helpers/explore';
 import { legend } from '../../../apps/web/tests/helpers/legend';
 import {
   waitForStructureLoaded,
@@ -17,7 +24,7 @@ import {
   rail,
   structurePanel,
 } from '../../../apps/web/tests/helpers/workbench';
-import type { CaptureEntry } from '../capture-plan';
+import type { CaptureEntry, Clip } from '../capture-plan';
 import { around } from './clip';
 
 /** Mol* loads from jsDelivr and the model from AlphaFold: allow for both on a slow network. */
@@ -32,6 +39,17 @@ async function showStructure(page: Page): Promise<void> {
 
 const themeMenu = (page: Page) => page.getByRole('menu', { name: 'Theme', exact: true });
 
+/**
+ * A bar's full height, from `first`'s left edge to `last`'s right edge, grown by `pad`: a full-width
+ * bar shown in the ~690 px docs column would shrink its text to a few pixels.
+ */
+async function barSpan(bar: Locator, first: Locator, last: Locator, pad = 12): Promise<Clip> {
+  const [b, l, r] = await Promise.all([around([bar], 0), around([first], 0), around([last], 0)]);
+  const x = Math.max(b.x, l.x - pad);
+  const right = Math.min(b.x + b.width, r.x + r.width + pad);
+  return { x, y: b.y, width: right - x, height: b.height };
+}
+
 export const OVERVIEW_CAPTURES: CaptureEntry[] = [
   {
     name: 'interface-overview',
@@ -43,11 +61,29 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     docs: ['explore/index.md'],
   },
   {
-    name: 'app-bar',
+    name: 'app-bar-start',
     kind: 'png',
     viewport: 'desktop',
     themes: ['light', 'dark'],
-    target: (page) => appBar(page),
+    // The logo, the dataset name and the search.
+    target: (page) =>
+      barSpan(
+        appBar(page),
+        appBar(page).locator('[data-workbench="app-bar-start"]'),
+        proteinSearch(page),
+      ),
+    docs: ['explore/index.md'],
+  },
+  {
+    name: 'app-bar-actions',
+    kind: 'png',
+    viewport: 'desktop',
+    themes: ['light', 'dark'],
+    // Import and Export, Theme, Help, Feedback and GitHub.
+    target: (page) => {
+      const actions = appBar(page).locator('[data-workbench="app-bar-actions"]');
+      return barSpan(appBar(page), actions, actions);
+    },
     docs: ['explore/index.md'],
   },
   {
@@ -55,7 +91,7 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     kind: 'png',
     viewport: 'desktop',
     themes: ['light', 'dark'],
-    target: (page) => viewBar(page),
+    target: (page) => barSpan(viewBar(page), projectionTrigger(page), filterButton(page)),
     docs: ['explore/index.md'],
   },
   {
@@ -80,7 +116,13 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     themes: ['light', 'dark'],
     timeoutMs: STRUCTURE_TIMEOUT_MS,
     steps: showStructure,
-    target: (page) => structurePanel(page),
+    // From the viewer's header down: the panel's box also holds the divider and a sliver of the
+    // legend's last row above it.
+    target: async (page) => {
+      const panel = await around([structurePanel(page)], 0);
+      const header = await around([structurePanel(page).locator('.header').first()], 0);
+      return { ...panel, y: header.y, height: panel.y + panel.height - header.y };
+    },
     docs: ['explore/index.md', 'explore/structures.md'],
   },
   {
@@ -103,11 +145,15 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
       const workbench = page.locator('.workbench');
       await cap.hold(800);
 
-      await cap.click(rail(page).getByRole('button', { name: 'Collapse sidebar' }));
+      await cap.click(rail(page).getByRole('button', { name: 'Collapse sidebar' }), {
+        label: 'Collapse sidebar',
+      });
       await expect(workbench).toHaveAttribute('data-sidebar', 'collapsed');
       await cap.hold(1_200);
 
-      await cap.click(rail(page).getByRole('button', { name: 'Expand sidebar' }));
+      await cap.click(rail(page).getByRole('button', { name: 'Expand sidebar' }), {
+        label: 'Expand sidebar',
+      });
       await expect(workbench).toHaveAttribute('data-sidebar', 'open');
       await cap.hold(1_000);
 
@@ -117,6 +163,7 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
       const wider = { x: from.x - 120, y: from.y };
       await cap.moveTo(from, { steps: 15 });
       await cap.hold(300);
+      await cap.label('Drag');
       await cap.drag(from, wider, { steps: 30 });
       await cap.hold(800);
       await cap.drag(wider, from, { steps: 30 });

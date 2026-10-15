@@ -16,14 +16,18 @@ The Explore page is a workbench for protein embeddings: a map of your proteins i
 
 ## App bar
 
-![The app bar: the ProtSpace logo, the dataset name and protein count, search, Import, Export, Theme and Help](./images/app-bar.png){.light-only}
-![The app bar: the ProtSpace logo, the dataset name and protein count, search, Import, Export, Theme and Help](./images/app-bar-dark.png){.dark-only}
+![The app bar's left side: the ProtSpace logo, the dataset name with its protein count, and the search box](./images/app-bar-start.png){.light-only}
+![The app bar's left side: the ProtSpace logo, the dataset name with its protein count, and the search box](./images/app-bar-start-dark.png){.dark-only}
+
+![The app bar's right side: Import, Export, then the Theme, Help, Feedback and GitHub buttons](./images/app-bar-actions.png){.light-only}
+![The app bar's right side: Import, Export, then the Theme, Help, Feedback and GitHub buttons](./images/app-bar-actions-dark.png){.dark-only}
 
 - **Dataset name** shows what is loaded and how many proteins it holds. Click it for the [dataset menu](/explore/controls#dataset-menu): the example datasets, your last file and **Open a file…**.
 - **Search** finds proteins by ID; paste a list of IDs to select them all at once. See [Search](/explore/controls#search).
 - **Import** and **Export** load data and save images, figures and data. See [Importing Data](/explore/importing-data) and [Exporting Results](/explore/exporting).
 - **Theme** switches between System, Light and Dark; see [Light and dark](#light-and-dark).
 - **Help** has the documentation, the keyboard shortcuts and the tour; see [Help, shortcuts and the tour](#help-shortcuts-and-the-tour).
+- **Feedback** starts an email to the ProtSpace team, and **GitHub** opens the project's repository.
 
 ## View bar
 
