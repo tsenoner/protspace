@@ -71,15 +71,11 @@ export const LEGACY_IMAGES: ReadonlySet<string> = new Set([
   'figure-editor-overview.png',
   'figure-editor-presets.png',
   'figure-editor-zoom-inset.png',
-  'interface-overview.png',
   'legend-others.gif',
-  'legend-panel.png',
   'legend-reorder.gif',
   'legend-toggle.gif',
-  'scatterplot-example.png',
   'select-box.gif',
   'select-single.gif',
-  'structure-viewer.png',
 ]);
 
 /**
@@ -89,7 +85,6 @@ export const LEGACY_IMAGES: ReadonlySet<string> = new Set([
 export const STALE_PAGES: ReadonlySet<string> = new Set([
   'explore/figure-editor.md',
   'explore/importing-data.md',
-  'explore/index.md',
   'explore/legend.md',
   'explore/scatterplot.md',
   'guide/faq.md',
