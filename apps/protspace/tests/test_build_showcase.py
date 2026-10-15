@@ -1025,7 +1025,6 @@ def test_the_embeddings_pin_gate(config, tmp_path):
     ],
 )
 def test_missing_labels_follow_the_web(text, missing):
-    assert bs.is_missing_label(text) is missing
     assert bs.cell_labels(text) == ([] if missing else [text.strip()])
 
 

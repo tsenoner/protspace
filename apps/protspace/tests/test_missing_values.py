@@ -3,9 +3,10 @@
 The web app reads a cell as N/A through ``normalizeMissingValue``
 (``packages/utils/src/visualization/missing-values.ts``). ``is_missing_value``
 mirrors it, and the bundle contract suite (``tests/contract``) pins the two to the
-same tokens and the same matching. These tests hold every Python reader of
-annotation cells to ``is_missing_value``, and every category the producer writes
-to never being spelled like a missing value: tsenoner/protspace#339 was TMbed's
+same tokens and the same matching. These tests hold the Python readers of
+annotation cells to ``is_missing_value`` (``transfer``'s own case lives in
+``test_transfer_cli.py``), and every category the producer writes to never being
+spelled like a missing value: tsenoner/protspace#339 was TMbed's
 negative prediction, written as ``none``, shown as N/A.
 """
 
@@ -15,11 +16,8 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
 import pytest
 
-from protspace.analysis.classification import Rule
-from protspace.cli.transfer import run_transfer
 from protspace.core.constants import (
     MISSING_VALUE_TOKENS,
     is_missing_value,
@@ -54,6 +52,8 @@ PACKAGE = Path(__file__).resolve().parents[1] / "src" / "protspace"
 # different subset of them (the cased and padded spellings, `__NA__`, a null).
 MISSING_CELLS = [
     None,
+    pd.NA,
+    pd.NaT,
     float("nan"),
     "",
     "  ",
@@ -137,32 +137,6 @@ def test_stats_leaves_every_missing_cell_out_of_the_categories():
     labels = build_annotation_labels(frame, ["group"])["group"]
 
     assert sorted(labels.values()) == ["a", "a", "b", "b"]
-
-
-def test_transfer_fills_every_missing_cell_and_never_copies_one():
-    # Each spelled-missing protein sits on the others, far from the only real
-    # reference. Read as a category, one would be a reference for the rest and
-    # hand them its spelling as a label.
-    spelled = ["N/A", "NULL", "None", " na ", "__NA__", "n/a"]
-    ids = [f"Q{i}" for i in range(len(spelled))] + ["R"]
-    annotations = pa.table({"identifier": ids, "family": [*spelled, "neurotoxin"]})
-    embeddings = {qid: np.zeros(2, dtype=np.float32) for qid in ids[:-1]}
-    embeddings["R"] = np.array([5.0, 0.0], dtype=np.float32)
-
-    out = run_transfer(
-        annotations=annotations,
-        embeddings=embeddings,
-        transfer_columns=["family"],
-        query_rule=Rule(),
-        reference_rule=Rule(),
-        k=1,
-        metric="euclidean",
-    )
-
-    rows = {row["identifier"]: row for row in out.to_pylist()}
-    for qid in ids[:-1]:
-        assert rows[qid]["family__pred_value"] == "neurotoxin", qid
-        assert rows[qid]["family__pred_source"] == "R", qid
 
 
 def _bundle(tmp_path, organism: list, settings: dict | None = None) -> Path:
@@ -331,8 +305,7 @@ def test_no_producer_module_spells_a_missing_value():
     ]
     # A moved package would otherwise scan nothing and pass.
     assert {p.relative_to(PACKAGE).parts[1] for p in paths} == {
-        "annotations",
-        "parsers",
+        Path(package).name for package in PRODUCER_PACKAGES
     }
 
     found = [
