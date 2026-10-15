@@ -37,6 +37,7 @@ pip install protspace
 | `protspace transfer` | Fill missing annotations from nearest neighbours (EAT)       |
 | `protspace style`    | Set colors, shapes and legend order on a bundle              |
 | `protspace convert`  | Upgrade a v1/v2 bundle to the current v3 format              |
+| `protspace export`   | Write a bundle as a TSV table, one row per protein           |
 | `protspace serve`    | Run a local viewer                                           |
 
 Run `protspace <command> -h` for the built-in help of any command.
@@ -864,6 +865,33 @@ Without a Python install, load the bundle at [protspace.app/explore](https://pro
 and export it again: the web app always exports v3. That export leaves out any protein no
 projection places (an annotations row without coordinates), which `convert` keeps. See
 [Legacy formats](/guide/data-format#legacy-formats-v1-and-v2).
+
+## `protspace export`
+
+Write a bundle as one tab-separated table, one row per protein, for a spreadsheet, R or pandas.
+
+```bash
+protspace export data.parquetbundle data.tsv
+protspace export data.parquetbundle data.tsv -p "ProtT5 — UMAP 2"
+```
+
+| Flag               | Description                                                           |
+| ------------------ | --------------------------------------------------------------------- |
+| `-p, --projection` | Also write this projection's coordinates (repeatable). Default: none. |
+| `-v, --verbose`    | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                |
+
+The columns are `protein_id`, then `<projection>_x` and `<projection>_y` for each `--projection`
+(and `<projection>_z` for one with a third axis), then every annotation in the order the bundle
+stores them. That includes the `cluster_*` membership columns [`stats`](#protspace-stats) writes
+and the `__pred_*` and `__neighbor` columns of [`transfer`](#protspace-transfer). A cell holds what
+the web app shows: score and evidence suffixes are dropped, encoded characters are decoded, and the
+values of a multi-valued cell are joined with `;`. Missing values, and the coordinates of a protein
+a projection does not place, are empty. Projection names are the ones the
+[web app lists](#projection-naming); a name the bundle does not hold is an error that lists the
+ones it does.
+
+To export only some proteins, filter the table in pandas. The same table is available in Python,
+see [Read a bundle in Python](/guide/data-format#read-a-bundle-in-python).
 
 ## `protspace serve`
 

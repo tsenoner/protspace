@@ -146,7 +146,7 @@ A common question for a set of unknown proteins and a curated reference set: whi
    `-e` needs the `:name` suffix when the `.h5` file carries no model name. `predictions.tsv` lists every unknown with its nearest reference, the raw distance and whether it is near or distant; sort it by `distance` for a candidate list. With `--k 5` it lists the five nearest references of each. See the [neighbour report](/guide/python-cli#neighbour-report).
 
 3. **Open the bundle here** and colour by **Toxin family — EAT neighbourhood** to see the near and distant unknowns, or colour by **Toxin family** and use the reliability filter's **Hide below** to keep only the confident transfers. Curated references stay visible either way: they are `N/A` in the neighbourhood column and carry no confidence.
-4. **Export the proteins you kept.** Coloured by the neighbourhood column, hide its `distant` legend value (or `near`) and `N/A` (the references), then **Export → Protein IDs**: the export holds exactly the proteins still visible. See [Exporting](/explore/exporting#what-gets-exported).
+4. **Export the proteins you kept.** Coloured by the neighbourhood column, hide its `distant` legend value (or `near`) and `N/A` (the references), then **Export → Protein IDs**: the export holds exactly the proteins still visible. See [Exporting](/explore/exporting#what-gets-exported). For everything at once, `protspace export space_eat.parquetbundle space.tsv` writes every protein with every annotation, the `__pred_*` and `__neighbor` columns included, as one table (see [`protspace export`](/guide/python-cli#protspace-export)).
 
 ## Trying It
 

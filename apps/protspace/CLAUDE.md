@@ -55,6 +55,7 @@ Single entry point: `protspace = protspace.cli.app:app`
 | `protspace style` | Add annotation colors/styles |
 | `protspace transfer` | Fill missing annotations from nearest reference embeddings (EAT); `--report` writes each query's neighbours (label, source, raw distance, reliability, ranked references) as TSV; `--max-distance D\|auto` writes `COL__neighbor` (near/distant by the nearest reference; `auto` = 95th percentile of reference-to-nearest-other-reference distances), `--skip-distant` leaves distant queries unpredicted |
 | `protspace convert` | Rewrite a v1/v2 .parquetbundle as v3 (`INPUT OUTPUT` or `INPUT --in-place`); a v3 input is left untouched |
+| `protspace export` | Write a bundle as a TSV table (`INPUT OUTPUT [-p PROJECTION]...`): `protein_id`, the coordinates of each `-p` projection, every annotation as the app shows it (`bundle.read_bundle_table`) |
 
 ### protspace prepare Usage
 
@@ -134,7 +135,8 @@ src/protspace/
 │   ├── serve.py                # Dash web frontend
 │   ├── transfer.py             # Embedding Annotation Transfer (EAT) command
 │   ├── style.py                # Annotation styling
-│   └── convert.py              # v1/v2 → v3 bundle conversion
+│   ├── convert.py              # v1/v2 → v3 bundle conversion
+│   └── export.py               # Bundle → TSV table
 ├── data/
 │   ├── biocentral_connection.py # Biocentral server address + wait_for_server(): one wait for embedding and annotation, and a failure that says why
 │   ├── loaders/
@@ -153,7 +155,7 @@ src/protspace/
 │   │   ├── retrievers/         # UniProt, InterPro, taxonomy fetchers
 │   │   └── transformers/       # Post-processing (field normalization, etc.)
 │   ├── io/
-│   │   ├── bundle.py           # .parquetbundle read/write
+│   │   ├── bundle.py           # .parquetbundle read/write; read_bundle_table (one display-decoded row per protein)
 │   │   ├── fasta.py            # FASTA detection + parsing (is_fasta_file, parse_fasta)
 │   │   ├── formatters.py       # ProteinAnnotations → DataFrame/Arrow
 │   │   ├── predictions.py      # Per-cell prediction overlay columns
@@ -324,6 +326,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_bundle_settings.py` | Parquetbundle settings read/write |
 | `test_annotation_encoding.py` | Percent-encoding round-trip, reserved-char-only encoding, schema-metadata stamping through parquet, `upgrade_cell_grammar` taking the version from the caller |
 | `test_transfer_cli.py` | Transfer orchestration core (k>1 confidence, cosine metric, self-transfer) and the `transfer` CLI: bad input (no matching embedding, no query match, both id columns) as a usage error with its message, `--help` rendering, `protein_id` and legacy v1 bundles end to end; `--report` (one row per query at `k=1`, ranked neighbours at `k>1`, the raw distance, decoded labels, the bundle unchanged by it); `--max-distance` (near/distant by the nearest reference of any label, references null, `--skip-distant`, `auto` equal to the percentile with self excluded by index, fewer than two references and bad flag values as usage errors, a re-run without a cutoff dropping the column) |
+| `test_export_cli.py` | `protspace export` / `read_bundle_table`: display-decoded cells in bundle order (scores, encoding, multi-hit), EAT and cluster columns, coordinates of the projections asked for (none for an unplaced protein, no `_z` for 2D), `protein_id` whatever the bundle's id column, unknown projection and unreadable bundle as usage errors; the `docs/guide/data-format.md` "Read a Bundle in Python" snippet run as written |
 | `test_predictions_overlay.py` | Building the per-cell prediction overlay columns and the `COL__neighbor` column (aligned by id, replaced on a re-run, dropped without a cutoff) |
 | `test_display_decode.py` | Display-side decoding of encoded values, multi-hit rendering, gated-off passthrough |
 | `test_toxprot_demo.py` | Signal-peptide bound parsing, mature-FASTA stripping, bundle post-processing (column filter/reorder) |
