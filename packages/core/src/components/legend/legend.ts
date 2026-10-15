@@ -1029,16 +1029,11 @@ export class ProtspaceLegend extends LitElement {
       const sourceDataMatchesCurrentLegend =
         sourceData?.protein_ids !== undefined &&
         this._hasSameProteinIds(sourceData.protein_ids, this.proteinIds);
-      // Hashed whole, EAT predictions included, as the dataset controller hashes it: the
-      // controller sweeps and seeds this dataset's settings under that hash.
+      // Hashed whole, EAT predictions included, as a host hashes the dataset for
+      // `clearForNewDataset`, `setFileSettings` and `applyShapeSize`, so both use one key set.
       const unfilteredData = sourceDataMatchesCurrentLegend
         ? sourceData
-        : {
-            protein_ids: this.proteinIds,
-            annotations: this.data?.annotations,
-            numeric_annotation_data: this.data?.numeric_annotation_data,
-            annotation_predicted: this.data?.annotation_predicted,
-          };
+        : { ...this.data, protein_ids: this.proteinIds };
 
       this._datasetProteinCount = unfilteredData.protein_ids.length;
       this._persistenceController.updateDatasetHash(unfilteredData);

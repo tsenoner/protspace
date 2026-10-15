@@ -21,6 +21,7 @@ import {
   TOXPROT_5181_FIXTURE,
   TOXPROT_5181_V3_FIXTURE,
 } from './helpers/fixtures';
+import { e2eExample } from './helpers/example-fixtures';
 import { readStoredImport } from './helpers/opfs';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
@@ -325,7 +326,7 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     // The bundle stores 15 visible values for this annotation (the default is 10). Its
     // settings are saved on import; only the in-session copy applies them before a reload.
     const bundledAnnotation = 'cluster_silhouette_ProtT5 — UMAP 2';
-    const eatProteinCount = 811;
+    const eatProteinCount = e2eExample('eat').count;
     const getMaxVisibleValues = () =>
       page.evaluate(
         () =>

@@ -7,7 +7,6 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import './legend';
-import { createDefaultSettings } from './legend-helpers';
 import {
   mountLegendWithScatterplot,
   settle,
@@ -602,10 +601,7 @@ describe('legend EAT reliability percent boxes', () => {
 describe('legend dataset hash for an EAT dataset', () => {
   it('loads the settings stored under the dataset controller hash', async () => {
     const datasetHash = generateDatasetHash(makeData());
-    setStorageItem(buildStorageKey('legend', datasetHash, 'ec'), {
-      ...createDefaultSettings('ec'),
-      shapeSize: 42,
-    });
+    setStorageItem(buildStorageKey('legend', datasetHash, 'ec'), { shapeSize: 42 });
 
     const { legend } = await setup();
     await settle(legend);
