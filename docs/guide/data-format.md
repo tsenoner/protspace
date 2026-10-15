@@ -425,8 +425,8 @@ same one twice: 21% is what settled the counts-versus-offsets choice described b
 while scores were still float32, and 19% is the same comparison after scores widened to float64.
 
 Nothing above the container boundary changes. `read_tables()` decodes a v3 file back into the
-v2-shaped tables, so `protspace serve`, `protspace style`, `protspace transfer` and every script
-keep their string-cell logic.
+v2-shaped tables, so `protspace style`, `protspace transfer`, the deprecated `protspace serve` and
+every script keep their string-cell logic.
 
 ### Part 1: annotations
 

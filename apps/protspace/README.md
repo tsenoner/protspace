@@ -43,7 +43,7 @@ pip install protspace
 | --- | --- | --- |
 | `local` | `pip install "protspace[local]"` | on-device embedding (`--backend local`) instead of the Biocentral API |
 | `similarity` | `pip install "protspace[similarity]"` | MMseqs2 sequence-similarity projections (`-s/--similarity`) |
-| `frontend` | `pip install "protspace[frontend]"` | the local Dash viewer (`protspace serve`) |
+| `frontend` | `pip install "protspace[frontend]"` | the local Dash viewer (`protspace serve`, deprecated) |
 
 > **Upgrading an existing install:** `-s/--similarity` used to work out of the box because
 > MMseqs2 shipped in the base install. It now lives in the `similarity` extra, so add
