@@ -37,7 +37,7 @@ also a little larger on a big plot and a little smaller on a small one (×0.8 to
 its drawn radius, or within 4 px of its centre when it is smaller than that.
 
 To see where categories concentrate when their points overlap, turn on
-[Contours](/explore/control-bar#_10-contours).
+[Contours](/explore/controls#contours).
 
 ## Point count
 
@@ -55,7 +55,7 @@ protein that appears on more than one point is not counted twice.
 - **Click** a point to select it
 - **⌘ + click** (Mac) or **Ctrl + click** (Windows) to add to selection
 - Click the same point again to deselect it
-- Click a `✓`-marked suggestion in the [search box](/explore/control-bar#_3-search) to deselect it
+- Click a `✓`-marked suggestion in the [search box](/explore/controls#search) to deselect it
 
 ### Box Selection
 
@@ -103,7 +103,7 @@ Hover over a point to see a tooltip with details about that protein:
 - **Annotation values** for the currently selected annotation
 - **Scores** (for InterPro domain annotations, e.g., E-values) or **evidence codes** (for GO terms, subcellular location, etc., e.g., EXP, IDA)
 
-Protein name, gene name, and UniProtKB ID are tooltip-only and don't appear in the [Annotation dropdown](/explore/control-bar#_2-annotation-selector).
+Protein name, gene name, and UniProtKB ID are tooltip-only and don't appear in the [Color by menu](/explore/controls#color-by).
 
 ### Focusing a Category
 
@@ -179,7 +179,7 @@ when a bundle contains projections from several embeddings. The rest depend on t
   parameter set
 
 Two things are deliberately absent from the list: the dimension count, which you already pick in the
-[Projection selector](/explore/control-bar), and the projection's name, which is the card header
+[Projection menu](/explore/controls#projection), and the projection's name, which is the card header
 rather than a row.
 
 #### Across the whole card

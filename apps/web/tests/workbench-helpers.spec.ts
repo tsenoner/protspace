@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { DEFAULT_EXAMPLE_DATASET, EXAMPLE_DATASETS } from '../src/explore/example-datasets';
 import { TOUR_STORAGE_KEY } from '../src/tour/storage-key';
 import { e2eExample, serveExampleFixtures } from './helpers/example-fixtures';
@@ -10,8 +10,16 @@ import {
   clearSelection,
   clearStatusChip,
   closeFilterPanel,
+  colorByMenu,
+  colorByTrigger,
+  contoursMenu,
+  contoursTrigger,
+  draftFilterCondition,
   expectUrlParam,
+  exportList,
   exportMenu,
+  exportTrigger,
+  filterApplyButton,
   filterButton,
   filterPanel,
   getColorByOptions,
@@ -30,6 +38,8 @@ import {
   pasteIntoSearch,
   pickExample,
   plotArea,
+  projectionMenu,
+  projectionTrigger,
   queryBuilder,
   resetIsolation,
   searchInput,
@@ -532,5 +542,39 @@ test.describe('capture helpers', () => {
   test('expectProductDemo refuses the e2e startup fixture', async ({ page }) => {
     await openExplore(page);
     await expect(expectProductDemo(page)).rejects.toThrow('E2E startup fixture');
+  });
+});
+
+test.describe('view-bar menus and the filter draft', () => {
+  test('the view-bar and Export menus open beside their triggers', async ({ page }) => {
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    const pairs: Array<[Locator, Locator]> = [
+      [projectionTrigger(page), projectionMenu(page)],
+      [colorByTrigger(page), colorByMenu(page)],
+      [contoursTrigger(page), contoursMenu(page)],
+      [exportTrigger(page), exportList(page)],
+    ];
+    for (const [trigger, menu] of pairs) {
+      await trigger.click();
+      await expect(menu).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(menu).toBeHidden();
+    }
+  });
+
+  test('draftFilterCondition drafts without applying', async ({ page }) => {
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    const { annotation } = await getViewState(page);
+    const values = (await legendRowValues(page)).slice(0, 2);
+    const first = await draftFilterCondition(page, 0, annotation ?? '', values);
+    await expect(first.locator('.value-chip')).toHaveCount(values.length);
+    const second = await draftFilterCondition(page, 1, 'length');
+    await expect(second.getByLabel('Comparison operator')).toBeVisible();
+    // A numeric condition needs a bound before Apply can enable.
+    await second.getByLabel('Minimum value').fill('0');
+    await expect(filterApplyButton(page)).toBeEnabled();
+    await expect(statusChip(page, 'filter')).toHaveCount(0);
   });
 });

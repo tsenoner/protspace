@@ -50,7 +50,7 @@ so its dots match the size you see on screen. The Figure Editor always renders t
 dots are drawn at their unzoomed size.
 
 ::: warning Contours are not exported yet
-[Contours](/explore/control-bar#_10-contours) are not drawn in exported images: Quick Export PNG and
+[Contours](/explore/controls#contours) are not drawn in exported images: Quick Export PNG and
 PDF, the Figure Editor and its zoom insets show the points only. The Figure Editor preview shows
 exactly what will be exported. Tracked in [#498](https://github.com/tsenoner/protspace/issues/498).
 :::

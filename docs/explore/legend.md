@@ -249,5 +249,6 @@ When proteins have multiple values, such as multiple EC numbers:
 ## Next Steps
 
 - [Separation Scores](/explore/separation-scores) - the strips at the top of the legend panel, and how well each category separates
-- [Control Bar Features](/explore/control-bar) - projections, filters, export, and import
+- [Bars and Tools](/explore/controls) - projections, Color by, contours, search, import and export
+- [Filtering](/explore/filter) - filter by annotation values
 - [Viewing 3D Structures](/explore/structures) - AlphaFold integration

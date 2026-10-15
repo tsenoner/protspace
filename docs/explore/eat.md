@@ -24,7 +24,7 @@ A protein that already had a curated value gets no prediction at all, so the thr
 
 ## Finding Them
 
-Annotations carrying predictions are marked with an **EAT** badge in the [Annotation dropdown](/explore/control-bar#_2-annotation-selector), beside the annotation's name. The badge appears only for columns that have at least one transferred value, so it doubles as the list of what is worth exploring. If no annotation carries the badge, the bundle has no predictions in it.
+Annotations carrying predictions are marked with an **EAT** badge in the [Color by menu](/explore/controls#color-by), beside the annotation's name. The badge appears only for columns that have at least one transferred value, so it doubles as the list of what is worth exploring. If no annotation carries the badge, the bundle has no predictions in it.
 
 ![The EAT badge in the annotation dropdown](./images/eat-annotation-badge.png)
 
@@ -75,7 +75,7 @@ A protein that is both a transferred protein and a source for others takes the f
 
 Endpoints get an unfilled halo so you can find the termini without the emphasis covering the markers underneath. Clicking still selects the protein exactly as it always did: the connectors are drawn on top of normal selection, not instead of it.
 
-A heavily reused source can have hundreds of dependants, so the fan-out is capped at **20 lines**, taking the highest-confidence targets first with the protein identifier as a deterministic tie-break. Candidates whose legend category is hidden are excluded outright. Candidates that exist but are currently off-view, removed by a filter or by [isolation](/explore/control-bar#_6-isolate-button), are reported instead of drawn: a small status strip appears at the top of the plot reading `3 hidden (off view)` with a × to dismiss it. It shows only when something is actually missing, so a fully drawable click is silent.
+A heavily reused source can have hundreds of dependants, so the fan-out is capped at **20 lines**, taking the highest-confidence targets first with the protein identifier as a deterministic tie-break. Candidates whose legend category is hidden are excluded outright. Candidates that exist but are currently off-view, removed by a filter or by [Show only these](/explore/controls#selection-bar), are reported instead of drawn: a small status strip appears at the top of the plot reading `3 hidden (off view)` with a × to dismiss it. It shows only when something is actually missing, so a fully drawable click is silent.
 
 Connectors are transient state and clear on Escape, on the status strip's close button, on clicking empty plot space, on clearing the selection, on changing the annotation, on toggling a legend category's visibility, on turning **Show** off, and on loading new data.
 
@@ -109,7 +109,7 @@ The coloured part of the track is always the part you keep — to the right of t
 
 Curated values are never affected in any mode. The filter applies only to transferred cells, so tightening it leaves the observed data whole. This is a different outcome from turning **Show** off: **Show** returns transferred proteins to `N/A`, while the filter removes them from the view the way any other filter condition does.
 
-The control is a front end for an ordinary filter. Moving it off its neutral position writes a single condition into the [filter query](/explore/control-bar#_7-filter-button) on a numeric column the app synthesises at load time for each transferred annotation:
+The control is a front end for an ordinary filter. Moving it off its neutral position writes a single condition into the [filter](/explore/filter#building-a-filter) on a numeric column the app synthesises at load time for each transferred annotation:
 
 ```
 Hide below x      ->  <annotation> — EAT confidence >= x        or N/A
@@ -140,5 +140,6 @@ It opens coloured by `toxin_class` with every transfer shown: the 659 rings, one
 ## Next Steps
 
 - [Using the Legend](/explore/legend) - the panel the EAT section lives in, and per-category visibility
-- [Control Bar Features](/explore/control-bar) - the annotation dropdown and the filter query builder
+- [Bars and Tools](/explore/controls) - Color by and the other controls
+- [Filtering](/explore/filter) - the filter panel the reliability control writes into
 - [Using Python CLI](/guide/python-cli#protspace-transfer) - `protspace transfer`, its flags, and the reliability formulas

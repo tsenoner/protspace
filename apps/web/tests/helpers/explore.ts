@@ -353,6 +353,28 @@ export const filterResetButton = (page: Page): Locator =>
 export const annotationSelect = (page: Page): Locator =>
   page.locator('protspace-annotation-select');
 
+/** The open Projection menu. */
+export const projectionMenu = (page: Page): Locator =>
+  page.locator('protspace-projection-select').getByRole('menu', { name: 'Projection' });
+
+/** The open Color by list. */
+export const colorByMenu = (page: Page): Locator =>
+  annotationSelect(page).locator('.dropdown-menu');
+
+/** The view bar's Contours button (its name gains the mode). */
+export const contoursTrigger = (page: Page): Locator =>
+  viewBar(page).getByRole('button', { name: /^Contours/ });
+
+/** The open Contours menu. */
+export const contoursMenu = (page: Page): Locator =>
+  page.locator('protspace-contours-menu').getByRole('menu', { name: 'Contours' });
+
+/** The app bar's Export button and its open menu. */
+export const exportTrigger = (page: Page): Locator =>
+  exportMenu(page).getByRole('button', { name: 'Export', exact: true });
+export const exportList = (page: Page): Locator =>
+  exportMenu(page).getByRole('menu', { name: 'Export', exact: true });
+
 export const searchInput = (page: Page): Locator =>
   page.locator('protspace-protein-search #protein-search-input');
 
@@ -367,7 +389,7 @@ export const selectionBarAction = (
 ): Locator => selectionBar(page).getByRole('button', { name, exact: true });
 
 /** The search's report under the field: found and missing ids, or why a hit is not shown. */
-const searchReport = (page: Page): Locator =>
+export const searchReport = (page: Page): Locator =>
   page.locator('protspace-protein-search .search-report');
 
 /** Pastes `text` into the search box, as a browser does on ⌘V / Ctrl+V. */
@@ -464,10 +486,6 @@ export async function pickExample(page: Page, id: string): Promise<void> {
   await importMenu(page).locator(`[data-example-id="${id}"]`).click();
 }
 
-/** The Export menu: a menu named "Export" in the Export button's popover. */
-const exportMenuList = (page: Page): Locator =>
-  exportMenu(page).getByRole('menu', { name: 'Export', exact: true });
-
 /**
  * Opens the Export menu unless it is open; resolves once it shows. "Open" is read from the
  * trigger's aria-expanded, not the menu's visibility: a closing ps-popover fades out over 120 ms,
@@ -475,11 +493,11 @@ const exportMenuList = (page: Page): Locator =>
  */
 export async function openExportMenu(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const trigger = exportMenu(page).getByRole('button', { name: 'Export', exact: true });
+  const trigger = exportTrigger(page);
   if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
     await trigger.click();
   }
-  await expect(exportMenuList(page)).toBeVisible();
+  await expect(exportList(page)).toBeVisible();
 }
 
 /** Opens the Export menu and chooses one of its exports. */
@@ -548,6 +566,43 @@ export async function applyFirstCategoryFilter(page: Page): Promise<void> {
   await expect(filterApplyButton(page)).toBeEnabled();
   await filterApplyButton(page).click();
   await expect(filterApplyButton(page)).toBeDisabled();
+}
+
+/**
+ * Drafts condition `row` (0-based) in the Filter panel and leaves it unapplied: adds a row when
+ * `row` is the next one, picks `annotation`, then each categorical value in `values` (none for a
+ * numeric annotation: fill its range through the row's labelled fields). Returns the row.
+ */
+export async function draftFilterCondition(
+  page: Page,
+  row: number,
+  annotation: string,
+  values: readonly string[] = [],
+): Promise<Locator> {
+  await openFilter(page);
+  const builder = queryBuilder(page);
+  const rows = builder.locator('protspace-query-condition-row');
+  if (row >= (await rows.count())) {
+    await builder.getByRole('button', { name: '+ Add condition' }).click();
+    await expect(rows).toHaveCount(row + 1);
+  }
+  const condition = rows.nth(row);
+  await condition.locator('.annotation-select-trigger').click();
+  await builder
+    .locator(`.annotation-picker-item[data-annotation="${quoted(annotation)}"]`)
+    .first()
+    .click();
+  if (values.length === 0) return condition;
+  for (const value of values) {
+    const item = builder.locator(`.value-picker-item[data-value="${quoted(value)}"]`).first();
+    if (!(await item.isVisible())) await condition.locator('.value-chip-add').click();
+    await item.click();
+  }
+  // Escape closes the value picker (a layer) and nothing else.
+  await page.keyboard.press('Escape');
+  await expect(builder.locator('.value-picker-item').first()).toBeHidden();
+  await expect(condition.locator('.value-chip')).toHaveCount(values.length);
+  return condition;
 }
 
 /**
@@ -681,7 +736,7 @@ function moreButton(page: Page): Locator {
  */
 export async function setContours(page: Page, mode: 'off' | 'auto' | 'on'): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const contours = viewBar(page).getByRole('button', { name: /^Contours/ });
+  const contours = contoursTrigger(page);
   if (await contours.isVisible()) {
     await contours.click();
     await page

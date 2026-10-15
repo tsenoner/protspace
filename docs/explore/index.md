@@ -15,8 +15,6 @@ The ProtSpace Explore page provides an interactive environment for visualizing a
 
 ## Control Bar
 
-![Control Bar - showing all buttons and dropdowns with numbered annotations](./images/control-bar-annotated.png)
-
 The control bar contains:
 
 1. **Projection dropdown** - Switch between PCA, UMAP, t-SNE, PaCMAP, MDS, or LocalMAP
@@ -29,7 +27,7 @@ The control bar contains:
 8. **Export button** - Save images or data
 9. **Import button** - Load a `.parquetbundle` or a FASTA file, or open one of the [example datasets](/explore/example-datasets)
 10. **Contours button** - Draw density rings for each legend colour: Off, Auto, or Always. See
-    [Contours](/explore/control-bar#_10-contours)
+    [Contours](/explore/controls#contours)
 
 See [Importing Data](/explore/importing-data) for both import paths and their limits.
 
