@@ -79,6 +79,8 @@ export class ProtspaceStructureViewer extends LitElement {
   private _stopThemeObserver: (() => void) | null = null;
   /** The background last given to the current Mol* viewer, so a theme change that keeps it repaints nothing. */
   private _appliedBackground: number | null = null;
+  /** Keeps the Mol* mount on whole device pixels while the viewer's box changes size. */
+  private _snapObserver: ResizeObserver | null = null;
 
   // Refs
   @query('.viewer-content') private _viewerContainer!: HTMLElement;
@@ -267,6 +269,12 @@ export class ProtspaceStructureViewer extends LitElement {
       // Hidden until its background is set, or Mol*'s own near-white shows for a frame in dark
       mount.style.visibility = 'hidden';
       this._viewerContainer.appendChild(mount);
+      this._snapMount();
+      if (typeof ResizeObserver !== 'undefined') {
+        this._snapObserver ??= new ResizeObserver(() => this._snapMount());
+        this._snapObserver.observe(this);
+        this._snapObserver.observe(this._viewerContainer);
+      }
       const viewer = await createMolstarViewer(mount, structureData.tedDomains);
       if (signal.aborted) {
         this._disposeViewer(viewer);
@@ -353,9 +361,29 @@ export class ProtspaceStructureViewer extends LitElement {
     }
   }
 
+  /**
+   * Puts the Mol* mount, and so its canvas, on whole device pixels: down by the sub-pixel rest of
+   * the container's top (the links row above has a fractional height) and a whole number of
+   * pixels tall. A canvas whose bottom edge sits near half a pixel is composited with light dashes
+   * along it, plain on the dark surface. The rest under the mount shows the container's surface,
+   * the colour Mol* clears to.
+   */
+  private _snapMount(): void {
+    const container = this._viewerContainer;
+    const mount = container?.querySelector<HTMLElement>('.molstar-mount');
+    if (!mount) return;
+    const box = container.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const shift = (Math.ceil(box.top * dpr) - box.top * dpr) / dpr;
+    mount.style.top = `${shift}px`;
+    mount.style.height = `${Math.max(0, Math.floor(box.height - shift))}px`;
+  }
+
   private _cleanup() {
     this._loadController?.abort();
     this._loadController = null;
+    this._snapObserver?.disconnect();
+    this._snapObserver = null;
     this._isLoading = false;
     this._colorMode = 'plddt';
 

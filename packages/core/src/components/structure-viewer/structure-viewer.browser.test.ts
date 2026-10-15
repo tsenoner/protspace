@@ -332,3 +332,37 @@ describe('protspace-structure-viewer in dark', () => {
     expect(style.outlineOffset).toBe('2px');
   });
 });
+
+describe('protspace-structure-viewer Mol* canvas box', () => {
+  it('puts the Mol* box on whole pixels inside its container at any fractional offset', async () => {
+    const viewer = await mount();
+    const root = viewer.shadowRoot!;
+    // A stand-in for Mol*: its layout is absolutely positioned in the mount.
+    const mountEl = document.createElement('div');
+    mountEl.className = 'molstar-mount';
+    const plugin = document.createElement('div');
+    plugin.style.cssText = 'position: absolute; inset: 0';
+    mountEl.append(plugin);
+    root.querySelector('.viewer-content')!.append(mountEl);
+    const container = root.querySelector('.viewer-container')!;
+    const snap = () => (viewer as unknown as { _snapMount(): void })._snapMount();
+    for (const [offset, height] of [
+      [0, 360],
+      [0.4, 360.4],
+      [0.5, 361.9],
+      [0.6, 360.6],
+    ]) {
+      viewer.style.marginTop = `${offset}px`;
+      viewer.style.height = `${height}px`;
+      snap();
+      const box = container.getBoundingClientRect();
+      const canvas = plugin.getBoundingClientRect();
+      const label = `${offset}px / ${height}px`;
+      expect(Number.isInteger(canvas.top * devicePixelRatio), label).toBe(true);
+      expect(Number.isInteger(canvas.height), label).toBe(true);
+      expect(canvas.top, label).toBeGreaterThanOrEqual(box.top);
+      expect(canvas.bottom, label).toBeLessThanOrEqual(box.bottom);
+      expect(box.bottom - canvas.bottom, label).toBeLessThan(2);
+    }
+  });
+});

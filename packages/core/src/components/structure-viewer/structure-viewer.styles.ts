@@ -211,6 +211,12 @@ const structureViewerStylesCore = css`
     border-radius: 0 0 6px 6px;
   }
 
+  /* Mol*'s layout is absolutely positioned: the mount holds it, so the canvas follows the mount's
+     whole-pixel box (_snapMount). */
+  .molstar-mount {
+    position: relative;
+  }
+
   .color-toolbar,
   .tips {
     display: flex;
