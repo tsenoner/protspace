@@ -128,8 +128,13 @@ def _v3_bundle(path: Path) -> None:
     write_bundle([annotations, metadata, data], path, settings=SETTINGS)
 
 
+# Wide enough that Rich does not wrap a message inside a long temporary path,
+# which `plain` would rejoin with a space; turbo runs tests without COLUMNS.
+_WIDE = {"COLUMNS": "1000"}
+
+
 def _convert(*args: str):
-    return CliRunner().invoke(app, ["convert", *args])
+    return CliRunner().invoke(app, ["convert", *args], env=_WIDE)
 
 
 def _parts(path: Path) -> list[bytes]:
@@ -298,7 +303,7 @@ def test_failed_in_place_conversion_leaves_the_input(tmp_path):
 
 
 def _style(*args: str):
-    return CliRunner().invoke(app, ["style", *args])
+    return CliRunner().invoke(app, ["style", *args], env=_WIDE)
 
 
 STYLES = '{"cat": {"colors": {"a": "#ff0000"}}}'

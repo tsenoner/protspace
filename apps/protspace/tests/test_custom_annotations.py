@@ -334,8 +334,13 @@ def _forbid_uniprot(monkeypatch):
     monkeypatch.setattr(UniProtRetriever, "fetch_annotations", fail)
 
 
+# Wide enough that Rich does not wrap a message inside a long temporary path,
+# which `plain` would rejoin with a space; turbo runs tests without COLUMNS.
+_WIDE = {"COLUMNS": "1000"}
+
+
 def _invoke(*args):
-    return CliRunner().invoke(app, [str(a) for a in args])
+    return CliRunner().invoke(app, [str(a) for a in args], env=_WIDE)
 
 
 def _bundle_annotations(path) -> pd.DataFrame:
