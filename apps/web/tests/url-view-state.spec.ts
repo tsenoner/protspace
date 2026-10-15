@@ -387,12 +387,14 @@ test.describe('URL-backed explore view state', () => {
     await waitForView(page, { projection: targetProjection });
     await expect.poll(() => getShapeSizeState(page)).toEqual(expectedShapeState);
 
+    // Another annotation than the one the size was picked on: the size is kept per
+    // dataset, not in that annotation's record.
     await page.goto(
-      `/explore?annotation=${encodeURIComponent(demoDefaultAnnotation)}&projection=${encodeURIComponent(demoDefaultProjection)}`,
+      `/explore?annotation=${encodeURIComponent(targetAnnotation)}&projection=${encodeURIComponent(demoDefaultProjection)}`,
     );
     await waitForExploreDataLoad(page);
     await waitForView(page, {
-      annotation: demoDefaultAnnotation,
+      annotation: targetAnnotation,
       projection: demoDefaultProjection,
     });
     await expect.poll(() => getShapeSizeState(page)).toEqual(expectedShapeState);

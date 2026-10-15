@@ -221,13 +221,13 @@ Legend settings are saved per dataset and per annotation in the browser.
 - Numeric hidden values and manual order are only restored when the current numeric topology still matches the saved one
 - The shape size is the exception: it is saved once per dataset, applies to every annotation, and
   travels in exported bundles with **Include legend settings**
-- Reloading the page or opening a projection link for the demo or an example dataset restores the
-  saved settings and shape size
+- Reloading the page, opening a link, or going Back or Forward to the demo or an example dataset
+  restores its saved settings and shape size
 - Use `Reset` in the settings dialog to clear saved preferences for the selected annotation; it also
   clears the dataset's shape size and every annotation's own size, including sizes a bundle set
   per annotation, so the [default](#default-dot-size) applies to every annotation again
-- Choosing an example from **Import → Examples** after another dataset is shown clears its saved
-  display settings and reapplies the bundle's curated defaults
+- Choosing an example from **Import → Examples** clears its saved display settings and reapplies
+  the bundle's curated defaults
 
 ## Styling From The Python CLI
 

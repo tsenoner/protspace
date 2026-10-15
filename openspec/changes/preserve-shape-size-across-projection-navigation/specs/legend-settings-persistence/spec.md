@@ -1,9 +1,10 @@
 ## ADDED Requirements
 
-### Requirement: Automatic projection navigation preserves dataset display settings
+### Requirement: Automatic loads preserve dataset display settings
 
-The explore view SHALL restore dataset-scoped display settings when projection navigation or a
-browser reload causes a fresh controller to load the same default dataset automatically.
+The explore view SHALL restore a dataset's saved display settings, including its picked Shape size,
+when the demo or an example loads without the user choosing it from the Import menu: on startup,
+from a reload, from a deep link, or from Back/Forward navigation.
 
 #### Scenario: In-place projection change retains Shape size
 
@@ -12,8 +13,8 @@ browser reload causes a fresh controller to load the same default dataset automa
 
 #### Scenario: Direct projection URL restores Shape size
 
-- **WHEN** a user saves a non-default Shape size and opens a projection URL for the same default
-  dataset in a fresh explore controller
+- **WHEN** a user saves a non-default Shape size and opens a projection URL for the same dataset with
+  another annotation selected
 - **THEN** the Shape size and its effective rendered point size match the saved setting
 
 #### Scenario: Reload after projection change restores Shape size
@@ -21,16 +22,22 @@ browser reload causes a fresh controller to load the same default dataset automa
 - **WHEN** a user saves a non-default Shape size, changes projection, and reloads the explore page
 - **THEN** the Shape size and its effective rendered point size match the saved setting
 
-#### Scenario: A bundle's shape size does not replace a saved one on startup
+#### Scenario: Back/Forward to an example restores its settings
+
+- **WHEN** a user saves a Shape size on an example, opens another example from the Import menu, and
+  goes Back
+- **THEN** the first example's saved settings and Shape size apply
+
+#### Scenario: A bundle's shape size does not replace a saved one on an automatic load
 
 - **WHEN** a user saves a Shape size for a dataset whose bundle carries a top-level `shapeSize`, and
-  the dataset loads again automatically in a fresh explore controller
+  the dataset loads again automatically
 - **THEN** the saved Shape size applies, not the bundle's
 
 #### Scenario: Silent URL restores saved tooltip selection
 
-- **WHEN** a fresh automatic load has a saved tooltip-annotation selection and the URL does not
-  specify `tooltip`
+- **WHEN** an automatic load has a saved tooltip-annotation selection and the URL does not specify
+  `tooltip`
 - **THEN** the saved tooltip-annotation selection is restored
 
 ### Requirement: Persistence components share complete dataset identity
@@ -44,16 +51,16 @@ dataset fields, including EAT prediction cells.
 - **WHEN** the controller preserves a legend record during an automatic load
 - **THEN** the legend reads and writes that record under the same dataset hash
 
-### Requirement: Explicit demo reset clears dataset display settings
+### Requirement: A menu choice resets an example to its bundle's settings
 
-The explore view SHALL clear persisted dataset display settings when the user explicitly resets to
-the demo dataset after a dataset is already active.
+The explore view SHALL clear an example's saved display settings and apply its bundle's settings
+when the user chooses it from the Import menu.
 
-#### Scenario: Reset to demo restores defaults
+#### Scenario: Choosing the demo from the Import menu restores its defaults
 
-- **WHEN** a dataset is active and the user explicitly resets to the demo dataset
-- **THEN** persisted custom legend display settings are cleared
-- **AND** the demo dataset uses its default legend display settings
+- **WHEN** the user chooses the demo from **Import → Examples**
+- **THEN** its saved legend display settings and Shape size are cleared
+- **AND** the demo uses the legend display settings of its bundle
 
 ### Requirement: Imported settings retain precedence
 

@@ -26,3 +26,13 @@
 - [x] 4.3 Run `pnpm precommit` successfully before committing and pushing.
 - [x] 4.4 Document saved Shape size, automatic reload retention, explicit reset behavior, and the
       unchanged-bundle curation trade-off.
+
+## 5. Review Follow-ups
+
+- [x] 5.1 Merge main, whose picked Shape size is stored once per dataset, and keep the dataset's
+      `shape-size` key on automatic loads.
+- [x] 5.2 Apply a bundle's top-level `shapeSize` on an automatic load only when no size is saved.
+- [x] 5.3 Key the reset on a menu choice instead of on a dataset being on screen, so Back/Forward
+      keeps saved settings; cover it in the controller lifecycle test.
+- [x] 5.4 Deep-link to another annotation in the shape-size browser regression.
+- [x] 5.5 Reread the proposal, design and spec delta against the final diff.

@@ -1,99 +1,91 @@
 ## Context
 
-Legend display settings are persisted under a dataset hash. An in-place projection change keeps the
-same explore controller alive and therefore retains Shape size. Projection deep links and browser
-reloads create a fresh controller, however, and the automatic demo-dataset load is classified as a
-`default` load. The dataset controller currently clears persisted legend and control-bar state for
-every `default` load and then applies the demo bundle's embedded settings with replacement semantics.
-The fresh controller therefore replaces the saved setting before the legend can restore it.
+Legend display settings are persisted per dataset hash: one record per annotation under
+`protspace:legend:<hash>:<annotation>`, and the picked Shape size once per dataset under
+`protspace:shape-size:<hash>` (`scatterplot-point-size`). An in-place projection change keeps the
+same explore controller and dataset alive, so it retains both.
 
-The same `default` load kind is also used by the explicit reset-to-demo action. The implementation
-must distinguish automatic startup from that user-requested reset without changing storage keys,
-file formats, or projection state.
+Every load of the demo or an example is a `default` load. The dataset controller cleared all
+`protspace:*:<hash>` keys for every `default` load and then applied the bundle's settings with
+replacement semantics. Reloads, projection deep links and Back/Forward therefore all reset the
+dataset to its bundle, and the picked Shape size fell back to the default computed from the protein
+count. The same `default` kind also covers the explicit reset: choosing the demo or an example from
+**Import → Examples**.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Preserve the dataset-scoped Shape size when projection navigation remounts the explore view.
-- Keep the existing explicit reset-to-demo behavior after a dataset is already active.
+- Keep a dataset's saved settings across loads the user did not ask to reset.
+- Keep the menu choice as the way to reset an example to its bundle's settings.
 - Preserve the precedence of settings embedded in imported dataset bundles.
-- Add focused regression coverage for the automatic-load and explicit-reset distinction.
 
 **Non-Goals:**
 
 - Making Shape size projection-specific or global across datasets.
 - Introducing a new persistence schema or migrating existing local-storage records.
 - Changing other legend controls, projection URL semantics, or dataset import behavior.
-- Refactoring the dataset loading or persistence architecture.
 
 ## Decisions
 
-### Use controller lifecycle state to distinguish startup from reset
+### Key the reset on the load's intent
 
-For a `default` load, use replacement semantics only when `currentDatasetHash` is already set. A
-fresh controller has no current dataset, so its automatic default load preserves existing
-dataset-keyed settings. An explicit reset after a dataset is active continues to clear and replace
-those settings. Recovery-banner actions can request the demo before any dataset has loaded; those
-requests intentionally follow startup semantics because there is no active dataset to reset.
+Clear and replace only for a menu choice (`loadMeta.example.source === 'menu'`, which a Retry of a
+menu choice repeats) and for a user import that carries settings. Every other `default` load keeps
+what is saved: the startup load, the recovery banner's "Load default", a `?dataset=` deep link and
+Back/Forward (`'startup'` or `'url'`). The same function already keys the curated-view reset on the
+menu source, so the two stay in step.
 
-This uses state the controller already owns and keeps the change local to the persistence decision.
-
-**Alternative considered:** never clear state for a `default` load. Rejected because it would break
-the explicit reset-to-demo contract.
-
-**Alternative considered:** persist Shape size in a separate global or per-dataset key. Rejected
-because it duplicates the existing legend persistence mechanism, requires precedence rules, and
-expands the change beyond the reported bug.
+**Alternative considered:** treat the first load in a controller as startup and any later `default`
+load as a reset (`currentDatasetHash !== null`). Rejected: Back/Forward to an example after another
+dataset is shown would still wipe its settings, and a menu choice made before anything rendered
+would keep them while the view reset to the curated one.
 
 ### Keep imported bundle precedence unchanged
 
 A user load with embedded settings continues to clear persisted state before applying the bundle's
 settings. OPFS restores continue to use the persisted dataset and legend state as before.
 
-### Seed missing demo settings without overwriting local settings
+### Seed missing settings without overwriting saved ones
 
-When file settings are applied without clearing existing storage, retain each annotation key that is
-already persisted and seed embedded settings only for missing annotation keys. Exclude retained keys
-from the in-memory file-precedence map so the normal local-storage restore path remains authoritative.
-This preserves saved Shape size while still giving first-time users the demo bundle's curated legend
-defaults.
-
-**Alternative considered:** skip all embedded demo settings on automatic startup. Rejected because
-first-time users would lose curated per-annotation defaults when no local record exists.
+On a keeping load, a bundle's per-annotation settings are seeded only for annotations with no saved
+record, and only those enter the in-memory file-precedence map, so the normal local-storage restore
+path stays authoritative for the rest. First-time visitors still get the bundle's curated legend.
+A bundle's top-level `shapeSize` is applied the same way: only when no size is saved for the dataset
+(`applyShapeSize(…, replaceExisting = false)`). The legend reloads its settings after
+`setFileSettings` only when the file's settings won for the selected annotation.
 
 ### Use one complete dataset identity at every persistence boundary
 
-The dataset controller and legend must hash the same fields. In particular, EAT prediction cells are
-part of the dataset fingerprint, so the legend includes `annotation_predicted` when it recomputes its
-hash after loading data. Otherwise the controller probes and seeds one storage key while the legend
-loads and saves another.
+The dataset controller and legend must hash the same fields. EAT prediction cells are part of the
+dataset fingerprint, so the legend's hash input includes `annotation_predicted`. Otherwise the controller probes and seeds one storage key while the legend loads and saves
+another.
 
 ## Risks / Trade-offs
 
-- **A fresh automatic load restores the complete legend record, not only Shape size.** → This is the
-  existing dataset-scoped persistence unit; retaining it avoids partial-record semantics. Explicit
-  reset still clears the record.
-- **Other hash-scoped preferences also survive automatic startup.** → The existing storage cleanup
-  removes every `protspace:*:<dataset-hash>` key. Skipping it therefore also activates the existing
-  silent-URL tooltip restore path. An explicit reset after a dataset is active still clears all keys.
-- **A re-curated demo bundle does not replace existing records for returning users.** → The bundle
-  settings table is not part of the dataset hash and stored records do not distinguish seeded
-  defaults from user edits. Changing this would require new persistence provenance and precedence
-  rules; this change favors existing local settings. Changing the demo data changes the hash and
-  seeds the new bundle settings.
-- **Changing non-clearing file application affects its API semantics.** → There are no existing
-  production callers of the non-clearing mode; focused controller tests define replacement and
-  preserve-existing behavior explicitly.
-- **Lifecycle state could be mistaken for load source.** → Focused tests cover both the first
-  automatic default load and a subsequent default load through the same controller.
-- **A later loader refactor could introduce another startup path.** → Keep the behavior specified in
-  terms of automatic first load versus explicit reset, rather than a particular UI event.
+- **A keeping load restores the complete legend record, not only Shape size.** → This is the
+  existing dataset-scoped persistence unit; retaining it avoids partial-record semantics. A menu
+  choice still clears the record.
+- **Other hash-scoped preferences also survive automatic loads.** → The cleanup removes every
+  `protspace:*:<dataset-hash>` key, so skipping it also restores the saved tooltip selection when
+  the URL names none. A menu choice still clears all keys.
+- **A re-curated example bundle does not replace saved records for returning users.** → The bundle
+  settings table is not part of the dataset hash, and stored records do not distinguish seeded
+  defaults from user edits. This covers a bundle's top-level `shapeSize` too, which is stored once
+  applied. Changing the example's data changes the hash and seeds the new settings; choosing the
+  example from the menu also applies them.
+- **Reset does not outlast a reload for a bundle with a top-level `shapeSize`.** → Reset removes the
+  dataset's stored size, so the next automatic load finds none and applies the bundle's size again.
+  Per-annotation sizes do not have this gap, because Reset rewrites their records instead of
+  removing them. Keeping Reset would need a stored marker, which `scatterplot-point-size` rules out
+  ("SHALL NOT store that default").
+- **The recovery banner's "Load default" keeps saved settings.** → It follows startup semantics; the
+  menu choice is the reset.
 
 ## Migration Plan
 
-No data migration is required. Existing persisted records become restorable on reload and projection
-deep links. EAT-backed legend records previously saved under the legend's incomplete,
+No data migration is required. Existing persisted records become restorable on reload, deep links
+and Back/Forward. EAT-backed legend records previously saved under the legend's
 prediction-omitting hash are not migrated; the corrected shared hash is seeded on the next load.
 Non-EAT dataset keys are unchanged. Rollback is a source revert; the storage schema is unchanged.
 

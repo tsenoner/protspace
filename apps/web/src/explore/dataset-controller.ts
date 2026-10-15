@@ -397,10 +397,11 @@ export function createDatasetController({
       }
 
       const datasetHash = generateDatasetHash(data);
-      const hadPreviousDataset = currentDatasetHash !== null;
+      // A menu choice resets the example to its bundle's settings, and an import's
+      // own settings replace the stored ones. A startup load, a deep link or a
+      // Back/Forward keeps what the user saved for the dataset.
       const shouldClearPersistedState =
-        (loadMeta.kind === 'default' && hadPreviousDataset) ||
-        (loadMeta.kind === 'user' && settings != null);
+        loadMeta.example?.source === 'menu' || (loadMeta.kind === 'user' && settings != null);
 
       legendElement.clearForNewDataset(datasetHash, shouldClearPersistedState);
       controlBar.clearForNewDataset(datasetHash, shouldClearPersistedState);
@@ -479,6 +480,7 @@ export function createDatasetController({
       // Must be set before the restore block so that any view-change emitted by
       // setRequestedView below is persisted under the new dataset's key, not the
       // previous dataset's key.
+      const hadPreviousDataset = currentDatasetHash !== null;
       currentDatasetHash = datasetHash;
       currentUnplacedProteinCount = unplacedProteinCount;
 

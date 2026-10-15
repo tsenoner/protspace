@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_EAT_CONFIDENCE_THRESHOLD } from '@protspace/utils';
 import { buildControllerOptions, dataLoadedEvent } from './dataset-controller.fixtures';
+import { EXAMPLE_DATASETS } from './example-datasets';
 import type { LoadMeta } from './types';
 import { createEmptyExploreViewRequest } from './url-state';
 
@@ -134,7 +135,7 @@ describe('dataset controller EAT settings restore', () => {
 });
 
 describe('dataset controller legend persistence lifecycle', () => {
-  it('keeps saved settings on the first automatic load and clears them on later loads', async () => {
+  it('keeps saved settings on automatic loads and clears them on a menu choice or an import', async () => {
     let runningLoadMeta: LoadMeta = { sequence: 1, kind: 'default' };
     const empty = createEmptyExploreViewRequest();
     let latestViewRequest = empty;
@@ -173,8 +174,21 @@ describe('dataset controller legend persistence lifecycle', () => {
       normalize: { ...empty.normalize, tooltip: true },
     });
 
-    // Choosing the demo or an example from the Import menu once a dataset is shown.
-    runningLoadMeta = { sequence: 3, kind: 'default' };
+    // Back/Forward to an example's entry, with a dataset on screen.
+    const entry = EXAMPLE_DATASETS[0];
+    runningLoadMeta = { sequence: 3, kind: 'default', example: { entry, source: 'url' } };
+    await controller.handleDataLoaded(dataLoadedEvent({ settings }));
+
+    expect(legendElement.clearForNewDataset).toHaveBeenLastCalledWith(expect.any(String), false);
+    expect(legendElement.setFileSettings).toHaveBeenLastCalledWith({}, expect.any(String), false);
+    expect(legendElement.applyShapeSize).toHaveBeenLastCalledWith(12, expect.any(String), false);
+
+    // Choosing the demo or an example from the Import menu.
+    runningLoadMeta = {
+      sequence: 4,
+      kind: 'default',
+      example: { entry, source: 'menu', replacesStoredImport: true },
+    };
     await controller.handleDataLoaded(dataLoadedEvent({ settings }));
 
     expect(legendElement.clearForNewDataset).toHaveBeenLastCalledWith(expect.any(String), true);
