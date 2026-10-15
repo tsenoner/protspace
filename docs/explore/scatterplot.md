@@ -173,7 +173,7 @@ once **Show duplicate counts and spread overlaps** is on in the [legend settings
 Click a stacked point to spread it into a spider layout showing each protein; click a protein in
 the spider to select it, and click the badge or press **Escape** to fold it again.
 
-![A duplicate stack opened into a spider of its proteins and folded again from its badge](./images/duplicate-badges.gif)
+![A duplicate stack opened into a spider, one of its proteins selected, then folded from its badge](./images/duplicate-badges.gif)
 
 ### Projection Metadata
 

@@ -227,16 +227,27 @@ async function duplicateBadgesSteps(page: Page, cap: CaptureApi): Promise<void> 
   await cap.click(target, { label: 'Click' });
   const nodes = page.locator('#myPlot .dup-spiderfy-node-circle');
   await expect(nodes.first()).toBeVisible();
-  await cap.hold(300);
+  await cap.hold(600);
 
-  // No spider node is clicked: while the mouse rests on a node the spider rebuilds every frame,
-  // so a click there lands on a detached node and selects nothing (an app bug, Task 7.11 report).
-  // The pointer moves onto the badge, at (+10, −10) px from the stack and outside the stacked
-  // point's hit radius, which drops the protein tooltip off the open spider; a click there
-  // collapses it.
+  // The spider node farthest from the badge, which sits at (+10, −10) px from the stack.
   const badge = { x: target.x + 10, y: target.y - 10 };
+  let farthest: Point | null = null;
+  let farthestDistance = -1;
+  for (let i = 0; i < (await nodes.count()); i++) {
+    const box = await nodes.nth(i).boundingBox();
+    if (!box) continue;
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const distance = Math.hypot(centre.x - badge.x, centre.y - badge.y);
+    if (distance > farthestDistance) [farthest, farthestDistance] = [centre, distance];
+  }
+  if (!farthest) throw new Error('The spider opened with no node on screen');
+  await cap.moveTo(farthest, { steps: 10 });
+  await cap.click(farthest, { label: 'Click' });
+  await expectSelected(page, '1 protein selected');
+  await cap.hold(1200);
+
+  // The badge collapses the spider; the click lands outside the stacked point's hit radius.
   await cap.moveTo(badge, { steps: 6 });
-  await cap.hold(1500);
   await cap.click(badge, { label: 'Click' });
   await expect(nodes).toHaveCount(0);
   await cap.hold(600);
