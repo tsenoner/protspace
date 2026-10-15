@@ -212,7 +212,15 @@ def fetch_annotations(
     # explicit -a the whole cached frame is emitted, so treat that as
     # consuming all of them.
     refresh_columns = stale_columns if annotations is None else stale_columns & required
-    discard_columns = stale_columns - refresh_columns
+    # A refresh refetches its sources whole (below), so a stale column of a
+    # source it refetches anyway is refreshed with it rather than dropped.
+    refreshed_along_stale = {
+        column
+        for columns in SOURCE_ANNOTATIONS.values()
+        if columns & refresh_columns
+        for column in columns & stale_columns
+    }
+    discard_columns = stale_columns - refresh_columns - refreshed_along_stale
     if discard_columns:
         # Unused this run, so drop rather than refetch: they must not ride
         # along into a cache this run stamps as current. A later run that

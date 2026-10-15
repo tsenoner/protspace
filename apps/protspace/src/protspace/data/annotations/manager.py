@@ -858,19 +858,16 @@ class ProteinAnnotationManager:
             # run over a lookup that only concerned the new ones.
             return dict(cached)
 
-    def _build_sequence_map(
-        self, uniprot_annotations: list[ProteinAnnotations]
+    @staticmethod
+    def _uniprot_sequences(
+        uniprot_annotations: list[ProteinAnnotations],
     ) -> dict[str, str]:
-        """Build a mapping from headers to sequences.
-
-        Merges local sequences (from FASTA, priority) with UniProt results (fallback).
-        """
-        sequences = dict(self.sequences) if self.sequences else {}
-        for protein in uniprot_annotations:
-            seq = protein.annotations.get("sequence", "")
-            if seq and protein.identifier not in sequences:
-                sequences[protein.identifier] = seq
-        return sequences
+        """Map identifiers to the non-empty sequences UniProt returned."""
+        return {
+            protein.identifier: seq
+            for protein in uniprot_annotations
+            if (seq := protein.annotations.get("sequence"))
+        }
 
     def _starved_by_uniprot(
         self, source: str, label: str, headers: list[str], sequences: dict[str, str]
@@ -909,7 +906,12 @@ class ProteinAnnotationManager:
 
         headers = self.headers if headers is None else headers
         try:
-            sequences = self._build_sequence_map(uniprot_annotations)
+            # UniProt's sequence wins: InterPro's precomputed matches are keyed by
+            # the canonical sequence hash.
+            sequences = {
+                **(self.sequences or {}),
+                **self._uniprot_sequences(uniprot_annotations),
+            }
             self._starved_by_uniprot("interpro", "InterPro", headers, sequences)
 
             retriever = InterProRetriever(
@@ -939,7 +941,11 @@ class ProteinAnnotationManager:
 
         headers = self.headers if headers is None else headers
         try:
-            sequences = self._build_sequence_map(uniprot_annotations)
+            # The local FASTA sequence wins: Biocentral predicts what was submitted.
+            sequences = {
+                **self._uniprot_sequences(uniprot_annotations),
+                **(self.sequences or {}),
+            }
             self._starved_by_uniprot("biocentral", "Biocentral", headers, sequences)
 
             retriever = BiocentralPredictionRetriever(
