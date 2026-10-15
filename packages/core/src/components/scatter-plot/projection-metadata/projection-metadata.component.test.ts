@@ -592,6 +592,41 @@ describe('auto-cluster agreement placement', () => {
     expect(text).toContain('optimistic');
   });
 
+  it('caveats an embedding clustering as found in the embedding, not this projection', async () => {
+    // `--cluster-space embedding`: K-means ran on the source embedding, so the optimistic
+    // numbers are the Embedding reference and this projection's are not.
+    const el = await setup(
+      { n_neighbors: 15 },
+      {
+        statistics: [
+          statRow({ annotation: 'cluster_elbow_prot_t5', label_kind: 'kmeans_elbow' }),
+          statRow({
+            space_kind: 'embedding',
+            space_name: 'prot_t5',
+            annotation: 'cluster_elbow_prot_t5',
+            label_kind: 'kmeans_elbow',
+            value: 0.41,
+          }),
+          statRow({
+            space_kind: 'embedding',
+            space_name: 'prot_t5',
+            annotation: '',
+            stat_family: 'cluster_validity',
+            label_kind: 'kmeans_elbow',
+            metric: 'n_clusters',
+            metric_kind: 'meta',
+            value: 7,
+          }),
+        ],
+        selectedAnnotation: 'cluster_elbow_prot_t5',
+      },
+    );
+
+    const text = statsBlock(el)!.textContent!;
+    expect(text).toContain('found these clusters in the embedding');
+    expect(text).not.toContain('in this projection, so these scores are optimistic');
+  });
+
   it('does not caveat an ordinary annotation', async () => {
     const el = await setup(
       { n_neighbors: 15 },
