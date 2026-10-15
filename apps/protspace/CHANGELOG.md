@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v4.16.6 (2026-10-15)
+
+### Bug Fixes
+
+- **protspace**: Read missing annotation values as the web app does
+  ([`e8495fc`](https://github.com/tsenoner/protspace/commit/e8495fcf0af0521ab1c8fe779b4a5f7afa4552bc))
+
+- **protspace**: Read pandas nulls as missing; tidy after review
+  ([`cd48efb`](https://github.com/tsenoner/protspace/commit/cd48efbfaf4f5cccb3ae14cebe03cb0d55aabd6d))
+
+
 ## v4.16.5 (2026-10-15)
 
 ### Bug Fixes
