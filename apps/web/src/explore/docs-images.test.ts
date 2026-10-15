@@ -174,8 +174,8 @@ const SCRIPTS_TSCONFIG = import.meta.glob('../../../../scripts/tsconfig.json', {
   eager: true,
 }) as Record<string, string>;
 const HELPER_TIMERS: Record<string, number> = {
-  // doubleClickLegendRow's default pause; a capture passes its own.
-  '../../tests/helpers/legend.ts': 1,
+  // doubleClickLegendRow's and dragLegendRow's default pauses; a capture passes its own.
+  '../../tests/helpers/legend.ts': 2,
   // A persisted-dataset poll that captures do not reach.
   '../../tests/helpers/explore.ts': 1,
   // A touch gesture's rest and its per-step frame, for the phone specs.
