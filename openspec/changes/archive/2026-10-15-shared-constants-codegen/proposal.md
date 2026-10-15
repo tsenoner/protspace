@@ -70,4 +70,6 @@ each side.
 - Tooling: `package.json` (`shared-constants`, `shared-constants:check`, `precommit`),
   `.github/workflows/bundle-contract.yml` (new check step), and
   `.github/workflows/protspace-ci.yml` (two TS paths dropped).
+- Contract suite: a comment in `tests/contract/bundle.contract.test.ts` on why the token-set
+  comparison stays.
 - Docs: `AGENTS.md`, `CONTRIBUTING.md` and `apps/protspace/CLAUDE.md`.

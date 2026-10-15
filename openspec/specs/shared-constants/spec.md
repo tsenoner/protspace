@@ -1,13 +1,24 @@
-## ADDED Requirements
+# shared-constants Specification
+
+## Purpose
+
+The Python package and the web app must hold the same values for a family of constants
+(missing-value tokens, the N/A key and colour, Kelly's colours, palette ids, point shapes,
+boolean labels). This capability keeps them in step by construction: one source file,
+generated into a committed module per language and checked on every pull request, while the
+rules both sides implement stay pinned by running both on the same inputs.
+
+## Requirements
 
 ### Requirement: Shared constants have one source
 
 Every constant both sides must agree on SHALL be defined once, in the shared source
-`contracts/shared-constants.json`, together with the reason it is shared. This covers the missing-value tokens, the `__NA__` sentinel, the N/A swatch colour,
-Kelly's colours in slot order, the categorical and gradient palette ids, the default numeric
-palette, the labels of an Arrow boolean column, and the point shapes. Neither language SHALL
-hold a hand-written copy of these values. Each SHALL read them from its generated module,
-and the names existing code imports SHALL stay importable from where they were.
+`contracts/shared-constants.json`, together with the reason it is shared. This covers the
+missing-value tokens, the `__NA__` sentinel, the N/A swatch colour, Kelly's colours in slot
+order, the categorical and gradient palette ids, the default numeric palette, the labels of
+an Arrow boolean column, and the point shapes. Neither language SHALL hold a hand-written
+copy of these values. Each SHALL read them from its generated module, and the names existing
+code imports SHALL stay importable from where they were.
 
 #### Scenario: A missing-value spelling is added
 
