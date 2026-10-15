@@ -351,9 +351,14 @@ test('the card moves and resizes from the keyboard, and stays over the plot when
   await card.focus();
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('Shift+ArrowUp');
+  // Polled: under load the first read can land before the move renders.
+  await expect
+    .poll(async () => {
+      const box = (await card.boundingBox())!;
+      return Math.max(Math.abs(box.x - (start.x - 16)), Math.abs(box.y - (start.y - 64)));
+    })
+    .toBeLessThanOrEqual(1);
   const moved = (await card.boundingBox())!;
-  expectNear(moved.x, start.x - 16);
-  expectNear(moved.y, start.y - 64);
   expect((await readLayout(page))!.floatingRect).toMatchObject({
     x: Math.round(moved.x - (await plotArea(page).boundingBox())!.x),
   });
@@ -363,9 +368,15 @@ test('the card moves and resizes from the keyboard, and stays over the plot when
   await grip.focus();
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowDown');
-  const resized = (await card.boundingBox())!;
-  expectNear(resized.width, start.width + 16);
-  expectNear(resized.height, start.height + 16);
+  await expect
+    .poll(async () => {
+      const box = (await card.boundingBox())!;
+      return Math.max(
+        Math.abs(box.width - (start.width + 16)),
+        Math.abs(box.height - (start.height + 16)),
+      );
+    })
+    .toBeLessThanOrEqual(1);
 
   // Collapsing the sidebar leaves the card over the plot, and the rail's Structure focuses it.
   await collapseSidebar(page);
