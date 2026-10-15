@@ -147,14 +147,16 @@ def rewrap_settings(settings: dict, template: dict | None) -> dict:
     would drop ``publishState``, ``exportOptions`` and the EAT display settings.
 
     *settings* is overlaid on the template's own annotation map rather than
-    replacing it. Only annotations that survive
+    replacing it, in either shape. Only annotations that survive
     :func:`settings_to_visualization_state` get rebuilt, and a numeric annotation
     never does — the frontend persists its categories with empty colors/shapes,
     which that function filters out — so replacing the map wholesale would drop
     every numeric annotation's ``numericSettings``, palette and hidden values.
     """
-    if not is_frontend_envelope(template):
+    if not template:
         return settings
+    if not is_frontend_envelope(template):
+        return {**template, **settings}
     return {
         **template,
         LEGEND_SETTINGS_KEY: {**template[LEGEND_SETTINGS_KEY], **settings},

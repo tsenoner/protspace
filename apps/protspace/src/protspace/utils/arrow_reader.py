@@ -41,7 +41,8 @@ class ArrowReader:
                 (protein_data, projections, …).
         """
         self.settings = None
-        self.statistics = None
+        # A bundle's statistics table, or a directory's statistics file bytes
+        self.statistics: pa.Table | bytes | None = None
         self._protein_annotations_df = None
         self._projections_metadata_df = None
         self._projections_data_df = None
@@ -112,9 +113,10 @@ class ArrowReader:
                 f"Directory '{path}' contains none of {', '.join(CORE_FILENAMES)}."
             )
         statistics_path = path / STATISTICS_FILENAME
+        if statistics_path.exists():
+            # Carried through to save_data unread: the reader never uses it.
+            self.statistics = statistics_path.read_bytes()
         try:
-            if statistics_path.exists():
-                self.statistics = pq.read_table(str(statistics_path))
             return tuple(
                 pq.read_table(str(p)) if p.exists() else None for p in core_paths
             )

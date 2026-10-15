@@ -7,6 +7,7 @@ carrying settings and statistics.
 """
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -179,3 +180,85 @@ def test_style_directory_in_place_is_not_shadowed_by_old_state(tmp_path):
     }
     settings = read_settings_from_file(source / SETTINGS_FILENAME)
     assert settings["organism"]["selectedPaletteId"] == "kellys"
+
+
+def _two_column_bundle(tmp_path):
+    """A bundle whose settings style `kingdom`, which the tests leave alone."""
+    tables = BaseProcessor({}, {}).create_output(
+        pd.DataFrame(
+            {"identifier": IDS, "organism": ["A", "B", "A"], "kingdom": ["x", "y", "x"]}
+        ),
+        [{"name": "PCA_2", "dimensions": 2, "info": {}, "data": np.zeros((3, 2))}],
+        IDS,
+    )
+    bundle = tmp_path / "two.parquetbundle"
+    write_bundle(
+        [
+            tables["protein_annotations"],
+            tables["projections_metadata"],
+            tables["projections_data"],
+        ],
+        bundle,
+        settings={"kingdom": KINGDOM_SETTINGS},
+    )
+    return bundle
+
+
+KINGDOM_SETTINGS = {
+    "selectedPaletteId": "okabeIto",
+    "maxVisibleValues": 3,
+    "categories": {},
+}
+
+
+def test_style_keeps_the_settings_of_an_annotation_it_does_not_style(tmp_path):
+    """Styling `organism` leaves the settings stored for `kingdom` as they were,
+    in a bundle and in its directory alike."""
+    bundle = _two_column_bundle(tmp_path)
+    styled_bundle = tmp_path / "styled.parquetbundle"
+    _style(bundle, styled_bundle)
+    directory = Path(extract_bundle_to_dir(bundle, tmp_path / "dir"))
+    _style(directory, directory)
+
+    assert read_settings_from_bundle(styled_bundle)["kingdom"] == KINGDOM_SETTINGS
+    settings = read_settings_from_file(directory / SETTINGS_FILENAME)
+    assert settings["kingdom"] == KINGDOM_SETTINGS
+    assert "organism" in settings
+
+
+def test_write_directory_without_settings_keeps_the_old_state(tmp_path):
+    """No settings written, nothing shadows the old styles: they stay."""
+    (tmp_path / VISUALIZATION_STATE_FILENAME).write_text("{}")
+    write_directory([None, *_core()[1:]], tmp_path)
+
+    assert (tmp_path / VISUALIZATION_STATE_FILENAME).exists()
+
+
+def test_unreadable_statistics_do_not_stop_a_directory_loading(tmp_path):
+    """The reader does not use statistics; it carries them through unread."""
+    source = _project_dir(tmp_path)
+    (source / STATISTICS_FILENAME).write_bytes(b"not parquet")
+
+    reader = ArrowReader(source)
+    assert sorted(reader.get_protein_ids()) == IDS
+    reader.save_data(tmp_path / "saved")
+    assert (tmp_path / "saved" / STATISTICS_FILENAME).read_bytes() == b"not parquet"
+
+
+def test_style_into_a_used_directory_drops_parts_the_input_lacks(tmp_path):
+    source = _project_dir(tmp_path)
+    (source / STATISTICS_FILENAME).unlink()
+    target = tmp_path / "styled"
+    target.mkdir()
+    (target / STATISTICS_FILENAME).write_bytes(b"another dataset's")
+    _style(source, target)
+
+    assert not (target / STATISTICS_FILENAME).exists()
+
+
+def test_style_in_place_leaves_the_other_files_untouched(tmp_path):
+    source = _project_dir(tmp_path)
+    before = {n: (source / n).stat().st_ino for n in CORE_FILENAMES}
+    _style(source, source)
+
+    assert {n: (source / n).stat().st_ino for n in CORE_FILENAMES} == before

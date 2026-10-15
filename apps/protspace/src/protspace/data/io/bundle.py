@@ -36,6 +36,7 @@ then rewrites a bundle warns once.
 import io
 import json
 import logging
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,7 +48,7 @@ from protspace.data.annotations.encoding import (
     migrate_legacy_annotation_table,
     read_format_version,
 )
-from protspace.data.io.atomic import atomic_write_bytes
+from protspace.data.io.atomic import atomic_write_bytes, staged_write
 from protspace.data.io.bundle_v3 import (
     CONTAINER_VERSION,
     CONTAINER_VERSION_KEY,
@@ -352,8 +353,9 @@ def write_directory(
     Files are named per :data:`CORE_FILENAMES`, :data:`SETTINGS_FILENAME` and
     :data:`STATISTICS_FILENAME`.  A part is a table, or the parquet bytes to
     write as they are; a ``None`` part writes no file (``protspace project``
-    has no annotations).  A :data:`VISUALIZATION_STATE_FILENAME` in
-    *target_dir* is removed, since it would win over the settings on read.
+    has no annotations).  When settings are written, a
+    :data:`VISUALIZATION_STATE_FILENAME` in *target_dir* is removed, since it
+    would win over them on read.
 
     Args:
         core_parts: The three core parts, in bundle part order.
@@ -375,7 +377,8 @@ def write_directory(
         if part is not None:
             data = part if isinstance(part, bytes) else write_part(part)
             atomic_write_bytes(target_dir / name, data)
-    (target_dir / VISUALIZATION_STATE_FILENAME).unlink(missing_ok=True)
+    if settings is not None:
+        (target_dir / VISUALIZATION_STATE_FILENAME).unlink(missing_ok=True)
 
 
 def replace_settings_in_directory(
@@ -383,21 +386,20 @@ def replace_settings_in_directory(
 ) -> None:
     """Write *settings* to a directory, keeping its other parts byte for byte.
 
-    The directory counterpart of :func:`replace_settings_in_bundle`;
-    *output_dir* may be *input_dir*.
+    The directory counterpart of :func:`replace_settings_in_bundle`.  In place
+    only the settings are written; into another directory the other parts are
+    copied, and any the input lacks are removed, so the output holds one
+    dataset.
     """
-    input_dir = Path(input_dir)
-
-    def stored(name: str) -> bytes | None:
-        path = input_dir / name
-        return path.read_bytes() if path.exists() else None
-
-    write_directory(
-        [stored(name) for name in CORE_FILENAMES],
-        output_dir,
-        settings=settings,
-        statistics=stored(STATISTICS_FILENAME),
-    )
+    input_dir, output_dir = Path(input_dir), Path(output_dir)
+    if not (output_dir.exists() and output_dir.samefile(input_dir)):
+        for name in [*CORE_FILENAMES, STATISTICS_FILENAME]:
+            if (input_dir / name).exists():
+                with staged_write(output_dir / name) as staged:
+                    shutil.copyfile(input_dir / name, staged)
+            else:
+                (output_dir / name).unlink(missing_ok=True)
+    write_directory([None] * len(CORE_FILENAMES), output_dir, settings=settings)
 
 
 def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:
