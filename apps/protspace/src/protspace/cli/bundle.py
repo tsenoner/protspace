@@ -29,10 +29,11 @@ def bundle(
             "-a",
             "--annotations",
             help=(
-                "Annotations parquet file. Output of `protspace annotate` and "
-                "the prepare cache (tmp/all_annotations.parquet) is used as is; "
-                "any other table without a protspace_format_version stamp is "
-                "read as plain text (legacy v1 cells) and encoded."
+                "Annotations parquet file, or a custom .csv/.tsv/.txt file. Output "
+                "of `protspace annotate` and the prepare cache "
+                "(tmp/all_annotations.parquet) is used as is; any other table "
+                "without a protspace_format_version stamp is read as plain text "
+                "(legacy v1 cells) and encoded."
             ),
             exists=True,
         ),
@@ -77,6 +78,7 @@ def bundle(
 
     import json
 
+    import pyarrow as pa
     import pyarrow.parquet as pq
 
     from protspace.data.annotations.encoding import (
@@ -91,6 +93,11 @@ def bundle(
         PROJECTIONS_METADATA_FILENAME,
         write_bundle,
     )
+    from protspace.data.processors.custom_annotations import (
+        is_custom_annotation_file,
+        load_custom_annotations,
+        resolve_id_column,
+    )
 
     settings_obj = json.loads(settings.read_text()) if settings is not None else None
 
@@ -102,16 +109,35 @@ def bundle(
     if not data_path.exists():
         raise typer.BadParameter(f"Missing: {data_path}")
 
-    annotations_table = pq.read_table(str(annotations))
     metadata_table = pq.read_table(str(metadata_path))
     data_table = pq.read_table(str(data_path))
+    custom = is_custom_annotation_file(annotations)
+    try:
+        if custom:
+            ids = dict.fromkeys(data_table.column("identifier").to_pylist())
+            frame = load_custom_annotations([annotations], list(ids))
+            annotations_table = pa.Table.from_pandas(frame, preserve_index=False)
+        else:
+            annotations_table = pq.read_table(str(annotations))
+        id_col = resolve_id_column(annotations_table.column_names)
+    except pa.ArrowInvalid as exc:
+        raise typer.BadParameter(
+            f"{annotations} is not a parquet file. -a takes an annotations parquet "
+            "or a .csv/.tsv/.txt file.",
+            param_hint="'-a/--annotations'",
+        ) from exc
+    except ValueError as exc:
+        raise typer.BadParameter(f"{annotations}: {exc}") from exc
 
     # Trust boundary: the grammar is decided here, from the input's own stamp, and
     # before the rename below drops it. `annotate` and the pipeline's annotation
     # cache stamp v2, and a cache written before it carried the stamp is still
     # recognised as the pipeline's own v2 output; any other unstamped table is
-    # user input in plain text, i.e. legacy v1, and is migrated explicitly.
-    if has_format_version(annotations_table):
+    # user input in plain text, i.e. legacy v1, and is migrated explicitly. The
+    # custom-file loader encodes its plain text itself, so its cells are v2.
+    if custom:
+        grammar = BUNDLE_FORMAT_VERSION
+    elif has_format_version(annotations_table):
         grammar = read_format_version(annotations_table)
     elif is_annotation_cache(annotations_table):
         grammar = BUNDLE_FORMAT_VERSION
@@ -128,11 +154,13 @@ def bundle(
             annotations,
         )
 
-    # Rename identifier column to protein_id if needed (bundle format).
-    col_names = annotations_table.column_names
-    if "identifier" in col_names and "protein_id" not in col_names:
+    # The id column, chosen by the rule `stats -a` uses, is protein_id in a bundle.
+    if id_col != "protein_id":
         annotations_table = annotations_table.rename_columns(
-            [("protein_id" if c == "identifier" else c) for c in col_names]
+            [
+                ("protein_id" if c == id_col else c)
+                for c in annotations_table.column_names
+            ]
         )
 
     try:

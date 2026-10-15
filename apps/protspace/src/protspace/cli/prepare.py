@@ -46,6 +46,7 @@ from protspace.cli.common_options import (
     build_embed_config,
     parse_refetch,
     require_similarity_extra,
+    warn_unused_embed_options,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,7 +98,7 @@ Opt_Annotations = Annotated[
     typer.Option(
         "-a",
         "--annotations",
-        help=f"Annotation groups (default,all,uniprot,interpro,taxonomy,ted,biocentral), individual names, or a CSV/TSV file path. Repeatable. See {ANNOTATIONS_URL}",
+        help=f"Annotation groups (default,all,uniprot,interpro,taxonomy,ted,biocentral), individual names, or custom .csv/.tsv/.txt files (merged on their id column). Repeatable. See {ANNOTATIONS_URL}",
         rich_help_panel="Annotations",
     ),
 ]
@@ -242,6 +243,7 @@ def _embed_all(
 
 @app.command(rich_help_panel=PANEL_START)
 def prepare(
+    ctx: typer.Context,
     # Input
     input: Opt_Input = None,
     query: Opt_Query = None,
@@ -370,11 +372,35 @@ def prepare(
             logger.error(f"No cache at {cache_path}.")
         return
 
+    # --- Parse annotations (repeatable option → flat list) ---
+    # Before embedding, so a mistyped file name fails now, not after the embeddings.
+    from protspace.data.processors.custom_annotations import (
+        flatten_annotation_args,
+        split_annotation_args,
+    )
+
+    annotation_list = flatten_annotation_args(annotations or ["default"])
+    try:
+        _, annotation_files = split_annotation_args(annotation_list)
+    except ValueError as e:
+        raise typer.BadParameter(str(e), param_hint="'-a/--annotations'") from e
+    missing = [str(p) for p in annotation_files if not p.is_file()]
+    if missing:
+        raise typer.BadParameter(
+            f"No such file: {', '.join(missing)}", param_hint="'-a/--annotations'"
+        )
+
     # --- Build embedding sets ---
     from protspace.data.loaders import EmbeddingSet, load_h5, resolve_input_names
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
 
-    embed_config = build_embed_config(backend, batch_size, max_length)
+    # Only a run that embeds needs the config, and building one imports the
+    # embedding backends (biocentral_api, and torch where installed).
+    embed_config = None
+    if has_fasta or query:
+        embed_config = build_embed_config(backend, batch_size, max_length)
+    else:
+        warn_unused_embed_options(ctx)
     embedding_sets: list[EmbeddingSet] = []
     fasta_for_similarity: Path | None = fasta
 
@@ -465,15 +491,6 @@ def prepare(
                     force_refetch="similarity" in refetch_stages,
                 )
             )
-
-        # --- Parse annotations (repeatable option → flat list) ---
-        raw = annotations if annotations else ["default"]
-        annotation_list = []
-        for item in raw:
-            for part in item.split(","):
-                part = part.strip()
-                if part:
-                    annotation_list.append(part)
 
         # --- Run pipeline ---
         from protspace.data.processors.pipeline import (
@@ -590,7 +607,7 @@ def _write_run_log(
     query: str | None,
     input_specs: list[tuple[Path, str | None]],
     embedders: list[str],
-    embed_config: EmbedConfig | LocalEmbedConfig,
+    embed_config: EmbedConfig | LocalEmbedConfig | None,
     pipeline_config: PipelineConfig,
     similarity: bool,
     scores: bool,
@@ -610,7 +627,7 @@ def _write_run_log(
     ts_end = datetime.now(UTC)
     n_projections = len(pipeline_config.methods) * n_embedding_sets
     rp = asdict(pipeline_config.reducer_params)
-    ec = asdict(embed_config)
+    ec = asdict(embed_config) if embed_config is not None else {}
 
     lines = [
         "# protspace run log",

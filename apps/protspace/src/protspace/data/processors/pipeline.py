@@ -22,6 +22,11 @@ from protspace.data.loaders.embedding_set import (
     format_projection_name,
 )
 from protspace.data.processors.base_processor import BaseProcessor
+from protspace.data.processors.custom_annotations import (
+    load_custom_annotations,
+    merge_custom_annotations,
+    split_annotation_args,
+)
 from protspace.utils import get_reducers
 from protspace.utils.constants import MDS_NAME
 
@@ -265,7 +270,8 @@ class ReductionPipeline:
         # Build full metadata with all headers
         full_metadata = pd.DataFrame({"identifier": all_headers})
         if len(metadata.columns) > 1:
-            metadata = metadata.astype(str)
+            # fillna first: a protein a merge left unannotated would read "nan".
+            metadata = metadata.fillna("").astype(str)
             id_col = metadata.columns[0]
             if id_col != "identifier":
                 metadata = metadata.rename(columns={id_col: "identifier"})
@@ -380,19 +386,9 @@ class ReductionPipeline:
         # Extract sequences from FASTA files (if available) to avoid re-fetching
         sequences = self._extract_sequences(embedding_sets) if embedding_sets else {}
 
-        annotation_names, csv_path = self._resolve_annotation_names()
+        annotation_names, csv_paths = self._resolve_annotation_names()
 
-        # Load user CSV if provided
-        csv_df = None
-        if csv_path:
-            logger.info(f"Loading custom annotations from: {csv_path}")
-            csv_df = pd.read_csv(
-                csv_path,
-                sep="\t" if csv_path.endswith(".tsv") else ",",
-            )
-            id_col = csv_df.columns[0]
-            if id_col != "identifier":
-                csv_df = csv_df.rename(columns={id_col: "identifier"})
+        csv_df = load_custom_annotations(csv_paths, headers) if csv_paths else None
 
         if annotation_names:
             annotations_list = AnnotationConfiguration(
@@ -420,53 +416,11 @@ class ReductionPipeline:
             refetch=self.config.refetch_stages,
         )
         self.uniprot_releases = set(fetched.uniprot_releases)
-        return self._merge_csv(fetched.frame, csv_df)
+        return merge_custom_annotations(fetched.frame, csv_df)
 
-    def _resolve_annotation_names(self) -> tuple[list[str], str | None]:
-        """Parse annotation arguments into annotation names and optional CSV path.
-
-        Returns:
-            Tuple of (annotation_names, csv_path_or_None)
-        """
-        if not self.config.annotations:
-            return [], None
-
-        names = []
-        csv_path = None
-        for item in self.config.annotations:
-            item = item.strip()
-            if not item:
-                continue
-            if item.endswith((".csv", ".tsv")):
-                csv_path = item
-            else:
-                for part in item.split(","):
-                    part = part.strip()
-                    if part:
-                        names.append(part)
-        return names, csv_path
-
-    @staticmethod
-    def _merge_csv(api_df: pd.DataFrame, csv_df: pd.DataFrame | None) -> pd.DataFrame:
-        """Merge user CSV annotations onto API annotations. CSV wins on collision."""
-        if csv_df is None:
-            return api_df
-
-        merged = api_df.merge(
-            csv_df.drop_duplicates("identifier"),
-            on="identifier",
-            how="left",
-            suffixes=("_api", ""),
-        )
-        # Drop API-suffixed duplicates so CSV values win
-        for col in list(merged.columns):
-            if col.endswith("_api"):
-                base = col.removesuffix("_api")
-                if base in merged.columns:
-                    merged = merged.drop(columns=[col])
-                else:
-                    merged = merged.rename(columns={col: base})
-        return merged
+    def _resolve_annotation_names(self) -> tuple[list[str], list[Path]]:
+        """Split the annotation arguments into source names and custom annotation files."""
+        return split_annotation_args(self.config.annotations or [])
 
     # --- Projection caching helpers ---
 

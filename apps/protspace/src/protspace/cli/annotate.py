@@ -33,7 +33,11 @@ def annotate(
         typer.Option(
             "-a",
             "--annotations",
-            help="Annotation sources (repeatable): default, all, uniprot, interpro, taxonomy, or individual names.",
+            help=(
+                "Annotation sources (repeatable): default, all, uniprot, interpro, "
+                "taxonomy, individual names, or a custom .csv/.tsv/.txt file. Files "
+                "alone fetch nothing."
+            ),
         ),
     ] = None,
     output: Annotated[
@@ -74,8 +78,9 @@ def annotate(
 
     \b
     Extracts protein identifiers from the input file and fetches
-    annotations, saving them as a parquet file. With --cache-dir, an
-    interrupted run resumes where it stopped.
+    annotations, saving them as a parquet file. Custom annotation files
+    given to -a are merged in, and win on a column-name clash. With
+    --cache-dir, an interrupted run resumes where it stopped.
     """
     setup_logging(verbose)
 
@@ -124,22 +129,31 @@ def annotate(
 
     logger.info(f"Found {len(headers)} protein identifiers")
 
-    # Resolve annotation names
-    annotations_list = None
-    if annotations:
-        from protspace.data.annotations.configuration import AnnotationConfiguration
+    from protspace.data.processors.custom_annotations import (
+        load_custom_annotations,
+        merge_custom_annotations,
+        split_annotation_args,
+    )
 
-        names = []
-        for item in annotations:
-            for part in item.split(","):
-                part = part.strip()
-                if part:
-                    names.append(part)
+    # Resolve annotation names and custom files; both are usage errors, not crashes.
+    try:
+        names, files = split_annotation_args(annotations or [])
+        custom = load_custom_annotations(files, headers) if files else None
+        annotations_list = None
         if names:
+            from protspace.data.annotations.configuration import (
+                AnnotationConfiguration,
+            )
+
             annotations_list = AnnotationConfiguration(names).user_annotations
+    except (FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="'-a/--annotations'") from exc
 
     # Fetch annotations
-    if cache_dir is None:
+    if custom is not None and annotations_list is None:
+        # Files only, as in `prepare -a file.csv`: nothing to fetch.
+        df, incomplete_sources = custom, set()
+    elif cache_dir is None:
         manager = ProteinAnnotationManager(
             headers=headers,
             annotations=annotations_list,
@@ -152,6 +166,9 @@ def annotate(
         df, incomplete_sources = _fetch_with_cache(
             headers, annotations_list, sequences, cache_dir, refetch_stages
         )
+
+    if custom is not None and annotations_list is not None:
+        df = merge_custom_annotations(df, custom)
 
     if not scores:
         from protspace.data.annotations.scores import strip_scores_from_df

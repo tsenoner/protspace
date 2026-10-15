@@ -63,7 +63,16 @@ Browser performance varies by device and GPU capabilities.
 
 ### Can I add custom annotations?
 
-Yes. Add columns when generating the bundle. See [Data Format](/guide/data-format).
+Yes. Put your columns in a CSV or TSV file with one row per protein and a column of protein ids
+matching your embeddings, then pass it with `-a` when you build the bundle:
+
+```bash
+protspace prepare -i embeddings.h5 -a annotations.csv -m umap2 -o output
+```
+
+Repeat `-a` to merge several files. `annotate`, `stats` and `bundle` take the same files. See
+[Custom annotation files](/guide/python-cli#custom-annotation-files) for how the id column and the
+delimiter are found. The [Colab notebook](/guide/data-preparation) takes an upload too.
 
 ### How do I include 3D structures?
 
@@ -142,14 +151,16 @@ need both.
 
 ### What's inside a .parquetbundle?
 
-Three to five Parquet tables bundled together:
+Six Parquet tables bundled together (format v3; older v1/v2 bundles hold three to five, and still
+load):
 
 1. Annotation data (protein metadata)
 2. Projection metadata (methods, parameters)
 3. Projection coordinates (x, y, z)
-4. Settings (optional, legend colors, shapes, export options)
-5. Statistics (optional, from `protspace stats`, [separation scores](/explore/separation-scores)
-   and cluster-agreement metrics)
+4. Settings (empty unless set: legend colors, shapes, export options)
+5. Statistics (empty unless computed, from `protspace stats`,
+   [separation scores](/explore/separation-scores) and cluster-agreement metrics)
+6. Payloads (the label dictionaries the browser reads the annotations through)
 
 The optional settings table is included when you export with "Include legend/export settings" enabled. See [Data Format](/guide/data-format) for details.
 
