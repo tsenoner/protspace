@@ -7,10 +7,10 @@ Before every commit: `pnpm precommit` (changes staged), `pnpm format:check`, and
 
 ## 2. Statistics
 
-- [ ] 2.1 `kmeans_elbow.py`: `pca_reduce` (top 50 PCs, fitted on the id-canonical subsample, applied in chunks; identity at ≤ 50 dims).
-- [ ] 2.2 `validity.py`: `ClusterValidityStatistic` honours `params["cluster_space"]` (default `both`, unknown values fall back), opts into the embedding pass, clusters an embedding on its PCs with 3 restarts, and scores the labelling on the raw embedding.
-- [ ] 2.3 `driver.py`: run the embedding pass whenever an opted-in statistic exists, then score each embedding cluster column on every projection of that embedding.
-- [ ] 2.4 Tests: default emits both columns; `projection` / `embedding` emit one kind; the embedding column is scored in every projection of its embedding and in the embedding; ARI/NMI rows; two embeddings; row-order invariance; PCA path above 50 dims; precomputed input; unknown value falls back; legend settings style the new column.
+- [x] 2.1 `kmeans_elbow.py`: `pca_reduce` (top 50 PCs, fitted on the id-canonical subsample, applied in chunks; identity at ≤ 50 dims).
+- [x] 2.2 `validity.py`: `ClusterValidityStatistic` honours `params["cluster_space"]` (default `both`, unknown values fall back), opts into the embedding pass, clusters an embedding on its PCs with 3 restarts, and scores the labelling on the raw embedding.
+- [x] 2.3 `driver.py`: run the embedding pass whenever an opted-in statistic exists, then score each embedding cluster column on every projection of that embedding.
+- [x] 2.4 Tests: default emits both columns; `projection` / `embedding` emit one kind; the embedding column is scored in every projection of its embedding and in the embedding; ARI/NMI rows; two embeddings; row-order invariance; PCA path above 50 dims; precomputed input; unknown value falls back; legend settings style the new column.
 
 ## 3. CLI
 

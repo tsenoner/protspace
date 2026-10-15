@@ -86,7 +86,8 @@ def test_discrete_path_produces_full_matrix(tmp_path):
         "cluster_validity",
         "annotation_validity",
     }
-    # The only thing scored here is the auto-clustering itself.
+    # The only things scored here are the auto-clusterings themselves: the
+    # projection's and, under the default cluster space, the embedding's.
     scored = {
         annotation
         for annotation, family in zip(
@@ -96,7 +97,7 @@ def test_discrete_path_produces_full_matrix(tmp_path):
         )
         if family == "annotation_validity"
     }
-    assert scored == {"cluster_elbow_E — PCA 2"}
+    assert scored == {"cluster_elbow_E — PCA 2", "cluster_elbow_E"}
     assert table.num_rows == len(report.partition()["statistics_part"])
 
 
@@ -514,8 +515,13 @@ def test_prepare_stats_annotation_validity_in_bundle(tmp_path):
     assert (st.stat_family == "annotation_validity").any()
     assert "annotation" in st.columns
     av = st[st.stat_family == "annotation_validity"]
-    # The curated annotation, plus the auto-clustering scored on its own labels.
-    assert set(av["annotation"]) == {"grp", "cluster_elbow_E — PCA 2"}
+    # The curated annotation, plus the projection's and the embedding's
+    # auto-clusterings scored on their own labels.
+    assert set(av["annotation"]) == {
+        "grp",
+        "cluster_elbow_E — PCA 2",
+        "cluster_elbow_E",
+    }
 
 
 def test_stats_rejects_bad_cluster_selection(tmp_path):
