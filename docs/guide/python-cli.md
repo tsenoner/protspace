@@ -343,7 +343,9 @@ this order:
    [Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
 3. **File name**, a model key the file name ends in: `seqs_esm2_650m.h5`, `Ss_mSCR_esm2_650m.h5`
    and `esm2_650m.h5` are all `esm2_650m`. The keys are the [embedder models](#embedder-models)
-   (plus `esm3_open`); the longest match wins, and only the end of the name counts
+   (plus `esm3_open`); the longest match wins, and only the end of the name counts. A directory
+   input takes the key its files share; files from different models in one directory are an
+   error, so give each model's files their own `-i`
 4. **File stem**, only when the file is the command's only input: `results.h5` is named `results`
 5. **Error**, when several inputs are given and one of them is still unnamed. The message says
    what the name decides for that command and shows the corrected command line with your paths
@@ -527,6 +529,8 @@ protspace project -i embeddings/prot_t5.h5 -i embeddings/esm2_3b.h5 -m pca2,umap
 ```
 
 Accepts the same projection flags as `prepare`, plus `-f/--fasta` for `-s/--similarity`.
+Unlike `prepare`, `project` does not merge inputs that share an embedding name, so it refuses two
+inputs of the same name; combine files from one model with `prepare` instead.
 
 ## `protspace annotate`
 

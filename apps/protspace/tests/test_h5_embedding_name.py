@@ -199,6 +199,24 @@ def test_a_directory_is_named_by_its_files_then_its_own_name(tmp_path):
     assert [n.name for n in named] == ["esm2_650m", "prot_t5"]
 
 
+def test_a_directory_of_files_from_different_models_is_refused(tmp_path):
+    """The Embeddings notebook writes `{fasta}_{model}.h5` beside the FASTA, so
+    two runs leave two models in one folder. Read as one input, the second
+    model's vectors were dropped as duplicates under the folder's name."""
+    mixed = tmp_path / "embdir"
+    mixed.mkdir()
+    _h5(mixed / "seqs_prot_t5.h5")
+    _h5(mixed / "seqs_prost_t5.h5", seed=1)
+
+    with pytest.raises(ValueError, match="different models") as exc:
+        resolve_input_names([(mixed, None)], command="prepare")
+
+    assert "seqs_prot_t5.h5 (prot_t5)" in str(exc.value)
+    assert "seqs_prost_t5.h5 (prost_t5)" in str(exc.value)
+    with pytest.raises(ValueError, match="different models"):
+        load_h5(sorted(mixed.glob("*.h5")))
+
+
 # --- The commands -----------------------------------------------------------------
 
 
@@ -266,6 +284,35 @@ def test_project_refuses_two_unnamed_files(tmp_path):
     )
     assert result.exit_code != 0
     assert f"protspace project -i {a}:<model> -i {b}:<model>" in plain(result.output)
+
+
+@pytest.mark.parametrize(
+    "inputs",
+    [
+        ("human_esm2_650m.h5", "mouse_esm2_650m.h5"),
+        ("human.h5:esm2_650m", "mouse.h5:esm2_650m"),
+    ],
+    ids=["from-file-names", "explicit"],
+)
+def test_project_refuses_two_inputs_of_the_same_name(tmp_path, inputs):
+    """project does not merge same-name inputs as prepare does; it used to reach
+    the projection table with two header lists and crash with an IndexError."""
+    for spec, n in zip(inputs, (40, 20), strict=True):
+        _h5(tmp_path / spec.split(":")[0], n=n)
+    result = CliRunner().invoke(
+        app,
+        [
+            "project",
+            *[a for spec in inputs for a in ("-i", str(tmp_path / spec))],
+            "-o",
+            str(tmp_path / "proj"),
+        ],
+    )
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    output = plain(result.output)
+    assert "share an embedding name" in output
+    assert "protspace prepare" in output
 
 
 def _stats(tmp_path, spec: str, proj: Path):

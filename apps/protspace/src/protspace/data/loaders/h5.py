@@ -121,8 +121,22 @@ def _model_from_file_name(stem: str) -> str | None:
 
 
 def _model_from_file_names(h5_files: list[Path]) -> str | None:
-    """The one known model key every file's name ends in, or None."""
-    keys = {_model_from_file_name(f.stem) for f in h5_files}
+    """The one known model key every file's name ends in, or None.
+
+    Raises:
+        ValueError: If the file names point to two or more different models.
+            Read as one input, their vectors would be merged into one space and
+            every protein the second model shares with the first dropped as a
+            duplicate.
+    """
+    by_file = {f: _model_from_file_name(f.stem) for f in h5_files}
+    keys = set(by_file.values())
+    if len(keys - {None}) > 1:
+        listing = ", ".join(f"{f.name} ({key})" for f, key in by_file.items() if key)
+        raise ValueError(
+            f"Files from different models in one input: {listing}.\n"
+            f"  Load each model's files as a separate input."
+        )
     return keys.pop() if len(keys) == 1 else None
 
 
@@ -190,9 +204,10 @@ def resolve_input_names(
 
     if unnamed and len(specs) == 1:
         path = unnamed[0]
+        where = "its file names" if path.is_dir() else "the file name"
         logger.info(
             f"No embedding name for {path} (no 'model_name' attribute, no known "
-            f"model in the file name); using '{path.stem}'. "
+            f"model in {where}); using '{path.stem}'. "
             f"To name it, append the model: {path}:<model>, e.g. {path}:esm2_650m."
         )
         return [NamedInput(path, path.stem, from_file_name=True)]
@@ -206,7 +221,7 @@ def _unnamed_inputs_message(
 ) -> str:
     if command == "project":
         why = "project labels each input's projections with its embedding name."
-        hint = ""
+        hint = "; each input needs a different name"
     else:
         why = (
             "The name decides how inputs combine: inputs with the same name are "

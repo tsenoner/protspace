@@ -5,6 +5,8 @@
 - [x] 1.3 Registry: every `EMBEDDER_MODELS` key and every ClickThrough notebook short key is recognised from a file name
 - [x] 1.4 CLI: `prepare`, `project`, `stats`, `transfer` each run on one unnamed file and refuse two (where they take several)
 - [x] 1.5 `stats`: adopts the single source for a file-named input, refuses several non-matching sources, leaves an explicit name alone
+- [x] 1.6 A directory whose file names point to different models is refused, by the resolver and by `load_h5` (review)
+- [x] 1.7 `project` refuses two inputs of the same name, inferred or explicit, without a traceback (review)
 
 ## 2. Implementation
 
@@ -12,10 +14,12 @@
 - [x] 2.2 `esm3_open` in `MODEL_DISPLAY_NAMES`
 - [x] 2.3 `prepare`, `project`, `stats`, `transfer` resolve names through it before loading
 - [x] 2.4 `stats` reconciles a file-named single input with the projections' source
+- [x] 2.5 `_model_from_file_names` raises on files from different models (review)
+- [x] 2.6 `project` checks resolved names for duplicates before loading; its unnamed-inputs hint says the names must differ (review)
 
 ## 3. Docs
 
-- [x] 3.1 `docs/guide/python-cli.md`: model-name resolution section, `-i`/`-e` rows, the "external HDF5" example
+- [x] 3.1 `docs/guide/python-cli.md`: model-name resolution section (incl. mixed-model directories), `-i`/`-e` rows, the "external HDF5" example, `project` refusing same-name inputs
 - [x] 3.2 `apps/protspace/CLAUDE.md`: h5.py line and the test row
 
 ## 4. Verify

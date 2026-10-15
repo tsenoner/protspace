@@ -32,6 +32,9 @@ proteins) and different names intersect them. That choice cannot be guessed from
   labelled like the bundle; it refuses with a message naming the sources when they come from
   several and none matches, instead of scoring every projection against the one embedding.
 - `transfer -e` never needed the name (it only reads the vectors); it now works without one.
+- A directory input whose file names point to different models is an error rather than one
+  embedding named after the directory, and `project` refuses two inputs that resolve to the same
+  name (it never merged them, and crashed building the projection table).
 - Name the ClickThrough notebook's `esm3_open` key in the registry so its files resolve too.
 - Docs: `docs/guide/python-cli.md` model-name section, input-flag rows and examples.
 
@@ -53,7 +56,8 @@ None.
   resolution only).
 - Behaviour: inputs that used to fail now run. A file that already carries `model_name` or that
   is named with `:name` resolves exactly as before. A file whose stem ends in a known key gets
-  that key instead of an error.
+  that key instead of an error. Two newly refused cases: a directory mixing models, which used to
+  be refused for lack of a name, and same-name inputs to `project`, which used to crash.
 - No bundle format, cache layout or dependency change. Projection caches stay keyed by the
   resolved name, so an inferred name is as stable as the file name.
 - Release: `feat(cli)` under `apps/protspace/`, a minor version.

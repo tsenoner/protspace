@@ -53,6 +53,13 @@ registry's spelling.
 - **WHEN** a file without `model_name` is named `esm2_650m_subset.h5`
 - **THEN** no known key is found in its name
 
+#### Scenario: A directory of files from different models
+
+- **WHEN** a directory input without `model_name` attributes holds `seqs_prot_t5.h5` and
+  `seqs_prost_t5.h5`
+- **THEN** the command fails, naming each file and the model its name points to
+- **AND** it does not fall back to the directory's name
+
 ### Requirement: Several unnamed inputs are refused with the reason and a correct example
 
 When a command has more than one input and at least one HDF5 input has no name after rules 1-3,
@@ -74,6 +81,18 @@ fixed model name.
 - **WHEN** the same two files are given to `protspace project` or `protspace stats`
 - **THEN** the example starts with that command, not with `prepare`
 - **AND** it does not suggest `prot_t5`
+
+### Requirement: project refuses inputs that share an embedding name
+
+`protspace project` SHALL fail before loading any embedding matrix when two of its inputs resolve
+to the same embedding name, whichever rule named them, and SHALL point to `protspace prepare`,
+which merges same-name inputs.
+
+#### Scenario: Two files named after the same model
+
+- **WHEN** `protspace project -i human_esm2_650m.h5 -i mouse_esm2_650m.h5` is run
+- **THEN** it exits non-zero without a traceback
+- **AND** the message says the inputs share the name `esm2_650m` and suggests `protspace prepare`
 
 ### Requirement: stats matches a single file-named embedding to the projections' source
 

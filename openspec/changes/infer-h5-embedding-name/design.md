@@ -22,8 +22,8 @@ and a correct example; nothing that resolved before resolves differently.
 
 **Non-Goals:** guessing a model from vector dimensions (1024 is ProtT5 _and_ ProstT5 _and_
 Ankh-Large); changing the multi-input union/intersection rule; removing or adding projection
-methods; `project` merging same-name inputs (it does not today, and this change does not alter
-that).
+methods; `project` merging same-name inputs (it does not today, and this change does not add it;
+see Decision 8).
 
 ## Decisions
 
@@ -40,7 +40,8 @@ ClickThrough notebook writes `{fasta_stem}_{short_key}.h5`; the prepare/embed ca
 1…n tokens, tried longest first, and the canonical (registry) spelling is returned. Leading or
 middle tokens are not tried: `esm2_650m_vs_prot_t5.h5` names the last model, never the first.
 A directory input matches when every file in it yields the same key, else by the directory's own
-name.
+name; files naming two or more different keys are an error, because one input is one embedding
+space and the second model's vectors would be dropped as duplicates of the first's.
 
 **3. The stem fallback needs the command's whole input to be one HDF5 input.** Counting `-i`
 items (FASTA included, for `prepare`) is exact: a FASTA input produces a named set, and an
@@ -68,6 +69,14 @@ embedding, so the command stops and names the sources. With a match, nothing cha
 
 **7. `transfer` needs no name.** It is resolved like any single input only so that `load_h5`
 does not raise; no message is added.
+
+**8. `project` refuses two inputs of the same name.** It projects each input on its own and
+writes every projection against the first input's header list, so two same-name inputs gave two
+identically labelled projections and, with different protein counts, an `IndexError`. That was
+reachable before with `:name`; inferring names from files such as `human_esm2_650m.h5` and
+`mouse_esm2_650m.h5` makes it the common case, so `project` now stops before loading and points
+at `prepare`, which merges them. Its unnamed-inputs message says each input needs a different
+name.
 
 ## Risks / Trade-offs
 
