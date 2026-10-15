@@ -1030,12 +1030,7 @@ export class ProtspaceLegend extends LitElement {
         sourceData?.protein_ids !== undefined &&
         this._hasSameProteinIds(sourceData.protein_ids, this.proteinIds);
       const unfilteredData = sourceDataMatchesCurrentLegend
-        ? {
-            protein_ids: sourceData.protein_ids,
-            annotations: sourceData.annotations,
-            numeric_annotation_data: sourceData.numeric_annotation_data,
-            annotation_predicted: sourceData.annotation_predicted,
-          }
+        ? sourceData
         : {
             protein_ids: this.proteinIds,
             annotations: this.data?.annotations,
@@ -1044,12 +1039,7 @@ export class ProtspaceLegend extends LitElement {
           };
 
       this._datasetProteinCount = unfilteredData.protein_ids.length;
-      this._persistenceController.updateDatasetHash({
-        protein_ids: unfilteredData.protein_ids,
-        annotations: unfilteredData.annotations,
-        numeric_annotation_data: unfilteredData.numeric_annotation_data,
-        annotation_predicted: unfilteredData.annotation_predicted,
-      });
+      this._persistenceController.updateDatasetHash(unfilteredData);
     }
 
     // Handle data or annotation changes
@@ -1172,8 +1162,8 @@ export class ProtspaceLegend extends LitElement {
   ): void {
     this._persistenceController.setFileSettings(settings, datasetHash, clearExistingStorage);
 
-    // If current annotation has file settings, reload and apply them immediately
-    if (settings?.[this.selectedAnnotation]) {
+    // If the file's settings won for the current annotation, reload and apply them immediately
+    if (this._persistenceController.hasFileSettingsForAnnotation(this.selectedAnnotation)) {
       this._persistenceController.loadSettings();
       // Clear stale legend items so _visibleValues falls back to _pendingCategories
       // (the file's category set). Without this, _visibleValues uses the default items

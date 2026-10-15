@@ -138,21 +138,14 @@ describe('dataset controller legend persistence lifecycle', () => {
     let runningLoadMeta: LoadMeta = { sequence: 1, kind: 'default' };
     const empty = createEmptyExploreViewRequest();
     let latestViewRequest = empty;
-    const legendElement = {
-      clearForNewDataset: vi.fn(),
-      setFileSettings: vi.fn(),
-      applyShapeSize: vi.fn(),
-      applyEatSettings: vi.fn(),
-    };
     const options = buildControllerOptions({
-      legendElement,
       loadQueue: {
         getRunningLoadMeta: () => runningLoadMeta,
         getLatestSequence: () => runningLoadMeta.sequence,
       },
     });
     options.viewController.getLatestViewRequest.mockImplementation(() => latestViewRequest);
-    const { controlBar, viewController } = options;
+    const { controlBar, legendElement, viewController } = options;
     const controller = createDatasetController(options);
     const settings = { legendSettings: {}, exportOptions: {}, shapeSize: 12 };
 

@@ -67,7 +67,7 @@ export abstract class BasePersistenceController<
     datasetHash?: string,
     clearExistingStorage: boolean = true,
   ): void {
-    this._fileSettings = settings ? { ...settings } : null;
+    this._fileSettings = settings;
     this._appliedFileAnnotations.clear();
 
     const hashToUse = datasetHash || this._datasetHash;
@@ -77,21 +77,18 @@ export abstract class BasePersistenceController<
         removeAllStorageItemsByHash(hashToUse);
       }
 
+      // Annotations whose stored settings are kept stay out of the file-precedence map.
+      const applied: Record<string, TSettings> = {};
       for (const [annotationName, annotationSettings] of Object.entries(settings)) {
         const key = buildStorageKey(this.storageKeyPrefix, hashToUse, annotationName);
-        if (!clearExistingStorage && getStorageItem<TSettings | null>(key, null) !== null) {
-          delete (this._fileSettings as Record<string, TSettings>)[annotationName];
-          continue;
-        }
+        if (!clearExistingStorage && getStorageItem<TSettings | null>(key, null) !== null) continue;
         setStorageItem(key, annotationSettings);
+        applied[annotationName] = annotationSettings;
       }
-
-      if (this._fileSettings && Object.keys(this._fileSettings).length === 0) {
-        this._fileSettings = null;
-      }
+      this._fileSettings = Object.keys(applied).length > 0 ? (applied as TSettingsMap) : null;
     }
 
-    if (settings && this._selectedAnnotation && settings[this._selectedAnnotation]) {
+    if (this._selectedAnnotation && this.hasFileSettingsForAnnotation(this._selectedAnnotation)) {
       this._settingsLoaded = false;
     }
   }

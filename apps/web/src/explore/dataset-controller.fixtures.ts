@@ -57,6 +57,7 @@ export function buildControllerOptions(
     legendElement: {
       clearForNewDataset: vi.fn(),
       setFileSettings: vi.fn(),
+      applyShapeSize: vi.fn(),
       applyEatSettings: vi.fn(),
     },
     loadQueue: {

@@ -4,11 +4,16 @@ import {
   buildStorageKey,
   generateDatasetHash,
   setStorageItem,
-  type LegendPersistedSettings,
   type VisualizationData,
 } from '@protspace/utils';
 import './legend';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import { createDefaultSettings } from './legend-helpers';
+import {
+  mountLegendWithScatterplot,
+  stubLocalStorage,
+} from './test-support/legend-scatterplot-harness';
+
+stubLocalStorage();
 
 function makeData(): VisualizationData {
   return {
@@ -54,26 +59,20 @@ afterEach(() => {
 
 describe('legend-owned EAT controls', () => {
   it('restores EAT legend settings from the controller dataset hash', async () => {
+    const datasetHash = generateDatasetHash(makeData());
+    setStorageItem(buildStorageKey('legend', datasetHash, 'ec'), {
+      ...createDefaultSettings('ec'),
+      shapeSize: 42,
+    });
     const { data, legend, plot } = await setup();
     plot.dispatchEvent(new CustomEvent('data-change', { detail: { data } }));
     await legend.updateComplete;
-    const datasetHash = generateDatasetHash(data);
-    const persistedSettings: LegendPersistedSettings = {
-      maxVisibleValues: 10,
-      shapeSize: 42,
-      sortMode: 'size-desc',
-      hiddenValues: [],
-      categories: {},
-      enableDuplicateStackUI: false,
-      selectedPaletteId: 'kellys',
-    };
-    const bundleSettings: LegendPersistedSettings = {
-      ...persistedSettings,
-      shapeSize: 30,
-    };
-    setStorageItem(buildStorageKey('legend', datasetHash, 'ec'), persistedSettings);
 
-    legend.setFileSettings({ ec: bundleSettings }, datasetHash, false);
+    legend.setFileSettings(
+      { ec: { ...createDefaultSettings('ec'), shapeSize: 30 } },
+      datasetHash,
+      false,
+    );
 
     expect(legend.shapeSize).toBe(42);
   });

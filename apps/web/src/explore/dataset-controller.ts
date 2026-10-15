@@ -533,8 +533,8 @@ export function createDatasetController({
         } else {
           // Default load ('default') or OPFS restore ('opfs'): the URL tooltip param
           // is authoritative. Only restore the persisted set when the URL is silent.
-          // Examples never have one (their saved state was wiped above), so a
-          // menu choice, whose request was reset above, lands on the curated view.
+          // A menu choice wiped its example's saved state above and reset the
+          // request, so it lands on the curated view.
           if (!latestRequest.present.tooltip) {
             if (savedTooltip.length > 0) {
               viewController.setRequestedView({
