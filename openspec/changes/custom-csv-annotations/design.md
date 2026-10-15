@@ -38,10 +38,10 @@ torch when installed. That import chain is what crashed every `prepare` on 4.16.
 ### One module in `data/processors/`
 
 `custom_annotations.py` holds the whole contract: which `-a` values are files
-(`split_annotation_args`), the id-column rule (`resolve_id_column`), reading one file, merging
-several onto the input's ids (`load_custom_annotations`), and laying them over fetched annotations
-(`merge_custom_annotations`, the pipeline's former `_merge_csv`). The CLI commands import it
-lazily, as they import everything else.
+(`flatten_annotation_args`, `split_annotation_args`), the id-column rule (`resolve_id_column`),
+reading one file, merging several onto the input's ids (`load_custom_annotations`), and laying them
+over fetched annotations (`merge_custom_annotations`, the pipeline's former `_merge_csv`). The CLI
+commands import it lazily, as they import everything else.
 
 ### A file is recognised by its suffix
 
@@ -49,6 +49,13 @@ lazily, as they import everything else.
 mistake a source name for a file; `-a default` with a file called `default` in the working
 directory stays the group. A value with any other suffix that names an existing file (`x.xlsx`,
 `x.parquet`) is refused with the accepted suffixes, instead of reaching the source-name lookup.
+
+`-a` values are comma-separated lists, but a whole value that is an existing custom file is kept
+whole before any splitting (`flatten_annotation_args`), so `-a "labels, v2.csv"` stays one file.
+`prepare` and the pipeline both split through it: the Preparation notebook hands the pipeline the
+uploaded file's own name, which may hold a comma. `prepare` splits once, before embedding, and
+fails with a usage error when a named file does not exist, so a mistyped path is reported before a
+FASTA input is embedded rather than after.
 
 ### Sniff the delimiter from the header line
 
@@ -118,10 +125,13 @@ inside parentheses now survives where `prepare` used to decode or split it.
 `stats -a table.parquet` enriches the parquet in place. A CSV is the user's source file, so `stats`
 does not rewrite it: it builds the frame from the loader (one row per projected protein, so the
 unannotated proteins get cluster columns too) and writes it, stamped v2, to
-`selected_annotations.parquet` in `-p`, the name the unbundled directory layout already gives the
-annotations part, then names that path for `bundle -a`. Writing next to the user's CSV was
-rejected: a run should not create files beside its inputs. Requiring a new output option was
-rejected: the common recipe would need one more flag to do the obvious thing.
+`<file stem>.annotations.parquet` in `-p` (`labels.csv` → `proj/labels.annotations.parquet`), then
+names that path for `bundle -a`. The name is derived from the file so that it cannot be
+`selected_annotations.parquet`, which in a `prepare --no-bundled` directory holds the fetched
+annotations; writing there would replace them. Its id column is `identifier`, as in the parquet
+`annotate` writes. Writing next to the user's CSV was rejected: a run should not create files
+beside its inputs. Requiring a new output option was rejected: the common recipe would need one
+more flag to do the obvious thing.
 
 ### `project` refuses, it does not grow
 
@@ -153,13 +163,21 @@ and checking `sys.modules` for `protspace.data.embedding`, `biocentral_api` and 
 - **[Plain-text encoding changes rare prepare cells]** A CSV cell that relied on percent-escapes
   being decoded now keeps them. No documented use asked for that; the bundle docs already described
   hand-written tables as plain text.
-- **[`stats` writes into `-p`]** A previous `selected_annotations.parquet` there is replaced
-  atomically. It is the table the same command would write again.
+- **[`stats` writes into `-p`]** A previous `<file stem>.annotations.parquet` there is replaced
+  atomically. Only `stats -a` with a file of that stem writes that name, so it is the table the
+  same command would write again; the directory's own parts are never touched.
 
 ## Migration Plan
 
-None. Existing single-file `prepare -a` runs give the same bundle unless a cell held a percent
-escape or a parenthesised `;`, and every newly accepted input used to fail.
+Existing single-file `prepare -a` runs give the same bundle, and every newly accepted input used
+to fail, with two exceptions:
+
+- A cell that held a percent escape or a parenthesised `;` now keeps it.
+- The id column. Before, the first column was always the id; now a later column named
+  `identifier`, `protein_id` or `id` (any case) takes precedence. A file such as
+  `accession,id,family`, where `id` is another database's id, is now keyed on `id`: the
+  unmatched-id warning fires and the file's columns come out empty. Rename that column, or move the
+  ids into a column named `identifier`. The CLI guide's "Upgrading from v4.4" note says so.
 
 ## Open Questions
 

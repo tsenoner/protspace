@@ -24,8 +24,9 @@
 ## 3. Commands
 
 - [x] 3.1 `annotate -a`: files beside names, files only fetch nothing, unknown names a usage error
-- [x] 3.2 `stats -a`: CSV scored and written to `<projections>/selected_annotations.parquet`;
-      shared id-column rule for a parquet; unreadable input a usage error
+- [x] 3.2 `stats -a`: CSV scored and written to `<projections>/<file stem>.annotations.parquet`,
+      never over the directory's own `selected_annotations.parquet`; shared id-column rule for a
+      parquet; unreadable input a usage error
 - [x] 3.3 `bundle -a`: CSV through the loader; shared id-column rule; unreadable input a usage error
 - [x] 3.4 `project`: hidden `-a/--annotations` and `--stats` refusing with the routes; help names
       `prepare`
@@ -40,13 +41,24 @@
       `KeyError: 'ESM_8M'` troubleshooting
 - [x] 4.2 `docs/guide/faq.md`: custom-annotation answer, bundle part count
 - [x] 4.3 `apps/protspace/CLAUDE.md`: new module and test file
-- [x] 4.4 Check the Colab notebooks for anything restating the CSV rules: the Preparation
-      notebook's upload hint ("first column = protein IDs", `accept=".csv,.tsv"`) is still true as
-      the default rule and needs no change
+- [ ] 4.4 Colab Preparation notebook (owned by the notebook workstream; hand over): change the
+      upload hint "first column = protein IDs" to "id column: `identifier`/`protein_id`/`id`,
+      else the first column", and `accept=".csv,.tsv"` to `accept=".csv,.tsv,.txt"`
 - [x] 4.5 Pin the guide's accepted suffixes to `CUSTOM_ANNOTATION_SUFFIXES` with a test
 
-## 5. Verify
+## 5. Review round
 
-- [x] 5.1 `openspec validate custom-csv-annotations --strict`
-- [x] 5.2 `uv run --directory apps/protspace pytest` (non-slow) and ruff
-- [x] 5.3 `pnpm precommit` and `pnpm format:check`
+- [x] 5.1 A comma in a custom file's name no longer splits it (`flatten_annotation_args`, used by
+      `prepare` and the pipeline); regression tests for the split and for `prepare`
+- [x] 5.2 `prepare` checks that every `-a` file exists before embedding; test that nothing is
+      embedded first
+- [x] 5.3 `stats -a x.csv` writes `x.annotations.parquet`, so a `prepare --no-bundled` directory's
+      `selected_annotations.parquet` survives; test
+- [x] 5.4 Migration Plan and the guide's upgrade note: an id-named column now outranks the first
+      column
+
+## 6. Verify
+
+- [x] 6.1 `openspec validate custom-csv-annotations --strict`
+- [x] 6.2 `uv run --directory apps/protspace pytest` (non-slow) and ruff
+- [x] 6.3 `pnpm precommit` and `pnpm format:check`

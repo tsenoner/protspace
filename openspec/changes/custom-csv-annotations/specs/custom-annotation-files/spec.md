@@ -16,6 +16,16 @@ other `-a` value of `prepare` and `annotate` SHALL remain an annotation source o
 - **WHEN** `prepare` or `annotate` receives `-a labels.xlsx` and that file exists
 - **THEN** the command fails with a message naming the accepted suffixes, without a traceback
 
+#### Scenario: A file name holding a comma
+
+- **WHEN** `-a "labels, v2.csv"` names an existing file
+- **THEN** that file is read whole instead of being split into `labels` and ` v2.csv`
+
+#### Scenario: A missing file
+
+- **WHEN** `prepare -i seqs.fasta -a typo.csv` is run and `typo.csv` does not exist
+- **THEN** it fails with a usage error naming the file before anything is embedded
+
 #### Scenario: A source name that is also a file name
 
 - **WHEN** `-a default` is given and the working directory holds a file named `default`
@@ -148,14 +158,19 @@ name SHALL be a usage error without a traceback.
 ### Requirement: stats scores a custom annotation file without rewriting it
 
 `stats -a` SHALL accept a custom annotation file, score it, and write the table with its
-per-protein cluster columns to `selected_annotations.parquet` in the projections directory, leaving
-the file unchanged.
+per-protein cluster columns to `<file stem>.annotations.parquet` in the projections directory,
+leaving the file and every other file in that directory unchanged.
 
 #### Scenario: stats with a CSV
 
 - **WHEN** `stats -i emb.h5 -p proj -a labels.csv -o stats.parquet` is run
-- **THEN** the file is unchanged and `proj/selected_annotations.parquet` holds its columns plus the
+- **THEN** the file is unchanged and `proj/labels.annotations.parquet` holds its columns plus the
   cluster columns, for every projected protein
+
+#### Scenario: An unbundled prepare directory
+
+- **WHEN** `-p` is a `prepare --no-bundled` directory holding `selected_annotations.parquet`
+- **THEN** `stats -a labels.csv` leaves that file unchanged
 
 ### Requirement: bundle takes a custom annotation file
 

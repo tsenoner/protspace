@@ -40,8 +40,8 @@ silently ignored on HDF5 input and `--max-length` is rejected there as if it mat
 - **`annotate -a`** takes files beside source names; files alone fetch nothing. An unknown source
   name is a usage error instead of a traceback.
 - **`stats -a`** and **`bundle -a`** take a CSV/TSV. `stats` scores it and, since it does not
-  rewrite a text file, writes the table with its cluster columns to `selected_annotations.parquet`
-  in the projections directory. A file that is neither is a usage error. Both resolve a parquet's
+  rewrite a text file, writes the table with its cluster columns to
+  `<file stem>.annotations.parquet` in the projections directory. A file that is neither is a usage error. Both resolve a parquet's
   id column with the same rule.
 - **`project`** gets hidden `-a/--annotations` and `--stats` options that exit with a usage error
   naming the one-shot route (`prepare … -a x.csv --stats`) and the step route (`annotate`, `stats`,
@@ -87,8 +87,12 @@ pipeline.py` (CSV loading moved out, several files, `nan` kept out of the metada
   plain-text CSV cell is no longer read as percent-encoded (a literal `%41` stays `%41`, and
   `Membrane (single-pass; type I)` stays one value); a parquet carrying both `identifier` and
   `protein_id` is refused by `bundle` instead of silently using `protein_id`; `--max-length` with
-  HDF5 input warns instead of failing.
+  HDF5 input warns instead of failing; a later column named `identifier`, `protein_id` or `id`
+  outranks the first column as the id column; a missing `-a` file fails `prepare` before anything
+  is embedded.
 - Tests: a new `tests/test_custom_annotations.py`; `test_pipeline_utils.py`'s
   `_resolve_annotation_names` cases follow the new return shape.
-- Docs: `docs/guide/python-cli.md`, `docs/guide/faq.md`, `apps/protspace/CLAUDE.md`.
+- Docs: `docs/guide/python-cli.md`, `docs/guide/faq.md`, `apps/protspace/CLAUDE.md`. The
+  Preparation notebook's upload hint restates the id rule and is handed to the notebook
+  workstream (tasks 4.4).
 - No bundle-format, dependency or public Python API change.
