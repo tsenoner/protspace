@@ -12,7 +12,7 @@ import {
   proteinScreenPosition,
   provenancePair,
 } from '../../../apps/web/tests/helpers/plot';
-import type { CaptureEntry } from '../capture-plan';
+import type { CaptureApi, CaptureEntry } from '../capture-plan';
 
 const DATASET = 'three-finger-toxins';
 const ANNOTATION = 'toxin_class';
@@ -25,8 +25,9 @@ const CLEARANCE_PX = 2;
 /** Wheel steps of the connectors GIF's zoom, before its recording starts. */
 const ZOOM_STEPS = 12;
 
-/** The connectors GIF's pair, picked before the zoom and clicked after it. */
-let pair: Awaited<ReturnType<typeof provenancePair>> | undefined;
+type Pair = Awaited<ReturnType<typeof provenancePair>>;
+/** The connectors GIF's pair per page: picked in setup, before the zoom, and clicked in steps. */
+const pairs = new WeakMap<Page, Pair>();
 
 const eatSection = (page: Page): Locator =>
   legend(page).getByRole('region', { name: 'Embedding Annotation Transfer' });
@@ -40,6 +41,22 @@ async function restingSpot(page: Page): Promise<{ x: number; y: number }> {
   const box = await plotArea(page).boundingBox();
   if (!box) throw new Error('The plot area has no box');
   return emptyScreenPointNear(page, { x: box.x + box.width - 48, y: box.y + box.height / 2 });
+}
+
+/**
+ * Wheels the plot in by `steps` around the empty spot nearest `at`, then rests the pointer in the
+ * margin. Each wheel event is one zoom step: Playwright dispatches them one at a time.
+ */
+async function zoomAround(
+  page: Page,
+  cap: CaptureApi,
+  at: { x: number; y: number },
+  steps: number,
+): Promise<void> {
+  await cap.moveTo(await emptyScreenPointNear(page, at), { steps: 15 });
+  for (let step = 0; step < steps; step++) await page.mouse.wheel(0, -50);
+  await plotSettled(page);
+  await cap.moveTo(await restingSpot(page), { steps: 15 });
 }
 
 export const EAT_CAPTURES: CaptureEntry[] = [
@@ -65,20 +82,16 @@ export const EAT_CAPTURES: CaptureEntry[] = [
     timeoutMs: 120_000,
     docs: ['explore/eat.md'],
     setup: async (page, cap) => {
-      pair = await provenancePair(page, ANNOTATION, { clearancePx: CLEARANCE_PX });
+      const pair = await provenancePair(page, ANNOTATION, { clearancePx: CLEARANCE_PX });
+      pairs.set(page, pair);
       // Zoom in around the pair, so the lines are long enough to read in the docs column.
       const sourceAt = await proteinScreenPosition(page, pair.source);
       const targetAt = await proteinScreenPosition(page, pair.target);
       const between = { x: (sourceAt.x + targetAt.x) / 2, y: (sourceAt.y + targetAt.y) / 2 };
-      await cap.moveTo(await emptyScreenPointNear(page, between), { steps: 15 });
-      for (let step = 0; step < ZOOM_STEPS; step++) {
-        await page.mouse.wheel(0, -50);
-        await cap.hold(50);
-      }
-      await plotSettled(page);
-      await cap.moveTo(await restingSpot(page), { steps: 15 });
+      await zoomAround(page, cap, between, ZOOM_STEPS);
     },
     steps: async (page, cap) => {
+      const pair = pairs.get(page);
       if (!pair) throw new Error('eat-connectors: setup picks the pair');
       const { source, target, dependantCount } = pair;
       const rest = await restingSpot(page);
@@ -116,6 +129,10 @@ export const EAT_CAPTURES: CaptureEntry[] = [
     dataset: DATASET,
     docs: ['explore/eat.md'],
     setup: async (page, cap) => {
+      // Zoom in on the biggest group of transferred proteins, so the rings the filter removes
+      // are large enough to see in the docs column. Clearance 0: only the spot matters here.
+      const { source } = await provenancePair(page, ANNOTATION, { clearancePx: 0 });
+      await zoomAround(page, cap, await proteinScreenPosition(page, source), ZOOM_STEPS / 2);
       // Rest in the gap left of the % box, so the cursor never covers the number it changes.
       const box = await reliabilityPercent(page).boundingBox();
       if (!box) throw new Error('The reliability percentage has no box');
