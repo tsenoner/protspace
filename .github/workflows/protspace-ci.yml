@@ -26,9 +26,7 @@ name: protspace CI (Python)
 # example opens on, and the perf manifest stage_perf.py writes. A change to only one
 # of them would otherwise never run the test that reads it. A checkout holding only
 # apps/protspace, the uv workspace files and the files listed below passes the fast
-# suite with no skips; a new test reading outside it belongs in the list. The web's
-# missing-value tokens are not here: bundle-contract.yml, which runs on every pull
-# request, checks them against the Python ones.
+# suite with no skips; a new test reading outside it belongs in the list.
 
 on:
   push:

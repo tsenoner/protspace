@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 
 # Missing values are dropped, never a category. What the web shows as N/A comes
 # from the shared ``core.constants.is_missing_value``; on top come the *display*
-# forms a missing cell takes downstream: ``"<N/A>"`` (``standardize_missing``),
-# and pandas nullable dtypes' ``"<NA>"`` / ``"NaT"`` and ``"<NaN>"``. Missing any
-# of these would score a phantom missing-value cluster and inflate a column's
-# cardinality.
+# forms a missing cell takes once something has turned it into text:
+# ``"<N/A>"`` (``standardize_missing``), pandas' ``"<NA>"`` / ``"NaT"``, and the
+# Dash picker's ``"<NaN>"``. Missing any of these would score a phantom
+# missing-value cluster and inflate a column's cardinality.
 _MISSING_DISPLAY_FORMS = frozenset({"<N/A>", "<NA>", "<NaN>", "NaT"})
 
 
@@ -41,9 +41,25 @@ def _category(value) -> str:
     return _strip_scores_from_cell(str(value))
 
 
+def _cell_categories(series):
+    """Each cell's bare category (:func:`_category`), or None when it is missing.
+
+    A text cell is decided once per distinct value: a column holds a few dozen
+    values across up to 570K cells, and the per-cell checks would dominate.
+    """
+    memo: dict[str, str | None] = {}
+    for v in series.tolist():
+        if not isinstance(v, str):
+            yield None if _is_missing(v) else _category(v)
+            continue
+        if v not in memo:
+            memo[v] = None if _is_missing(v) else _category(v)
+        yield memo[v]
+
+
 def _clean(series) -> list[str]:
     """Non-missing bare-category string values of a column (scores stripped)."""
-    return [_category(v) for v in series.tolist() if not _is_missing(v)]
+    return [c for c in _cell_categories(series) if c is not None]
 
 
 def _is_numeric(vals) -> bool:
@@ -67,11 +83,11 @@ def _is_suitable_column(series, cap: int) -> bool:
     """
     seen: set[str] = set()
     total = 0
-    for v in series.tolist():
-        if _is_missing(v):
+    for category in _cell_categories(series):
+        if category is None:
             continue
         total += 1
-        seen.add(_category(v))
+        seen.add(category)
         if len(seen) > cap:  # too many categories → not a low-card categorical
             return False
     distinct = len(seen)
@@ -145,9 +161,9 @@ def build_annotation_labels(
     ids = [str(i) for i in frame[id_col].tolist()]
     for name in names:
         mapping = {
-            pid: _category(v)
-            for pid, v in zip(ids, frame[name].tolist(), strict=False)
-            if not _is_missing(v)
+            pid: category
+            for pid, category in zip(ids, _cell_categories(frame[name]), strict=False)
+            if category is not None
         }
         if mapping:
             labels[name] = mapping

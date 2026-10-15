@@ -102,8 +102,8 @@ class TestNoTransmembraneIsACategory:
     """A protein without a TM segment is a prediction, not a missing value.
 
     Both readers turn a set of literal tokens into N/A: the CLI's
-    `standardize_missing` and the web app's `normalizeMissingValue`, which share
-    `is_missing_value` (the bundle contract suite pins it to the web's).
+    `standardize_missing`, through `is_missing_value`, and the web app's
+    `normalizeMissingValue`, which the bundle contract suite pins it to.
     `none` was one of them, so every negative prediction displayed as N/A.
     """
 

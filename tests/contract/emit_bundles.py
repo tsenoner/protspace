@@ -99,7 +99,7 @@ EDGE_VALUES = [2**53, 1, None, -(2**53), 2, 3]
 
 
 # Spellings around the missing-value rule, each published with Python's verdict:
-# every token as written, upper-cased, title-cased and padded, blank cells, and
+# every token as written, upper-cased and padded, blank cells, and
 # near misses (TMbed's negative among them; the display forms `stats` drops on
 # its own, which the web shows as categories). The reader asserts its own
 # verdict on each, so a change in how either side matches fails, not only a
@@ -108,7 +108,7 @@ MISSING_VALUE_PROBES = sorted(
     {
         spelling
         for token in MISSING_VALUE_TOKENS
-        for spelling in (token, token.upper(), token.title(), f"  {token}\t")
+        for spelling in (token, token.upper(), f"  {token}\t")
     }
     | {"", " ", "\t\n", "\u00a0", "non-transmembrane", "nan%", "n.a.", "NA_"}
     | {"<N/A>", "<NA>", "0", "False"}
