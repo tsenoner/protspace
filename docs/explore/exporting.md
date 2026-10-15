@@ -4,7 +4,9 @@ ProtSpace allows you to export publication-ready figures, raw data, and protein 
 
 ## Export Button
 
-Click **Export** in the top bar to open its menu:
+Click **Export** in the app bar to open its menu (on a phone: **More**, then **Export**):
+
+![The Export menu open under the Export button](./images/export-menu.png)
 
 | Item                             | What it does                                                     |
 | -------------------------------- | ---------------------------------------------------------------- |
@@ -15,7 +17,10 @@ Click **Export** in the top bar to open its menu:
 | **Data bundle (.parquetbundle)** | Downloads a `.parquetbundle` with all data and optional settings |
 
 **Include legend settings**, below them, decides whether a data bundle carries your legend
-settings. Every export confirms with a message naming the downloaded file.
+settings. Every export confirms with a message naming the downloaded file:
+
+![The notification after an export](./images/toast.png){.light-only}
+![The notification after an export](./images/toast-dark.png){.dark-only}
 
 ## Image Export (PNG / PDF)
 
@@ -55,6 +60,12 @@ PDF, the Figure Editor and its zoom insets show the points only. The Figure Edit
 exactly what will be exported. Tracked in [#498](https://github.com/tsenoner/protspace/issues/498).
 :::
 
+::: info Exports are always light
+Quick PNG and PDF, the Figure Editor's preview and its exports always use the light colours (a
+white background and the light greys for `Other` and `N/A`), whatever theme the app shows, so a
+figure looks the same whoever made it. See [Light and dark](/explore/#light-and-dark).
+:::
+
 ## Parquet Export
 
 Export a `.parquetbundle` file that can be loaded back into ProtSpace or shared.
@@ -78,12 +89,12 @@ Exports a plain text file with one protein ID per line. Useful for downstream an
 
 ## What Gets Exported
 
-| State             | Exported Data          |
-| ----------------- | ---------------------- |
-| Proteins isolated | Only isolated proteins |
-| No isolation      | All proteins           |
+| State                                         | Exported Data       |
+| --------------------------------------------- | ------------------- |
+| After **Show only these** (the plot narrowed) | Only those proteins |
+| No **Show only these** step                   | All proteins        |
 
-Use isolation to export specific subsets.
+To export a subset, select its proteins and press **Show only these** in the selection bar.
 
 A subset export drops the statistics: the scores were computed over the whole dataset, so keeping
 them in a slice would make them read as describing that slice.

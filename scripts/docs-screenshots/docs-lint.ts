@@ -68,10 +68,7 @@ export const LEGACY_IMAGES: ReadonlySet<string> = new Set<string>();
  * User-guide pages that still name removed UI until their page task rewrites them. Only
  * shrinks; Task 7.16 deletes the set.
  */
-export const STALE_PAGES: ReadonlySet<string> = new Set([
-  'explore/importing-data.md',
-  'guide/faq.md',
-]);
+export const STALE_PAGES: ReadonlySet<string> = new Set<string>();
 
 /** The pages the stale-term check reads: the user guide, not the developer docs. */
 const USER_GUIDE = /^(index\.md|explore\/.+\.md|guide\/.+\.md)$/;

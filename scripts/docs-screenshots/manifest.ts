@@ -3,8 +3,10 @@ import { CONTROLS_CAPTURES } from './scenes/controls';
 import { EAT_CAPTURES } from './scenes/eat';
 import { EXAMPLE_CAPTURES } from './scenes/examples';
 import { FIGURE_EDITOR_CAPTURES } from './scenes/figure-editor';
+import { IMPORT_EXPORT_CAPTURES } from './scenes/import-export';
 import { LEGEND_CAPTURES } from './scenes/legend';
 import { OVERVIEW_CAPTURES } from './scenes/overview';
+import { PHONE_CAPTURES } from './scenes/phones';
 import { SCATTERPLOT_CAPTURES } from './scenes/scatterplot';
 import { STRUCTURE_CAPTURES } from './scenes/structures';
 
@@ -18,4 +20,6 @@ export const MANIFEST: readonly CaptureEntry[] = [
   ...STRUCTURE_CAPTURES,
   ...FIGURE_EDITOR_CAPTURES,
   ...EAT_CAPTURES,
+  ...IMPORT_EXPORT_CAPTURES,
+  ...PHONE_CAPTURES,
 ];

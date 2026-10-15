@@ -8,28 +8,31 @@ ProtSpace accepts two kinds of input:
   ProtSpace prep backend, then opened automatically. See
   [FASTA Upload (Instant Prep)](#fasta-upload-instant-prep).
 
-Both the drop zone and the **Import** button accept either kind.
+You can drop either kind anywhere on the page, or open it from the **Import** menu.
 
 ## Drag and Drop (Recommended)
 
 The easiest way to load data:
 
 1. Locate your `.parquetbundle` or FASTA file on your computer
-2. Drag it onto the scatterplot canvas
-3. Drop when you see the drop indicator
+2. Drag it over the ProtSpace page; `Drop to open this file` appears over the workbench
+3. Drop it
 4. Data loads automatically
 
 ::: tip Drop Anywhere
-You can drop the file anywhere on the scatterplot area - it doesn't need to be a specific location.
+The drop works anywhere on the page: the plot, the legend, the bars. When nothing is loaded, the
+plot says `Drop a file or pick an example`, with **Open a file…** and **Pick an example** buttons.
 :::
 
-## Import Button
+## The Import Menu
 
-Alternatively, use the **Import** button in the control bar:
+**Import** in the app bar opens the Import menu, and so does the dataset's name at the left of the
+app bar. On a phone, tap the dataset's name, or open **More** and choose **Import data**. The menu
+holds:
 
-1. Click the **Import** button in the top-right corner
-2. Select your `.parquetbundle` or FASTA file from the file picker
-3. Click **Open**
+- **Open a file…**, which opens your system's file picker for a `.parquetbundle` or FASTA file
+- **Last file**, which reopens the file you imported last, from this browser's storage
+- **Examples**, the [example datasets](/explore/example-datasets); each opens in its curated view
 
 ## FASTA Upload (Instant Prep)
 
@@ -104,6 +107,14 @@ For datasets beyond these limits, use the
 import the resulting `.parquetbundle`.
 
 ## What Happens When You Load Data
+
+While a dataset loads, a card over the page says what is happening and how far it has got: for a
+file, that it is being read in your browser; for an example, `Downloading …` with a
+**Cancel download** button, then `Opening …`; then `Drawing N proteins`. A file you open never
+leaves your computer; only a FASTA file is sent to the server, for embedding.
+
+![The loading card while an example downloads](./images/loading-overlay.png){.light-only}
+![The loading card while an example downloads](./images/loading-overlay-dark.png){.dark-only}
 
 After successfully loading a file:
 
@@ -183,7 +194,7 @@ Auto-retry would loop forever on a genuinely broken file. The banner makes the f
 
 ## Need a Data File?
 
-If you only have sequences, drop the FASTA straight onto the scatterplot, see
+If you only have sequences, drop the FASTA file anywhere on the page, see
 [FASTA Upload (Instant Prep)](#fasta-upload-instant-prep). To build a `.parquetbundle` yourself:
 
 - **[Using Google Colab](/guide/data-preparation)** - No installation required (recommended)

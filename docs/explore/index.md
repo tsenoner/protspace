@@ -123,6 +123,49 @@ The tour runs once by itself, the first time you open Explore. It points at each
 | <kbd>Shift</kbd> + hover          | Focus the category of the point under the pointer                                          |
 | <kbd>i</kbd>                      | In the legend, show only the focused category                                              |
 
+## Phones and tablets
+
+ProtSpace picks a layout from the window's size, and the same page works with touch:
+
+| Window                                    | Layout                                                                                          |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 951 px wide and more                      | The desktop workbench described above                                                           |
+| 641 to 950 px wide (tablets)              | The plot on top; the legend and the structure side by side below it                             |
+| 640 px wide or less (phones)              | One fixed screen: the bars, the plot, and a panel under it                                      |
+| A phone on its side (500 px tall or less) | The page scrolls once past the bars to a plot-and-legend view; the structure opens on the right |
+
+<p>
+<img src="./images/phone-layout.png" alt="ProtSpace on a phone: the bars, the plot and the legend panel" width="240" class="light-only" loading="lazy" />
+<img src="./images/phone-layout-dark.png" alt="ProtSpace on a phone: the bars, the plot and the legend panel" width="240" class="dark-only" loading="lazy" />
+<img src="./images/phone-more-sheet.png" alt="The More sheet on a phone" width="240" class="light-only" loading="lazy" />
+<img src="./images/phone-more-sheet-dark.png" alt="The More sheet on a phone" width="240" class="dark-only" loading="lazy" />
+<img src="./images/phone-structure-sheet.png" alt="A pinned tooltip and the folded structure sheet on a phone" width="240" class="light-only" loading="lazy" />
+<img src="./images/phone-structure-sheet-dark.png" alt="A pinned tooltip and the folded structure sheet on a phone" width="240" class="dark-only" loading="lazy" />
+</p>
+
+On a phone:
+
+- The app bar keeps the wordmark, the dataset's name and a search button, which opens search over
+  the bar. The view bar keeps **Projection**, **Color by** and **More**.
+- **More** opens a sheet with everything else: **Contours**, **Filter**, **Import data**,
+  **Export**, **Theme** (System, Light, Dark), **Help & shortcuts** (Documentation, Keyboard
+  shortcuts, Take the tour) and **Feedback**. A dot on **More** says something in it is active,
+  such as contours or a filter.
+- The panel under the plot holds the legend and the Filter panel, switched by the **Legend** and
+  **Filter** tabs. Its chevron folds it to its header to give the plot the room.
+- Tapping a protein selects it and pins its tooltip. Its structure opens in a sheet at the bottom,
+  folded to its header so the plot and the tooltip stay in view; the header's chevron, or **View
+  structure** in the tooltip, expands it. While it is expanded, a tap on the plot opens no tooltip.
+
+<img src="./images/tablet-layout.png" alt="ProtSpace on a tablet: the plot above the legend and the structure" width="320" loading="lazy" />
+
+On every touch screen:
+
+- Drag to pan, pinch to zoom; a tap on empty space or a pan closes a pinned tooltip.
+- Tap a legend row to hide or show it, and double-tap it to show only that category. The row's
+  eye, handle and ⋯ menu are always shown, and every control is at least 40 px.
+- To reorder the legend, hold a row's handle for a moment, then drag it.
+
 ## Next steps
 
 - [Importing Data](/explore/importing-data): load your protein data

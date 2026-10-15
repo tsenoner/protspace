@@ -99,7 +99,7 @@ export const CONTROLS_CAPTURES: CaptureEntry[] = [
     name: 'export-menu',
     kind: 'png',
     viewport: 'desktop',
-    docs: ['explore/controls.md'],
+    docs: ['explore/controls.md', 'explore/exporting.md'],
     steps: async (page) => {
       await openExportMenu(page);
     },
