@@ -89,12 +89,14 @@ Exports a plain text file with one protein ID per line. Useful for downstream an
 
 ## What Gets Exported
 
-| State                                         | Exported Data       |
-| --------------------------------------------- | ------------------- |
-| After **Show only these** (the plot narrowed) | Only those proteins |
-| No **Show only these** step                   | All proteins        |
+| State                                                       | Exported Data                    |
+| ----------------------------------------------------------- | -------------------------------- |
+| A [filter](/explore/filter) applied, or **Show only these** | Only the proteins the plot shows |
+| Neither                                                     | All proteins                     |
 
-To export a subset, select its proteins and press **Show only these** in the selection bar.
+To export a subset, filter the plot, or select its proteins and press **Show only these** in the
+selection bar. To export everything, clear both with the ✕ on their chips in the plot's
+[status corner](/explore/scatterplot#status-corner).
 
 A subset export drops the statistics: the scores were computed over the whole dataset, so keeping
 them in a slice would make them read as describing that slice.
