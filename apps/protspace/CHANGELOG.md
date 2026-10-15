@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v4.16.4 (2026-10-15)
+
+### Bug Fixes
+
+- **reader**: Refuse only a bundle file as save_data's default target
+  ([`d91ff68`](https://github.com/tsenoner/protspace/commit/d91ff68fa4b82dc02e006e7633a140728e60ce7b))
+
+- **reader**: Refuse save_data without a directory to write into
+  ([`b8c8b8c`](https://github.com/tsenoner/protspace/commit/b8c8b8c6a242baef45b577ef7ef5283a79d8b448))
+
+- **reader**: Save annotations where ArrowReader reloads them
+  ([`6b5baa8`](https://github.com/tsenoner/protspace/commit/6b5baa84b4c450d6c0547bfc5a99f294bbb12494))
+
+### Refactoring
+
+- **reader**: Write save_data's tables in one loop, test via the shared fixture
+  ([`2e3ed84`](https://github.com/tsenoner/protspace/commit/2e3ed8478b0b7cdec3a461c530403626c1fbe729))
+
+
 ## v4.16.3 (2026-10-13)
 
 ### Bug Fixes
