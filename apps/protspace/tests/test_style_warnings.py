@@ -283,8 +283,14 @@ def test_resolve_style_key_answers_what_style_would_accept():
     assert resolve_style_key("__NA__", {"None", "Human"}) == "None"
     assert resolve_style_key("100.0", {"100"}) == "100"
     assert resolve_style_key("Alien", {"Human", "Mouse"}) is None
-    # Only the NA spellings `style` folds: "none" (TMbed) is a value of its own.
-    assert resolve_style_key("__NA__", {"none", "Human"}) is None
+    # Every spelling the web shows as N/A is N/A to `style` too. "none" was kept
+    # apart while TMbed wrote its negative that way, but the web always drew it
+    # as N/A, so a style on it never applied.
+    assert resolve_style_key("__NA__", {"none", "Human"}) == "none"
+    assert resolve_style_key("N/A", {"null", "Human"}) == "null"
+    assert resolve_style_key("__NA__", {"Human"}) is None  # no missing cell
+    # With several N/A spellings in the data, always the same one.
+    assert resolve_style_key("N/A", {"None", "", "n/a", "Human"}) == ""
 
 
 def test_style_keys_are_the_display_values_of_every_cell():

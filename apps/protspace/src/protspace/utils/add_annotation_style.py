@@ -4,6 +4,12 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from protspace.data.annotations.encoding import to_display_value
+from protspace.data.io.settings_converter import (
+    NA_COLOR,
+    NA_INTERNAL,
+    is_na_label,
+    visualization_state_to_settings,
+)
 from protspace.utils.arrow_reader import ArrowReader
 
 logger = logging.getLogger(__name__)
@@ -80,26 +86,19 @@ def detect_data_format(input_path: str) -> str:
         )
 
 
-_NA_LABELS = {"", "<NA>", "NaN", "__NA__", "None"}
-
-
 def _resolve_na(value: str, all_values: set[str]) -> str | None:
-    """If *value* is an NA-like label, return the matching label in *all_values*.
+    """If *value* names N/A, return the N/A spelling *all_values* holds.
 
-    Different data sources represent missing values as ``""``, ``"<NA>"``,
-    ``"NaN"``, or the frontend's ``"__NA__"`` sentinel; a v3 bundle's missing
-    cell decodes as ``""``.  ``"None"`` is what ``str()`` yields for a parquet
-    NULL, which is how a v2 bundle exported by a web build before v3 stored a
-    missing categorical cell.  This helper maps between them so styles using
-    one form still work when the data uses another.  Returns *None* when no
-    match is found.
+    The web draws every missing spelling as one N/A category
+    (:func:`~protspace.data.io.settings_converter.is_na_label`): a v3 bundle's
+    missing cell decodes as ``""``, a Parquet NULL as ``"None"``, and a cell may
+    say ``N/A`` outright. A styles file may use any of them. The first spelling
+    in sorted order, so the answer does not depend on set order; *None* when the
+    column has no missing cell.
     """
-    if value not in _NA_LABELS:
+    if not is_na_label(value):
         return None
-    for candidate in _NA_LABELS:
-        if candidate in all_values:
-            return candidate
-    return None
+    return min((v for v in all_values if is_na_label(v)), default=None)
 
 
 def _resolve_numeric(value: str, all_values: set[str]) -> str | None:
@@ -264,8 +263,8 @@ def generate_template(input_file: str) -> dict:
     """Generate a pre-filled styles template from an input file.
 
     Reads annotations, computes value frequencies, and outputs a template
-    with values in frequency-descending order. ``<NA>`` gets a default
-    light-gray color.
+    with values in frequency-descending order. N/A, whatever the data spells
+    it, is one ``__NA__`` entry, last, with a default light-gray color.
     """
     detect_data_format(input_file)
     reader = ArrowReader(Path(input_file))
@@ -281,12 +280,11 @@ def generate_template(input_file: str) -> dict:
             freqs.keys(), key=lambda v: freqs.get(v, 0), reverse=True
         )
 
-        colors: dict[str, str] = {}
-        for value in sorted_values:
-            if value in ("<NA>", "NaN", ""):
-                colors[value] = "#C0C0C0"
-            else:
-                colors[value] = ""
+        # Every N/A spelling is the web's one N/A entry: listed once, last, as
+        # the legend places it.
+        colors: dict[str, str] = {v: "" for v in sorted_values if not is_na_label(v)}
+        if any(is_na_label(v) for v in sorted_values):
+            colors[NA_INTERNAL] = NA_COLOR
 
         template[annotation] = {
             "sortMode": "size-desc",
@@ -314,8 +312,6 @@ def _styled_settings(
     ``selectedPaletteId``) alongside ``colors`` and ``shapes``; these are
     forwarded to the settings converter.
     """
-    from protspace.data.io.settings_converter import visualization_state_to_settings
-
     # Existing settings (if any), to preserve extra fields.  From the reader,
     # not the file again: this command reads its input once (and so logs a
     # legacy-format warning once).
@@ -352,15 +348,19 @@ def _styled_settings(
         if overrides:
             style_overrides[annotation] = overrides
 
+        # An N/A style goes under __NA__, the key the stored settings already
+        # use, so it replaces the stored N/A style rather than competing with it.
         if "colors" in styles:
             for value, color in styles["colors"].items():
                 resolved = _resolve_style_value(str(value), all_values, annotation)
-                reader.update_annotation_color(annotation, resolved, color)
+                key = NA_INTERNAL if is_na_label(resolved) else resolved
+                reader.update_annotation_color(annotation, key, color)
 
         if "shapes" in styles:
             for value, shape in styles["shapes"].items():
                 resolved = _resolve_style_value(str(value), all_values, annotation)
-                reader.update_marker_shape(annotation, resolved, shape)
+                key = NA_INTERNAL if is_na_label(resolved) else resolved
+                reader.update_marker_shape(annotation, key, shape)
 
     # Convert updated visualization_state back to settings_json
     viz_state = reader.data.get("visualization_state", {})

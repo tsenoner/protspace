@@ -38,8 +38,15 @@ from protspace.data.annotations.transformers.interpro_transforms import (
 from protspace.data.annotations.transformers.uniprot_transforms import (
     UniProtTransformer,
 )
+from protspace.data.io.bundle import read_settings_from_bundle, write_bundle
+from protspace.data.io.settings_converter import NA_INTERNAL, NA_PINNED_COLOR
 from protspace.data.parsers.uniprot_parser import UniProtEntry
+from protspace.data.processors.base_processor import BaseProcessor
 from protspace.stats.annotation_select import build_annotation_labels
+from protspace.utils.add_annotation_style import (
+    add_annotation_styles,
+    generate_template,
+)
 
 PACKAGE = Path(__file__).resolve().parents[1] / "src" / "protspace"
 
@@ -156,6 +163,97 @@ def test_transfer_fills_every_missing_cell_and_never_copies_one():
     for qid in ids[:-1]:
         assert rows[qid]["family__pred_value"] == "neurotoxin", qid
         assert rows[qid]["family__pred_source"] == "R", qid
+
+
+def _bundle(tmp_path, organism: list, settings: dict | None = None) -> Path:
+    ids = [f"P{i}" for i in range(len(organism))]
+    tables = BaseProcessor({}, {}).create_output(
+        pd.DataFrame({"identifier": ids, "organism": organism}),
+        [
+            {
+                "name": "PCA_2",
+                "dimensions": 2,
+                "info": {},
+                "data": np.zeros((len(ids), 2)),
+            }
+        ],
+        ids,
+    )
+    path = tmp_path / "in.parquetbundle"
+    write_bundle(
+        [
+            tables["protein_annotations"],
+            tables["projections_metadata"],
+            tables["projections_data"],
+        ],
+        path,
+        settings=settings,
+    )
+    return path
+
+
+def _styled(bundle: Path, styles: dict) -> dict:
+    """The `organism` settings `protspace style` writes for *styles*."""
+    out = bundle.with_name("styled.parquetbundle")
+    add_annotation_styles(str(bundle), {"organism": styles}, str(out))
+    return read_settings_from_bundle(out)["organism"]
+
+
+@pytest.mark.parametrize(
+    ("cell", "key"),
+    [("N/A", "N/A"), ("null", NA_INTERNAL), ("none", "none"), (None, "N/A")],
+    ids=["N/A-as-itself", "null-as-__NA__", "none-as-itself", "null-cell-as-N/A"],
+)
+def test_style_puts_an_na_colour_on_the_web_na_category(tmp_path, cell, key):
+    # The web draws every missing cell as one legend entry and looks its style
+    # up under __NA__; a style stored under the cell's own spelling never applies.
+    bundle = _bundle(tmp_path, ["A", cell, "B", "A"])
+
+    settings = _styled(bundle, {"colors": {key: "#FF0000", "A": "#00FF00"}})
+
+    assert settings["categories"].keys() == {"A", NA_INTERNAL}
+    assert settings["categories"][NA_INTERNAL]["color"] == "#FF0000"
+
+
+@pytest.mark.parametrize("key", [NA_INTERNAL, "N/A", ""])
+def test_restyling_na_replaces_the_stored_colour(tmp_path, key):
+    stored = {
+        "categories": {
+            NA_INTERNAL: {"color": "#111111", "shape": "circle", "zOrder": 1},
+            "A": {"color": "#00FF00", "shape": "circle", "zOrder": 0},
+        }
+    }
+    bundle = _bundle(tmp_path, ["A", None, "A"], settings={"organism": stored})
+
+    settings = _styled(bundle, {"colors": {key: "#FF0000"}})
+
+    assert settings["categories"][NA_INTERNAL]["color"] == "#FF0000"
+
+
+def test_style_hides_and_pins_na_by_any_spelling(tmp_path):
+    bundle = _bundle(tmp_path, ["A", "N/A", "B", "A", "none"])
+
+    settings = _styled(
+        bundle,
+        {
+            "sortMode": "manual",
+            "maxVisibleValues": 2,
+            "pinnedValues": ["A", "N/A", "none"],
+            "hiddenValues": ["N/A", "", "none"],
+        },
+    )
+
+    assert settings["hiddenValues"] == [NA_INTERNAL]
+    categories = settings["categories"]
+    assert categories.keys() == {"A", NA_INTERNAL}
+    assert categories[NA_INTERNAL]["zOrder"] == 1
+    assert categories[NA_INTERNAL]["color"] == NA_PINNED_COLOR
+
+
+def test_style_template_lists_na_once(tmp_path):
+    template = generate_template(str(_bundle(tmp_path, ["A", None, "N/A", "null"])))
+
+    assert list(template["organism"]["colors"]) == ["A", NA_INTERNAL]
 
 
 # ---------------------------------------------------------------------------

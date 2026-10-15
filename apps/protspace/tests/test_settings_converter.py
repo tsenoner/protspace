@@ -192,6 +192,47 @@ class TestVisualizationStateToSettings:
         # NA values are stored under __NA__ key (frontend internal format)
         assert cats["__NA__"]["color"] == "#C0C0C0"
 
+    def test_every_na_spelling_is_one_na_category(self):
+        # The web draws all of these as its one N/A entry, keyed __NA__; the
+        # stored __NA__ wins over a spelling of it.
+        viz = {
+            "annotation_colors": {
+                "ann": {
+                    "A": "#00FF00",
+                    "N/A": "#FF0000",
+                    "": "#0000FF",
+                    "__NA__": "#111111",
+                    "<NA>": "#222222",
+                }
+            },
+            "marker_shapes": {"ann": {"null": "diamond"}},
+        }
+        cats = visualization_state_to_settings(viz)["ann"]["categories"]
+        assert cats.keys() == {"A", "__NA__"}
+        assert cats["__NA__"]["color"] == "#111111"
+        assert cats["__NA__"]["shape"] == "diamond"
+        assert cats["__NA__"]["zOrder"] == 1  # last
+
+    def test_na_spellings_count_as_one_category_when_sorting_by_size(self):
+        result = visualization_state_to_settings(
+            {"annotation_colors": {}, "marker_shapes": {}},
+            value_frequencies={"ann": {"A": 3, "B": 2, "N/A": 1, "": 2}},
+            style_overrides={"ann": {"sortMode": "size-desc"}},
+        )
+        cats = result["ann"]["categories"]
+        assert {k: v["zOrder"] for k, v in cats.items()} == {
+            "A": 0,
+            "B": 1,
+            "__NA__": 2,
+        }
+
+    def test_hidden_na_is_named_as_the_web_names_it(self):
+        result = visualization_state_to_settings(
+            {"annotation_colors": {"ann": {"A": "#00FF00"}}, "marker_shapes": {}},
+            style_overrides={"ann": {"hiddenValues": ["A", "N/A", "", "__NA__"]}},
+        )
+        assert result["ann"]["hiddenValues"] == ["A", "__NA__"]
+
     def test_defaults_when_no_existing(self):
         viz = {
             "annotation_colors": {"ann": {"A": "rgba(255,0,0,0.8)"}},

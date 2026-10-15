@@ -14,15 +14,11 @@ plus UI preferences (maxVisibleValues, sortMode, hiddenValues, etc.).
 
 import re
 
+from protspace.core.constants import is_missing_value
+
 NA_COLOR = "#C0C0C0"  # light gray for missing / <NA> values
 NA_INTERNAL = "__NA__"  # frontend internal key for N/A categories
 NA_PINNED_COLOR = "#DDDDDD"  # lighter gray used for N/A in pinned settings
-# Every spelling a missing cell can arrive under. A v3 bundle's missing cell
-# decodes as "". "None" is what ``str()`` yields for a parquet NULL, which is
-# how a v2 bundle exported by a web build before v3 stored a missing categorical
-# cell (it no longer wrote the __NA__ sentinel), so without it a styled N/A group
-# lands under the key "None" and the frontend's __NA__ lookup misses it.
-_NA_LABELS = {"", "<NA>", "NaN", "__NA__", "None"}
 REST_MARKER = "__REST__"  # auto-fill remaining slots from top values by frequency
 
 # Kelly's 21 Colors of Maximum Contrast (same order as the web frontend)
@@ -49,6 +45,45 @@ KELLYS_COLORS = [
     "#F2F3F4",
     "#222222",
 ]
+
+
+def is_na_label(value: str) -> bool:
+    """Whether a styles or settings key names the web's one N/A category.
+
+    Every spelling the web reads as missing (:func:`is_missing_value`): a v3
+    bundle's missing cell decodes as ``""``, a Parquet NULL as ``"None"``, and a
+    cell may say ``N/A`` or ``null`` outright. Plus ``"<NA>"``, the ``str()`` of a
+    pandas missing value, which styles files from earlier templates carry.
+    """
+    return value == "<NA>" or is_missing_value(value)
+
+
+def _fold_na(by_key: dict) -> dict:
+    """Key the entries of every N/A spelling as one, under :data:`NA_INTERNAL`.
+
+    The web draws them all as one legend entry, so one value has to win:
+    ``__NA__`` itself (what the web stored), then the other spellings in sorted
+    order.
+    """
+    folded = {k: v for k, v in by_key.items() if not is_na_label(k)}
+    na_keys = sorted(
+        (k for k in by_key if is_na_label(k)), key=lambda k: (k != NA_INTERNAL, k)
+    )
+    if na_keys:
+        folded[NA_INTERNAL] = by_key[na_keys[0]]
+    return folded
+
+
+def _fold_na_list(values: list[str]) -> list[str]:
+    """*values* with the N/A spellings named :data:`NA_INTERNAL`, once, where the
+    first of them stood."""
+    out: list[str] = []
+    for value in values:
+        if not is_na_label(value):
+            out.append(value)
+        elif NA_INTERNAL not in out:
+            out.append(NA_INTERNAL)
+    return out
 
 
 def _hex_to_rgba(hex_color: str, alpha: float = 0.8) -> str:
@@ -214,7 +249,7 @@ def _sort_values_for_zorder(
 ) -> list[str]:
     """Return *values* ordered according to *sort_mode*.
 
-    NA-like values (:data:`_NA_LABELS`) are always placed last regardless of
+    N/A values (:func:`is_na_label`) are always placed last regardless of
     sort mode.
 
     Args:
@@ -224,8 +259,8 @@ def _sort_values_for_zorder(
         frequencies: Mapping ``{value: count}``.  Required for size-based
             modes; ignored for alphabetical / manual modes.
     """
-    regular = sorted(v for v in values if v not in _NA_LABELS)
-    na_present = sorted(v for v in values if v in _NA_LABELS)
+    regular = sorted(v for v in values if not is_na_label(v))
+    na_present = sorted(v for v in values if is_na_label(v))
 
     if sort_mode in ("size-desc", "size-asc") and frequencies:
         regular.sort(
@@ -277,13 +312,15 @@ def visualization_state_to_settings(
 
     settings: dict = {}
     for annotation_name in all_annotations:
-        colors = annotation_colors.get(annotation_name, {})
-        shapes = marker_shapes.get(annotation_name, {})
+        # The web draws every N/A spelling as one category, keyed __NA__, so the
+        # styles, stored categories and counts of all of them are one entry here.
+        colors = _fold_na(annotation_colors.get(annotation_name, {}))
+        shapes = _fold_na(marker_shapes.get(annotation_name, {}))
 
         # Start from existing settings if available
         if existing and annotation_name in existing:
             ann_settings = dict(existing[annotation_name])
-            existing_categories = dict(ann_settings.get("categories", {}))
+            existing_categories = _fold_na(ann_settings.get("categories", {}))
         else:
             ann_settings = {
                 "includeShapes": bool(shapes),
@@ -309,6 +346,10 @@ def visualization_state_to_settings(
             for key, val in style_overrides[annotation_name].items():
                 if key in _SETTINGS_KEYS:
                     ann_settings[key] = val
+            if "hiddenValues" in style_overrides[annotation_name]:
+                ann_settings["hiddenValues"] = _fold_na_list(
+                    ann_settings["hiddenValues"]
+                )
 
         # Pop processing-only keys (not stored in output settings).
         # "zOrderSort" overrides "sortMode" for zOrder computation only
@@ -320,6 +361,11 @@ def visualization_state_to_settings(
         pinned_values: list[str] = ann_settings.pop("pinnedValues", None) or []
         sort_mode = zorder_sort or ann_settings.get("sortMode", "size-desc")
         freqs = value_frequencies.get(annotation_name) if value_frequencies else None
+        if freqs:
+            na_count = sum(n for v, n in freqs.items() if is_na_label(v))
+            freqs = {v: n for v, n in freqs.items() if not is_na_label(v)}
+            if na_count:
+                freqs[NA_INTERNAL] = na_count
 
         # Build categories from colors, shapes, and (if needed) frequency data.
         # When style_overrides reference an annotation with no pre-existing
@@ -340,6 +386,7 @@ def visualization_state_to_settings(
             max_vis = ann_settings.get("maxVisibleValues", 10)
 
             # First pass: collect explicit (non-REST) pinned values
+            pinned_values = _fold_na_list(pinned_values)
             explicit_pinned: list[str] = []
             has_rest = False
             for pv in pinned_values:
@@ -347,16 +394,11 @@ def visualization_state_to_settings(
                     has_rest = True
                 elif pv in all_values:
                     explicit_pinned.append(pv)
-                elif pv in _NA_LABELS:
-                    for alias in _NA_LABELS:
-                        if alias in all_values:
-                            explicit_pinned.append(alias)
-                            break
 
             if has_rest and freqs:
                 # Auto-fill: pick top values by sort_mode, excluding already-pinned and NA
                 candidates = _sort_values_for_zorder(
-                    all_values - _NA_LABELS - set(explicit_pinned),
+                    all_values - {NA_INTERNAL} - set(explicit_pinned),
                     sort_mode,
                     freqs,
                 )
@@ -372,11 +414,6 @@ def visualization_state_to_settings(
                         valid_pinned.extend(rest_values)
                     elif pv in all_values:
                         valid_pinned.append(pv)
-                    elif pv in _NA_LABELS:
-                        for alias in _NA_LABELS:
-                            if alias in all_values:
-                                valid_pinned.append(alias)
-                                break
             else:
                 valid_pinned = explicit_pinned
 
@@ -394,7 +431,7 @@ def visualization_state_to_settings(
                 cat["color"] = _rgba_to_hex(color) if "rgba" in str(color) else color
             elif pinned_values:
                 # Auto-assign Kelly's palette colors for pinned values
-                if value in _NA_LABELS:
+                if value == NA_INTERNAL:
                     cat["color"] = NA_PINNED_COLOR
                 else:
                     cat["color"] = KELLYS_COLORS[color_slot % len(KELLYS_COLORS)]
@@ -403,15 +440,7 @@ def visualization_state_to_settings(
             shape = shapes.get(value, cat.get("shape", "circle"))
             cat["shape"] = shape
 
-            # Use __NA__ as the key for NA values (frontend internal format)
-            key = NA_INTERNAL if value in _NA_LABELS else value
-            categories[key] = cat
-
-        if not pinned_values:
-            # Ensure <NA> / empty values always get light gray
-            for na_label in ("", "<NA>", "NaN"):
-                if na_label in categories:
-                    categories[na_label].setdefault("color", NA_COLOR)
+            categories[value] = cat
 
         ann_settings["categories"] = categories
         # Set maxVisibleValues to actual category count
