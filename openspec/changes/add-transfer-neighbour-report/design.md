@@ -47,7 +47,9 @@ stop discarding what it computed.
   Ids are written as stored (they are not encoded in the annotation column).
 - **TSV, written atomically.** Tab-separated to match the rest of the CLI's text outputs and the
   web app's table export; the report goes through `atomic_write_bytes`, so a failed run never
-  leaves half a file. Numbers are written with six significant digits.
+  leaves half a file. Numbers are written with six significant digits. It is written after the
+  bundle, so a `--report` path that cannot hold a file (a directory, or a file where a parent
+  directory should be) is a usage error before anything is written.
 
 ## Risks / Trade-offs
 

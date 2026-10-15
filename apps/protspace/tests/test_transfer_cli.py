@@ -980,6 +980,28 @@ def test_cli_transfer_max_distance_writes_the_column_and_the_report(tmp_path):
     assert (row["neighbor"], float(row["max_distance"])) == ("near", 2.0)
 
 
+def test_cli_transfer_unwritable_report_writes_nothing(tmp_path):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    bundle, h5 = _write_bundle_and_h5(tmp_path)
+    out_path = tmp_path / "out.parquetbundle"
+    (tmp_path / "taken").write_text("")
+    result = CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            *("-b", str(bundle), "-e", str(h5), "-t", "protein_category"),
+            *("-o", str(out_path), "--report", str(tmp_path / "taken" / "r.tsv")),
+        ],
+        env={"COLUMNS": "200"},
+    )
+    assert result.exit_code == 2
+    assert "is not a directory" in plain(result.output)
+    assert not out_path.exists()
+
+
 @pytest.mark.parametrize(
     ("flags", "message"),
     [

@@ -8,7 +8,7 @@
 
 - [x] 2.1 `data/io/predictions.py`: report rows from predictions (decoded labels) and an atomic TSV writer
 - [x] 2.2 `run_transfer(report=...)` collects rows; `protspace transfer --report PATH` writes them
-- [x] 2.3 Tests in `tests/test_transfer_cli.py`: `--k 1` one row per query matching the source, `--k 3` ranked rows, raw distance (not reliability), bundle identical with and without `--report`
+- [x] 2.3 Tests in `tests/test_transfer_cli.py`: `--k 1` one row per query matching the source, `--k 3` ranked rows, raw distance (not reliability), bundle identical with and without `--report`, an unwritable `--report` path a usage error that writes nothing
 
 ## 3. Docs and notebook
 

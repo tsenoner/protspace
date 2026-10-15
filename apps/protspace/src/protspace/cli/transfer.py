@@ -398,6 +398,14 @@ def transfer(
     cutoff = _parse_max_distance(max_distance)
     if skip_distant and cutoff is None:
         raise typer.BadParameter("--skip-distant needs --max-distance")
+    # The report is written after the bundle, so a path that cannot hold a file
+    # (a directory, or a file where a parent directory should be) fails first.
+    if report is not None:
+        if report.is_dir():
+            raise typer.BadParameter(f"--report {report} is a directory")
+        nearest = next(p for p in report.absolute().parents if p.exists())
+        if not nearest.is_dir():
+            raise typer.BadParameter(f"--report {report}: {nearest} is not a directory")
 
     # Load embeddings (optional ':name' override; colon/Windows-safe parsing).
     h5_path, name_override = split_h5_spec(embeddings)
@@ -485,5 +493,10 @@ def transfer(
         raise typer.BadParameter(f"cannot write {output}: {exc}") from exc
     logger.info("Wrote transferred bundle to %s", output)
     if report is not None:
-        write_report(report, neighbour_rows)
+        try:
+            write_report(report, neighbour_rows)
+        except OSError as exc:
+            raise typer.BadParameter(
+                f"cannot write --report {report} (the bundle was written): {exc}"
+            ) from exc
         logger.info("Wrote %d neighbour row(s) to %s", len(neighbour_rows), report)
