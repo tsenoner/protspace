@@ -1,12 +1,13 @@
 import type { CATEGORICAL_PALETTE_IDS, GRADIENT_PALETTE_IDS } from '../generated/shared-constants';
-import { KELLYS_COLORS } from '../generated/shared-constants';
+import { DEFAULT_CATEGORICAL_PALETTE_ID, KELLYS_COLORS } from '../generated/shared-constants';
 import { clamp01 } from './numeric-binning.js';
 
 /** Every palette id; contracts/shared-constants.json lists them for both languages. */
 type PaletteId = (typeof CATEGORICAL_PALETTE_IDS)[number] | (typeof GRADIENT_PALETTE_IDS)[number];
 
-// Kelly's colours, in slot order, are shared with the Python package.
-export { KELLYS_COLORS };
+// Kelly's colours, in slot order, and the default categorical palette are
+// shared with the Python package.
+export { DEFAULT_CATEGORICAL_PALETTE_ID, KELLYS_COLORS };
 
 // Color-blind safe
 export const OKABE_ITO_COLORS = [

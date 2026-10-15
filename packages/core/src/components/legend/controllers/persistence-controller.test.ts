@@ -16,6 +16,7 @@ function createTestItem(value: string, zOrder: number): LegendItem {
 }
 
 vi.mock('@protspace/utils', () => ({
+  DEFAULT_CATEGORICAL_PALETTE_ID: 'kellys',
   generateDatasetHash: vi.fn((ids: string[]) => `hash_${ids.join('_')}`),
   buildStorageKey: vi.fn(
     (prefix: string, hash: string, annotation: string) => `${prefix}_${hash}_${annotation}`,

@@ -122,6 +122,16 @@ function checkInvariants(constants: Constants, errors: string[]): void {
   for (const id of categorical?.filter((item) => gradient?.includes(item)) ?? []) {
     errors.push(`palettes: "${id}" is both categorical and gradient`);
   }
+  const categoricalDefault = get('DEFAULT_CATEGORICAL_PALETTE_ID', 'string');
+  if (
+    categorical &&
+    categoricalDefault !== undefined &&
+    !categorical.includes(categoricalDefault)
+  ) {
+    errors.push(
+      `DEFAULT_CATEGORICAL_PALETTE_ID: "${categoricalDefault}" is not a categorical palette`,
+    );
+  }
   const numericDefault = get('DEFAULT_NUMERIC_PALETTE_ID', 'string');
   if (gradient && numericDefault !== undefined && !gradient.includes(numericDefault)) {
     errors.push(`DEFAULT_NUMERIC_PALETTE_ID: "${numericDefault}" is not a gradient palette`);

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from protspace._generated.shared_constants import (
     CATEGORICAL_PALETTE_IDS,
+    DEFAULT_CATEGORICAL_PALETTE_ID,
     GRADIENT_PALETTE_IDS,
     NA_DEFAULT_COLOR,
     POINT_SHAPES,
@@ -246,9 +247,10 @@ def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
         reason = f"'{palette}' is not a known palette"
     logger.warning(
         "Annotation '%s': selectedPaletteId %s; the frontend will fall back to "
-        "'kellys'. Categorical palettes: %s. See https://protspace.app/docs/guide/styling#color-palettes.",
+        "'%s'. Categorical palettes: %s. See https://protspace.app/docs/guide/styling#color-palettes.",
         annotation,
         reason,
+        DEFAULT_CATEGORICAL_PALETTE_ID,
         ", ".join(sorted(_CATEGORICAL_PALETTE_IDS)),
     )
 
@@ -285,7 +287,7 @@ def generate_template(input_file: str) -> dict:
             "sortMode": "size-desc",
             "maxVisibleValues": 10,
             "shapeSize": 10,
-            "selectedPaletteId": "kellys",
+            "selectedPaletteId": DEFAULT_CATEGORICAL_PALETTE_ID,
             "hiddenValues": [],
             "colors": colors,
             "shapes": {},

@@ -81,10 +81,10 @@ export const KELLYS_COLORS = [
 /**
  * Palettes for categorical annotations: the only ids a bundle's
  * `selectedPaletteId` may name. `protspace style` warns on any other id, and
- * the web draws a gradient or unknown id with `kellys`. The web's
- * `COLOR_SCHEMES` holds the colours and must list exactly these ids plus
- * GRADIENT_PALETTE_IDS (the type check fails otherwise). A new palette also
- * goes in docs/guide/styling.md (Color palettes).
+ * the web draws a gradient or unknown id with DEFAULT_CATEGORICAL_PALETTE_ID.
+ * The web's `COLOR_SCHEMES` holds the colours and must list exactly these ids
+ * plus GRADIENT_PALETTE_IDS (the type check fails otherwise). A new palette
+ * also goes in docs/guide/styling.md (Color palettes).
  */
 export const CATEGORICAL_PALETTE_IDS = [
   'kellys',
@@ -100,6 +100,12 @@ export const CATEGORICAL_PALETTE_IDS = [
  * legend settings rather than through `selectedPaletteId`.
  */
 export const GRADIENT_PALETTE_IDS = ['viridis', 'cividis', 'inferno', 'batlow', 'plasma'] as const;
+
+/**
+ * The palette a categorical annotation starts on, and the one the web falls
+ * back to; one of CATEGORICAL_PALETTE_IDS.
+ */
+export const DEFAULT_CATEGORICAL_PALETTE_ID = 'kellys';
 
 /**
  * The gradient a numeric annotation starts on; one of GRADIENT_PALETTE_IDS.

@@ -1,3 +1,4 @@
+import { DEFAULT_CATEGORICAL_PALETTE_ID } from '../generated/shared-constants';
 import type {
   BundleSettings,
   ExportOptionsMap,
@@ -270,7 +271,10 @@ function sanitizeLegendSettingsEntry(obj: unknown): LegendPersistedSettings | nu
     hiddenValues: s.hiddenValues,
     categories,
     enableDuplicateStackUI: s.enableDuplicateStackUI,
-    selectedPaletteId: typeof s.selectedPaletteId === 'string' ? s.selectedPaletteId : 'kellys',
+    selectedPaletteId:
+      typeof s.selectedPaletteId === 'string'
+        ? s.selectedPaletteId
+        : DEFAULT_CATEGORICAL_PALETTE_ID,
     numericSettings,
   };
 }

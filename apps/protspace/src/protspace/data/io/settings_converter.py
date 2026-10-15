@@ -17,6 +17,7 @@ import re
 # Kelly's colours in the web's slot order, the web's N/A key and its N/A swatch,
 # generated from contracts/shared-constants.json.
 from protspace._generated.shared_constants import (
+    DEFAULT_CATEGORICAL_PALETTE_ID,
     KELLYS_COLORS,
     NA_DEFAULT_COLOR,
     NA_VALUE,
@@ -308,7 +309,7 @@ def visualization_state_to_settings(
                 "sortMode": "size-desc",
                 "hiddenValues": [],
                 "enableDuplicateStackUI": False,
-                "selectedPaletteId": "kellys",
+                "selectedPaletteId": DEFAULT_CATEGORICAL_PALETTE_ID,
             }
             existing_categories = {}
 
