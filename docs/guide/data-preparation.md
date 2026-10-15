@@ -92,8 +92,9 @@ label comes out wrong. The same rules apply in the [CLI](/guide/python-cli#model
    example dataset is fetched when you click **Generate**
 3. Get your file into the Colab runtime, if you use one, in any of three ways:
    - **Upload cell**: tick the box in **Optional: upload a file from your computer**, run that
-     cell and pick the file. Its path fills the matching field in the panel. Untick it
-     afterwards, or the next Run all asks for a file again
+     cell and pick the file. It lands in a new `upload-…` folder, so a corrected file uploaded
+     under the same name is the one the panel loads, and its path fills the matching field in
+     the panel. Untick it afterwards, or the next Run all asks for a file again
    - **Files pane**: drag the file into the folder icon in Colab's left sidebar; it lands in
      `/content/`
    - **Google Drive**: mount it from the Files pane and use the `/content/drive/MyDrive/...` path
@@ -119,8 +120,8 @@ and Biocentral (predicted).
 See the [Annotations reference](/guide/annotations) for the complete per-column catalogue: what each
 annotation means, where it comes from, and which ones are predicted.
 
-To add your own columns, give a CSV or TSV whose first column holds the protein IDs: enter its path,
-or choose it with **Choose CSV/TSV**. Pick **CSV only (no UniProt fetch)** to use just those
+To add your own columns, give a CSV or TSV (gzipped is fine) whose first column holds the protein
+IDs: enter its path, or choose it with **Choose CSV/TSV**. Pick **CSV only (no UniProt fetch)** to use just those
 columns, for example when your IDs are not UniProt accessions.
 
 ### Dimensionality Reduction

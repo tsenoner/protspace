@@ -35,6 +35,11 @@ a path in the runtime, and SHALL provide a separate upload cell that runs Colab'
 - **WHEN** the user ticks the checkbox and runs the upload cell with an `.h5` file
 - **THEN** the file is written into the runtime and its path fills the HDF5 tab's path field
 
+#### Scenario: Re-uploading a corrected file under the same name
+
+- **WHEN** the user uploads `toxins.h5`, then uploads a changed `toxins.h5` again
+- **THEN** the HDF5 tab loads the second upload, not the first
+
 #### Scenario: A path that holds no file
 
 - **WHEN** the user loads a path where no file exists

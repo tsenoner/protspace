@@ -30,10 +30,15 @@ documentation or report that the picker renders and replies there; a picker that
 would block the kernel with no timeout, which is the very symptom being fixed. A top-level cell
 is the documented use, and it is what the Embeddings notebook does. The cell sits above the
 panel so the order reads "get the file in, then configure"; it runs `files.upload()` only when
-its `upload_from_computer` checkbox is ticked, so _Run all_ passes straight through. `files.upload()`
-writes the file to the working directory; the cell puts its path into the H5, FASTA or CSV path
-field by extension, and loads it, when the panel exists, or into `uploaded_paths`, which the
-panel reads when it is built. _Load_ gunzips a `.gz`, whichever route brought it.
+its `upload_from_computer` checkbox is ticked, so _Run all_ passes straight through. Each run
+uploads into a fresh `upload-…` folder (`files.upload(target_dir=...)`): colabtools saves a name
+that already exists as `x (1).h5`, so a corrected file re-uploaded under the same name would
+otherwise leave the panel on the old one, and the suffix would hide a model key at the end of the
+name. The cell builds the path from that folder and the bare file name, which holds whether
+Colab keys its result by the saved path (current colabtools) or by the original name. It puts
+the path into the H5, FASTA or CSV path field by extension, and loads it, when the panel exists,
+or into `uploaded_paths`, which the panel reads when it is built. _Load_, and Generate for the
+CSV, gunzip a `.gz`, whichever route brought it.
 _Alternative — a button calling `files.upload()`:_ rejected as unverified and, if wrong,
 kernel-blocking. _Alternative — keep `FileUpload` with a size warning:_ rejected; the failure is
 silent, so a warning would be the only signal and it cannot be shown at the moment it matters.
@@ -45,9 +50,12 @@ but the upload only writes the file and fills the CSV path field; Generate reads
 
 **3. Auto-detect uses the package's resolver when it exists.** `resolve_input_names([(path,
 None)], command="prepare")` gives the same name the CLI would. It is imported under
-`except ImportError`; the fallback (protspace <= 4.16.5) uses the `model_name` attribute, else
-the stem, which is the CLI's rule minus the file-name key. A chosen embedder is always passed as
-the name.
+`except ImportError`; the fallback (protspace <= 4.16.5) uses the `model_name` attribute, then
+the same file-name rule over the released `MODEL_DISPLAY_NAMES`, then the stem, and a test runs
+the panel without the resolver and compares the names. The resolver's INFO line tells CLI users
+to append `:<model>`, which the path field does not take, so Auto-detect silences that logger
+while it runs; the Ready line and the Embedder dropdown carry the override instead. A chosen
+embedder is always passed as the name.
 
 **4. Each tab holds its own input; Generate reads the selected tab.** `input_args` becomes a
 dict keyed by tab index. The Example tab's entry is set at build time without fetching; the
@@ -72,10 +80,12 @@ it goes back to 0.1. The rewrite's commit says "Annotations: Default, All, Custo
 option)"; _CSV only_ keeps that intent (no bundle without annotations) by refusing to run
 without a CSV.
 
-**8. Tests run the real cell.** `test_notebooks.py` executes cells 1-2 with the installed
+**8. Tests run the real cells.** `test_notebooks.py` executes cells 1-3 (install, upload, panel) with the installed
 ipywidgets, a mocked `google.colab`, a stubbed `pip`, and no network (the example is pre-seeded;
 annotations are CSV only), then drives the panel: Load an unnamed ClickThrough-style file,
-Generate, read the bundle. CI has ipywidgets 8; the same tests pass under 7.7.1 with
+Generate, read the bundle. The `files.upload` mock renames an existing name as colabtools does.
+Further tests cover the button being disabled during a run, CSV only without a CSV, a failed
+example fetch, a gzipped CSV and a cosine UMAP. CI has ipywidgets 8; the same tests pass under 7.7.1 with
 `uv run --with ipywidgets==7.7.1 pytest tests/test_notebooks.py`, and the upload helper is also
 tested against both value shapes directly.
 

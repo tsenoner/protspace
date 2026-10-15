@@ -1,9 +1,10 @@
 ## 1. Failing tests first
 
-- [x] 1.1 `tests/test_notebooks.py`: run cells 1-2 with real ipywidgets and a mocked `google.colab`; loading an attribute-less `*_esm2_650m.h5` and clicking Generate writes a bundle labelled `ESM2-650M`
+- [x] 1.1 `tests/test_notebooks.py`: run cells 1-3 (install, upload, panel) with real ipywidgets and a mocked `google.colab`; loading an attribute-less `*_esm2_650m.h5` and clicking Generate writes a bundle labelled `ESM2-650M`
 - [x] 1.2 Generate on an empty selected tab refuses and does not process the example; building the panel performs no network I/O
 - [x] 1.3 The CSV upload helper reads both the ipywidgets 7 and 8 `FileUpload` value shapes
 - [x] 1.4 The Embeddings notebook writes `model_name` (structural check)
+- [x] 1.5 Review: re-uploading a same-named file loads the new one; the H5 tab shows no `:<model>` CLI syntax; Auto-detect without the resolver names files as the resolver does; Generate is disabled during a run; CSV only without a CSV is refused; a gzipped CSV is read; a failed example fetch is reported and re-enables Generate; a cosine UMAP records `metric: cosine`
 
 ## 2. Preparation notebook
 
@@ -14,6 +15,7 @@
 - [x] 2.5 Metric selector; `min_dist` 0.1; CSV-only preset; version-agnostic CSV `FileUpload`
 - [x] 2.6 Cell 1 guard catches any exception with the upgrade hint
 - [x] 2.7 "Going further" CLI example and the H5 error text
+- [x] 2.8 Review: upload into a fresh folder per run; Auto-detect silences the resolver's CLI hint and its fallback applies the file-name rule; the custom CSV is gunzipped like H5 and FASTA
 
 ## 3. Embeddings notebook
 

@@ -31,7 +31,8 @@ default (0.4) differs from the CLI's (0.1) for no recorded reason.
   CLI's name rules (`infer-h5-embedding-name`): attribute, then a model key at the end of the
   file name, then the stem. The Ready line says which name will be used and why.
 - **A dedicated upload cell** above the panel calls `google.colab.files.upload()` when its
-  checkbox is ticked and fills the matching tab's path field. It is skipped by default, so
+  checkbox is ticked, into a fresh folder per run so a re-upload under the same name is not
+  renamed, and fills the matching tab's path field. It is skipped by default, so
   _Run all_ never stops at a file picker. FASTA uses a path field the same way; the custom CSV
   keeps its small `FileUpload`, now written for both ipywidgets 7 and 8, beside a path field.
 - **Generate uses the selected tab, or refuses.** Each tab keeps its own input. An empty tab
@@ -70,4 +71,5 @@ change, covers the output name and parameter scope; this change does not touch e
   installed ipywidgets and a mocked `google.colab`; `apps/protspace/CLAUDE.md` row.
 - Docs: `docs/guide/data-preparation.md`.
 - No package code beyond `infer-h5-embedding-name`, which the H5 tab's Auto-detect uses when the
-  installed release has it (and falls back to attribute-or-stem when it does not).
+  installed release has it (and falls back to the same rules, written in the cell, when it does
+  not).

@@ -453,6 +453,33 @@ def _clickthrough_h5(path: Path, n: int = 40, dim: int = 16) -> Path:
     return path
 
 
+def _colab_upload(uploads):
+    """`files.upload` as colabtools writes it: a name that already exists is
+    saved as `x (1).h5`, and the result is keyed by the path it was saved to."""
+
+    def upload(target_dir=""):
+        saved = {}
+        for name, data in uploads.items():
+            path, n = Path(target_dir, name), 0
+            while path.exists():
+                n += 1
+                path = Path(target_dir, f"{Path(name).stem} ({n}){Path(name).suffix}")
+            path.write_bytes(data)
+            saved[str(path)] = data
+        return saved
+
+    return upload
+
+
+def _run_upload_cell(namespace, uploads):
+    """Tick the upload cell's box and run it again, as a user would."""
+    namespace["files"].upload = _colab_upload(uploads)
+    source = _preparation_cell("# @title Optional: upload").replace(
+        "upload_from_computer = False", "upload_from_computer = True"
+    )
+    exec(compile(source, "prep:upload", "exec"), namespace)
+
+
 def _run_preparation_panel(monkeypatch, tmp_path, *, uploads=None):
     """Run cells 1-3 and return (namespace, downloads, network calls)."""
     pytest.importorskip("ipywidgets")
@@ -465,14 +492,10 @@ def _run_preparation_panel(monkeypatch, tmp_path, *, uploads=None):
     monkeypatch.chdir(tmp_path)
     downloads, network = [], []
 
-    def _upload():
-        # files.upload() writes what it receives into the working directory.
-        for name, data in (uploads or {}).items():
-            Path(name).write_bytes(data)
-        return dict(uploads or {})
-
     colab = types.ModuleType("google.colab")
-    colab.files = types.SimpleNamespace(download=downloads.append, upload=_upload)
+    colab.files = types.SimpleNamespace(
+        download=downloads.append, upload=_colab_upload(uploads or {})
+    )
     try:
         import google
     except ImportError:
@@ -581,6 +604,147 @@ def test_preparation_upload_cell_hands_the_file_to_the_panel(monkeypatch, tmp_pa
     )
     assert namespace["tabs"].selected_index == 1
     assert namespace["input_args"][1]["name"] == "prot_t5"
+
+
+def test_preparation_reupload_of_a_same_named_file_is_the_one_loaded(
+    monkeypatch, tmp_path
+):
+    """Colab saves a second `toxins.h5` as `toxins (1).h5`; a path built from the
+    original name kept the panel on the first upload's embeddings."""
+    first = _clickthrough_h5(tmp_path / "first.h5", n=40)
+    namespace, _, _ = _run_preparation_panel(
+        monkeypatch, tmp_path, uploads={"toxins_esm2_650m.h5": first.read_bytes()}
+    )
+    corrected = _clickthrough_h5(tmp_path / "corrected.h5", n=25)
+    _run_upload_cell(namespace, {"toxins_esm2_650m.h5": corrected.read_bytes()})
+
+    loaded = namespace["input_args"][1]
+    assert Path(loaded["path"]).read_bytes() == corrected.read_bytes()
+    assert "25 proteins" in loaded["summary"]
+    assert loaded["name"] == "esm2_650m"
+
+
+def test_preparation_h5_tab_shows_no_cli_syntax(monkeypatch, tmp_path, capsys):
+    """The resolver's log line says to append `:<model>`, which the path field
+    does not take; the tab points at its Embedder dropdown instead."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["_on_h5_load"]()
+
+    output = capsys.readouterr().out
+    assert "embedding name 'results'" in output
+    assert ":<model>" not in output and ":esm2_650m" not in output
+    assert "Pick it under Embedder" in output
+
+
+@pytest.mark.parametrize(
+    "file_name",
+    ["toxins_esm2_650m.h5", "Ss_mSCR_ESM2_650M.h5", "toxins_prost_t5.h5", "results.h5"],
+)
+def test_preparation_auto_detect_without_the_resolver_matches_it(
+    monkeypatch, tmp_path, file_name
+):
+    """Cell 1 installs the released protspace, which may predate
+    resolve_input_names; the panel's stand-in must name files the same way."""
+    import protspace.data.loaders as loaders
+    from protspace.data.loaders import resolve_input_names
+
+    h5 = _clickthrough_h5(tmp_path / file_name)
+    ((_, expected, _),) = resolve_input_names([(h5, None)], command="prepare")
+    monkeypatch.delattr(loaders, "resolve_input_names")
+
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    assert namespace["resolve_input_names"] is None
+    namespace["h5_path_field"].value = str(h5)
+    namespace["_on_h5_load"]()
+
+    assert namespace["input_args"][1]["name"] == expected
+
+
+def test_preparation_disables_generate_while_it_runs(monkeypatch, tmp_path):
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    csv = tmp_path / "custom.csv"
+    csv.write_text("identifier,group\nprot000,a\n")
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["_on_h5_load"]()
+    namespace["tabs"].selected_index = 1
+
+    seen, real_load_h5 = [], namespace["load_h5"]
+
+    def _load_h5(*args, **kwargs):
+        seen.append(namespace["gen_btn"].disabled)
+        return real_load_h5(*args, **kwargs)
+
+    namespace["load_h5"] = _load_h5
+    _generate_pca_from_csv(namespace, csv)
+
+    assert seen == [True]
+    assert downloads and namespace["gen_btn"].disabled is False
+
+
+def test_preparation_csv_only_needs_a_csv(monkeypatch, tmp_path, capsys):
+    namespace, downloads, network = _run_preparation_panel(monkeypatch, tmp_path)
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["_on_h5_load"]()
+    namespace["tabs"].selected_index = 1
+    namespace["ann_preset"].value = namespace["_CSV_ONLY"]
+
+    namespace["_on_gen"](None)
+
+    assert "CSV only needs a CSV" in capsys.readouterr().out
+    assert downloads == [] and network == []
+
+
+def test_preparation_reads_a_gzipped_csv(monkeypatch, tmp_path):
+    import gzip
+
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    csv = tmp_path / "custom.csv.gz"
+    csv.write_bytes(gzip.compress(b"identifier,group\nprot000,a\n"))
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["_on_h5_load"]()
+    namespace["tabs"].selected_index = 1
+    _generate_pca_from_csv(namespace, csv)
+
+    assert len(downloads) == 1
+
+
+def test_preparation_reports_a_failed_example_fetch(monkeypatch, tmp_path, capsys):
+    """The network is refused here, as on a dead connection: Generate says so
+    and gives the button back."""
+    namespace, downloads, network = _run_preparation_panel(monkeypatch, tmp_path)
+
+    namespace["_on_gen"](None)
+
+    assert len(network) == 1
+    assert "Fetch failed" in capsys.readouterr().out
+    assert downloads == [] and namespace["gen_btn"].disabled is False
+    assert not list(tmp_path.glob("*.part"))
+
+
+def test_preparation_records_the_metric_picked(monkeypatch, tmp_path):
+    import json as _json
+
+    from protspace.data.io.bundle import read_tables
+
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    csv = tmp_path / "custom.csv"
+    csv.write_text(
+        "identifier,group\n" + "".join(f"prot{i:03d},g{i % 3}\n" for i in range(40))
+    )
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["_on_h5_load"]()
+    namespace["tabs"].selected_index = 1
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method == "UMAP"
+    namespace["pw"]["metric"].value = "cosine"
+    namespace["ann_preset"].value = namespace["_CSV_ONLY"]
+    namespace["csv_path_field"].value = str(csv)
+    namespace["_on_gen"](None)
+
+    (bundle,) = downloads
+    (info,) = read_tables(bundle)[1].column("info_json").to_pylist()
+    assert _json.loads(info)["metric"] == "cosine"
 
 
 def test_preparation_refuses_an_empty_tab_instead_of_the_example(
