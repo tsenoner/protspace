@@ -1,7 +1,14 @@
-import type { BrowserContextOptions } from '@playwright/test';
+import type { BrowserContextOptions, Page } from '@playwright/test';
 import { LAYOUT_STORAGE_KEY, type LayoutState } from '../../src/explore/layout-defaults';
 import { TOUR_STORAGE_KEY } from '../../src/tour/storage-key';
 import { THEME_STORAGE_KEY, type ThemeChoice } from '../../src/explore/theme-defaults';
+
+/**
+ * The stored entry that marks the product tour as seen. Every test and capture that suppresses the
+ * tour seeds it from here, through `exploreStorageState` or `seedTourSeen`, so a change of key or
+ * value happens in this one place (storage-key.test.ts fails on any other spelling of the key).
+ */
+const TOUR_SEEN: { name: string; value: string } = { name: TOUR_STORAGE_KEY, value: 'true' };
 
 /**
  * Explore's local storage for a Playwright context: the product tour's "already seen" flag, and a
@@ -23,7 +30,7 @@ export function exploreStorageState(
   baseUrl: string,
   options: { layout?: LayoutState; theme?: ThemeChoice } = {},
 ): BrowserContextOptions['storageState'] {
-  const localStorage = [{ name: TOUR_STORAGE_KEY, value: 'true' }];
+  const localStorage = [{ ...TOUR_SEEN }];
   if (options.layout) {
     localStorage.push({ name: LAYOUT_STORAGE_KEY, value: JSON.stringify(options.layout) });
   }
@@ -37,4 +44,19 @@ export function exploreStorageState(
 /** The tour already seen, and nothing else: what every e2e context starts with. */
 export function tourCompletedStorageState(baseUrl: string): BrowserContextOptions['storageState'] {
   return exploreStorageState(baseUrl);
+}
+
+/**
+ * Marks the product tour as seen before any of the page's scripts run: for a page whose context
+ * does not start from `exploreStorageState`, such as one a test opens with `browser.newContext`.
+ * Blocked storage (a document without it) is ignored.
+ */
+export async function seedTourSeen(page: Page): Promise<void> {
+  await page.addInitScript(({ name, value }) => {
+    try {
+      localStorage.setItem(name, value);
+    } catch {
+      // No storage to write to: nothing to seed.
+    }
+  }, TOUR_SEEN);
 }

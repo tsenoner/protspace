@@ -267,7 +267,7 @@ export async function emptyPlotSpot(page: Page): Promise<Point> {
  * The visible buttons, links and tabs inside `root` (through shadow roots) smaller than `min`
  * px either way, as "name: W×H". Empty when every target is finger-sized.
  */
-export async function touchTargetsBelow(page: Page, root: Locator, min = 40): Promise<string[]> {
+export async function touchTargetsBelow(_page: Page, root: Locator, min = 40): Promise<string[]> {
   return root.locator('button, [role="button"], a[href], [role="tab"]').evaluateAll(
     (elements, limit) =>
       elements.flatMap((element) => {

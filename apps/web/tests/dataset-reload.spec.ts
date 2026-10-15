@@ -22,6 +22,7 @@ import {
 } from './helpers/explore';
 import { TOXPROT_5181_FIXTURE, TOXPROT_5181_V3_FIXTURE } from './helpers/fixtures';
 import { readStoredImport } from './helpers/opfs';
+import { seedTourSeen } from './helpers/tour-storage-state';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
@@ -383,9 +384,8 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
 test.describe('Persisted dataset failure handling', () => {
   test('queued user imports win over corrupted OPFS fallback recovery', async ({ page }) => {
+    await seedTourSeen(page);
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
-
       const originalDefine = customElements.define.bind(customElements);
       customElements.define = (name, constructor, options) => {
         if (name === 'protspace-data-loader') {
@@ -461,8 +461,8 @@ test.describe('Persisted dataset failure handling', () => {
   test('OPFS access restrictions show a toast without blocking the current session load', async ({
     page,
   }) => {
+    await seedTourSeen(page);
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
       Object.defineProperty(navigator.storage, 'getDirectory', {
         configurable: true,
         value: async () => {
@@ -490,8 +490,8 @@ test.describe('Persisted dataset failure handling', () => {
   test('unsupported browsers show an OPFS support toast without blocking the current session load', async ({
     page,
   }) => {
+    await seedTourSeen(page);
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
       Object.defineProperty(navigator.storage, 'getDirectory', {
         configurable: true,
         value: undefined,

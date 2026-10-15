@@ -15,11 +15,6 @@ export function structurePanel(page: Page): Locator {
   return page.locator('[data-workbench="structure"]');
 }
 
-/** The plot area: the floating structure card stays inside it. */
-export function plotArea(page: Page): Locator {
-  return page.locator('[data-workbench="plot"]');
-}
-
 /** Pops the structure out of the sidebar into its floating card over the plot. */
 export async function floatStructure(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Pop out structure' }).click();

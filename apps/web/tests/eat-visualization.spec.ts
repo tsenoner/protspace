@@ -21,6 +21,7 @@ import {
   waitForProteinCount,
 } from './helpers/explore';
 import { STARTUP_URL_GLOB } from './helpers/fixtures';
+import { seedTourSeen } from './helpers/tour-storage-state';
 import { rail } from './helpers/workbench';
 
 const EAT_FIXTURE = fileURLToPath(
@@ -30,9 +31,7 @@ const EAT_FIXTURE = fileURLToPath(
 // 06bacd7a1f862bdea4a9bf2e81037a4a7d772636704c74e3f2806958f3b9ba33.
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('driver.overviewTour', 'true');
-  });
+  await seedTourSeen(page);
 });
 
 async function loadEatFixture(page: Page): Promise<void> {

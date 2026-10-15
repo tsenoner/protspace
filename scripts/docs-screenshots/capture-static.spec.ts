@@ -5,8 +5,8 @@ import { IMAGES_DIR } from './paths';
 import {
   awaitTwoFrames,
   createSharedCapturePage,
-  dismissProductTour,
-  waitForDataLoad,
+  dismissTourIfPresent,
+  waitForExploreDataLoad,
   waitForLegend,
   waitForStructureViewer,
   clickProteinPoint,
@@ -17,8 +17,8 @@ import {
 // only the per-test mutations in beforeEach.
 const getPage = createSharedCapturePage(async (page) => {
   await page.goto('/explore');
-  await dismissProductTour(page);
-  await waitForDataLoad(page);
+  await waitForExploreDataLoad(page);
+  await dismissTourIfPresent(page);
   await waitForLegend(page);
   await waitForControlBar(page);
 });

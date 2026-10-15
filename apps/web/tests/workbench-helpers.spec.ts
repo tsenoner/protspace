@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { DEFAULT_EXAMPLE_DATASET, EXAMPLE_DATASETS } from '../src/explore/example-datasets';
+import { TOUR_STORAGE_KEY } from '../src/tour/storage-key';
 import { e2eExample, serveExampleFixtures } from './helpers/example-fixtures';
 import {
   appBar,
@@ -30,9 +31,11 @@ import {
   setContours,
   sidebar,
   statusChip,
+  waitForExploreDataLoad,
   waitForProteinCount,
   type ViewState,
 } from './helpers/explore';
+import { exploreStorageState, seedTourSeen } from './helpers/tour-storage-state';
 
 /**
  * The contract of the layout-free helpers in helpers/explore.ts. A task that moves a control
@@ -215,5 +218,35 @@ test.describe('explore helpers', () => {
     await openExplore(page);
     expect(await getCurrentDatasetName(page)).toBe(DEFAULT_EXAMPLE_DATASET.label);
     await expect(appBar(page)).toContainText(DEFAULT_EXAMPLE_DATASET.label.split(' · ')[0]);
+  });
+});
+
+test.describe('tour storage helpers', () => {
+  // Empty storage, as in a context a test opens itself: only seedTourSeen marks the tour seen.
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('seedTourSeen keeps the tour from starting', async ({ page, baseURL }) => {
+    await seedTourSeen(page);
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+
+    // The same entry the e2e contexts start with.
+    const state = exploreStorageState(baseURL!);
+    const seen =
+      typeof state === 'object'
+        ? state.origins[0].localStorage.find((entry) => entry.name === TOUR_STORAGE_KEY)?.value
+        : undefined;
+    expect(seen).toBeTruthy();
+    expect(await page.evaluate((key) => localStorage.getItem(key), TOUR_STORAGE_KEY)).toBe(seen);
+
+    // The tour would start 800 ms after the first load: a 2 s window in which it must not show.
+    const shown = await page
+      .locator('.driver-popover')
+      .waitFor({ state: 'visible', timeout: 2_000 })
+      .then(
+        () => true,
+        () => false,
+      );
+    expect(shown).toBe(false);
   });
 });

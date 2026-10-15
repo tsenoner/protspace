@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { EXAMPLE_MANIFEST } from '../../apps/web/src/explore/example-manifest';
 import { exampleServedPath } from '../../apps/web/src/explore/example-served-path';
-import { dismissProductTour, waitForDataLoad } from './helpers';
+import { dismissTourIfPresent, waitForExploreDataLoad } from './helpers';
 
 /**
  * Shared setup for the EAT documentation captures.
@@ -50,8 +50,8 @@ export async function loadEatExampleBundle(page: Page): Promise<void> {
     );
   }
   await page.goto(`/explore?dataset=${EAT_EXAMPLE_ID}`);
-  await dismissProductTour(page);
-  await waitForDataLoad(page, { expectedProteinCount: EAT_EXAMPLE.proteins });
+  await waitForExploreDataLoad(page, { proteinCount: EAT_EXAMPLE.proteins });
+  await dismissTourIfPresent(page);
 }
 
 interface ProvenanceDemoPair {

@@ -14,6 +14,7 @@ import {
   waitForProteinCount,
 } from './helpers/explore';
 import { STARTUP_URL_GLOB } from './helpers/fixtures';
+import { seedTourSeen } from './helpers/tour-storage-state';
 import { stubStructureRequests } from './helpers/workbench';
 
 const EAT_FIXTURE = fileURLToPath(
@@ -30,7 +31,7 @@ test.beforeEach(async ({ page }) => {
 
 /** The EAT fixture, loaded through the data loader's file input as eat-visualization.spec.ts does. */
 async function loadEatFixture(page: Page): Promise<void> {
-  await page.addInitScript(() => localStorage.setItem('driver.overviewTour', 'true'));
+  await seedTourSeen(page);
   await page.route(STARTUP_URL_GLOB, (route) => route.abort());
   await page.goto('/explore');
   await dismissTourIfPresent(page);

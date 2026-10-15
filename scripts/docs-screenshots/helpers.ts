@@ -3,6 +3,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { IMAGES_DIR, TEMP_VIDEOS_DIR } from './paths';
 
+// The load and tour helpers are the e2e suite's, shared with the captures (design decision 19).
+export { dismissTourIfPresent, waitForExploreDataLoad } from '../../apps/web/tests/helpers/explore';
+
 /**
  * Viewport every capture runs at. Mirrors the `screenshots`/`animations`
  * projects in `playwright.config.ts`; specs that open their own context must
@@ -17,20 +20,6 @@ const SCREENSHOT_VIEWPORT = { width: 1536, height: 864 } as const;
 export const INITIAL_PAUSE = 2000;
 
 /**
- * Dismiss the product tour by setting the localStorage flag that marks it as
- * completed.  Must be called **after** `page.goto()` (so the origin is set)
- * but **before** data finishes loading (which triggers the tour).
- *
- * A simple approach: navigate first, inject the key, then reload so the page
- * starts fresh with the flag already in place.  Alternatively, call this
- * right after goto and before waitForDataLoad — the tour checks localStorage
- * synchronously before calling `driverObj.drive()`.
- */
-export async function dismissProductTour(page: Page): Promise<void> {
-  await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-}
-
-/**
  * Settle for two animation frames so Lit's update cycle and the next paint
  * have committed before we proceed. Cheaper and more deterministic than a
  * fixed `waitForTimeout` since it ties to the actual render loop.
@@ -42,78 +31,6 @@ export async function awaitTwoFrames(page: Page): Promise<void> {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       }),
   );
-}
-
-/**
- * Wait for the scatterplot to finish loading data and for the first render
- * pass to populate the plot's internal layout state. Also waits for the
- * `#progressive-loading` overlay (loading-overlay.ts) to be removed, which the
- * app does once the load has settled — without this, screenshots can land
- * while the overlay still covers the plot.
- */
-export async function waitForDataLoad(
-  page: Page,
-  options: { timeout?: number; expectedProteinCount?: number } = {},
-): Promise<void> {
-  const { timeout = 30000, expectedProteinCount } = options;
-  await page.waitForSelector('#myPlot', { timeout });
-
-  // Wait for the data property AND for the plot to have points it can place on
-  // screen, which is what the animation tests go on to ask it for.
-  // `dataToClient` answers null until there is plotted data with scales.
-  //
-  // `expectedProteinCount` pins the gate to one specific dataset, for specs
-  // that hand-feed a bundle and must not proceed on a different one.
-  await page.waitForFunction(
-    (expected) => {
-      const plot = document.querySelector('#myPlot') as
-        | (Element & {
-            data?: { protein_ids?: string[] };
-            dataToClient?(x: number, y: number): { x: number; y: number } | null;
-          })
-        | null;
-      const loaded = plot?.data?.protein_ids?.length;
-      if (!plot || !loaded) return false;
-      if (expected !== undefined && loaded !== expected) return false;
-      return plot.dataToClient?.(0, 0) != null;
-    },
-    expectedProteinCount,
-    { timeout, polling: 200 },
-  );
-
-  // The loading overlay is removed once the load's post-load work has finished.
-  // Wait for the element to be gone from the DOM.
-  await page.waitForFunction(() => !document.getElementById('progressive-loading'), undefined, {
-    timeout,
-    polling: 100,
-  });
-
-  await assertProductStartupDataset(page);
-  await awaitTwoFrames(page);
-}
-
-/**
- * The captures photograph the product demo (`./data.parquetbundle`). A dev
- * server left on :8080 by an E2E run serves the app with the startup load
- * pinned to a test fixture (`VITE_STARTUP_DATASET_URL`, a `/@fs/` URL), and
- * this config starts no server of its own, so refuse to capture from it.
- * (With :8080 taken, start a plain `vite --port <n>` in `apps/web` and set
- * `PLAYWRIGHT_BASE_URL=http://localhost:<n>`.)
- */
-async function assertProductStartupDataset(page: Page): Promise<void> {
-  const pinned = await page.evaluate(
-    () =>
-      performance
-        .getEntriesByType('resource')
-        .map((entry) => entry.name)
-        .find((name) => name.includes('/@fs/') && name.endsWith('.parquetbundle')) ?? null,
-  );
-  if (pinned) {
-    throw new Error(
-      `The app at ${new URL(page.url()).origin} loaded the E2E startup fixture (${pinned}), not the product demo: ` +
-        'stop that dev server and start `pnpm dev` before `pnpm docs:images`.',
-    );
-  }
 }
 
 /**

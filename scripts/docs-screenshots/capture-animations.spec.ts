@@ -90,8 +90,8 @@ async function collectClusterScreenPoints(
 import {
   INITIAL_PAUSE,
   saveTestVideo,
-  dismissProductTour,
-  waitForDataLoad,
+  dismissTourIfPresent,
+  waitForExploreDataLoad,
   waitForLegend,
   selectProjection,
   toggleLegendItem,
@@ -149,8 +149,8 @@ test.describe('Zoom Animation', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/explore');
-    await dismissProductTour(page);
-    await waitForDataLoad(page);
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
     await waitForLegend(page);
   });
 
@@ -199,8 +199,8 @@ test.describe('Zoom Animation', () => {
 test.describe('Scatterplot Animation Captures', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/explore');
-    await dismissProductTour(page);
-    await waitForDataLoad(page);
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
     await waitForLegend(page);
   });
 
@@ -673,8 +673,8 @@ test.describe('Scatterplot Animation Captures', () => {
 test.describe('Legend Animation Captures', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/explore');
-    await dismissProductTour(page);
-    await waitForDataLoad(page);
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
     await waitForLegend(page);
   });
 

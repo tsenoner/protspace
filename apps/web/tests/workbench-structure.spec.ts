@@ -6,6 +6,7 @@ import {
   getSelectedProteinIds,
   importUserFile,
   openExplore,
+  plotArea,
   waitForExploreDataLoad,
 } from './helpers/explore';
 import {
@@ -14,7 +15,6 @@ import {
   dockStructure,
   dragDivider,
   floatStructure,
-  plotArea,
   rail,
   readLayout,
   seedLayout,

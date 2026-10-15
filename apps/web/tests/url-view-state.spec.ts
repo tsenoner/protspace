@@ -22,6 +22,7 @@ import {
   waitForPersistedExploreDataset,
 } from './helpers/explore';
 import { STARTUP_DATASET_URL } from './helpers/fixtures';
+import { seedTourSeen } from './helpers/tour-storage-state';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -261,13 +262,7 @@ test.beforeAll(async ({ browser }, workerInfo) => {
   const context = await browser.newContext({ baseURL: workerInfo.project.use.baseURL });
   const page = await context.newPage();
   try {
-    await page.addInitScript(() => {
-      try {
-        localStorage.setItem('driver.overviewTour', 'true');
-      } catch {
-        /* ignore */
-      }
-    });
+    await seedTourSeen(page);
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     // getCurrentView reads Color by's options, which the app wires separately
