@@ -21,14 +21,16 @@ from protspace.cli.common_options import ClusterSelection, ClusterSpace, Opt_Ver
 logger = logging.getLogger(__name__)
 
 
-def _resolve_id_col(frame) -> str:
+def _resolve_id_col(frame, source: str | None = None) -> str:
     """The id column of the ``-a`` table, by the parquet rule ``bundle -a`` uses too.
 
-    A custom annotation file comes back from its loader with the ids in ``identifier``.
+    A custom annotation file comes back from its loader with the ids in ``protein_id``.
+    *source* is passed by the one call per run that should warn about an ``identifier``
+    column (see :func:`resolve_id_column`).
     """
     from protspace.data.processors.custom_annotations import resolve_id_column
 
-    return resolve_id_column(list(frame.columns))
+    return resolve_id_column(list(frame.columns), source=source)
 
 
 def _parse_info_json(raw) -> dict:
@@ -59,7 +61,7 @@ def _load_reductions(
 ) -> list[dict]:
     """Reconstruct per-projection ``{name, data, ids, info, source}`` from a dir.
 
-    Reads ``projections_data.parquet`` (long table of projection_name/identifier/
+    Reads ``projections_data.parquet`` (long table of projection_name/protein_id/
     x/y/z) into per-projection coordinate arrays + id order, and the reducer
     metric + source-embedding name from ``projections_metadata.parquet``.
     """
@@ -70,6 +72,7 @@ def _load_reductions(
         PROJECTIONS_DATA_FILENAME,
         PROJECTIONS_METADATA_FILENAME,
     )
+    from protspace.data.io.ids import PROTEIN_ID_COLUMN, with_protein_id
 
     data_path = projections / PROJECTIONS_DATA_FILENAME
     meta_path = projections / PROJECTIONS_METADATA_FILENAME
@@ -93,9 +96,11 @@ def _load_reductions(
             if i < len(sources) and sources[i]:
                 source_by_name[nm] = sources[i]
 
-    dt = pq.read_table(str(data_path)).to_pydict()
+    dt = with_protein_id(
+        pq.read_table(str(data_path)), source=str(data_path)
+    ).to_pydict()
     pnames = dt["projection_name"]
-    idents = dt["identifier"]
+    idents = dt[PROTEIN_ID_COLUMN]
     xs, ys = dt["x"], dt["y"]
     zs = dt.get("z", [None] * len(pnames))
 
@@ -223,7 +228,7 @@ def _read_annotations(path: Path, reductions: list[dict]):
             ids = dict.fromkeys(i for r in reductions for i in r["ids"])
             return load_custom_annotations([path], list(ids))
         frame = pq.read_table(str(path)).to_pandas()
-        _resolve_id_col(frame)
+        _resolve_id_col(frame, source=str(path))
         return frame
     except ArrowInvalid as exc:
         raise typer.BadParameter(
@@ -251,7 +256,7 @@ def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> list[
     """Merge the report's per-protein ``AnnotationColumn``s into ``ann_path``.
 
     Rewrites the annotations parquet in place with the computed ``cluster_*``
-    membership columns joined by identifier (each value a bare ``cluster N``
+    membership columns joined by protein id (each value a bare ``cluster N``
     label). Added columns are stringified
     (absent → empty) so they match the prepare path's all-string annotations and the
     frontend's content-based type inference. ``frame`` reuses an already-loaded

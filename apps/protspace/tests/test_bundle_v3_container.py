@@ -43,6 +43,7 @@ from protspace.data.io.bundle import (
     write_bundle,
 )
 from protspace.data.io.bundle_v3 import CONTAINER_VERSION_KEY, write_part
+from protspace.data.io.ids import with_protein_id
 from tests.bundle_v3_helpers import (
     annotations_table,
     manifest_of,
@@ -237,13 +238,17 @@ def test_read_tables_accepts_raw_bytes(tmp_path):
 
 
 def test_legacy_bundle_reads_back_unchanged(tmp_path):
+    """Its values come back as stored; the projections' `identifier` key comes
+    back as `protein_id`, as a v3 decode keys them."""
     path = tmp_path / "legacy.parquetbundle"
     parts = legacy_bundle(path)
 
     annotations, metadata, data = read_tables(path)
     assert annotations.equals(read(parts[0]))
     assert metadata.equals(read(parts[1]))
-    assert data.equals(read(parts[2]))
+    assert data.equals(with_protein_id(read(parts[2])))
+    assert "identifier" in read(parts[2]).column_names
+    assert data.column_names[1] == "protein_id"
     assert read_format_version(annotations) == 2
 
 
@@ -278,7 +283,7 @@ def test_read_bundle_contents_reads_a_legacy_bundle_as_stored(tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="protspace.data.io.bundle"):
         contents = read_bundle_contents(path)
     assert contents.annotations.equals(read(parts[0]))
-    assert contents.projections.equals(read(parts[2]))
+    assert contents.projections.equals(with_protein_id(read(parts[2])))
     assert contents.settings == {"cat": {}} and contents.statistics is None
     assert contents.container_version is None
     assert ["deprecated" in r.getMessage() for r in caplog.records] == [True]
@@ -582,7 +587,7 @@ def test_extract_v3_bundle_writes_v2_shaped_files(tmp_path):
     assert (out_dir / "settings.parquet").exists()
 
 
-def test_extract_legacy_bundle_writes_the_raw_parts(tmp_path):
+def test_extract_legacy_bundle_writes_the_parts_as_stored(tmp_path):
     src = tmp_path / "legacy.parquetbundle"
     parts = legacy_bundle(src, settings=b"")
 
@@ -590,5 +595,8 @@ def test_extract_legacy_bundle_writes_the_raw_parts(tmp_path):
 
     assert (out_dir / "selected_annotations.parquet").read_bytes() == parts[0]
     assert (out_dir / "projections_metadata.parquet").read_bytes() == parts[1]
-    assert (out_dir / "projections_data.parquet").read_bytes() == parts[2]
+    # The one part keyed on `identifier` is written keyed on protein_id.
+    projections = pq.read_table(out_dir / "projections_data.parquet")
+    assert projections.equals(with_protein_id(read(parts[2])))
+    assert "identifier" not in projections.column_names
     assert not (out_dir / "settings.parquet").exists()  # zero-byte slot

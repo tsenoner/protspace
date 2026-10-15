@@ -47,7 +47,7 @@ def summarize(path: Path) -> dict:
     projections: dict[str, dict[str, list[float]]] = {}
     for row in data.to_pylist():
         axes = [row["x"], row["y"]] + ([row["z"]] if row.get("z") is not None else [])
-        projections.setdefault(row["projection_name"], {})[row["identifier"]] = axes
+        projections.setdefault(row["projection_name"], {})[row["protein_id"]] = axes
 
     statistics = read_statistics_from_bundle(path)
     return {

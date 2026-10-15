@@ -31,6 +31,7 @@ from protspace.deprecations import (
     DEPRECATIONS,
     EXPLORE_URL,
     LEGACY_BUNDLE_READ,
+    LEGACY_ID_COLUMN,
     SERVE_COMMAND,
     THREE_D_PROJECTION_READ,
     THREE_D_PROJECTIONS,
@@ -74,6 +75,7 @@ def test_the_scheduled_removals():
         SERVE_COMMAND: "5.0.0",
         LEGACY_BUNDLE_READ: "5.0.0",
         THREE_D_PROJECTION_READ: "5.0.0",
+        LEGACY_ID_COLUMN: "5.0.0",
     }
 
 

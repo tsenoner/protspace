@@ -320,7 +320,7 @@ def test_read_tables_rebuilds_both_projections_in_protein_order(tables):
 
     frame = data.to_pandas()
     pca2 = frame[frame.projection_name == "pca2"]
-    assert pca2.identifier.tolist() == generator.PROTEIN_IDS
+    assert pca2.protein_id.tolist() == generator.PROTEIN_IDS
     # P1 and P2 sit where the v2 golden fixture puts them.
     assert pca2[["x", "y"]].values.tolist()[:2] == [[0.0, 0.0], [1.0, 1.0]]
     assert pca2.z.isna().all()  # 2D: no z
@@ -328,7 +328,7 @@ def test_read_tables_rebuilds_both_projections_in_protein_order(tables):
     umap3 = frame[frame.projection_name == "umap3"]
     assert umap3[["x", "y", "z"]].values.tolist()[0] == [0.0, 0.25, 0.5]
     # P6 has no umap3 row in the source table, so none comes back either.
-    assert umap3.identifier.tolist() == generator.PROTEIN_IDS[:-1]
+    assert umap3.protein_id.tolist() == generator.PROTEIN_IDS[:-1]
 
 
 def test_a_protein_missing_from_a_projection_is_nan_in_part_three(parts):

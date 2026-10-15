@@ -183,7 +183,7 @@ describe('v3 export: the container', () => {
     // No cell-grammar key: a v3 part 1 stores decoded labels, not cells.
     expect(kv.protspace_format_version).toBeUndefined();
     expect(JSON.parse(kv.protspace_v3_manifest!)).toEqual({
-      idColumn: 'identifier',
+      idColumn: 'protein_id',
       columns: {
         organism: { kind: 'categorical', sourceType: 'string' },
         go: { kind: 'multi', sourceType: 'string', scores: true, evidence: true },
@@ -197,7 +197,7 @@ describe('v3 export: the container', () => {
       ],
     });
     expect(part1.schema.slice(1).map(({ name, type }) => [name, type])).toEqual([
-      ['identifier', 'BYTE_ARRAY'],
+      ['protein_id', 'BYTE_ARRAY'],
       ['organism', 'INT32'],
       ['go__count', 'INT32'],
       ['pfam__count', 'INT32'],
@@ -373,7 +373,7 @@ describe('v3 export: round trip through decodeParquetBundle', () => {
     expect(columns.ratio.sourceType).toBe('double');
   });
 
-  it('names the id column protein_id when an annotation is called identifier', async () => {
+  it('keeps the id column protein_id when an annotation is called identifier', async () => {
     // Python bundles a table holding both protein_id and identifier with protein_id as the
     // id column and identifier as an ordinary annotation; such a dataset must export.
     const original = handBuilt();
@@ -394,13 +394,11 @@ describe('v3 export: round trip through decodeParquetBundle', () => {
     expect(meaning(data)).toEqual(meaning(original));
   });
 
-  it('refuses a dataset whose annotations occupy both id column names', () => {
+  it('refuses a dataset with an annotation named protein_id', () => {
     const original = handBuilt();
-    for (const name of ['identifier', 'protein_id']) {
-      original.annotations[name] = categorical(['a', 'b', 'c', 'd']);
-      original.annotation_data[name] = Int32Array.of(0, 1, 2, 3);
-    }
-    expect(() => createParquetBundle(original)).toThrow(/identifier.*protein_id/);
+    original.annotations.protein_id = categorical(['a', 'b', 'c', 'd']);
+    original.annotation_data.protein_id = Int32Array.of(0, 1, 2, 3);
+    expect(() => createParquetBundle(original)).toThrow(/"protein_id" leaves no name/);
   });
 
   it('writes an empty dictionary for a categorical column with no values at all', async () => {

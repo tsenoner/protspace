@@ -268,7 +268,7 @@ class TestAnnotationWriter:
             assert output_path.exists()
             df = pd.read_csv(output_path)
             assert len(df) == 2
-            assert list(df["identifier"]) == ["P1", "P2"]
+            assert list(df["protein_id"]) == ["P1", "P2"]
 
     def test_write_parquet(self):
         """Test saving annotations to Parquet file."""
@@ -293,7 +293,7 @@ class TestAnnotationWriter:
             assert output_path.exists()
             df = pd.read_parquet(output_path)
             assert len(df) == 2
-            assert list(df["identifier"]) == ["P1", "P2"]
+            assert list(df["protein_id"]) == ["P1", "P2"]
 
 
 class TestDataFormatter:
@@ -315,8 +315,8 @@ class TestDataFormatter:
         # Verify DataFrame structure
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 2
-        assert "identifier" in result.columns
-        assert list(result["identifier"]) == ["P1", "P2"]
+        assert "protein_id" in result.columns
+        assert list(result["protein_id"]) == ["P1", "P2"]
 
     def test_to_dataframe_empty_annotations(self):
         """Test creating DataFrame with empty annotations list."""
@@ -325,7 +325,7 @@ class TestDataFormatter:
         # Should create DataFrame with just identifier column
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 0
-        assert list(result.columns) == ["identifier"]
+        assert list(result.columns) == ["protein_id"]
 
 
 class TestUniProtTransformer:
@@ -468,7 +468,7 @@ class TestIntegration:
         ).to_pd()
 
         assert not cache_path.exists()
-        assert result["identifier"].tolist() == ["custom_protein"]
+        assert result["protein_id"].tolist() == ["custom_protein"]
 
     @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_cached_signal_peptide_states_survive_uniprot_refetch(
@@ -485,7 +485,7 @@ class TestIntegration:
         ]
         cached_data = pd.DataFrame(
             {
-                "identifier": ["with_signal", "without_signal"],
+                "protein_id": ["with_signal", "without_signal"],
                 "signal_peptide": ["True", "False"],
             }
         )
@@ -510,7 +510,7 @@ class TestIntegration:
         cache_path = tmp_path / "all_annotations.parquet"
         pd.DataFrame(
             {
-                "identifier": [
+                "protein_id": [
                     "unresolved",
                     "resolved_without_pdb",
                     "resolved_with_pdb",
@@ -565,8 +565,8 @@ class TestIntegration:
             headers=SAMPLE_HEADERS, annotations=["length", "genus", "species"]
         ).to_pd()
 
-        assert list(result.columns) == ["identifier", "length", "genus", "species"]
-        assert result["identifier"].tolist() == SAMPLE_HEADERS
+        assert list(result.columns) == ["protein_id", "length", "genus", "species"]
+        assert result["protein_id"].tolist() == SAMPLE_HEADERS
         assert result["length"].tolist() == ["110", "142", "85"]
         assert result["genus"].tolist() == ["Homo", "Homo", "Mus"]
         assert result["species"].tolist() == [
@@ -586,7 +586,7 @@ class TestIntegration:
         ).to_pd()
 
         assert output_path.exists()
-        assert list(result.columns) == ["identifier", "length"]
+        assert list(result.columns) == ["protein_id", "length"]
         assert len(result) == 3
 
     @pytest.mark.parametrize("with_cache", [False, True])
@@ -1085,7 +1085,7 @@ class TestStripScores:
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "cc_subcellular_location": ["Cytoplasm|EXP;Nucleus|IEA"],
             }
         )
@@ -1098,7 +1098,7 @@ class TestStripScores:
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "pfam": ["PF00001 (7tm_1)|50.2;PF00002 (7tm_2)|60.5"],
             }
         )
@@ -1111,7 +1111,7 @@ class TestStripScores:
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "reviewed": ["Swiss-Prot"],
                 "gene_name": ["INS"],
             }
@@ -1126,7 +1126,7 @@ class TestStripScores:
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1", "P2"],
+                "protein_id": ["P1", "P2"],
                 "ec": ["", float("nan")],
             }
         )
@@ -1140,7 +1140,7 @@ class TestStripScores:
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "reviewed": ["Swiss-Prot"],
             }
         )
@@ -1154,7 +1154,7 @@ class TestStripScores:
             strip_scores_from_df,
         )
 
-        data = {"identifier": ["P1"]}
+        data = {"protein_id": ["P1"]}
         for col in SCORE_BEARING_COLUMNS:
             data[col] = ["value|score"]
         df = pd.DataFrame(data)
@@ -1169,7 +1169,7 @@ class TestStripScores:
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "ec": ["2.7.11.1|EXP;3.4.21.1|IEA"],
             }
         )
@@ -1182,7 +1182,7 @@ class TestStripScores:
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "protein_families": ["Insulin family|ISS"],
             }
         )
@@ -1195,7 +1195,7 @@ class TestStripScores:
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "go_bp": ["apoptotic process|TAS;signal transduction|IEA"],
                 "go_mf": ["kinase activity|IDA;ATP binding"],
                 "go_cc": ["cytoplasm|IDA;nucleus"],
@@ -1321,7 +1321,7 @@ class TestUniProtFailureCacheWrite:
         ).to_pd()
 
         assert cache_path.exists() is cache_written
-        assert result["identifier"].tolist() == ["P01308"]
+        assert result["protein_id"].tolist() == ["P01308"]
 
     @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_lost_batch_leaves_an_existing_cache_untouched(
@@ -1329,7 +1329,7 @@ class TestUniProtFailureCacheWrite:
     ):
         mock_retriever.return_value = self._retriever(failed_batches=1)
         cache_path = tmp_path / "all_annotations.parquet"
-        pd.DataFrame({"identifier": ["P01308"], "length": ["110"]}).to_parquet(
+        pd.DataFrame({"protein_id": ["P01308"], "length": ["110"]}).to_parquet(
             cache_path, index=False
         )
 
@@ -1360,7 +1360,7 @@ class TestPerIdentifierReuse:
     def _cached(identifiers, organism="9606"):
         return pd.DataFrame(
             {
-                "identifier": identifiers,
+                "protein_id": identifiers,
                 "organism_id": [organism] * len(identifiers),
                 "length": [f"{10 * (i + 1)}" for i in range(len(identifiers))],
             }
@@ -1386,7 +1386,7 @@ class TestPerIdentifierReuse:
         ).to_pd()
 
         assert mock_uniprot.call_args.kwargs["headers"] == ["P3"]
-        assert dict(zip(result["identifier"], result["length"], strict=True)) == {
+        assert dict(zip(result["protein_id"], result["length"], strict=True)) == {
             "P1": "10",
             "P2": "20",
             "P3": "30",
@@ -1402,7 +1402,7 @@ class TestPerIdentifierReuse:
         ).to_pd()
 
         mock_uniprot.assert_not_called()
-        assert set(result["identifier"]) >= {"P1", "P2"}
+        assert set(result["protein_id"]) >= {"P1", "P2"}
 
     @patch("protspace.data.annotations.manager.TaxonomyRetriever")
     @patch("protspace.data.annotations.manager.UniProtRetriever")
@@ -1436,7 +1436,7 @@ class TestPerIdentifierReuse:
 
         # 9606 is already in the cache; only the unseen organism is looked up.
         assert mock_taxonomy.call_args.kwargs["taxon_ids"] == [10090]
-        assert dict(zip(result["identifier"], result["genus"], strict=True)) == {
+        assert dict(zip(result["protein_id"], result["genus"], strict=True)) == {
             "P1": "Homo",
             "P2": "Homo",
             "P3": "Mus",
@@ -1461,7 +1461,7 @@ class TestPerIdentifierReuse:
             cached_data=self._cached(["P1", "P2", "P3"]),
         ).to_pd()
 
-        assert set(pd.read_parquet(cache_path)["identifier"]) == {"P1", "P2", "P3"}
+        assert set(pd.read_parquet(cache_path)["protein_id"]) == {"P1", "P2", "P3"}
 
     @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_a_failed_fill_in_does_not_cache_empty_values(self, mock_uniprot, tmp_path):
@@ -1482,9 +1482,9 @@ class TestPerIdentifierReuse:
 
         # The run still returns what it had, but P3's empty length must not be
         # cached: the next run would read it as "this protein has no length".
-        assert dict(zip(result["identifier"], result["length"], strict=True)) == {
+        assert dict(zip(result["protein_id"], result["length"], strict=True)) == {
             "P1": "10",
             "P2": "20",
             "P3": "",
         }
-        assert set(pd.read_parquet(cache_path)["identifier"]) == {"P1", "P2"}
+        assert set(pd.read_parquet(cache_path)["protein_id"]) == {"P1", "P2"}

@@ -358,7 +358,7 @@ def test_a_v1_id_column_is_not_migrated_as_a_label(tmp_path, id_column, command)
         ["50% identity"],
         ["x"],
     ]
-    assert projections.column("identifier").to_pylist() == ids
+    assert projections.column("protein_id").to_pylist() == ids
 
 
 @pytest.mark.parametrize("command", ["convert", "style"])

@@ -7,6 +7,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from protspace._generated.shared_constants import PROTEIN_ID_COLUMN
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,7 +80,7 @@ class ArrowReader:
                 annotations.schema.metadata
             )
         else:
-            self._protein_annotations_df = pd.DataFrame(columns=["protein_id"])
+            self._protein_annotations_df = pd.DataFrame(columns=[PROTEIN_ID_COLUMN])
         self._projections_metadata_df = (
             metadata.to_pandas()
             if metadata is not None
@@ -87,7 +89,9 @@ class ArrowReader:
         self._projections_data_df = (
             projections.to_pandas()
             if projections is not None
-            else pd.DataFrame(columns=["projection_name", "identifier", "x", "y", "z"])
+            else pd.DataFrame(
+                columns=["projection_name", PROTEIN_ID_COLUMN, "x", "y", "z"]
+            )
         )
 
     def _read_bundle(self, path: Path) -> tuple[pa.Table, pa.Table, pa.Table]:
@@ -103,9 +107,12 @@ class ArrowReader:
         """Read the core tables a directory holds; a missing one reads as None.
 
         An annotations-only directory is valid, but one holding none of the core
-        tables is not ProtSpace data and must not read as an empty dataset.
+        tables is not ProtSpace data and must not read as an empty dataset. A
+        table keyed on ``identifier``, as older releases wrote, is read keyed on
+        ``protein_id``, with a deprecation warning.
         """
         from protspace.data.io.bundle import CORE_FILENAMES, STATISTICS_FILENAME
+        from protspace.data.io.ids import with_protein_id
 
         core_paths = [path / name for name in CORE_FILENAMES]
         if not any(p.exists() for p in core_paths):
@@ -118,7 +125,10 @@ class ArrowReader:
             self.statistics = statistics_path.read_bytes()
         try:
             return tuple(
-                pq.read_table(str(p)) if p.exists() else None for p in core_paths
+                with_protein_id(pq.read_table(str(p)), source=str(p))
+                if p.exists()
+                else None
+                for p in core_paths
             )
         except Exception as e:
             raise ValueError(f"Error loading Arrow data from {path}: {e}") from e
@@ -171,7 +181,7 @@ class ArrowReader:
                     coordinates["z"] = row["z"]
 
                 projection["data"].append(
-                    {"identifier": row["identifier"], "coordinates": coordinates}
+                    {"identifier": row[PROTEIN_ID_COLUMN], "coordinates": coordinates}
                 )
 
             self.data["projections"].append(projection)

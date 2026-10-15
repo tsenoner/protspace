@@ -42,6 +42,7 @@ import {
   normalizeMissingValue,
 } from '../../packages/utils/src/visualization/missing-values';
 import { generateDatasetHash } from '../../packages/utils/src/storage/data-hash';
+import { PROTEIN_ID_COLUMN } from '../../packages/utils/src/generated/shared-constants';
 import type { VisualizationData } from '../../packages/utils/src/types';
 
 const REPO_ROOT = resolve(__dirname, '../..');
@@ -89,6 +90,8 @@ const PRODUCER_CONTAINER = {
   containerVersion: PRODUCER_CONTAINER_VERSION,
   // The cell-grammar key belongs to legacy parts and v2-shaped tables, never to a v3 part 1.
   cellGrammar: null,
+  // Both writers name the id column this, whatever the annotations are called (#552).
+  idColumn: PROTEIN_ID_COLUMN,
 };
 
 let outDir: string;
@@ -100,22 +103,26 @@ function loadBundle(variant: string): ArrayBuffer {
 }
 
 /**
- * The container's physical layout: its part count and the two version keys of part 1's
- * footer, the container version (v3 only) and the legacy cell grammar (v1/v2 only).
+ * The container's physical layout: its part count, the two version keys of part 1's footer,
+ * the container version (v3 only) and the legacy cell grammar (v1/v2 only), and the id column
+ * the v3 manifest names.
  */
 function inspectContainer(bundle: ArrayBuffer): {
   partCount: number;
   containerVersion: number | null;
   cellGrammar: string | null;
+  idColumn: string | null;
 } {
   const positions = findBundleDelimiterPositions(new Uint8Array(bundle));
   const kv = parquetMetadata(bundle.slice(0, positions[0])).key_value_metadata ?? [];
   const value = (key: string) => kv.find((entry) => entry.key === key)?.value ?? null;
   const container = value('protspace_container_version');
+  const manifest = value('protspace_v3_manifest');
   return {
     partCount: positions.length + 1,
     containerVersion: container === null ? null : Number(container),
     cellGrammar: value('protspace_format_version'),
+    idColumn: manifest === null ? null : (JSON.parse(manifest) as { idColumn: string }).idColumn,
   };
 }
 
@@ -491,6 +498,7 @@ describe('protspace convert', () => {
       partCount: 5,
       containerVersion: null,
       cellGrammar: '2',
+      idColumn: null,
     });
     expect(inspectContainer(loadBundle('converted'))).toEqual(PRODUCER_CONTAINER);
     expect(converted.formatVersion).toBe(PRODUCER_CONTAINER_VERSION);

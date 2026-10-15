@@ -71,6 +71,10 @@ def run_transfer(
     ``embeddings`` maps protein id -> 1-D float32 vector. Proteins without an
     embedding cannot act as queries or references.
 
+    ``annotations`` is keyed on ``protein_id``, as :func:`read_tables` hands every
+    bundle back, or on ``identifier``, the column this function took before
+    protspace 4.17.0; the table comes back keyed as it was given.
+
     ``report``, when given, receives one row per query and neighbour (see
     :func:`protspace.data.io.predictions.report_rows`); the table is the same
     either way.
@@ -82,6 +86,7 @@ def run_transfer(
     """
     from protlabel import eat
     from protspace.analysis.classification import classify
+    from protspace.data.io.ids import id_column_by_name
     from protspace.data.io.predictions import (
         add_overlay_columns,
         report_rows,
@@ -90,7 +95,10 @@ def run_transfer(
 
     # Full-table identifiers, materialized once: reused both for the has-embedding
     # filter and for aligning every column's overlay (invariant across columns).
-    all_ids = [str(v) for v in annotations.column("identifier").to_pylist()]
+    id_col = id_column_by_name(annotations.column_names)
+    if id_col is None:
+        raise KeyError("annotations table has no 'protein_id' column")
+    all_ids = [str(v) for v in annotations.column(id_col).to_pylist()]
 
     # Restrict classification to proteins that actually have an embedding.
     has_emb = pa.array([i in embeddings for i in all_ids])
@@ -105,7 +113,7 @@ def run_transfer(
     # Materialize the embedded id column once (not the whole table); per-column
     # values are pulled inside the loop. Avoids GB-scale Python lists at
     # Swiss-Prot size, and is reused by both classify() and the transfer loop.
-    id_list = [str(v) for v in embedded.column("identifier").to_pylist()]
+    id_list = [str(v) for v in embedded.column(id_col).to_pylist()]
     query_idx, ref_idx = classify(
         embedded, query_rule, reference_rule, identifiers=id_list
     )
@@ -362,6 +370,7 @@ def transfer(
         upgrade_cell_grammar,
     )
     from protspace.data.io.bundle import read_tables, replace_annotations_in_bundle
+    from protspace.data.io.ids import LEGACY_ID_COLUMN
     from protspace.data.io.predictions import write_report
     from protspace.data.loaders import load_h5, resolve_input_names, split_h5_spec
 
@@ -417,19 +426,11 @@ def transfer(
     annotations, _metadata, _projections = read_tables(bundle, keyed=True)
     input_format_version = read_format_version(annotations)
 
-    # Real bundles name the id column "protein_id"; run_transfer works on "identifier".
-    if (
-        "protein_id" in annotations.column_names
-        and "identifier" in annotations.column_names
-    ):
+    # read_tables keys every bundle on protein_id.
+    if LEGACY_ID_COLUMN in annotations.column_names:
         raise typer.BadParameter(
             "Bundle annotations contain both 'protein_id' and 'identifier' columns; "
             "cannot determine the id column unambiguously."
-        )
-    id_col = "protein_id" if "protein_id" in annotations.column_names else "identifier"
-    if id_col != "identifier":
-        annotations = annotations.rename_columns(
-            ["identifier" if n == id_col else n for n in annotations.column_names]
         )
 
     for col in transfer_columns:
@@ -469,15 +470,9 @@ def transfer(
         message = exc.args[0] if exc.args else str(exc)
         raise typer.BadParameter(str(message)) from exc
 
-    # Rename id column back so the written bundle keeps its original name
-    # (the web frontend expects "protein_id").
-    if id_col != "identifier":
-        augmented = augmented.rename_columns(
-            [id_col if n == "identifier" else n for n in augmented.column_names]
-        )
-
-    # The renames dropped the stamp, so restore the grammar from the version read
-    # off the bundle: a v1 bundle's cells are migrated, v2 cells are re-stamped.
+    # Restore the grammar from the version read off the bundle, which the overlay
+    # columns' table rebuild does not carry: a v1 bundle's cells are migrated, v2
+    # cells are re-stamped.
     augmented = upgrade_cell_grammar(augmented, input_format_version)
 
     # A legacy input the v3 encoder still refuses (projection sets that disagree

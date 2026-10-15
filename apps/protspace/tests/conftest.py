@@ -18,7 +18,7 @@ def sample_data():
         "embeddings": np.random.default_rng(0).random((3, 10)),
         "metadata": pd.DataFrame(
             {
-                "identifier": headers,
+                "protein_id": headers,
                 "length": [100, 150, 200],
                 "organism": ["Homo sapiens", "Homo sapiens", "Homo sapiens"],
             }

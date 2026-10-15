@@ -365,7 +365,8 @@ def rebuild_bundle(
 
 
 def normalize_id(table: pa.Table) -> pa.Table:
-    """Name the identifier column ``protein_id`` (annotate writes ``identifier``)."""
+    """Name the identifier column ``protein_id`` (``annotate`` before protspace
+    4.17.0 wrote ``identifier``)."""
     names = table.column_names
     if ID_COLUMN in names:
         return table
@@ -474,12 +475,12 @@ def projection_ids(data: pa.Table) -> list[str]:
     """Identifiers of the first projection, in file order."""
     first = data.column("projection_name")[0].as_py()
     rows = data.filter(pc.equal(data.column("projection_name"), first))
-    return [str(v) for v in rows.column("identifier").to_pylist()]
+    return [str(v) for v in rows.column(ID_COLUMN).to_pylist()]
 
 
 def coordinates(data: pa.Table) -> pa.Table:
     """Long-format projections as one comparable table: ``projection_name``,
-    ``identifier`` (as text), ``x``, ``y`` and ``z`` at float32 (the precision a
+    ``protein_id`` (as text), ``x``, ``y`` and ``z`` at float32 (the precision a
     v3 file stores and the browser draws; a missing axis is null), sorted by
     projection and identifier."""
 
@@ -491,15 +492,13 @@ def coordinates(data: pa.Table) -> pa.Table:
     table = pa.table(
         {
             "projection_name": pc.cast(data.column("projection_name"), pa.string()),
-            "identifier": pc.cast(data.column("identifier"), pa.string()),
+            ID_COLUMN: pc.cast(data.column(ID_COLUMN), pa.string()),
             "x": axis("x"),
             "y": axis("y"),
             "z": axis("z"),
         }
     )
-    return table.sort_by(
-        [("projection_name", "ascending"), ("identifier", "ascending")]
-    )
+    return table.sort_by([("projection_name", "ascending"), (ID_COLUMN, "ascending")])
 
 
 def same_coordinates(a: pa.Table, b: pa.Table) -> bool:
@@ -1009,7 +1008,7 @@ def _coords(bundle: Bundle, projection: str):
     )
     if rows.num_rows == 0:
         raise BuildError(f"projection {projection!r} not in the bundle")
-    ids = [str(v) for v in rows.column("identifier").to_pylist()]
+    ids = [str(v) for v in rows.column(ID_COLUMN).to_pylist()]
     xy = np.column_stack(
         [
             np.asarray(rows.column("x").to_pylist(), dtype=float),

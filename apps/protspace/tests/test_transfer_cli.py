@@ -14,7 +14,7 @@ from tests.cli_output import plain
 
 def _three_protein_inputs(extra_columns=None):
     cols = {
-        "identifier": ["TRINITY_1", "P00001", "P00002"],
+        "protein_id": ["TRINITY_1", "P00001", "P00002"],
         "protein_category": ["", "neurotoxin", "enzyme"],
     }
     if extra_columns:
@@ -36,7 +36,7 @@ def _projection_tables(identifiers, name="PCA 2"):
         pa.table(
             {
                 "projection_name": [name] * len(identifiers),
-                "identifier": list(identifiers),
+                "protein_id": list(identifiers),
                 "x": [float(i) for i in range(len(identifiers))],
                 "y": [0.0] * len(identifiers),
             }
@@ -78,7 +78,7 @@ def test_run_transfer_predicts_for_query_with_missing_value():
         k=1,
         metric="euclidean",
     )
-    by_id = {r["identifier"]: r for r in out.to_pylist()}
+    by_id = {r["protein_id"]: r for r in out.to_pylist()}
     assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
     assert by_id["TRINITY_1"]["protein_category__pred_confidence"] > 0.9
     # Provenance: the label came from the nearest neurotoxin reference, P00001.
@@ -91,7 +91,7 @@ def test_run_transfer_treats_nan_as_missing():
     # never enrolled as the literal label "nan".
     annotations = pa.table(
         {
-            "identifier": ["TRINITY_1", "P00001", "P00002"],
+            "protein_id": ["TRINITY_1", "P00001", "P00002"],
             "score": [float("nan"), 1.0, float("nan")],
         }
     )
@@ -109,7 +109,7 @@ def test_run_transfer_treats_nan_as_missing():
         k=1,
         metric="euclidean",
     )
-    by_id = {r["identifier"]: r for r in out.to_pylist()}
+    by_id = {r["protein_id"]: r for r in out.to_pylist()}
     # TRINITY_1 (NaN) is a query missing a value -> transferred the only real
     # reference value (P00001's 1.0), never the P00002 NaN rendered as "nan".
     assert by_id["TRINITY_1"]["score__pred_value"] == "1.0"
@@ -162,7 +162,7 @@ def test_run_transfer_k_greater_than_one():
         k=2,
         metric="euclidean",
     )
-    by_id = {r["identifier"]: r for r in out.to_pylist()}
+    by_id = {r["protein_id"]: r for r in out.to_pylist()}
     assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
     # The nearest neighbour wins for any k here; only the confidence sees the
     # second vote (k=1 would give ~0.909).
@@ -188,7 +188,7 @@ def test_run_transfer_cosine_metric():
         k=1,
         metric="cosine",
     )
-    by_id = {r["identifier"]: r for r in out.to_pylist()}
+    by_id = {r["protein_id"]: r for r in out.to_pylist()}
     assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
     # Cosine-nearest neurotoxin reference is P00001 ([1,0] vs query [1,0.1]).
     assert by_id["TRINITY_1"]["protein_category__pred_source"] == "P00001"
@@ -198,7 +198,7 @@ def test_run_transfer_warns_when_nothing_transferred(caplog):
     # Query proteins all already have a value -> nothing to transfer -> warning.
     annotations = pa.table(
         {
-            "identifier": ["TRINITY_1", "P00001"],
+            "protein_id": ["TRINITY_1", "P00001"],
             "protein_category": ["already_set", "neurotoxin"],
         }
     )
@@ -522,7 +522,7 @@ def _transfer_rows(query_rule=None, categories=None):
         k=1,
         metric="euclidean",
     )
-    return {r["identifier"]: r for r in out.to_pylist()}
+    return {r["protein_id"]: r for r in out.to_pylist()}
 
 
 def test_run_transfer_without_rules_fills_missing_values():
@@ -629,7 +629,7 @@ def _write_legacy_bundle_and_h5(tmp_path, annotations, projected, names=("p", "p
     data = pa.table(
         {
             "projection_name": [names[1]] * len(projected),
-            "identifier": list(projected),
+            "protein_id": list(projected),
             "x": [float(i) for i in range(len(projected))],
             "y": [0.0] * len(projected),
         }
@@ -757,7 +757,7 @@ def _four_protein_inputs():
     """Two queries and three references on a line, so neighbour ranks are known."""
     annotations = pa.table(
         {
-            "identifier": ["Q_near", "Q_far", "R_a", "R_b", "R_c"],
+            "protein_id": ["Q_near", "Q_far", "R_a", "R_b", "R_c"],
             "fam": ["", "", "alpha", "beta", "alpha"],
         }
     )
@@ -817,7 +817,7 @@ def test_run_transfer_report_ranks_k_neighbours():
 
 def test_run_transfer_report_shows_labels_decoded():
     annotations = pa.table(
-        {"identifier": ["Q", "R"], "fam": ["", "Kunitz%3B BPTI|0.9"]}
+        {"protein_id": ["Q", "R"], "fam": ["", "Kunitz%3B BPTI|0.9"]}
     )
     embeddings = {
         "Q": np.array([0.0, 0.0], dtype=np.float32),
@@ -874,7 +874,7 @@ def test_cli_transfer_writes_the_report(tmp_path):
 
 
 def _rows(table):
-    return {r["identifier"]: r for r in table.to_pylist()}
+    return {r["protein_id"]: r for r in table.to_pylist()}
 
 
 def test_run_transfer_max_distance_classes_queries_and_leaves_references_null():
@@ -939,7 +939,7 @@ def test_run_transfer_auto_max_distance_is_the_reference_spacing_percentile():
 def test_run_transfer_auto_max_distance_excludes_self_by_index():
     # Two references on the same point: each one's nearest other is at 0, and it
     # is the duplicate, not itself, whichever order the search returns them in.
-    annotations = pa.table({"identifier": ["Q", "R1", "R2"], "fam": ["", "a", "a"]})
+    annotations = pa.table({"protein_id": ["Q", "R1", "R2"], "fam": ["", "a", "a"]})
     vec = np.array([1.0, 0.0], dtype=np.float32)
     embeddings = {"Q": np.array([1.0, 1.0], dtype=np.float32), "R1": vec, "R2": vec}
     report = []
@@ -949,7 +949,7 @@ def test_run_transfer_auto_max_distance_excludes_self_by_index():
 
 
 def test_run_transfer_auto_max_distance_needs_two_references():
-    annotations = pa.table({"identifier": ["Q", "R"], "fam": ["", "a"]})
+    annotations = pa.table({"protein_id": ["Q", "R"], "fam": ["", "a"]})
     embeddings = {
         "Q": np.array([0.0, 0.0], dtype=np.float32),
         "R": np.array([1.0, 0.0], dtype=np.float32),

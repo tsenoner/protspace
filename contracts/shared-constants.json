@@ -134,6 +134,19 @@
       ],
       "value": ["false", "true"]
     },
+    "PROTEIN_ID_COLUMN": {
+      "kind": "string",
+      "doc": [
+        "The column every table ProtSpace writes holds the protein IDs in: a",
+        "bundle's part 1 and its manifest `idColumn`, from the Python encoder and",
+        "the web exporter alike, and every parquet the Python package writes. A v3",
+        "reader takes the column the manifest's `idColumn` names, whatever it is",
+        "called; only a table without a manifest is found by name, and older files",
+        "named it `identifier` (read until protspace 5.0.0). Which column holds the",
+        "IDs is a rule, pinned by the bundle contract suite; this is only the name."
+      ],
+      "value": "protein_id"
+    },
     "NON_ANNOTATION_COLUMNS": {
       "kind": "set",
       "doc": [

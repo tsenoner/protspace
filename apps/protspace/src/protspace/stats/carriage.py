@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import math
 
+from protspace.data.io.ids import PROTEIN_ID_COLUMN
 from protspace.stats.base import StatRow, StatsReport
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ def route_faithfulness_to_metadata(report: StatsReport, reductions: list[dict]) 
 
 
 def merge_annotation_columns(
-    report: StatsReport, frame, id_col: str = "identifier"
+    report: StatsReport, frame, id_col: str = PROTEIN_ID_COLUMN
 ) -> list[str]:
     """Merge ``annotation``-destined per-protein columns into an annotations frame.
 

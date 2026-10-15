@@ -45,7 +45,7 @@ def _project_dir(tmp_path, n=150, dim=6, centers=4, seed=0):
         pa.table(
             {
                 "projection_name": ["E — PCA 2"] * n,
-                "identifier": headers,
+                "protein_id": headers,
                 "x": coords[:, 0],
                 "y": coords[:, 1],
                 "z": [None] * n,
@@ -215,7 +215,7 @@ def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
     h5_path, proj, headers = _project_dir(tmp_path)
     ann_path = tmp_path / "annotations.parquet"
     pq.write_table(
-        pa.table({"identifier": headers, "organism": ["x"] * len(headers)}),
+        pa.table({"protein_id": headers, "organism": ["x"] * len(headers)}),
         str(ann_path),
     )
 
@@ -241,7 +241,7 @@ def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
     assert cluster_cols
     assert not [c for c in df.columns if c.startswith("silhouette_")]  # no 2nd column
     assert "organism" in df.columns  # pre-existing annotation preserved
-    assert "identifier" in df.columns
+    assert "protein_id" in df.columns
     # membership value = a bare "cluster N" category, like any curated annotation
     value = str(df[cluster_cols[0]].iloc[0])
     assert value.startswith("cluster ") and "|" not in value
@@ -259,7 +259,7 @@ def test_stats_a_then_bundle_carries_computed_columns_into_bundle(tmp_path):
     runner = CliRunner()
     ann_path = tmp_path / "annotations.parquet"
     pq.write_table(
-        pa.table({"identifier": headers, "organism": ["x"] * len(headers)}),
+        pa.table({"protein_id": headers, "organism": ["x"] * len(headers)}),
         str(ann_path),
     )
 
@@ -321,7 +321,7 @@ def test_stats_settings_out_then_bundle_settings_styles_clusters(tmp_path):
     h5_path, proj, headers = _project_dir(tmp_path)
     runner = CliRunner()
     ann_path = tmp_path / "annotations.parquet"
-    pq.write_table(pa.table({"identifier": headers}), str(ann_path))
+    pq.write_table(pa.table({"protein_id": headers}), str(ann_path))
 
     stats_out = tmp_path / "statistics.parquet"
     styles_out = tmp_path / "cluster_styles.json"
@@ -394,7 +394,7 @@ def test_stats_then_bundle_carries_faithfulness_into_bundle(tmp_path):
     assert r1.exit_code == 0, r1.output
 
     ann_path = tmp_path / "annotations.parquet"
-    pq.write_table(pa.table({"identifier": headers}), str(ann_path))
+    pq.write_table(pa.table({"protein_id": headers}), str(ann_path))
 
     bundle_out = tmp_path / "data.parquetbundle"
     r2 = runner.invoke(
@@ -485,7 +485,7 @@ def test_prepare_stats_annotation_validity_in_bundle(tmp_path):
 
     ann_path = tmp_path / "grp.csv"
     groups = ["a" if i % 2 == 0 else "b" for i in range(len(headers))]
-    pd.DataFrame({"identifier": headers, "grp": groups}).to_csv(ann_path, index=False)
+    pd.DataFrame({"protein_id": headers, "grp": groups}).to_csv(ann_path, index=False)
 
     output_dir = tmp_path / "out"
     result = CliRunner().invoke(
@@ -562,7 +562,7 @@ def test_stats_command_computes_annotation_validity(tmp_path):
     ann_path = tmp_path / "annotations.parquet"
     # A separable categorical annotation over the same ids.
     groups = ["a" if i % 2 else "b" for i in range(len(ids))]
-    pq.write_table(pa.table({"identifier": ids, "major_group": groups}), str(ann_path))
+    pq.write_table(pa.table({"protein_id": ids, "major_group": groups}), str(ann_path))
     out = tmp_path / "statistics.parquet"
     result = CliRunner().invoke(
         app,
@@ -604,7 +604,7 @@ def test_stats_command_scores_explicit_annotation_list(tmp_path):
     pq.write_table(
         pa.table(
             {
-                "identifier": ids,
+                "protein_id": ids,
                 "major_group": ["a" if i % 2 else "b" for i in range(n)],
                 "clade": ["x" if i % 3 else "y" for i in range(n)],
                 "unnamed_grp": ["p" if i % 2 else "q" for i in range(n)],  # suitable
@@ -710,7 +710,7 @@ def test_stats_annotations_rewrite_preserves_untouched_dtypes(tmp_path):
     pq.write_table(
         pa.table(
             {
-                "identifier": headers,
+                "protein_id": headers,
                 "taxon_id": pa.array(taxon, type=pa.int64()),
                 "grp": ["a" if i % 2 == 0 else "b" for i in range(len(headers))],
             }
@@ -774,7 +774,7 @@ def _run_stats_with_annotations(tmp_path, *extra):
     h5_path, proj, headers = _project_dir(tmp_path)
     ann_path = tmp_path / "annotations.parquet"
     pq.write_table(
-        pa.table({"identifier": headers, "organism": ["x"] * len(headers)}),
+        pa.table({"protein_id": headers, "organism": ["x"] * len(headers)}),
         str(ann_path),
     )
     settings_path = tmp_path / "styles.json"

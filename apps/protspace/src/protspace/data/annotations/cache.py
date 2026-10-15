@@ -15,6 +15,7 @@ import pandas as pd
 
 from protspace.data.annotations.configuration import SOURCE_ANNOTATIONS
 from protspace.data.io.atomic import staged_write
+from protspace.data.io.ids import PROTEIN_ID_COLUMN, with_protein_id
 
 logger = logging.getLogger(__name__)
 
@@ -81,19 +82,23 @@ def _migrate_legacy_ted_labels(df: pd.DataFrame) -> bool:
 
 
 def _restore_cached_columns(api_df: pd.DataFrame, cached: pd.DataFrame) -> pd.DataFrame:
-    """Refill blank cells in ``api_df`` from ``cached``, matched on identifier.
+    """Refill blank cells in ``api_df`` from ``cached``, matched on protein id.
 
     Only blanks are refilled, so anything the current run did retrieve wins
     and a protein absent from the cache simply stays blank.
     """
-    columns = [c for c in cached.columns if c != "identifier" and c in api_df.columns]
-    if not columns or "identifier" not in api_df.columns:
+    columns = [
+        c for c in cached.columns if c != PROTEIN_ID_COLUMN and c in api_df.columns
+    ]
+    if not columns or PROTEIN_ID_COLUMN not in api_df.columns:
         return api_df
 
-    lookup = cached.drop_duplicates(subset="identifier").set_index("identifier")
+    lookup = cached.drop_duplicates(subset=PROTEIN_ID_COLUMN).set_index(
+        PROTEIN_ID_COLUMN
+    )
     restored = api_df.copy()
     for column in columns:
-        fallback = restored["identifier"].map(lookup[column]).fillna("")
+        fallback = restored[PROTEIN_ID_COLUMN].map(lookup[column]).fillna("")
         blank = restored[column].isna() | (restored[column].astype(str) == "")
         restored.loc[blank, column] = fallback[blank]
     return restored
@@ -174,7 +179,9 @@ def fetch_annotations(
         )
         return _from_manager(manager, manager.to_pd())
 
-    cached_df = pd.read_parquet(cache_path)
+    # A cache written before 4.17.0 is keyed on `identifier`; the next write
+    # keys it on protein_id. It is the pipeline's own file, so no warning.
+    cached_df = with_protein_id(pd.read_parquet(cache_path))
     missing_identifiers = uncached_headers(headers, cached_df)
     if missing_identifiers:
         # Rows the cache has no entry for. The manager fetches each source
@@ -197,7 +204,7 @@ def fetch_annotations(
         )
         with staged_write(cache_path) as staged:
             cached_df.to_parquet(staged, index=False)
-    cached_annotations = set(cached_df.columns) - {"identifier"}
+    cached_annotations = set(cached_df.columns) - {PROTEIN_ID_COLUMN}
 
     if annotations is None:
         required = set(ANNOTATION_GROUPS["default"])
@@ -269,7 +276,9 @@ def fetch_annotations(
     ):
         logger.warning("Using cached annotations")
         if annotations:
-            cols = ["identifier"] + [f for f in annotations if f in cached_df.columns]
+            cols = [PROTEIN_ID_COLUMN] + [
+                f for f in annotations if f in cached_df.columns
+            ]
             api_df = cached_df[cols]
         else:
             api_df = cached_df
@@ -277,7 +286,7 @@ def fetch_annotations(
         # Warn if cached annotations are all empty. Checked *before* the FASTA
         # length fallback below, otherwise a derived length makes a wholly
         # useless cache look populated and silently suppresses this warning.
-        data_cols = [c for c in api_df.columns if c != "identifier"]
+        data_cols = [c for c in api_df.columns if c != PROTEIN_ID_COLUMN]
         if data_cols:
             non_empty = api_df[data_cols].apply(lambda col: (col != "").any())
             if not non_empty.any():
@@ -295,7 +304,7 @@ def fetch_annotations(
                 api_df.loc[missing_lengths, "length"] = [
                     resolve_fasta_sequence_length(identifier, length, sequences)
                     for identifier, length in zip(
-                        api_df.loc[missing_lengths, "identifier"],
+                        api_df.loc[missing_lengths, PROTEIN_ID_COLUMN],
                         api_df.loc[missing_lengths, "length"],
                         strict=True,
                     )
@@ -358,7 +367,7 @@ def fetch_annotations(
                 if c not in stale_columns and c in cached_df.columns
             ]
             if preserved:
-                legacy_uniprot = cached_df[["identifier", *preserved]].copy()
+                legacy_uniprot = cached_df[[PROTEIN_ID_COLUMN, *preserved]].copy()
         cached_df = cached_df.drop(
             columns=[c for c in cols_to_drop if c in cached_df.columns]
         )

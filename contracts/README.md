@@ -3,8 +3,8 @@
 `shared-constants.json` is the single source of the constants the Python package
 (`apps/protspace`) and the web app (`packages/utils`, `packages/core`) must hold the same
 value for: the missing-value tokens, the `__NA__` sentinel and its colour, Kelly's colours,
-the palette ids, the point shapes, the labels of a boolean column and the column names the web
-reader never shows as an annotation.
+the palette ids, the point shapes, the labels of a boolean column, the column names the web
+reader never shows as an annotation and the name of the protein ID column (`protein_id`).
 
 `pnpm shared-constants` writes it into two committed modules, which each side re-exports
 under its existing names:

@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from protspace.data.io.atomic import staged_write
+from protspace.data.io.ids import PROTEIN_ID_COLUMN
 from protspace.data.loaders import EmbeddingSet
 from protspace.data.loaders.embedding_set import (
     format_param_suffix,
@@ -293,16 +294,16 @@ class ReductionPipeline:
             metadata = strip_scores_from_df(metadata)
 
         # Build full metadata with all headers
-        full_metadata = pd.DataFrame({"identifier": all_headers})
+        full_metadata = pd.DataFrame({PROTEIN_ID_COLUMN: all_headers})
         if len(metadata.columns) > 1:
             # fillna first: a protein a merge left unannotated would read "nan".
             metadata = metadata.fillna("").astype(str)
             id_col = metadata.columns[0]
-            if id_col != "identifier":
-                metadata = metadata.rename(columns={id_col: "identifier"})
+            if id_col != PROTEIN_ID_COLUMN:
+                metadata = metadata.rename(columns={id_col: PROTEIN_ID_COLUMN})
             full_metadata = full_metadata.merge(
-                metadata.drop_duplicates("identifier"),
-                on="identifier",
+                metadata.drop_duplicates(PROTEIN_ID_COLUMN),
+                on=PROTEIN_ID_COLUMN,
                 how="left",
             )
         metadata = full_metadata
@@ -681,7 +682,7 @@ class ReductionPipeline:
             annotation_labels = None
             if metadata is not None:
                 annotation_labels = build_annotation_labels(
-                    metadata, self.config.stats_annotation, id_col="identifier"
+                    metadata, self.config.stats_annotation, id_col=PROTEIN_ID_COLUMN
                 )
 
             report = compute_statistics(

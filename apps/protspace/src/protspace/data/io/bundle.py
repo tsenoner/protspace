@@ -65,6 +65,7 @@ from protspace.data.io.bundle_v3 import (
     replace_annotations_v3,
     write_part,
 )
+from protspace.data.io.ids import PROTEIN_ID_COLUMN, id_column_by_name, with_protein_id
 from protspace.deprecations import (
     DEPRECATIONS,
     LEGACY_BUNDLE_READ,
@@ -224,11 +225,15 @@ def _warn_3d(
 def _core_tables(
     core: list[bytes], payloads: bytes | None
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
-    """The three core tables in their v2 shape, from :func:`_split`'s output."""
+    """The three core tables in their v2 shape, from :func:`_split`'s output.
+
+    A legacy container's tables are keyed on ``protein_id`` where they were keyed
+    on ``identifier``, as a v3 decode keys them; nothing else is changed.
+    """
     if payloads is not None:
         return decode_v3([*core, payloads])
     annotations, metadata, projections = (read_part(p) for p in core)
-    return annotations, metadata, projections
+    return with_protein_id(annotations), metadata, with_protein_id(projections)
 
 
 def _drop_internal_columns(annotations: pa.Table) -> pa.Table:
@@ -404,21 +409,20 @@ def read_bundle_table(
         )
 
     decode = read_format_version(annotations) >= 2
-    id_col = "protein_id" if "protein_id" in annotations.column_names else "identifier"
     frame = annotations.to_pandas()
-    ids = frame.pop(id_col).astype(str)
+    ids = frame.pop(PROTEIN_ID_COLUMN).astype(str)
     for field in annotations.schema:
-        if field.name != id_col and pa.types.is_string(field.type):
+        if field.name != PROTEIN_ID_COLUMN and pa.types.is_string(field.type):
             # Map each distinct cell once: a large bundle repeats few labels.
             values = frame[field.name]
             shown = {v: _table_cell(v, decode) for v in values.dropna().unique()}
             frame[field.name] = values.map(shown)
 
-    table = pd.DataFrame({"protein_id": ids})
+    table = pd.DataFrame({PROTEIN_ID_COLUMN: ids})
     if projections:
         long = coordinates.to_pandas()
         for name in projections:
-            placed = long[long["projection_name"] == name].set_index("identifier")
+            placed = long[long["projection_name"] == name].set_index(PROTEIN_ID_COLUMN)
             for axis in ("x", "y"):
                 table[f"{name}_{axis}"] = ids.map(placed[axis]).to_numpy()
     return pd.concat([table, frame], axis=1)
@@ -428,7 +432,9 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
     """Extract a .parquetbundle into a directory (see :func:`write_directory`).
 
     A v3 core is decoded back to the v2 shape, so everything downstream reads
-    the files it always did; a legacy bundle's parts are written as stored.
+    the files it always did; a legacy bundle's parts are written with their
+    stored values, keyed on ``protein_id`` where they were keyed on
+    ``identifier`` (see :func:`~protspace.data.io.ids.with_protein_id`).
 
     Args:
         bundle_path: Path to the .parquetbundle file.
@@ -446,7 +452,14 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
     if payloads is not None:
         parts = list(decode_v3([*core, payloads]))
     else:
-        parts = [part or None for part in core]  # an empty part writes no file
+        # Keyed on protein_id, as every directory is written: a part keyed on
+        # `identifier` is rewritten, any other is written as stored; an empty
+        # part writes no file.
+        parts = []
+        for part in core:
+            table = read_part(part) if part else None
+            keyed = with_protein_id(table) if table is not None else None
+            parts.append(part if keyed is table else keyed)
     write_directory(
         parts,
         target_dir,
@@ -864,7 +877,7 @@ def _keyed_as_the_legacy_reader_keyed_it(annotations: pa.Table) -> pa.Table:
     """
     names = annotations.column_names
     metadata = annotations.schema.metadata
-    id_column = next((c for c in ("protein_id", "identifier") if c in names), None)
+    id_column = id_column_by_name(names)
     if id_column is None and names:
         id_column = next(
             (
@@ -881,9 +894,9 @@ def _keyed_as_the_legacy_reader_keyed_it(annotations: pa.Table) -> pa.Table:
             id_column,
         )
         annotations = annotations.rename_columns(
-            ["protein_id" if name == id_column else name for name in names]
+            [PROTEIN_ID_COLUMN if name == id_column else name for name in names]
         )
-        id_column = "protein_id"
+        id_column = PROTEIN_ID_COLUMN
     if id_column is None:
         return annotations
 

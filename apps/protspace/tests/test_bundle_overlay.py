@@ -17,13 +17,13 @@ from protspace.data.io.bundle import (
 
 def _tables():
     annotations = stamp_format_version(
-        pa.table({"identifier": ["A", "B"], "cat": ["x", "y"]})
+        pa.table({"protein_id": ["A", "B"], "cat": ["x", "y"]})
     )
     proj_meta = pa.table({"projection_name": ["PCA 2"], "dimensions": [2]})
     proj_data = pa.table(
         {
             "projection_name": ["PCA 2", "PCA 2"],
-            "identifier": ["A", "B"],
+            "protein_id": ["A", "B"],
             "x": [0.0, 1.0],
             "y": [0.0, 1.0],
         }
@@ -46,7 +46,7 @@ def test_projection_parts_preserved_byte_for_byte(tmp_path):
     new_annotations = stamp_format_version(
         pa.table(
             {
-                "identifier": ["A", "B"],
+                "protein_id": ["A", "B"],
                 "cat": ["x", "y"],
                 "cat__pred_value": [None, "z"],
             }
@@ -74,7 +74,7 @@ def test_delimiter_in_annotation_cell_raises(tmp_path):
     write_bundle(_tables(), src)
 
     evil = "ev" + PARQUET_BUNDLE_DELIMITER.decode() + "il"
-    bad = stamp_format_version(pa.table({"identifier": ["A", "B"], "cat": ["x", evil]}))
+    bad = stamp_format_version(pa.table({"protein_id": ["A", "B"], "cat": ["x", evil]}))
     with pytest.raises(ValueError):
         replace_annotations_in_bundle(src, out, bad)
 
@@ -87,7 +87,7 @@ def test_in_place_overwrite_works_and_leaves_no_temp(tmp_path):
     new_annotations = stamp_format_version(
         pa.table(
             {
-                "identifier": ["A", "B"],
+                "protein_id": ["A", "B"],
                 "cat": ["x", "y"],
                 "cat__pred_value": [None, "z"],
             }
@@ -110,7 +110,7 @@ def test_failed_replace_preserves_original_in_place(tmp_path, monkeypatch):
     new_annotations = stamp_format_version(
         pa.table(
             {
-                "identifier": ["A", "B"],
+                "protein_id": ["A", "B"],
                 "cat": ["x", "y"],
                 "cat__pred_value": [None, "z"],
             }
@@ -140,7 +140,7 @@ def test_preserves_statistics_part_when_present(tmp_path):
     new_annotations = stamp_format_version(
         pa.table(
             {
-                "identifier": ["A", "B"],
+                "protein_id": ["A", "B"],
                 "cat": ["x", "y"],
                 "cat__pred_value": [None, "z"],
             }
@@ -167,7 +167,7 @@ def test_preserves_statistics_with_zero_byte_settings_slot(tmp_path):
     write_bundle(_tables(), src, statistics=stats)
 
     new_annotations = stamp_format_version(
-        pa.table({"identifier": ["A", "B"], "cat": ["x", "y"]})
+        pa.table({"protein_id": ["A", "B"], "cat": ["x", "y"]})
     )
     replace_annotations_in_bundle(src, out, new_annotations)
 

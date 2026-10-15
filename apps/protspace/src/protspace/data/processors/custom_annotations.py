@@ -21,20 +21,21 @@ from pathlib import Path
 
 import pandas as pd
 
+from protspace import deprecations
 from protspace._generated.shared_constants import NON_ANNOTATION_COLUMNS
 from protspace.data.annotations.encoding import encode_legacy_cell
+from protspace.data.io.ids import LEGACY_ID_COLUMN, PROTEIN_ID_COLUMN, id_column_by_name
 
 logger = logging.getLogger(__name__)
 
 CUSTOM_ANNOTATION_SUFFIXES = (".csv", ".tsv", ".txt")
-ID_COLUMN = "identifier"
+ID_COLUMN = PROTEIN_ID_COLUMN
 
 #: Names a later column of a custom file cannot keep, compared exactly: the names the web viewer
 #: never shows as an annotation (shared with it through contracts/shared-constants.json), which
-#: include the pipeline's and the bundle's id column (``identifier``, ``protein_id``).
+#: include the id column every table is written with (``protein_id``) and its older name
+#: (``identifier``).
 RESERVED_COLUMNS = NON_ANNOTATION_COLUMNS
-# A parquet's id column, by precedence: `protein_id` (a bundle), then `identifier` (the pipeline).
-_PARQUET_ID_NAMES = ("protein_id", "identifier")
 _DELIMITERS = {"\t": "tab", ",": "comma", ";": "semicolon"}
 _EXAMPLES = 3
 
@@ -81,17 +82,20 @@ def split_annotation_args(items: Iterable[str]) -> tuple[list[str], list[Path]]:
     return names, files
 
 
-def resolve_id_column(columns: Sequence[str]) -> str:
+def resolve_id_column(columns: Sequence[str], *, source: str | None = None) -> str:
     """The column holding the protein ids of an annotations parquet (``stats -a``, ``bundle -a``).
 
-    ``protein_id``, else ``identifier`` (the names every table ProtSpace writes gives it), else
-    the first column. Beside ``protein_id``, an ``identifier`` column is an annotation, as the
-    bundle encoder reads it. A custom annotation file does not use this: its first column is the
-    id column, always (:func:`_read_file`).
+    ``protein_id`` (the name every table ProtSpace writes gives it), else ``identifier`` (the
+    name older releases wrote), else the first column. Beside ``protein_id``, an ``identifier``
+    column is an annotation, as the bundle encoder reads it. Taking ``identifier`` logs the
+    deprecation warning when *source*, the file's name, is given. A custom annotation file does
+    not use this: its first column is the id column, always (:func:`_read_file`).
     """
-    for name in _PARQUET_ID_NAMES:
-        if name in columns:
-            return name
+    name = id_column_by_name(columns)
+    if name == LEGACY_ID_COLUMN and source is not None:
+        deprecations.warn(deprecations.LEGACY_ID_COLUMN, logger, name=source)
+    if name is not None:
+        return name
     if not len(columns):
         raise ValueError("The table has no columns.")
     return columns[0]

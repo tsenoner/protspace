@@ -62,6 +62,7 @@ THREE_D_PROJECTIONS = "3d-projections"
 SERVE_COMMAND = "serve-command"
 LEGACY_BUNDLE_READ = "legacy-bundle-read"
 THREE_D_PROJECTION_READ = "3d-projection-read"
+LEGACY_ID_COLUMN = "legacy-id-column"
 
 #: The web viewer users are pointed to instead of ``protspace serve``.
 EXPLORE_URL = "https://protspace.app/explore"
@@ -164,6 +165,32 @@ _REGISTRY = (
             "projectionPlane and the 3-D paths (scatter-plot.ts with it)",
             "apps/web/src/explore/notifications.ts: drop the 3-D projection notice",
             "docs/explore/control-bar.md: drop the 3D projections tip",
+        ),
+    ),
+    Deprecation(
+        key=LEGACY_ID_COLUMN,
+        feature=(
+            "reading `identifier` as the protein ID column of a table without a "
+            "manifest (an unbundled directory, an annotation parquet)"
+        ),
+        remove_in="5.0.0",
+        message=(
+            "{name} holds its protein IDs in a column named `identifier`; protspace "
+            "writes them to `protein_id`. Reading `identifier` as the ID column is "
+            "deprecated and will be removed in protspace {remove_in}; rename the "
+            "column to `protein_id`, or re-run the command that wrote the file."
+        ),
+        removal=(
+            "apps/protspace/src/protspace/data/io/ids.py: id_column_by_name and "
+            "with_protein_id take protein_id only (see the single-protein-id-column "
+            "OpenSpec change)",
+            "apps/protspace/src/protspace/data/processors/custom_annotations.py: "
+            "resolve_id_column takes protein_id, else the first column (old "
+            "`annotate` output has `identifier` first, so it still reads)",
+            "apps/protspace/src/protspace/data/annotations/cache.py: drop the "
+            "identifier rename on read, or treat such a cache as stale",
+            "apps/protspace/src/protspace/data/io/bundle_v3.py: encode_v3 takes "
+            "protein_id only",
         ),
     ),
 )

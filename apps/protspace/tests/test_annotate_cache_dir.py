@@ -209,7 +209,7 @@ class TestSharedWithPrepare:
 
         assert result.exit_code == 0, result.output
         written = pd.read_parquet(out)
-        assert written["identifier"].tolist() == ["P01308", "P01315"]
+        assert written["protein_id"].tolist() == ["P01308", "P01315"]
         assert written["pfam"].tolist() == ["PF00049|1.0", "PF00050|2.0"]
 
     def test_a_cache_covering_more_proteins_yields_only_the_input_rows(
@@ -241,7 +241,7 @@ class TestSharedWithPrepare:
         )
 
         assert result.exit_code == 0, result.output
-        assert pd.read_parquet(out)["identifier"].tolist() == ["P01315"]
+        assert pd.read_parquet(out)["protein_id"].tolist() == ["P01315"]
 
 
 class TestRefetch:
@@ -362,7 +362,7 @@ class TestLegacyCache:
         cache_dir.mkdir()
         pd.DataFrame(
             {
-                "identifier": list(SEQUENCES),
+                "protein_id": list(SEQUENCES),
                 "xref_pdb": ["", ""],
                 "gene_name": ["STALE", "STALE"],
                 "protein_name": ["", ""],

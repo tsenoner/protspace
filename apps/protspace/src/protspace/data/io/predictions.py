@@ -35,6 +35,7 @@ import pyarrow as pa
 from protlabel import Prediction
 from protspace.data.annotations.encoding import encode_field, to_display_value
 from protspace.data.io.atomic import atomic_write_bytes
+from protspace.data.io.ids import PROTEIN_ID_COLUMN
 
 #: The columns of a transfer report, in order: one row per query and neighbour.
 REPORT_COLUMNS = (
@@ -72,7 +73,9 @@ def add_overlay_columns(
     """
     by_query = {p.query_id: p for p in predictions}
     if identifiers is None:
-        identifiers = [str(v) for v in annotations.column("identifier").to_pylist()]
+        identifiers = [
+            str(v) for v in annotations.column(PROTEIN_ID_COLUMN).to_pylist()
+        ]
 
     values: list[str | None] = []
     confidences: list[float | None] = []

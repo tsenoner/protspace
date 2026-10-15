@@ -216,12 +216,13 @@ def _merge_full_length_columns(
 ) -> pa.Table:
     """Replace or add the sequence-based columns computed on full-length input.
 
-    Joined by protein id (``annotate`` names it ``identifier``); the always-
+    Joined by protein id (``protein_id``, or ``identifier`` in ``annotate``
+    output from before protspace 4.17.0); the always-
     included name columns ``annotate`` adds are ignored, the bundle has them.
     """
     if full_length is None:
         return annotations
-    id_col = "identifier" if "identifier" in full_length.column_names else "protein_id"
+    id_col = "protein_id" if "protein_id" in full_length.column_names else "identifier"
     rows = {pid: i for i, pid in enumerate(full_length.column(id_col).to_pylist())}
     ids = annotations.column("protein_id").to_pylist()
     take = pa.array([rows.get(pid) for pid in ids], type=pa.int64())

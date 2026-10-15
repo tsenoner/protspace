@@ -157,7 +157,7 @@ class TestLaterSourceIncomplete:
         cache_path = tmp_path / CACHE_NAME
         cached = pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 **{k: [v] for k, v in _uniprot_row("OLD").items()},
                 "ted_domains": ["-|80.0"],
             }
@@ -195,7 +195,7 @@ class TestPendingSources:
         cache_path = tmp_path / CACHE_NAME
         cached = pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 **{k: [v] for k, v in _uniprot_row("OLD").items()},
                 "pfam": ["PF00049|1.0"],
             }
@@ -232,7 +232,7 @@ class TestPendingSources:
         cache_path = tmp_path / CACHE_NAME
         cached = pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 **{k: [v] for k, v in _uniprot_row("INS").items()},
                 "pfam": ["PF00049|1.0"],
             }
@@ -257,8 +257,8 @@ class TestPendingSources:
         ).to_pd()
 
         assert calls == [("uniprot", ["P01315"]), ("interpro", ["P01315"])]
-        assert seen_by_interpro["cache"]["identifier"].tolist() == ["P01308"]
-        final = pd.read_parquet(cache_path).set_index("identifier")
+        assert seen_by_interpro["cache"]["protein_id"].tolist() == ["P01308"]
+        final = pd.read_parquet(cache_path).set_index("protein_id")
         assert final.loc["P01315", "pfam"] == "PF00050|3.0"
         assert final.loc["P01315", "gene_name"] == "IGF"
 
@@ -273,7 +273,7 @@ class TestPendingSources:
         cache_path = tmp_path / CACHE_NAME
         cached = pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 **{k: [v] for k, v in _uniprot_row("INS").items()},
             }
         )
@@ -296,7 +296,7 @@ class TestPendingSources:
             sources_to_fetch={**NOTHING_TO_FETCH, "interpro": True},
         ).to_pd()
 
-        checkpoint = seen_by_interpro["cache"].set_index("identifier")
+        checkpoint = seen_by_interpro["cache"].set_index("protein_id")
         assert checkpoint.loc["P01315", "gene_name"] == "IGF"
         assert "pfam" not in checkpoint.columns
 
@@ -310,7 +310,7 @@ class TestPendingSources:
         """
         cache_path = tmp_path / CACHE_NAME
         cached = pd.DataFrame(
-            {"identifier": ["OLD1"], "gene_name": ["OLD"], "pfam": ["PF00001|1.0"]}
+            {"protein_id": ["OLD1"], "gene_name": ["OLD"], "pfam": ["PF00001|1.0"]}
         )
         cached.to_parquet(cache_path, index=False)
         seen_by_interpro: dict = {}
@@ -376,7 +376,7 @@ class TestNothingWritten:
         cache_path = tmp_path / CACHE_NAME
         cached = pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 **{k: [v] for k, v in _uniprot_row("INS").items()},
                 "pfam": ["PF00049|1.0"],
             }

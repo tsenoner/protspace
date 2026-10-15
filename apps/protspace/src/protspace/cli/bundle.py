@@ -93,6 +93,7 @@ def bundle(
         PROJECTIONS_METADATA_FILENAME,
         write_bundle,
     )
+    from protspace.data.io.ids import PROTEIN_ID_COLUMN, with_protein_id
     from protspace.data.processors.custom_annotations import (
         is_custom_annotation_file,
         load_custom_annotations,
@@ -110,16 +111,18 @@ def bundle(
         raise typer.BadParameter(f"Missing: {data_path}")
 
     metadata_table = pq.read_table(str(metadata_path))
-    data_table = pq.read_table(str(data_path))
+    data_table = with_protein_id(pq.read_table(str(data_path)), source=str(data_path))
     custom = is_custom_annotation_file(annotations)
     try:
         if custom:
-            ids = dict.fromkeys(data_table.column("identifier").to_pylist())
+            ids = dict.fromkeys(data_table.column(PROTEIN_ID_COLUMN).to_pylist())
             frame = load_custom_annotations([annotations], list(ids))
             annotations_table = pa.Table.from_pandas(frame, preserve_index=False)
         else:
             annotations_table = pq.read_table(str(annotations))
-        id_col = resolve_id_column(annotations_table.column_names)
+        id_col = resolve_id_column(
+            annotations_table.column_names, source=str(annotations)
+        )
     except pa.ArrowInvalid as exc:
         raise typer.BadParameter(
             f"{annotations} is not a parquet file. -a takes an annotations parquet "
@@ -155,11 +158,11 @@ def bundle(
         )
 
     # The id column, chosen by the parquet rule `stats -a` uses (a custom file's loader
-    # puts its first column in `identifier`), is protein_id in a bundle.
-    if id_col != "protein_id":
+    # puts its first column in `protein_id`), is protein_id in a bundle.
+    if id_col != PROTEIN_ID_COLUMN:
         annotations_table = annotations_table.rename_columns(
             [
-                ("protein_id" if c == id_col else c)
+                (PROTEIN_ID_COLUMN if c == id_col else c)
                 for c in annotations_table.column_names
             ]
         )

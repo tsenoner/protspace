@@ -327,7 +327,7 @@ UniProt annotations empty too, and the run warns how many batches and proteins a
 Bring your own columns as a table with one row per protein:
 
 ```csv
-identifier,taxonomy,family,function
+protein_id,taxonomy,family,function
 P12345,Bacteria,Kinase,ATP binding
 P67890,Archaea,Phosphatase,Hydrolase
 Q54321,Eukaryota,Kinase,Transferase
@@ -771,8 +771,11 @@ the web app renders that table, see
 
 The annotations parquet can be the output of `protspace annotate`, the annotation cache `prepare`
 keeps (`tmp/all_annotations.parquet`), or a table of your own. Its id column is the column named
-`protein_id`, else `identifier`, as in every table ProtSpace writes, or else its first column;
-beside `protein_id`, an `identifier` column is an annotation. `stats -a` follows the same rule, so a table `stats` enriched is one `bundle`
+`protein_id`, the name every table ProtSpace writes uses, else `identifier`, the name releases
+before 4.17 wrote, or else its first column; beside `protein_id`, an `identifier` column is an
+annotation. Reading `identifier` as the id column warns that it is deprecated: it ends in protspace
+5.0.0, so rename such a column to `protein_id`. A projections directory keyed on `identifier`
+warns the same way. `stats -a` follows the same rule, so a table `stats` enriched is one `bundle`
 accepts. `annotate` and the cache hold
 percent-encoded v2 cells, stamped `protspace_format_version` = `2`, and those pass through
 unchanged; a cache written before the cache carried that stamp is recognised as one and read the
@@ -1080,6 +1083,12 @@ Coming from ProtSpace 4.4, or from the v3 `protspace-local` command:
 - **The id column is still the first column**, as in 4.4 and `protspace-local`, whatever its
   header. A later column named `identifier` or `protein_id`, which used to fail the run with a
   duplicate-column error, is now kept as `identifier_annotation` or `protein_id_annotation`.
+- **Every table names its id column `protein_id`.** Since 4.17, `annotate` output, the
+  `.annotations.parquet` `stats -a` writes, both files of a `project` or `prepare --no-bundled`
+  directory and the tables `read_tables` returns hold the protein ids in `protein_id`, where
+  older releases wrote `identifier`. Files written before are still read, with a deprecation
+  warning, until protspace 5.0.0. A script that reads `identifier` from such a table should read
+  `protein_id`.
 - **3D projections and `protspace serve` are deprecated.** Both still work, with a warning, and
   are removed in protspace 5.0.0 (tracked in
   [#544](https://github.com/tsenoner/protspace/issues/544)). If you used `umap3`, `tsne3` or any

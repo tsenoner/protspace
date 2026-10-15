@@ -44,7 +44,7 @@ def _make_bundle(tmp_path, ids, annotation_columns):
     data = pa.table(
         {
             "projection_name": ["pca2"] * n,
-            "identifier": list(ids),
+            "protein_id": list(ids),
             "x": [0.0] * n,
             "y": [0.0] * n,
             "z": [None] * n,

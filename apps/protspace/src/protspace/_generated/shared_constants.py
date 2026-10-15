@@ -129,6 +129,15 @@ ARROW_BOOLEAN_LABELS = (
     "true",
 )
 
+# The column every table ProtSpace writes holds the protein IDs in: a
+# bundle's part 1 and its manifest `idColumn`, from the Python encoder and
+# the web exporter alike, and every parquet the Python package writes. A v3
+# reader takes the column the manifest's `idColumn` names, whatever it is
+# called; only a table without a manifest is found by name, and older files
+# named it `identifier` (read until protspace 5.0.0). Which column holds the
+# IDs is a rule, pinned by the bundle contract suite; this is only the name.
+PROTEIN_ID_COLUMN = "protein_id"
+
 # Column names the web reader never shows as an annotation, compared
 # exactly: the id columns it may key a table on and the fields of a
 # projection row. The Python loader of a custom annotation file renames a

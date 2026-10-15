@@ -68,17 +68,17 @@ def _tables(*, three_d: bool = True) -> list[pa.Table]:
             ][: len(names)],
         }
     )
-    rows = {"projection_name": [], "identifier": [], "x": [], "y": [], "z": []}
+    rows = {"projection_name": [], "protein_id": [], "x": [], "y": [], "z": []}
     for name in names:
         for i, ident in enumerate(IDS):
             rows["projection_name"].append(name)
-            rows["identifier"].append(ident)
+            rows["protein_id"].append(ident)
             rows["x"].append(float(i))
             rows["y"].append(float(i) + 0.5)
             rows["z"].append(float(i) + 0.25 if name == "UMAP 3" else None)
     data = pa.table(
         {
-            **{k: rows[k] for k in ("projection_name", "identifier")},
+            **{k: rows[k] for k in ("projection_name", "protein_id")},
             **{k: pa.array(rows[k], type=pa.float32()) for k in ("x", "y", "z")},
         }
     )
@@ -239,9 +239,9 @@ def test_flatten_writes_each_3d_projection_as_its_xy_view(tmp_path, container):
     rows = contents.projections.to_pandas()
     original = _tables()[2].to_pandas()
     for name, written in (("PCA 2", "PCA 2"), ("UMAP 3", flat)):
-        got = rows[rows.projection_name == written].sort_values("identifier")
-        want = original[original.projection_name == name].sort_values("identifier")
-        assert got.identifier.tolist() == want.identifier.tolist()
+        got = rows[rows.projection_name == written].sort_values("protein_id")
+        want = original[original.projection_name == name].sort_values("protein_id")
+        assert got.protein_id.tolist() == want.protein_id.tolist()
         assert got.x.tolist() == want.x.tolist()
         assert got.y.tolist() == want.y.tolist()
 
@@ -318,7 +318,7 @@ def test_a_name_that_would_collide_is_refused(tmp_path):
     extra = pa.table(
         {
             "projection_name": [taken] * 3,
-            "identifier": IDS,
+            "protein_id": IDS,
             "x": pa.array([0.0, 1.0, 2.0], type=pa.float32()),
             "y": pa.array([0.0, 1.0, 2.0], type=pa.float32()),
             "z": pa.array([None] * 3, type=pa.float32()),

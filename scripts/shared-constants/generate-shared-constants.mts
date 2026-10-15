@@ -137,6 +137,15 @@ function checkInvariants(constants: Constants, errors: string[]): void {
     errors.push(`DEFAULT_NUMERIC_PALETTE_ID: "${numericDefault}" is not a gradient palette`);
   }
 
+  const idColumn = get('PROTEIN_ID_COLUMN', 'string');
+  const hidden = get('NON_ANNOTATION_COLUMNS', 'set');
+  if (idColumn !== undefined && hidden && !hidden.includes(idColumn)) {
+    errors.push(
+      `NON_ANNOTATION_COLUMNS: must hold "${idColumn}" (PROTEIN_ID_COLUMN), or the web reader ` +
+        'shows the ID column of a v1/v2 file as an annotation',
+    );
+  }
+
   const booleanLabels = get('ARROW_BOOLEAN_LABELS', 'list');
   const shown = [String(false), String(true)];
   if (booleanLabels && booleanLabels.join() !== shown.join()) {

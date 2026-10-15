@@ -10,12 +10,13 @@ Bundles are always generated into a caller-supplied directory, never committed.
 A committed fixture cannot fail when the writer changes; a generated one can.
 
 The bundles are produced by shelling out to the real ``protspace bundle`` CLI
-rather than by calling ``write_bundle`` directly. Two transformations live only
-in the CLI layer and are contract surface the reader depends on:
+rather than by calling ``write_bundle`` directly. Two decisions live only in
+the CLI layer and are contract surface the reader depends on:
 
-* the ``identifier`` -> ``protein_id`` column rename, and
+* the id column: ``protein_id``, which ``annotate`` writes (``identifier``
+  from an older one, and an annotation beside ``protein_id``), and
 * the cell-grammar decision: the CLI reads the input's
-  ``protspace_format_version`` stamp *before* that rename drops it, so the
+  ``protspace_format_version`` stamp *before* any rename drops it, so the
   annotate output's v2 cells are neither migrated a second time (``%3B`` ->
   ``%253B``) nor refused by the v3 encoder as grammar-unknown.
 
@@ -193,11 +194,9 @@ def tmbed_column(extract, count: int) -> list[str]:
 
 
 def build_annotations_table(ids: list[str]) -> pa.Table:
-    """Mimic ``protspace annotate`` output: an ``identifier`` column plus annotations.
+    """Mimic ``protspace annotate`` output: a ``protein_id`` column plus annotations.
 
-    The CLI renames ``identifier`` to ``protein_id`` while bundling, so emitting
-    the pre-rename name here keeps that rename inside the tested surface. Like
-    ``annotate``, the table is stamped as v2 cell grammar; an unstamped one
+    Like ``annotate``, the table is stamped as v2 cell grammar; an unstamped one
     would be read as plain v1 text and escaped again.
 
     Every cell follows one per-row rule at every size (``family_label``,
@@ -227,7 +226,7 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
     return stamp_format_version(
         pa.table(
             {
-                "identifier": pa.array(ids, pa.string()),
+                "protein_id": pa.array(ids, pa.string()),
                 "family": pa.array(family, pa.string()),
                 "domains": pa.array(domains, pa.string()),
                 "predicted_signal_peptide": pa.array(
@@ -285,7 +284,7 @@ def build_projection_tables(
     data = pa.table(
         {
             "projection_name": pa.array(names, pa.string()),
-            "identifier": pa.array(identifiers, pa.string()),
+            "protein_id": pa.array(identifiers, pa.string()),
             "x": pa.array(xs, pa.float32()),
             "y": pa.array(ys, pa.float32()),
             "z": pa.array(zs, pa.float64()),
@@ -374,9 +373,9 @@ def build_coverage_annotations_table(ids: list[str]) -> pa.Table:
     ``PROJECTION_ONLY_ID``, plus ``ANNOTATION_ONLY_ID``, with a BOOLEAN column
     and the two int64 columns a web re-export must keep int64.
 
-    The ids are in ``protein_id`` and ``identifier`` is an ordinary annotation:
-    ``bundle -a`` renames ``identifier`` only when ``protein_id`` is absent, so
-    the web writer must name its id column around that annotation."""
+    The ids are in ``protein_id`` and ``identifier`` is an ordinary annotation,
+    as ``bundle -a`` keys a table holding both, and the web writer must still
+    name its id column ``protein_id`` beside it."""
     annotated = [i for i in ids if i != PROJECTION_ONLY_ID] + [ANNOTATION_ONLY_ID]
     return stamp_format_version(
         pa.table(
@@ -407,8 +406,9 @@ def write_legacy_v2_bundle(path: Path, ids: list[str]) -> None:
     No current writer emits v2 any more, so this is the stand-in for a file a
     user still has on disk: the same annotations, settings and statistics as
     the v3 variants, and one projection gap, for ``protspace convert`` to
-    upgrade. The annotations table is stamped v2 after the ``protein_id``
-    rename, exactly as ``protspace bundle`` did.
+    upgrade. Its annotations are keyed on ``protein_id`` and stamped v2, and
+    its projections on ``identifier``, exactly as ``protspace bundle`` wrote
+    them.
 
     It also holds an annotation-only protein, which no projection places, whose
     ``size`` is ``unknown`` among the placed proteins' numbers: v2 showed
@@ -416,10 +416,8 @@ def write_legacy_v2_bundle(path: Path, ids: list[str]) -> None:
     converted bundle has to as well, with the same dataset hash.
     """
     # The legacy file's own columns; the TMbed ones are checked on the v3 variants.
-    annotations = (
-        build_annotations_table(ids)
-        .select(["identifier", "family", "domains", "length"])
-        .rename_columns(["protein_id", "family", "domains", "length"])
+    annotations = build_annotations_table(ids).select(
+        ["protein_id", "family", "domains", "length"]
     )
     annotations = annotations.append_column(
         "size", pa.array([str(10 * i) if i % 3 else "NA" for i in range(len(ids))])
@@ -435,6 +433,9 @@ def write_legacy_v2_bundle(path: Path, ids: list[str]) -> None:
     )
     annotations = pa.concat_tables([annotations, unplaced])
     metadata, data = build_projection_tables(ids, gaps={"PCA_3": GAP_ID})
+    data = data.rename_columns(
+        ["identifier" if c == "protein_id" else c for c in data.column_names]
+    )
     parts = []
     for table in (stamp_format_version(annotations), metadata, data):
         buffer = pa.BufferOutputStream()

@@ -15,7 +15,7 @@ SAMPLE_HEADERS = ["P1", "P2", "P3"]
 SAMPLE_DATA = np.array([[1.0, 0.5], [0.5, 1.0], [0.2, 0.8]])
 SAMPLE_METADATA = pd.DataFrame(
     {
-        "identifier": SAMPLE_HEADERS,
+        "protein_id": SAMPLE_HEADERS,
         "length": ["100", "200", "300"],
         "organism": ["A", "B", "C"],
     }
@@ -108,7 +108,7 @@ class TestCreateOutput:
         # Create metadata with internal columns
         metadata_with_internal = pd.DataFrame(
             {
-                "identifier": SAMPLE_HEADERS,
+                "protein_id": SAMPLE_HEADERS,
                 "reviewed": ["Swiss-Prot", "Swiss-Prot", "TrEMBL"],
                 "organism_id": ["9606", "9606", "10090"],
                 "length": ["100", "200", "300"],
