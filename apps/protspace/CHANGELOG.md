@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v4.16.5 (2026-10-15)
+
+### Bug Fixes
+
+- **io**: Style a directory by its stored bytes, and write it atomically
+  ([`383003b`](https://github.com/tsenoner/protspace/commit/383003b34b10d7e596cab43de653f4304256f376))
+
+- **style**: Keep unstyled annotations' settings and a directory's other files
+  ([`e36265e`](https://github.com/tsenoner/protspace/commit/e36265e6cdaa8aa9c443602823f244aaec896fb4))
+
+- **style**: Write a styled directory the way every other writer does
+  ([`b72b90a`](https://github.com/tsenoner/protspace/commit/b72b90a275785b4e102d66fb8ec1f26e90e5deb6))
+
+### Refactoring
+
+- **cli**: Name projection files by the shared bundle constants
+  ([`f996a78`](https://github.com/tsenoner/protspace/commit/f996a78ece3faccf839bf1d695dd58c9a8eed2b8))
+
+
 ## v4.16.4 (2026-10-15)
 
 ### Bug Fixes
