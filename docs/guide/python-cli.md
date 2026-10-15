@@ -138,6 +138,7 @@ given without `-e`, `prot_t5` is used.
 | `--bundled / --no-bundled`   | Bundle into a single `.parquetbundle`.                                                                                                                                       | bundled |
 | `--stats / --no-stats`       | Compute projection quality statistics. See [Projection statistics](#projection-statistics).                                                                                  | off     |
 | `--cluster-selection`        | With `--stats`, how to choose the cluster count K: `elbow`, `silhouette`, or `both`.                                                                                         | `elbow` |
+| `--cluster-space`            | With `--stats`, where to cluster: `projection`, `embedding` (one column per embedding, shared by its projections), or `both`.                                                | `both`  |
 | `--stats-annotation`         | With `--stats`, which annotation column(s) to score: `auto` or a comma-separated list.                                                                                       | `auto`  |
 | `--refetch`                  | Recompute stages (comma-separated): `query`, `embed`, `similarity`, `projections`, `uniprot`, `taxonomy`, `interpro`, `ted`, `biocentral`. Shorthands: `all`, `annotations`. | off     |
 | `--keep-tmp / --no-keep-tmp` | Cache intermediates in `{output}/tmp/` for resumability.                                                                                                                     | on      |
@@ -565,6 +566,10 @@ protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
 # Score only specific annotations
 protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
   -a annotations.parquet --stats-annotation major_group,ec_number
+
+# Cluster only in the embedding: one cluster column shared by every projection
+protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
+  -a annotations.parquet --cluster-space embedding
 ```
 
 | Flag                  | Description                                                                                                                                                     | Default     |
@@ -575,6 +580,7 @@ protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
 | `-a, --annotations`   | Annotations parquet, enriched in place with per-protein `cluster_*` membership columns and scored for annotation-based validity plus ARI/NMI agreement.         | -           |
 | `--settings-out`      | Write auto-generated cluster legend styles here (JSON) for `bundle --settings`. Requires `-a`.                                                                  | -           |
 | `--cluster-selection` | How to choose the cluster count K: `elbow`, `silhouette`, or `both`.                                                                                            | `elbow`     |
+| `--cluster-space`     | Where to cluster: `projection` (each projection's coordinates), `embedding` (once per embedding, shared by its projections), or `both`.                         | `both`      |
 | `--stats-annotation`  | Which curated annotation column(s) to score: `auto` or a comma-separated list. Requires `-a`. The `cluster_*` membership columns are scored regardless of this. | `auto`      |
 | `--metric`            | High-dimensional distance metric for faithfulness when the projection metadata omits one (PCA/MDS).                                                             | `euclidean` |
 | `--seed`              | Random seed.                                                                                                                                                    | `42`        |
@@ -591,16 +597,24 @@ protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
   it null); Calinski–Harabasz stays aggregate-only. A one-member category gets no per-category row
   and is excluded from the Davies–Bouldin and Calinski–Harabasz input, so an annotation with a few
   singleton categories still scores on the rest. Requires `-a`.
-- **Auto-clustering and its agreement with annotations**, KMeans labels the projection, with K
-  chosen by the inertia elbow and/or maximum silhouette. Each selection becomes a per-protein
-  membership column (`cluster_elbow_<projection>`, `cluster_silhouette_<projection>`) holding a
-  bare `cluster N` label, the same shape as a curated categorical annotation. Each clustering is
+- **Auto-clustering and its agreement with annotations**, KMeans labels each projection on its own
+  coordinates, each embedding once in the embedding space, or both (`--cluster-space`, default
+  `both`), with K chosen by the inertia elbow and/or maximum silhouette. Each selection becomes a
+  per-protein membership column holding a bare `cluster N` label, the same shape as a curated
+  categorical annotation: `cluster_elbow_<projection>` / `cluster_silhouette_<projection>` for a
+  projection, whose cluster numbers are independent of every other projection's, and
+  `cluster_elbow_<embedding>` / `cluster_silhouette_<embedding>` for an embedding, one column that
+  every projection of that embedding shares, so a protein's cluster number is the same in its UMAP
+  and its t-SNE. An embedding is clustered on its top 50 principal components with three KMeans
+  restarts per K, which keeps a 5,000 × 1,280 embedding to about 20 seconds. Each clustering is
   then scored on its own categories exactly as an annotation is, aggregate and per-category, filed
   under the membership column's name and tagged `label_kind=kmeans_elbow|kmeans_silhouette`,
-  whether or not `--stats-annotation` named anything. Read those scores as descriptive rather than
-  as a verdict: KMeans drew the boundaries being graded, and a `silhouette`-selected K was chosen by
-  maximising the very number reported. Separately, each clustering's ARI/NMI agreement with every
-  scored annotation is recorded as `stat_family=cluster_agreement`. `--no-scores` does not touch
+  whether or not `--stats-annotation` named anything: a projection clustering in its projection,
+  an embedding clustering on the embedding and again in each of its projections. Read those
+  scores as descriptive rather than as a verdict: KMeans drew the boundaries being graded, and a
+  `silhouette`-selected K was chosen by maximising the very number reported. Separately, each
+  clustering's ARI/NMI agreement with every scored annotation is recorded as
+  `stat_family=cluster_agreement`. `--no-scores` does not touch
   these columns, they carry no score to strip; bundles written by older versions, whose values were
   `cluster N|0.41`, still load because the app drops the suffix by column name.
 - **Faithfulness**, how well the projection preserves the embedding's structure: kNN-overlap,

@@ -38,7 +38,7 @@ None.
 
 ## Impact
 
-- `apps/protspace/src/protspace/stats/metrics/validity.py`, `stats/cluster/kmeans_elbow.py`, `stats/driver.py`, `stats/base.py`.
+- `apps/protspace/src/protspace/stats/metrics/validity.py`, `stats/cluster/kmeans_elbow.py`, `stats/driver.py`.
 - `apps/protspace/src/protspace/cli/stats.py`, `cli/prepare.py`, `cli/common_options.py` (the option), `data/processors/pipeline.py` (one config field, passed through).
 - Tests: `apps/protspace/tests/test_stats.py`, `tests/test_stats_cli.py`.
 - Docs: `docs/explore/separation-scores.md`, `docs/guide/python-cli.md`, `apps/protspace/CLAUDE.md`, `apps/protspace/notebooks/ProtSpace_Preparation.ipynb`.

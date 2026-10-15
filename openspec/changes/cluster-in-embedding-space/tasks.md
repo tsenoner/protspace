@@ -19,6 +19,6 @@ Before every commit: `pnpm precommit` (changes staged), `pnpm format:check`, and
 
 ## 4. Docs
 
-- [ ] 4.1 `docs/explore/separation-scores.md`: the cluster columns are of each projection or of the embedding (fixes "of the embedding"), what each kind is scored on, which projections show strips.
-- [ ] 4.2 `docs/guide/python-cli.md`: `--cluster-space` in the `prepare` option table and the `stats` table, an example, and the auto-clustering paragraph of "Projection statistics".
-- [ ] 4.3 `apps/protspace/CLAUDE.md` stats usage and test rows; the Preparation notebook's "Going further" note.
+- [x] 4.1 `docs/explore/separation-scores.md`: the cluster columns are of each projection or of the embedding (fixes "of the embedding"), what each kind is scored on, which projections show strips.
+- [x] 4.2 `docs/guide/python-cli.md`: `--cluster-space` in the `prepare` option table and the `stats` table, an example, and the auto-clustering paragraph of "Projection statistics".
+- [x] 4.3 `apps/protspace/CLAUDE.md` stats usage and test rows; the Preparation notebook's "Going further" note.
