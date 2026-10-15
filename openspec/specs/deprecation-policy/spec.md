@@ -18,7 +18,7 @@ The package SHALL keep one registry of scheduled removals. Each entry SHALL name
 #### Scenario: The scheduled removals
 
 - **WHEN** the registry is read
-- **THEN** it holds producing 3-D projections, `protspace serve`, reading v1/v2 bundles, and reading 3-D projections, each due for removal in 5.0.0
+- **THEN** it holds producing 3-D projections, `protspace serve`, reading v1/v2 bundles, reading 3-D projections, and taking `identifier` as the protein ID column of a table without a manifest, each due for removal in 5.0.0
 
 ### Requirement: The web app names the same removal versions as the registry
 

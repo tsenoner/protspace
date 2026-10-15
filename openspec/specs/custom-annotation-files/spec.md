@@ -63,8 +63,10 @@ field under every candidate, the loader SHALL warn that the file has a single co
 The loader SHALL take a custom annotation file's first column as its id column, whatever its
 header. A later column named exactly `identifier`, `protein_id`, `id`, `uniprot`, `entry`,
 `projection_name`, `x`, `y` or `z` SHALL be kept, renamed `<name>_annotation`, with a warning
-naming the rename. `stats` and `bundle` SHALL take a parquet's id column from `protein_id`, else
-`identifier`, else its first column; beside `protein_id`, an `identifier` column is an annotation.
+naming the rename. The loaded table SHALL hold the ids in `protein_id`. `stats` and `bundle` SHALL
+take a parquet's id column from `protein_id`, else `identifier`, else its first column; beside
+`protein_id`, an `identifier` column is an annotation, and taking `identifier` as the id column
+SHALL log the `LEGACY_ID_COLUMN` deprecation warning.
 
 #### Scenario: protein_id is not the first column
 
@@ -102,7 +104,7 @@ naming the rename. `stats` and `bundle` SHALL take a parquet's id column from `p
 #### Scenario: stats' table is one bundle accepts
 
 - **WHEN** `stats -a labels.csv` scores a file whose columns are `seq,protein_id,grp`
-- **THEN** `labels.annotations.parquet` holds the ids in `identifier` and the annotation in
+- **THEN** `labels.annotations.parquet` holds the ids in `protein_id` and the annotation in
   `protein_id_annotation`, and `bundle -a` on it carries both `grp` and the cluster columns
 
 #### Scenario: stats and bundle agree on a parquet
@@ -116,6 +118,12 @@ naming the rename. `stats` and `bundle` SHALL take a parquet's id column from `p
 - **WHEN** a parquet annotation table has both an `identifier` and a `protein_id` column
 - **THEN** `stats -a` and `bundle -a` key it on `protein_id`, and the bundle keeps `identifier` as
   an annotation column
+
+#### Scenario: A parquet keyed on identifier
+
+- **WHEN** a parquet annotation table written by an older `protspace annotate` holds its ids in
+  `identifier`, with no `protein_id` column
+- **THEN** `stats -a` and `bundle -a` key it on `identifier` and log the deprecation warning once
 
 ### Requirement: Cells are read as text
 

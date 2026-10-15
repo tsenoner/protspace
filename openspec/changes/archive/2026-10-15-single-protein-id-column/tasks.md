@@ -3,7 +3,7 @@
 - [x] 1.1 `PROTEIN_ID_COLUMN` in `contracts/shared-constants.json`, with the generator check that
       it is one of `NON_ANNOTATION_COLUMNS`; regenerate both modules
 - [x] 1.2 `data/io/ids.py`: `PROTEIN_ID_COLUMN`, `LEGACY_ID_COLUMN`, `id_column_by_name`,
-      `with_protein_id`; re-export pinned in `test_shared_constants.py`
+      `with_protein_id`, `keyed_on_protein_id`; re-export pinned in `test_shared_constants.py`
 - [x] 1.3 `deprecations.LEGACY_ID_COLUMN` with its removal notes
 
 ## 2. Python writers and readers

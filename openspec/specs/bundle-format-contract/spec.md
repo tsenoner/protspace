@@ -23,7 +23,7 @@ Every `.parquetbundle` used by the contract suite SHALL be produced during the t
 
 ### Requirement: Bundles are produced through the real bundle CLI
 
-The generator SHALL invoke the `protspace bundle` command as a subprocess rather than calling `write_bundle` directly, so that the CLI's `identifier` to `protein_id` rename, its cell-grammar decision and its v3 encoding are inside the tested surface. The generator's stand-in for `protspace annotate` output SHALL be stamped as v2 cell grammar, as `annotate` stamps it. A non-zero exit from the subprocess SHALL fail the suite with the subprocess's captured stderr included in the failure message.
+The generator SHALL invoke the `protspace bundle` command as a subprocess rather than calling `write_bundle` directly, so that the CLI's ID column handling, its cell-grammar decision and its v3 encoding are inside the tested surface. The generator's stand-in for `protspace annotate` output SHALL be keyed on `protein_id` and stamped as v2 cell grammar, as `annotate` writes it. A non-zero exit from the subprocess SHALL fail the suite with the subprocess's captured stderr included in the failure message.
 
 #### Scenario: The producer stops writing v3
 
@@ -32,7 +32,7 @@ The generator SHALL invoke the `protspace bundle` command as a subprocess rather
 
 #### Scenario: The CLI loses the input's cell grammar
 
-- **WHEN** the CLI stops reading the input's grammar stamp before its rename drops it, so the encoder is handed an unstamped table
+- **WHEN** the CLI stops reading the input's grammar stamp before an operation drops it, so the encoder is handed an unstamped table
 - **THEN** the bundle subprocess fails and the suite reports its stderr
 
 #### Scenario: The CLI treats `annotate` output as plain text
@@ -308,3 +308,15 @@ The contract SHALL read, besides the small bundles, a generated bundle large eno
 - **WHEN** the reader mishandles a payload only past its first rows, or a chunk that starts past
   row 0
 - **THEN** the contract suite fails
+
+### Requirement: Both writers name the ID column PROTEIN_ID_COLUMN
+
+The contract suite SHALL fail when a bundle written by the Python CLI or re-exported by the web
+writer declares a manifest `idColumn` other than the shared `PROTEIN_ID_COLUMN`, including for a
+dataset with an annotation named `identifier`.
+
+#### Scenario: The web writer falls back to identifier
+
+- **WHEN** the web writer names the ID column `identifier` for a dataset without an `identifier`
+  annotation
+- **THEN** the contract suite fails on the `idColumn` assertion

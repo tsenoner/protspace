@@ -34,10 +34,17 @@ reader never needs a name rule; everything without a manifest still does.
   the annotation manager, the custom loader and the stats code key on `PROTEIN_ID_COLUMN`, so a
   writer has nothing to rename.
 - **Normalise at the read boundary.** `data/io/ids.py` holds `PROTEIN_ID_COLUMN`,
-  `LEGACY_ID_COLUMN` and two helpers: `id_column_by_name` (`protein_id`, else `identifier`, else
-  none) and `with_protein_id` (renames a legacy `identifier` key to `protein_id`, keeping the
-  schema metadata, since `rename_columns` drops the cell-grammar stamp). Every reader of a table
-  without a manifest goes through them once, so code downstream sees one name.
+  `LEGACY_ID_COLUMN` and three helpers: `id_column_by_name` (`protein_id`, else `identifier`, else
+  none), `with_protein_id` (renames a legacy `identifier` key to `protein_id`, keeping the schema
+  metadata, since `rename_columns` drops the cell-grammar stamp) and `keyed_on_protein_id`, the
+  same with a first-column fallback, for the user's `-a` parquet that `stats` and `bundle` read
+  through one `read_annotation_table`. Every reader of a table without a manifest goes through
+  them once, so code downstream sees one name. The cell-grammar migration skips only that id
+  column, so an `identifier` annotation beside `protein_id` is migrated like any other.
+- **`run_transfer` takes either name.** Its CLI hands it a table keyed on `protein_id`, but the
+  Preparation notebook calls it directly and, for released protspace < 4.17, keys the table on
+  `identifier` (only when that name is free). It returns the table keyed as it was given; the
+  removal notes drop this with the other fallbacks.
 - **The encoder writes `protein_id` whatever it is given.** `encode_v3` still accepts an
   `identifier`-keyed table (a caller's own, or a v1/v2 table `convert` upgrades) and writes it as
   `protein_id`, so no bundle written from here on carries another name.

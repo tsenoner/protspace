@@ -68,8 +68,8 @@ registry's spelling.
 
 ### Requirement: Several unnamed inputs are refused with the reason and a correct example
 
-When a command has more than one input and at least one HDF5 input has no name after rules 1-3,
-the command SHALL fail before reading any embedding matrix. The message SHALL name the unnamed
+A command SHALL fail before reading any embedding matrix when it has more than one input and at
+least one HDF5 input has no name after rules 1-3. The message SHALL name the unnamed
 inputs, say what the name decides for that command, and show a corrected command line for the
 command actually run, built from the user's own paths, with a `<model>` placeholder rather than a
 fixed model name.
