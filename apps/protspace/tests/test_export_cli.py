@@ -66,6 +66,31 @@ def test_read_bundle_table_holds_display_values_in_bundle_order(tmp_path):
     assert table["cluster_elbow_UMAP 2"].tolist() == ["cluster 0"] * 2 + ["cluster 1"]
 
 
+def test_read_bundle_table_leaves_a_cell_spelled_missing_empty(tmp_path):
+    # The app reads these as N/A, and its table export writes N/A as an empty
+    # cell, dropping a missing hit from a multi-hit cell the same way.
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2", "p3", "p4"],
+                "fam": ["N/A", " none ", "NaN|0.5", "A;null;B|0.5", "Nana"],
+            }
+        )
+    )
+    metadata = pa.table({"projection_name": ["UMAP 2"], "dimensions": [2]})
+    coordinates = pa.table(
+        {
+            "projection_name": ["UMAP 2"],
+            "identifier": ["p0"],
+            "x": pa.array([0.0], pa.float32()),
+            "y": pa.array([0.0], pa.float32()),
+        }
+    )
+    path = tmp_path / "missing.parquetbundle"
+    write_bundle([annotations, metadata, coordinates], path)
+    assert read_bundle_table(path)["fam"].tolist() == ["", "", "", "A;B", "Nana"]
+
+
 def test_read_bundle_table_adds_the_coordinates_asked_for(tmp_path):
     table = read_bundle_table(_bundle(tmp_path), ["UMAP 2"])
     assert list(table.columns[:3]) == ["protein_id", "UMAP 2_x", "UMAP 2_y"]

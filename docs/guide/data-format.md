@@ -721,7 +721,8 @@ statistics = contents.statistics  # a pyarrow table, or None without --stats
 ```
 
 `read_bundle_table` decodes the cells for reading: score and evidence suffixes are dropped,
-encoded characters are decoded and multi-valued cells are joined with `;`. `read_bundle_contents`
+encoded characters are decoded, multi-valued cells are joined with `;`, and a
+[missing value](#missing-values) is an empty string. `read_bundle_contents`
 hands back the cells as stored, in the [cell grammar](#encoding-format-v2), along with the
 `settings` and `statistics` parts. Projection names are those the web app shows, such as
 `ProtT5 — UMAP 2`.

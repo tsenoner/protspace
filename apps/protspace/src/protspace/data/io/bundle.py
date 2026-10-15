@@ -47,6 +47,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from protspace.core.constants import is_missing_value
 from protspace.data.annotations.encoding import (
     migrate_legacy_annotation_table,
     read_format_version,
@@ -371,6 +372,14 @@ def read_bundle_contents(
     )
 
 
+def _table_cell(raw: str, decode: bool) -> str:
+    """A text cell as the app's table export writes it: display values of its hits,
+    joined with ``;``, leaving out each hit the app reads as missing (``N/A``,
+    ``None``, blank, ...), so a missing cell is empty."""
+    hits = (to_display_value(hit, decode=decode) for hit in raw.split(";"))
+    return ";".join(hit for hit in hits if not is_missing_value(hit))
+
+
 def read_bundle_table(
     path_or_bytes: Path | str | bytes, projections: Sequence[str] = ()
 ) -> pd.DataFrame:
@@ -402,9 +411,7 @@ def read_bundle_table(
         if field.name != id_col and pa.types.is_string(field.type):
             # Map each distinct cell once: a large bundle repeats few labels.
             values = frame[field.name]
-            shown = {
-                v: to_display_value(v, decode=decode) for v in values.dropna().unique()
-            }
+            shown = {v: _table_cell(v, decode) for v in values.dropna().unique()}
             frame[field.name] = values.map(shown)
 
     table = pd.DataFrame({"protein_id": ids})
