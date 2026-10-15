@@ -63,8 +63,8 @@ field under every candidate, the loader SHALL warn that the file has a single co
 The loader SHALL take a custom annotation file's first column as its id column, whatever its
 header. A later column named exactly `identifier`, `protein_id`, `id`, `uniprot`, `entry`,
 `projection_name`, `x`, `y` or `z` SHALL be kept, renamed `<name>_annotation`, with a warning
-naming the rename. `stats` and `bundle` SHALL take a parquet's id column from `protein_id` or
-`identifier`, else its first column, and SHALL refuse a parquet with both.
+naming the rename. `stats` and `bundle` SHALL take a parquet's id column from `protein_id`, else
+`identifier`, else its first column; beside `protein_id`, an `identifier` column is an annotation.
 
 #### Scenario: protein_id is not the first column
 
@@ -114,7 +114,8 @@ naming the rename. `stats` and `bundle` SHALL take a parquet's id column from `p
 #### Scenario: A parquet naming its ids twice
 
 - **WHEN** a parquet annotation table has both an `identifier` and a `protein_id` column
-- **THEN** `bundle -a` fails with a message naming both
+- **THEN** `stats -a` and `bundle -a` key it on `protein_id`, and the bundle keeps `identifier` as
+  an annotation column
 
 ### Requirement: Cells are read as text
 
