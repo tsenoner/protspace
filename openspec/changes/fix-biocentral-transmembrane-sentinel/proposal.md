@@ -12,9 +12,11 @@ N/A and cannot be distinguished from proteins whose prediction is actually absen
 - Preserve absent or malformed Biocentral predictions, including TMbed prediction
   objects whose optional payload is `None`, empty, non-string, or contains unsupported
   topology labels, as missing values for both derived TMbed annotations.
-- Preserve FASTA sequences through the standalone `annotate` command when a requested
-  source needs them, using source-appropriate precedence when UniProt also supplies a
-  canonical sequence.
+- Use source-appropriate sequence precedence when both the FASTA and UniProt supply a
+  sequence: Biocentral predicts the submitted sequence, InterPro looks up the canonical
+  one.
+- Record the TMbed payload change as annotation cache semantics version 4, so caches
+  written before it are refreshed rather than reused.
 - Add regression coverage across the Python annotation producer and TypeScript
   bundle consumer boundary.
 - Update generated annotation documentation to describe the corrected category.
@@ -30,6 +32,8 @@ N/A and cannot be distinguished from proteins whose prediction is actually absen
 
 - `bundle-format-contract`: Require producer-emitted categorical values to remain
   distinguishable from the consumer's missing-value sentinel set.
+- `annotation-cache-semantics`: Refresh cached TMbed columns written before the payload
+  validation.
 
 ## Impact
 

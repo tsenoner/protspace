@@ -382,11 +382,14 @@ class TestIntegration:
             ProteinAnnotations(identifier="custom-protein", annotations={}),
         ]
         mock_interpro_retriever.return_value.fetch_annotations.return_value = []
+        mock_interpro_retriever.return_value.failed_batch_count = 0
         mock_biocentral_retriever.return_value.fetch_annotations.return_value = []
+        mock_biocentral_retriever.return_value.prediction_failed = False
 
         manager._fetch_interpro(uniprot_annotations, [])
         manager._fetch_biocentral(uniprot_annotations, [])
 
+        assert manager.incomplete_sources == set()
         assert mock_interpro_retriever.call_args.kwargs["sequences"] == {
             "P12345": "CANONICAL",
             "custom-protein": "CUSTOM",

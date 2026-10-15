@@ -43,7 +43,7 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-from biocentral_api._generated import Prediction
+from biocentral_api import Prediction
 
 from protspace.data.annotations.encoding import encode_field, stamp_format_version
 from protspace.data.annotations.retrievers.biocentral_retriever import (
@@ -171,7 +171,7 @@ NEGATIVE_TMBED_CATEGORY = BiocentralPredictionRetriever._extract_transmembrane(
 def tmbed_column(extract, count: int) -> list[str]:
     """A TMbed-derived annotation column: the payload rows, then empty cells."""
     cells = [extract(tmbed_predictions(value)) for value in TMBED_PAYLOADS]
-    return cells + [""] * (count - len(cells))
+    return (cells + [""] * count)[:count]
 
 
 def build_annotations_table(ids: list[str]) -> pa.Table:

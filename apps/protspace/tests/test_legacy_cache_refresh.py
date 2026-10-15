@@ -824,6 +824,67 @@ class TestVersion3:
         assert not _holds_stale_value_as_current(cache, "predicted_transmembrane")
 
 
+# --- Cache version 4: empty or malformed TMbed payloads ----------------------
+#
+# Version 3 still wrote signal peptide "False" for a TMbed prediction with an
+# empty topology, a confident negative where nothing was predicted, and read a
+# malformed payload as a topology. Biocentral owns both TMbed columns, so it is
+# the only source the refresh refetches.
+
+
+class TestVersion4:
+    def test_version_4_covers_both_tmbed_columns(self):
+        assert CACHE_SEMANTICS_CHANGES[4] == frozenset(
+            {"predicted_signal_peptide", "predicted_transmembrane"}
+        )
+
+    def test_a_v3_cache_refetches_biocentral_once_and_nothing_else(
+        self, tmp_path, monkeypatch
+    ):
+        # "True" stands in for whatever v3 derived; the refetch answers "False".
+        _write_v2_cache(tmp_path, version=3, predicted_signal_peptide="True")
+        calls: list = []
+        _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
+        _serve_taxonomy(monkeypatch, calls)
+        _serve_biocentral(monkeypatch, calls)
+        annotations = ["gene_name", "root", "predicted_signal_peptide"]
+
+        result = _pipeline(tmp_path, annotations)._fetch_annotations(["P02299"])
+
+        assert calls == [("biocentral", {"P02299": "MARTKQTARK"})]
+        assert result["predicted_signal_peptide"].tolist() == ["False"]
+        assert result["gene_name"].tolist() == ["CACHED_GENE"]
+        cache = _read_cache(tmp_path)
+        assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
+
+        # Stamped current, so the next run reuses it without a request.
+        calls.clear()
+        _pipeline(tmp_path, annotations)._fetch_annotations(["P02299"])
+
+        assert calls == []
+
+    def test_the_other_tmbed_column_is_refreshed_with_it_not_dropped(
+        self, tmp_path, monkeypatch
+    ):
+        """Biocentral is refetched for one stale column, so the other comes along."""
+        _write_v2_cache(tmp_path, version=3, predicted_signal_peptide="True")
+        calls: list = []
+        requested: list = []
+        _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
+        _serve_biocentral(monkeypatch, calls, requested=requested)
+
+        result = _pipeline(
+            tmp_path, ["gene_name", "predicted_transmembrane"]
+        )._fetch_annotations(["P02299"])
+
+        assert _sources(calls) == ["biocentral"]
+        assert "predicted_signal_peptide" in requested[0]
+        assert "predicted_signal_peptide" not in result.columns
+        cache = _read_cache(tmp_path)
+        assert cache["predicted_signal_peptide"].tolist() == ["False"]
+        assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
+
+
 class TestBiocentralNeedsASequence:
     """Biocentral is looked up by sequence, like InterPro, on any run.
 

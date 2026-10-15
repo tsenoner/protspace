@@ -96,3 +96,14 @@
       validation, and `pnpm precommit`.
 - [x] 15.3 Prepare the verified changes and per-item dispositions for the newest review
       reply.
+
+## 16. Merge with main and Code Review
+
+- [x] 16.1 Merge `main`, which had already shipped the `non-transmembrane` label and
+      FASTA sequence passing; keep its `annotate` command, which parses the FASTA for
+      every request (the missing-length fallback reads it), superseding 13.2 and 14.2.
+- [x] 16.2 Record the TMbed payload change as annotation cache semantics version 4 and
+      refresh a stale column of a source the refresh refetches anyway instead of
+      dropping it.
+- [x] 16.3 Run Ruff, the non-slow ProtSpace and hosted-prep suites, the bundle contract,
+      strict OpenSpec validation, and `pnpm precommit`.

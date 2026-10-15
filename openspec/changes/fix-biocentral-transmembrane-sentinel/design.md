@@ -69,12 +69,12 @@ inventing a completed negative result when the other reports missing data.
 
 ### Pass FASTA sequences to the sources that consume them
 
-When a requested source consumes sequences, the standalone `annotate` command will
-parse the FASTA into a canonical identifier-to-sequence map and pass it to
-`ProteinAnnotationManager`. UniProt-only and taxonomy-only requests will retain the
-streaming identifier scan without materializing the full sequence map. HDF5 inputs
-continue to omit a local sequence map and retain their existing UniProt-fallback
-behavior.
+The standalone `annotate` command parses the FASTA into a canonical
+identifier-to-sequence map and passes it to `ProteinAnnotationManager`. It does so
+for every request, not only for sequence-backed sources, because the missing-length
+fallback reads the same map (main shipped this before the change merged it). HDF5
+inputs continue to omit a local sequence map and retain their existing
+UniProt-fallback behavior.
 
 Sequence precedence is source-specific. Biocentral predicts the sequence supplied in
 the FASTA, using UniProt only as a fallback for identifiers with no local sequence.
@@ -95,6 +95,17 @@ contract will derive its negative transmembrane and missing TMbed-derived fixtur
 from the real adapter and assert that TypeScript preserves the former as a category and
 the latter as `N/A`. This avoids duplicated hand-written constants that could allow
 producer and contract fixtures to drift apart.
+
+### Refresh caches written before the payload validation
+
+An empty TMbed payload used to yield signal peptide `False`, and a malformed one was
+read as a topology, so cached values of both TMbed columns written before this change
+can hold a negative or a category where nothing usable was predicted. The change is
+recorded as annotation cache semantics version 4 covering `predicted_signal_peptide`
+and `predicted_transmembrane`, so the established legacy-cache refresh refetches them.
+Because a refresh refetches its sources whole, a stale column of a source the refresh
+refetches anyway is refreshed with it instead of being dropped; otherwise a run that
+asks for only one of the two TMbed columns would lose the other from the cache.
 
 ## Risks / Trade-offs
 

@@ -20,9 +20,3 @@ sequence-backed annotation sources using the same canonical identifiers as its o
 - **THEN** Biocentral receives the FASTA sequence it is being asked to predict
 - **AND** InterPro receives the UniProt canonical sequence used by its precomputed
   sequence-hash index
-
-#### Scenario: Requested annotations do not consume sequences
-
-- **WHEN** `protspace annotate` receives a FASTA input and the requested annotation
-  sources are UniProt-only or taxonomy-only
-- **THEN** the command extracts identifiers without materializing the FASTA sequences

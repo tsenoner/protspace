@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 import requests
-from biocentral_api._generated import Prediction
+from biocentral_api import Prediction
 
 from protspace.core.constants import BROWSER_MISSING_TOKENS, standardize_missing
 from protspace.data.annotations.retrievers.biocentral_retriever import (
