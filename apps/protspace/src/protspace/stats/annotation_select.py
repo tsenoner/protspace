@@ -10,31 +10,24 @@ from __future__ import annotations
 
 import logging
 
-from protspace.core.constants import MISSING_VALUE_TOKENS
+from protspace.core.constants import is_missing_value
 from protspace.data.annotations.scores import _strip_scores_from_cell
 from protspace.stats.base import CLUSTER_COLUMN_PREFIX
 
 logger = logging.getLogger(__name__)
 
-# Values treated as "missing" (dropped, never a category). The raw input sentinels
-# come from the shared ``core.constants.MISSING_VALUE_TOKENS`` (so they can't drift
-# from what ``standardize_missing`` normalises); on top we add the *display* forms
-# produced downstream — ``"<N/A>"`` (standardize_missing), pandas nullable dtypes'
-# ``"<NA>"`` / ``"NaT"``, ``"<NaN>"``, and ``None``'s str form. Missing any of these
-# would score a phantom missing-value cluster and inflate a column's cardinality.
-_MISSING = {
-    *MISSING_VALUE_TOKENS,
-    "<N/A>",
-    "<NA>",
-    "<NaN>",
-    "NaT",
-    "None",
-}
+# Missing values are dropped, never a category. What the web shows as N/A comes
+# from the shared ``core.constants.is_missing_value``; on top come the *display*
+# forms a missing cell takes downstream: ``"<N/A>"`` (``standardize_missing``),
+# and pandas nullable dtypes' ``"<NA>"`` / ``"NaT"`` and ``"<NaN>"``. Missing any
+# of these would score a phantom missing-value cluster and inflate a column's
+# cardinality.
+_MISSING_DISPLAY_FORMS = frozenset({"<N/A>", "<NA>", "<NaN>", "NaT"})
 
 
 def _is_missing(value) -> bool:
-    """Whether a raw cell value is missing (None or a sentinel string)."""
-    return value is None or str(value) in _MISSING
+    """Whether a raw cell value is missing (as the web reads it, or a display form)."""
+    return is_missing_value(value) or str(value) in _MISSING_DISPLAY_FORMS
 
 
 def _category(value) -> str:

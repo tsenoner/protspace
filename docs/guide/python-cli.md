@@ -668,7 +668,9 @@ reference protein the label came from, for provenance).
 
 **The filters are optional.** With no `--query-*` and no `--reference-*` filter, transfer runs
 within the bundle: every protein missing a value in a `--transfer` column is a query, and every
-protein holding one is a reference. Those two sets are complements of the same missing-value test, so
+protein holding one is a reference. A value is missing exactly when the web app shows it as N/A
+(see [Missing Values](./data-format.md#missing-values)), so a cell spelled `N/A` or `None` is filled,
+never copied. Those two sets are complements of the same missing-value test, so
 a protein can never be its own source, and no marker column is needed to describe "the rows that are
 empty". Reach for the filters only to narrow that down, for example to label one species from
 another or to hold out a labelled subset as a benchmark. Passing only one side is fine too: the other

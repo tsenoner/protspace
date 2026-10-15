@@ -251,6 +251,11 @@ canonical "N/A" legend category:
 - These string spellings (case-insensitive, trimmed): `"NA"`, `"N/A"`, `"NaN"`,
   `"null"`, `"None"`, `"__NA__"`
 
+The Python package reads cells by the same rule: the `protspace serve` plot shows these as N/A,
+`protspace stats` leaves them out of every category, and `protspace transfer` treats a protein
+holding one as missing a value, so it is filled rather than used as a label source. A test keeps
+the two lists identical.
+
 `__NA__` is a **reserved** spelling, not just another synonym: it is the token ProtSpace uses
 in memory for a missing cell, and the exporter drops it unconditionally. A genuine category
 literally named `__NA__` therefore collapses into N/A on load. Give such a category a different

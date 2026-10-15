@@ -66,7 +66,7 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import requests
 
-from protspace.core.constants import BROWSER_MISSING_TOKENS
+from protspace.core.constants import is_missing_value
 from protspace.data.annotations.configuration import (
     INTERNAL_ANNOTATIONS,
     SOURCE_ANNOTATIONS,
@@ -134,12 +134,11 @@ KINDS = ("paper-refresh", "demo-refresh", "embed-build")
 def is_missing_label(text: str) -> bool:
     """Whether the web app shows this display value as N/A (W10).
 
-    The web's missing tokens (protspace's ``BROWSER_MISSING_TOKENS``), compared
-    trimmed and case-insensitively, plus the empty string: a gate here counts
-    N/A exactly as the legend does.
+    protspace's ``is_missing_value``, the web's own rule (the bundle contract
+    suite pins the two together): a gate here counts N/A exactly as the legend
+    does.
     """
-    stripped = text.strip()
-    return not stripped or stripped.lower() in BROWSER_MISSING_TOKENS
+    return is_missing_value(text)
 
 
 # Kelly's colours in the web app's order, without the two greys at its end.
