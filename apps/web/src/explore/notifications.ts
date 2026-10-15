@@ -177,6 +177,24 @@ function unplacedProteins(count: number): string {
 }
 
 /**
+ * A user imported a bundle holding 3-D projections: they load, shown as their X/Y view,
+ * but reading them ends in protspace 5.0.0. `protspace convert --flatten-3d` writes them
+ * as 2-D projections of that same view, so the picture does not change.
+ */
+export function getThreeDProjectionNotification(projectionNames: readonly string[]): NotifyOptions {
+  const shown = projectionNames.slice(0, 3).join(', ');
+  const rest = projectionNames.length - 3;
+  const listed = rest > 0 ? `${shown} and ${rest} more` : shown;
+  const verb = projectionNames.length === 1 ? 'is' : 'are';
+  return {
+    title: 'This file has 3-D projections.',
+    description: `${listed} ${verb} shown as their X/Y view. Reading 3-D projections ends in ProtSpace 5.0.0. To keep this view, run "protspace convert --flatten-3d" on the file: it turns them into 2-D projections.`,
+    durationMs: 12_000,
+    dedupeKey: 'three-d-projections',
+  };
+}
+
+/**
  * A user imported a v1/v2 bundle: it loads, but reading that format ends in 5.0.0.
  *
  * An export from the app holds only the proteins it shows, so a file that also holds
