@@ -53,7 +53,7 @@ Single entry point: `protspace = protspace.cli.app:app`
 | `protspace stats` | Compute projection quality statistics (annotation-based cluster-validity + faithfulness) |
 | `protspace serve` | Launch Dash web frontend |
 | `protspace style` | Add annotation colors/styles |
-| `protspace transfer` | Fill missing annotations from nearest reference embeddings (EAT); `--report` writes each query's neighbours (label, source, raw distance, reliability, ranked references) as TSV |
+| `protspace transfer` | Fill missing annotations from nearest reference embeddings (EAT); `--report` writes each query's neighbours (label, source, raw distance, reliability, ranked references) as TSV; `--max-distance D\|auto` writes `COL__neighbor` (near/distant by the nearest reference; `auto` = 95th percentile of reference-to-nearest-other-reference distances), `--skip-distant` leaves distant queries unpredicted |
 | `protspace convert` | Rewrite a v1/v2 .parquetbundle as v3 (`INPUT OUTPUT` or `INPUT --in-place`); a v3 input is left untouched |
 
 ### protspace prepare Usage
@@ -323,8 +323,8 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_formatters.py` | ProteinAnnotations → DataFrame formatting |
 | `test_bundle_settings.py` | Parquetbundle settings read/write |
 | `test_annotation_encoding.py` | Percent-encoding round-trip, reserved-char-only encoding, schema-metadata stamping through parquet, `upgrade_cell_grammar` taking the version from the caller |
-| `test_transfer_cli.py` | Transfer orchestration core (k>1 confidence, cosine metric, self-transfer) and the `transfer` CLI: bad input (no matching embedding, no query match, both id columns) as a usage error with its message, `--help` rendering, `protein_id` and legacy v1 bundles end to end; `--report` (one row per query at `k=1`, ranked neighbours at `k>1`, the raw distance, decoded labels, the bundle unchanged by it) |
-| `test_predictions_overlay.py` | Building the per-cell prediction overlay columns |
+| `test_transfer_cli.py` | Transfer orchestration core (k>1 confidence, cosine metric, self-transfer) and the `transfer` CLI: bad input (no matching embedding, no query match, both id columns) as a usage error with its message, `--help` rendering, `protein_id` and legacy v1 bundles end to end; `--report` (one row per query at `k=1`, ranked neighbours at `k>1`, the raw distance, decoded labels, the bundle unchanged by it); `--max-distance` (near/distant by the nearest reference of any label, references null, `--skip-distant`, `auto` equal to the percentile with self excluded by index, fewer than two references and bad flag values as usage errors, a re-run without a cutoff dropping the column) |
+| `test_predictions_overlay.py` | Building the per-cell prediction overlay columns and the `COL__neighbor` column (aligned by id, replaced on a re-run, dropped without a cutoff) |
 | `test_display_decode.py` | Display-side decoding of encoded values, multi-hit rendering, gated-off passthrough |
 | `test_toxprot_demo.py` | Signal-peptide bound parsing, mature-FASTA stripping, bundle post-processing (column filter/reorder) |
 | `test_build_showcase.py` | `scripts/generate_examples/build_showcase.py`, the showcase bundle build: bundle reading and rebuilding (legacy and v3), projection selection, column order from the web catalog's `defaultView`, styles filtering, mature chains and the three-finger-toxins hold-out and EAT gates, provenance stamping read back by `write_manifest.py`, step markers and reruns, fetch release checks, `stage-release` never giving a published name new bytes; one offline end-to-end EAT build (three-finger toxins), run in CI |

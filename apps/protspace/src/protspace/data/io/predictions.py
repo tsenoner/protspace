@@ -16,13 +16,18 @@ out of the colour-by dropdown (see the EAT visualization design).
 ``protspace transfer --report`` writes what the bundle leaves out: every
 neighbour each prediction was computed from, with its raw distance, as a TSV
 built by :func:`report_rows` and :func:`write_report`.
+
+With ``--max-distance`` a fourth column, ``COL__neighbor``, records whether a
+query's nearest reference lay within the cutoff (``near``) or not
+(``distant``). It is an ordinary categorical annotation, outside the reserved
+``__pred_`` namespace, so the web app colours and filters by it like any other.
 """
 
 from __future__ import annotations
 
 import csv
 import io
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pyarrow as pa
@@ -44,6 +49,11 @@ REPORT_COLUMNS = (
     "reference_label",
     "reference_distance",
 )
+#: Appended to the report columns when the transfer ran with a distance cutoff.
+CUTOFF_REPORT_COLUMNS = ("neighbor", "max_distance")
+
+#: Suffix of the near/distant column ``--max-distance`` writes beside ``COL``.
+NEIGHBOR_SUFFIX = "__neighbor"
 
 
 def add_overlay_columns(
@@ -101,6 +111,32 @@ def add_overlay_columns(
     return out
 
 
+def set_neighbor_column(
+    annotations: pa.Table,
+    column: str,
+    classes: Mapping[str, str] | None,
+    *,
+    identifiers: list[str],
+) -> pa.Table:
+    """Write ``COL__neighbor`` from ``classes`` (query id -> near/distant).
+
+    Any existing ``COL__neighbor`` is dropped first, so a re-transfer replaces
+    it; with ``classes=None`` (a run without a cutoff) nothing replaces it, and
+    a class computed against earlier predictions does not outlive them. Proteins
+    absent from ``classes`` (references, unembedded proteins) are null.
+    """
+    name = f"{column}{NEIGHBOR_SUFFIX}"
+    out = (
+        annotations.drop_columns([name])
+        if name in annotations.column_names
+        else annotations
+    )
+    if classes is None:
+        return out
+    values = [classes.get(identifier) for identifier in identifiers]
+    return out.append_column(name, pa.array(values, pa.string()))
+
+
 def report_rows(
     column: str,
     predictions: Sequence[Prediction],
@@ -142,12 +178,15 @@ def write_report(path: Path, rows: Sequence[dict]) -> None:
     Floats are written with six significant digits, which keeps the distances
     readable without hiding a difference the reliability index would show.
     """
+    columns = REPORT_COLUMNS
+    if rows and CUTOFF_REPORT_COLUMNS[0] in rows[0]:
+        columns += CUTOFF_REPORT_COLUMNS
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter="\t", lineterminator="\n")
-    writer.writerow(REPORT_COLUMNS)
+    writer.writerow(columns)
     for row in rows:
         writer.writerow(
             f"{value:.6g}" if isinstance(value, float) else value
-            for value in (row[name] for name in REPORT_COLUMNS)
+            for value in (row[name] for name in columns)
         )
     atomic_write_bytes(path, buffer.getvalue().encode())

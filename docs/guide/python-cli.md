@@ -664,7 +664,9 @@ projection, and copies that label along with a reliability index in [0, 1].
 
 The curated source column (`COL`) is left untouched; three new columns are written:
 `COL__pred_value` (string), `COL__pred_confidence` (float) and `COL__pred_source` (string, the
-reference protein the label came from, for provenance).
+reference protein the label came from, for provenance). With `--max-distance`, a fourth,
+`COL__neighbor`, says whether the query sits [near or distant](#near-or-distant) from the
+references.
 
 **The filters are optional.** With no `--query-*` and no `--reference-*` filter, transfer runs
 within the bundle: every protein missing a value in a `--transfer` column is a query, and every
@@ -709,6 +711,8 @@ protspace transfer \
 | `--query-where`         | Restrict queries to rows where `col` contains `substr` (`col~substr`). | any protein missing a value  |
 | `--reference-id-prefix` | Only use references whose ID has this prefix (repeatable).             | any protein that has a value |
 | `--reference-where`     | Restrict references the same way (`col~substr`).                       | any protein that has a value |
+| `--max-distance`        | Mark each query near or distant: a distance, or `auto`. See below.     | -                            |
+| `--skip-distant`        | Leave distant queries unpredicted (needs `--max-distance`).            | label every query            |
 | `--report`              | Also write a TSV of each query's neighbours, see below.                | -                            |
 
 A bundle carrying these columns renders the transferred proteins as ringed markers with their own
@@ -750,6 +754,35 @@ import pandas as pd
 report = pd.read_csv("predictions.tsv", sep="\t")
 report[report["rank"] == 1].sort_values("distance")
 ```
+
+### Near or distant
+
+Transfer labels every query, however far its nearest reference is. `--max-distance` adds the
+split a reference database is usually first asked for: which queries sit near a reference at all.
+A query is `near` when the embedding distance to its nearest reference (of any label) is at most the
+cutoff, and `distant` otherwise. The class is written to a fourth column, `COL__neighbor`, which is
+empty for every protein that was not a query. It is an ordinary annotation: colour, filter and
+export by it in the web app like any other.
+
+```bash
+protspace transfer -b space.parquetbundle -e emb.h5:esm2_650m -t toxin_family \
+  --max-distance auto --report predictions.tsv -o space_eat.parquetbundle
+```
+
+- **`--max-distance auto`** picks the cutoff for each column from the references themselves: the
+  95th percentile of every reference's distance to its nearest other reference. A query farther
+  from every reference than that sits outside the reference set's own spacing. The column needs at
+  least two references. `-v` logs the value chosen, and the report's `max_distance` column records
+  it.
+- **`--max-distance D`** uses a fixed distance, in `--metric` units. Distances are model-specific
+  (ESM2 cosine distances are small even between unrelated proteins), so a number from one model or
+  paper does not carry over to another.
+- **`--skip-distant`** leaves the distant queries unpredicted: they get `COL__neighbor = distant`
+  and no `__pred_*` values. Without it they keep the nearest label, as without a cutoff.
+
+With `--report`, every row also carries `neighbor` (the query's class) and `max_distance` (the
+cutoff used). Transferring a column again replaces its `COL__neighbor`, and a run without
+`--max-distance` removes it, so the class never describes predictions that are gone.
 
 ### Reliability index
 

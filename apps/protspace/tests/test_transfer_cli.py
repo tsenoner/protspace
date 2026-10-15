@@ -853,3 +853,144 @@ def test_cli_transfer_writes_the_report(tmp_path):
     # Cosine, k=1: the reliability index is 1 - distance, both written out.
     assert float(row["reliability"]) == pytest.approx(1 - float(row["distance"]))
     assert read_tables(with_report)[0].equals(read_tables(without)[0])
+
+
+# ── --max-distance: near/distant by the nearest reference ────────────────────
+
+
+def _rows(table):
+    return {r["identifier"]: r for r in table.to_pylist()}
+
+
+def test_run_transfer_max_distance_classes_queries_and_leaves_references_null():
+    annotations, embeddings = _four_protein_inputs()
+    rows = _rows(_run(annotations, embeddings, k=1, max_distance=0.5))
+    assert rows["Q_near"]["fam__neighbor"] == "near"  # R_a at 0.1
+    assert rows["Q_far"]["fam__neighbor"] == "distant"  # R_c at 27
+    assert all(rows[r]["fam__neighbor"] is None for r in ("R_a", "R_b", "R_c"))
+    # Without --skip-distant the distant query is still labelled.
+    assert rows["Q_far"]["fam__pred_value"] == "alpha"
+
+
+def test_run_transfer_max_distance_reads_the_nearest_reference_of_any_label():
+    # At 0.6, k=3 votes alpha (R_a at 0.6, R_c at 2.4) over beta (R_b at 0.4), so
+    # the source lies beyond the cutoff while the nearest reference is inside it.
+    annotations, embeddings = _four_protein_inputs()
+    embeddings["Q_near"] = np.array([0.6, 0.0], dtype=np.float32)
+    rows = _rows(_run(annotations, embeddings, k=3, max_distance=0.5))
+    assert rows["Q_near"]["fam__pred_source"] == "R_a"
+    assert rows["Q_near"]["fam__neighbor"] == "near"
+
+
+def test_run_transfer_skip_distant_leaves_distant_queries_unpredicted():
+    annotations, embeddings = _four_protein_inputs()
+    rows = _rows(
+        _run(annotations, embeddings, k=1, max_distance=0.5, skip_distant=True)
+    )
+    assert rows["Q_far"]["fam__neighbor"] == "distant"
+    assert rows["Q_far"]["fam__pred_value"] is None
+    assert rows["Q_far"]["fam__pred_confidence"] is None
+    assert rows["Q_near"]["fam__pred_value"] == "alpha"
+
+
+def test_run_transfer_auto_max_distance_is_the_reference_spacing_percentile():
+    # Each reference's nearest other reference: R_a 1 (R_b), R_b 1 (R_a), R_c 2 (R_b).
+    annotations, embeddings = _four_protein_inputs()
+    report = []
+    rows = _rows(_run(annotations, embeddings, k=1, max_distance="auto", report=report))
+    expected = float(np.percentile([1.0, 1.0, 2.0], 95))
+    assert [r["max_distance"] for r in report] == pytest.approx([expected] * 2)
+    assert {r["query_id"]: r["neighbor"] for r in report} == {
+        "Q_near": "near",
+        "Q_far": "distant",
+    }
+    assert rows["Q_near"]["fam__neighbor"] == "near"
+    assert rows["Q_far"]["fam__neighbor"] == "distant"
+
+
+def test_run_transfer_auto_max_distance_excludes_self_by_index():
+    # Two references on the same point: each one's nearest other is at 0, and it
+    # is the duplicate, not itself, whichever order the search returns them in.
+    annotations = pa.table({"identifier": ["Q", "R1", "R2"], "fam": ["", "a", "a"]})
+    vec = np.array([1.0, 0.0], dtype=np.float32)
+    embeddings = {"Q": np.array([1.0, 1.0], dtype=np.float32), "R1": vec, "R2": vec}
+    report = []
+    _run(annotations, embeddings, k=1, max_distance="auto", report=report)
+    assert report[0]["max_distance"] == pytest.approx(0.0, abs=1e-6)
+    assert report[0]["neighbor"] == "distant"
+
+
+def test_run_transfer_auto_max_distance_needs_two_references():
+    annotations = pa.table({"identifier": ["Q", "R"], "fam": ["", "a"]})
+    embeddings = {
+        "Q": np.array([0.0, 0.0], dtype=np.float32),
+        "R": np.array([1.0, 0.0], dtype=np.float32),
+    }
+    with pytest.raises(ValueError, match="at least two references.*'fam'"):
+        _run(annotations, embeddings, k=1, max_distance="auto")
+
+
+def test_run_transfer_without_cutoff_drops_a_stale_neighbor_column():
+    annotations, embeddings = _four_protein_inputs()
+    first = _run(annotations, embeddings, k=1, max_distance=0.5)
+    # Re-transfer the overlaid table: the curated column is unchanged, so the
+    # same proteins are queries again, now without a cutoff.
+    again = _run(first, embeddings, k=1)
+    assert "fam__neighbor" not in again.column_names
+    assert again.column_names.count("fam__pred_value") == 1
+
+
+def test_cli_transfer_max_distance_writes_the_column_and_the_report(tmp_path):
+    import csv
+
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_tables
+
+    bundle, h5 = _write_bundle_and_h5(tmp_path)
+    out_path, report_path = tmp_path / "out.parquetbundle", tmp_path / "r.tsv"
+    result = CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            *("-b", str(bundle), "-e", str(h5), "-t", "protein_category"),
+            *("-o", str(out_path), "--report", str(report_path)),
+            *("--max-distance", "2", "--skip-distant"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    rows = {r["protein_id"]: r for r in read_tables(out_path)[0].to_pylist()}
+    assert rows["TRINITY_1"]["protein_category__neighbor"] == "near"
+    with open(report_path, newline="") as f:
+        (row,) = csv.DictReader(f, delimiter="\t")
+    assert (row["neighbor"], float(row["max_distance"])) == ("near", 2.0)
+
+
+@pytest.mark.parametrize(
+    ("flags", "message"),
+    [
+        (["--max-distance", "-1"], "non-negative number or 'auto'"),
+        (["--max-distance", "near"], "non-negative number or 'auto'"),
+        (["--skip-distant"], "--skip-distant needs --max-distance"),
+    ],
+)
+def test_cli_transfer_bad_cutoff_is_a_usage_error(tmp_path, flags, message):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    bundle, h5 = _write_bundle_and_h5(tmp_path)
+    out_path = tmp_path / "out.parquetbundle"
+    result = CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            *("-b", str(bundle), "-e", str(h5), "-t", "protein_category"),
+            *("-o", str(out_path), *flags),
+        ],
+        env={"COLUMNS": "200"},
+    )
+    assert result.exit_code == 2
+    assert message in plain(result.output)
+    assert not out_path.exists()
