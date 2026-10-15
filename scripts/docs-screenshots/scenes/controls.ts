@@ -55,6 +55,10 @@ async function draftTwoConditions(page: Page): Promise<void> {
     // The element's text keeps its template whitespace around the sentence.
     /^\s*[1-9][\d,]* of [\d,]+ proteins? match\s*$/,
   );
+  // The length condition's own count lands after a 750 ms debounce.
+  await expect(second.locator('.numeric-match-count')).toHaveText(
+    /[1-9][\d,]* (proteins match|protein matches)/,
+  );
 }
 
 export const CONTROLS_CAPTURES: CaptureEntry[] = [
