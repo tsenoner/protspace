@@ -51,6 +51,7 @@ test.describe('notifications', () => {
   test('with a selection the toast sits above the selection bar', async ({ page }) => {
     await openExplore(page);
     await searchProteins(page, [await firstProteinId(page)]);
+    await expect(selectionBar(page)).toBeVisible();
     await applyFirstCategoryFilter(page);
 
     await filterResetButton(page).click();
@@ -95,6 +96,7 @@ test.describe('notifications', () => {
 
     // A selection is a newer history step: Undo would no longer take back the removal.
     await searchProteins(page, [await firstProteinId(page)]);
+    await expect(selectionBar(page)).toBeVisible();
 
     await expect(removed).toHaveCount(0);
   });

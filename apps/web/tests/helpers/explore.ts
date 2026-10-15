@@ -388,19 +388,28 @@ export async function pasteIntoSearch(page: Page, text: string): Promise<void> {
 
 /**
  * Selects proteins through the search box: one id is typed and entered, several are pasted one per
- * line. Resolves once the selection bar or the search's report shows.
+ * line. A search only adds to the selection, so it resolves once the selection bar's count changes
+ * or the search's report shows (an id missing or already selected); a bar that was already showing
+ * does not count.
  */
 export async function searchProteins(page: Page, ids: readonly string[]): Promise<void> {
   if (ids.length === 0) throw new Error('searchProteins needs at least one id');
+  const barText = async () =>
+    (await selectionBar(page).isVisible()) ? await selectionBar(page).textContent() : null;
+  const before = await barText();
   if (ids.length === 1) {
     await searchInput(page).fill(ids[0]);
     await searchInput(page).press('Enter');
   } else {
     await pasteIntoSearch(page, ids.join('\n'));
   }
-  await expect(
-    selectionBar(page).or(searchReport(page)).filter({ visible: true }).first(),
-  ).toBeVisible();
+  await expect
+    .poll(async () => {
+      if (await searchReport(page).isVisible()) return true;
+      const after = await barText();
+      return after !== null && after !== before;
+    })
+    .toBe(true);
 }
 
 /** A notification (a Sonner toast) by its text. */

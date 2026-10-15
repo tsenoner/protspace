@@ -328,10 +328,18 @@ const inside = (
 test.describe('capture helpers', () => {
   test('plotSettled resolves after a zoom, and needs ?perfCounters=1', async ({ page }) => {
     await openExplore(page, '?perfCounters=1');
+    const counters = () => page.evaluate(() => JSON.stringify(window.__protspacePerfCounters));
+    await plotSettled(page);
+    const idle = await counters();
     const box = (await plotArea(page).boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, -400);
     await plotSettled(page);
+    const settled = await counters();
+    expect(settled).not.toBe(idle);
+    // Settled means the zoom has finished drawing: half a second later nothing has changed.
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 500)));
+    expect(await counters()).toBe(settled);
 
     await openExplore(page);
     await expect(plotSettled(page)).rejects.toThrow('load the page with ?perfCounters=1');
@@ -435,8 +443,13 @@ test.describe('capture helpers', () => {
   test('openFigureEditor opens the figure editor', async ({ page }) => {
     await openExplore(page);
     const dialog = await openFigureEditor(page);
+    expect(String(dialog)).toBe(String(figureEditor(page)));
     await expect(dialog).toBeVisible();
-    await expect(figureEditor(page)).toBeVisible();
+    // It resolves with the preview drawn: no wait here, the canvas already has a size.
+    const size = await page
+      .locator('protspace-publish-modal .publish-preview-canvas')
+      .evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
+    expect(Math.min(...size)).toBeGreaterThan(0);
   });
 
   test('searchProteins selects the given ids', async ({ page }) => {
@@ -450,6 +463,10 @@ test.describe('capture helpers', () => {
     await clearSelection(page);
     await searchProteins(page, ids.slice(0, 1));
     await expect.poll(() => getSelectedProteinIds(page)).toEqual(ids.slice(0, 1));
+
+    // With the bar already showing, the helper still waits for this search to land.
+    await searchProteins(page, ids.slice(1));
+    expect(await getSelectedProteinIds(page)).toEqual(ids);
   });
 
   test('pasteIntoSearch reports found and missing ids', async ({ page }) => {
@@ -477,7 +494,13 @@ test.describe('capture helpers', () => {
     await openExplore(page);
     const value = await getFirstLegendItemValue(page);
 
-    await doubleClickLegendRow(page, value);
+    // A capture paces the gap with its own timer.
+    const pauses: number[] = [];
+    await doubleClickLegendRow(page, value, async (ms) => {
+      pauses.push(ms);
+      await page.waitForTimeout(ms);
+    });
+    expect(pauses).toEqual([120]);
     await expect.poll(() => legendRowValues(page, { visible: true })).toEqual([value]);
   });
 
