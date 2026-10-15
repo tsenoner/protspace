@@ -7,17 +7,17 @@
 
 ## 2. Preparation notebook
 
-- [ ] 2.1 Upload cell above the panel, guarded by a checkbox, filling the matching path field
-- [ ] 2.2 HDF5 and FASTA tabs: path field, Load button, states; embedder dropdown with Auto-detect on the H5 tab
-- [ ] 2.3 Per-tab inputs; Generate uses the selected tab, refuses an empty one, echoes the input
-- [ ] 2.4 Example fetched in Generate with a timeout; Generate disabled while running; observers captured; protspace logging routed to the output
-- [ ] 2.5 Metric selector; `min_dist` 0.1; CSV-only preset; version-agnostic CSV `FileUpload`
-- [ ] 2.6 Cell 1 guard catches any exception with the upgrade hint
-- [ ] 2.7 "Going further" CLI example and the H5 error text
+- [x] 2.1 Upload cell above the panel, guarded by a checkbox, filling the matching path field
+- [x] 2.2 HDF5 and FASTA tabs: path field, Load button, states; embedder dropdown with Auto-detect on the H5 tab
+- [x] 2.3 Per-tab inputs; Generate uses the selected tab, refuses an empty one, echoes the input
+- [x] 2.4 Example fetched in Generate with a timeout; Generate disabled while running; observers captured; protspace logging routed to the output
+- [x] 2.5 Metric selector; `min_dist` 0.1; CSV-only preset; version-agnostic CSV `FileUpload`
+- [x] 2.6 Cell 1 guard catches any exception with the upgrade hint
+- [x] 2.7 "Going further" CLI example and the H5 error text
 
 ## 3. Embeddings notebook
 
-- [ ] 3.1 Write `model_name` on the produced HDF5
+- [x] 3.1 Write `model_name` on the produced HDF5
 
 ## 4. Docs
 
