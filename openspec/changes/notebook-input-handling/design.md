@@ -46,7 +46,9 @@ silent, so a warning would be the only signal and it cannot be shown at the mome
 **2. Path fields are the single source for H5 and FASTA.** Files pane, Drive and the upload cell
 all end as a path, so one _Load_ button validates it ("no file at …", "Ready: N proteins, D
 dims, embedding name X (from …)"). The custom CSV keeps a `FileUpload` because CSVs are small,
-but the upload only writes the file and fills the CSV path field; Generate reads the field.
+but the upload only writes the file and fills the CSV path field; Generate reads the field. The
+CSV's accepted suffixes and its id-column hint follow `custom-csv-annotations`: the suffixes are
+imported from the package (`CUSTOM_ANNOTATION_SUFFIXES`, `.csv`/`.tsv` on a release without it).
 
 **3. Auto-detect uses the package's resolver when it exists.** `resolve_input_names([(path,
 None)], command="prepare")` gives the same name the CLI would. It is imported under

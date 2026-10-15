@@ -25,6 +25,8 @@
 
 - [x] 4.1 `docs/guide/data-preparation.md`: four-tab panel, upload routes and size caveat, Run all, 2-D only, MDS CLI-only, taxonomy tip removed, naming no longer needed
 - [x] 4.2 `apps/protspace/CLAUDE.md`: `test_notebooks.py` row
+- [x] 4.3 Integration with `custom-csv-annotations`: the CSV hint names the id columns, and the
+      accepted suffixes are imported from the package
 
 ## 5. Verify
 

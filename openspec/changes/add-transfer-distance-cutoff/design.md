@@ -62,5 +62,5 @@ query and, for `auto`, the same quantity for each reference against the other re
   bounded in memory like the query search; only paid when `auto` is asked for.
 - [A user column that happens to end in `__neighbor` gets the EAT label] → Only the label and
   description change; the data is untouched.
-- [Distances are model- and metric-specific] → `auto` is the documented default; a fixed `D` is
+- [Distances are model- and metric-specific] → `auto` is the documented choice; a fixed `D` is
   for users who have calibrated one.

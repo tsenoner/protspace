@@ -60,8 +60,8 @@ silently ignored on HDF5 input and `--max-length` is rejected there as if it mat
   command.
 - Reading spreadsheets (`.xlsx`) or a `--delimiter` option. A file with another suffix is refused
   with the accepted ones named.
-- Changing which embedding methods exist. 3-D projections are no longer promoted; no example,
-  default or recommendation here uses one.
+- Changing which embedding methods exist. 3-D dimensionality reduction is no longer supported;
+  no example, default or recommendation here uses one.
 
 ## Capabilities
 
@@ -92,7 +92,7 @@ pipeline.py` (CSV loading moved out, several files, `nan` kept out of the metada
   is embedded.
 - Tests: a new `tests/test_custom_annotations.py`; `test_pipeline_utils.py`'s
   `_resolve_annotation_names` cases follow the new return shape.
-- Docs: `docs/guide/python-cli.md`, `docs/guide/faq.md`, `apps/protspace/CLAUDE.md`. The
-  Preparation notebook's upload hint restates the id rule and is handed to the notebook
-  workstream (tasks 4.4).
+- Docs: `docs/guide/python-cli.md`, `docs/guide/faq.md`, `docs/guide/data-preparation.md`,
+  `apps/protspace/CLAUDE.md`. The Preparation notebook's CSV hint restates the id rule, and its
+  accepted suffixes come from the package (tasks 4.4).
 - No bundle-format, dependency or public Python API change.
