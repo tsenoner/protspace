@@ -279,15 +279,21 @@ export async function readLegendSettings(page: Page): Promise<{
 /**
  * A real double click on a row: click (detail 1), a pause, click (detail 2) and dblclick, as a
  * hand makes one. Playwright's `dblclick()` sends the two clicks back to back, which the legend
- * cannot tell from one click being repeated.
+ * cannot tell from one click being repeated. A capture passes `pause` as `(ms) => cap.hold(ms)`,
+ * since `hold` is the only timer capture code may use.
  */
-export async function doubleClickLegendRow(page: Page, value: string, gapMs = 120): Promise<void> {
+export async function doubleClickLegendRow(
+  page: Page,
+  value: string,
+  pause: (ms: number) => Promise<void> = (ms) => page.waitForTimeout(ms),
+  gapMs = 120,
+): Promise<void> {
   const box = await legendRow(page, value).boundingBox();
   if (!box) throw new Error(`No legend row for ${value}`);
   await page.mouse.move(box.x + 24, box.y + box.height / 2);
   await page.mouse.down({ clickCount: 1 });
   await page.mouse.up({ clickCount: 1 });
-  await page.waitForTimeout(gapMs);
+  await pause(gapMs);
   await page.mouse.down({ clickCount: 2 });
   await page.mouse.up({ clickCount: 2 });
 }

@@ -74,25 +74,38 @@ describe('validateManifest', () => {
   });
 
   it.each([
-    ['a name used twice', [entry({ name: 'twice' }), entry({ name: 'twice' })]],
-    ['an uppercase name', [entry({ name: 'Interface-Overview' })]],
-    ['a name with spaces', [entry({ name: 'interface overview' })]],
-    ['a name in another folder', [entry({ name: 'gifs/zoom' })]],
-    ['a name with an extension', [entry({ name: 'zoom.gif' })]],
-    ['a name ending in -dark', [entry({ name: 'overview-dark' })]],
-    ['a dark GIF', [entry({ name: 'zoom', kind: 'gif', themes: ['light', 'dark'] })]],
-    ['a budget on a screenshot', [entry({ name: 'shot', budgetBytes: 1_000 })]],
-    ['GIF settings on a screenshot', [entry({ name: 'shot', gif: { fps: 15 } })]],
-    ['a scale on a GIF', [entry({ name: 'zoom', kind: 'gif', scale: 1 })]],
-    ['a scale on a phone screenshot', [entry({ name: 'shot', viewport: 'phone', scale: 2 })]],
+    ['a name used twice', [entry({ name: 'twice' }), entry({ name: 'twice' })], 'used twice'],
+    ['an uppercase name', [entry({ name: 'Interface-Overview' })], 'kebab-case'],
+    ['a name with spaces', [entry({ name: 'interface overview' })], 'kebab-case'],
+    ['a name in another folder', [entry({ name: 'gifs/zoom' })], 'kebab-case'],
+    ['a name with an extension', [entry({ name: 'zoom.gif' })], 'has an extension'],
+    ['a name ending in -dark', [entry({ name: 'overview-dark' })], 'ending in -dark'],
+    [
+      'a dark GIF',
+      [entry({ name: 'zoom', kind: 'gif', themes: ['light', 'dark'] })],
+      'GIF is light only',
+    ],
+    ['a budget on a screenshot', [entry({ name: 'shot', budgetBytes: 1_000 })], 'GIFs only'],
+    ['GIF settings on a screenshot', [entry({ name: 'shot', gif: { fps: 15 } })], 'GIFs only'],
+    ['a scale on a GIF', [entry({ name: 'zoom', kind: 'gif', scale: 1 })], 'scale applies'],
+    [
+      'a scale on a phone screenshot',
+      [entry({ name: 'shot', viewport: 'phone', scale: 2 })],
+      'scale applies',
+    ],
     [
       'a scale on a custom-size screenshot',
       [entry({ name: 'shot', viewport: { width: 600, height: 400 }, scale: 1 })],
+      'scale applies',
     ],
-    ['no docs page', [entry({ name: 'shot', docs: [] })]],
-    ['a docs page that is not markdown', [entry({ name: 'shot', docs: ['explore/index'] })]],
-  ])('reports %s once', (_, entries) => {
-    expect(validateManifest(entries)).toHaveLength(1);
+    ['no docs page', [entry({ name: 'shot', docs: [] })], 'names no page'],
+    [
+      'a docs page that is not markdown',
+      [entry({ name: 'shot', docs: ['explore/index'] })],
+      'not a .md file',
+    ],
+  ] as const)('reports %s once, and why', (_, entries, why) => {
+    expect(validateManifest(entries)).toEqual([expect.stringContaining(why)]);
   });
 });
 
@@ -107,7 +120,7 @@ describe('gifLadder', () => {
     ladder.map(({ fps, width }) => `${fps}/${width}`);
 
   it('steps the frame rate down, then the width', () => {
-    expect(rungs(gifLadder())).toEqual(['30/1000', '20/1000', '15/1000', '15/800', '15/640']);
+    expect(rungs(gifLadder())).toEqual(['25/1000', '20/1000', '15/1000', '15/800', '15/640']);
   });
 
   it("starts at an entry's own settings", () => {
@@ -115,7 +128,7 @@ describe('gifLadder', () => {
   });
 
   it('steps only the frame rate from the narrowest width', () => {
-    expect(rungs(gifLadder({ width: 640 }))).toEqual(['30/640', '20/640', '15/640']);
+    expect(rungs(gifLadder({ width: 640 }))).toEqual(['25/640', '20/640', '15/640']);
   });
 });
 
@@ -130,6 +143,33 @@ const CAPTURE_SOURCES = import.meta.glob('../../../../scripts/docs-screenshots/*
   eager: true,
 }) as Record<string, string>;
 const SCRIPTS = '../../../../scripts/docs-screenshots/';
+
+/**
+ * The test helpers capture code may import (`scripts/tsconfig.json`'s include list). A capture
+ * reaches their timers too, so each one is counted: a new timer in a shared helper fails here
+ * until it is either passed in by the caller (as `doubleClickLegendRow`'s `pause` is, which a
+ * capture sets to `cap.hold`) or added to this list on purpose.
+ */
+const HELPER_SOURCES = import.meta.glob('../../tests/helpers/**/*.ts', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+const SCRIPTS_TSCONFIG = import.meta.glob('../../../../scripts/tsconfig.json', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+const HELPER_TIMERS: Record<string, number> = {
+  // doubleClickLegendRow's default pause; a capture passes its own.
+  '../../tests/helpers/legend.ts': 1,
+  // A persisted-dataset poll that captures do not reach.
+  '../../tests/helpers/explore.ts': 1,
+  // A touch gesture's rest and its per-step frame, for the phone specs.
+  '../../tests/helpers/mobile.ts': 2,
+  // The perf probes' idle wait, for the perf runs.
+  '../../tests/helpers/perf/probes.ts': 1,
+};
 
 describe('the capture code', () => {
   it('is read', () => {
@@ -167,5 +207,22 @@ describe('the capture code', () => {
     const runner = CAPTURE_SOURCES[`${SCRIPTS}runner.ts`];
     expect(runner.match(/waitForTimeout/g)).toHaveLength(1);
     expect(runner).toMatch(/hold: async \(ms\) => \{\s*await page\.waitForTimeout\(ms\);/);
+  });
+
+  it('counts every timer in the helpers it imports', () => {
+    const { include } = JSON.parse(Object.values(SCRIPTS_TSCONFIG)[0]) as { include: string[] };
+    const helpers = include
+      .filter((path) => path.startsWith('../apps/web/tests/helpers/'))
+      .map((path) => path.replace('../apps/web/tests/', '../../tests/'));
+    expect(helpers.length).toBeGreaterThan(0);
+    const timers = Object.fromEntries(
+      helpers
+        .map((file) => {
+          expect(Object.keys(HELPER_SOURCES)).toContain(file);
+          return [file, HELPER_SOURCES[file].match(/waitForTimeout/g)?.length ?? 0] as const;
+        })
+        .filter(([, count]) => count > 0),
+    );
+    expect(timers).toEqual(HELPER_TIMERS);
   });
 });

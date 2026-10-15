@@ -149,8 +149,11 @@ export interface GifSettings {
   width: number;
 }
 
-/** Where a GIF's ladder starts unless its entry says otherwise. */
-export const GIF_START: GifSettings = { fps: 30, width: 1000 };
+/**
+ * Where a GIF's ladder starts unless its entry says otherwise. Playwright records video at a fixed
+ * 25 fps, so a higher rate would only repeat frames.
+ */
+export const GIF_START: GifSettings = { fps: 25, width: 1000 };
 
 const LADDER_FPS = [20, 15];
 const LADDER_WIDTHS = [800, 640];
@@ -158,7 +161,7 @@ const LADDER_WIDTHS = [800, 640];
 /**
  * The settings a GIF is converted at, in order, until one fits its budget: the start, then each
  * lower frame rate of 20 and 15, then each narrower width of 800 and 640 at the last rate.
- * `gifLadder()` is 30/1000, 20/1000, 15/1000, 15/800, 15/640.
+ * `gifLadder()` is 25/1000, 20/1000, 15/1000, 15/800, 15/640.
  */
 export function gifLadder(start: Partial<GifSettings> = {}): GifSettings[] {
   const first = { ...GIF_START, ...start };
