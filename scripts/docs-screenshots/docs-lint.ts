@@ -70,9 +70,6 @@ export const LEGACY_IMAGES: ReadonlySet<string> = new Set([
   'figure-editor-overview.png',
   'figure-editor-presets.png',
   'figure-editor-zoom-inset.png',
-  'legend-others.gif',
-  'legend-reorder.gif',
-  'legend-toggle.gif',
 ]);
 
 /**
@@ -82,7 +79,6 @@ export const LEGACY_IMAGES: ReadonlySet<string> = new Set([
 export const STALE_PAGES: ReadonlySet<string> = new Set([
   'explore/figure-editor.md',
   'explore/importing-data.md',
-  'explore/legend.md',
   'guide/faq.md',
 ]);
 

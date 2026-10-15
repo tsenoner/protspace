@@ -1,6 +1,7 @@
 import type { CaptureEntry } from './capture-plan';
 import { CONTROLS_CAPTURES } from './scenes/controls';
 import { EXAMPLE_CAPTURES } from './scenes/examples';
+import { LEGEND_CAPTURES } from './scenes/legend';
 import { OVERVIEW_CAPTURES } from './scenes/overview';
 import { SCATTERPLOT_CAPTURES } from './scenes/scatterplot';
 
@@ -10,4 +11,5 @@ export const MANIFEST: readonly CaptureEntry[] = [
   ...SCATTERPLOT_CAPTURES,
   ...CONTROLS_CAPTURES,
   ...OVERVIEW_CAPTURES,
+  ...LEGEND_CAPTURES,
 ];
