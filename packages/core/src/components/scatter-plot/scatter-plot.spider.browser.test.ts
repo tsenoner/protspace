@@ -83,7 +83,9 @@ describe('scatterplot duplicate spider', () => {
     await viewSettled(plot);
     const node = nodes(plot)[0];
     await userEvent.hover(node.querySelector('circle')!);
-    await wait(100);
+    await vi.waitFor(() =>
+      expect(plot.shadowRoot!.querySelector('protspace-protein-tooltip')).not.toBeNull(),
+    );
     let mutations = 0;
     const observer = new MutationObserver((records) => (mutations += records.length));
     const layer = plot.shadowRoot!.querySelector('g.duplicate-spiderfy-layer')!;
@@ -94,11 +96,12 @@ describe('scatterplot duplicate spider', () => {
     expect(mutations).toBe(0);
     expect(nodes(plot)[0]).toBe(node);
     expect(hovers).toEqual(['P1']);
-    expect(plot.shadowRoot!.querySelector('protspace-protein-tooltip')).not.toBeNull();
 
     await userEvent.click(node.querySelector('circle')!);
     await plot.updateComplete;
     expect(ids).toEqual(['P1']);
+    expect(plot.hasExpandedDuplicateStack()).toBe(true);
+    expect(nodes(plot)).toHaveLength(2);
   });
 
   it('a touch tap on a spider node selects it', async () => {
