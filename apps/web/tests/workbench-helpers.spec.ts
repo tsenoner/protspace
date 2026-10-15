@@ -530,6 +530,29 @@ test.describe('capture helpers', () => {
       .toBe(true);
   });
 
+  test('dragLegendRow moves the last row to the top, over every row between', async ({ page }) => {
+    await openExplore(page);
+    const rows = (await legendRowValues(page)).filter((value) => value !== 'Other');
+    expect(rows.length).toBeGreaterThan(3);
+    const last = rows[rows.length - 1];
+    const pauses: number[] = [];
+
+    await dragLegendRow(
+      page,
+      last === '__NA__' ? 'N/A' : last,
+      rows[0] === '__NA__' ? 'N/A' : rows[0],
+      {
+        pause: async (ms) => {
+          pauses.push(ms);
+          await page.waitForTimeout(ms);
+        },
+      },
+    );
+    await expect.poll(async () => (await legendRowValues(page))[0]).toBe(last);
+    // One pause per row passed, then the hold before the drop.
+    expect(pauses).toEqual([...Array(rows.length - 2).fill(80), 400]);
+  });
+
   test('openExample opens an example by its link', async ({ page }) => {
     await serveExampleFixtures(page);
     const example = e2eExample('other');

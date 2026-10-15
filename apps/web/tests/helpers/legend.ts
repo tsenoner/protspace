@@ -52,6 +52,14 @@ export async function legendRowValues(
     );
 }
 
+/** The legend's raw value for a category whose value contains `needle`, case-insensitive. */
+export async function legendValueContaining(page: Page, needle: string): Promise<string> {
+  const values = await legendRowValues(page);
+  const value = values.find((v) => v.toLowerCase().includes(needle.toLowerCase()));
+  if (!value) throw new Error(`No legend row contains "${needle}"; rows: ${values.join(', ')}`);
+  return value;
+}
+
 /** Hovers a row so its actions show, then clicks its eye or picks an item from its "⋯" menu. */
 export async function legendRowAction(
   page: Page,
@@ -298,20 +306,48 @@ export async function doubleClickLegendRow(
   await page.mouse.up({ clickCount: 2 });
 }
 
+/** A point on the page, as `page.mouse.move` takes it. */
+interface Point {
+  x: number;
+  y: number;
+}
+
 /**
- * Drags row `from` by its "Reorder …" handle onto the middle of row `to`, with the mouse and in
- * steps, which is what Sortable reads as a drag. Hovers the row first, which shows its handle.
+ * Drags row `from` by its "Reorder …" handle onto the middle of row `to`, with the mouse, row by
+ * row with a pause on each. One fast sweep over many rows leaves the order unchanged: Sortable
+ * ignores a row it is still animating, and an emulated drag sends `dragover` only when the mouse
+ * moves. A capture passes `move` as `(p) => cap.moveTo(p, { steps: 6 })` and `pause` as
+ * `(ms) => cap.hold(ms)`, so the GIF shows the glide and times the holds.
  */
-export async function dragLegendRow(page: Page, from: string, to: string): Promise<void> {
-  await legendRow(page, from).hover();
+export async function dragLegendRow(
+  page: Page,
+  from: string,
+  to: string,
+  io: { move?: (point: Point) => Promise<void>; pause?: (ms: number) => Promise<void> } = {},
+): Promise<void> {
+  const move = io.move ?? ((point: Point) => page.mouse.move(point.x, point.y, { steps: 6 }));
+  const pause = io.pause ?? ((ms: number) => page.waitForTimeout(ms));
+  // Hovering the row shows its handle.
+  const row = await legendItem(page, from).boundingBox();
+  if (!row) throw new Error(`No legend row for ${from}`);
+  await move({ x: row.x + row.width / 2, y: row.y + row.height / 2 });
   const handle = await legendItem(page, from)
     .getByRole('button', { name: /^Reorder / })
     .boundingBox();
   if (!handle) throw new Error(`No drag handle on the legend row ${from}`);
   const target = await legendItem(page, to).boundingBox();
   if (!target) throw new Error(`No legend row for ${to}`);
-  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  const start = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 };
+  const end = { x: start.x, y: target.y + target.height / 2 };
+  await move(start);
   await page.mouse.down();
-  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 20 });
+  const step = Math.sign(end.y - start.y) * target.height;
+  // Through every row in between; the last step lands on `to` itself.
+  for (let y = start.y + step; step !== 0 && (end.y - y) / step > 0.5; y += step) {
+    await move({ x: start.x, y });
+    await pause(80);
+  }
+  await move(end);
+  await pause(400);
   await page.mouse.up();
 }

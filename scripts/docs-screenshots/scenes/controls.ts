@@ -3,7 +3,7 @@
  * menu open beside its trigger, the search report, the Export menu, the Filter panel holding a
  * two-condition draft, the plot with contours, and the EAT badge in Color by.
  */
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { DEFAULT_EXAMPLE_DATASET } from '../../../apps/web/src/explore/example-datasets';
 import {
   annotationSelect,
@@ -22,6 +22,7 @@ import {
   projectionTrigger,
   queryBuilder,
   searchInput,
+  proteinSearch,
   searchReport,
   setContours,
 } from '../../../apps/web/tests/helpers/explore';
@@ -34,8 +35,6 @@ import { around } from './clip';
 const EAT_ANNOTATION = 'toxin_class';
 /** Ids no dataset holds, for the search report's "Not found" list. */
 const UNKNOWN_IDS = ['X00001', 'X00002'];
-
-const search = (page: Page): Locator => page.locator('#myProteinSearch');
 
 /**
  * Builds a draft in the Filter panel and leaves it unapplied: the colouring annotation is one of
@@ -114,7 +113,7 @@ export const CONTROLS_CAPTURES: CaptureEntry[] = [
     steps: async (page) => {
       // Focusing the empty box lists the dataset's first ids: three real ones to paste.
       await searchInput(page).click();
-      const suggestions = search(page).getByRole('option');
+      const suggestions = proteinSearch(page).getByRole('option');
       await expect(suggestions.first()).toBeVisible();
       const found = (await suggestions.allTextContents())
         .map((text) => text.trim())
@@ -127,7 +126,7 @@ export const CONTROLS_CAPTURES: CaptureEntry[] = [
       await expect(searchReport(page)).toContainText(`${found.length} of ${total} found`);
       await expect(searchReport(page)).toContainText('Not found');
     },
-    target: (page) => around([search(page), searchReport(page)]),
+    target: (page) => around([proteinSearch(page), searchReport(page)]),
   },
   {
     name: 'filter-panel',

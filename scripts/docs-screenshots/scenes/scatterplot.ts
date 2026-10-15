@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import type { CaptureApi, CaptureEntry } from '../capture-plan';
 import { around } from './clip';
+import { PLA2, THREE_FINGER } from './demo';
 import { EXAMPLE_MANIFEST } from '../../../apps/web/src/explore/example-manifest';
 import {
   chooseTool,
@@ -10,11 +11,13 @@ import {
   selectionBar,
   selectionBarAction,
   statusChip,
+  toolButton,
   viewBar,
 } from '../../../apps/web/tests/helpers/explore';
 import {
   closeLegendSettings,
   legendRowValues,
+  legendValueContaining,
   toggleLegendSetting,
 } from '../../../apps/web/tests/helpers/legend';
 import { plotTooltip, type Point } from '../../../apps/web/tests/helpers/mobile';
@@ -48,18 +51,6 @@ async function wheel(page: Page, cap: CaptureApi, delta: number): Promise<void> 
 }
 
 // ─── Selection, duplicates and the plot's own chrome (Task 7.11) ───────────────
-
-/** Two families of the demo's default colouring (protein_families) that form their own clusters. */
-const PLA2 = 'phospholipase A2';
-const THREE_FINGER = 'three-finger toxin';
-
-/** The legend's raw value for a category whose value contains `needle`, case-insensitive. */
-async function legendValue(page: Page, needle: string): Promise<string> {
-  const values = await legendRowValues(page);
-  const value = values.find((v) => v.toLowerCase().includes(needle.toLowerCase()));
-  if (!value) throw new Error(`No legend row contains "${needle}"; rows: ${values.join(', ')}`);
-  return value;
-}
 
 /** A plotted point of `value`'s cluster nearest the cluster's median, in client pixels. */
 async function clusterMiddle(page: Page, value: string): Promise<Point> {
@@ -145,9 +136,7 @@ async function selectSingleSteps(page: Page, cap: CaptureApi): Promise<void> {
 }
 
 async function selectBoxSteps(page: Page, cap: CaptureApi): Promise<void> {
-  const boxTool = page
-    .getByRole('toolbar', { name: 'Plot tools' })
-    .getByRole('button', { name: 'Box select', exact: true });
+  const boxTool = toolButton(page, 'Box select');
   await cap.hold(500);
   await cap.moveTo(boxTool, { steps: 15 });
   await cap.click(boxTool, { label: 'Box select' });
@@ -187,31 +176,43 @@ async function duplicateBadgesSetup(page: Page, cap: CaptureApi): Promise<void> 
   await expect.poll(async () => (await duplicateStacks(page)).length).toBeGreaterThan(0);
   // Escape leaves focus, and so its tooltip, on the Legend settings button: a click on empty plot
   // beside the stack takes both away before the trim.
-  await cap.click(await emptyScreenPointNear(page, await duplicateAnchor(page)));
+  await cap.click((await duplicateAnchor(page)).zoomAt);
 }
 
-/** The largest stack, nearest the median of all stacks, so it sits inside the cluster mass. */
+/** How far from its stack the zoom may anchor: the zoom pushes the stack away by this times its factor. */
+const ZOOM_OFFSET_PX = 24;
+
+/**
+ * The largest stack nearest the median of all stacks, so it sits inside the cluster mass, among
+ * those with empty plot within ZOOM_OFFSET_PX: the zoom anchors there, since a pointer resting on
+ * the stack's own point would keep its tooltip over the stack for the whole zoom.
+ */
 async function duplicateAnchor(
   page: Page,
-): Promise<{ key: string; x: number; y: number; count: number }> {
+): Promise<{ key: string; x: number; y: number; count: number; zoomAt: Point }> {
   const stacks = await duplicateStacks(page);
   const xs = stacks.map((s) => s.x).sort((a, b) => a - b);
   const ys = stacks.map((s) => s.y).sort((a, b) => a - b);
   const mid = { x: xs[Math.floor(xs.length / 2)], y: ys[Math.floor(ys.length / 2)] };
-  return [...stacks].sort(
+  const ranked = [...stacks].sort(
     (a, b) =>
       b.count - a.count ||
       Math.hypot(a.x - mid.x, a.y - mid.y) - Math.hypot(b.x - mid.x, b.y - mid.y),
-  )[0];
+  );
+  for (const stack of ranked) {
+    const zoomAt = await emptyScreenPointNear(page, stack, ZOOM_OFFSET_PX).catch(() => null);
+    if (zoomAt) return { ...stack, zoomAt };
+  }
+  throw new Error(`No duplicate stack has empty plot within ${ZOOM_OFFSET_PX}px`);
 }
 
 async function duplicateBadgesSteps(page: Page, cap: CaptureApi): Promise<void> {
   const anchor = await duplicateAnchor(page);
 
   await cap.hold(300);
-  await cap.moveTo(anchor, { steps: 20 });
+  await cap.moveTo(anchor.zoomAt, { steps: 20 });
   await cap.hold(300);
-  // The zoom keys off the pointer, which now rests on the stack.
+  // The zoom keys off the pointer, which now rests beside the stack.
   for (let i = 0; i < 20; i++) {
     await page.mouse.wheel(0, -50);
     await cap.hold(50);
@@ -259,7 +260,7 @@ async function plotChromeSteps(page: Page, cap: CaptureApi): Promise<void> {
   const area = await clusterBox(page, PLA2);
   await cap.drag(area.from, area.to, { steps: 10 });
   await expect(selectionBar(page)).toBeVisible();
-  await clickLegendItem(page, await legendValue(page, THREE_FINGER));
+  await clickLegendItem(page, await legendValueContaining(page, THREE_FINGER));
   await expect(statusChip(page, 'hidden')).toBeVisible();
 }
 

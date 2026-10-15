@@ -317,8 +317,8 @@ export async function appBarTextFits(page: Page): Promise<{ name: boolean; place
       const width = context.measureText('Venom toxins (demo)').width;
       return width <= parseFloat(getComputedStyle(element).maxWidth);
     });
-  const placeholder = await page
-    .locator('#myProteinSearch input')
+  const placeholder = await proteinSearch(page)
+    .locator('input')
     .evaluate((input: HTMLInputElement) => {
       const context = document.createElement('canvas').getContext('2d')!;
       context.font = getComputedStyle(input).font;
@@ -375,6 +375,9 @@ export const exportTrigger = (page: Page): Locator =>
 export const exportList = (page: Page): Locator =>
   exportMenu(page).getByRole('menu', { name: 'Export', exact: true });
 
+/** The app bar's protein search element (`protspace-protein-search`). */
+export const proteinSearch = (page: Page): Locator => page.locator('#myProteinSearch');
+
 export const searchInput = (page: Page): Locator =>
   page.locator('protspace-protein-search #protein-search-input');
 
@@ -411,9 +414,11 @@ export async function pasteIntoSearch(page: Page, text: string): Promise<void> {
 
 /**
  * Selects proteins through the search box: one id is typed and entered, several are pasted one per
- * line. A search only adds to the selection, so it resolves once the selection bar's count changes
+ * line. A search only adds to the selection, so it waits until the selection bar's count changes
  * or the search's report shows (an id missing or already selected); a bar that was already showing
- * does not count.
+ * does not count. The bar and the search box show a pick a frame before the plot takes it
+ * (`selection-controller.ts`, AfterPaintCommit), so it then waits for the plot to hold the same
+ * selection: it resolves with the search landed on the plot.
  */
 export async function searchProteins(page: Page, ids: readonly string[]): Promise<void> {
   if (ids.length === 0) throw new Error('searchProteins needs at least one id');
@@ -432,6 +437,16 @@ export async function searchProteins(page: Page, ids: readonly string[]): Promis
       const after = await barText();
       return after !== null && after !== before;
     })
+    .toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        type WithSelection = Element & { selectedProteinIds?: string[] };
+        const shown = document.querySelector<WithSelection>('#myProteinSearch')?.selectedProteinIds;
+        const plotted = document.querySelector<WithSelection>('#myPlot')?.selectedProteinIds;
+        return JSON.stringify(shown ?? []) === JSON.stringify(plotted ?? []);
+      }),
+    )
     .toBe(true);
 }
 
@@ -759,11 +774,16 @@ const TOOL_STATES = {
   'Lasso select': { selectionMode: true, selectionTool: 'lasso' },
 } as const;
 
+type PlotToolName = keyof typeof TOOL_STATES;
+
+/** A tool's button on the plot's tool strip. */
+export const toolButton = (page: Page, tool: PlotToolName): Locator =>
+  page
+    .getByRole('toolbar', { name: 'Plot tools' })
+    .getByRole('button', { name: tool, exact: true });
+
 /** Picks a tool on the plot's tool strip and waits until the plot uses it. */
-export async function chooseTool(
-  page: Page,
-  tool: 'Move and zoom' | 'Box select' | 'Lasso select',
-): Promise<void> {
+export async function chooseTool(page: Page, tool: PlotToolName): Promise<void> {
   await waitForExploreInteractionReady(page);
   const readTool = () =>
     page.evaluate(() => {
@@ -776,10 +796,7 @@ export async function chooseTool(
       };
     });
   const wanted = TOOL_STATES[tool];
-  await page
-    .getByRole('toolbar', { name: 'Plot tools' })
-    .getByRole('button', { name: tool, exact: true })
-    .click();
+  await toolButton(page, tool).click();
   await expect
     .poll(async () => {
       const state = await readTool();

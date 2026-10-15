@@ -5,9 +5,11 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import type { CaptureApi, CaptureEntry } from '../capture-plan';
 import { around } from './clip';
+import { PLA2, THREE_FINGER } from './demo';
 import { statusChip } from '../../../apps/web/tests/helpers/explore';
 import {
   doubleClickLegendRow,
+  dragLegendRow,
   isLegendItemHidden,
   legend,
   legendOtherDialog,
@@ -15,22 +17,13 @@ import {
   legendRowValues,
   legendSettingsDialog,
   legendSortButton,
+  legendValueContaining,
   openLegendOther,
   openLegendSettings,
 } from '../../../apps/web/tests/helpers/legend';
 
-const PLA2 = 'phospholipase A2';
-const THREE_FINGER = 'three-finger toxin';
 const NA = '__NA__';
 const OTHER = 'Other';
-
-/** The legend's raw value for a category whose value contains `needle`, case-insensitive. */
-async function legendValue(page: Page, needle: string): Promise<string> {
-  const values = await legendRowValues(page);
-  const value = values.find((v) => v.toLowerCase().includes(needle.toLowerCase()));
-  if (!value) throw new Error(`No legend row contains "${needle}"; rows: ${values.join(', ')}`);
-  return value;
-}
 
 /** The text a row's name starts with: N/A's raw value is a sentinel, every other one is its label. */
 const label = (value: string): string => (value === NA ? 'N/A' : value);
@@ -43,8 +36,8 @@ const otherPopover = (page: Page): Locator =>
   legend(page).locator('protspace-legend-other-popover');
 
 async function toggleSteps(page: Page, cap: CaptureApi): Promise<void> {
-  const hidden = await legendValue(page, PLA2);
-  const only = await legendValue(page, THREE_FINGER);
+  const hidden = await legendValueContaining(page, PLA2);
+  const only = await legendValueContaining(page, THREE_FINGER);
 
   await cap.hold(500);
   // A click on the row hides the category.
@@ -93,27 +86,11 @@ async function reorderSteps(page: Page, cap: CaptureApi): Promise<void> {
   await cap.hold(500);
   await cap.moveTo(legendRow(page, label(moving)), { steps: 15 });
   await cap.hold(400);
-  const handle = legend(page).getByRole('button', {
-    name: `Reorder ${label(moving)}`,
-    exact: true,
-  });
-  const from = await handle.boundingBox();
-  const to = await legendRow(page, label(top)).boundingBox();
-  if (!from || !to) throw new Error('The drag handle or the first row has no box');
-  const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
-  await cap.moveTo(start, { steps: 6 });
   await cap.label('Drag');
-  // Row by row, pausing on each: one fast sweep to the top (cap.drag, or dragLegendRow over
-  // twelve rows) leaves the order unchanged, likely because Sortable skips rows still animating.
-  await page.mouse.down();
-  const rowHeight = to.height;
-  for (let y = start.y - rowHeight; y > to.y; y -= rowHeight) {
-    await cap.moveTo({ x: start.x, y }, { steps: 6 });
-    await cap.hold(80);
-  }
-  await cap.moveTo({ x: start.x, y: to.y + to.height / 2 }, { steps: 6 });
-  await cap.hold(400);
-  await page.mouse.up();
+  await dragLegendRow(page, label(moving), label(top), {
+    move: (point) => cap.moveTo(point, { steps: 6 }),
+    pause: (ms) => cap.hold(ms),
+  });
   await expect.poll(async () => (await legendRowValues(page))[0]).toBe(moving);
   await expect(legendSortButton(page)).toHaveAccessibleName(/^Sort: Your order/);
   await cap.hold(1500);
@@ -162,6 +139,8 @@ async function othersSteps(page: Page, cap: CaptureApi): Promise<void> {
     exact: true,
   });
   await expect(add).toBeVisible();
+  // The popover re-centres as the list shrinks: bring the pointer back to the search box.
+  await cap.moveTo(search, { steps: 8 });
   await cap.hold(1000);
 
   await cap.moveTo(add, { steps: 10 });
@@ -207,7 +186,7 @@ export const LEGEND_CAPTURES: CaptureEntry[] = [
     steps: async (page) => {
       await openLegendSettings(page);
     },
-    target: (page) => around([legend(page), legendSettingsDialog(page)]),
+    target: (page) => around([legendSettingsDialog(page)], 4),
     docs: ['explore/legend.md'],
   },
   {
