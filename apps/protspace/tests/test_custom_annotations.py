@@ -82,6 +82,14 @@ class TestSplitAnnotationArgs:
         with pytest.raises(ValueError, match=r"\.csv, \.tsv or \.txt"):
             split_annotation_args([str(xlsx)])
 
+    def test_a_comma_in_a_file_name_does_not_split_it(self, tmp_path):
+        csv = tmp_path / "labels, v2.csv"
+        csv.write_text("identifier,x\nP1,a\n")
+        assert split_annotation_args([str(csv)]) == ([], [csv])
+        # A value that names no file is still a comma-separated list.
+        names, files = split_annotation_args([f"default,{tmp_path / 'b.csv'}"])
+        assert names == ["default"] and [f.name for f in files] == ["b.csv"]
+
 
 def test_the_guide_lists_the_accepted_suffixes():
     section = GUIDE.read_text().split("### Custom annotation files")[1]
@@ -311,6 +319,39 @@ class TestPrepare:
         )
         assert result.exit_code == 1
         assert "family" in plain(result.output)
+
+    def test_a_comma_in_a_file_name_reaches_the_bundle(self, tmp_path, monkeypatch):
+        _forbid_uniprot(monkeypatch)
+        csv = _write(tmp_path / "labels, v2.csv", "identifier,family\nP1,a\n")
+        out = tmp_path / "out"
+        result = _invoke(
+            "prepare", "-i", f"{_h5(tmp_path)}:E", "-a", csv, "--no-log", "-o", out
+        )
+        assert result.exit_code == 0, result.output
+        frame = _bundle_annotations(out / "data.parquetbundle")
+        assert frame.loc["P1", "family"] == "a"
+
+    def test_a_missing_file_fails_before_anything_is_embedded(
+        self, tmp_path, monkeypatch
+    ):
+        def fail(*_args, **_kwargs):
+            raise AssertionError("nothing must be embedded")
+
+        monkeypatch.setattr("protspace.cli.prepare._embed_all", fail)
+        fasta = tmp_path / "seqs.fasta"
+        fasta.write_text(">P1\nMKV\n")
+        result = _invoke(
+            "prepare",
+            "-i",
+            fasta,
+            "-a",
+            tmp_path / "typo.csv",
+            "--no-log",
+            "-o",
+            tmp_path / "out",
+        )
+        assert result.exit_code == 2
+        assert "typo.csv" in plain(result.output)
 
 
 class TestAnnotate:

@@ -40,6 +40,22 @@ def is_custom_annotation_file(item: str | Path) -> bool:
     return Path(item).suffix.lower() in CUSTOM_ANNOTATION_SUFFIXES
 
 
+def flatten_annotation_args(items: Iterable[str]) -> list[str]:
+    """Repeatable, comma-separated ``-a`` values as one flat list.
+
+    A value naming an existing custom file is kept whole, so a file name holding a comma
+    (``labels, v2.csv``) is not split in two.
+    """
+    parts: list[str] = []
+    for item in items:
+        item = item.strip()
+        if is_custom_annotation_file(item) and Path(item).is_file():
+            parts.append(item)
+        else:
+            parts.extend(p.strip() for p in item.split(",") if p.strip())
+    return parts
+
+
 def split_annotation_args(items: Iterable[str]) -> tuple[list[str], list[Path]]:
     """Split repeatable, comma-separated ``-a`` values into source names and files.
 
@@ -48,20 +64,16 @@ def split_annotation_args(items: Iterable[str]) -> tuple[list[str], list[Path]]:
     """
     names: list[str] = []
     files: list[Path] = []
-    for item in items:
-        for part in item.split(","):
-            part = part.strip()
-            if not part:
-                continue
-            if is_custom_annotation_file(part):
-                files.append(Path(part))
-            elif Path(part).suffix and Path(part).is_file():
-                raise ValueError(
-                    f"{part}: custom annotations are read from .csv, .tsv or .txt "
-                    "files (comma, tab or semicolon separated)."
-                )
-            else:
-                names.append(part)
+    for part in flatten_annotation_args(items):
+        if is_custom_annotation_file(part):
+            files.append(Path(part))
+        elif Path(part).suffix and Path(part).is_file():
+            raise ValueError(
+                f"{part}: custom annotations are read from .csv, .tsv or .txt "
+                "files (comma, tab or semicolon separated)."
+            )
+        else:
+            names.append(part)
     return names, files
 
 

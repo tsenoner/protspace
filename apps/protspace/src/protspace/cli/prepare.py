@@ -372,6 +372,24 @@ def prepare(
             logger.error(f"No cache at {cache_path}.")
         return
 
+    # --- Parse annotations (repeatable option → flat list) ---
+    # Before embedding, so a mistyped file name fails now, not after the embeddings.
+    from protspace.data.processors.custom_annotations import (
+        flatten_annotation_args,
+        split_annotation_args,
+    )
+
+    annotation_list = flatten_annotation_args(annotations or ["default"])
+    try:
+        _, annotation_files = split_annotation_args(annotation_list)
+    except ValueError as e:
+        raise typer.BadParameter(str(e), param_hint="'-a/--annotations'") from e
+    missing = [str(p) for p in annotation_files if not p.is_file()]
+    if missing:
+        raise typer.BadParameter(
+            f"No such file: {', '.join(missing)}", param_hint="'-a/--annotations'"
+        )
+
     # --- Build embedding sets ---
     from protspace.data.loaders import EmbeddingSet, load_h5
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
@@ -472,15 +490,6 @@ def prepare(
                     force_refetch="similarity" in refetch_stages,
                 )
             )
-
-        # --- Parse annotations (repeatable option → flat list) ---
-        raw = annotations if annotations else ["default"]
-        annotation_list = []
-        for item in raw:
-            for part in item.split(","):
-                part = part.strip()
-                if part:
-                    annotation_list.append(part)
 
         # --- Run pipeline ---
         from protspace.data.processors.pipeline import (
