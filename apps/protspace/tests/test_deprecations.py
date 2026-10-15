@@ -277,6 +277,75 @@ def test_project_with_a_3d_method_warns_and_still_writes_it(tmp_path):
     assert metadata.column("dimensions").to_pylist() == [2, 3]
 
 
+class _Records(logging.Handler):
+    """Records on the pipeline logger itself: `setup_logging` clears the root
+    handlers, caplog's among them, when the command starts."""
+
+    def __init__(self):
+        super().__init__(logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record):
+        self.messages.append(record.getMessage())
+
+
+@pytest.fixture
+def pipeline_warnings():
+    handler = _Records()
+    logger = logging.getLogger(PIPELINE_LOGGER)
+    logger.addHandler(handler)
+    yield handler.messages
+    logger.removeHandler(handler)
+
+
+def _prepare_fasta(tmp_path, monkeypatch, method: str, warnings: list[str]):
+    """`prepare -i <FASTA> -m <method>` with the embedder replaced: it records the
+    warnings logged by the time embedding starts, then stops the run."""
+    at_embedding: list[list[str]] = []
+
+    def embed(*_args, **_kwargs):
+        at_embedding.append(list(warnings))
+        raise typer.Exit(3)
+
+    monkeypatch.setattr("protspace.cli.prepare._embed_all", embed)
+    fasta = tmp_path / "seqs.fasta"
+    fasta.write_text(">P1\nMKV\n")
+    result = CliRunner().invoke(
+        app,
+        ["prepare", "-i", str(fasta), "-m", method, "--no-log"]
+        + ["-o", str(tmp_path / "out")],
+        env={"COLUMNS": "200"},
+    )
+    return result, at_embedding
+
+
+def test_prepare_warns_about_a_3d_method_before_embedding_a_fasta(
+    tmp_path, monkeypatch, pipeline_warnings
+):
+    result, at_embedding = _prepare_fasta(
+        tmp_path, monkeypatch, "umap3", pipeline_warnings
+    )
+
+    assert result.exit_code == 3, result.output  # stopped by the stand-in embedder
+    [before] = at_embedding
+    [warning] = [m for m in before if "deprecated" in m]
+    assert warning.startswith("3-D projections are deprecated")
+    assert warning.endswith("Requested 3-D methods: umap3.")
+    assert pipeline_warnings == before  # and not warned again after
+
+
+def test_prepare_refuses_a_malformed_method_before_embedding(
+    tmp_path, monkeypatch, pipeline_warnings
+):
+    result, at_embedding = _prepare_fasta(
+        tmp_path, monkeypatch, "umap2:bogus=5", pipeline_warnings
+    )
+
+    assert at_embedding == []  # nothing embedded
+    assert result.exit_code == 2
+    assert "Unknown parameter 'bogus'" in result.output
+
+
 # --------------------------------------------------------------------------- #
 # protspace serve
 # --------------------------------------------------------------------------- #

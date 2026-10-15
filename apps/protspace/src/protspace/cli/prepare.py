@@ -405,6 +405,16 @@ def prepare(
             f"No such file: {', '.join(missing)}", param_hint="'-a/--annotations'"
         )
 
+    # --- Parse methods ---
+    # Before embedding too: a FASTA or -q input is embedded first, so a malformed
+    # -m spec, and the 3-D deprecation warning, would otherwise come only after it.
+    from protspace.data.processors.pipeline import parse_methods_arg
+
+    try:
+        method_specs = parse_methods_arg(methods or ["pca2"])
+    except ValueError as e:
+        raise typer.BadParameter(str(e), param_hint="'-m/--methods'") from e
+
     # --- Build embedding sets ---
     from protspace.data.loaders import EmbeddingSet, load_h5, resolve_input_names
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
@@ -512,10 +522,7 @@ def prepare(
             PipelineConfig,
             ReducerParams,
             ReductionPipeline,
-            parse_methods_arg,
         )
-
-        method_specs = parse_methods_arg(methods or ["pca2"])
 
         reducer_params = ReducerParams(
             metric=metric.value,

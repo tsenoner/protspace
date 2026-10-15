@@ -138,7 +138,12 @@ def parse_method_spec(method_spec: str) -> MethodSpec:
         base, params_str = method_spec, ""
 
     method = "".join(filter(str.isalpha, base))
-    dims = int("".join(filter(str.isdigit, base)))
+    digits = "".join(filter(str.isdigit, base))
+    if not digits:
+        raise ValueError(
+            f"Method '{method_spec}' needs a dimension suffix, e.g. '{method}2'."
+        )
+    dims = int(digits)
 
     overrides = {}
     if params_str:

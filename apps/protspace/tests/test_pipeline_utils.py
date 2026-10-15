@@ -53,7 +53,7 @@ class TestParseMethodSpec:
         assert (spec.method, spec.dims, spec.overrides) == (method, dims, ())
 
     def test_invalid_no_digits(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="needs a dimension suffix, e.g. 'pca2'"):
             parse_method_spec("pca")
 
 
