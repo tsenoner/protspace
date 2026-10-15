@@ -29,6 +29,8 @@ export interface ImageRef {
   line: number;
   /** A raw `<img>` whose inline `style` sets `display`, which beats the light/dark head rule. */
   inlineDisplay?: true;
+  /** A raw `<img>` with a `width` and no `height`: it has no box until it loads. */
+  heightless?: true;
 }
 
 /** One file the capture manifest writes, and the pages that must show it. */
@@ -144,6 +146,9 @@ export function imageRefs(page: DocsPage): ImageRef[] {
       const lazy = attribute(match[0], 'loading') === 'lazy';
       const ref: ImageRef = { page: page.path, file, classes, lazy, line: index + 1 };
       if (/(^|;)\s*display\s*:/i.test(attribute(match[0], 'style') ?? '')) ref.inlineDisplay = true;
+      if (attribute(match[0], 'width') !== null && attribute(match[0], 'height') === null) {
+        ref.heightless = true;
+      }
       found.push({ at: match.index ?? 0, ref });
     }
     found.sort((a, b) => a.at - b.at).forEach(({ ref }) => refs.push(ref));
@@ -300,6 +305,11 @@ function imageProblems(pages: readonly DocsPage[], files: readonly ImageFile[]):
       shown.add(ref.file);
       if (!onDisk.has(ref.file))
         problems.push(`${page.path}:${ref.line}: ${ref.file} does not exist`);
+      if (ref.heightless) {
+        problems.push(
+          `${page.path}:${ref.line}: ${ref.file} sets a width but no height; give both, or the page shifts as it loads`,
+        );
+      }
     }
     for (let i = 0; i < refs.length; i++) {
       const ref = refs[i];
@@ -359,7 +369,8 @@ function imageProblems(pages: readonly DocsPage[], files: readonly ImageFile[]):
 
 /**
  * The checks that need only the pages and the image files: refs to missing files, orphans, the
- * light/dark pair rules, `#anchor` links, and names of removed UI in the user guide.
+ * light/dark pair rules, raw images with a width but no height, `#anchor` links, and names of
+ * removed UI in the user guide.
  */
 export function lintDocs(pages: readonly DocsPage[], files: readonly ImageFile[]): string[] {
   return [...imageProblems(pages, files), ...anchorProblems(pages), ...staleProblems(pages)];

@@ -18,7 +18,6 @@ import {
   type ImageRef,
   type MediaOutput,
 } from '../../../../scripts/docs-screenshots/docs-lint';
-import * as docsLint from '../../../../scripts/docs-screenshots/docs-lint';
 
 /**
  * Pins the docs media pipeline's pure rules (scripts/docs-screenshots/capture-plan.ts): how an
@@ -384,6 +383,23 @@ describe('docs lint: light and dark pairs', () => {
   });
 });
 
+describe('docs lint: image size', () => {
+  it('fails a raw image with a width but no height, which shifts the page as it loads', () => {
+    const page = lintPage('explore/a.md', '<img src="./images/a.png" alt="A" width="240" />');
+    expect(lintDocs([page], onDisk('a.png'))).toEqual([
+      'explore/a.md:1: a.png sets a width but no height; give both, or the page shifts as it loads',
+    ]);
+  });
+
+  it('passes a raw image with both, or with neither', () => {
+    const both = '<img src="./images/a.png" alt="A" width="240" height="480" />';
+    const neither = '<img src="./images/b.png" alt="B" />';
+    expect(lintDocs([lintPage('explore/a.md', both, neither)], onDisk('a.png', 'b.png'))).toEqual(
+      [],
+    );
+  });
+});
+
 describe('docs lint: files', () => {
   it('fails a file no page shows', () => {
     expect(lintDocs([], onDisk('a.png'))).toEqual([
@@ -543,13 +559,12 @@ describe('docs lint: the real docs', () => {
 });
 
 describe('docs lint: no allowlist left', () => {
-  it('exports only the checks: every image comes from the manifest, every page is current', () => {
-    expect(Object.keys(docsLint).sort()).toEqual([
-      'headingSlug',
-      'imageRefs',
-      'lintDocs',
-      'lintManifest',
-      'pageAnchors',
+  it('flags removed UI on every user-guide page and every unmade image', () => {
+    for (const path of ['explore/figure-editor.md', 'explore/importing-data.md', 'guide/faq.md']) {
+      expect(lintDocs([lintPage(path, 'Use the control bar.')], [])).toHaveLength(1);
+    }
+    expect(lintManifest([], [{ file: 'eat-connectors.gif' }], [])).toEqual([
+      expect.stringMatching(/^eat-connectors\.gif: no manifest entry makes it/),
     ]);
   });
 });

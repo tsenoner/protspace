@@ -69,8 +69,8 @@ The rail on the sidebar's right edge switches between its three panels and folds
 
 ### Legend
 
-<img src="./images/legend-panel.png" class="light-only" alt="The legend: the colour-by annotation in its header with the sort and settings buttons, and one row per category with its count" width="300" />
-<img src="./images/legend-panel-dark.png" class="dark-only" alt="The legend: the colour-by annotation in its header with the sort and settings buttons, and one row per category with its count" width="300" loading="lazy" />
+<img src="./images/legend-panel.png" class="light-only" alt="The legend: the colour-by annotation in its header with the sort and settings buttons, and one row per category with its count" width="300" height="586" />
+<img src="./images/legend-panel-dark.png" class="dark-only" alt="The legend: the colour-by annotation in its header with the sort and settings buttons, and one row per category with its count" width="300" height="586" loading="lazy" />
 
 - Click a row to hide or show its category; double-click it to show only that one.
 - Drag a row by its handle to reorder; higher rows are drawn on top in the plot.
@@ -84,8 +84,8 @@ The rail on the sidebar's right edge switches between its three panels and folds
 
 Selecting a protein loads its AlphaFold structure under the legend. A row of links under its title opens the protein's [AlphaFold Database](https://alphafold.ebi.ac.uk/), [UniProt](https://www.uniprot.org/), [InterPro](https://www.interpro.org/) and [TED](https://ted.cathdb.info/) entries in new tabs. Drag the divider above it to share the height with the legend, or pop the structure out to float over the plot.
 
-<img src="./images/structure-viewer.png" class="light-only" alt="The structure panel: the protein's name and links, the pLDDT-coloured AlphaFold model, and its colour control" width="300" />
-<img src="./images/structure-viewer-dark.png" class="dark-only" alt="The structure panel: the protein's name and links, the pLDDT-coloured AlphaFold model, and its colour control" width="300" loading="lazy" />
+<img src="./images/structure-viewer.png" class="light-only" alt="The structure panel: the protein's name and links, the pLDDT-coloured AlphaFold model, and its colour control" width="300" height="310" />
+<img src="./images/structure-viewer-dark.png" class="dark-only" alt="The structure panel: the protein's name and links, the pLDDT-coloured AlphaFold model, and its colour control" width="300" height="310" loading="lazy" />
 
 [Viewing 3D Structures](/explore/structures) has the details.
 
