@@ -442,3 +442,22 @@ class TestBundle:
         frame = _bundle_annotations(bundle)
         assert frame.loc[headers[1], "grp"] == "b"
         assert any(c.startswith("cluster_elbow_") for c in frame.columns)
+
+
+class TestProject:
+    @pytest.mark.parametrize("option", [["-a", "labels.csv"], ["--stats"]])
+    def test_annotation_and_stats_options_point_elsewhere(self, tmp_path, option):
+        result = _invoke(
+            "project", "-i", f"{_h5(tmp_path)}:E", *option, "-o", tmp_path / "proj"
+        )
+        assert result.exit_code == 2
+        message = plain(result.output)
+        assert "protspace prepare" in message
+        assert "protspace bundle" in message
+        assert not (tmp_path / "proj").exists()
+
+    def test_help_names_prepare_and_hides_the_options(self):
+        result = _invoke("project", "--help")
+        assert "prepare" in plain(result.output)
+        assert "--annotations" not in result.output
+        assert "--stats" not in result.output

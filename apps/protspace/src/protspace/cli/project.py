@@ -28,6 +28,15 @@ from protspace.cli.common_options import (
 
 logger = logging.getLogger(__name__)
 
+# What `project` says to a v4.4-era `-a annotations.csv` or a `--stats`: it never
+# took either, and the commands that do are one hop away.
+_NOT_HERE = (
+    "project only computes projections. For a bundle in one step use "
+    "`protspace prepare -i emb.h5 -a annotations.csv -m umap2 --stats -o out`; "
+    "step by step, add annotations with `protspace annotate` or "
+    "`protspace bundle -a annotations.csv`, and statistics with `protspace stats`."
+)
+
 
 @app.command(rich_help_panel=PANEL_STAGES)
 def project(
@@ -73,14 +82,25 @@ def project(
     n_init: Opt_NInit = 4,
     max_iter: Opt_MaxIter = 300,
     eps: Opt_Eps = 1e-3,
+    annotations: Annotated[
+        list[str] | None,
+        typer.Option("-a", "--annotations", hidden=True),
+    ] = None,
+    stats: Annotated[bool, typer.Option("--stats", hidden=True)] = False,
     verbose: Opt_Verbose = 0,
 ) -> None:
     """Embeddings → 2D projections (UMAP, t-SNE, PCA, …).
 
     \b
     Outputs projections_metadata.parquet and projections_data.parquet
-    to the output directory.
+    to the output directory. For annotations and statistics in the same
+    run, use `protspace prepare`.
     """
+    if annotations:
+        raise typer.BadParameter(_NOT_HERE, param_hint="'-a/--annotations'")
+    if stats:
+        raise typer.BadParameter(_NOT_HERE, param_hint="'--stats'")
+
     setup_logging(verbose)
 
     # Both similarity preconditions are pure argument checks, so they run
