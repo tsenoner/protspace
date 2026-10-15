@@ -10,6 +10,9 @@ import {
   type LayoutState,
 } from '../../src/explore/layout-defaults';
 
+/** The workbench's root element, which carries the layout's data attributes. */
+export const workbenchRoot = (page: Page): Locator => workbenchRoot(page);
+
 /** The structure section of the sidebar: the docked viewer, or its empty footer. */
 export function structurePanel(page: Page): Locator {
   return page.locator('[data-workbench="structure"]');
@@ -18,13 +21,13 @@ export function structurePanel(page: Page): Locator {
 /** Pops the structure out of the sidebar into its floating card over the plot. */
 export async function floatStructure(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Pop out structure' }).click();
-  await expect(page.locator('.workbench')).toHaveAttribute('data-structure', 'floating');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'floating');
 }
 
 /** Docks the floating structure card under the legend again. */
 export async function dockStructure(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Dock structure' }).click();
-  await expect(page.locator('.workbench')).toHaveAttribute('data-structure', 'docked');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'docked');
 }
 
 /** Drags the divider between the legend and the structure by `dy` pixels and releases it. */
@@ -140,13 +143,13 @@ export function rail(page: Page): Locator {
 /** Collapses the sidebar from the rail and waits until its slide has ended. */
 export async function collapseSidebar(page: Page): Promise<void> {
   await rail(page).getByRole('button', { name: 'Collapse sidebar' }).click();
-  await expect(page.locator('.workbench')).toHaveAttribute('data-sidebar', 'collapsed');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'collapsed');
 }
 
 /** Expands the sidebar from the rail and waits until it is open and the plot has narrowed. */
 export async function expandSidebar(page: Page): Promise<void> {
   await rail(page).getByRole('button', { name: 'Expand sidebar' }).click();
-  await expect(page.locator('.workbench')).toHaveAttribute('data-sidebar', 'open');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'open');
 }
 
 /** Drags the sidebar's left edge by `dx` pixels (negative widens the sidebar) and releases it. */

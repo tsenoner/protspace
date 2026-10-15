@@ -294,7 +294,7 @@ export const importMenu = (page: Page): Locator => page.locator('#myImportMenu')
 export const exportMenu = (page: Page): Locator => page.locator('#myExportMenu');
 
 /** The Import panel: a dialog named "Import" that the Import button and the dataset name open. */
-const importPanel = (page: Page): Locator =>
+export const importPanel = (page: Page): Locator =>
   importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
 
 /**

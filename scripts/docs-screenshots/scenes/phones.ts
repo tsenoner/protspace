@@ -19,8 +19,7 @@ import {
   waitForStructureLoaded,
   watchStructureLoads,
 } from '../../../apps/web/tests/helpers/structure';
-
-const workbench = (page: Page) => page.locator('.workbench');
+import { workbenchRoot } from '../../../apps/web/tests/helpers/workbench';
 
 /** The panel under the plot shows the legend, unfolded, with its rows. */
 async function phoneLayoutSteps(page: Page): Promise<void> {
@@ -42,7 +41,7 @@ async function structureSheetSteps(page: Page): Promise<void> {
   await watchStructureLoads(page);
   const protein = await proteinNear(page, 0.5, 0.35);
   await tap(page, protein);
-  await expect(workbench(page)).toHaveAttribute('data-sheet', 'folded');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sheet', 'folded');
   await expect(plotTooltip(page).getByRole('button', { name: 'View structure' })).toBeVisible();
   await waitForStructureLoaded(page, protein.id, 90_000);
 }

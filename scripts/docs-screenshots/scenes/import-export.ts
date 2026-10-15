@@ -9,7 +9,7 @@ import { findExampleDataset } from '../../../apps/web/src/explore/example-datase
 import {
   exportAction,
   holdNextRequest,
-  importMenu,
+  importPanel,
   pickExample,
   toast,
 } from '../../../apps/web/tests/helpers/explore';
@@ -41,7 +41,7 @@ async function loadingOverlaySteps(page: Page): Promise<void> {
   // Held until the page closes, so the card stays on its first frame for the shutter.
   await holdNextRequest(page, `**/${example.url.replace(/^\.\//, '')}`);
   await pickExample(page, LOADING_EXAMPLE);
-  await expect(importMenu(page).locator('[data-driver-id="import-own-dataset"]')).toBeHidden();
+  await expect(importPanel(page)).toBeHidden();
   const overlay = page.locator('#progressive-loading');
   await expect(overlay).toBeVisible();
   await expect(overlay.getByRole('button', { name: 'Cancel download' })).toBeVisible();
