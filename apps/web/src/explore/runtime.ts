@@ -721,7 +721,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       lifecycle.scheduleTimeout(() => {
         const kind = firstVisitTour();
         // driver.js and its CSS load only when a tour runs, so they stay out of the explore chunk.
-        if (kind) void import('../tour/product-tour').then((tour) => tour.startTour(kind));
+        // The first load is slow: Explore may be gone by the time it resolves.
+        if (kind)
+          void import('../tour/product-tour').then((tour) => {
+            if (!lifecycle.isDisposed()) tour.startTour(kind);
+          });
       }, 800);
     },
     { once: true },
