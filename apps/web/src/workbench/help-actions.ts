@@ -11,6 +11,6 @@ export function openDocumentation(): void {
 }
 
 /** Starts the full product tour from its first step; its code loads on first use. */
-export function startTour(): void {
+export function takeTheTour(): void {
   void import('../tour/product-tour').then((tour) => tour.startTour('full', { force: true }));
 }

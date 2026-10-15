@@ -27,7 +27,7 @@ import { FEEDBACK_HREF } from '@/lib/support';
 import { focusFilterTitle, openPanel } from '../explore/layout-state';
 import { THEME_CHOICES, THEME_LABELS, type ThemeChoice } from '../explore/theme-defaults';
 import { setTheme } from '../explore/theme-state';
-import { openDocumentation, startTour } from './help-actions';
+import { openDocumentation, takeTheTour } from './help-actions';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { useTheme } from './use-theme';
 import { useWorkbenchStatus } from './use-workbench-status';
@@ -214,7 +214,7 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
             <button
               type="button"
               className="wb-sheet-row wb-sheet-subrow"
-              onClick={closeThen(startTour)}
+              onClick={closeThen(takeTheTour)}
             >
               <span className="wb-sheet-label">Take the tour</span>
             </button>

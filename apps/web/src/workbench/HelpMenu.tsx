@@ -1,7 +1,7 @@
 import type { PsMenu } from '@protspace/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { openDocumentation, startTour } from './help-actions';
+import { openDocumentation, takeTheTour } from './help-actions';
 import { ShortcutsDialog } from './ShortcutsDialog';
 
 /**
@@ -25,7 +25,7 @@ export function HelpMenu() {
       // ps-menu has closed and refocused Help before it dispatches the pick, so the dialog
       // records Help as the element to return focus to.
       if (value === 'shortcuts') setShortcutsOpen(true);
-      if (value === 'tour') startTour();
+      if (value === 'tour') takeTheTour();
     };
     element.addEventListener('ps-select', onSelect);
     return () => element.removeEventListener('ps-select', onSelect);
