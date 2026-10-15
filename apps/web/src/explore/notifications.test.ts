@@ -17,6 +17,7 @@ import {
   getExportSuccessNotification,
   getLegendErrorNotification,
   getRendererDegradedNotification,
+  getThreeDProjectionNotification,
   getSelectionDisabledNotification,
 } from './notifications';
 import { TEST_EXAMPLE } from './example-catalog.fixtures';
@@ -292,5 +293,23 @@ describe('getRendererDegradedNotification', () => {
 
     expect(n.title).toBe('Rendering quality reduced.');
     expect(n.dedupeKey).toBe('renderer-degraded:gamma-pipeline-unavailable');
+  });
+});
+
+describe('getThreeDProjectionNotification', () => {
+  it('names the 3-D projections, the X/Y view, 5.0.0 and convert --flatten-3d', () => {
+    const n = getThreeDProjectionNotification(['UMAP 3']);
+
+    expect(n.title).toBe('This file has 3-D projections.');
+    expect(n.description).toMatch(/^UMAP 3 is shown as their X\/Y view\./);
+    expect(n.description).toContain('Reading 3-D projections ends in ProtSpace 5.0.0.');
+    expect(n.description).toContain('"protspace convert --flatten-3d"');
+    expect(n.dedupeKey).toBe('three-d-projections');
+  });
+
+  it('lists up to three names and counts the rest', () => {
+    const n = getThreeDProjectionNotification(['A 3', 'B 3', 'C 3', 'D 3', 'E 3']);
+
+    expect(n.description).toMatch(/^A 3, B 3, C 3 and 2 more are shown as their X\/Y view\./);
   });
 });
