@@ -141,6 +141,7 @@ describe('dataset controller legend persistence lifecycle', () => {
     const legendElement = {
       clearForNewDataset: vi.fn(),
       setFileSettings: vi.fn(),
+      applyShapeSize: vi.fn(),
       applyEatSettings: vi.fn(),
     };
     const options = buildControllerOptions({
@@ -153,7 +154,7 @@ describe('dataset controller legend persistence lifecycle', () => {
     options.viewController.getLatestViewRequest.mockImplementation(() => latestViewRequest);
     const { controlBar, viewController } = options;
     const controller = createDatasetController(options);
-    const settings = { legendSettings: {}, exportOptions: {} };
+    const settings = { legendSettings: {}, exportOptions: {}, shapeSize: 12 };
 
     // Startup: the demo or an example opened by a reload or a projection link.
     await controller.handleDataLoaded(dataLoadedEvent({ settings }));
@@ -161,6 +162,7 @@ describe('dataset controller legend persistence lifecycle', () => {
     expect(legendElement.clearForNewDataset).toHaveBeenLastCalledWith(expect.any(String), false);
     expect(controlBar.clearForNewDataset).toHaveBeenLastCalledWith(expect.any(String), false);
     expect(legendElement.setFileSettings).toHaveBeenLastCalledWith({}, expect.any(String), false);
+    expect(legendElement.applyShapeSize).toHaveBeenLastCalledWith(12, expect.any(String), false);
 
     // A user import while the URL still carries the previous dataset's tooltip.
     runningLoadMeta = { sequence: 2, kind: 'user' };
@@ -185,6 +187,7 @@ describe('dataset controller legend persistence lifecycle', () => {
     expect(legendElement.clearForNewDataset).toHaveBeenLastCalledWith(expect.any(String), true);
     expect(controlBar.clearForNewDataset).toHaveBeenLastCalledWith(expect.any(String), true);
     expect(legendElement.setFileSettings).toHaveBeenLastCalledWith({}, expect.any(String), true);
+    expect(legendElement.applyShapeSize).toHaveBeenLastCalledWith(12, expect.any(String), true);
   });
 
   it('restores the saved tooltip fields on an automatic load when the URL is silent', async () => {

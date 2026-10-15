@@ -21,6 +21,12 @@ browser reload causes a fresh controller to load the same default dataset automa
 - **WHEN** a user saves a non-default Shape size, changes projection, and reloads the explore page
 - **THEN** the Shape size and its effective rendered point size match the saved setting
 
+#### Scenario: A bundle's shape size does not replace a saved one on startup
+
+- **WHEN** a user saves a Shape size for a dataset whose bundle carries a top-level `shapeSize`, and
+  the dataset loads again automatically in a fresh explore controller
+- **THEN** the saved Shape size applies, not the bundle's
+
 #### Scenario: Silent URL restores saved tooltip selection
 
 - **WHEN** a fresh automatic load has a saved tooltip-annotation selection and the URL does not

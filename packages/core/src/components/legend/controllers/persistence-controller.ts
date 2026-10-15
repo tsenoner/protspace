@@ -130,9 +130,9 @@ export class PersistenceController
   }
 
   /** The dataset's picked size, or a bundle's top-level size. */
-  loadShapeSize(): number | null {
-    if (!this._datasetHash) return null;
-    return readShapeSize(buildStorageKey(SHAPE_SIZE_KEY, this._datasetHash));
+  loadShapeSize(datasetHash: string = this._datasetHash): number | null {
+    if (!datasetHash) return null;
+    return readShapeSize(buildStorageKey(SHAPE_SIZE_KEY, datasetHash));
   }
 
   saveShapeSize(size: number, datasetHash: string = this._datasetHash): void {

@@ -1270,9 +1270,11 @@ export class ProtspaceLegend extends LitElement {
 
   /**
    * Apply a bundle's dataset-level shape size. `datasetHash` is for when the
-   * component's own hash is not computed from the new data yet.
+   * component's own hash is not computed from the new data yet. With
+   * `replaceExisting` false, a size already stored for the dataset is kept.
    */
-  public applyShapeSize(shapeSize: number, datasetHash?: string): void {
+  public applyShapeSize(shapeSize: number, datasetHash?: string, replaceExisting = true): void {
+    if (!replaceExisting && this._persistenceController.loadShapeSize(datasetHash) !== null) return;
     const size = Math.min(shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
     this._persistenceController.saveShapeSize(size, datasetHash);
     this.shapeSize = size;

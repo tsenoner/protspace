@@ -43,7 +43,7 @@ type ShapeSizeLegend = HTMLElement & {
   data: { annotations: Record<string, { values: string[] }> } | null;
   getAllPersistedSettings: () => Record<string, { shapeSize: number }>;
   setFileSettings: (settings: LegendSettingsMap | null, datasetHash?: string) => void;
-  applyShapeSize: (size: number, datasetHash?: string) => void;
+  applyShapeSize: (size: number, datasetHash?: string, replaceExisting?: boolean) => void;
   readonly pickedShapeSize: number | undefined;
 };
 
@@ -164,6 +164,24 @@ describe('legend shape size', () => {
     expect(el.shapeSize).toBe(64);
     expect(pointSizes.at(-1)).toBe(512);
     expect(el.pickedShapeSize).toBe(64);
+  });
+
+  it('keeps a picked size over a bundle size that is not to replace it', () => {
+    const { el, hash, pointSizes, switchTo, pick, storedPick } = makeLegend();
+    switchTo('a');
+    pick(12);
+    el.applyShapeSize(20, hash, false);
+    expect(el.shapeSize).toBe(12);
+    expect(pointSizes.at(-1)).toBe(96);
+    expect(storedPick()).toBe('12');
+  });
+
+  it('applies a bundle size that is not to replace one when none is picked', () => {
+    const { el, hash, switchTo } = makeLegend();
+    switchTo('a');
+    el.applyShapeSize(20, hash, false);
+    expect(el.shapeSize).toBe(20);
+    expect(el.pickedShapeSize).toBe(20);
   });
 
   it('caps a stored size at 64', () => {

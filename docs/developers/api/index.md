@@ -189,12 +189,14 @@ Category filtering and color mapping with automatic settings persistence.
 
 ### Methods
 
-| Member                               | Returns               | Description                                                                          |
-| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------ |
-| `applyShapeSize(size, datasetHash?)` | `void`                | Apply a dataset-wide shape size, e.g. a bundle's top-level `shapeSize`, and store it |
-| `pickedShapeSize` (getter)           | `number \| undefined` | The dataset-wide shape size, or `undefined` while none was picked or applied         |
+| Member                                                 | Returns               | Description                                                                          |
+| ------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------ |
+| `applyShapeSize(size, datasetHash?, replaceExisting?)` | `void`                | Apply a dataset-wide shape size, e.g. a bundle's top-level `shapeSize`, and store it |
+| `pickedShapeSize` (getter)                             | `number \| undefined` | The dataset-wide shape size, or `undefined` while none was picked or applied         |
 
 Pass `datasetHash` to `applyShapeSize` when the legend has not computed the new dataset's hash yet.
+Pass `false` as `replaceExisting` to keep a size already stored for the dataset, as the explore view
+does when it reopens the same example on startup.
 A size above 64 is applied and stored as 64. Write `pickedShapeSize`, not `shapeSize`, into a bundle's top-level `shapeSize`: the live
 `shapeSize` may only be seeded from the current annotation, or be the default computed from the
 dataset's protein count, `clamp(round(10 · (10000 / N)^⅔), 1, 10)`, which is never stored or

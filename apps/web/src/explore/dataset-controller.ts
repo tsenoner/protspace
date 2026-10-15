@@ -439,7 +439,7 @@ export function createDatasetController({
           shouldClearPersistedState,
         );
         if (settings.shapeSize !== undefined) {
-          legendElement.applyShapeSize(settings.shapeSize, datasetHash);
+          legendElement.applyShapeSize(settings.shapeSize, datasetHash, shouldClearPersistedState);
         }
       }
       if (settings) {
