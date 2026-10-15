@@ -368,6 +368,8 @@ deprecated alongside legacy read support.
    and unit fixtures stay v1/v2 until 5.0.0 removes the reader they test.
 4. In 5.0.0, remove the legacy readers, `extractRowsFromParquetBundle` and the notice, and make
    `protspace convert` point to the last 4.x release for anyone still holding v1/v2 files.
+   (Revised in issue #544: `convert` keeps its own legacy reader in 5.0 and upgrades v1/v2
+   files, so nobody is stranded.)
 
 Rollback is a revert of the merge. Files written as v3 in the meantime then need a 4.x build that
 reads v3, which is why the reader lands in the same release as the writer.
