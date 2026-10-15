@@ -53,14 +53,16 @@ const outputs: MediaOutput[] = captureVariants(MANIFEST).map(({ entry, file }) =
   docs: entry.docs,
 }));
 
-const problems = [...lintDocs(pages, files), ...lintManifest(outputs, files, pages)];
+const manifestProblems = lintManifest(outputs, files, pages);
+const problems = [...lintDocs(pages, files), ...manifestProblems];
 if (problems.length > 0) {
   console.error(`docs:images:check: ${problems.length} problem(s)`);
   for (const problem of problems) console.error(`  ${problem}`);
-  console.error(
-    'Capture an image with `pnpm docs:screenshots -g "<file>"` or ' +
-      '`pnpm docs:animations -g "<file>" && pnpm docs:gifs <name>`; see docs/explore/images/README.md.',
-  );
+  if (manifestProblems.length > 0)
+    console.error(
+      'Capture an image with `pnpm docs:screenshots -g "<file>"` or ' +
+        '`pnpm docs:animations -g "<file>" && pnpm docs:gifs <name>`; see docs/explore/images/README.md.',
+    );
   process.exit(1);
 }
 console.log(
