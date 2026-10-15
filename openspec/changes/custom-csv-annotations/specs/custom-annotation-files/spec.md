@@ -46,8 +46,7 @@ field under every candidate, the loader SHALL warn that the file has a single co
 
 The id column SHALL be the column named `identifier` or `protein_id` (case-insensitive) in any
 position; otherwise the column named `id` (case-insensitive); otherwise the first column. Two
-columns matching the first rule, or a non-id column named `identifier` or `protein_id`, SHALL be an
-error naming the columns. `stats` and `bundle` SHALL resolve a parquet annotation table's id column
+columns matching the first rule SHALL be an error naming them. `stats` and `bundle` SHALL resolve a parquet annotation table's id column
 with the same rule.
 
 #### Scenario: protein_id is not the first column

@@ -29,8 +29,7 @@ silently ignored on HDF5 input and `--max-length` is rejected there as if it mat
   - The delimiter is sniffed from the header (tab, comma or semicolon), not taken from the
     extension; a file that still parses to one column is warned about.
   - The id column is `identifier` or `protein_id` wherever it sits (case-insensitive), else `id`,
-    else the first column. Two id-named columns are an error, as is a non-id column named
-    `identifier` or `protein_id`.
+    else the first column. Two id-named columns are an error.
   - Cells are read as text: an empty cell stays empty. A UTF-8 byte-order mark and CRLF or lone
     CR line endings are normalised.
   - Several files are merged on the id column; a column that two files both define is an error.

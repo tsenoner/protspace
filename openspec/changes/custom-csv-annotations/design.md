@@ -67,9 +67,10 @@ is a one-column file; it is read, and a warning names the expected delimiters.
 2. Else a column named `id`, case-insensitively.
 3. Else the first column, whatever its header (the rule `prepare` always had).
 
-The chosen column is renamed `identifier`, the pipeline's name for it. Any other column still named
-`identifier` or `protein_id` is an error, because the bundle writer renames `identifier` to
-`protein_id` and would produce a duplicate. The same function resolves a parquet's id column in
+The chosen column is renamed `identifier`, the pipeline's name for it. Rule 1 matching every
+case-insensitive `identifier` and `protein_id` is what keeps a second one out of the table: the
+bundle writer renames `identifier` to `protein_id`, and a leftover `protein_id` column used to make
+that a duplicate-column error. The same function resolves a parquet's id column in
 `stats` and `bundle`, so a table `stats` enriched is one `bundle` accepts.
 
 ### Text in, text out
