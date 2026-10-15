@@ -239,9 +239,9 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
 }
 
 /**
- * Callers hash on every data change, the legend often with a rebuilt wrapper object
- * (`legend.ts`), while the inner arrays keep their identity, so keying on `protein_ids`
- * identity plus the three payload references turns the repeat calls into a lookup. This is only
+ * Callers hash on every data change, the legend's standalone path with a freshly spread
+ * wrapper object (`legend.ts`), while the inner arrays keep their identity, so keying on
+ * `protein_ids` identity plus the three payload references turns the repeat calls into a lookup. This is only
  * sound because no producer mutates a live dataset in place: every transform
  * (`materializeVisualizationData`, `cloneWithPredictions`, the conversion
  * pipeline) hands back fresh containers, which miss the memo and recompute.

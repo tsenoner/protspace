@@ -7,6 +7,7 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import './legend';
+import type { ProtspaceLegend } from './legend';
 import {
   mountLegendWithScatterplot,
   settle,
@@ -613,6 +614,7 @@ describe('legend dataset hash for an EAT dataset', () => {
     const { data, legend, plot } = await setup();
     await settle(legend);
     legend.applyShapeSize(42);
+    expect(legend.pickedShapeSize).toBe(42);
 
     legend.clearForNewDataset(generateDatasetHash(data));
     plot.dispatchEvent(new CustomEvent('data-change', { detail: { data } }));
@@ -620,5 +622,23 @@ describe('legend dataset hash for an EAT dataset', () => {
 
     expect(legend.pickedShapeSize).toBeUndefined();
     expect(legend.shapeSize).toBe(10);
+  });
+});
+
+describe('legend dataset hash without a scatter plot', () => {
+  it('loads the settings stored under the hash of the dataset it is given', async () => {
+    const data = makeData();
+    setStorageItem(buildStorageKey('legend', generateDatasetHash(data), 'ec'), { shapeSize: 42 });
+
+    const legend = document.createElement('protspace-legend') as ProtspaceLegend;
+    legend.autoSync = false;
+    legend.data = data;
+    legend.proteinIds = data.protein_ids;
+    legend.selectedAnnotation = 'ec';
+    legend.annotationData = { name: 'ec', values: data.annotations.ec.values, kind: 'categorical' };
+    document.body.append(legend);
+    await settle(legend);
+
+    expect(legend.shapeSize).toBe(42);
   });
 });
