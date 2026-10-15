@@ -197,6 +197,11 @@
       the legacy reader's test data; `scripts/landing-data` reads v3; `encode_legacy_cell` splits a
       hit at its last pipe
 - [ ] 5.4 Merge the PR with a merge commit, never a squash (it touches `apps/protspace/`)
+- [ ] 5.5 Before archiving, carve `--flatten-3d` out of the `bundle-conversion` requirement
+      "`protspace convert` SHALL leave a v3 input untouched": a v3 input holding 3-D projections is
+      rewritten when `--flatten-3d` is given, as `openspec/specs/deprecation-policy/spec.md` (from
+      `deprecate-3d-and-serve`) requires; without the flag, or with nothing to flatten, it is still
+      left untouched
 
 ## 6. Follow-ups for protspace 5.0.0 (not in this change)
 

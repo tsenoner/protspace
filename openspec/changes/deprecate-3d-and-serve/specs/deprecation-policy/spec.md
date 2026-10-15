@@ -41,6 +41,12 @@ Each Python read of a bundle's projections SHALL log one deprecation warning whe
 - **WHEN** a user runs `protspace transfer` on a bundle holding `UMAP 3`
 - **THEN** one WARNING line names the bundle and `UMAP 3`, says reading 3-D projections ends in protspace 5.0.0, and names `protspace convert --flatten-3d`
 
+#### Scenario: Exporting a 3-D bundle as a table
+
+- **WHEN** a user runs `protspace export` on a bundle holding `UMAP 3` with `-p "UMAP 3"`
+- **THEN** one 3-D deprecation warning names `UMAP 3`
+- **AND** the table holds `UMAP 3_x` and `UMAP 3_y`, its X/Y view, and no `z` column
+
 #### Scenario: A 2-D bundle
 
 - **WHEN** a bundle holding only 2-D projections is read
@@ -70,6 +76,21 @@ With `--flatten-3d`, `protspace convert` SHALL write each 3-D projection as a 2-
 - **WHEN** a user runs `protspace convert in.parquetbundle out.parquetbundle --flatten-3d` on a v3 bundle holding `PCA 2` and `UMAP 3`
 - **THEN** `out.parquetbundle` is v3 with `PCA 2` unchanged and a 2-D `UMAP 3 (X/Y)` whose coordinates are the X and Y of `UMAP 3`
 - **AND** the output names each flattened projection
+
+### Requirement: `--flatten-3d` is the one exception to leaving a v3 input untouched
+
+The `bundle-conversion` capability requires `protspace convert` to leave a v3 input untouched. `--flatten-3d` SHALL be the one exception: a v3 input that holds at least one 3-D projection SHALL be rewritten when the flag is given. A v3 input SHALL still be left untouched, with nothing written, when the flag is absent or the input holds no 3-D projection.
+
+#### Scenario: A v3 bundle with 3-D projections and the flag
+
+- **WHEN** `protspace convert in.parquetbundle --in-place --flatten-3d` runs on a v3 bundle holding `UMAP 3`
+- **THEN** `in.parquetbundle` is rewritten with `UMAP 3 (X/Y)` in place of `UMAP 3`
+
+#### Scenario: A v3 bundle with 3-D projections and no flag
+
+- **WHEN** `protspace convert in.parquetbundle out.parquetbundle` runs without `--flatten-3d` on a v3 bundle holding `UMAP 3`
+- **THEN** the command says the bundle is already current, `in.parquetbundle` is unchanged and `out.parquetbundle` is not created
+- **AND** a warning names `UMAP 3` and `--flatten-3d`
 
 #### Scenario: A v3 bundle with nothing to flatten
 
@@ -113,6 +134,20 @@ When a run of `protspace prepare` or `protspace project` requests one or more me
 
 - **WHEN** a run requests `pca2,umap2`
 - **THEN** no deprecation warning is printed
+
+### Requirement: `protspace prepare` checks its methods before embedding
+
+`protspace prepare` SHALL parse its `-m` methods before any embedding starts, so that for a FASTA or `-q` input the 3-D deprecation warning comes before the embeddings are computed, and a malformed method spec fails as a usage error before any embedding work.
+
+#### Scenario: A FASTA input with a 3-D method
+
+- **WHEN** a user runs `protspace prepare -i seqs.fasta -m umap3`
+- **THEN** the 3-D deprecation warning is printed before the sequences are embedded, and only once
+
+#### Scenario: A malformed method spec with a FASTA input
+
+- **WHEN** a user runs `protspace prepare -i seqs.fasta -m "umap2:bogus=5"`
+- **THEN** the command exits with a usage error naming the unknown parameter, and nothing is embedded
 
 ### Requirement: The help text marks 3-D methods as deprecated
 

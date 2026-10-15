@@ -39,9 +39,9 @@ Alternatives: a TOML/JSON data file (the warnings would need a loader on the hot
 
 ### Warn in `parse_methods_arg`, once per call
 
-Both commands that accept methods, and any script or notebook that parses `-m` strings, go through it, so one call site covers every entry point without touching `prepare.py`'s flow. It logs one warning listing every requested 3-D method and the first one's 2-D variant.
+Both commands that accept methods, and any script or notebook that parses `-m` strings, go through it, so one call site covers every entry point. It logs one warning listing every requested 3-D method and the first one's 2-D variant.
 
-Trade-off: in `prepare`, methods are parsed after the inputs are loaded and embedded, so on a FASTA input the warning appears after embedding, not at start-up. Moving the parse earlier would reorder a file other work is editing; the warning is still printed before any projection runs and lands in the same terminal output.
+`prepare` parses `-m` before it builds any embedding set, next to its early `-a` check, rather than just before the pipeline runs. On a FASTA or `-q` input the embeddings come first and can take a long time, so a later parse would print the warning only after them, and a malformed spec (an unknown `key=value`, a method with no dimension suffix) would fail only once the work was done. A malformed spec is a usage error naming `-m/--methods`. `project` parses after loading its HDF5 inputs, which embeds nothing, and the Colab notebook already parses before embedding.
 
 Alternatives: a Typer callback on `-m` (fires before `setup_logging`, so the line would lack the `WARNING:` prefix, and it would duplicate method parsing); a check in `DimensionReductionConfig` (fires once per embedding set × method, too noisy).
 
@@ -60,6 +60,8 @@ The browser restates 5.0.0 in TypeScript: the legacy-format notice users see (`a
 ### Reading 3-D projections warns where the projections are read
 
 Maintainer decision (2026-10-15): 5.0.0 stops reading 3-D projections as well as producing them. The warning goes where a bundle's projections become tables: `read_tables`, `read_bundle_contents` (which `ArrowReader` uses), `read_bundle` and `extract_bundle_to_dir`, each logging one registry warning (`3d-projection-read`) per read through the bundle logger, after the v1/v2 warning when both apply. A helper, `bundle.three_d_projection_names(projections)`, lists the projections whose rows hold a finite `z`, in first-seen order, from the v2-shaped table every read produces. `protspace stats` reads a projection directory directly, so it warns with the same entry.
+
+`protspace export` reads through `read_tables`, so it warns like any other reader; it writes a 3-D projection's `_x` and `_y` only, the X/Y view the web app shows, as does the web app's table export (`table-export` spec).
 
 Not warned: `read_settings_from_bundle` / `read_statistics_from_bundle` never touch projections (so `protspace style`, which only rewrites settings, stays quiet), the writers read their input without decoding projections, `convert` prints its own message (below), and `protspace bundle` passing a `project` directory through (that directory's 3-D projections were warned about when `project` made them). `read_bundle_contents(..., warn_3d=False)` exists for callers that read such files on purpose, like `warn_legacy`.
 
@@ -114,11 +116,10 @@ A test reads the workflow and asserts the gate step exists and runs before the `
 - [The gate only sees what PSR computes; a hand-made `v5.0.0` tag bypasses it] → the unit test fails on the next PR, and `AGENTS.md` says the bump is blocked until the removals land.
 - [`--print`'s stdout format changes in a later PSR] → the pin is explicit (10.6.1); the script rejects a value that is not a version, so a format change fails loudly instead of passing.
 - [Two deprecation lines for `serve` (Click's generic one and ours)] → accepted; ours carries the version and the replacement.
-- [3-D warning appears late in a FASTA `prepare`] → accepted, see the decision above.
 
 ## v5.0.0 removal inventory
 
-Verified by grepping for importers on this branch (4.16.5). The registry's `removal` notes are the short form of this list.
+Verified by grepping for importers on this branch (4.16.5), and again after it merged with the user-feedback workstreams (`protspace export` and the web table export read no `z`). The registry's `removal` notes are the short form of this list.
 
 ### `protspace serve` and the Dash viewer
 
@@ -173,7 +174,7 @@ Web (TypeScript):
 - `apps/web/src/explore/notifications.ts` / `dataset-controller.ts`: the 3-D notice and its trigger.
 - Fixtures and tests: the `umap3` projection in `packages/core/.../__fixtures__/v3-sample.parquetbundle` and the tests asserting it (`bundle-v3.test.ts`, `v3-equivalence.test.ts`, `bundle-roundtrip.test.ts`, `decode-transferables.test.ts`), `slice-visualization-data.test.ts`, `data-processor.test.ts`, the scatter-plot tests using `projectionPlane`, `bundle-writer.test.ts`, `tests/contract/bundle.contract.test.ts` (`PCA_3`), and the e2e 3-D notice test in `apps/web/tests/dataset-reload.spec.ts`.
 
-Docs and specs: `docs/explore/control-bar.md` (3D tip), `docs/explore/figure-editor.md` (2D/3D fingerprint), `docs/explore/scatterplot.md` ("2D or 3D layout"), `docs/developers/api/index.md` (`projectionPlane`), `docs/guide/data-format.md` (`<name>__z`, "A projection is 3D when…"), `docs/guide/python-cli.md`; the `bundle-format-contract` spec's "A three-dimensional projection is read" scenario and `eat-provenance-connectors`'s "Projection or 3-D plane change" scenario need MODIFIED deltas in the 5.0.0 change.
+Docs and specs: `docs/explore/control-bar.md` (3D tip), `docs/explore/figure-editor.md` (2D/3D fingerprint), `docs/explore/scatterplot.md` ("2D or 3D layout"), `docs/developers/api/index.md` (`projectionPlane`), `docs/guide/data-format.md` (`<name>__z`, "A projection is 3D when…"), `docs/guide/python-cli.md` (also the `export` paragraph's 3-D note and the "Upgrading from v4.4" bullet), `docs/explore/exporting.md` (the Table Export 3-D note); the `bundle-format-contract` spec's "A three-dimensional projection is read" scenario and `eat-provenance-connectors`'s "Projection or 3-D plane change" scenario need MODIFIED deltas in the 5.0.0 change.
 
 ### Reading v1/v2 bundles
 
@@ -191,4 +192,4 @@ For 5.0.0: land the removals above, delete their registry entries, then let a `B
 
 ## Open Questions
 
-- When both changes archive, `parquetbundle-v3`'s `bundle-conversion` requirement "SHALL leave a v3 input untouched" needs the `--flatten-3d` exception this change adds to `deprecation-policy`; whichever archives second should reconcile the wording.
+None. This change archives before `parquetbundle-v3`, whose `bundle-conversion` requirement says `convert` "SHALL leave a v3 input untouched". The `deprecation-policy` spec states `--flatten-3d` as the one exception, and `parquetbundle-v3` task 5.5 (unticked) carves that exception out of its own requirement before it archives.
