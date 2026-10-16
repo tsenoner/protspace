@@ -216,9 +216,7 @@ describe('legend score column', () => {
     // below cannot pass by coincidence.
     expect(rowOrder().indexOf('Viperidae')).toBeLessThan(rowOrder().indexOf('Elapidae'));
 
-    (el as unknown as { _actions: { applySortMode(mode: string): void } })._actions.applySortMode(
-      'silhouette-desc',
-    );
+    el._actions.applySortMode('silhouette-desc');
     // Same two-cycle wait as the click-toggle test above: applySortMode sets _legendItems;
     // _sortedLegendItems only re-derives from it in the next updated().
     await el.updateComplete;

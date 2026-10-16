@@ -19,8 +19,7 @@ async function setup(): Promise<ProtspaceLegend> {
   return legend;
 }
 
-const reorder = (legend: ProtspaceLegend) =>
-  (legend as unknown as { _reorder: ReorderController })._reorder;
+const reorder = (legend: ProtspaceLegend) => legend._reorder;
 const order = (legend: ProtspaceLegend) =>
   Array.from(legend.shadowRoot!.querySelectorAll<HTMLElement>('.legend-item')).map(
     (row) => row.dataset.value,

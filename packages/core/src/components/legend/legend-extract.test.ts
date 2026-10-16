@@ -7,12 +7,12 @@ import { LEGEND_VALUES, NA_VALUE, LEGEND_EVENTS } from './config';
 
 // Import the component to register the custom element
 import './legend';
+import type { ProtspaceLegend } from './legend';
 
 type AnyLegend = HTMLElement & Record<string, unknown>;
 
 /** The legend's item actions (controllers/item-actions-controller.ts). */
-const actions = (el: AnyLegend) =>
-  el._actions as { extractFromOther(value: string): void; extractAllFromOther(): void };
+const actions = (el: AnyLegend) => (el as unknown as ProtspaceLegend)._actions;
 
 function createLegendItem(value: string, overrides: Partial<LegendItem> = {}): LegendItem {
   return {

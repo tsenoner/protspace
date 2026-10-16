@@ -13,6 +13,7 @@ import type { LegendDisplaySettings, LegendPersistedSettings, LegendSortMode } f
 
 // Import the component to register the custom element for integration coverage.
 import './legend';
+import type { ProtspaceLegend } from './legend';
 
 type LegendTestElement = HTMLElement & {
   selectedAnnotation: string;
@@ -28,10 +29,7 @@ type LegendTestElement = HTMLElement & {
   _renderSettingsPopover: (label: string) => unknown;
   _applyDisplaySettings: (patch: Partial<LegendDisplaySettings>) => void;
   _handleSettingsReset: () => void;
-  _data: {
-    applyPersistedSettings: (settings: LegendPersistedSettings) => void;
-    syncNumericSettingsFromPersistence: () => void;
-  };
+  _data: ProtspaceLegend['_data'];
   _updateLegendItems: () => void;
   _scatterplotController: {
     scatterplot: {

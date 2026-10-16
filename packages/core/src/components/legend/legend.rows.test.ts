@@ -216,9 +216,7 @@ describe('legend rows', () => {
     main(legend, 'C').focus();
     await settleLegend(legend);
 
-    (
-      legend as unknown as { _actions: { toggleOrderDirection(): void } }
-    )._actions.toggleOrderDirection();
+    legend._actions.toggleOrderDirection();
     await settleLegend(legend);
 
     expect(rowValues(legend)[0]).not.toBe('A');

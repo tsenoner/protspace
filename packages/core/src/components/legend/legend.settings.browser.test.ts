@@ -29,13 +29,9 @@ const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => r
  * `_updateLegendItems`) and `rebuildItems`, so the spies count what the perf budgets count.
  */
 function spies(legend: ProtspaceLegend) {
-  const internals = legend as unknown as {
-    _updateLegendItems(): void;
-    _data: { rebuildItems(): void };
-  };
   return {
-    update: vi.spyOn(internals, '_updateLegendItems'),
-    rebuild: vi.spyOn(internals._data, 'rebuildItems'),
+    update: vi.spyOn(legend, '_updateLegendItems'),
+    rebuild: vi.spyOn(legend._data, 'rebuildItems'),
   };
 }
 

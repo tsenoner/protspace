@@ -12,7 +12,6 @@ vi.mock('../../../utils/perf-counters', async (importOriginal) => {
 });
 
 import { perfCounters } from '../../../utils/perf-counters';
-import type { ProtspaceLegend } from '../legend';
 import { categoricalData, numericData, TWELVE } from '../test-support/legend-fixtures';
 import {
   mountLegendWithScatterplot,
@@ -25,15 +24,10 @@ vi.stubGlobal('localStorage', createLocalStorageMock());
 
 const counters = perfCounters!;
 
-type DataInternals = ProtspaceLegend & {
-  _data: LegendDataController;
-  _updateLegendItems(): void;
-};
-
 async function mount(...args: Parameters<typeof mountLegendWithScatterplot>) {
   const { legend } = await mountLegendWithScatterplot(...args);
   await settleLegend(legend);
-  return legend as DataInternals;
+  return legend;
 }
 
 describe('LegendDataController', () => {
@@ -43,7 +37,7 @@ describe('LegendDataController', () => {
     vi.restoreAllMocks();
   });
 
-  it("is the legend's data pipeline; updateItems counts one legendUpdate per _updateLegendItems call", async () => {
+  it('every _updateLegendItems call runs updateItems once and counts one legendUpdate', async () => {
     const legend = await mount(categoricalData(TWELVE), 'family');
     expect(legend._data).toBeInstanceOf(LegendDataController);
     const updateItems = vi.spyOn(legend._data, 'updateItems');

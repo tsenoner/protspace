@@ -1,5 +1,4 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { CategoryScore } from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { PsIconButton } from '../kit/button';
 import { deepActiveElement } from '../kit/focus';
@@ -18,13 +17,6 @@ afterEach(() => {
   document.body.replaceChildren();
   localStorage.clear();
 });
-
-interface Internals {
-  _actions: { applySortMode(mode: LegendSortMode): void };
-  _updateLegendItems(): void;
-  _categoryScores: CategoryScore[];
-}
-const internals = (legend: ProtspaceLegend) => legend as unknown as Internals;
 
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
@@ -115,7 +107,7 @@ describe('legend sort menu', () => {
       'Reverse order',
     ]);
     // perfCounters.legendUpdate counts exactly the calls of _updateLegendItems.
-    const update = vi.spyOn(internals(legend), '_updateLegendItems');
+    const update = vi.spyOn(legend, '_updateLegendItems');
 
     await pick(legend, 'alpha-asc');
 
@@ -151,7 +143,7 @@ describe('legend sort menu', () => {
       ['manual', 'manual-reverse'],
     ];
     for (const [base, reversed] of cases) {
-      internals(legend)._actions.applySortMode(base);
+      legend._actions.applySortMode(base);
       await settle(legend);
       const before = rowValues(legend);
 
@@ -185,7 +177,7 @@ describe('legend sort menu', () => {
 
   it('Your order, reversed keeps its top rows and Other last as Max legend items shrinks and grows', async () => {
     const legend = await mount(categoricalData(TWELVE), 'family');
-    internals(legend)._actions.applySortMode('manual');
+    legend._actions.applySortMode('manual');
     await settle(legend);
     await openSortMenu(legend);
     await pick(legend, 'reverse');
@@ -213,15 +205,15 @@ describe('legend sort menu', () => {
     expect(menuItem(legend, 'silhouette-desc')).toBeUndefined();
     await escape(legend);
 
-    internals(legend)._actions.applySortMode('silhouette-desc');
+    legend._actions.applySortMode('silhouette-desc');
     await settle(legend);
     await openSortMenu(legend);
     expect(menuItem(legend, 'silhouette-desc')?.checked).toBe(true);
     expect(menuItem(legend, 'silhouette-desc')?.textContent!.trim()).toBe('By separation');
     await escape(legend);
 
-    internals(legend)._actions.applySortMode('size-desc');
-    internals(legend)._categoryScores = [
+    legend._actions.applySortMode('size-desc');
+    legend._categoryScores = [
       { category: 'A', silhouette: 0.5, silhouetteEmbedding: null, daviesBouldin: 1 },
     ];
     await settle(legend);
@@ -249,7 +241,7 @@ describe('legend sort menu', () => {
       ['manual', 'manual', false],
     ];
     for (const [mode, radio, reversed] of cases) {
-      internals(legend)._actions.applySortMode(mode);
+      legend._actions.applySortMode(mode);
       await settle(legend);
       await openSortMenu(legend);
       expect(checkedRadios(legend)).toEqual([radio]);
@@ -260,11 +252,11 @@ describe('legend sort menu', () => {
 
   it('picking the checked radio again keeps the reversed order', async () => {
     const legend = await mount(categoricalData(TWELVE), 'family');
-    internals(legend)._actions.applySortMode('size-asc');
+    legend._actions.applySortMode('size-asc');
     await settle(legend);
     await openSortMenu(legend);
     expect(checkedRadios(legend)).toEqual(['size-desc']);
-    const update = vi.spyOn(internals(legend), '_updateLegendItems');
+    const update = vi.spyOn(legend, '_updateLegendItems');
 
     await pick(legend, 'size-desc');
 
