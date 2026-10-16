@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 #: ``--max-distance auto``: the percentile of the references' distances to their
 #: nearest other reference that becomes the cutoff.
 AUTO_PERCENTILE = 95
+#: Above this many references the percentile is estimated from a fixed random
+#: sample of them (each still searched against all references), so ``auto``
+#: stays linear in the reference count instead of comparing every pair.
+AUTO_SAMPLE = 10_000
 
 
 def _auto_max_distance(column: str, ref_emb: np.ndarray, metric: str) -> float:
@@ -38,6 +42,8 @@ def _auto_max_distance(column: str, ref_emb: np.ndarray, metric: str) -> float:
     their own nearest neighbour sits outside the reference set's spacing. The
     nearest *other* reference is found by index, not by distance: a duplicate
     embedding is also at distance ~0, and cosine self-distance is not exactly 0.
+    Past :data:`AUTO_SAMPLE` references a seeded sample of them is used, so the
+    same references always give the same cutoff.
     """
     from protlabel.backends import nearest
 
@@ -46,8 +52,13 @@ def _auto_max_distance(column: str, ref_emb: np.ndarray, metric: str) -> float:
             f"--max-distance auto needs at least two references with a value "
             f"for {column!r}; found {ref_emb.shape[0]}"
         )
-    idx, dist = nearest(ref_emb, ref_emb, k=2, metric=metric)
-    is_self = idx[:, 0] == np.arange(ref_emb.shape[0])
+    rows = np.arange(ref_emb.shape[0])
+    if rows.size > AUTO_SAMPLE:
+        rows = np.sort(
+            np.random.default_rng(0).choice(rows, AUTO_SAMPLE, replace=False)
+        )
+    idx, dist = nearest(ref_emb[rows], ref_emb, k=2, metric=metric)
+    is_self = idx[:, 0] == rows
     other = np.where(is_self, dist[:, 1], dist[:, 0])
     return float(np.percentile(other, AUTO_PERCENTILE))
 

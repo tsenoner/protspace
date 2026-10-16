@@ -910,9 +910,10 @@ protspace transfer -b space.parquetbundle -e emb.h5:esm2_650m -t toxin_family \
 
 - **`--max-distance auto`** picks the cutoff for each column from the references themselves: the
   95th percentile of every reference's distance to its nearest other reference. A query farther
-  from every reference than that sits outside the reference set's own spacing. The column needs at
-  least two references. `-v` logs the value chosen, and the report's `max_distance` column records
-  it.
+  from every reference than that sits outside the reference set's own spacing. Above 10,000
+  references the percentile is estimated from a fixed sample of 10,000 of them, so the same
+  references always give the same cutoff. The column needs at least two references. `-v` logs the
+  value chosen, and the report's `max_distance` column records it.
 - **`--max-distance D`** uses a fixed distance, in `--metric` units. Distances are model-specific
   (ESM2 cosine distances are small even between unrelated proteins), so a number from one model or
   paper does not carry over to another.
