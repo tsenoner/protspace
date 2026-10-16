@@ -7,6 +7,7 @@ import type { CaptureApi, CaptureEntry } from '../capture-plan';
 import { around } from './clip';
 import { findExampleDataset } from '../../../apps/web/src/explore/example-datasets';
 import {
+  animationsFinished,
   exportAction,
   holdNextRequest,
   importPanel,
@@ -33,10 +34,7 @@ async function exportToastSteps(page: Page, cap: CaptureApi): Promise<void> {
   ).toBeVisible();
   // Sonner slides the toast up from below the viewport; measuring mid-slide clips it.
   await expect(exportReady(page)).toHaveAttribute('data-mounted', 'true');
-  await exportReady(page).evaluate(async (el) => {
-    await new Promise(requestAnimationFrame);
-    await Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished));
-  });
+  await animationsFinished(exportReady(page));
   // The toast closes itself after 4 s; Sonner pauses that while the pointer rests on it.
   await cap.moveTo(exportReady(page), { steps: 1 });
 }

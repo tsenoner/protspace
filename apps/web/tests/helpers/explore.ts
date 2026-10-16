@@ -454,6 +454,14 @@ export async function searchProteins(page: Page, ids: readonly string[]): Promis
 export const toast = (page: Page, text: string | RegExp): Locator =>
   page.locator('[data-sonner-toast]').filter({ hasText: text });
 
+/** Resolves once every animation on `locator` and its subtree has finished (a toast's slide-in). */
+export async function animationsFinished(locator: Locator): Promise<void> {
+  await locator.evaluate(async (el) => {
+    await new Promise(requestAnimationFrame);
+    await Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished));
+  });
+}
+
 type StatusChipKind = 'filter' | 'isolation' | 'hidden';
 
 const STATUS_CLEAR_NAMES: Readonly<Record<StatusChipKind, string>> = {
