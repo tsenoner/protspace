@@ -305,7 +305,7 @@ describe('protspace-structure-viewer protein choices', () => {
 });
 
 describe('protspace-structure-viewer under a coarse pointer', () => {
-  it('the resource links are 40 px targets and the colour control is a 40 px group', async () => {
+  it('the resource links and the colour options are 40 px targets', async () => {
     const session = cdp();
     await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
     try {
@@ -317,14 +317,14 @@ describe('protspace-structure-viewer under a coarse pointer', () => {
         expect(box.height, link.textContent!.trim()).toBeGreaterThanOrEqual(40 - 0.5);
         expect(box.width, link.textContent!.trim()).toBeGreaterThanOrEqual(40 - 0.5);
       }
-      // The kit's touch sizes: 34 px options inside a 40 px group.
+      // The kit's touch sizes: 40 px options inside a 42 px group.
       const { control, option } = await colorControl(viewer);
       const group = control.shadowRoot!.querySelector('[role="radiogroup"]')!;
-      expect(group.getBoundingClientRect().height).toBeGreaterThanOrEqual(40 - 0.5);
+      expect(group.getBoundingClientRect().height).toBeGreaterThanOrEqual(42 - 0.5);
       for (const mode of ['plddt', 'ted-domains']) {
         const box = option(mode).getBoundingClientRect();
-        expect(box.height, mode).toBeGreaterThanOrEqual(34 - 0.5);
-        expect(box.width, mode).toBeGreaterThanOrEqual(34 - 0.5);
+        expect(box.height, mode).toBeGreaterThanOrEqual(40 - 0.5);
+        expect(box.width, mode).toBeGreaterThanOrEqual(40 - 0.5);
       }
     } finally {
       await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });

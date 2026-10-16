@@ -173,11 +173,15 @@ export const segmentedStyles = [
       color: var(--ps-text-faint);
       cursor: not-allowed;
     }
-    /* Touch: a 40 px group (the track's 2 px padding and 1 px border around 34 px options). */
+    /* Touch: every option is a full target. The track drops its padding, so the group is 42 px
+       (the 1 px border), as the structure viewer's own control was before the kit. */
     @media (pointer: coarse) {
+      [role='radiogroup'] {
+        padding: 0;
+      }
       button {
-        height: calc(var(--ps-touch-target) - 6px);
-        min-width: calc(var(--ps-touch-target) - 6px);
+        height: var(--ps-touch-target);
+        min-width: var(--ps-touch-target);
       }
     }
     @media (forced-colors: active) {

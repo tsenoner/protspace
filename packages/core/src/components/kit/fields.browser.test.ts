@@ -434,7 +434,7 @@ describe('choice controls under a coarse pointer', () => {
     }
   }
 
-  it('segmented options are 34 px tall inside a 40 px group and at least 34 px wide', async () => {
+  it('segmented options meet the 40 px touch target inside a 42 px group', async () => {
     await coarse(async () => {
       const el = await mount<PsSegmented>('<ps-segmented label="Contours"></ps-segmented>');
       el.options = [
@@ -446,11 +446,11 @@ describe('choice controls under a coarse pointer', () => {
       el.value = 'off';
       await el.updateComplete;
       const group = el.shadowRoot!.querySelector('[role="radiogroup"]')!;
-      expect(group.getBoundingClientRect().height).toBeCloseTo(40, 0);
+      expect(group.getBoundingClientRect().height).toBeCloseTo(42, 0);
       for (const radio of el.shadowRoot!.querySelectorAll('[role="radio"]')) {
         const box = radio.getBoundingClientRect();
-        expect(box.height).toBeCloseTo(34, 0);
-        expect(box.width).toBeGreaterThanOrEqual(34 - 0.5);
+        expect(box.height).toBeCloseTo(40, 0);
+        expect(box.width).toBeGreaterThanOrEqual(40 - 0.5);
       }
     });
   });
