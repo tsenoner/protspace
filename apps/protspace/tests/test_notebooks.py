@@ -1064,6 +1064,17 @@ def test_preparation_sliders_stay_within_the_config(monkeypatch, tmp_path):
     assert isinstance(namespace["pw"]["perplexity"].value, int)
 
 
+def test_preparation_slider_defaults_sit_on_their_step_grid(monkeypatch, tmp_path):
+    """The browser snaps a slider to min + k * step: learning_rate (min 1, step 10)
+    showed the CLI's 200 as 201, and moved it there on the first touch."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    for name, slider in namespace["pw"].items():
+        if not hasattr(slider, "step"):
+            continue
+        steps = (slider.value - slider.min) / slider.step
+        assert abs(steps - round(steps)) < 1e-9, (name, slider.value, slider.min)
+
+
 def _string_constants(root: Path) -> list[str]:
     """Every string literal under *root*, adjacent pieces joined as Python joins them."""
     found = []
