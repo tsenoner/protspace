@@ -55,7 +55,7 @@ import {
   waitForProteinCount,
   type ViewState,
 } from './helpers/explore';
-import { figureEditor, openFigureEditor } from './helpers/figure';
+import { figureEditor, figurePreviewCanvas, openFigureEditor } from './helpers/figure';
 import {
   closeLegendSettings,
   doubleClickLegendRow,
@@ -457,9 +457,10 @@ test.describe('capture helpers', () => {
     expect(String(dialog)).toBe(String(figureEditor(page)));
     await expect(dialog).toBeVisible();
     // It resolves with the preview drawn: no wait here, the canvas already has a size.
-    const size = await page
-      .locator('protspace-publish-modal .publish-preview-canvas')
-      .evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
+    const size = await figurePreviewCanvas(page).evaluate((canvas: HTMLCanvasElement) => [
+      canvas.width,
+      canvas.height,
+    ]);
     expect(Math.min(...size)).toBeGreaterThan(0);
   });
 

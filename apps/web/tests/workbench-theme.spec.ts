@@ -11,6 +11,7 @@ import {
   openExplore,
   waitForExploreDataLoad,
 } from './helpers/explore';
+import { figureEditorContent, figurePreviewCanvas } from './helpers/figure';
 import { chooseTheme, DARK_SURFACE, htmlTheme, seedTheme, themeButton } from './helpers/theme';
 
 /**
@@ -300,8 +301,8 @@ test.describe('exports stay light in Dark', () => {
     await openExplore(page);
     await chooseTheme(page, 'Dark');
     await exportAction(page, 'Figure editor…');
-    const modal = page.locator('protspace-publish-modal');
-    const preview = modal.locator('.publish-preview-canvas');
+    const modal = figureEditorContent(page);
+    const preview = figurePreviewCanvas(page);
     await expect(preview).toBeVisible();
     const cornerAlpha = () =>
       preview.evaluate(

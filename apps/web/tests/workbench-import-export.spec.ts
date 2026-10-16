@@ -20,6 +20,7 @@ import {
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
+import { figureEditorContent } from './helpers/figure';
 import { PHOSPHATASE_1587_FIXTURE, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
 
@@ -238,7 +239,7 @@ test.describe('Import and Export menus', () => {
   test('the figure editor opens from Export', async ({ page }) => {
     await openExplore(page);
     await exportAction(page, 'Figure editor…');
-    await expect(page.locator('protspace-publish-modal')).toBeAttached();
+    await expect(figureEditorContent(page)).toBeAttached();
   });
 
   test('Escape closes the figure editor and the selection stays', async ({ page }) => {
@@ -252,7 +253,7 @@ test.describe('Import and Export menus', () => {
     await expect(editor).toBeVisible();
 
     await page.keyboard.press('Escape');
-    await expect(page.locator('protspace-publish-modal')).toHaveCount(0);
+    await expect(figureEditorContent(page)).toHaveCount(0);
     // The editor took the press: the plot's selection fallback did not run.
     expect(await getSelectedProteinIds(page)).toEqual([id]);
   });

@@ -13,6 +13,7 @@ import {
   viewBar,
   waitForProteinCount,
 } from './helpers/explore';
+import { figureEditorContent, figurePreviewCanvas } from './helpers/figure';
 import { STARTUP_URL_GLOB } from './helpers/fixtures';
 import { seedTourSeen } from './helpers/tour-storage-state';
 import { stubStructureRequests } from './helpers/workbench';
@@ -178,11 +179,11 @@ test.describe('the Escape order', () => {
     await exportMenu(page).evaluate((menu) =>
       menu.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true })),
     );
-    const editor = page.locator('protspace-publish-modal');
+    const editor = figureEditorContent(page);
     await expect(editor).toBeAttached();
     // Draw a circle with the Circle tool, then select it from its row in the sidebar.
     await editor.getByRole('button', { name: 'Circle', exact: true }).click();
-    const canvas = (await editor.locator('canvas.publish-preview-canvas').boundingBox())!;
+    const canvas = (await figurePreviewCanvas(page).boundingBox())!;
     const cx = canvas.x + canvas.width * 0.4;
     const cy = canvas.y + canvas.height * 0.4;
     await page.mouse.move(cx, cy);

@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { exportMenu, selectAnnotation } from './helpers/explore';
+import { figureEditorContent } from './helpers/figure';
 import {
   getFirstLegendItemValue,
   legend,
@@ -203,7 +204,7 @@ test.describe('the legend on a phone', () => {
       expect(bounds.height).toBeGreaterThanOrEqual(40);
       // Task 5.12: upright the preview stacks over the settings, sideways it sits beside them.
       // The editor's content is slotted into the dialog, so it is found from the modal's host.
-      const modal = page.locator('protspace-publish-modal');
+      const modal = figureEditorContent(page);
       const preview = await box(modal.locator('.publish-preview'));
       const settings = await box(modal.locator('.publish-sidebar'));
       if (size) expect(preview.x + preview.width).toBeLessThanOrEqual(settings.x + 1);
