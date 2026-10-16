@@ -80,15 +80,21 @@ export const rowStyles = css`
 - **Modular components**: a media query sits in the module whose rules it adapts (for example
   `@media (pointer: coarse)` in the legend's `row.ts`), after that module's other rules
 - **Monolithic components**: All `@media` at end of file
-- **Always add breakpoint comments**:
+- **Always add breakpoint comments**, and build a width query from the constants rather than
+  typing the number:
 
-```css
-@media (max-width: 950px) {
-  /* below DESKTOP_MIN_WIDTH */
-  :host {
-    max-width: unset;
+```typescript
+import { css } from 'lit';
+import { DESKTOP_MIN_WIDTH } from '../../utils/breakpoints';
+
+export const layoutStyles = css`
+  @media (max-width: ${DESKTOP_MIN_WIDTH - 1}px) {
+    /* below DESKTOP_MIN_WIDTH */
+    :host {
+      max-width: unset;
+    }
   }
-}
+`;
 ```
 
 ## Custom Properties
@@ -102,8 +108,8 @@ Colours, font sizes, spacing, radii, shadows and durations are `--ps-*` tokens, 
 `packages/core/src/styles/style-lint.test.ts` checks every core stylesheet, with no exemptions.
 It fails one that hard-codes a colour or a font size, declares a `--ps-*` token, or reads a
 variable that neither `theme.ts` nor the stylesheet itself declares. A module may read a
-component property it declares (the scatter plot's `--protspace-height`, the projection card's
-`--card-gap`); the few values code sets at run time (`--protspace-tooltip-max-height`, the kit's
+variable it declares itself (the scatter plot's `--protspace-height`, the projection card's
+local `--card-gap`); the few values code sets at run time (`--protspace-tooltip-max-height`, the kit's
 `--available-height`, …) are listed in the test. `z-index` values are plain numbers: there are no
 layer tokens. The web app's `workbench.css` and `tour/product-tour.css` are held to the colour
 rule too.
@@ -117,7 +123,8 @@ Exports always draw the light values on white.
 
 ### Component properties
 
-The scatter plot is the one element with custom properties of its own, four sizes on its `:host`:
+The scatter plot is the one element with custom properties an embedder can set, four sizes on
+its `:host`:
 
 | Property                         | Default | Sets                                       |
 | -------------------------------- | ------- | ------------------------------------------ |
@@ -129,7 +136,7 @@ The scatter plot is the one element with custom properties of its own, four size
 Rules for a component property:
 
 1. **Sizes only**: colours come from the `--ps-*` tokens, so a component property never holds a
-   colour (`--protspace-height: 100%`)
+   colour (`--protspace-height: 480px`)
 2. **Define in `:host` only**
 3. **Use only when** a runtime override is needed, or the value is used 3+ times
 4. **Name it** `--[component-prefix]-[property]`, and group it under a comment (`/* Layout */`)
