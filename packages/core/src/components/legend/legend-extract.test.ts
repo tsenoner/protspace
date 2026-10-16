@@ -10,6 +10,10 @@ import './legend';
 
 type AnyLegend = HTMLElement & Record<string, unknown>;
 
+/** The legend's item actions (controllers/item-actions-controller.ts). */
+const actions = (el: AnyLegend) =>
+  el._actions as { extractFromOther(value: string): void; extractAllFromOther(): void };
+
 function createLegendItem(value: string, overrides: Partial<LegendItem> = {}): LegendItem {
   return {
     value,
@@ -40,24 +44,24 @@ describe('legend extract methods', () => {
     el = createLegend();
   });
 
-  describe('_handleExtractFromOther', () => {
+  describe('extractFromOther', () => {
     beforeEach(() => {
       el._otherPopover.show(document.createElement('button'));
       el.maxVisibleValues = 5;
     });
 
     it('sets _pendingExtractValue to the given value', () => {
-      (el as AnyLegend)._handleExtractFromOther('cat1');
+      actions(el).extractFromOther('cat1');
       expect(el._pendingExtractValue).toBe('cat1');
     });
 
     it('increments maxVisibleValues by 1', () => {
-      (el as AnyLegend)._handleExtractFromOther('cat1');
+      actions(el).extractFromOther('cat1');
       expect(el.maxVisibleValues).toBe(6);
     });
 
     it('keeps the Other popover open', () => {
-      (el as AnyLegend)._handleExtractFromOther('cat1');
+      actions(el).extractFromOther('cat1');
       expect(el._otherPopover.anchor).not.toBeNull();
     });
 
@@ -66,7 +70,7 @@ describe('legend extract methods', () => {
       el.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((e: CustomEvent) =>
         events.push(e)) as EventListener);
 
-      (el as AnyLegend)._handleExtractFromOther('cat1');
+      actions(el).extractFromOther('cat1');
 
       expect(events).toHaveLength(1);
       expect(events[0].detail).toEqual({ value: 'cat1', action: 'extract' });
@@ -77,7 +81,7 @@ describe('legend extract methods', () => {
       el.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((e: CustomEvent) =>
         events.push(e)) as EventListener);
 
-      (el as AnyLegend)._handleExtractFromOther(NA_VALUE);
+      actions(el).extractFromOther(NA_VALUE);
 
       expect(el._pendingExtractValue).toBe(NA_VALUE);
       expect(events[0].detail.value).toBe(NA_VALUE);
@@ -87,7 +91,7 @@ describe('legend extract methods', () => {
       const resolved = Promise.resolve(true);
       vi.spyOn(el, 'updateComplete', 'get').mockReturnValue(resolved);
 
-      (el as AnyLegend)._handleExtractFromOther('cat1');
+      actions(el).extractFromOther('cat1');
 
       // Queued on updateComplete — flush the microtask
       await resolved;
@@ -95,7 +99,7 @@ describe('legend extract methods', () => {
     });
   });
 
-  describe('_handleExtractAllFromOther', () => {
+  describe('extractAllFromOther', () => {
     const otherItems: OtherItem[] = [
       { value: 'cat1', count: 5 },
       { value: 'cat2', count: 3 },
@@ -113,13 +117,13 @@ describe('legend extract methods', () => {
     });
 
     it('sets maxVisibleValues to nonOtherCount + otherItems.length', () => {
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
       // 2 non-Other legend items + 3 other items = 5
       expect(el.maxVisibleValues).toBe(5);
     });
 
     it('closes the Other popover', () => {
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
       expect(el._otherPopover.anchor).toBeNull();
     });
 
@@ -128,7 +132,7 @@ describe('legend extract methods', () => {
       el.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((e: CustomEvent) =>
         events.push(e)) as EventListener);
 
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
 
       expect(events).toHaveLength(3);
       expect(events[0].detail).toEqual({ value: 'cat1', action: 'extract' });
@@ -151,7 +155,7 @@ describe('legend extract methods', () => {
       }) as EventListener);
 
       const origMaxVisible = el.maxVisibleValues;
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
 
       // maxVisibleValues should have been the original value when first event fired
       expect(maxVisibleAtEventTime).toBe(origMaxVisible);
@@ -162,7 +166,7 @@ describe('legend extract methods', () => {
       const resolved = Promise.resolve(true);
       vi.spyOn(el, 'updateComplete', 'get').mockReturnValue(resolved);
 
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
 
       await resolved;
       expect(el._persistenceController.saveSettings).toHaveBeenCalled();
@@ -179,7 +183,7 @@ describe('legend extract methods', () => {
       el.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((e: CustomEvent) =>
         events.push(e)) as EventListener);
 
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
 
       expect(events).toHaveLength(0);
       // 1 non-Other + 0 other items

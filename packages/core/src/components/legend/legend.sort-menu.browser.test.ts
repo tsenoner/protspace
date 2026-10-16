@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 interface Internals {
-  _applySortMode(mode: LegendSortMode): void;
+  _actions: { applySortMode(mode: LegendSortMode): void };
   _updateLegendItems(): void;
   _categoryScores: CategoryScore[];
 }
@@ -151,7 +151,7 @@ describe('legend sort menu', () => {
       ['manual', 'manual-reverse'],
     ];
     for (const [base, reversed] of cases) {
-      internals(legend)._applySortMode(base);
+      internals(legend)._actions.applySortMode(base);
       await settle(legend);
       const before = rowValues(legend);
 
@@ -185,7 +185,7 @@ describe('legend sort menu', () => {
 
   it('Your order, reversed keeps its top rows and Other last as Max legend items shrinks and grows', async () => {
     const legend = await mount(categoricalData(TWELVE), 'family');
-    internals(legend)._applySortMode('manual');
+    internals(legend)._actions.applySortMode('manual');
     await settle(legend);
     await openSortMenu(legend);
     await pick(legend, 'reverse');
@@ -213,14 +213,14 @@ describe('legend sort menu', () => {
     expect(menuItem(legend, 'silhouette-desc')).toBeUndefined();
     await escape(legend);
 
-    internals(legend)._applySortMode('silhouette-desc');
+    internals(legend)._actions.applySortMode('silhouette-desc');
     await settle(legend);
     await openSortMenu(legend);
     expect(menuItem(legend, 'silhouette-desc')?.checked).toBe(true);
     expect(menuItem(legend, 'silhouette-desc')?.textContent!.trim()).toBe('By separation');
     await escape(legend);
 
-    internals(legend)._applySortMode('size-desc');
+    internals(legend)._actions.applySortMode('size-desc');
     internals(legend)._categoryScores = [
       { category: 'A', silhouette: 0.5, silhouetteEmbedding: null, daviesBouldin: 1 },
     ];
@@ -249,7 +249,7 @@ describe('legend sort menu', () => {
       ['manual', 'manual', false],
     ];
     for (const [mode, radio, reversed] of cases) {
-      internals(legend)._applySortMode(mode);
+      internals(legend)._actions.applySortMode(mode);
       await settle(legend);
       await openSortMenu(legend);
       expect(checkedRadios(legend)).toEqual([radio]);
@@ -260,7 +260,7 @@ describe('legend sort menu', () => {
 
   it('picking the checked radio again keeps the reversed order', async () => {
     const legend = await mount(categoricalData(TWELVE), 'family');
-    internals(legend)._applySortMode('size-asc');
+    internals(legend)._actions.applySortMode('size-asc');
     await settle(legend);
     await openSortMenu(legend);
     expect(checkedRadios(legend)).toEqual(['size-desc']);

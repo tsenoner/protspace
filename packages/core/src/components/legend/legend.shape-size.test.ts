@@ -451,7 +451,6 @@ describe('legend default shape size from the protein count', () => {
 type MockPlot = Awaited<ReturnType<typeof mountLegendWithScatterplot>>['plot'];
 type ResettableLegend = ProtspaceLegend & {
   _handleSettingsReset: () => void;
-  _handleItemClick: (value: string) => void;
 };
 
 function makeData(count: number, prefix = 'p'): VisualizationData {
@@ -496,7 +495,7 @@ describe('legend default shape size with a scatterplot', () => {
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
 
-    legend._handleItemClick('A');
+    legend._actions.toggle('A');
     await settleLegend(legend);
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);

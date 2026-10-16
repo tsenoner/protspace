@@ -553,8 +553,8 @@ export class LegendDataProcessor {
     });
 
     // A categorical "Your order, reversed" holds its zOrders in display order (the legend's
-    // `_reverseZOrder` writes them so): it buckets and numbers exactly as "Your order". A numeric
-    // one re-derives from its manual bin ids each pass.
+    // `ItemActionsController.reverseZOrder` writes them so): it buckets and numbers exactly as
+    // "Your order". A numeric one re-derives from its manual bin ids each pass.
     const orderMode: LegendSortMode =
       sortMode === 'manual-reverse' && !isNumericSource ? 'manual' : sortMode;
 

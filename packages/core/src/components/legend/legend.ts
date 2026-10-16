@@ -17,13 +17,7 @@ import {
 import type { AnnotationData, LegendSettingsMap } from '@protspace/utils';
 
 // Configuration and styles
-import {
-  LEGEND_DEFAULTS,
-  LEGEND_STYLES,
-  LEGEND_VALUES,
-  LEGEND_EVENTS,
-  toDisplayValue,
-} from './config';
+import { LEGEND_DEFAULTS, LEGEND_STYLES, LEGEND_VALUES, LEGEND_EVENTS } from './config';
 
 import type { PointShape } from '@protspace/utils';
 import { legendStyles } from './legend.styles';
@@ -35,6 +29,8 @@ import {
   PersistenceController,
   DragController,
   LegendDataController,
+  ItemActionsController,
+  ReorderController,
 } from './controllers';
 
 // Processors and renderers
@@ -47,12 +43,7 @@ import {
   type SortMenuModel,
 } from './legend-header';
 import { renderLegendRow, type LegendRowHandlers, type LegendRowView } from './legend-row';
-import {
-  LegendKeyboardController,
-  renderLegendList,
-  TruncatedNameTooltip,
-  type LegendReorderSnapshot,
-} from './legend-list';
+import { LegendKeyboardController, renderLegendList, TruncatedNameTooltip } from './legend-list';
 import { ColorPickerController } from './legend-color-picker';
 import { LegendRowMenu } from './legend-row-menu';
 import { OtherPopoverControl } from './legend-other-control';
@@ -69,32 +60,18 @@ import {
 
 // Helpers
 import {
-  valueToKey,
   calculatePointSize,
   defaultShapeSize,
   getDefaultSortMode,
   getItemClasses,
   isItemSelected,
   createItemActionEvent,
-  updateItemsVisibility,
-  isolateItem,
-  isSecondClickOfDouble,
-  isolationBase,
-  isDoubleTap,
-  clickPointerType,
-  type FirstClick,
   computeOtherConcreteValues,
 } from './legend-helpers';
 import type { EatPopulationCounts } from './eat-population-counts';
 import {
   applyPaletteColors,
-  displayedOrder,
   normalizeCategoricalPaletteId,
-  normalizeSortModeForType,
-  numericOrderFromItems,
-  reorderByValues,
-  reverseKeepingOtherLast,
-  reverseSortMode,
   sortItemsForDisplay,
 } from './legend-items-state';
 
@@ -176,7 +153,6 @@ export class ProtspaceLegend extends LitElement {
   // Internal State
   // ─────────────────────────────────────────────────────────────────
 
-  @state() private _sortedLegendItems: LegendItem[] = [];
   /** The sort button while its menu is open (the menu's anchor); null when closed. */
   @state() private _sortMenu: HTMLElement | null = null;
   /** The settings button while the settings popover is open under it (design decision 12). */
@@ -188,16 +164,6 @@ export class ProtspaceLegend extends LitElement {
    * (each strip's `highlighted` binding), so a hover in either place lights up both.
    */
   @state() private _hoveredCategory: string | null = null;
-  private _announceManualPromotionOnNextReorder = false;
-
-  // Kept until its dblclick arrives, which isolates from `isolationBase`.
-  private _firstClick: FirstClick | null = null;
-  // Touch: the last tap on a row (a second one soon after isolates), the pointer behind the last
-  // row click (a dblclick after touch taps is ignored) and the last row press (older Safari sends
-  // clicks with no pointer type).
-  private _lastTap: { valueKey: string; time: number } | null = null;
-  private _lastClickPointer = 'mouse';
-  private _lastRowPointerDown: { pointerType: string; time: number } | null = null;
 
   @query('.legend-items')
   private _legendItemsEl?: HTMLDivElement;
@@ -210,6 +176,7 @@ export class ProtspaceLegend extends LitElement {
   // ─────────────────────────────────────────────────────────────────
 
   @state() _legendItems: LegendItem[] = [];
+  @state() _sortedLegendItems: LegendItem[] = [];
   @state() _otherItems: OtherItem[] = [];
   @state() _hiddenValues: string[] = [];
   @state() _annotationSortModes: Record<string, LegendSortMode> = {};
@@ -264,6 +231,19 @@ export class ProtspaceLegend extends LitElement {
 
   // Instance-specific processor context (avoids global state conflicts)
   _processorContext: LegendProcessorContext = createProcessorContext();
+
+  _announceManualPromotionOnNextReorder = false;
+  /**
+   * The last press on a row: older Safari sends clicks with no pointer type, so a row click
+   * (`ItemActionsController.rowClick`) takes it from here.
+   */
+  _lastRowPointerDown: { pointerType: string; time: number } | null = null;
+
+  /** The selected annotation's display name, never its key (decision 15). */
+  get _annotationDisplayName(): string {
+    const name = this.selectedAnnotation;
+    return name ? annotationLabel(name, this.data?.annotations?.[name] ?? this.annotationData) : '';
+  }
 
   /** `autoSync` is off; its doc lists what that changes. */
   get _hostDriven(): boolean {
@@ -334,9 +314,16 @@ export class ProtspaceLegend extends LitElement {
     this._colorPicker.close();
   }
 
-  _clearKeyboardReorderState(): void {
-    this._keyboard.clear();
-    this._announceManualPromotionOnNextReorder = false;
+  _dispatchItemAction(value: string, action: 'toggle' | 'isolate' | 'extract'): void {
+    this.dispatchEvent(createItemActionEvent(LEGEND_EVENTS.ITEM_CLICK, value, action));
+  }
+
+  _announceStatus(message: string): void {
+    this._statusMessage = message;
+    // Clear after announcement to allow repeated messages
+    setTimeout(() => {
+      this._statusMessage = '';
+    }, 1000);
   }
 
   _dispatchError(message: string, source: LegendErrorSource, originalError?: Error): void {
@@ -360,6 +347,10 @@ export class ProtspaceLegend extends LitElement {
 
   /** The data pipeline (controllers/data-controller.ts); the callbacks below call it. */
   readonly _data = new LegendDataController(this);
+  /** Row, Other and sort-menu actions (controllers/item-actions-controller.ts). */
+  readonly _actions = new ItemActionsController(this);
+  /** Keyboard reorder and what a drag commits (controllers/reorder-controller.ts). */
+  readonly _reorder = new ReorderController(this);
 
   _scatterplotController = new ScatterplotSyncController(this, {
     onDataChange: (data, annotation, projectionName) =>
@@ -387,31 +378,14 @@ export class ProtspaceLegend extends LitElement {
 
   private _dragController = new DragController(this, {
     getLegendItems: () => this._legendItems,
-    setLegendItems: (items) => {
-      this._legendItems = items;
-      if (this._isNumericAnnotation()) {
-        // Exclude Other (synthetic) and NA (locked to legend end regardless of
-        // sort) from the persisted manual order — they have no observable
-        // position effect and would clutter the saved state.
-        this._data.setNumericManualOrderIds(this.selectedAnnotation, numericOrderFromItems(items));
-      }
-    },
+    setLegendItems: (items) => this._reorder.setItemsFromDrag(items),
     onReorder: () => {
       this._scatterplotController.dispatchZOrderChange();
       this._persistenceController.saveSettings();
     },
-    onMergeToOther: (value) => this._handleMergeToOther(value),
-    onSortModeChange: (mode) => {
-      this._announceManualPromotionOnNextReorder =
-        mode === 'manual' && !this._currentSortMode.startsWith('manual');
-      this._annotationSortModes = {
-        ...this._annotationSortModes,
-        [this.selectedAnnotation]: mode,
-      };
-      this._keyboard.clear();
-      this._scatterplotController.syncNumericAnnotationSettings();
-    },
-    onDropComplete: (value) => this._highlightDroppedItem(value),
+    onMergeToOther: (value) => this._actions.mergeToOther(value),
+    onSortModeChange: (mode) => this._reorder.onDragSortModeChange(mode),
+    onDropComplete: (value) => this._actions.highlightDropped(value),
   });
 
   private _headerHandlers: LegendHeaderHandlers = {
@@ -426,8 +400,8 @@ export class ProtspaceLegend extends LitElement {
   };
 
   private _sortMenuHandlers: Parameters<typeof renderSortMenu>[1] = {
-    onPick: (mode) => this._applySortMode(mode),
-    onReverse: () => this._toggleLegendOrderDirection(),
+    onPick: (mode) => this._actions.applySortMode(mode),
+    onReverse: () => this._actions.toggleOrderDirection(),
     onClose: () => {
       this._sortMenu = null;
     },
@@ -441,22 +415,14 @@ export class ProtspaceLegend extends LitElement {
     isMultilabel: () => this._isMultilabelAnnotation(),
   });
 
-  private _keyboard = new LegendKeyboardController(this, {
+  _keyboard = new LegendKeyboardController(this, {
     getSortedItems: () => this._sortedLegendItems,
     canDrag: (item) => this._canDragLegendItem(item),
-    toggle: (value) => this._handleItemClick(value),
-    isolate: (value) => this._handleItemDoubleClick(value),
-    snapshot: () => ({
-      annotation: this.selectedAnnotation,
-      sortMode: this._currentSortMode,
-      legendItems: this._legendItems.map((item) => ({ ...item })),
-      otherItems: this._otherItems.map((item) => ({ ...item })),
-      numericManualOrderIds: this._isNumericAnnotation()
-        ? [...(this._numericManualOrderIdsByAnnotation[this.selectedAnnotation] ?? [])]
-        : undefined,
-    }),
-    restore: (snapshot) => this._restoreKeyboardReorderSnapshot(snapshot),
-    move: (value, direction) => this._moveFocusedManualItem(value, direction),
+    toggle: (value) => this._actions.toggle(value),
+    isolate: (value) => this._actions.isolate(value),
+    snapshot: () => this._reorder.snapshot(),
+    restore: (snapshot) => this._reorder.restore(snapshot),
+    move: (value, direction) => this._reorder.move(value, direction),
     announce: (message) => this._announceStatus(message),
     annotationName: () => this._annotationDisplayName,
   });
@@ -466,7 +432,7 @@ export class ProtspaceLegend extends LitElement {
   private _rowMenu = new LegendRowMenu(this, {
     getItems: () => this._legendItems,
     isNumeric: () => this._isNumericAnnotation(),
-    isolate: (value) => this._handleItemDoubleClick(value),
+    isolate: (value) => this._actions.isolate(value),
     customize: (value) => {
       // Found by its dataset rather than a selector: a value can hold any character.
       const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>('.legend-item') ?? [])].find(
@@ -477,10 +443,10 @@ export class ProtspaceLegend extends LitElement {
     },
   });
 
-  private _otherPopover = new OtherPopoverControl(this, {
+  _otherPopover = new OtherPopoverControl(this, {
     getItems: () => this._otherItems,
-    add: (value) => this._handleExtractFromOther(value),
-    addAll: () => this._handleExtractAllFromOther(),
+    add: (value) => this._actions.extractFromOther(value),
+    addAll: () => this._actions.extractAllFromOther(),
     focusFirstRow: () => this._keyboard.focusItem(0),
   });
 
@@ -501,92 +467,6 @@ export class ProtspaceLegend extends LitElement {
 
   private _canDragLegendItem(item: LegendItem): boolean {
     return item.value !== LEGEND_VALUES.OTHER;
-  }
-
-  private _restoreKeyboardReorderSnapshot(snapshot: LegendReorderSnapshot): void {
-    if (snapshot.annotation !== this.selectedAnnotation) {
-      this._clearKeyboardReorderState();
-      return;
-    }
-
-    this._annotationSortModes = {
-      ...this._annotationSortModes,
-      [this.selectedAnnotation]: snapshot.sortMode,
-    };
-    if (this._isNumericAnnotation()) {
-      this._data.setNumericManualOrderIds(this.selectedAnnotation, snapshot.numericManualOrderIds);
-    }
-    // Only the order goes back: colour, shape and visibility set during the reorder stay.
-    const live = new Map(this._legendItems.map((item) => [item.value, item]));
-    this._legendItems = snapshot.legendItems.map((item) => ({
-      ...(live.get(item.value) ?? item),
-      zOrder: item.zOrder,
-    }));
-    this._otherItems = snapshot.otherItems.map((item) => ({ ...item }));
-    this._clearKeyboardReorderState();
-
-    if (!snapshot.sortMode.startsWith('manual')) {
-      this._updateLegendItems();
-    }
-
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.dispatchZOrderChange();
-    this._scatterplotController.syncOtherValues();
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  /** Returns whether the move switched the annotation to manual order. */
-  private _commitManualOrderFromVisibleValues(orderedValues: string[]): boolean {
-    const visibleOrder = [...orderedValues];
-    const didPromote = !this._currentSortMode.startsWith('manual');
-    this._annotationSortModes = {
-      ...this._annotationSortModes,
-      [this.selectedAnnotation]: 'manual',
-    };
-
-    if (this._isNumericAnnotation()) {
-      this._data.setNumericManualOrderIds(this.selectedAnnotation, visibleOrder);
-      this._updateLegendItems();
-    } else {
-      this._legendItems = reorderByValues(this._legendItems, visibleOrder);
-    }
-
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.dispatchZOrderChange();
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-    return didPromote;
-  }
-
-  private _moveFocusedManualItem(
-    value: string,
-    direction: -1 | 1,
-  ): { moved: LegendItem; promoted: boolean } | null {
-    const orderedItems = this._sortedLegendItems.filter(
-      (item) => item.value !== LEGEND_VALUES.OTHER,
-    );
-    const currentIndex = orderedItems.findIndex((item) => item.value === value);
-    if (currentIndex === -1) return null;
-
-    const nextIndex = Math.max(0, Math.min(orderedItems.length - 1, currentIndex + direction));
-    if (nextIndex === currentIndex) return null;
-
-    const reordered = [...orderedItems];
-    const [moved] = reordered.splice(currentIndex, 1);
-    reordered.splice(nextIndex, 0, moved);
-    const promoted = this._commitManualOrderFromVisibleValues(reordered.map((item) => item.value));
-    return { moved, promoted };
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Computed Properties
-  // ─────────────────────────────────────────────────────────────────
-
-  /** The selected annotation's display name, never its key (decision 15). */
-  private get _annotationDisplayName(): string {
-    const name = this.selectedAnnotation;
-    return name ? annotationLabel(name, this.data?.annotations?.[name] ?? this.annotationData) : '';
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -800,7 +680,7 @@ export class ProtspaceLegend extends LitElement {
     // in this bundle would load as "hide above <the previous dataset's upper bound>" — the
     // opposite filter.
     this._eatControls.mirror(DEFAULT_EAT_RELIABILITY);
-    this._clearKeyboardReorderState();
+    this._reorder.clear();
 
     // Reset isolation state
     this.isolationMode = false;
@@ -915,262 +795,6 @@ export class ProtspaceLegend extends LitElement {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // Item Interactions
-  // ─────────────────────────────────────────────────────────────────
-
-  /**
-   * Toggles, except on the second click of a mouse double-click (`isSecondClickOfDouble`). The
-   * second of two quick taps on one row isolates it (`isDoubleTap`), as a double-click does.
-   */
-  private _handleItemMouseClick(value: string, event: MouseEvent): void {
-    const valueKey = valueToKey(value);
-    const pointerType = clickPointerType(event, this._lastRowPointerDown);
-    this._lastClickPointer = pointerType;
-    if (isSecondClickOfDouble(this._firstClick, valueKey, { detail: event.detail, pointerType })) {
-      return;
-    }
-    if (isDoubleTap(this._lastTap, { valueKey, time: event.timeStamp, pointerType })) {
-      this._lastTap = null;
-      this._isolateFromFirstClick(value);
-      return;
-    }
-    const touch = pointerType === 'touch' || pointerType === 'pen';
-    this._lastTap = touch ? { valueKey, time: event.timeStamp } : null;
-
-    const itemsBefore = this._legendItems;
-    this._handleItemClick(value);
-    this._firstClick =
-      event.detail === 1 ? { valueKey, itemsBefore, itemsAfter: this._legendItems } : null;
-  }
-
-  private _handleItemMouseDoubleClick(value: string): void {
-    // Touch and pen double taps isolated on their second tap already.
-    if (this._lastClickPointer === 'touch' || this._lastClickPointer === 'pen') return;
-    this._isolateFromFirstClick(value);
-  }
-
-  private _isolateFromFirstClick(value: string): void {
-    const first = this._firstClick;
-    this._firstClick = null;
-    this._handleItemDoubleClick(value, isolationBase(first, valueToKey(value), this._legendItems));
-  }
-
-  private _handleItemClick(value: string): void {
-    const valueKey = valueToKey(value);
-    const result = updateItemsVisibility(this._legendItems, this._hiddenValues, valueKey);
-
-    this._legendItems = result.items;
-    this._hiddenValues = result.hiddenValues;
-
-    const item = this._legendItems.find((i) => valueToKey(i.value) === valueKey);
-    this._announceStatus(`${toDisplayValue(value)} ${item?.isVisible ? 'shown' : 'hidden'}`);
-
-    this._scatterplotController.syncHiddenValues();
-    this._dispatchItemAction(value, 'toggle');
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  private _handleItemDoubleClick(value: string, items: LegendItem[] = this._legendItems): void {
-    const result = isolateItem(items, value);
-
-    this._legendItems = result.items;
-    this._hiddenValues = result.hiddenValues;
-
-    const visibleCount = result.items.filter((i) => i.isVisible).length;
-    this._announceStatus(
-      visibleCount === 1 ? `Isolated ${toDisplayValue(value)}` : 'All items shown',
-    );
-
-    this._scatterplotController.syncHiddenValues();
-    this._dispatchItemAction(value, 'isolate');
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  private _handleExtractFromOther(value: string): void {
-    // Set pending extract value - will be used by processor to add this item to visible set
-    this._pendingExtractValue = value;
-
-    // Increase maxVisibleValues to accommodate the extracted item
-    // This triggers updated() which calls _updateLegendItems() with pending value still set
-    this.maxVisibleValues = this.maxVisibleValues + 1;
-
-    // Don't call _updateLegendItems() explicitly - the maxVisibleValues change will trigger
-    // updated() which calls it. If we call it here, it will be called twice and the
-    // pending value will be cleared after the first call, causing the second call to not
-    // respect the extract operation.
-
-    this._announceStatus(`Extracted ${toDisplayValue(value)} from Other category`);
-    this._dispatchItemAction(value, 'extract');
-    // Save settings after the update cycle completes
-    this.updateComplete.then(() => {
-      this._persistenceController.saveSettings();
-    });
-  }
-
-  private _handleExtractAllFromOther(): void {
-    const nonOtherCount = this._legendItems.filter((i) => i.value !== LEGEND_VALUES.OTHER).length;
-    const targetMaxVisibleValues = nonOtherCount + this._otherItems.length;
-
-    this._otherPopover.close();
-
-    this._announceStatus('Extracted all items from Other category');
-    for (const item of this._otherItems) {
-      this._dispatchItemAction(item.value, 'extract');
-    }
-    this.maxVisibleValues = targetMaxVisibleValues;
-
-    this.updateComplete.then(() => {
-      this._persistenceController.saveSettings();
-    });
-  }
-
-  private _handleMergeToOther(value: string): void {
-    // Set pending merge value - will be used by processor to remove this item from visible set
-    this._pendingMergeValue = value;
-
-    // Decrease maxVisibleValues to remove space for the merged item
-    // This triggers updated() which calls _updateLegendItems() with pending value still set
-    this.maxVisibleValues = Math.max(1, this.maxVisibleValues - 1);
-
-    // Don't call _updateLegendItems() explicitly - the maxVisibleValues change will trigger
-    // updated() which calls it. If we call it here, it will be called twice and the
-    // pending value will be cleared after the first call, causing the second call to not
-    // respect the merge operation.
-
-    this._announceStatus(`Moved ${toDisplayValue(value)} to Other category`);
-    // Save settings after the update cycle completes
-    this.updateComplete.then(() => {
-      this._persistenceController.saveSettings();
-    });
-  }
-
-  private async _highlightDroppedItem(value: string): Promise<void> {
-    // Wait for Lit to render the new item order. The second await covers an update that the
-    // first one's `updated()` schedules (the data pipeline still writes state there).
-    await this.updateComplete;
-    await this.updateComplete;
-
-    const items = this.shadowRoot?.querySelectorAll('.legend-item');
-    if (!items) return;
-
-    for (const el of items) {
-      const htmlEl = el as HTMLElement;
-      if (htmlEl.getAttribute('data-value') === value) {
-        htmlEl.classList.add('legend-item-just-dropped');
-        // The handle, as before the main button moved ahead of it in the row; Other has no usable one.
-        const focusTarget =
-          htmlEl.querySelector<HTMLElement>('.drag-handle:not(:disabled)') ??
-          htmlEl.querySelector<HTMLElement>('.legend-item-main');
-        focusTarget?.focus();
-        this._announceStatus(
-          this._announceManualPromotionOnNextReorder
-            ? `Moved ${htmlEl.dataset.displayValue ?? toDisplayValue(value)}. Switched ${this._annotationDisplayName} to Manual order.`
-            : `Moved ${htmlEl.dataset.displayValue ?? toDisplayValue(value)}.`,
-        );
-        this._announceManualPromotionOnNextReorder = false;
-        htmlEl.addEventListener(
-          'animationend',
-          () => {
-            htmlEl.classList.remove('legend-item-just-dropped');
-          },
-          { once: true },
-        );
-        break;
-      }
-    }
-  }
-
-  private _reverseZOrder(): void {
-    if (this._legendItems.length <= 1) return;
-
-    const currentMode = this._currentSortMode;
-    if (
-      this._isNumericAnnotation() &&
-      currentMode === 'manual' &&
-      !this._numericManualOrderIdsByAnnotation[this.selectedAnnotation]?.length
-    ) {
-      this._data.setNumericManualOrderIds(
-        this.selectedAnnotation,
-        [...this._sortedLegendItems]
-          .filter((item) => item.value !== LEGEND_VALUES.OTHER)
-          .map((item) => item.value),
-      );
-    }
-
-    this._annotationSortModes = {
-      ...this._annotationSortModes,
-      [this.selectedAnnotation]: reverseSortMode(currentMode),
-    };
-
-    if (!this._isNumericAnnotation()) {
-      // Always reverse the visible items directly, keeping "Other" at the end.
-      this._legendItems = reverseKeepingOtherLast(this._legendItems);
-    } else {
-      this._updateLegendItems();
-    }
-
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.dispatchZOrderChange();
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  /**
-   * Applies a sort-menu pick at once and stores it, as the settings dialog's Save applied an
-   * order. "Your order" starts from the order on screen, whatever sorted it.
-   */
-  private _applySortMode(mode: LegendSortMode): void {
-    const isNumeric = this._isCurrentAnnotationNumeric();
-    const next = normalizeSortModeForType(mode, isNumeric);
-    this._keyboard.clear();
-    if (next === 'manual' && !this._currentSortMode.startsWith('manual')) {
-      const shown = displayedOrder(this._sortedLegendItems, isNumeric);
-      if (isNumeric) this._data.setNumericManualOrderIds(this.selectedAnnotation, shown);
-      else this._legendItems = reorderByValues(this._legendItems, shown);
-    }
-    this._annotationSortModes = { ...this._annotationSortModes, [this.selectedAnnotation]: next };
-    this._updateLegendItems();
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.dispatchZOrderChange();
-    this._persistenceController.saveSettings();
-  }
-
-  private _toggleLegendOrderDirection(): void {
-    if (this._legendItems.length <= 1) return;
-    this._clearKeyboardReorderState();
-
-    if (this._isNumericAnnotation() && !this._currentSortMode.startsWith('manual')) {
-      const nextMode: LegendSortMode =
-        this._currentSortMode === 'alpha-desc' ? 'alpha-asc' : 'alpha-desc';
-      this._annotationSortModes = {
-        ...this._annotationSortModes,
-        [this.selectedAnnotation]: nextMode,
-      };
-      this._updateLegendItems();
-      this._scatterplotController.syncNumericAnnotationSettings();
-      this._persistenceController.saveSettings();
-      this.requestUpdate();
-      return;
-    }
-
-    this._reverseZOrder();
-  }
-
-  private _dispatchItemAction(value: string, action: 'toggle' | 'isolate' | 'extract'): void {
-    this.dispatchEvent(createItemActionEvent(LEGEND_EVENTS.ITEM_CLICK, value, action));
-  }
-
-  private _announceStatus(message: string): void {
-    this._statusMessage = message;
-    // Clear after announcement to allow repeated messages
-    setTimeout(() => {
-      this._statusMessage = '';
-    }, 1000);
-  }
-
-  // ─────────────────────────────────────────────────────────────────
   // Settings Popover
   // ─────────────────────────────────────────────────────────────────
 
@@ -1181,7 +805,7 @@ export class ProtspaceLegend extends LitElement {
       return;
     }
     // One legend overlay at a time; a keyboard reorder in progress is dropped, as the dialog did.
-    this._clearKeyboardReorderState();
+    this._reorder.clear();
     this._colorPicker.close();
     this._rowMenu.close();
     this._sortMenu = null;
@@ -1549,7 +1173,7 @@ export class ProtspaceLegend extends LitElement {
     onHover: (category) => this._setHoveredCategory(category),
     onToggle: (category) => {
       if (this._legendItems.some((item) => item.value === category)) {
-        this._handleItemClick(category);
+        this._actions.toggle(category);
       }
     },
   };
@@ -1617,15 +1241,15 @@ export class ProtspaceLegend extends LitElement {
       otherExpanded: isOther && this._otherPopover.isOpen,
     };
     const handlers: LegendRowHandlers = {
-      onClick: (e: MouseEvent) => this._handleItemMouseClick(item.value, e),
-      onDoubleClick: () => this._handleItemMouseDoubleClick(item.value),
+      onClick: (e: MouseEvent) => this._actions.rowClick(item.value, e),
+      onDoubleClick: () => this._actions.rowDoubleClick(item.value),
       onKeyDown: (e: KeyboardEvent) => this._keyboard.onItemKeyDown(e, item, sortedIndex),
       onHandleKeyDown: (e: KeyboardEvent) => this._keyboard.onHandleKeyDown(e, item),
       onHover: (category) => this._setHoveredCategory(category),
       onFocus: () => {
         this._keyboard.focusValue = item.value;
       },
-      onToggle: () => this._handleItemClick(item.value),
+      onToggle: () => this._actions.toggle(item.value),
       onMenu: (e: MouseEvent) => this._rowMenu.toggle(item.value, e.currentTarget as HTMLElement),
       onViewOther: (e: Event) => this._otherPopover.toggle(e),
       onNamePointerEnter: this._nameTooltip.onNamePointerEnter,

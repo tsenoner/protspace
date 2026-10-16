@@ -200,8 +200,10 @@ describe('legend score strips', () => {
     // sort would still show the UMAP 2 order after switching.
     const { legend, plot, picker } = await setup();
 
-    (legend as unknown as { _applySortMode(mode: string): void })._applySortMode('silhouette-desc');
-    // Same two-cycle wait legend.score-sync.test.ts documents: _applySortMode sets
+    (
+      legend as unknown as { _actions: { applySortMode(mode: string): void } }
+    )._actions.applySortMode('silhouette-desc');
+    // Same two-cycle wait legend.score-sync.test.ts documents: applySortMode sets
     // _legendItems; _sortedLegendItems only re-derives from it in the next updated().
     await legend.updateComplete;
     await legend.updateComplete;

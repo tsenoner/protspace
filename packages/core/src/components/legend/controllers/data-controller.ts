@@ -91,7 +91,7 @@ export class LegendDataController {
   ): void {
     // A pending edit lands on the annotation it was made for, before the plot moves to another.
     if (selectedAnnotation !== this.host.selectedAnnotation) this.host._closeAnnotationOverlays();
-    this.host._clearKeyboardReorderState();
+    this.host._reorder.clear();
     const scatterplot = this.host._scatterplotController.scatterplot;
     this.host._eatControls.mirrorOverlayEnabled(scatterplot?.eatOverlayEnabled ?? true);
     // The reliability slider position is legend-owned now (it drives the query
@@ -154,7 +154,7 @@ export class LegendDataController {
   onAnnotationChange(annotation: string): void {
     // A value still being typed belongs to the annotation it was typed for.
     this.host._closeAnnotationOverlays();
-    this.host._clearKeyboardReorderState();
+    this.host._reorder.clear();
     this.host.selectedAnnotation = annotation;
     this.host._hiddenValues = [];
     // Reset pre-isolation visible values so the new annotation uses maxVisibleValues

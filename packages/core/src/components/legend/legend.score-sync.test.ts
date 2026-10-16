@@ -137,9 +137,9 @@ describe('legend score strip synchronisation', () => {
         composed: true,
       }),
     );
-    // _handleItemClick sets _legendItems; _sortedLegendItems (what the template renders)
-    // only re-derives from it in the *next* updated() cycle, so this needs two chained
-    // awaits, same as the existing _highlightDroppedItem (legend.ts).
+    // ItemActionsController.toggle sets _legendItems; _sortedLegendItems (what the template
+    // renders) only re-derives from it in the *next* updated() cycle, so this needs two chained
+    // awaits, same as ItemActionsController.highlightDropped.
     await legend.updateComplete;
     await legend.updateComplete;
 
@@ -216,8 +216,10 @@ describe('legend score column', () => {
     // below cannot pass by coincidence.
     expect(rowOrder().indexOf('Viperidae')).toBeLessThan(rowOrder().indexOf('Elapidae'));
 
-    (el as unknown as { _applySortMode(mode: string): void })._applySortMode('silhouette-desc');
-    // Same two-cycle wait as the click-toggle test above: _applySortMode sets _legendItems;
+    (el as unknown as { _actions: { applySortMode(mode: string): void } })._actions.applySortMode(
+      'silhouette-desc',
+    );
+    // Same two-cycle wait as the click-toggle test above: applySortMode sets _legendItems;
     // _sortedLegendItems only re-derives from it in the next updated().
     await el.updateComplete;
     await el.updateComplete;
