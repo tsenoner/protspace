@@ -10,13 +10,11 @@ from pathlib import Path
 
 import numpy as np
 
+from protspace.data.cache_hits import note_cache_hit
 from protspace.data.loaders.embedding_set import EmbeddingSet
 from protspace.data.loaders.h5 import parse_identifier
 
 logger = logging.getLogger(__name__)
-
-# The cached matrix in a run's cache directory, beside `similarity_headers.npy`.
-SIMILARITY_MATRIX_FILENAME = "similarity_matrix.npy"
 
 # Single source for both failure paths: this loader (direct library callers) and
 # the CLI's up-front guard, which imports it lazily on the error path only.
@@ -43,7 +41,7 @@ def compute_similarity(
         EmbeddingSet with precomputed=True, name="MMseqs2".
     """
     # --- Cache check ---
-    matrix_cache = cache_dir / SIMILARITY_MATRIX_FILENAME if cache_dir else None
+    matrix_cache = cache_dir / "similarity_matrix.npy" if cache_dir else None
     headers_cache = cache_dir / "similarity_headers.npy" if cache_dir else None
 
     if (
@@ -56,6 +54,7 @@ def compute_similarity(
         cached_headers = list(np.load(headers_cache, allow_pickle=False))
         if cached_headers == headers:
             logger.warning("Using cached similarity matrix")
+            note_cache_hit("similarity")
             return EmbeddingSet(
                 name="MMseqs2",
                 data=np.load(matrix_cache),

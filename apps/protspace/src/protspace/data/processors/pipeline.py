@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from protspace.data.cache_hits import note_cache_hit
 from protspace.data.io.atomic import staged_write
 from protspace.data.loaders import EmbeddingSet
 from protspace.data.loaders.embedding_set import (
@@ -230,9 +231,6 @@ class ReductionPipeline:
         # UniProtKB release(s) behind the annotations of the last
         # `_fetch_annotations` call; empty when no UniProt data was used.
         self.uniprot_releases: set[str] = set()
-        # Whether `run` reused cached annotations or projections from
-        # `config.intermediate_dir`.
-        self.reused_cache = False
         reducer_dict = asdict(config.reducer_params)
         self.base = BaseProcessor(reducer_dict, get_reducers())
 
@@ -423,7 +421,6 @@ class ReductionPipeline:
             refetch=self.config.refetch_stages,
         )
         self.uniprot_releases = set(fetched.uniprot_releases)
-        self.reused_cache |= fetched.from_cache
         return self._merge_csv(fetched.frame, csv_df)
 
     def _resolve_annotation_names(self) -> tuple[list[str], str | None]:
@@ -665,7 +662,7 @@ class ReductionPipeline:
                 computed_count += 1
 
         if cached_projections:
-            self.reused_cache = True
+            note_cache_hit("projections")
             logger.warning(
                 "Using %d cached projection%s",
                 len(cached_projections),

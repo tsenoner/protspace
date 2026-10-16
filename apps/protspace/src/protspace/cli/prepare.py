@@ -190,19 +190,6 @@ Opt_NoLog = Annotated[
 # ---------------------------------------------------------------------------
 
 
-def _mtime(path: Path | None) -> int | None:
-    """*path*'s modification time, or ``None`` when there is no such file."""
-    return path.stat().st_mtime_ns if path and path.exists() else None
-
-
-def _reused(path: Path | None, mtime_before: int | None) -> bool:
-    """Whether a stage read the cache file at *path* rather than writing it.
-
-    A cache hit leaves an existing file untouched; a computed result writes it.
-    """
-    return mtime_before is not None and _mtime(path) == mtime_before
-
-
 def _embed_all(
     embedders: list[str],
     fasta_path: Path,
@@ -214,6 +201,7 @@ def _embed_all(
     force_reembed: bool = False,
 ) -> list[str]:
     """Embed all models, return list of cache-hit model names."""
+    from protspace.data.cache_hits import note_cache_hit
     from protspace.data.loaders.fasta import embed_fasta
 
     cached_names: list[str] = []
@@ -222,7 +210,9 @@ def _embed_all(
         # Delete cache to force re-embedding
         if force_reembed and emb_cache and emb_cache.exists():
             emb_cache.unlink()
-        old_mtime = _mtime(emb_cache)
+        old_mtime = (
+            emb_cache.stat().st_mtime if emb_cache and emb_cache.exists() else None
+        )
         emb_set = embed_fasta(
             fasta_path,
             emb_name,
@@ -232,10 +222,12 @@ def _embed_all(
         )
         emb_set.fasta_path = fasta_path
         embedding_sets.append(emb_set)
-        if _reused(emb_cache, old_mtime):
+        # Cache hit if file existed before and was not modified
+        if old_mtime is not None and emb_cache.stat().st_mtime == old_mtime:
             cached_names.append(emb_name)
 
     if cached_names:
+        note_cache_hit("embed")
         logger.warning(
             "Using %d cached embedding%s (%s)",
             len(cached_names),
@@ -381,26 +373,21 @@ def prepare(
         return
 
     # --- Build embedding sets ---
+    from protspace.data.cache_hits import record_cache_hits
     from protspace.data.loaders import EmbeddingSet, load_h5
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
 
     embed_config = build_embed_config(backend, batch_size, max_length)
     embedding_sets: list[EmbeddingSet] = []
     fasta_for_similarity: Path | None = fasta
-    # Whether any stage reused a result an earlier run cached in `cache_dir`.
-    reused_cache = False
+    # Stages reusing a result an earlier run cached in `cache_dir`.
+    cache_hits = record_cache_hits()
 
     try:
         if query:
-            from protspace.data.loaders.query import (
-                query_cache_path,
-                resolve_query_fasta,
-            )
+            from protspace.data.loaders.query import resolve_query_fasta
 
-            query_fasta = query_cache_path(cache_dir, query) if cache_dir else None
-            fasta_mtime = _mtime(query_fasta)
             headers, fasta_path = resolve_query_fasta(query, cache_dir, refetch_stages)
-            reused_cache |= _reused(query_fasta, fasta_mtime)
             if not headers:
                 raise typer.BadParameter(f"No sequences for query: '{query}'")
 
@@ -409,7 +396,7 @@ def prepare(
 
                 embedders = [DEFAULT_EMBEDDER]
 
-            cached_embeddings = _embed_all(
+            _embed_all(
                 embedders,
                 fasta_path,
                 cache_dir,
@@ -418,7 +405,6 @@ def prepare(
                 backend=backend.value,
                 force_reembed="embed" in refetch_stages,
             )
-            reused_cache |= bool(cached_embeddings)
             fasta_for_similarity = fasta_path
 
         elif input_specs:
@@ -434,7 +420,7 @@ def prepare(
                 elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
                     emb_set = load_h5([path], name_override=name_override)
                 elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
-                    cached_embeddings = _embed_all(
+                    _embed_all(
                         embedders,
                         path,
                         cache_dir,
@@ -443,7 +429,6 @@ def prepare(
                         backend=backend.value,
                         force_reembed="embed" in refetch_stages,
                     )
-                    reused_cache |= bool(cached_embeddings)
                     fasta_for_similarity = path
                     continue
                 else:
@@ -475,10 +460,7 @@ def prepare(
         # `fasta_for_similarity` is set here whenever `similarity` is on.
         if similarity:
             from protspace.data.loaders import compute_similarity
-            from protspace.data.loaders.similarity import SIMILARITY_MATRIX_FILENAME
 
-            matrix_cache = cache_dir / SIMILARITY_MATRIX_FILENAME if cache_dir else None
-            matrix_mtime = _mtime(matrix_cache)
             embedding_sets.append(
                 compute_similarity(
                     fasta_for_similarity,
@@ -487,7 +469,6 @@ def prepare(
                     force_refetch="similarity" in refetch_stages,
                 )
             )
-            reused_cache |= _reused(matrix_cache, matrix_mtime)
 
         # --- Parse annotations (repeatable option → flat list) ---
         raw = annotations if annotations else ["default"]
@@ -538,12 +519,11 @@ def prepare(
 
         pipeline = ReductionPipeline(config)
         pipeline.run(embedding_sets)
-        reused_cache |= pipeline.reused_cache
 
         # Only after a run that reused something: a fresh run has nothing to
         # recompute. A warning, like the "Using cached ..." lines it answers,
         # so a default-verbosity rerun shows it.
-        if reused_cache and not refetch_stages:
+        if cache_hits and not refetch_stages:
             logger.warning(
                 f"Hint: results were reused from {cache_dir}; use --refetch all "
                 "to recompute everything, or --refetch <stages> selectively"
