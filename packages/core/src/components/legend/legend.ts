@@ -399,7 +399,6 @@ export class ProtspaceLegend extends LitElement {
     onReorder: () => {
       this._scatterplotController.dispatchZOrderChange();
       this._persistenceController.saveSettings();
-      this._dispatchLegendStateChange();
     },
     onMergeToOther: (value) => this._handleMergeToOther(value),
     onSortModeChange: (mode) => {
@@ -534,19 +533,7 @@ export class ProtspaceLegend extends LitElement {
     this._scatterplotController.dispatchZOrderChange();
     this._scatterplotController.syncOtherValues();
     this._persistenceController.saveSettings();
-    this._dispatchLegendStateChange();
     this.requestUpdate();
-  }
-
-  private _dispatchLegendStateChange(): void {
-    window.dispatchEvent(
-      new CustomEvent('protspace-legend-state-change', {
-        detail: {
-          annotation: this.selectedAnnotation,
-          scatterplotSelector: this.scatterplotSelector,
-        },
-      }),
-    );
   }
 
   /** Returns whether the move switched the annotation to manual order. */
@@ -568,7 +555,6 @@ export class ProtspaceLegend extends LitElement {
     this._scatterplotController.syncNumericAnnotationSettings();
     this._scatterplotController.dispatchZOrderChange();
     this._persistenceController.saveSettings();
-    this._dispatchLegendStateChange();
     this.requestUpdate();
     return didPromote;
   }
@@ -1128,7 +1114,6 @@ export class ProtspaceLegend extends LitElement {
     this._scatterplotController.syncNumericAnnotationSettings();
     this._scatterplotController.dispatchZOrderChange();
     this._persistenceController.saveSettings();
-    this._dispatchLegendStateChange();
     this.requestUpdate();
   }
 
@@ -1150,7 +1135,6 @@ export class ProtspaceLegend extends LitElement {
     this._scatterplotController.syncNumericAnnotationSettings();
     this._scatterplotController.dispatchZOrderChange();
     this._persistenceController.saveSettings();
-    this._dispatchLegendStateChange();
   }
 
   private _toggleLegendOrderDirection(): void {
@@ -1167,7 +1151,6 @@ export class ProtspaceLegend extends LitElement {
       this._updateLegendItems();
       this._scatterplotController.syncNumericAnnotationSettings();
       this._persistenceController.saveSettings();
-      this._dispatchLegendStateChange();
       this.requestUpdate();
       return;
     }
@@ -1280,7 +1263,6 @@ export class ProtspaceLegend extends LitElement {
       enableDuplicateStackUI: this._enableDuplicateStackUI,
     });
     this._persistenceController.saveSettings();
-    this._dispatchLegendStateChange();
     this.requestUpdate();
   }
 

@@ -33,7 +33,6 @@ type LegendTestElement = HTMLElement & {
     syncNumericSettingsFromPersistence: () => void;
   };
   _updateLegendItems: () => void;
-  _dispatchLegendStateChange: () => void;
   _scatterplotController: {
     scatterplot: {
       data?: {
@@ -82,7 +81,6 @@ describe('ProtspaceLegend numeric settings inference', () => {
     el.selectedAnnotation = 'score';
     el.annotationData = { name: 'score', values: ['1', '2'], kind: 'numeric' };
     el._updateLegendItems = vi.fn();
-    el._dispatchLegendStateChange = vi.fn();
   }
 
   function setSourceAnnotationKind(el: LegendTestElement, kind: 'categorical' | 'numeric'): void {

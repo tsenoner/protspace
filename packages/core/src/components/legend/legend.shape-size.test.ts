@@ -28,7 +28,6 @@ type ShapeSizeLegend = HTMLElement & {
   _applyDisplaySettings: (patch: { shapeSize?: number | null }) => void;
   _handleSettingsReset: () => void;
   _updateLegendItems: () => void;
-  _dispatchLegendStateChange: () => void;
   _scatterplotController: { updateConfig: (config: { pointSize?: number }) => void };
   _persistenceController: {
     _datasetHash: string;
@@ -62,7 +61,6 @@ function makeLegend(proteinCount = 2) {
     if (config.pointSize !== undefined) pointSizes.push(config.pointSize);
   };
   el._updateLegendItems = vi.fn();
-  el._dispatchLegendStateChange = vi.fn();
   el._persistenceController.updateDatasetHash(DATASET);
   el._datasetProteinCount = proteinCount;
   const hash = el._persistenceController._datasetHash;
