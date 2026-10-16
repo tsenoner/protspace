@@ -274,6 +274,71 @@ def test_cells_carry_ids_when_the_format_requires_them(path: Path):
     assert not missing, f"{path.name}: cells {missing} have no id"
 
 
+def _install_cell(path: Path) -> str:
+    """The install cell up to its import block, which needs Colab."""
+    (source,) = [src for _, src in _code_cells(path) if src.startswith("# @title 1.")]
+    return source.split("# A preloaded module")[0]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb",
+        NOTEBOOK_DIR / "ProtSpace_Transfer.ipynb",
+    ],
+    ids=lambda p: p.name,
+)
+def test_install_cell_stops_when_pip_changed_a_loaded_package(path, monkeypatch):
+    """Colab had numpy loaded when pip upgraded it; the cell's imports passed and
+    Generate failed on `_blas_supports_fpe` until a manual restart."""
+    import importlib.metadata as md
+    import subprocess
+    import sys
+    import types
+    from pathlib import PurePosixPath
+
+    disk = {"fakepkg": "1.0", "nsdist": "1.0"}
+    upgrade = {"to": "2.0"}
+
+    def pip(cmd, *_a, **_k):
+        assert "pip" in cmd
+        if upgrade["to"]:
+            disk.update(fakepkg=upgrade["to"], nsdist=upgrade["to"])
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    loaded = types.ModuleType("fakepkg")
+    loaded.__file__ = "/site-packages/fakepkg/__init__.py"
+    # A namespace package (no __file__) shared by many distributions, as `google`
+    # is in Colab: nsdist's subpackage is not loaded, so its upgrade is harmless.
+    namespace_pkg = types.ModuleType("nsfake")
+    monkeypatch.setitem(sys.modules, "fakepkg", loaded)
+    monkeypatch.setitem(sys.modules, "nsfake", namespace_pkg)
+    monkeypatch.setattr(
+        md,
+        "packages_distributions",
+        lambda: {"fakepkg": ["fakepkg"], "nsfake": ["nsdist"]},
+    )
+    monkeypatch.setattr(md, "version", lambda dist: disk[dist])
+    monkeypatch.setattr(
+        md, "distribution",
+        lambda dist: types.SimpleNamespace(files=[PurePosixPath("nsfake/sub/__init__.py")]),
+    )  # fmt: skip
+    monkeypatch.setattr(subprocess, "run", pip)
+    source = compile(_install_cell(path), f"{path.name}:install", "exec")
+
+    session = {"__name__": "__notebook__"}
+    with pytest.raises(SystemExit, match=r"fakepkg \(1\.0 \u2192 2\.0\)") as stopped:
+        exec(source, session)
+    assert "Restart session" in str(stopped.value)
+    assert "nsdist" not in str(stopped.value)
+
+    upgrade["to"] = None  # pip finds nothing left to do, the old copy is still loaded
+    with pytest.raises(SystemExit, match="fakepkg"):
+        exec(source, session)
+
+    exec(source, {"__name__": "__notebook__"})  # after the restart
+
+
 class _Widget:
     """Just enough of an ipywidgets widget for a cell to build and read its panel."""
 
