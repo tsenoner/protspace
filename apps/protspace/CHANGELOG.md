@@ -1,9 +1,42 @@
 # CHANGELOG
 
 
+## v4.17.0 (2026-10-16)
+
+### Bug Fixes
+
+- Name the sample in the auto-cutoff log; format TSV floats from 6 digits
+  ([`529cbe8`](https://github.com/tsenoner/protspace/commit/529cbe818c5731bd0aef1bff1cfc2eb4506d4db2))
+
+- Say the X/Y view of a 3-D projection is its 2-D fit only for PCA
+  ([`43d40ee`](https://github.com/tsenoner/protspace/commit/43d40eef703bd1fd9543b398e765861caade79de))
+
+### Performance Improvements
+
+- **transfer**: Estimate the auto cutoff from a sample of large reference sets
+  ([`814d954`](https://github.com/tsenoner/protspace/commit/814d954ff44e0926e013f0b74d3f1544ffa0e0a9))
+
+### Refactoring
+
+- Share the 3-D advice text and the __neighbor column suffix
+  ([`eaa7eda`](https://github.com/tsenoner/protspace/commit/eaa7eda76fffe2bf4146d1185f853b6335f26c32))
+
+
 ## v4.16.8 (2026-10-16)
 
 ### Bug Fixes
+
+- Address the PR review's export and notebook findings
+  ([`5bab48b`](https://github.com/tsenoner/protspace/commit/5bab48b8a76d5a7310352b6954ed85cd59a86166))
+
+- **annotations**: Key a parquet holding protein_id and identifier on protein_id
+  ([`e5e8dd6`](https://github.com/tsenoner/protspace/commit/e5e8dd63e40a7705a5b13fbc8851619d3fddadc8))
+
+- **export**: Write a value the app reads as missing as an empty cell
+  ([`619f8ea`](https://github.com/tsenoner/protspace/commit/619f8ea97445c9504969ef910da19be1ef543320))
+
+- **notebook**: Keep empty CSV cells empty in the Preparation panel
+  ([`af18b40`](https://github.com/tsenoner/protspace/commit/af18b407841debb53291fae9aa27a7f0bf86d0f1))
 
 - **prepare**: Name the reused stages in the --refetch hint
   ([`1c42f04`](https://github.com/tsenoner/protspace/commit/1c42f042bf21e9ff370c6b9702c3a1ac25396be4))
@@ -11,10 +44,32 @@
 - **prepare**: Show the --refetch hint only after reusing cached work
   ([`b0d4cb2`](https://github.com/tsenoner/protspace/commit/b0d4cb2692cf1f8387a715ee40c925fc0cfd0b9a))
 
+- **transfer**: Key a bundle with an identifier annotation on protein_id
+  ([`696ff8d`](https://github.com/tsenoner/protspace/commit/696ff8d990349124b7f4bb2a08ee8e7074291be1))
+
+### Features
+
+- **io**: Write protein_id as the protein ID column everywhere
+  ([`5120c9b`](https://github.com/tsenoner/protspace/commit/5120c9bdf9f0a279ae9251454d903c4dec8450b2))
+
 ### Refactoring
+
+- Share id, annotation and sampling helpers across the PR
+  ([`ded6813`](https://github.com/tsenoner/protspace/commit/ded681326d37fe0d2a3dac01f2462f1a59fab5b6))
+
+- Share the column names the viewer never shows as annotations
+  ([`d14b817`](https://github.com/tsenoner/protspace/commit/d14b81717e6b4fd6e38713b20e36938a30dde9ab))
 
 - **prepare**: Record cache hits where each stage decides to reuse
   ([`7a55d27`](https://github.com/tsenoner/protspace/commit/7a55d27b8d4065709ca1ef3e2693fd927c3dd114))
+
+### Testing
+
+- Keep CLI messages on one line when turbo runs the suite
+  ([`6edcbc6`](https://github.com/tsenoner/protspace/commit/6edcbc63d50288cfff33cb3b5d435341e330b7f2))
+
+- **h5**: Keep the two-unnamed-files message on one line
+  ([`f5cfef0`](https://github.com/tsenoner/protspace/commit/f5cfef08774e33a018a3d1ae185e2b2b2f0d5205))
 
 
 ## v4.16.7 (2026-10-15)
@@ -94,11 +149,150 @@
 
 ### Bug Fixes
 
+- **annotations**: Key custom annotation files on their first column
+  ([`3e69865`](https://github.com/tsenoner/protspace/commit/3e698650a0da87ec5aec48a48fa5c61b0a0d7984))
+
+- **cli**: Refuse mixed-model folders and same-name project inputs
+  ([`ebd6b5e`](https://github.com/tsenoner/protspace/commit/ebd6b5e62dc379d7f39a14c4a6e4815c5bee2242))
+
+- **export**: Write only x and y coordinates in table exports
+  ([`1c0a54c`](https://github.com/tsenoner/protspace/commit/1c0a54c8d85fe52944cc3f13315b38be7d058912))
+
+- **notebook**: Load the panel's files by path and name every H5
+  ([`dd3b281`](https://github.com/tsenoner/protspace/commit/dd3b281740a4d54f7dee1171b6249f88d4c6d6b9))
+
+- **notebook**: Stamp model_name on the embeddings notebook's HDF5
+  ([`0ded0c6`](https://github.com/tsenoner/protspace/commit/0ded0c6cf166d6975ba2e4f49a7140f40e3e12d2))
+
+- **notebook**: State the custom CSV id rule and accept .txt
+  ([`4a34afa`](https://github.com/tsenoner/protspace/commit/4a34afa02383f138d426247494334baf8cd425bf))
+
+- **notebook**: Upload into a fresh folder and name H5s like the CLI
+  ([`70734f2`](https://github.com/tsenoner/protspace/commit/70734f259190acc0b27692b9250f79289c5b37c8))
+
+- **prepare**: Keep comma-named -a files whole, check them early
+  ([`686bb8b`](https://github.com/tsenoner/protspace/commit/686bb8b29f9112259c23a58438e390c8eb6d2c78))
+
+- **prepare**: Merge custom annotation files instead of keeping one
+  ([`3d7df47`](https://github.com/tsenoner/protspace/commit/3d7df47f5a86c7b211024cc12e2c342a948712cf))
+
+- **prepare**: Parse -m before embedding a FASTA or query input
+  ([`7fbd63f`](https://github.com/tsenoner/protspace/commit/7fbd63f9315cd2b92c38d72ef6deb810b8997465))
+
+- **prepare**: Skip the embedding backends when nothing is embedded
+  ([`95fcf73`](https://github.com/tsenoner/protspace/commit/95fcf7398909a201cb067a2f3d29ab84b6ffeedf))
+
+- **project**: Point -a and --stats to the commands that take them
+  ([`60ea778`](https://github.com/tsenoner/protspace/commit/60ea7784283c8678e1030c1b49807d551f4a3d21))
+
 - **protspace**: Read missing annotation values as the web app does
   ([`e8495fc`](https://github.com/tsenoner/protspace/commit/e8495fcf0af0521ab1c8fe779b4a5f7afa4552bc))
 
 - **protspace**: Read pandas nulls as missing; tidy after review
   ([`cd48efb`](https://github.com/tsenoner/protspace/commit/cd48efbfaf4f5cccb3ae14cebe03cb0d55aabd6d))
+
+- **stats**: Write a CSV's scored table under its own name
+  ([`231bf96`](https://github.com/tsenoner/protspace/commit/231bf96b6723247da2fea8d832dd1dafc79940fe))
+
+- **transfer**: Refuse an unwritable --report path before writing
+  ([`05eef4a`](https://github.com/tsenoner/protspace/commit/05eef4ae321d86a67cb40383ff6cf8904c674478))
+
+- **transfer**: Warn when --skip-distant leaves a column unpredicted
+  ([`89dab8d`](https://github.com/tsenoner/protspace/commit/89dab8d8116d6b9fd0ea47bab8895c53e54a8ffd))
+
+### Continuous Integration
+
+- **release**: Block a release that reaches a scheduled removal
+  ([`23dcdd4`](https://github.com/tsenoner/protspace/commit/23dcdd4ae7075f3afefbc0830f9ef5bd6b251e79))
+
+### Documentation
+
+- Describe projection and embedding cluster columns
+  ([`96ac148`](https://github.com/tsenoner/protspace/commit/96ac1485c7295eca83dc778f2fc2d516890278fc))
+
+- Describe the deprecation registry and release gate
+  ([`308cf7f`](https://github.com/tsenoner/protspace/commit/308cf7f4a26ebc217f7ae1e29e2939f3edb42cdc))
+
+- Describe the neighbour report and table export in READMEs
+  ([`899f764`](https://github.com/tsenoner/protspace/commit/899f76464b8555d8f5df7fded1ead566ed851e54))
+
+- Document 3-D reading deprecation and convert --flatten-3d
+  ([`7564b47`](https://github.com/tsenoner/protspace/commit/7564b473f95a2901703dafb579504364bb3a561b))
+
+- Document custom annotation files and the step commands
+  ([`4268bcf`](https://github.com/tsenoner/protspace/commit/4268bcf77299024e7fd811de7c073ed8431e30ec))
+
+- Mark 3-D projections and protspace serve deprecated
+  ([`566edec`](https://github.com/tsenoner/protspace/commit/566edec78583c8b42bf084bc9cab2bb3a0204918))
+
+- Name stats' CSV output, note the id-column change on upgrade
+  ([`4cd27a4`](https://github.com/tsenoner/protspace/commit/4cd27a410995674d8239296ce47120df201a7da4))
+
+- State the 3-D and serve deprecation across the merged guide
+  ([`a30591b`](https://github.com/tsenoner/protspace/commit/a30591b6455e538b49ac4df2faa92d0bea4e0645))
+
+- **openspec**: Reconcile deprecate-3d-and-serve with the merged branch
+  ([`a22d12c`](https://github.com/tsenoner/protspace/commit/a22d12cf27284fcf8ec96cc486900fcaaa49cda0))
+
+### Features
+
+- **cli**: Accept custom annotation files in annotate, stats, bundle
+  ([`fee8637`](https://github.com/tsenoner/protspace/commit/fee86376c0a706ef04d0c75ab59c5da75b392867))
+
+- **cli**: Add --cluster-space to stats and prepare
+  ([`566154b`](https://github.com/tsenoner/protspace/commit/566154bf3e5976163b3a02f777bd276ee53cfb8d))
+
+- **cli**: Add convert --flatten-3d
+  ([`13d9794`](https://github.com/tsenoner/protspace/commit/13d9794a2bb02ac633d751545faaaba0f93f4922))
+
+- **cli**: Deprecate 3-D projections and protspace serve
+  ([`6fbd87b`](https://github.com/tsenoner/protspace/commit/6fbd87b8bc694ebf61180c3b37db9d01cd789dcb))
+
+- **cli**: Infer the HDF5 embedding name when it is unambiguous
+  ([`af0babc`](https://github.com/tsenoner/protspace/commit/af0babc8fe15dacce20e895eba569a72019baf62))
+
+- **cli**: Warn when reading 3-D projections
+  ([`543ac97`](https://github.com/tsenoner/protspace/commit/543ac977c7de66f57762eee1290c1fe4a4908b2b))
+
+- **export**: Write a bundle as a TSV table
+  ([`2fd50d4`](https://github.com/tsenoner/protspace/commit/2fd50d49bf99f02d38ed8d7625fca36e861631bf))
+
+- **protlabel**: Keep each prediction's neighbours on request
+  ([`c44ea99`](https://github.com/tsenoner/protspace/commit/c44ea99c0b42e71070b75c1e8f811b12e442efa6))
+
+- **stats**: Cluster each embedding once in embedding space
+  ([`b9a8371`](https://github.com/tsenoner/protspace/commit/b9a83717e29f51110cc813614dee0e3ab6e0eef1))
+
+- **transfer**: Mark queries near or distant with --max-distance
+  ([`ed84414`](https://github.com/tsenoner/protspace/commit/ed84414085c04e749b87c5c01d762b1c06a52df0))
+
+- **transfer**: Write each query's neighbours with --report
+  ([`6a3285c`](https://github.com/tsenoner/protspace/commit/6a3285c140849a9ddae6f3776bce829661a78100))
+
+### Refactoring
+
+- **stats**: Drop aligned embedding from kept projection contexts
+  ([`b08b677`](https://github.com/tsenoner/protspace/commit/b08b6770b6f6b5beea8c9ed05ff1dfe0cd5054fc))
+
+- **transfer**: Name the CLI's report list apart from report_rows
+  ([`b66e2e1`](https://github.com/tsenoner/protspace/commit/b66e2e1cdd567a84e6444ef579697bbdf0358817))
+
+### Testing
+
+- Cover the 3-D reading warning and convert --flatten-3d
+  ([`05103cb`](https://github.com/tsenoner/protspace/commit/05103cbe3c080c95858ea7169b321723de5156e8))
+
+- Cover the deprecation registry and its warnings
+  ([`489a10f`](https://github.com/tsenoner/protspace/commit/489a10fe776770beb357b2fdba1b2c4ffea574c7))
+
+- Cover the release deprecation gate
+  ([`d92d809`](https://github.com/tsenoner/protspace/commit/d92d8097be39dee1249318a8ee507a6b8d3c50c6))
+
+- **notebook**: Run the Preparation panel with real ipywidgets
+  ([`0b69e1a`](https://github.com/tsenoner/protspace/commit/0b69e1a55b4afacc3ffe3221fd6a0a0de58de367))
+
+- **protspace**: Pin the guide's custom annotation suffixes
+  ([`26523f9`](https://github.com/tsenoner/protspace/commit/26523f9916ffeb244a0c2e437d1f1d4f107deb13))
 
 
 ## v4.16.5 (2026-10-15)

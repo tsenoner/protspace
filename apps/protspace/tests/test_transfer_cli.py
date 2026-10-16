@@ -7,6 +7,7 @@ import pyarrow as pa
 import pytest
 
 from protspace.analysis.classification import Rule
+from protspace.cli import transfer as transfer_cli
 from protspace.cli.transfer import run_transfer
 from protspace.data.annotations.encoding import stamp_format_version
 from tests.cli_output import plain
@@ -954,6 +955,18 @@ def test_run_transfer_auto_max_distance_excludes_self_by_index():
     _run(annotations, embeddings, k=1, max_distance="auto", report=report)
     assert report[0]["max_distance"] == pytest.approx(0.0, abs=1e-6)
     assert report[0]["neighbor"] == "distant"
+
+
+def test_auto_max_distance_samples_large_reference_sets(monkeypatch):
+    # Past AUTO_SAMPLE references the percentile comes from a seeded sample: the
+    # same references give the same cutoff, close to the full one.
+    refs = np.random.default_rng(1).normal(size=(400, 8)).astype(np.float32)
+    full = transfer_cli._auto_max_distance("fam", refs, "euclidean")
+    monkeypatch.setattr(transfer_cli, "AUTO_SAMPLE", 100)
+    sampled = transfer_cli._auto_max_distance("fam", refs, "euclidean")
+    assert sampled == transfer_cli._auto_max_distance("fam", refs, "euclidean")
+    assert sampled != full
+    assert sampled == pytest.approx(full, rel=0.1)
 
 
 def test_run_transfer_auto_max_distance_needs_two_references():

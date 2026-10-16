@@ -33,6 +33,7 @@ from pathlib import Path
 import pyarrow as pa
 
 from protlabel import Prediction
+from protspace._generated.shared_constants import EAT_NEIGHBOR_SUFFIX
 from protspace.data.annotations.encoding import encode_field, to_display_value
 from protspace.data.io.atomic import atomic_write_bytes
 from protspace.data.io.ids import PROTEIN_ID_COLUMN
@@ -54,7 +55,7 @@ REPORT_COLUMNS = (
 CUTOFF_REPORT_COLUMNS = ("neighbor", "max_distance")
 
 #: Suffix of the near/distant column ``--max-distance`` writes beside ``COL``.
-NEIGHBOR_SUFFIX = "__neighbor"
+NEIGHBOR_SUFFIX = EAT_NEIGHBOR_SUFFIX
 
 
 def add_overlay_columns(

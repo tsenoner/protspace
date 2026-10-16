@@ -73,6 +73,10 @@ THREE_D_XY_VIEW = (
     "non-linear methods it is the 3-D layout seen from one side, which can overlap "
     "points that are far apart."
 )
+#: The advice that comes first in those messages.
+THREE_D_RECOMPUTE = (
+    "Recompute them with the 2-D method (e.g. umap2) when you have the embeddings."
+)
 
 _REGISTRY = (
     Deprecation(
@@ -150,10 +154,9 @@ _REGISTRY = (
         remove_in="5.0.0",
         message=(
             "{name} holds 3-D projections ({projections}). Reading 3-D projections "
-            "is deprecated and will be removed in protspace {remove_in}. Recompute "
-            "them with the 2-D method (e.g. umap2) when you have the embeddings, or "
-            "run `protspace convert --flatten-3d` to keep their X/Y view as 2-D. "
-            f"{THREE_D_XY_VIEW}"
+            "is deprecated and will be removed in protspace {remove_in}. "
+            f"{THREE_D_RECOMPUTE} Or run `protspace convert --flatten-3d` to keep "
+            f"their X/Y view as 2-D. {THREE_D_XY_VIEW}"
         ),
         removal=(
             "apps/protspace/src/protspace/data/io/bundle_v3.py: drop the z axis "

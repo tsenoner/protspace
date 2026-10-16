@@ -809,9 +809,9 @@ def flatten_3d_projections(
 
     flat = pa.array(list(renamed), type=pa.string())
     names_column = projections.column("projection_name")
-    is_flat = pc.is_in(names_column, value_set=flat)
     # One lookup per row: the flattened name of a renamed projection, else its own.
     position = pc.index_in(names_column, value_set=flat)
+    is_flat = pc.is_valid(position)
     new_names = pc.coalesce(
         pc.take(pa.array(list(renamed.values()), pa.string()), position),
         names_column,

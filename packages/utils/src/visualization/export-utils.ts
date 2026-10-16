@@ -977,10 +977,16 @@ export class ProtSpaceExporter {
   }
 }
 
+const FLOAT32_MIN_NORMAL = 2 ** -126;
+
 /** Shortest decimal that reads back as the same float32, as Python prints a float32 column. */
 function formatFloat32(value: number): string {
   if (!Number.isFinite(value)) return '';
-  for (let digits = 1; digits < 9; digits++) {
+  // Start at 6: a normal float32 within 2^-24 of a shorter decimal rounds to that same decimal
+  // at 6 digits, so fewer digits never give a different string, and most coordinates need 7-9.
+  // A subnormal has less precision, so it still tries every length.
+  const first = Math.abs(value) < FLOAT32_MIN_NORMAL ? 1 : 6;
+  for (let digits = first; digits < 9; digits++) {
     const text = String(Number(value.toPrecision(digits)));
     if (Math.fround(Number(text)) === value) return text;
   }

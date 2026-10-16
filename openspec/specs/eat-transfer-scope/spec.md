@@ -154,6 +154,9 @@ transferred again.
 `--max-distance auto` SHALL set the cutoff for each `--transfer` column to the 95th percentile of
 the distances from each reference of that column to its nearest other reference, SHALL log the
 value chosen, and SHALL fail with a usage error when a column has fewer than two references.
+Above 10,000 references the percentile SHALL be estimated from a fixed seeded sample of 10,000 of
+them, each still searched against all references, so the same references always give the same
+cutoff.
 When `--report` is given, every report row SHALL carry the cutoff used for its column and the
 query's class.
 

@@ -147,6 +147,16 @@
       ],
       "value": "protein_id"
     },
+    "EAT_NEIGHBOR_SUFFIX": {
+      "kind": "string",
+      "doc": [
+        "Suffix of the column `protspace transfer --max-distance` writes beside an",
+        "annotation `<col>`: `near` or `distant` per query. The web describes a",
+        "`<col>__neighbor` column by the annotation it belongs to; a different",
+        "spelling would show it as an unexplained raw column."
+      ],
+      "value": "__neighbor"
+    },
     "NON_ANNOTATION_COLUMNS": {
       "kind": "set",
       "doc": [

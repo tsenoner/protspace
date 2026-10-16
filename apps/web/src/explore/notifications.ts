@@ -189,7 +189,7 @@ export function getThreeDProjectionNotification(projectionNames: readonly string
   const verb = projectionNames.length === 1 ? 'is' : 'are';
   return {
     title: 'This file has 3-D projections.',
-    description: `${listed} ${verb} shown as their X/Y view. For PCA this is the same as its 2-D projection; for UMAP, t-SNE and other non-linear methods it is the 3-D layout seen from one side, which can overlap points that are far apart. Reading 3-D projections ends in ProtSpace 5.0.0. Recompute them with the 2-D method (e.g. umap2) if you have the embeddings, or run "protspace convert --flatten-3d" on the file to keep this view as 2-D.`,
+    description: `${listed} ${verb} shown as their X/Y view. For PCA the X/Y view is the same as pca2; for UMAP, t-SNE, PaCMAP and other non-linear methods it is the 3-D layout seen from one side, which can overlap points that are far apart. Reading 3-D projections ends in ProtSpace 5.0.0. Recompute them with the 2-D method (e.g. umap2) when you have the embeddings. Or run "protspace convert --flatten-3d" on the file to keep this view as 2-D.`,
     durationMs: 12_000,
     dedupeKey: 'three-d-projections',
   };

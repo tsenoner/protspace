@@ -138,6 +138,12 @@ ARROW_BOOLEAN_LABELS = (
 # IDs is a rule, pinned by the bundle contract suite; this is only the name.
 PROTEIN_ID_COLUMN = "protein_id"
 
+# Suffix of the column `protspace transfer --max-distance` writes beside an
+# annotation `<col>`: `near` or `distant` per query. The web describes a
+# `<col>__neighbor` column by the annotation it belongs to; a different
+# spelling would show it as an unexplained raw column.
+EAT_NEIGHBOR_SUFFIX = "__neighbor"
+
 # Column names the web reader never shows as an annotation, compared
 # exactly: the id columns it may key a table on and the fields of a
 # projection row. The Python loader of a custom annotation file renames a
