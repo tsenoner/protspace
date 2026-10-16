@@ -473,7 +473,7 @@ projection is stored as `NaN` on every axis, never `0.0`: the origin is a real c
 missing point is not drawn. A projection is 3D when any of its rows has a finite `z` value and
 2D otherwise (a `z` of NaN counts as missing). Reading 3D projections is deprecated and ends in
 protspace 5.0.0; `protspace convert --flatten-3d` rewrites them as 2D projections of their X/Y
-view. A `dimensions` value in the input metadata that
+view, which for any method but PCA is the 3D layout seen from one side rather than a 2D fit. A `dimensions` value in the input metadata that
 disagrees is ignored with a warning, and part 2 is written with the value the data gives, so it
 always agrees with the manifest. Both readers refuse a part 3 whose row count differs from part
 1's, rather than leaving the unread proteins at `(0, 0)` or dropping the extra rows. The web app

@@ -12,7 +12,11 @@ import typer
 
 from protspace.cli.app import PANEL_REFINE, app, setup_logging
 from protspace.cli.common_options import Opt_Verbose
-from protspace.deprecations import DEPRECATIONS, THREE_D_PROJECTION_READ
+from protspace.deprecations import (
+    DEPRECATIONS,
+    THREE_D_PROJECTION_READ,
+    THREE_D_XY_VIEW,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +50,9 @@ def convert(
             help=(
                 "Write each 3-D projection as 2-D, keeping its X/Y view (named "
                 "'<name> (X/Y)'; its 3-D quality figures are dropped). Works on v3 "
-                "bundles too. Reading 3-D projections ends in protspace "
+                f"bundles too. {THREE_D_XY_VIEW} For those, recomputing with the "
+                "2-D method (e.g. umap2) is better when you have the embeddings. "
+                "Reading 3-D projections ends in protspace "
                 f"{DEPRECATIONS[THREE_D_PROJECTION_READ].remove_in}."
             ),
         ),
@@ -90,13 +96,19 @@ def convert(
             "Flattened to their X/Y view: "
             + ", ".join(f"{n} -> {n}{FLATTENED_SUFFIX}" for n in result.flattened)
         )
+        typer.echo(
+            f"{THREE_D_XY_VIEW} Recompute those with the 2-D method (e.g. umap2) "
+            "when you have the embeddings."
+        )
     elif result.three_d:
         logger.warning(
             "%s holds 3-D projections (%s), kept as 3-D. Reading 3-D projections "
-            "ends in protspace %s; rerun with --flatten-3d to write them as 2-D "
-            "projections of their X/Y view (protspace %s does this automatically).",
+            "ends in protspace %s. Recompute them with the 2-D method (e.g. umap2) "
+            "when you have the embeddings, or rerun with --flatten-3d to write "
+            "their X/Y view as 2-D (protspace %s does this automatically). %s",
             input_file,
             ", ".join(result.three_d),
             DEPRECATIONS[THREE_D_PROJECTION_READ].remove_in,
             DEPRECATIONS[THREE_D_PROJECTION_READ].remove_in,
+            THREE_D_XY_VIEW,
         )

@@ -197,7 +197,7 @@ Specify `pca2`, not `pca` alone.
 ::: warning 3D projections are deprecated
 3D projections (any `*3` method) are deprecated and will be removed in protspace 5.0.0. They
 still run, with a warning; use the `*2` variant instead. The web app shows a 3D projection only
-as its X/Y view. Reading them is deprecated too: every command that reads a bundle's projections
+as its X/Y view, which is the same as the 2D projection only for PCA. Reading them is deprecated too: every command that reads a bundle's projections
 warns when it holds a 3D one, and from 5.0.0 only `protspace convert` reads them, to turn them
 into 2D (see [`--flatten-3d`](#protspace-convert)).
 :::
@@ -990,12 +990,16 @@ protspace convert data.parquetbundle --in-place --flatten-3d
 | `--flatten-3d`  | Write each 3D projection as 2D, keeping its X/Y view; works on v3 bundles too. |
 | `-v, --verbose` | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                         |
 
-**3D projections.** Reading them is deprecated and ends in protspace 5.0.0. `--flatten-3d`
-rewrites each one as a 2D projection holding its X and Y coordinates, the view the web app shows
-today, so the picture does not change. It is renamed `<name> (X/Y)` and marked
-`flattened_from_3d` in its metadata so it is not mistaken for a 2D fit, and the quality figures
-computed on the 3D layout (its faithfulness and its statistics rows) are dropped. Without the
-flag, `convert` keeps 3D projections and warns; from 5.0.0 it flattens them automatically.
+**3D projections.** Reading them is deprecated and ends in protspace 5.0.0. `--flatten-3d` rewrites
+each one as a 2D projection holding its X and Y coordinates, the view the web app shows today. For
+PCA that view is the same as the 2D projection (`pca2`, up to the sign of each axis). For UMAP,
+t-SNE, PaCMAP, LocalMAP and MDS it is not: each optimises the layout for the number of dimensions it
+is given, so the X/Y view is the 3D layout seen from one side, where points that are far apart along
+`z` can overlap. If you have the embeddings, recompute those projections with the 2D method (e.g.
+`umap2`) instead. A flattened projection is renamed `<name> (X/Y)` and marked `flattened_from_3d` in
+its metadata so it is not mistaken for a 2D fit, and the quality figures computed on the 3D layout
+(its faithfulness and its statistics rows) are dropped. Without the flag, `convert` keeps 3D
+projections and warns; from 5.0.0 it flattens them automatically.
 
 Give either an output path or `--in-place`; the input is never overwritten otherwise. Settings
 (legend colors, shapes, order) and projection statistics are kept as they are, and the file is
@@ -1031,7 +1035,8 @@ protspace export data.parquetbundle data.tsv -p "ProtT5 — UMAP 2"
 | `-v, --verbose`    | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                |
 
 The columns are `protein_id`, then `<projection>_x` and `<projection>_y` for each `--projection`
-(a 3D projection writes only this X/Y view, the one the web app shows; its `z` is not exported, and
+(a 3D projection writes only this X/Y view, the one the web app shows, which is the same as the 2D
+projection only for PCA; its `z` is not exported, and
 reading it prints the [3D deprecation warning](#projection-methods)), then every annotation in the
 order the bundle stores them. That includes the `cluster_*` membership columns
 [`stats`](#protspace-stats) writes
@@ -1095,8 +1100,10 @@ Coming from ProtSpace 4.4, or from the v3 `protspace-local` command:
 - **3D projections and `protspace serve` are deprecated.** Both still work, with a warning, and
   are removed in protspace 5.0.0 (tracked in
   [#544](https://github.com/tsenoner/protspace/issues/544)). If you used `umap3`, `tsne3` or any
-  other `*3` method, switch to its `*2` variant; turn the 3D projections of existing bundles into
-  2D with [`protspace convert --flatten-3d`](#protspace-convert); and explore bundles at
+  other `*3` method, switch to its `*2` variant; recompute the 3D projections of existing bundles
+  with it when you have the embeddings, or keep their X/Y view as 2D with
+  [`protspace convert --flatten-3d`](#protspace-convert) (the same as the 2D projection only for
+  PCA); and explore bundles at
   [protspace.app/explore](https://protspace.app/explore) instead of with `serve`.
 
 ## See Also

@@ -297,13 +297,17 @@ describe('getRendererDegradedNotification', () => {
 });
 
 describe('getThreeDProjectionNotification', () => {
-  it('names the 3-D projections, the X/Y view, 5.0.0 and convert --flatten-3d', () => {
+  it('names the 3-D projections, the X/Y view, PCA, 5.0.0, recomputing and --flatten-3d', () => {
     const n = getThreeDProjectionNotification(['UMAP 3']);
 
     expect(n.title).toBe('This file has 3-D projections.');
     expect(n.description).toMatch(/^UMAP 3 is shown as their X\/Y view\./);
+    expect(n.description).toContain('For PCA this is the same as its 2-D projection;');
+    expect(n.description).toContain('the 3-D layout seen from one side');
     expect(n.description).toContain('Reading 3-D projections ends in ProtSpace 5.0.0.');
+    expect(n.description).toContain('Recompute them with the 2-D method (e.g. umap2)');
     expect(n.description).toContain('"protspace convert --flatten-3d"');
+    expect(n.description).not.toContain('To keep this view');
     expect(n.dedupeKey).toBe('three-d-projections');
   });
 
