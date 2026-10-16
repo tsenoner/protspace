@@ -410,7 +410,9 @@ requirement that the desktop layout stays unchanged is superseded.
 ### 18. Code structure targets
 
 - No element file over about 800 lines; `legend.ts`, `control-bar.ts` and `publish-modal.ts` are
-  split as described above.
+  split as described above. `legend.ts` is split into the element (about 980 lines: state,
+  lifecycle, render, public API) and controllers for its data pipeline, item actions, keyboard
+  reorder and settings.
 - `scatter-plot.ts` (about 2,600 lines) is a recorded exception: its isolation, tooltip and pin
   code and the `updated()` reconcilers share private state on the plot's hottest path, so this
   change moves out only the export compositing. Follow-up: split it in a change of its own after
