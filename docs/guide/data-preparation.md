@@ -94,10 +94,10 @@ label comes out wrong. The same rules apply in the [CLI](/guide/python-cli#model
 1. Click the Colab badge at the top of this page to open the notebook
 2. Choose **Runtime → Run all**. Setup takes about 30 seconds, then the control panel appears.
    Run all never stops to ask for a file, and building the panel downloads nothing: the
-   example dataset is fetched when you click **Generate**. If the install replaced a package
-   Colab had already loaded (numpy, say), the setup cell stops and names it: choose
-   **Runtime → Restart session**, then **Run all** again. The second run installs nothing and
-   takes seconds
+   example dataset is fetched when you click **Generate**. Setup keeps the packages Colab has
+   already loaded (numpy, pandas) at their versions, so it needs no restart. If one changed all
+   the same, the setup cell stops and names it: choose **Runtime → Restart session**, then
+   **Run all** again. The second run installs nothing and takes seconds
 3. Get your file into the Colab runtime, if you use one, in any of three ways:
    - **Upload cell**: tick the box in **Optional: upload a file from your computer**, run that
      cell and pick the file. It lands in a new `upload-…` folder, so a corrected file uploaded
@@ -157,7 +157,9 @@ Choose which 2-D projections to generate:
 ### Parameters (Optional)
 
 Fine-tune settings for each method. The defaults are the CLI's, and each slider covers only the
-values the CLI accepts (perplexity 5 to 50, for example):
+values the CLI accepts. t-SNE's perplexity must stay below the number of proteins (about a third of
+it works best). The Methods section says so as soon as the loaded input is too small for the
+value, and Generate does not start until it is changed:
 
 | Method   | Parameters                                                              |
 | -------- | ----------------------------------------------------------------------- |
@@ -181,11 +183,14 @@ ProtSpace renders these scores in the legend and the projection metadata panel. 
 1. Click **Generate**. It runs on the input tab that is open; if that tab has nothing loaded it
    says so and runs nothing. It first prints the input it runs on, with the protein count
 2. Wait for processing (time depends on dataset size). The button is disabled until the run
-   ends; a status box below it names the step that is running, and protspace's own progress
+   ends. A bar and a status box below it show the step (for example _Step 3 of 6 · Reducing
+   dimensions (UMAP 2, 2 of 4)_) and the time since the click, and protspace's own progress
    lines appear under that
 3. When it is done, the status box names the `.parquetbundle`, its size and the time taken, and
-   the file downloads to your computer. If the browser blocks it, take it from the Colab Files
-   pane under `output/`
+   says the download has started. The browser saves the file when the transfer ends, which for a
+   large bundle can be a while after _Done_. **Download bundle** downloads any bundle of this
+   runtime again (its list shows each with its size and time), and the Colab Files pane has them
+   under `output/`
 4. If a run fails, the status box names the step and the error, with the advice that fits it
    (restart the session for a package the install replaced, change a parameter, attach a GPU when
    Biocentral is down); the details for a bug report are printed below it
@@ -194,7 +199,9 @@ ProtSpace renders these scores in the legend and the projection metadata panel. 
 
 The Preparation notebook has an **Embedding Annotation Transfer** panel below the Generate button.
 It fills blank annotation values on your query proteins from their nearest annotated neighbours in
-embedding space, with a reliability score attached. Its column list fills in after each Generate.
+embedding space, with a reliability score attached. Its column list fills in after each Generate
+and offers only the columns with values to copy and gaps to fill, each with its counts (for
+example _family (2,544 set / 2,491 missing)_). A run shows its steps and elapsed time like Generate.
 
 A label is copied however far the nearest reference is, so the panel sets a **distance cutoff**,
 calibrated on the references by default (the CLI's `--max-distance auto`), and marks each query
