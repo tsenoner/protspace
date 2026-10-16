@@ -81,9 +81,9 @@ export class SpiderfyLayer {
     const signature = `${coarse}|${stack.key}|${stack.points.map((p) => p.id).join('\u0000')}`;
     const transform = `translate(${stack.px},${stack.py}) scale(${1 / k})`;
 
-    // The same ring again (a hover, a theme or a zoom redraw): move and recolour it in place. A
-    // rebuilt node under a resting mouse fires mouseenter, whose hover redraws the ring: a loop
-    // that also detaches the node a click is about to land on.
+    // The same ring again (a theme, zoom or selection redraw): move and recolour it in place. A
+    // rebuilt node under a resting mouse would fire mouseenter and detach the node a click is about
+    // to land on.
     const existing = layer.select<SVGGElement>('g.dup-spiderfy');
     if (
       !existing.empty() &&

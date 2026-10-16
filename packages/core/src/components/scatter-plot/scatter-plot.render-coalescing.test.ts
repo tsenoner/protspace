@@ -207,6 +207,19 @@ describe('render coalescing', () => {
     expect(render).toHaveBeenCalledTimes(1);
   });
 
+  it('a tooltip change with a non-skippable change still renders', () => {
+    const { el, renderer } = makePlot();
+    const render = vi.spyOn(renderer, 'render');
+    el._reconcileSelectionOverlays(
+      new Map<string, unknown>([
+        ['_tooltipData', null],
+        ['hiddenAnnotationValues', []],
+      ]),
+    );
+    frames.run();
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
   it('a flush with nothing requested does not render', () => {
     const { el } = makePlot();
     const render = vi.spyOn(el, '_renderPlot');
