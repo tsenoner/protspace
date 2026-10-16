@@ -72,7 +72,7 @@ capabilities the change adds and which existing specs it will update.
 - `explore-import-export`: the Import menu and dataset switcher, the Export menu and its
   confirmations, and the figure editor's dialog behaviour.
 - `explore-help`: the help menu, the complete keyboard shortcut list, the full tour for new visitors
-  and the "What's new" tour for returning ones, and info buttons for Contours, Filter and Export.
+  and the "What's new" tour for returning ones.
 - `explore-mobile-layout`: tablet, phone and landscape-phone layouts, the More sheet, the bottom
   panel, the structure sheet, touch affordances, and dialogs that fit a phone (ported from the
   unmerged mobile branch, without its "desktop unchanged" requirement).
@@ -122,9 +122,9 @@ capabilities the change adds and which existing specs it will update.
 ## Impact
 
 - **Core (`packages/core`)**: a new `components/kit/` (controls, layer stack); `styles/theme.ts`
-  replaces `styles/tokens.ts` and most of `mixins.ts` / `overlay-mixins.ts`; the legend split into
-  focused files; `control-bar.ts` replaced by separate elements; the figure editor moved onto
-  `ps-dialog` and split; the scatterplot reads its background and neutral colours from tokens,
+  replaces `styles/tokens.ts`, `mixins.ts` and `overlay-mixins.ts`, which are deleted; the legend
+  split into focused files; `control-bar.ts` replaced by separate elements; the figure editor moved
+  onto `ps-dialog` and split; the scatterplot reads its background and neutral colours from tokens,
   resizes once per layout change and keeps the viewed centre; the structure viewer gains docked and
   floating modes and themed backgrounds; the export renderer uses the shared scale function.
 - **Utils (`packages/utils`)**: `visualization/data-processor.ts` (one scale for both axes).

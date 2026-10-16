@@ -164,8 +164,9 @@ width changes, and points under an opaque sidebar are drawn for nothing).
   It has two kinds of token: roles, which the themes set (surfaces, borders, text, accent fill, accent
   text, accent tint, danger, warning, success, focus, scrim, shadows, and later the plot background
   and neutral point greys); and sizes (control heights 28/32 px, list row 28 px, radii, the type
-  scale, spacing, motion durations, layers). Role values are literal colours from the slate and cyan
-  ramps, named in comments; the ramps are not variables, so every variable has a user.
+  scale, spacing, motion durations). Stacking order is not a token: each shadow root writes its few
+  `z-index` values as plain numbers. Role values are literal colours from the slate and cyan ramps,
+  named in comments; the ramps are not variables, so every variable has a user.
 - The variables live on `:root` under `[data-theme="light"]` and `[data-theme="dark"]`. CSS custom
   properties inherit into shadow roots, so every component reads them without importing anything.
 - Components only read tokens. The current `tokens` export, which re-declares values on each
@@ -174,8 +175,10 @@ width changes, and points under an opaque sidebar are drawn for nothing).
   working theme with no setup. A page overrides any token with a more specific selector.
 - Tailwind 4 in `apps/web` maps the same variables in `@theme inline` (e.g. `bg-ps-surface`), so
   React code and Lit code draw from one list.
-- A unit test fails when a core stylesheet contains a raw colour, a pixel font size or a `var(--…)`
-  that `theme.ts` does not define, and when `theme.ts` defines a token nothing uses.
+- A unit test fails when a core stylesheet contains a raw colour, a literal font size, a `--ps-*`
+  declaration or a `var(--…)` that neither `theme.ts` nor the stylesheet itself declares (a
+  component may read its own size properties, such as the scatter plot's `--protspace-height`),
+  and when `theme.ts` defines a token nothing uses.
 
 Alternatives considered: keeping per-component tokens (the cause of the drift), and generating CSS
 from a TypeScript token module (a build step for no gain: the CSS file is readable on its own, and
@@ -408,6 +411,10 @@ requirement that the desktop layout stays unchanged is superseded.
 
 - No element file over about 800 lines; `legend.ts`, `control-bar.ts` and `publish-modal.ts` are
   split as described above.
+- `scatter-plot.ts` (about 2,600 lines) is a recorded exception: its isolation, tooltip and pin
+  code and the `updated()` reconcilers share private state on the plot's hottest path, so this
+  change moves out only the export compositing. Follow-up: split it in a change of its own after
+  this one merges.
 - Deleted: the copied style mixins replaced by the kit, the 27 component custom properties nothing
   consumes, dead shell CSS (`Explore.css`), the site header on the explore page, the emoji and glyph
   icons, each dialog's own focus trap and fixed positioning, the inline-styled loading overlay.
