@@ -156,6 +156,7 @@ export const segmentedStyles = [
       background: transparent;
       color: var(--ps-text-muted);
       font: inherit;
+      white-space: nowrap;
       cursor: pointer;
     }
     /* The accent ring marks the chip: surface on the muted track is near 1:1 (decision 6). */
@@ -165,6 +166,12 @@ export const segmentedStyles = [
       box-shadow:
         inset 0 0 0 1px var(--ps-accent),
         var(--ps-shadow-sm);
+    }
+    /* Disabled, not native disabled (its tooltip needs hover and focus): faint text, and the
+       checked chip keeps its ring. */
+    button[aria-disabled='true'] {
+      color: var(--ps-text-faint);
+      cursor: not-allowed;
     }
     /* Touch: a 40 px group (the track's 2 px padding and 1 px border around 34 px options). */
     @media (pointer: coarse) {

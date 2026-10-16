@@ -246,6 +246,131 @@ describe('ps-segmented', () => {
     );
     expect(tabbable.length).toBe(1);
   });
+
+  /** Options a, b and c with b disabled and explained; a is checked. */
+  async function withDisabled(): Promise<{ el: PsSegmented; radios: HTMLElement[] }> {
+    const el = await mount<PsSegmented>('<ps-segmented label="Mode"></ps-segmented>');
+    el.options = [
+      { value: 'a', label: 'A' },
+      { value: 'b', label: 'B', disabled: true, tooltip: 'Available once B has loaded' },
+      { value: 'c', label: 'C' },
+    ];
+    el.value = 'a';
+    await el.updateComplete;
+    const radios = [...el.shadowRoot!.querySelectorAll<HTMLElement>('[role="radio"]')];
+    return { el, radios };
+  }
+
+  it('a disabled option is aria-disabled and stays focusable for its reason', async () => {
+    const { el, radios } = await withDisabled();
+    expect(radios.map((r) => r.getAttribute('aria-disabled'))).toEqual([null, 'true', null]);
+    // Not native disabled: that would drop hover and focus, and with them the tooltip.
+    expect(radios[1].hasAttribute('disabled')).toBe(false);
+    radios[1].focus();
+    expect(el.shadowRoot!.activeElement).toBe(radios[1]);
+    const style = getComputedStyle(radios[1]);
+    // #94a3b8, the light --ps-text-faint (disabled text).
+    expect(style.color).toBe('rgb(148, 163, 184)');
+    expect(style.cursor).toBe('not-allowed');
+  });
+
+  it('clicking a disabled option changes nothing and dispatches no change', async () => {
+    const { el, radios } = await withDisabled();
+    const onChange = vi.fn();
+    el.addEventListener('change', onChange);
+    // A DOM click: Playwright's own click waits for an aria-disabled element to become enabled.
+    radios[1].click();
+    radios[1].focus();
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard(' ');
+    await el.updateComplete;
+    expect(el.value).toBe('a');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(radios.map((r) => r.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
+  });
+
+  it('arrow keys skip a disabled option', async () => {
+    const { el, radios } = await withDisabled();
+    const onChange = vi.fn();
+    el.addEventListener('change', onChange);
+    radios[0].focus();
+    await userEvent.keyboard('{ArrowRight}');
+    await el.updateComplete;
+    expect(el.value).toBe('c');
+    expect(onChange.mock.calls.map(([event]) => event.detail)).toEqual([{ value: 'c' }]);
+    expect(el.shadowRoot!.activeElement).toBe(radios[2]);
+    await userEvent.keyboard('{ArrowLeft}');
+    await el.updateComplete;
+    expect(el.value).toBe('a');
+    expect(el.shadowRoot!.activeElement).toBe(radios[0]);
+  });
+
+  it('with only the checked option enabled, an arrow changes nothing', async () => {
+    const el = await mount<PsSegmented>('<ps-segmented label="Mode"></ps-segmented>');
+    el.options = [
+      { value: 'a', label: 'A' },
+      { value: 'b', label: 'B', disabled: true },
+      { value: 'c', label: 'C', disabled: true },
+    ];
+    el.value = 'a';
+    await el.updateComplete;
+    const onChange = vi.fn();
+    el.addEventListener('change', onChange);
+    const first = el.shadowRoot!.querySelector<HTMLElement>('[role="radio"]')!;
+    first.focus();
+    const key = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+    });
+    first.dispatchEvent(key);
+    await el.updateComplete;
+    // The key is still the group's: the page does not scroll.
+    expect(key.defaultPrevented).toBe(true);
+    expect(el.value).toBe('a');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(el.shadowRoot!.activeElement).toBe(first);
+  });
+
+  it("an option's tooltip describes its button", async () => {
+    const { radios } = await withDisabled();
+    const tooltip = radios[1].nextElementSibling as HTMLElement & { text: string };
+    expect(tooltip.localName).toBe('ps-tooltip');
+    expect(tooltip.text).toBe('Available once B has loaded');
+    // The tooltip binds to its anchor a microtask after it connects.
+    await expect.poll(() => radios[1].ariaDescribedByElements?.includes(tooltip)).toBe(true);
+    await userEvent.hover(radios[1]);
+    await expect
+      .poll(() => tooltip.shadowRoot?.querySelector('.tip')?.matches(':popover-open'))
+      .toBe(true);
+    // Options without a reason get no tooltip.
+    expect(radios[0].nextElementSibling).toBe(radios[1]);
+  });
+
+  it('a checked option that is disabled is the tab stop', async () => {
+    const el = await mount<PsSegmented>('<ps-segmented label="Mode"></ps-segmented>');
+    const stops = () =>
+      [...el.shadowRoot!.querySelectorAll('[role="radio"]')].map((r) => r.getAttribute('tabindex'));
+    el.options = [
+      { value: 'a', label: 'A', disabled: true },
+      { value: 'b', label: 'B' },
+    ];
+    el.value = 'a';
+    await el.updateComplete;
+    expect(stops()).toEqual(['0', '-1']);
+    // No value: the first enabled option.
+    el.value = '';
+    await el.updateComplete;
+    expect(stops()).toEqual(['-1', '0']);
+    // Nothing enabled: the first option, so the group stays reachable.
+    el.options = [
+      { value: 'a', label: 'A', disabled: true },
+      { value: 'b', label: 'B', disabled: true },
+    ];
+    await el.updateComplete;
+    expect(stops()).toEqual(['0', '-1']);
+  });
 });
 
 describe('choice controls under a coarse pointer', () => {
@@ -268,7 +393,8 @@ describe('choice controls under a coarse pointer', () => {
       el.options = [
         { value: 'off', label: 'Off' },
         { value: 'auto', label: 'Auto' },
-        { value: 'on', label: 'Always' },
+        // A disabled option with a reason keeps the same box; its tooltip adds none.
+        { value: 'on', label: 'Always', disabled: true, tooltip: 'Needs a density layer' },
       ];
       el.value = 'off';
       await el.updateComplete;

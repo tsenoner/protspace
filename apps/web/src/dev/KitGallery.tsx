@@ -10,7 +10,12 @@ const PALETTES: SelectOption[] = [
 
 const STRUCTURE_COLOURS: SegmentedOption[] = [
   { value: 'plddt', label: 'pLDDT' },
-  { value: 'ted', label: 'TED domains' },
+  {
+    value: 'ted',
+    label: 'TED domains',
+    disabled: true,
+    tooltip: 'Available once the structure has loaded',
+  },
 ];
 
 const PROJECTIONS: SegmentedOption[] = [

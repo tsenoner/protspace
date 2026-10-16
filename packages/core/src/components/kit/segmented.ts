@@ -2,10 +2,18 @@ import { LitElement, html, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { segmentedStyles } from './choice.styles';
+import './tooltip';
 
 export interface SegmentedOption {
   value: string;
   label: string;
+  /**
+   * Shown but not choosable. The option is aria-disabled, not native disabled, so hover and focus
+   * still reach its tooltip; a click or an arrow key never selects it.
+   */
+  disabled?: boolean;
+  /** A ps-tooltip for the option, typically why it is disabled. */
+  tooltip?: string;
 }
 
 /** A small set of mutually exclusive choices: a radio group with arrow-key movement. */
@@ -19,6 +27,15 @@ export class PsSegmented extends LitElement {
 
   render() {
     const selected = this.options.findIndex((option) => option.value === this.value);
+    // The checked option is the tab stop even when disabled, so its reason stays reachable;
+    // otherwise the first enabled one, or the first one when none is.
+    const stop =
+      selected >= 0
+        ? selected
+        : Math.max(
+            0,
+            this.options.findIndex((option) => !option.disabled),
+          );
     return html`<div
       part="group"
       role="radiogroup"
@@ -28,15 +45,19 @@ export class PsSegmented extends LitElement {
       ${this.options.map(
         (option, index) =>
           html`<button
-            type="button"
-            role="radio"
-            aria-checked=${String(index === selected)}
-            tabindex=${index === (selected < 0 ? 0 : selected) ? 0 : -1}
-            data-value=${option.value}
-            @click=${() => this.select(option.value)}
-          >
-            ${option.label}
-          </button>`,
+              type="button"
+              role="radio"
+              aria-checked=${String(index === selected)}
+              aria-disabled=${option.disabled ? 'true' : nothing}
+              tabindex=${index === stop ? 0 : -1}
+              data-value=${option.value}
+              @click=${() => {
+                if (!option.disabled) this.select(option.value);
+              }}
+            >
+              ${option.label}
+            </button>
+            ${option.tooltip ? html`<ps-tooltip text=${option.tooltip}></ps-tooltip>` : nothing}`,
       )}
     </div>`;
   }
@@ -63,8 +84,16 @@ export class PsSegmented extends LitElement {
     if (step === 0 || count === 0) return;
     event.preventDefault();
     const current = this.options.findIndex((option) => option.value === this.value);
-    const next = current < 0 ? (step > 0 ? 0 : count - 1) : (current + step + count) % count;
-    this.select(this.options[next].value, true);
+    // From the checked option (or from just outside either end), the next enabled one, wrapping.
+    const start = current < 0 ? (step > 0 ? -1 : count) : current;
+    for (let offset = 1; offset <= count; offset++) {
+      const index = (((start + step * offset) % count) + count) % count;
+      if (index === current) return;
+      if (!this.options[index].disabled) {
+        this.select(this.options[index].value, true);
+        return;
+      }
+    }
   };
 }
 
