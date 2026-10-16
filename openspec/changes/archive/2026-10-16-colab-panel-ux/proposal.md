@@ -16,7 +16,7 @@ ESM2-650M `.h5`, a custom CSV and non-UniProt IDs, and hit three bugs and a run 
 
 ## What Changes
 
-- The install cell (both Colab notebooks) stops with a restart message naming each package pip
+- The install cell of every Colab notebook stops with a restart message naming each package pip
   changed under an already-imported module, and keeps stopping until the session restarts.
 - Every Methods slider stays within the range `DimensionReductionConfig` accepts; perplexity is an
   integer slider from 5 to 50.
@@ -30,14 +30,26 @@ ESM2-650M `.h5`, a custom CSV and non-UniProt IDs, and hit three bugs and a run 
   no UniProt fetch when no ID is an accession (CSV only when a CSV is given); the EAT column list
   refreshed after each Generate; settings kept in the runtime and restored after a restart; tabs
   named by what they take.
+- The Embeddings notebook (`ClickThrough_GenerateEmbeddings.ipynb`), run against Colab's package
+  snapshot (Python 3.13, transformers 5.18, huggingface_hub 1.33), installed the `esm` SDK for every
+  model: it pins transformers < 5, so pip replaced transformers, tokenizers and huggingface_hub, and
+  transformers 4.57 then imported TensorFlow, JAX and torchao (the import warnings users saw). It now
+  takes the model first and installs the SDK only for the EvolutionaryScale models, switches
+  TensorFlow and JAX off for transformers, uses `get_token` (huggingface_hub 1.x has no `HfFolder`),
+  gets the install cell's stale-package check, and says what each step did or why it stopped.
+- The Transfer notebook runs its example with `--max-distance auto` (protspace 4.17.0), counts near
+  and distant predictions, and stops with what to do when a step's input is missing.
+- The Methods parameter groups wrap before their slider tracks collapse in a narrow pane (#346, the
+  approach of #409), and the learning-rate slider holds the CLI's default.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `notebook-annotation-transfer`: how the Preparation notebook's EAT cell transfers labels: the
-  default distance cutoff, the distant-query option, the neighbour report, and the fallback for a
-  released protspace without them.
+- `notebook-embedding-generation`: how the Embeddings notebook installs, imports and reports.
+- `notebook-annotation-transfer`: how the Preparation notebook's EAT cell transfers labels (the
+  default distance cutoff, the distant-query option, the neighbour report, the fallback for a
+  released protspace without them) and how the Transfer notebook reports near and distant ones.
 
 ### Modified Capabilities
 
@@ -46,8 +58,12 @@ ESM2-650M `.h5`, a custom CSV and non-UniProt IDs, and hit three bugs and a run 
 
 ## Impact
 
-- `apps/protspace/notebooks/ProtSpace_Preparation.ipynb`, `ProtSpace_Transfer.ipynb` (install cell)
+- `apps/protspace/notebooks/ProtSpace_Preparation.ipynb`, `ProtSpace_Transfer.ipynb`,
+  `ClickThrough_GenerateEmbeddings.ipynb`
 - `apps/protspace/tests/test_notebooks.py`
 - `docs/guide/data-preparation.md`, `docs/explore/eat.md`, `apps/protspace/CLAUDE.md`
-- No package code changes: the notebook uses `run_transfer`'s existing `max_distance`,
-  `skip_distant` and `report` arguments and `write_report`.
+- No package code changes: the notebook uses `run_transfer`'s `max_distance`, `skip_distant` and
+  `report` arguments and `write_report` (protspace 4.17.0). Installing protspace on Colab still
+  upgrades numpy and pandas (biocentral-api 2.x requires biotrainer-core, which pins numpy >= 2.4.1
+  and pandas >= 2.3.3), so a fresh runtime's first setup asks for one restart; the dependency itself
+  is a separate change.

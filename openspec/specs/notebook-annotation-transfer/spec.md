@@ -1,4 +1,10 @@
-## ADDED Requirements
+# notebook-annotation-transfer Specification
+
+## Purpose
+
+How the Colab notebooks transfer annotation labels with EAT: the Preparation notebook's EAT cell (distance cutoff, distant queries, neighbour report, and its fallback for an older protspace) and the Transfer notebook's near/distant report.
+
+## Requirements
 
 ### Requirement: The EAT cell calibrates a distance cutoff by default
 
@@ -40,3 +46,19 @@ that they need a newer protspace, when the installed `run_transfer` has neither.
 
 - **WHEN** the notebook runs on protspace 4.16.8
 - **THEN** the transfer completes and the cell says the cutoff and the report need a newer release
+
+### Requirement: The Transfer notebook marks distant transfers
+
+The Transfer notebook SHALL run its example transfer with the automatic distance cutoff and SHALL
+report how many of the predicted proteins are near a reference and how many distant. Its steps
+that read the transfer's output SHALL say to run the transfer first when that output is missing.
+
+#### Scenario: The example run
+
+- **WHEN** the user runs every cell of the Transfer notebook
+- **THEN** step 4 shows the neighbourhood column and the near and distant counts
+
+#### Scenario: Step 4 before step 3
+
+- **WHEN** step 4 runs while step 3 has not written its report
+- **THEN** it stops, saying to run step 3 again and read its error

@@ -25,12 +25,18 @@ on every re-run in the same session, and SHALL pass after a restart when pip cha
 ### Requirement: The Methods sliders stay within the accepted ranges
 
 Every Methods slider SHALL offer only values `DimensionReductionConfig` accepts for its
-parameter; perplexity SHALL be an integer slider from 5 to 50.
+parameter, with its default on the slider's step grid; perplexity SHALL be an integer slider from
+5 to 50. A parameter group SHALL wrap to the next row before its slider tracks lose their width.
 
 #### Scenario: The largest perplexity
 
 - **WHEN** the user moves the perplexity slider to its maximum and generates t-SNE
 - **THEN** the run uses perplexity 50 and does not fail on the parameter
+
+#### Scenario: A narrow Colab pane
+
+- **WHEN** the panel is 800 px wide with UMAP and t-SNE selected
+- **THEN** the parameter groups wrap and every slider keeps a usable track (#346)
 
 ### Requirement: The panel says what failed and what to do about it
 
