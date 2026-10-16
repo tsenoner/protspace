@@ -157,10 +157,10 @@ describe('style lint', () => {
 
   it('accepts a module reading a custom property it declares', () => {
     expect(cssViolations(':host { --gap: 2px; } .a { margin: var(--gap); }')).toEqual([]);
-    // Declaring a token is still flagged, and declaring one does not make --gap known.
-    expect(cssViolations(':host { --ps-gap: 2px; } .a { margin: var(--gap); }')).toEqual([
+    // Declaring a token is still flagged, and does not make it a known own property.
+    expect(cssViolations(':host { --ps-gap: 2px; } .a { margin: var(--ps-gap); }')).toEqual([
       '--ps-gap: 2px',
-      'margin: var(--gap)',
+      'margin: var(--ps-gap)',
     ]);
     // A literal font size is still a literal behind an own property.
     expect(cssViolations(':host { --size: 12px; } .a { font-size: var(--size); }')).toEqual([
