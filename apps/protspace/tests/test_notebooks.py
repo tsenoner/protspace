@@ -580,6 +580,7 @@ def test_transfer_notebook_shows_only_the_predicted_rows(tmp_path, monkeypatch):
     write_bundle(
         [annotations, *projection_tables(3, (2,))], tmp_path / "results.parquetbundle"
     )
+    (tmp_path / "predictions.tsv").write_text("")  # step 3 finished
 
     shown = []
     (source,) = [
