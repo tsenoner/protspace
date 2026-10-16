@@ -109,7 +109,7 @@ const FLOAT_STEP = 16;
 
 /**
  * Where the floating structure card goes in a plot area of `bounds`: the stored rectangle, or for
- * null the default 340 × 360 card 14 px in from the right edge and 64 px up from the bottom, above
+ * null the default 340 × 360 card 14 px in from the right edge and 76 px up from the bottom, above
  * the selection bar (a plot too short for that puts it at the top). Its size is at least 280 × 240
  * and at most the plot area, and it is moved inside the plot area. Render only: a card stored
  * outside a smaller window shows inside it, and storage keeps the user's rectangle.

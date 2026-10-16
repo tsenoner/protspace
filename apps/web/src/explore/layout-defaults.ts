@@ -14,17 +14,27 @@ export const SIDEBAR_WIDTH = { min: 240, max: 480, default: 300 } as const;
 export const LEGEND_FRACTION = { min: 0.2, max: 0.8, default: 0.5 } as const;
 
 /**
+ * The selection bar in px, as core's selection-bar styles and workbench.css size it: its offset from
+ * the plot's bottom, and its height under a fine pointer and under a coarse one (finger-sized
+ * buttons, desktop touch screens included).
+ */
+export const SELECTION_BAR = { offset: 12, height: 38, coarseHeight: 50 } as const;
+
+/** The floating card's inset from the plot's edges, and its gap above the selection bar. */
+const CARD_INSET = 14;
+
+/**
  * The floating structure card in px. Its default spot is `inset` from the plot's right edge and
- * `bottomInset` from its bottom: the selection bar's 12 px offset, its 38 px height and the 14 px
- * inset, so the default card clears Copy IDs and Clear.
+ * `bottomInset` from its bottom: above the taller (coarse-pointer) selection bar by the same inset,
+ * so the default card clears Copy IDs and Clear under either pointer.
  */
 export const FLOATING_CARD = {
   minWidth: 280,
   minHeight: 240,
   defaultWidth: 340,
   defaultHeight: 360,
-  inset: 14,
-  bottomInset: 64,
+  inset: CARD_INSET,
+  bottomInset: SELECTION_BAR.offset + SELECTION_BAR.coarseHeight + CARD_INSET,
 } as const;
 
 /** The narrowest window that gets the desktop workbench (design decision 17). */

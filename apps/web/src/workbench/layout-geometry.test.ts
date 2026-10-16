@@ -12,6 +12,7 @@ import {
   sidebarStep,
   splitSidebar,
 } from './layout-geometry';
+import { FLOATING_CARD, SELECTION_BAR } from '../explore/layout-defaults';
 
 describe('splitSidebar', () => {
   it('splitSidebar honours the fraction within the 120 and 220 px minimums', () => {
@@ -101,9 +102,17 @@ describe('clampFloatRect', () => {
   const area = { width: 936, height: 628 };
 
   it('clampFloatRect defaults above the selection bar', () => {
-    // 14 px from the right edge; 64 px from the bottom, clear of the bar's 12 px offset and
-    // 38 px height (Copy IDs and Clear stay clickable).
-    expect(clampFloatRect(null, area)).toEqual({ x: 582, y: 204, width: 340, height: 360 });
+    // 14 px from the right edge; 76 px from the bottom, clear of the bar's 12 px offset and its
+    // 50 px coarse-pointer height (Copy IDs and Clear stay clickable).
+    expect(clampFloatRect(null, area)).toEqual({ x: 582, y: 192, width: 340, height: 360 });
+  });
+
+  it('the default card clears the selection bar under either pointer', () => {
+    const card = clampFloatRect(null, area);
+    const gap = (barHeight: number) =>
+      area.height - SELECTION_BAR.offset - barHeight - (card.y + card.height);
+    expect(gap(SELECTION_BAR.height)).toBeGreaterThanOrEqual(FLOATING_CARD.inset);
+    expect(gap(SELECTION_BAR.coarseHeight)).toBe(FLOATING_CARD.inset);
   });
 
   it('a stored card keeps its place', () => {

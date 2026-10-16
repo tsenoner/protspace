@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { LAYOUT_STORAGE_KEY } from '../src/explore/layout-defaults';
+import { FLOATING_CARD, LAYOUT_STORAGE_KEY } from '../src/explore/layout-defaults';
 import { PHOSPHATASE_1587_FIXTURE } from './helpers/fixtures';
 import {
   chooseTool,
@@ -197,14 +197,14 @@ test('Pop out floats the card over the plot without resizing it', async ({ page 
 
   await floatStructure(page);
 
-  // The default card: 340 × 360, 14 px in from the plot area's right edge and 64 px up from its
-  // bottom, above the selection bar.
+  // The default card: 340 × 360, 14 px in from the plot area's right edge and 76 px up from its
+  // bottom, above the selection bar under either pointer.
   const area = (await plotArea(page).boundingBox())!;
   const card = (await structurePanel(page).boundingBox())!;
   expectNear(card.width, 340);
   expectNear(card.height, 360);
   expectNear(area.x + area.width - (card.x + card.width), 14);
-  expectNear(area.y + area.height - (card.y + card.height), 64);
+  expectNear(area.y + area.height - (card.y + card.height), FLOATING_CARD.bottomInset);
   // The legend takes the whole sidebar column.
   const body = (await page.locator('[data-workbench="body"]').boundingBox())!;
   expectNear((await page.locator('#myLegend').boundingBox())!.height, body.height);
