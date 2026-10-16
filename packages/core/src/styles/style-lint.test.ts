@@ -17,16 +17,6 @@ const MODULES = import.meta.glob<Record<string, CSSResultGroup>>(
   { eager: true },
 );
 
-/**
- * Modules written before the tokens existed. A phase that migrates a module deletes its line. The
- * last test fails while a listed module is already clean, so this list only shrinks.
- */
-const LEGACY = new Set<string>([
-  '../components/structure-viewer/structure-viewer.styles.ts',
-  './mixins.ts',
-  './overlay-mixins.ts',
-]);
-
 const COLOUR =
   /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(|\b(?:white|black)\b/i;
 /**
@@ -54,64 +44,6 @@ function cssOf(path: string): string {
     .flatMap(flatten)
     .map((sheet) => sheet.cssText)
     .join('\n');
-}
-
-/** Each sheet a module exports by name (tokens, overlayMixins, segmentedControlMixin…), mapped to that module. */
-const OWNER = new Map<unknown, string>();
-for (const [path, exports] of Object.entries(MODULES)) {
-  for (const value of Object.values(exports)) if (!Array.isArray(value)) OWNER.set(value, path);
-}
-
-/**
- * The CSS a module writes itself. A stylesheet that composes another module's named sheet
- * (scatter-plot.styles.ts composes tokens and overlayMixins) does not answer for it: that sheet is
- * checked as its own module.
- */
-function ownCssOf(path: string): string {
-  return Object.values(MODULES[path] ?? {})
-    .flatMap(flatten)
-    .filter((sheet) => (OWNER.get(sheet) ?? path) === path)
-    .map((sheet) => sheet.cssText)
-    .join('\n');
-}
-
-const STRIP_COMMENTS = /\/\*[\s\S]*?\*\//g;
-/** Every custom property tokens.ts declares; phase 8 deletes the module. */
-const LEGACY_VARS = new Map(
-  [
-    ...cssOf('./tokens.ts')
-      .replace(STRIP_COMMENTS, '')
-      .matchAll(/(--[\w-]+)\s*:\s*([^;{}]+)/g),
-  ].map(([, name, value]) => [name, value.trim()] as const),
-);
-/** The tokens.ts properties that hold a colour: always light, so reading one breaks dark mode. */
-const COLOUR_ALIASES = new Set(
-  [...LEGACY_VARS].filter(([, value]) => COLOUR.test(value)).map(([name]) => name),
-);
-
-/**
- * The colour half of cssViolations, for modules still in LEGACY: a declaration that hard-codes a
- * colour, reads a tokens.ts colour alias, or reads a variable nothing defines (theme.ts,
- * RUNTIME_VARS, tokens.ts or the module itself). Literal font sizes and tokens.ts's non-colour
- * aliases (z-index, spacing, fonts) wait for phase 8.
- */
-function colourViolations(cssText: string): string[] {
-  const declarations = [
-    ...cssText.replace(STRIP_COMMENTS, '').matchAll(/([\w-]+)\s*:\s*([^;{}]+)/g),
-  ].map(([, property, raw]) => [property, raw.trim()] as const);
-  const own = new Set(
-    declarations.map(([property]) => property).filter((property) => property.startsWith('--')),
-  );
-  const known = (name: string) =>
-    !COLOUR_ALIASES.has(name) &&
-    (DEFINED.has(name) || RUNTIME_VARS.has(name) || LEGACY_VARS.has(name) || own.has(name));
-  return declarations
-    .filter(
-      ([, value]) =>
-        COLOUR.test(value) ||
-        [...value.matchAll(/var\(\s*(--[\w-]+)/g)].some(([, name]) => !known(name)),
-    )
-    .map(([property, value]) => `${property}: ${value}`);
 }
 
 /**
@@ -221,13 +153,6 @@ describe('style lint', () => {
       'border-color: lab(50% 0 0)',
       'gap: var(--spacing-sm)',
     ]);
-    // The colour-only check: tokens.ts colour aliases and undefined variables fail; its other
-    // aliases, literal font sizes and the module's own properties pass.
-    expect(
-      colourViolations(
-        '.a { color: var(--surface); background: #fff; border-color: var(--nowhere); gap: var(--spacing-sm); font-size: 12px; --gap: 2px; margin: var(--gap); max-height: var(--available-height); }',
-      ),
-    ).toEqual(['color: var(--surface)', 'background: #fff', 'border-color: var(--nowhere)']);
   });
 
   it('accepts a module reading a custom property it declares', () => {
@@ -243,12 +168,9 @@ describe('style lint', () => {
     ]);
   });
 
-  it.each(paths.filter((path) => !LEGACY.has(path)))(
-    '%s reads colours and font sizes from tokens',
-    (path) => {
-      expect(cssViolations(cssOf(path))).toEqual([]);
-    },
-  );
+  it.each(paths)('%s reads colours and font sizes from tokens', (path) => {
+    expect(cssViolations(cssOf(path))).toEqual([]);
+  });
 
   it('defines every --ps token a stylesheet reads', () => {
     const read = new Set(
@@ -289,17 +211,5 @@ describe('style lint', () => {
 
   it.each(WEB_CSS)('%s reads colours from tokens', (file) => {
     expect(webCssViolations(readFileSync(join(WEB_SRC, file), 'utf8'))).toEqual([]);
-  });
-
-  it.each([...LEGACY])('%s hard-codes no colour', (path) => {
-    expect(colourViolations(ownCssOf(path))).toEqual([]);
-  });
-
-  it.each([...LEGACY])('%s still needs its legacy exemption', (path) => {
-    expect(MODULES[path], `${path} no longer exists; delete it from LEGACY`).toBeDefined();
-    expect(
-      cssViolations(cssOf(path)).length,
-      `${path} is clean; delete it from LEGACY`,
-    ).toBeGreaterThan(0);
   });
 });

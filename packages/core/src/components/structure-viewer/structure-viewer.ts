@@ -1,4 +1,5 @@
 import { LitElement, html, nothing, type PropertyValues } from 'lit';
+import { live } from 'lit/directives/live.js';
 import { property, state, query } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { StructureService, formatCount, getBaseAccession } from '@protspace/utils';
@@ -16,7 +17,8 @@ import { resourceLinkStyles } from '../common/resource-links.styles';
 import { observeTheme } from '../../utils/theme-observer';
 import '../kit/menu';
 import type { PsMenu } from '../kit/menu';
-import '../kit/tooltip';
+import '../kit/segmented';
+import type { SegmentedOption } from '../kit/segmented';
 import { icon } from '../kit/icon';
 import {
   createStructureErrorEventDetail,
@@ -537,6 +539,19 @@ export class ProtspaceStructureViewer extends LitElement {
       : 'TED domain annotations are unavailable for this protein';
   }
 
+  /** pLDDT once the structure has loaded; TED also needs domains, and says why when it cannot. */
+  private get _colorOptions(): SegmentedOption[] {
+    return [
+      { value: 'plddt', label: 'pLDDT', disabled: !this._canChangeColorMode },
+      {
+        value: 'ted-domains',
+        label: 'TED domains',
+        disabled: !this._canChangeColorMode || !this._hasTedDomains,
+        tooltip: this._tedButtonTitle,
+      },
+    ];
+  }
+
   private async _handleColorModeChange(mode: StructureColorMode) {
     const viewer = this._viewer;
     if (!viewer || this._colorMode === mode) return;
@@ -624,33 +639,16 @@ export class ProtspaceStructureViewer extends LitElement {
           ? html`
               <div class="color-toolbar">
                 <span class="color-toolbar-label">Color by</span>
-                <div
-                  class="segmented color-mode-group"
-                  role="group"
-                  aria-label="Structure color mode"
-                >
-                  <button
-                    type="button"
-                    class="segmented-btn"
-                    data-color-mode="plddt"
-                    aria-pressed=${this._colorMode === 'plddt'}
-                    .disabled=${!this._canChangeColorMode}
-                    @click=${() => this._handleColorModeChange('plddt')}
-                  >
-                    pLDDT
-                  </button>
-                  <button
-                    type="button"
-                    class="segmented-btn"
-                    data-color-mode="ted-domains"
-                    aria-pressed=${this._colorMode === 'ted-domains'}
-                    .disabled=${!this._canChangeColorMode || !this._hasTedDomains}
-                    @click=${() => this._handleColorModeChange('ted-domains')}
-                  >
-                    TED domains
-                  </button>
-                  <ps-tooltip text=${this._tedButtonTitle}></ps-tooltip>
-                </div>
+                <!-- live(): the control picks a mode itself; a request the viewer refuses or rolls
+                     back must still put the control back on the viewer's mode. -->
+                <ps-segmented
+                  class="color-mode"
+                  label="Structure color mode"
+                  .options=${this._colorOptions}
+                  .value=${live(this._colorMode)}
+                  @change=${(event: CustomEvent<{ value: string }>) =>
+                    this._handleColorModeChange(event.detail.value as StructureColorMode)}
+                ></ps-segmented>
               </div>
             `
           : ''}

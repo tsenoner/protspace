@@ -29,6 +29,30 @@ async function mount(width = ''): Promise<ProtspaceStructureViewer> {
   return viewer;
 }
 
+/** The viewer's colour control and its options, once the viewer and the control have rendered. */
+async function colorControl(viewer: ProtspaceStructureViewer) {
+  await viewer.updateComplete;
+  const control = viewer.shadowRoot!.querySelector('ps-segmented')!;
+  await control.updateComplete;
+  const option = (mode: string) =>
+    control.shadowRoot!.querySelector<HTMLElement>(`[role="radio"][data-value="${mode}"]`)!;
+  return { control, option };
+}
+
+/**
+ * Stands in for a loaded structure with TED domains (requestAnimationFrame is stubbed, so nothing
+ * loads), which enables both colour options.
+ */
+async function enableColorModes(viewer: ProtspaceStructureViewer): Promise<void> {
+  const internals = viewer as unknown as { _viewer: unknown; _structureData: unknown };
+  internals._viewer = { setBackground: () => true, dispose() {} };
+  internals._structureData = {
+    tedDomains: [{ domainNumber: 1, segments: [{ start: 1, end: 10 }] }],
+  };
+  viewer.requestUpdate();
+  await viewer.updateComplete;
+}
+
 describe('protspace-structure-viewer header', () => {
   it('slotted header actions render before the close button', async () => {
     const viewer = await mount();
@@ -58,20 +82,22 @@ describe('protspace-structure-viewer header', () => {
 });
 
 describe('protspace-structure-viewer color mode', () => {
-  it('fills the selected segment with the accent under on-accent text', async () => {
+  it("the checked colour option is the kit's chip", async () => {
     const viewer = await mount();
-    const pressed = viewer.shadowRoot!.querySelector('.segmented-btn[aria-pressed="true"]')!;
-    expect(getComputedStyle(pressed).backgroundColor).toBe('rgb(0, 122, 181)');
-    expect(getComputedStyle(pressed).color).toBe('rgb(255, 255, 255)');
+    const { option } = await colorControl(viewer);
+    const checked = option('plddt');
+    expect(checked.getAttribute('aria-checked')).toBe('true');
+    // The kit's look: a surface chip ringed in the accent (#007ab5), not an accent fill.
+    expect(getComputedStyle(checked).boxShadow).toContain('rgb(0, 122, 181)');
+    expect(getComputedStyle(checked).backgroundColor).toBe('rgb(255, 255, 255)');
   });
 
-  it('hovering the disabled TED button shows why it is disabled', async () => {
+  it('hovering the disabled TED option shows why it is disabled', async () => {
     // requestAnimationFrame is stubbed, so the structure never loads and TED stays disabled.
     const viewer = await mount();
-    const ted = viewer.shadowRoot!.querySelector<HTMLButtonElement>(
-      '[data-color-mode="ted-domains"]',
-    )!;
-    expect(ted.disabled).toBe(true);
+    const { option } = await colorControl(viewer);
+    const ted = option('ted-domains');
+    expect(ted.getAttribute('aria-disabled')).toBe('true');
     const tooltip = ted.nextElementSibling as HTMLElement & { text: string };
     expect(tooltip.localName).toBe('ps-tooltip');
     expect(tooltip.text).toBe('Available once the structure has loaded');
@@ -80,6 +106,45 @@ describe('protspace-structure-viewer color mode', () => {
     await expect
       .poll(() => tooltip.shadowRoot?.querySelector('.tip')?.matches(':popover-open'))
       .toBe(true);
+  });
+
+  it('the loading veil and the error box sit above the viewer at z-index 10', async () => {
+    const viewer = await mount();
+    const internals = viewer as unknown as { _isLoading: boolean; _error: string | null };
+    internals._isLoading = true;
+    internals._error = 'Structure not available';
+    await viewer.updateComplete;
+    const root = viewer.shadowRoot!;
+    expect(getComputedStyle(root.querySelector('.loading-overlay')!).zIndex).toBe('10');
+    expect(getComputedStyle(root.querySelector('.error-container')!).zIndex).toBe('10');
+    const spinner = getComputedStyle(root.querySelector('.loading-spinner')!);
+    expect(spinner.animationName).toBe('spin');
+    // #007ab5, the light --ps-accent, on the spinner's moving edge.
+    expect(spinner.borderTopColor).toBe('rgb(0, 122, 181)');
+  });
+
+  it('the viewer host renders in Inter', async () => {
+    const viewer = await mount();
+    expect(getComputedStyle(viewer).fontFamily).toMatch(/^"Inter Variable"/);
+    // The size properties nothing read are gone.
+    expect(getComputedStyle(viewer).getPropertyValue('--protspace-viewer-height').trim()).toBe('');
+  });
+
+  it('at 240 px the colour row fits on one line inside the host', async () => {
+    const viewer = await mount('240px');
+    await enableColorModes(viewer);
+    const { control, option } = await colorControl(viewer);
+    const toolbar = viewer.shadowRoot!.querySelector<HTMLElement>('.color-toolbar')!;
+    // Nothing is pushed past the toolbar's edge…
+    expect(toolbar.scrollWidth).toBeLessThanOrEqual(toolbar.clientWidth);
+    const host = viewer.getBoundingClientRect();
+    const group = control.shadowRoot!.querySelector('[role="radiogroup"]')!.getBoundingClientRect();
+    expect(group.right).toBeLessThanOrEqual(host.right + 0.5);
+    // …and each label stays inside its chip (Task 8.3 made chips one line).
+    for (const mode of ['plddt', 'ted-domains']) {
+      const chip = option(mode);
+      expect(chip.scrollWidth, mode).toBeLessThanOrEqual(chip.clientWidth);
+    }
   });
 });
 
@@ -240,17 +305,26 @@ describe('protspace-structure-viewer protein choices', () => {
 });
 
 describe('protspace-structure-viewer under a coarse pointer', () => {
-  it('the resource links and the colour-mode buttons are 40 px tall', async () => {
+  it('the resource links are 40 px targets and the colour control is a 40 px group', async () => {
     const session = cdp();
     await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
     try {
       const viewer = await mount();
-      const targets = viewer.shadowRoot!.querySelectorAll('.header-link, .segmented-btn');
-      expect(targets.length).toBeGreaterThanOrEqual(6);
-      for (const target of targets) {
-        const box = target.getBoundingClientRect();
-        expect(box.height, target.textContent!.trim()).toBeGreaterThanOrEqual(40 - 0.5);
-        expect(box.width, target.textContent!.trim()).toBeGreaterThanOrEqual(40 - 0.5);
+      const links = viewer.shadowRoot!.querySelectorAll('.header-link');
+      expect(links.length).toBe(4);
+      for (const link of links) {
+        const box = link.getBoundingClientRect();
+        expect(box.height, link.textContent!.trim()).toBeGreaterThanOrEqual(40 - 0.5);
+        expect(box.width, link.textContent!.trim()).toBeGreaterThanOrEqual(40 - 0.5);
+      }
+      // The kit's touch sizes: 34 px options inside a 40 px group.
+      const { control, option } = await colorControl(viewer);
+      const group = control.shadowRoot!.querySelector('[role="radiogroup"]')!;
+      expect(group.getBoundingClientRect().height).toBeGreaterThanOrEqual(40 - 0.5);
+      for (const mode of ['plddt', 'ted-domains']) {
+        const box = option(mode).getBoundingClientRect();
+        expect(box.height, mode).toBeGreaterThanOrEqual(34 - 0.5);
+        expect(box.width, mode).toBeGreaterThanOrEqual(34 - 0.5);
       }
     } finally {
       await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
@@ -294,9 +368,13 @@ describe('protspace-structure-viewer in dark', () => {
     // #94a3b8 --ps-text-muted.
     expect(style('.color-toolbar').color).toBe('rgb(148, 163, 184)');
     expect(style('.close-button').color).toBe('rgb(148, 163, 184)');
-    // The segmented control: #334155 --ps-border-strong, unpressed text muted.
-    expect(style('.segmented').borderTopColor).toBe('rgb(51, 65, 85)');
-    expect(style('.segmented-btn[aria-pressed="false"]').color).toBe('rgb(148, 163, 184)');
+    // The colour control, enabled as after a load: #334155 --ps-border-strong around the track,
+    // the unchecked option in --ps-text-muted.
+    await enableColorModes(viewer);
+    const { control, option } = await colorControl(viewer);
+    const track = control.shadowRoot!.querySelector('[role="radiogroup"]')!;
+    expect(getComputedStyle(track).borderTopColor).toBe('rgb(51, 65, 85)');
+    expect(getComputedStyle(option('ted-domains')).color).toBe('rgb(148, 163, 184)');
   });
 
   it('the loading veil is a translucent dark surface in dark', async () => {
@@ -311,22 +389,17 @@ describe('protspace-structure-viewer in dark', () => {
     expect(alpha).toBeCloseTo(0.9, 2);
   });
 
-  it('the focused selected colour segment shows the library ring, offset from its fill', async () => {
+  it('the focused checked colour option shows the library ring', async () => {
     document.documentElement.dataset.theme = 'dark';
     const viewer = await mount();
-    // requestAnimationFrame is stubbed, so nothing loads: a stand-in viewer enables the segments.
-    (viewer as unknown as { _viewer: unknown })._viewer = {
-      setBackground: () => true,
-      dispose() {},
-    };
-    viewer.requestUpdate();
-    await viewer.updateComplete;
-    const root = viewer.shadowRoot!;
-    const pressed = root.querySelector<HTMLElement>('.segmented-btn[aria-pressed="true"]')!;
-    for (let step = 0; step < 20 && root.activeElement !== pressed; step++) await userEvent.tab();
-    expect(root.activeElement).toBe(pressed);
-    const style = getComputedStyle(pressed);
-    // sky-400, the dark --ps-focus: the same colour as the fill, so the 2 px offset gap shows it.
+    await enableColorModes(viewer);
+    const { option } = await colorControl(viewer);
+    const checked = option('plddt');
+    // The checked option is the control's one tab stop, inside ps-segmented's shadow root.
+    for (let step = 0; step < 20 && deepActiveElement() !== checked; step++) await userEvent.tab();
+    expect(deepActiveElement()).toBe(checked);
+    const style = getComputedStyle(checked);
+    // sky-400, the dark --ps-focus, 2 px out from the chip.
     expect(style.outlineStyle).toBe('solid');
     expect(style.outlineColor).toBe('rgb(56, 189, 248)');
     expect(style.outlineOffset).toBe('2px');

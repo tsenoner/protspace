@@ -1,20 +1,14 @@
 import { css } from 'lit';
-import { tokens } from '../../styles/tokens';
-import { overlayMixins } from '../../styles/overlay-mixins';
-import { segmentedControlMixin } from '../../styles/mixins';
 
 const structureViewerStylesCore = css`
   :host {
-    /* Sizes only: every colour comes from a --ps-* token (theme.ts), so an embedder restyles the
-       viewer in both themes by setting those on :root. The frame is the panel's surface, the
-       colour the Mol* canvas also takes, so frame and canvas meet without a seam. */
-    --protspace-viewer-width: 100%;
-    --protspace-viewer-height: 100%;
-    --protspace-viewer-border-radius: 6px;
-
+    /* Every colour comes from a --ps-* token (theme.ts), so an embedder restyles the viewer in both
+       themes by setting those on :root. The frame is the panel's surface, the colour the Mol*
+       canvas also takes, so frame and canvas meet without a seam. */
     display: flex;
     flex-direction: column;
     width: 100%;
+    font-family: var(--ps-font-sans);
 
     box-shadow: var(--ps-shadow-md);
     box-sizing: border-box;
@@ -124,15 +118,12 @@ const structureViewerStylesCore = css`
     background: var(--ps-surface-hover);
   }
 
-  /* Touch: the close and protein-pick buttons are 40 px targets (the app's header is 44 px). */
+  /* Touch: the close and protein-pick buttons are 40 px targets (the app's header is 44 px). The
+     colour control is ps-segmented, which sizes itself for touch. */
   @media (pointer: coarse) {
     .close-button,
     .protein-pick {
       min-width: var(--ps-touch-target);
-      min-height: var(--ps-touch-target);
-    }
-
-    .segmented > .segmented-btn {
       min-height: var(--ps-touch-target);
     }
   }
@@ -147,16 +138,39 @@ const structureViewerStylesCore = css`
     border-radius: 0 0 6px 6px;
   }
 
-  /* Base loading overlay styles provided by overlayMixins */
+  /* The veil over the viewer while a structure loads. */
   .loading-overlay {
-    /* Extend with column layout for text */
+    position: absolute;
+    inset: 0;
+    display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
     background: color-mix(in srgb, var(--ps-surface) 90%, transparent);
+  }
+
+  .loading-spinner {
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 2px solid var(--ps-border);
+    border-top: 2px solid var(--ps-accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
   }
 
   .loading-text {
     color: var(--ps-text-muted);
-    font-size: 0.875rem;
+    font-size: var(--ps-text-md);
     margin-top: 1rem;
   }
 
@@ -168,7 +182,7 @@ const structureViewerStylesCore = css`
     align-items: center;
     justify-content: center;
     background: var(--ps-surface);
-    z-index: var(--z-overlay);
+    z-index: 10;
     padding: 2rem;
     border-radius: 0 0 6px 6px;
     text-align: center;
@@ -188,7 +202,7 @@ const structureViewerStylesCore = css`
     align-items: center;
     justify-content: center;
     background: var(--ps-surface);
-    z-index: var(--z-canvas);
+    z-index: 1;
     padding: 2rem;
     text-align: center;
   }
@@ -201,7 +215,7 @@ const structureViewerStylesCore = css`
 
   .empty-message {
     color: var(--ps-text-muted);
-    font-size: 0.875rem;
+    font-size: var(--ps-text-md);
   }
 
   .viewer-content,
@@ -225,7 +239,7 @@ const structureViewerStylesCore = css`
     background: var(--ps-surface-muted);
     border-top: 1px solid var(--ps-border);
     color: var(--ps-text-muted);
-    font-size: 0.75rem;
+    font-size: var(--ps-text-sm);
   }
 
   .color-toolbar {
@@ -240,12 +254,6 @@ const structureViewerStylesCore = css`
 
   .color-toolbar-label {
     font-weight: 600;
-  }
-
-  /* The TED button's ps-tooltip follows it, so the mixin's :last-child misses its end corners. */
-  .segmented > .segmented-btn:has(+ ps-tooltip:last-child) {
-    border-top-right-radius: calc(var(--radius) - var(--border-width));
-    border-bottom-right-radius: calc(var(--radius) - var(--border-width));
   }
 
   .tips {
@@ -263,8 +271,6 @@ const structureViewerStylesCore = css`
     display: contents;
   }
 
-  /* Spin animation provided by overlayMixins */
-
   /* ----------------------------- Responsive ------------------------------------ */
 
   /* Below desktop the viewer has half a panel row: keep only the colour legend. The host's size
@@ -276,9 +282,4 @@ const structureViewerStylesCore = css`
   }
 `;
 
-export const structureViewerStyles = [
-  tokens,
-  overlayMixins,
-  segmentedControlMixin,
-  structureViewerStylesCore,
-];
+export const structureViewerStyles = [structureViewerStylesCore];
