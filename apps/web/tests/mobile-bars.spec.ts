@@ -662,6 +662,30 @@ test.describe('search on a phone', () => {
     await expect(appBar(page)).toHaveAttribute('data-search-open', '');
   });
 
+  test('Ctrl+K opens search over the app bar with focus in the field', async ({ page }) => {
+    await openExplorePhone(page);
+    await expect(searchInput(page)).toBeHidden();
+
+    // A hardware keyboard on a phone: the shortcut opens search as the search button does.
+    await page.keyboard.press('Control+k');
+    await expect(appBar(page)).toHaveAttribute('data-search-open', '');
+    await expect(searchToggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(searchInput(page)).toBeFocused();
+
+    // On its side too. Close search first: focus showed the suggestion list, a layer that takes
+    // the first Escape; the second closes search.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('protspace-protein-search').getByRole('listbox')).toBeHidden();
+    await page.keyboard.press('Escape');
+    await expect(appBar(page)).not.toHaveAttribute('data-search-open');
+    await page.setViewportSize({ width: 740, height: 360 });
+    await expect(workbench(page)).toHaveAttribute('data-layout', 'landscape');
+    await expect(searchInput(page)).toBeHidden();
+    await page.keyboard.press('Control+k');
+    await expect(appBar(page)).toHaveAttribute('data-search-open', '');
+    await expect(searchInput(page)).toBeFocused();
+  });
+
   test('at 320 px the dataset name keeps more than 40 px', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 640 });
     await openExplorePhone(page);

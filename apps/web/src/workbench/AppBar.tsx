@@ -97,6 +97,19 @@ export function AppBar() {
     setSearchWanted(false);
     if (returnFocus) toggleRef.current?.focus();
   };
+  // Ctrl/⌘K on a phone. Closed, the field is display: none, so the search's own shortcut focuses
+  // nothing: open search as the search button does, which shows the field and focuses it. Wider,
+  // or with search open, the search's own handler is enough and this listener is gone.
+  useEffect(() => {
+    if (!compact || searchOpen) return;
+    const onShortcut = (event: globalThis.KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== 'k' || event.isComposing) return;
+      event.preventDefault();
+      openSearch();
+    };
+    window.addEventListener('keydown', onShortcut);
+    return () => window.removeEventListener('keydown', onShortcut);
+  }, [compact, searchOpen]);
   // An Escape nothing else took: the suggestion list and the report are layers, which take theirs
   // first. Default-prevented here, so the selection's Escape fallback does not run as well.
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
