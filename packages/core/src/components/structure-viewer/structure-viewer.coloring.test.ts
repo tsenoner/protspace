@@ -219,6 +219,22 @@ describe('structure viewer color control', () => {
     await expectActiveColorMode(element, 'plddt');
   });
 
+  it('puts the control back when a change is refused within the same update (live binding)', async () => {
+    const element = await renderViewer(domains);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // A synchronous throw rolls back before Lit renders, so the binding's last value is still
+    // plddt and only live() writes it back over the control's own ted-domains.
+    mocks.setColorTheme.mockImplementationOnce(() => {
+      throw new Error('refused synchronously');
+    });
+
+    (await colorButton(element, 'ted-domains'))?.click();
+    await element.updateComplete;
+
+    await expectActiveColorMode(element, 'plddt');
+    expect((await colorControl(element))!.value).toBe('plddt');
+  });
+
   it('ignores a completed color change from a replaced viewer', async () => {
     const element = await renderViewer(domains);
     const tedChange = holdTedThemeChange();
