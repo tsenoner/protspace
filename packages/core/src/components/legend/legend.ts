@@ -382,7 +382,7 @@ export class ProtspaceLegend extends LitElement {
     onSortMenu: (anchor) => {
       this._sortMenu = this._sortMenu ? null : anchor;
     },
-    onSettings: (anchor) => this._settings.open(anchor),
+    onSettings: (anchor) => this._settings.toggle(anchor),
     onTitlePointerEnter: (e) => {
       const title = e.currentTarget as HTMLElement;
       this._nameTooltip.hover(title, title);

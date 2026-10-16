@@ -21,7 +21,7 @@ export class SettingsController {
   constructor(private readonly host: ProtspaceLegend) {}
 
   /** The header's settings button: opens the settings popover under it, or closes it. */
-  open(anchor: HTMLElement): void {
+  toggle(anchor: HTMLElement): void {
     if (this.host._settingsAnchor) {
       this.close();
       return;
