@@ -342,7 +342,7 @@ export class ProtspaceLegend extends LitElement {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // Controllers (a field without `private` is read by controllers/* too; not public API)
+  // Controllers (a field without `private` is read by controllers/* or by tests; not public API)
   // ─────────────────────────────────────────────────────────────────
 
   /** The data pipeline (controllers/data-controller.ts); the callbacks below call it. */

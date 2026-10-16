@@ -34,6 +34,7 @@ import {
 } from '../legend-items-state';
 import type { ProtspaceLegend } from '../legend';
 import type {
+  LegendAnnotationData,
   LegendItem,
   LegendPersistedSettings,
   LegendSortMode,
@@ -41,6 +42,23 @@ import type {
   ScatterplotData,
 } from '../types';
 import type { PersistenceCallbacks } from './persistence-controller';
+
+/** The legend's view of one annotation: the fields `annotationData` carries. */
+function annotationDataFor(
+  name: string,
+  annotation: ScatterplotData['annotations'][string],
+): LegendAnnotationData {
+  return {
+    name,
+    values: annotation.values,
+    colors: annotation.colors,
+    shapes: annotation.shapes,
+    kind: annotation.kind,
+    sourceKind: annotation.sourceKind,
+    numericMetadata: annotation.numericMetadata,
+    runtime: annotation.runtime,
+  };
+}
 
 /**
  * The legend's data pipeline: the scatterplot's data and annotation changes, the counts, the
@@ -104,16 +122,10 @@ export class LegendDataController {
       annotation_predicted: data.annotation_predicted,
     };
     this.host.selectedAnnotation = selectedAnnotation;
-    this.host.annotationData = {
-      name: selectedAnnotation,
-      values: data.annotations[selectedAnnotation].values,
-      colors: data.annotations[selectedAnnotation].colors,
-      shapes: data.annotations[selectedAnnotation].shapes,
-      kind: data.annotations[selectedAnnotation].kind,
-      sourceKind: data.annotations[selectedAnnotation].sourceKind,
-      numericMetadata: data.annotations[selectedAnnotation].numericMetadata,
-      runtime: data.annotations[selectedAnnotation].runtime,
-    };
+    this.host.annotationData = annotationDataFor(
+      selectedAnnotation,
+      data.annotations[selectedAnnotation],
+    );
     this.updateAnnotationValues(data, selectedAnnotation);
     this.host._eatCounts = computeEatPopulationCounts(
       data,
@@ -168,16 +180,7 @@ export class LegendDataController {
   refreshAnnotationData(): void {
     const annotationInfo = this.host.data?.annotations?.[this.host.selectedAnnotation] ?? null;
     this.host.annotationData = annotationInfo
-      ? {
-          name: this.host.selectedAnnotation,
-          values: annotationInfo.values,
-          colors: annotationInfo.colors,
-          shapes: annotationInfo.shapes,
-          kind: annotationInfo.kind,
-          sourceKind: annotationInfo.sourceKind,
-          numericMetadata: annotationInfo.numericMetadata,
-          runtime: annotationInfo.runtime,
-        }
+      ? annotationDataFor(this.host.selectedAnnotation, annotationInfo)
       : { name: '', values: [] };
   }
 
@@ -266,18 +269,6 @@ export class LegendDataController {
     }
   }
 
-  private getPersistedCategoriesForProcessing(): Record<string, PersistedCategoryData> {
-    if (!this.host._isNumericAnnotation()) {
-      return this.host._persistenceController.pendingCategories;
-    }
-
-    return {};
-  }
-
-  private getNumericOrderValues(): Map<string, number> {
-    return getNumericBinLowerBoundMap(this.host.annotationData);
-  }
-
   buildNumericManualOrderIds(annotationName: string): string[] | undefined {
     if (!annotationName) return undefined;
     const manualOrderIds = this.host._numericManualOrderIdsByAnnotation[annotationName];
@@ -330,7 +321,8 @@ export class LegendDataController {
 
     try {
       // Get persisted categories from persistence controller
-      const persistedCategories = this.getPersistedCategoriesForProcessing();
+      const persistedCategories: Record<string, PersistedCategoryData> =
+        this.host._isNumericAnnotation() ? {} : this.host._persistenceController.pendingCategories;
 
       // Get pending values for extract/merge operations
       // undefined = no pending operation, string = value (including '__NA__' for N/A)
@@ -351,7 +343,7 @@ export class LegendDataController {
             hasExistingItems
           ? this.host._visibleValues
           : new Set<string>();
-      const numericOrderValues = this.getNumericOrderValues();
+      const numericOrderValues = getNumericBinLowerBoundMap(this.host.annotationData);
       const numericDisplayLabels = getNumericBinLabelMap(this.host.annotationData);
       const numericManualOrderIds = isNumericAnnotation
         ? (this.buildNumericManualOrderIds(this.host.selectedAnnotation) ?? [])
