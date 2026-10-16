@@ -28,8 +28,10 @@ type LegendTestElement = HTMLElement & {
   _renderSettingsPopover: (label: string) => unknown;
   _applyDisplaySettings: (patch: Partial<LegendDisplaySettings>) => void;
   _handleSettingsReset: () => void;
-  _applyPersistedSettings: (settings: LegendPersistedSettings) => void;
-  _syncNumericSettingsFromPersistence: () => void;
+  _data: {
+    applyPersistedSettings: (settings: LegendPersistedSettings) => void;
+    syncNumericSettingsFromPersistence: () => void;
+  };
   _updateLegendItems: () => void;
   _dispatchLegendStateChange: () => void;
   _scatterplotController: {
@@ -197,7 +199,7 @@ describe('ProtspaceLegend numeric settings inference', () => {
     el.selectedAnnotation = 'score';
     el.annotationData = { name: 'score', values: ['1', '2'], kind: 'numeric' };
 
-    el._applyPersistedSettings({
+    el._data.applyPersistedSettings({
       maxVisibleValues: 5,
       shapeSize: 12,
       sortMode: 'size-desc',
@@ -317,7 +319,7 @@ describe('ProtspaceLegend numeric settings inference', () => {
       'syncNumericAnnotationSettings',
     );
 
-    el._syncNumericSettingsFromPersistence();
+    el._data.syncNumericSettingsFromPersistence();
 
     expect(syncNumericAnnotationSettings).toHaveBeenCalled();
     expect(dispatchEvent).not.toHaveBeenCalled();

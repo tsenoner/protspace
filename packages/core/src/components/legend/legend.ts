@@ -1,25 +1,15 @@
 import { LitElement, html, type TemplateResult } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { perfCounters } from '../../utils/perf-counters';
 import {
   DEFAULT_NUMERIC_PALETTE_ID,
   DEFAULT_NUMERIC_STRATEGY,
-  getNumericBinLabelMap,
-  getNumericBinLowerBoundMap,
-  getOrderedNumericBinIds,
   isNumericAnnotation,
-  materializeNumericAnnotation,
   normalizeNumericPaletteId,
-  resolveNumericAnnotationDisplaySettings,
   annotationLabel,
   DEFAULT_EAT_RELIABILITY,
-  hasEatPredictionsForAnnotation,
   isPredictedAnnotation,
   getAnnotationMeta,
-  annotationCategoryScores,
-  isAutoClusterColumn,
-  type NumericBinningStrategy,
   type NumericAnnotationDisplaySettingsMap,
   type EatReliabilityState,
   type CategoryScore,
@@ -33,7 +23,6 @@ import {
   LEGEND_VALUES,
   LEGEND_EVENTS,
   toDisplayValue,
-  toInternalValue,
 } from './config';
 
 import type { PointShape } from '@protspace/utils';
@@ -41,14 +30,15 @@ import { legendStyles } from './legend.styles';
 import '../common/info-popover';
 
 // Controllers
-import { ScatterplotSyncController, PersistenceController, DragController } from './controllers';
+import {
+  ScatterplotSyncController,
+  PersistenceController,
+  DragController,
+  LegendDataController,
+} from './controllers';
 
 // Processors and renderers
-import {
-  LegendDataProcessor,
-  createProcessorContext,
-  type LegendProcessorContext,
-} from './legend-data-processor';
+import { createProcessorContext, type LegendProcessorContext } from './legend-data-processor';
 import {
   renderLegendHeader,
   renderSortMenu,
@@ -82,7 +72,6 @@ import {
   valueToKey,
   calculatePointSize,
   defaultShapeSize,
-  SHAPE_SIZE_FILLER,
   getDefaultSortMode,
   getItemClasses,
   isItemSelected,
@@ -96,21 +85,17 @@ import {
   type FirstClick,
   computeOtherConcreteValues,
 } from './legend-helpers';
-import { computeEatPopulationCounts, type EatPopulationCounts } from './eat-population-counts';
+import type { EatPopulationCounts } from './eat-population-counts';
 import {
-  applyDerivedNumericColors,
-  applyNumericDisplayLabels,
   applyPaletteColors,
   displayedOrder,
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
   numericOrderFromItems,
   reorderByValues,
-  resolvePersistedSettings,
   reverseKeepingOtherLast,
   reverseSortMode,
   sortItemsForDisplay,
-  type ResolvedLegendSettings,
 } from './legend-items-state';
 
 import { createLegendErrorEventDetail } from './legend.events';
@@ -128,8 +113,6 @@ import type {
   LegendItem,
   LegendSortMode,
   OtherItem,
-  ScatterplotData,
-  LegendPersistedSettings,
   PersistedCategoryData,
   LegendErrorEventDetail,
   LegendErrorSource,
@@ -193,71 +176,19 @@ export class ProtspaceLegend extends LitElement {
   // Internal State
   // ─────────────────────────────────────────────────────────────────
 
-  @state() private _legendItems: LegendItem[] = [];
   @state() private _sortedLegendItems: LegendItem[] = [];
-  @state() private _otherItems: OtherItem[] = [];
-  @state() private _hiddenValues: string[] = [];
-  @state() private _annotationSortModes: Record<string, LegendSortMode> = {};
   /** The sort button while its menu is open (the menu's anchor); null when closed. */
   @state() private _sortMenu: HTMLElement | null = null;
-  private _preIsolationVisibleValues: Set<string> = new Set();
   /** The settings button while the settings popover is open under it (design decision 12). */
   @state() private _settingsAnchor: HTMLElement | null = null;
-  /**
-   * "Show duplicate counts and spread overlaps" for the selected annotation. Live state: the
-   * stored record reads it, so an unrelated save never writes false over a stored true.
-   */
-  @state() private _enableDuplicateStackUI = false;
   @state() private _statusMessage = '';
-  @state() private _selectedPaletteId = 'kellys';
-  @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
-  @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
-  @state() private _eatCounts: EatPopulationCounts | null = null;
-  @state() private _categoryScores: CategoryScore[] = [];
-  /**
-   * Whether the current annotation is one of the backend's auto-clustering membership
-   * columns, whose separation scores are optimistic by construction. Derived alongside
-   * `_categoryScores` because both need `statisticsRows`, which render time does not see.
-   */
-  @state() private _isClusterAnnotation = false;
   /**
    * Category under the pointer, from a legend row or from a score strip. Read by
    * `_renderLegendItem` (the row's `legend-item-score-hover` class) and by `_renderScoreStrips`
    * (each strip's `highlighted` binding), so a hover in either place lights up both.
    */
   @state() private _hoveredCategory: string | null = null;
-  /**
-   * The annotation storage the legend counts from, captured on every scatterplot
-   * data change. Counting straight out of it (`countFromStorage`) replaces the
-   * flat `annotationValues` array, which cost one interned string per protein
-   * and misaligned isolation filtering. `null` means "no synced storage": a host
-   * that feeds the public `annotationValues` property instead.
-   */
-  private _countSource: {
-    colData: AnnotationData;
-    values: (string | null)[];
-    proteinCount: number;
-  } | null = null;
   private _announceManualPromotionOnNextReorder = false;
-
-  // Pending extract/merge values for next update cycle.
-  // undefined = no pending operation, string = value to extract/merge (including '__NA__' for N/A)
-  private _pendingExtractValue: string | undefined = undefined;
-  private _pendingMergeValue: string | undefined = undefined;
-
-  /**
-   * Protein count of the whole dataset, taken with its hash in `updated()` from the same
-   * unfiltered data, so a filter, an isolation or hidden categories never change it. It sets
-   * the default shape size.
-   */
-  private _datasetProteinCount = 0;
-
-  /**
-   * The selected annotation's own shape size from a bundle or browser storage, or null when it
-   * holds a filler. Its persisted record keeps this, never the live size, so neither a picked
-   * size nor the computed default is ever stored or exported as the annotation's own.
-   */
-  private _annotationShapeSize: number | null = null;
 
   // Kept until its dblclick arrives, which isolates from `isolationBase`.
   private _firstClick: FirstClick | null = null;
@@ -274,17 +205,166 @@ export class ProtspaceLegend extends LitElement {
   @query('protspace-legend-settings-popover')
   private _settingsPopover?: ProtspaceLegendSettingsPopover;
 
+  // ─────────────────────────────────────────────────────────────────
+  // Read and written by the legend's controllers (controllers/*); not public API.
+  // ─────────────────────────────────────────────────────────────────
+
+  @state() _legendItems: LegendItem[] = [];
+  @state() _otherItems: OtherItem[] = [];
+  @state() _hiddenValues: string[] = [];
+  @state() _annotationSortModes: Record<string, LegendSortMode> = {};
+  _preIsolationVisibleValues: Set<string> = new Set();
+  /**
+   * "Show duplicate counts and spread overlaps" for the selected annotation. Live state: the
+   * stored record reads it, so an unrelated save never writes false over a stored true.
+   */
+  @state() _enableDuplicateStackUI = false;
+  @state() _selectedPaletteId = 'kellys';
+  @state() _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
+  @state() _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
+  @state() _eatCounts: EatPopulationCounts | null = null;
+  @state() _categoryScores: CategoryScore[] = [];
+  /**
+   * Whether the current annotation is one of the backend's auto-clustering membership
+   * columns, whose separation scores are optimistic by construction. Derived alongside
+   * `_categoryScores` because both need `statisticsRows`, which render time does not see.
+   */
+  @state() _isClusterAnnotation = false;
+  /**
+   * The annotation storage the legend counts from, captured on every scatterplot
+   * data change. Counting straight out of it (`countFromStorage`) replaces the
+   * flat `annotationValues` array, which cost one interned string per protein
+   * and misaligned isolation filtering. `null` means "no synced storage": a host
+   * that feeds the public `annotationValues` property instead.
+   */
+  _countSource: {
+    colData: AnnotationData;
+    values: (string | null)[];
+    proteinCount: number;
+  } | null = null;
+
+  // Pending extract/merge values for next update cycle.
+  // undefined = no pending operation, string = value to extract/merge (including '__NA__' for N/A)
+  _pendingExtractValue: string | undefined = undefined;
+  _pendingMergeValue: string | undefined = undefined;
+
+  /**
+   * Protein count of the whole dataset, taken with its hash in `updated()` from the same
+   * unfiltered data, so a filter, an isolation or hidden categories never change it. It sets
+   * the default shape size.
+   */
+  _datasetProteinCount = 0;
+
+  /**
+   * The selected annotation's own shape size from a bundle or browser storage, or null when it
+   * holds a filler. Its persisted record keeps this, never the live size, so neither a picked
+   * size nor the computed default is ever stored or exported as the annotation's own.
+   */
+  _annotationShapeSize: number | null = null;
+
   // Instance-specific processor context (avoids global state conflicts)
-  private _processorContext: LegendProcessorContext = createProcessorContext();
+  _processorContext: LegendProcessorContext = createProcessorContext();
+
+  /** `autoSync` is off; its doc lists what that changes. */
+  get _hostDriven(): boolean {
+    return !this.autoSync;
+  }
+
+  get _currentSortMode(): LegendSortMode {
+    return this._data.normalizeSortMode(
+      this.selectedAnnotation,
+      this._annotationSortModes[this.selectedAnnotation],
+    );
+  }
+
+  /**
+   * Get the set of currently visible values (from legend items, excluding "Other").
+   * Used to preserve membership when sort mode changes.
+   * N/A items use '__NA__' as their value.
+   */
+  get _visibleValues(): Set<string> {
+    const visible = new Set<string>();
+
+    // Collect visible values from current _legendItems (excluding "Other")
+    if (this._legendItems.length > 0) {
+      this._legendItems.forEach((item) => {
+        if (item.value !== LEGEND_VALUES.OTHER) {
+          visible.add(item.value);
+        }
+      });
+    }
+
+    // If visible is empty but we have pendingCategories, use those instead.
+    // This handles the case where _legendItems only has "Other" during restore.
+    if (visible.size === 0) {
+      const pendingCategories = this._persistenceController.pendingCategories;
+      if (Object.keys(pendingCategories).length > 0) {
+        for (const key of Object.keys(pendingCategories)) {
+          if (key !== LEGEND_VALUES.OTHER) {
+            visible.add(key);
+          }
+        }
+      }
+    }
+
+    return visible;
+  }
+
+  /**
+   * The one entry to the item pass. `LegendDataController.updateItems` has no other caller, so
+   * `perfCounters.legendUpdate` counts exactly these calls, the ones tests spy on and replace.
+   */
+  _updateLegendItems(): void {
+    this._data.updateItems();
+  }
+
+  _isNumericAnnotation(): boolean {
+    return isNumericAnnotation(this.annotationData);
+  }
+
+  _isCurrentAnnotationNumeric(): boolean {
+    const sourceAnnotation =
+      this._scatterplotController.scatterplot?.data?.annotations?.[this.selectedAnnotation];
+    return isNumericAnnotation(sourceAnnotation) || this._isNumericAnnotation();
+  }
+
+  /** Closes the annotation's own overlays, landing their pending edits on it first. */
+  _closeAnnotationOverlays(): void {
+    this._closeSettings();
+    this._colorPicker.close();
+  }
+
+  _clearKeyboardReorderState(): void {
+    this._keyboard.clear();
+    this._announceManualPromotionOnNextReorder = false;
+  }
+
+  _dispatchError(message: string, source: LegendErrorSource, originalError?: Error): void {
+    const detail: LegendErrorEventDetail = createLegendErrorEventDetail(message, source, {
+      annotation: this.selectedAnnotation || undefined,
+      originalError,
+    });
+    this.dispatchEvent(
+      new CustomEvent(LEGEND_EVENTS.ERROR, {
+        detail,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    console.error(`[protspace-legend] ${source}: ${message}`, originalError);
+  }
 
   // ─────────────────────────────────────────────────────────────────
-  // Controllers
+  // Controllers (a field without `private` is read by controllers/* too; not public API)
   // ─────────────────────────────────────────────────────────────────
 
-  private _scatterplotController = new ScatterplotSyncController(this, {
+  /** The data pipeline (controllers/data-controller.ts); the callbacks below call it. */
+  readonly _data = new LegendDataController(this);
+
+  _scatterplotController = new ScatterplotSyncController(this, {
     onDataChange: (data, annotation, projectionName) =>
-      this._handleScatterplotDataChange(data, annotation, projectionName),
-    onAnnotationChange: (annotation) => this._handleAnnotationChange(annotation),
+      this._data.onDataChange(data, annotation, projectionName),
+    onAnnotationChange: (annotation) => this._data.onAnnotationChange(annotation),
     getHiddenValues: () => this._hiddenValues,
     getOtherItems: () => this._otherItems,
     getLegendItems: () => this._legendItems,
@@ -295,41 +375,14 @@ export class ProtspaceLegend extends LitElement {
     getNumericManualOrderIds: () => this._numericManualOrderIdsByAnnotation,
   });
 
-  private _persistenceController = new PersistenceController(this, {
-    onSettingsLoaded: (settings) => this._applyPersistedSettings(settings),
+  _persistenceController = new PersistenceController(this, {
+    onSettingsLoaded: (settings) => this._data.applyPersistedSettings(settings),
     getLegendItems: () => this._legendItems,
     getHiddenValues: () => this._hiddenValues,
     shouldPersistCategories: () => !this._isCurrentAnnotationNumeric(),
     shouldPersistCategoryEncodings: () => !this._isCurrentAnnotationNumeric(),
     isNumericAnnotation: () => this._isCurrentAnnotationNumeric(),
-    getCurrentSettings: () => {
-      const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-      return {
-        maxVisibleValues: this.maxVisibleValues,
-        shapeSize: this._annotationShapeSize ?? SHAPE_SIZE_FILLER,
-        sortMode: normalizeSortModeForType(
-          this._annotationSortModes[this.selectedAnnotation],
-          isNumericAnnotation,
-        ),
-        enableDuplicateStackUI: this._enableDuplicateStackUI,
-        selectedPaletteId: isNumericAnnotation
-          ? normalizeNumericPaletteId(this._selectedPaletteId)
-          : normalizeCategoricalPaletteId(this._selectedPaletteId),
-        numericSettings: isNumericAnnotation
-          ? {
-              strategy:
-                this._numericSettingsByAnnotation[this.selectedAnnotation]?.strategy ??
-                DEFAULT_NUMERIC_STRATEGY,
-              reverseGradient:
-                this._numericSettingsByAnnotation[this.selectedAnnotation]?.reverseGradient ??
-                false,
-              signature: this.annotationData.numericMetadata?.signature ?? '',
-              topologySignature: this.annotationData.numericMetadata?.topologySignature ?? '',
-              manualOrderIds: this._buildNumericManualOrderIds(this.selectedAnnotation),
-            }
-          : undefined,
-      };
-    },
+    getCurrentSettings: () => this._data.currentSettings(),
   });
 
   private _dragController = new DragController(this, {
@@ -340,7 +393,7 @@ export class ProtspaceLegend extends LitElement {
         // Exclude Other (synthetic) and NA (locked to legend end regardless of
         // sort) from the persisted manual order — they have no observable
         // position effect and would clutter the saved state.
-        this._setNumericManualOrderIds(this.selectedAnnotation, numericOrderFromItems(items));
+        this._data.setNumericManualOrderIds(this.selectedAnnotation, numericOrderFromItems(items));
       }
     },
     onReorder: () => {
@@ -432,7 +485,7 @@ export class ProtspaceLegend extends LitElement {
     focusFirstRow: () => this._keyboard.focusItem(0),
   });
 
-  private _eatControls = new EatReliabilityController(this, {
+  _eatControls = new EatReliabilityController(this, {
     getScatterplot: () => this._scatterplotController.scatterplot,
     isHostDriven: () => this._hostDriven,
     getAnnotation: () => this.selectedAnnotation,
@@ -451,11 +504,6 @@ export class ProtspaceLegend extends LitElement {
     return item.value !== LEGEND_VALUES.OTHER;
   }
 
-  private _clearKeyboardReorderState(): void {
-    this._keyboard.clear();
-    this._announceManualPromotionOnNextReorder = false;
-  }
-
   private _restoreKeyboardReorderSnapshot(snapshot: LegendReorderSnapshot): void {
     if (snapshot.annotation !== this.selectedAnnotation) {
       this._clearKeyboardReorderState();
@@ -467,7 +515,7 @@ export class ProtspaceLegend extends LitElement {
       [this.selectedAnnotation]: snapshot.sortMode,
     };
     if (this._isNumericAnnotation()) {
-      this._setNumericManualOrderIds(this.selectedAnnotation, snapshot.numericManualOrderIds);
+      this._data.setNumericManualOrderIds(this.selectedAnnotation, snapshot.numericManualOrderIds);
     }
     // Only the order goes back: colour, shape and visibility set during the reorder stay.
     const live = new Map(this._legendItems.map((item) => [item.value, item]));
@@ -488,47 +536,6 @@ export class ProtspaceLegend extends LitElement {
     this._persistenceController.saveSettings();
     this._dispatchLegendStateChange();
     this.requestUpdate();
-  }
-
-  private _syncNumericSettingsFromPersistence(): void {
-    const annotationEntries = Object.entries(this.data?.annotations ?? {});
-    if (annotationEntries.length === 0) {
-      return;
-    }
-
-    const persistedSettings = this.getAllPersistedSettings();
-    const nextNumericSettings = { ...this._numericSettingsByAnnotation };
-    let didChange = false;
-
-    for (const [annotationName, annotation] of annotationEntries) {
-      if (!isNumericAnnotation(annotation)) {
-        continue;
-      }
-
-      const persisted = persistedSettings[annotationName];
-      const { settings: nextSettings } = resolveNumericAnnotationDisplaySettings({
-        persistedSettings: persisted,
-        liveSettings: nextNumericSettings[annotationName],
-        defaultBinCount: LEGEND_DEFAULTS.maxVisibleValues,
-      });
-
-      const currentSettings = nextNumericSettings[annotationName];
-      if (
-        !currentSettings ||
-        currentSettings.binCount !== nextSettings.binCount ||
-        currentSettings.strategy !== nextSettings.strategy ||
-        currentSettings.paletteId !== nextSettings.paletteId ||
-        currentSettings.reverseGradient !== nextSettings.reverseGradient
-      ) {
-        nextNumericSettings[annotationName] = nextSettings;
-        didChange = true;
-      }
-    }
-
-    if (didChange) {
-      this._numericSettingsByAnnotation = nextNumericSettings;
-      this._scatterplotController.syncNumericAnnotationSettings();
-    }
   }
 
   private _dispatchLegendStateChange(): void {
@@ -552,7 +559,7 @@ export class ProtspaceLegend extends LitElement {
     };
 
     if (this._isNumericAnnotation()) {
-      this._setNumericManualOrderIds(this.selectedAnnotation, visibleOrder);
+      this._data.setNumericManualOrderIds(this.selectedAnnotation, visibleOrder);
       this._updateLegendItems();
     } else {
       this._legendItems = reorderByValues(this._legendItems, visibleOrder);
@@ -590,55 +597,10 @@ export class ProtspaceLegend extends LitElement {
   // Computed Properties
   // ─────────────────────────────────────────────────────────────────
 
-  private get _currentSortMode(): LegendSortMode {
-    return this._normalizeSortModeForAnnotation(
-      this.selectedAnnotation,
-      this._annotationSortModes[this.selectedAnnotation],
-    );
-  }
-
   /** The selected annotation's display name, never its key (decision 15). */
   private get _annotationDisplayName(): string {
     const name = this.selectedAnnotation;
     return name ? annotationLabel(name, this.data?.annotations?.[name] ?? this.annotationData) : '';
-  }
-
-  /** `autoSync` is off; its doc lists what that changes. */
-  private get _hostDriven(): boolean {
-    return !this.autoSync;
-  }
-
-  /**
-   * Get the set of currently visible values (from legend items, excluding "Other").
-   * Used to preserve membership when sort mode changes.
-   * N/A items use '__NA__' as their value.
-   */
-  private get _visibleValues(): Set<string> {
-    const visible = new Set<string>();
-
-    // Collect visible values from current _legendItems (excluding "Other")
-    if (this._legendItems.length > 0) {
-      this._legendItems.forEach((item) => {
-        if (item.value !== LEGEND_VALUES.OTHER) {
-          visible.add(item.value);
-        }
-      });
-    }
-
-    // If visible is empty but we have pendingCategories, use those instead.
-    // This handles the case where _legendItems only has "Other" during restore.
-    if (visible.size === 0) {
-      const pendingCategories = this._persistenceController.pendingCategories;
-      if (Object.keys(pendingCategories).length > 0) {
-        for (const key of Object.keys(pendingCategories)) {
-          if (key !== LEGEND_VALUES.OTHER) {
-            visible.add(key);
-          }
-        }
-      }
-    }
-
-    return visible;
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -686,8 +648,8 @@ export class ProtspaceLegend extends LitElement {
 
     // Handle data or annotation changes
     if (changedProperties.has('data') || changedProperties.has('selectedAnnotation')) {
-      this._updateAnnotationDataFromData();
-      this._ensureSortModeDefaults();
+      this._data.refreshAnnotationData();
+      this._data.ensureSortModeDefaults();
 
       const annotationChanged = this._persistenceController.updateSelectedAnnotation(
         this.selectedAnnotation,
@@ -700,7 +662,7 @@ export class ProtspaceLegend extends LitElement {
         this._persistenceController.loadSettings();
       }
 
-      this._syncNumericSettingsFromPersistence();
+      this._data.syncNumericSettingsFromPersistence();
     }
 
     // An externally fed annotationValues array is the source of truth while it is
@@ -722,7 +684,7 @@ export class ProtspaceLegend extends LitElement {
       changedProperties.has('isolationMode') ||
       changedProperties.has('isolationHistory')
     ) {
-      this._rebuildLegendItems();
+      this._data.rebuildItems();
     }
 
     // Initialize Sortable when container becomes available
@@ -804,7 +766,7 @@ export class ProtspaceLegend extends LitElement {
       // (the file's category set). Without this, _visibleValues uses the default items
       // built during loadNewData(), which may have a different visible set than the file.
       this._legendItems = [];
-      this._rebuildLegendItems();
+      this._data.rebuildItems();
     }
   }
 
@@ -955,175 +917,8 @@ export class ProtspaceLegend extends LitElement {
     this.requestUpdate();
   }
 
-  private _handleScatterplotDataChange(
-    data: ScatterplotData,
-    selectedAnnotation: string,
-    selectedProjectionName: string,
-  ): void {
-    // A pending edit lands on the annotation it was made for, before the plot moves to another.
-    if (selectedAnnotation !== this.selectedAnnotation) this._closeAnnotationOverlays();
-    this._clearKeyboardReorderState();
-    const scatterplot = this._scatterplotController.scatterplot;
-    this._eatControls.mirrorOverlayEnabled(scatterplot?.eatOverlayEnabled ?? true);
-    // The reliability slider position is legend-owned now (it drives the query
-    // filter, not scatter-plot dimming), so it is preserved across data-change
-    // rather than re-read from the scatter plot.
-    this.data = {
-      annotations: data.annotations,
-      protein_ids: data.protein_ids,
-      numeric_annotation_data: data.numeric_annotation_data,
-      annotation_predicted: data.annotation_predicted,
-    };
-    this.selectedAnnotation = selectedAnnotation;
-    this.annotationData = {
-      name: selectedAnnotation,
-      values: data.annotations[selectedAnnotation].values,
-      colors: data.annotations[selectedAnnotation].colors,
-      shapes: data.annotations[selectedAnnotation].shapes,
-      kind: data.annotations[selectedAnnotation].kind,
-      sourceKind: data.annotations[selectedAnnotation].sourceKind,
-      numericMetadata: data.annotations[selectedAnnotation].numericMetadata,
-      runtime: data.annotations[selectedAnnotation].runtime,
-    };
-    this._updateAnnotationValues(data, selectedAnnotation);
-    this._eatCounts = computeEatPopulationCounts(
-      data,
-      selectedAnnotation,
-      this._eatControls.overlayEnabled,
-    );
-    // Taken from the unsliced element, not from the incoming payload.
-    // `sliceWith` in utils strips `statisticsRows` from a filtered or isolated
-    // view on purpose (a slice must not carry scores that describe the whole dataset), so
-    // reading them off `data` made every filter look identical to "this annotation was never
-    // scored" -- which is why this used to need a sticky per-annotation memory to tell the two
-    // apart. The scores are whole-dataset facts about the annotation, so the legend reads them
-    // from the whole dataset and decides separately whether to plot them (`_renderScoreStrips`).
-    // Same escape hatch the dataset hash in `updated()` already uses, and the same source the
-    // sibling projection-metadata panel is handed.
-    const statisticsRows = scatterplot?.data?.statisticsRows ?? data.statisticsRows;
-    this._categoryScores = annotationCategoryScores(
-      statisticsRows,
-      selectedAnnotation,
-      selectedProjectionName,
-    );
-    this._isClusterAnnotation = isAutoClusterColumn(statisticsRows, selectedAnnotation);
-    this.proteinIds = data.protein_ids;
-
-    // Sync isolation state
-    const { isolationMode, isolationHistory } = this._scatterplotController.getIsolationState();
-
-    // Save visible values before entering isolation so "Other" items stay grouped
-    if (isolationMode && !this.isolationMode) {
-      this._preIsolationVisibleValues = this._visibleValues;
-    }
-
-    this.isolationMode = isolationMode;
-    this.isolationHistory = isolationHistory;
-  }
-
-  private _handleAnnotationChange(annotation: string): void {
-    // A value still being typed belongs to the annotation it was typed for.
-    this._closeAnnotationOverlays();
-    this._clearKeyboardReorderState();
-    this.selectedAnnotation = annotation;
-    this._hiddenValues = [];
-    // Reset pre-isolation visible values so the new annotation uses maxVisibleValues
-    // instead of being constrained to the old annotation's visible set
-    if (this.isolationMode) {
-      this._preIsolationVisibleValues = new Set<string>();
-    }
-    this._scatterplotController.forceSync();
-  }
-
-  private _updateAnnotationDataFromData(): void {
-    const annotationInfo = this.data?.annotations?.[this.selectedAnnotation] ?? null;
-    this.annotationData = annotationInfo
-      ? {
-          name: this.selectedAnnotation,
-          values: annotationInfo.values,
-          colors: annotationInfo.colors,
-          shapes: annotationInfo.shapes,
-          kind: annotationInfo.kind,
-          sourceKind: annotationInfo.sourceKind,
-          numericMetadata: annotationInfo.numericMetadata,
-          runtime: annotationInfo.runtime,
-        }
-      : { name: '', values: [] };
-  }
-
-  private _updateAnnotationValues(data: ScatterplotData, selectedAnnotation: string): void {
-    this._countSource = {
-      colData: data.annotation_data[selectedAnnotation],
-      values: data.annotations[selectedAnnotation].values,
-      proteinCount: data.protein_ids.length,
-    };
-  }
-
-  /**
-   * Legend counts, isolation applied: from the synced storage, or from the public
-   * `annotationValues` array when there is none. Either way the processor only ever
-   * sees the counted map.
-   *
-   * Recomputed per rebuild rather than cached: the bincount is ~2 ms at 573K,
-   * cheaper than the array scan it replaces, and it depends on the isolation
-   * state, which changes independently of the storage.
-   */
-  private _computeAnnotationCounts(knownValues: string[]): ReadonlyMap<string, number> {
-    const isolating = this.isolationMode && this.isolationHistory?.length > 0;
-    const filteredIndices = isolating
-      ? LegendDataProcessor.getFilteredIndices(true, this.isolationHistory, this.proteinIds)
-      : null;
-    const source = this._countSource;
-    if (!source) {
-      // The array holds one value per protein in `proteinIds` order, so the filter's
-      // protein indices address it directly.
-      return LegendDataProcessor.countAnnotationFrequencies(
-        this.annotationValues,
-        filteredIndices,
-        knownValues,
-      );
-    }
-    // Protein order while host-driven, the order a per-protein `annotationValues` feed
-    // gives, so the legend comes out the same whether its host feeds it or it counts the
-    // synced storage. Tied counts keep this order, which settles their rows and colours.
-    return LegendDataProcessor.countFromStorage(
-      source.colData,
-      source.values,
-      source.proteinCount,
-      filteredIndices,
-      knownValues,
-      this._hostDriven,
-    );
-  }
-
-  private _hasSelectedEatAnnotation(): boolean {
-    const stableData = this._scatterplotController.scatterplot?.data ?? this.data;
-    return hasEatPredictionsForAnnotation(stableData, this.selectedAnnotation);
-  }
-
-  private _ensureSortModeDefaults(): void {
-    const annotationNames = this.data?.annotations ? Object.keys(this.data.annotations) : [];
-    if (annotationNames.length === 0) return;
-
-    const updated: Record<string, LegendSortMode> = { ...this._annotationSortModes };
-    for (const aname of annotationNames) {
-      updated[aname] = this._normalizeSortModeForAnnotation(aname, updated[aname]);
-    }
-    this._annotationSortModes = updated;
-  }
-
   private _isMultilabelAnnotation(): boolean {
     return this._scatterplotController.isMultilabelAnnotation(this.selectedAnnotation);
-  }
-
-  private _isNumericAnnotation(): boolean {
-    return isNumericAnnotation(this.annotationData);
-  }
-
-  private _isCurrentAnnotationNumeric(): boolean {
-    const sourceAnnotation =
-      this._scatterplotController.scatterplot?.data?.annotations?.[this.selectedAnnotation];
-    return isNumericAnnotation(sourceAnnotation) || this._isNumericAnnotation();
   }
 
   private _hasSameProteinIds(left: readonly string[], right: readonly string[]): boolean {
@@ -1131,305 +926,6 @@ export class ProtspaceLegend extends LitElement {
     if (left.length !== right.length) return false;
 
     return left.every((proteinId, index) => proteinId === right[index]);
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Legend Item Processing
-  // ─────────────────────────────────────────────────────────────────
-
-  /**
-   * Rebuild legend items and apply persisted z-order.
-   * Use when forcing a full rebuild outside the updated() lifecycle.
-   */
-  private _rebuildLegendItems(): void {
-    if (perfCounters) perfCounters.legendRebuild++;
-    this._updateLegendItems();
-
-    if (!this._isNumericAnnotation() && this._persistenceController.hasPendingCategories()) {
-      this._legendItems = this._persistenceController.applyPendingZOrder(this._legendItems);
-    }
-  }
-
-  private _getPersistedCategoriesForProcessing(): Record<string, PersistedCategoryData> {
-    if (!this._isNumericAnnotation()) {
-      return this._persistenceController.pendingCategories;
-    }
-
-    return {};
-  }
-
-  private _getNumericOrderValues(): Map<string, number> {
-    return getNumericBinLowerBoundMap(this.annotationData);
-  }
-
-  private _buildNumericManualOrderIds(annotationName: string): string[] | undefined {
-    if (!annotationName) return undefined;
-    const manualOrderIds = this._numericManualOrderIdsByAnnotation[annotationName];
-    if (manualOrderIds?.length) {
-      return manualOrderIds;
-    }
-
-    if (annotationName !== this.selectedAnnotation || !this._isNumericAnnotation()) {
-      return undefined;
-    }
-
-    return numericOrderFromItems(this._legendItems);
-  }
-
-  private _setNumericManualOrderIds(annotationName: string, orderIds: string[] | undefined): void {
-    if (!annotationName) return;
-
-    if (!orderIds || orderIds.length === 0) {
-      const rest = { ...this._numericManualOrderIdsByAnnotation };
-      delete rest[annotationName];
-      this._numericManualOrderIdsByAnnotation = rest;
-      return;
-    }
-
-    this._numericManualOrderIdsByAnnotation = {
-      ...this._numericManualOrderIdsByAnnotation,
-      [annotationName]: [...orderIds],
-    };
-  }
-
-  private _updateLegendItems(): void {
-    if (perfCounters) perfCounters.legendUpdate++;
-    // Aligned with PersistenceController's isNumericAnnotation callback so the
-    // processor and the persistence layer agree on numeric-ness in transient states.
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    // Ahead of the bincount below, which is O(proteins) and has nothing to count for
-    // an annotation with no values at all.
-    if (!this.annotationData?.values?.length) {
-      this._legendItems = [];
-      return;
-    }
-    const knownValues = isNumericAnnotation
-      ? this.annotationData.values.map((value) => toInternalValue(value))
-      : [];
-    const frequencies = this._computeAnnotationCounts(knownValues);
-    if (!isNumericAnnotation && frequencies.size === 0) {
-      this._legendItems = [];
-      return;
-    }
-
-    try {
-      // Get persisted categories from persistence controller
-      const persistedCategories = this._getPersistedCategoriesForProcessing();
-
-      // Get pending values for extract/merge operations
-      // undefined = no pending operation, string = value (including '__NA__' for N/A)
-      const pendingExtract = this._pendingExtractValue;
-      const pendingMerge = this._pendingMergeValue;
-
-      // Use visibleValues to preserve the current visible set when:
-      // - There are persisted settings in localStorage
-      // - There are pending extract/merge operations
-      // - There are already legend items (e.g., switching sort mode before persistence)
-      // When none of these apply (true initial load), use empty set so maxVisibleValues is respected.
-      const hasPendingOps = pendingExtract !== undefined || pendingMerge !== undefined;
-      const hasExistingItems = this._legendItems.some((i) => i.value !== LEGEND_VALUES.OTHER);
-      const visibleValues = this.isolationMode
-        ? this._preIsolationVisibleValues
-        : this._persistenceController.hasPersistedSettings() || hasPendingOps || hasExistingItems
-          ? this._visibleValues
-          : new Set<string>();
-      const numericOrderValues = this._getNumericOrderValues();
-      const numericDisplayLabels = getNumericBinLabelMap(this.annotationData);
-      const numericManualOrderIds = isNumericAnnotation
-        ? (this._buildNumericManualOrderIds(this.selectedAnnotation) ?? [])
-        : [];
-      const existingLegendItems =
-        isNumericAnnotation && this._currentSortMode.startsWith('manual')
-          ? getOrderedNumericBinIds(this.annotationData, 'manual', numericManualOrderIds).map(
-              (id, index) => ({
-                value: id,
-                displayValue: numericDisplayLabels.get(id) ?? id,
-                color: '',
-                shape: 'circle',
-                count: 0,
-                isVisible: true,
-                zOrder: index,
-              }),
-            )
-          : this._legendItems;
-
-      const { legendItems, otherItems } = LegendDataProcessor.processLegendItems(
-        this._processorContext,
-        this.annotationData.name || this.selectedAnnotation,
-        frequencies,
-        this.maxVisibleValues,
-        this.isolationMode,
-        existingLegendItems,
-        this._currentSortMode,
-        persistedCategories,
-        visibleValues,
-        numericOrderValues,
-        !isNumericAnnotation,
-        pendingExtract,
-        pendingMerge,
-        isNumericAnnotation,
-      );
-
-      // Apply hidden values
-      if (this._hiddenValues.length > 0) {
-        this._legendItems = legendItems.map((item: LegendItem) => ({
-          ...item,
-          isVisible: !this._hiddenValues.includes(valueToKey(item.value)),
-        }));
-      } else {
-        this._legendItems = legendItems;
-      }
-      this._otherItems = otherItems;
-
-      if (isNumericAnnotation) {
-        // Only once the annotation itself reads as numeric: a plot-side numeric column whose
-        // legend data has not caught up yet keeps the processor's labels and colours.
-        if (this._isNumericAnnotation()) {
-          this._legendItems = applyDerivedNumericColors(
-            applyNumericDisplayLabels(this._legendItems, this.annotationData),
-            this.annotationData,
-          );
-        }
-      } else if (this._selectedPaletteId !== 'kellys') {
-        this._legendItems = applyPaletteColors(this._legendItems, this._selectedPaletteId);
-      }
-
-      // Clear pending extract/merge values after they've been applied
-      this._pendingExtractValue = undefined;
-      this._pendingMergeValue = undefined;
-      // Note: We do NOT clear pendingCategories here because subsequent update cycles
-      // (triggered by property changes in _applyPersistedSettings) may rebuild legend items
-      // and need the persisted colors/shapes. Categories are cleared when loadSettings()
-      // is called for a new annotation.
-
-      // Sync with scatterplot
-      this._scatterplotController.dispatchZOrderChange();
-      this._scatterplotController.dispatchColorMappingChange();
-      this._scatterplotController.syncOtherValues();
-      this._scatterplotController.syncHiddenValues();
-    } catch (error) {
-      this._dispatchError(
-        'Failed to process legend data',
-        'data-processing',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Settings Persistence
-  // ─────────────────────────────────────────────────────────────────
-
-  private _applyPersistedSettings(settings: LegendPersistedSettings): void {
-    try {
-      const resolved: ResolvedLegendSettings = resolvePersistedSettings(settings, {
-        isNumeric: this._isCurrentAnnotationNumeric(),
-        liveNumeric: this._numericSettingsByAnnotation[this.selectedAnnotation],
-        signatures: (binCount, strategy, paletteId, reverseGradient) =>
-          this._computeNumericSettingsSignatures(binCount, strategy, paletteId, reverseGradient),
-      });
-
-      if (resolved.clearPendingCategories) {
-        this._persistenceController.clearPendingCategories();
-      }
-      this.maxVisibleValues = resolved.maxVisibleValues;
-      this._annotationShapeSize = resolved.annotationShapeSize;
-      this.shapeSize = this._resolveShapeSize();
-      this._hiddenValues = resolved.hiddenValues;
-      this._selectedPaletteId = resolved.paletteId;
-
-      if (resolved.numeric) {
-        const { manualOrderIds, ...numericSettings } = resolved.numeric;
-        this._numericSettingsByAnnotation = {
-          ...this._numericSettingsByAnnotation,
-          [this.selectedAnnotation]: numericSettings,
-        };
-        this._setNumericManualOrderIds(this.selectedAnnotation, manualOrderIds);
-      }
-
-      this._annotationSortModes = {
-        ...this._annotationSortModes,
-        [this.selectedAnnotation]: resolved.sortMode,
-      };
-
-      this._enableDuplicateStackUI = resolved.enableDuplicateStackUI === true;
-      this._scatterplotController.updateConfig({
-        pointSize: calculatePointSize(this.shapeSize),
-        enableDuplicateStackUI: this._enableDuplicateStackUI,
-      });
-      this._scatterplotController.syncNumericAnnotationSettings();
-    } catch (error) {
-      this._dispatchError(
-        'Failed to apply persisted settings',
-        'persistence',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-  }
-
-  /**
-   * The dataset's stored size (picked, or a bundle's top-level size), else the annotation's own,
-   * else the default from the dataset's protein count; capped at the dialog's bound.
-   */
-  private _resolveShapeSize(): number {
-    return Math.min(
-      this._persistenceController.loadShapeSize() ??
-        this._annotationShapeSize ??
-        defaultShapeSize(this._datasetProteinCount),
-      LEGEND_DEFAULTS.maxSymbolSize,
-    );
-  }
-
-  /**
-   * Forget the dataset's picked size and every annotation's own, so the default from the
-   * protein count applies; that default is never stored.
-   */
-  private _clearShapeSize(): void {
-    this._persistenceController.clearShapeSize(Object.keys(this.data?.annotations ?? {}));
-    this._annotationShapeSize = null;
-    this.shapeSize = this._resolveShapeSize();
-  }
-
-  private _computeNumericSettingsSignatures(
-    binCount: number,
-    strategy: NumericBinningStrategy,
-    paletteId: string,
-    reverseGradient: boolean,
-  ): { signature: string | null; topologySignature: string | null } {
-    const rawNumericValues =
-      this._scatterplotController.scatterplot?.data?.numeric_annotation_data?.[
-        this.selectedAnnotation
-      ] ?? this.data?.numeric_annotation_data?.[this.selectedAnnotation];
-
-    if (!rawNumericValues) {
-      return {
-        signature: this.annotationData.numericMetadata?.signature ?? null,
-        topologySignature: this.annotationData.numericMetadata?.topologySignature ?? null,
-      };
-    }
-
-    const metadata = materializeNumericAnnotation(rawNumericValues, {
-      binCount,
-      strategy,
-      paletteId,
-      reverseGradient,
-    }).annotation.numericMetadata;
-    return {
-      signature: metadata?.signature ?? null,
-      topologySignature: metadata?.topologySignature ?? null,
-    };
-  }
-
-  private _normalizeSortModeForAnnotation(
-    annotationName: string,
-    sortMode: LegendSortMode | undefined,
-  ): LegendSortMode {
-    const annotation =
-      this.data?.annotations?.[annotationName] ??
-      (annotationName === this.selectedAnnotation ? this.annotationData : undefined);
-    const isNumeric = isNumericAnnotation(annotation);
-
-    return normalizeSortModeForType(sortMode, isNumeric);
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -1609,7 +1105,7 @@ export class ProtspaceLegend extends LitElement {
       currentMode === 'manual' &&
       !this._numericManualOrderIdsByAnnotation[this.selectedAnnotation]?.length
     ) {
-      this._setNumericManualOrderIds(
+      this._data.setNumericManualOrderIds(
         this.selectedAnnotation,
         [...this._sortedLegendItems]
           .filter((item) => item.value !== LEGEND_VALUES.OTHER)
@@ -1646,7 +1142,7 @@ export class ProtspaceLegend extends LitElement {
     this._keyboard.clear();
     if (next === 'manual' && !this._currentSortMode.startsWith('manual')) {
       const shown = displayedOrder(this._sortedLegendItems, isNumeric);
-      if (isNumeric) this._setNumericManualOrderIds(this.selectedAnnotation, shown);
+      if (isNumeric) this._data.setNumericManualOrderIds(this.selectedAnnotation, shown);
       else this._legendItems = reorderByValues(this._legendItems, shown);
     }
     this._annotationSortModes = { ...this._annotationSortModes, [this.selectedAnnotation]: next };
@@ -1691,21 +1187,6 @@ export class ProtspaceLegend extends LitElement {
     }, 1000);
   }
 
-  private _dispatchError(message: string, source: LegendErrorSource, originalError?: Error): void {
-    const detail: LegendErrorEventDetail = createLegendErrorEventDetail(message, source, {
-      annotation: this.selectedAnnotation || undefined,
-      originalError,
-    });
-    this.dispatchEvent(
-      new CustomEvent(LEGEND_EVENTS.ERROR, {
-        detail,
-        bubbles: true,
-        composed: true,
-      }),
-    );
-    console.error(`[protspace-legend] ${source}: ${message}`, originalError);
-  }
-
   // ─────────────────────────────────────────────────────────────────
   // Settings Popover
   // ─────────────────────────────────────────────────────────────────
@@ -1724,12 +1205,6 @@ export class ProtspaceLegend extends LitElement {
     this._otherPopover.close();
     this._settingsAnchor = anchor;
     this.dispatchEvent(new CustomEvent(LEGEND_EVENTS.CUSTOMIZE, { bubbles: true, composed: true }));
-  }
-
-  /** Closes the annotation's own overlays, landing their pending edits on it first. */
-  private _closeAnnotationOverlays(): void {
-    this._closeSettings();
-    this._colorPicker.close();
   }
 
   private _closeSettings(): void {
@@ -1762,7 +1237,7 @@ export class ProtspaceLegend extends LitElement {
     if (patch.shapeSize !== undefined) {
       if (patch.shapeSize === null) {
         // An emptied size field returns the dataset to its default, as Reset does for the size.
-        this._clearShapeSize();
+        this._data.clearShapeSize();
       } else {
         const size = Math.min(patch.shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
         if (size !== this.shapeSize) {
@@ -1936,7 +1411,7 @@ export class ProtspaceLegend extends LitElement {
     // Reset all settings to defaults. The shape size is the dataset's, so it is cleared for every
     // annotation rather than stored, and the default from the protein count applies again.
     this.maxVisibleValues = LEGEND_DEFAULTS.maxVisibleValues;
-    this._clearShapeSize();
+    this._data.clearShapeSize();
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
 
     this._selectedPaletteId = isNumericAnnotation ? DEFAULT_NUMERIC_PALETTE_ID : 'kellys';
@@ -1950,7 +1425,7 @@ export class ProtspaceLegend extends LitElement {
           reverseGradient: false,
         },
       };
-      this._setNumericManualOrderIds(this.selectedAnnotation, undefined);
+      this._data.setNumericManualOrderIds(this.selectedAnnotation, undefined);
     }
 
     this._annotationSortModes = {
@@ -2023,7 +1498,7 @@ export class ProtspaceLegend extends LitElement {
           ${this._statusMessage}
         </div>
         ${renderLegendHeader(this._headerModel(title, predicted, info), this._headerHandlers)}
-        ${this._hasSelectedEatAnnotation()
+        ${this._data.hasSelectedEatAnnotation()
           ? renderEatSection(this._eatControls, { counts: this._eatCounts })
           : ''}
         ${this._renderScoreStrips()}
@@ -2128,7 +1603,7 @@ export class ProtspaceLegend extends LitElement {
     const view: ScoreStripsView = {
       hasScores: this._categoryScores.length > 0,
       // Gated on the live filter/isolation state directly, which is the actual question -- the
-      // scores themselves are read from the unsliced dataset (see `_handleScatterplotDataChange`)
+      // scores themselves are read from the unsliced dataset (see `LegendDataController.onDataChange`)
       // and so stay available for sorting.
       filtered:
         this.isolationMode || Boolean(this._scatterplotController.scatterplot?.filtersActive),

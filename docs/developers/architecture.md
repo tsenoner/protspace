@@ -59,24 +59,26 @@ children of one list for drag-and-drop, and the e2e, perf and tour code reach ro
 `legend.shadowRoot`. The element holds the state and the wiring; the rest lives beside it in
 `packages/core/src/components/legend/`:
 
-| Module                       | Holds                                                                                                                                                                                                                                                                                                          |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `legend.ts`                  | Properties, state, controller wiring, lifecycle, public API, the data pipeline and item actions                                                                                                                                                                                                                |
-| `legend-header.ts`           | The header template, the sort button's label and icon, and the sort menu                                                                                                                                                                                                                                       |
-| `legend-row.ts`              | The legend symbol and the row template                                                                                                                                                                                                                                                                         |
-| `legend-row-menu.ts`         | `LegendRowMenu`: the one "⋯" menu every row shares                                                                                                                                                                                                                                                             |
-| `legend-other-popover.ts`    | `protspace-legend-other-popover`, the searchable list of the categories under Other                                                                                                                                                                                                                            |
-| `legend-settings-popover.ts` | `protspace-legend-settings-popover`, the settings popover, with its palette swatches in `palette-swatches.ts`. Each edit is a `settings-change` the legend applies at once (`_applyDisplaySettings`) and stores under the same `protspace:legend:{datasetHash}:{annotation}` key; Reset is a `settings-reset`. |
-| `legend-other-control.ts`    | `OtherPopoverControl`: the legend's side of the Other popover (its anchor, opening and closing, focus when Other empties)                                                                                                                                                                                      |
-| `legend-list.ts`             | The list template, `LegendKeyboardController` (row keys, the list's one Tab stop, keyboard reorder as a layer) and `TruncatedNameTooltip`                                                                                                                                                                      |
-| `legend-score-strips.ts`     | Score-strip points and the strips section                                                                                                                                                                                                                                                                      |
-| `legend-eat-controls.ts`     | `EatReliabilityController` and the EAT section                                                                                                                                                                                                                                                                 |
-| `legend-color-picker.ts`     | `ColorPickerController`: the colour and shape picker, a `ps-popover` on the layer stack                                                                                                                                                                                                                        |
-| `legend-items-state.ts`      | Pure functions: sort, palette and numeric helpers, and the reading of a stored record                                                                                                                                                                                                                          |
+| Module                           | Holds                                                                                                                                                                                                                                                                                                          |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `legend.ts`                      | Properties, state, controller wiring, lifecycle, render, public API, item actions, keyboard reorder and settings                                                                                                                                                                                               |
+| `controllers/data-controller.ts` | `LegendDataController`: the data pipeline (data and annotation changes, counts, the item pass and its rebuild, stored settings, shape size, numeric order). Takes the element as its host                                                                                                                      |
+| `legend-header.ts`               | The header template, the sort button's label and icon, and the sort menu                                                                                                                                                                                                                                       |
+| `legend-row.ts`                  | The legend symbol and the row template                                                                                                                                                                                                                                                                         |
+| `legend-row-menu.ts`             | `LegendRowMenu`: the one "⋯" menu every row shares                                                                                                                                                                                                                                                             |
+| `legend-other-popover.ts`        | `protspace-legend-other-popover`, the searchable list of the categories under Other                                                                                                                                                                                                                            |
+| `legend-settings-popover.ts`     | `protspace-legend-settings-popover`, the settings popover, with its palette swatches in `palette-swatches.ts`. Each edit is a `settings-change` the legend applies at once (`_applyDisplaySettings`) and stores under the same `protspace:legend:{datasetHash}:{annotation}` key; Reset is a `settings-reset`. |
+| `legend-other-control.ts`        | `OtherPopoverControl`: the legend's side of the Other popover (its anchor, opening and closing, focus when Other empties)                                                                                                                                                                                      |
+| `legend-list.ts`                 | The list template, `LegendKeyboardController` (row keys, the list's one Tab stop, keyboard reorder as a layer) and `TruncatedNameTooltip`                                                                                                                                                                      |
+| `legend-score-strips.ts`         | Score-strip points and the strips section                                                                                                                                                                                                                                                                      |
+| `legend-eat-controls.ts`         | `EatReliabilityController` and the EAT section                                                                                                                                                                                                                                                                 |
+| `legend-color-picker.ts`         | `ColorPickerController`: the colour and shape picker, a `ps-popover` on the layer stack                                                                                                                                                                                                                        |
+| `legend-items-state.ts`          | Pure functions: sort, palette and numeric helpers, and the reading of a stored record                                                                                                                                                                                                                          |
 
-Templates take explicit view models and handlers; controllers are Lit reactive controllers that
-keep their own transient state and timers; the pure functions return new arrays that `legend.ts`
-assigns before it syncs the plot.
+Templates take explicit view models and handlers; the controllers beside the templates are Lit
+reactive controllers that keep their own transient state and timers, and the `controllers/` classes
+that hold the legend's own logic are plain classes over the element (below); the pure functions
+return new arrays that `legend.ts` assigns before it syncs the plot.
 
 ### Controllers
 
@@ -118,7 +120,7 @@ Located in `@protspace/utils/storage`:
 
 ### Reactive Controllers Pattern
 
-Controllers implement Lit's `ReactiveController` interface:
+The callback-based controllers implement Lit's `ReactiveController` interface:
 
 ```typescript
 interface ReactiveController {
@@ -127,11 +129,20 @@ interface ReactiveController {
 }
 ```
 
-Communication between controllers and host component happens through callback interfaces, enabling:
+`PersistenceController`, `DragController`, `ScatterplotSyncController` and the controllers beside
+the templates talk to the element through callback interfaces, enabling:
 
 - Testability (controllers can be tested in isolation)
 - Reusability (controllers can be used by other components)
 - Maintainability (concerns are clearly separated)
+
+The controllers that hold the legend's own logic, moved out of `legend.ts` (the table's rows that
+take the element as host), are plain classes instead. Each is built with the element
+(`constructor(private readonly host: ProtspaceLegend)`, a type-only import) and reads and writes the
+members `legend.ts` lists under "Read and written by the legend's controllers": a callbacks object
+would repeat each of those members as a getter and a setter. They reach each other only through the
+element's fields (`host._data`, …), never by import, and every item pass goes through
+`ProtspaceLegend._updateLegendItems()`, the one call `perfCounters.legendUpdate` counts.
 
 ## Workbench layout modes
 

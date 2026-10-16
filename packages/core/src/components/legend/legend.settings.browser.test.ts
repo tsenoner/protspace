@@ -25,16 +25,17 @@ const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => r
 
 /**
  * Counts the item passes: `perfCounters.legendUpdate` and `legendRebuild` are incremented once
- * each, at the start of these two methods, so the spies count what the perf budgets count.
+ * each, at the start of `LegendDataController.updateItems` (reached only through the element's
+ * `_updateLegendItems`) and `rebuildItems`, so the spies count what the perf budgets count.
  */
 function spies(legend: ProtspaceLegend) {
   const internals = legend as unknown as {
     _updateLegendItems(): void;
-    _rebuildLegendItems(): void;
+    _data: { rebuildItems(): void };
   };
   return {
     update: vi.spyOn(internals, '_updateLegendItems'),
-    rebuild: vi.spyOn(internals, '_rebuildLegendItems'),
+    rebuild: vi.spyOn(internals._data, 'rebuildItems'),
   };
 }
 

@@ -253,7 +253,7 @@ export class ScatterplotSyncController implements ReactiveController {
    * Both manual isolation AND an active query filter are constrained views: the
    * plot shows a kept subset of proteins. The legend treats them identically —
    * counts reflect the kept set while the visible-category structure is preserved
-   * (see legend `_handleScatterplotDataChange` / `processLegendItems`). So an active
+   * (see `LegendDataController.onDataChange` / `processLegendItems`). So an active
    * query filter is reported here as `isolationMode: true` with the kept id set
    * appended as an extra history layer; when isolation is ALSO active the layers
    * intersect, matching the plot's own combined cull. This does NOT couple the
