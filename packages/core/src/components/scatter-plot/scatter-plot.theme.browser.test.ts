@@ -255,6 +255,7 @@ function overlayProbe(): ShadowRoot {
   const root = host.attachShadow({ mode: 'open' });
   adoptStyles(root, scatterplotStyles);
   root.innerHTML = `
+    <canvas width="20" height="20"></canvas>
     <svg width="200" height="200">
       <g class="brush-container"><rect class="selection" width="20" height="20"></rect></g>
       <path class="lasso-path" d="M0 0 L20 20 L0 20 Z"></path>
@@ -340,6 +341,38 @@ describe('plot overlays, chips and tooltip follow the theme', () => {
     const root = overlayProbe();
     // #0b1120, the dark --ps-plot-bg.
     expect(styleOf(root, '.dup-spiderfy-node-circle').stroke).toBe('rgb(11, 17, 32)');
+  });
+
+  it("the plot's SVG layer stacks above its canvas", () => {
+    const root = overlayProbe();
+    // Brush, lasso and spider marks live in the SVG and must sit over the WebGL canvas.
+    expect(styleOf(root, 'svg').zIndex).toBe('3');
+    expect(styleOf(root, 'canvas').zIndex).toBe('1');
+    expect(styleOf(root, '.plot-indicator').zIndex).toBe('10');
+    expect(styleOf(root, '.connector-status').zIndex).toBe('10');
+  });
+
+  it('the point-count chip is 11 px, weight 500, in Inter', () => {
+    const root = overlayProbe();
+    for (const selector of ['.plot-indicator', '.connector-status']) {
+      const chip = styleOf(root, selector);
+      expect(chip.fontSize, selector).toBe('11px');
+      expect(chip.fontWeight, selector).toBe('500');
+      expect(chip.fontFamily, selector).toMatch(/^"Inter Variable"/);
+    }
+    expect(styleOf(root, '.connector-status button').fontSize).toBe('16px');
+  });
+
+  it('the plot host keeps the documented size properties', () => {
+    const host = overlayProbe().host;
+    const prop = (name: string) => getComputedStyle(host).getPropertyValue(name).trim();
+    expect(prop('--protspace-height')).toBe('600px');
+    expect(prop('--protspace-width')).toBe('100%');
+    expect(prop('--protspace-border-radius')).toBe('6px');
+    expect(prop('--protspace-brush-stroke-width')).toBe('1px');
+    // Declared for years, read by nothing: gone.
+    expect(prop('--protspace-point-size')).toBe('');
+    expect(prop('--protspace-transition-duration')).toBe('');
   });
 
   it('the plot indicator and connector chip sit on the dark raised surface with light text', () => {

@@ -1,38 +1,21 @@
 import { css } from 'lit';
-import { tokens } from '../../styles/tokens';
-import { overlayMixins } from '../../styles/overlay-mixins';
 
 const scatterplotStylesCore = css`
   :host {
-    /* Sizes, opacities and timings only: every colour comes from a --ps-* token (theme.ts), so an
-       embedder restyles the plot in both themes by setting those on :root. */
+    /* Sizes only: every colour comes from a --ps-* token (theme.ts), so an embedder restyles the
+       plot in both themes by setting those on :root. --protspace-width and --protspace-height
+       are the documented embedder API (docs/developers/embedding.md). */
 
     /* Layout */
     --protspace-width: 100%;
     --protspace-height: 600px;
     --protspace-border-radius: 6px;
 
-    /* Points */
-    --protspace-point-size: 80px;
-    --protspace-point-size-highlighted: 120px;
-    --protspace-point-size-selected: 150px;
-    --protspace-point-opacity-base: 0.8;
-    --protspace-point-opacity-selected: 1;
-    --protspace-point-opacity-faded: 0.2;
-
-    /* Selection */
-    --protspace-stroke-width-base: 1px;
-    --protspace-stroke-width-highlighted: 2px;
-    --protspace-stroke-width-selected: 3px;
-
-    /* Transitions */
-    --protspace-transition-duration: 0.2s;
-    --protspace-transition-easing: ease-in-out;
-
     /* Brush */
     --protspace-brush-stroke-width: 1px;
 
     display: block;
+    font-family: var(--ps-font-sans);
     width: var(--protspace-width);
     height: var(--protspace-height);
     position: relative;
@@ -60,14 +43,14 @@ const scatterplotStylesCore = css`
   }
 
   svg {
-    z-index: var(--z-svg);
+    z-index: 3;
     pointer-events: all;
     /* d3-zoom pans and pinches the plot; the browser must not also scroll or zoom the page. */
     touch-action: none;
   }
 
   canvas {
-    z-index: var(--z-canvas);
+    z-index: 1;
     pointer-events: none;
   }
 
@@ -109,13 +92,6 @@ const scatterplotStylesCore = css`
     vector-effect: non-scaling-stroke;
   }
 
-  /* Base loading overlay styles provided by overlayMixins */
-  .loading-spinner {
-    /* Override size from base mixin */
-    width: 3rem;
-    height: 3rem;
-  }
-
   /* Small status chips overlaid on the plot (visible point count bottom-left,
      numeric recompute notice bottom-right). Same card look as the top-left
      projection-metadata trigger. */
@@ -123,7 +99,7 @@ const scatterplotStylesCore = css`
     position: absolute;
     bottom: 0.5rem;
     left: 0.5rem;
-    z-index: var(--z-overlay);
+    z-index: 10;
     display: flex;
     align-items: center;
     height: 2rem;
@@ -133,8 +109,8 @@ const scatterplotStylesCore = css`
     border: 1px solid var(--ps-border);
     box-shadow: var(--ps-shadow-md);
     color: var(--ps-text-muted);
-    font-size: var(--text-caption);
-    font-weight: var(--font-medium);
+    font-size: var(--ps-text-xs);
+    font-weight: var(--ps-weight-medium);
     letter-spacing: 0.01em;
     border-radius: 0.375rem;
     pointer-events: none;
@@ -188,7 +164,7 @@ const scatterplotStylesCore = css`
     position: absolute;
     top: var(--ps-space-2);
     left: 50%;
-    z-index: var(--z-overlay);
+    z-index: 10;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -201,8 +177,8 @@ const scatterplotStylesCore = css`
     border: 1px solid var(--ps-border);
     box-shadow: var(--ps-shadow-md);
     color: var(--ps-text);
-    font-size: var(--text-caption);
-    font-weight: var(--font-medium);
+    font-size: var(--ps-text-xs);
+    font-weight: var(--ps-weight-medium);
     border-radius: 0.375rem;
   }
 
@@ -224,7 +200,7 @@ const scatterplotStylesCore = css`
     background: transparent;
     color: var(--ps-text-muted);
     font: inherit;
-    font-size: 1rem;
+    font-size: var(--ps-text-lg);
     line-height: 1;
     cursor: pointer;
   }
@@ -242,4 +218,4 @@ const scatterplotStylesCore = css`
   }
 `;
 
-export const scatterplotStyles = [tokens, overlayMixins, scatterplotStylesCore];
+export const scatterplotStyles = [scatterplotStylesCore];
