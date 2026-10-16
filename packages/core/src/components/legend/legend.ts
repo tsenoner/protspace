@@ -25,9 +25,8 @@ import {
   isPredictedAnnotation,
   getAnnotationMeta,
   annotationCategoryScores,
-  isAutoClusterColumn,
+  autoClusterScoreCaveat,
   metricDisplay,
-  AUTO_CLUSTER_SCORE_CAVEAT,
   type NumericBinningStrategy,
   type NumericAnnotationDisplaySettingsMap,
   type EatReliabilityMode,
@@ -259,11 +258,12 @@ export class ProtspaceLegend extends LitElement {
   @state() private _eatCounts: EatPopulationCounts | null = null;
   @state() private _categoryScores: CategoryScore[] = [];
   /**
-   * Whether the current annotation is one of the backend's auto-clustering membership
-   * columns, whose separation scores are optimistic by construction. Derived alongside
-   * `_categoryScores` because both need `statisticsRows`, which render time does not see.
+   * The caveat for the current annotation's scores when it is one of the backend's
+   * auto-clustering membership columns, whose separation scores are optimistic by
+   * construction; `null` otherwise. Derived alongside `_categoryScores` because both need
+   * `statisticsRows`, which render time does not see.
    */
-  @state() private _isClusterAnnotation = false;
+  @state() private _clusterCaveat: string | null = null;
   /**
    * Category under the pointer, from a legend row or from a score strip. Read by
    * `_renderLegendItem` (the row's `legend-item-score-hover` class) and by `_renderScoreStrip`
@@ -1651,7 +1651,7 @@ export class ProtspaceLegend extends LitElement {
       selectedAnnotation,
       selectedProjectionName,
     );
-    this._isClusterAnnotation = isAutoClusterColumn(statisticsRows, selectedAnnotation);
+    this._clusterCaveat = autoClusterScoreCaveat(statisticsRows, selectedAnnotation);
     this.proteinIds = data.protein_ids;
 
     // Sync isolation state
@@ -2951,8 +2951,8 @@ export class ProtspaceLegend extends LitElement {
         <!-- Stated here rather than only in the projection-metadata panel: this is where
              the per-category numbers are actually read, and a user hovering rows may
              never open that panel. -->
-        ${this._isClusterAnnotation
-          ? html`<p class="score-strips-caveat">${AUTO_CLUSTER_SCORE_CAVEAT}</p>`
+        ${this._clusterCaveat
+          ? html`<p class="score-strips-caveat">${this._clusterCaveat}</p>`
           : ''}
       </section>
     `;

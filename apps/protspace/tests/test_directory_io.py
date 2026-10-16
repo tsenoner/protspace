@@ -38,7 +38,7 @@ STYLES = {"organism": {"colors": {"A": "#ff0000"}, "shapes": {"B": "diamond"}}}
 
 def _tables() -> dict[str, pa.Table]:
     return BaseProcessor({}, {}).create_output(
-        pd.DataFrame({"identifier": IDS, "organism": ["A", "B", "A"]}),
+        pd.DataFrame({"protein_id": IDS, "organism": ["A", "B", "A"]}),
         [
             {
                 "name": "PCA_2",
@@ -186,7 +186,7 @@ def _two_column_bundle(tmp_path):
     """A bundle whose settings style `kingdom`, which the tests leave alone."""
     tables = BaseProcessor({}, {}).create_output(
         pd.DataFrame(
-            {"identifier": IDS, "organism": ["A", "B", "A"], "kingdom": ["x", "y", "x"]}
+            {"protein_id": IDS, "organism": ["A", "B", "A"], "kingdom": ["x", "y", "x"]}
         ),
         [{"name": "PCA_2", "dimensions": 2, "info": {}, "data": np.zeros((3, 2))}],
         IDS,

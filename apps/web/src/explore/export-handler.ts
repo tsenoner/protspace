@@ -18,7 +18,7 @@ interface ExportEventDetail {
   includeLegendSettings?: boolean;
   legendFontSizePx?: number;
   legendWidthPercent?: number;
-  type: 'ids' | 'pdf' | 'png' | 'parquet';
+  type: 'ids' | 'tsv' | 'pdf' | 'png' | 'parquet';
 }
 
 interface ExportHandlerOptions {
@@ -234,6 +234,9 @@ export function createExportHandler({
       switch (type) {
         case 'ids':
           exporter.exportProteinIds(options);
+          break;
+        case 'tsv':
+          exporter.exportTable(options);
           break;
         case 'png':
           await exporter.exportPNG(options);

@@ -70,6 +70,20 @@ jobs:
       - name: Install Python Semantic Release
         run: uv tool install python-semantic-release@v10.6.1
 
+      # Deprecation gate: refuse a release that reaches a scheduled removal
+      # (src/protspace/deprecations.py) while the feature is still in. `--print`
+      # computes the next version from the same history and config as the step
+      # below and writes nothing (no commit, tag, changelog or version file).
+      # When nothing is to be released it prints the current version and the
+      # script passes, so the no-op handling below is unaffected. Pinned by
+      # tests/test_check_deprecations.py: keep this step before the next one.
+      - name: Check scheduled removals against the next version
+        run: |
+          set -euo pipefail
+          next=$(uv tool run --from python-semantic-release semantic-release version --print | tail -n 1)
+          echo "Next version: $next"
+          python3 scripts/check_deprecations.py --next-version "$next"
+
       - name: Run Semantic Release
         id: semantic_release
         env:

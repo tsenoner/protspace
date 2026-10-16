@@ -130,7 +130,7 @@ def test_stats_leaves_every_missing_cell_out_of_the_categories():
     cells = MISSING_CELLS + ["a", "b", "a", "b"]
     frame = pd.DataFrame(
         {
-            "identifier": [f"p{i}" for i in range(len(cells))],
+            "protein_id": [f"p{i}" for i in range(len(cells))],
             "group": pd.Series(cells, dtype=object),
         }
     )
@@ -143,7 +143,7 @@ def test_stats_leaves_every_missing_cell_out_of_the_categories():
 def _bundle(tmp_path, organism: list, settings: dict | None = None) -> Path:
     ids = [f"P{i}" for i in range(len(organism))]
     tables = BaseProcessor({}, {}).create_output(
-        pd.DataFrame({"identifier": ids, "organism": organism}),
+        pd.DataFrame({"protein_id": ids, "organism": organism}),
         [
             {
                 "name": "PCA_2",

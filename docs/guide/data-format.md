@@ -101,10 +101,17 @@ same tables on every Python read, so the shapes below are what a Python consumer
 
 Contains metadata and biological annotations for each protein.
 
-| Column       | Type          | Description                                                        |
-| ------------ | ------------- | ------------------------------------------------------------------ |
-| `identifier` | string        | Protein ID (e.g., P12345); named `protein_id` in Python CLI output |
-| _others_     | string/number | Any biological annotations                                         |
+| Column       | Type          | Description                |
+| ------------ | ------------- | -------------------------- |
+| `protein_id` | string        | Protein ID (e.g., P12345)  |
+| _others_     | string/number | Any biological annotations |
+
+Every table ProtSpace writes, from Python or the web app, names its protein ID column
+`protein_id`. Files written before protspace 4.17 may call it `identifier`: a v3 bundle names its
+ID column in the [manifest](#the-manifest), so it reads whatever the name, and the Python reader
+hands it back as `protein_id`. A table with no manifest (a v1/v2 bundle, an unbundled directory,
+an annotations parquet) is keyed on `protein_id`, else `identifier`, until protspace 5.0.0; beside
+`protein_id`, an `identifier` column is an ordinary annotation.
 
 The columns `gene_name`, `protein_name`, and `uniprot_kb_id` are **tooltip-only**, shown on hover but excluded from the annotation dropdown.
 
@@ -118,13 +125,13 @@ The columns `gene_name`, `protein_name`, and `uniprot_kb_id` are **tooltip-only*
 
 ### 3. Projections Data
 
-| Column            | Type   | Description                 |
-| ----------------- | ------ | --------------------------- |
-| `projection_name` | string | Method name (e.g., `PCA_2`) |
-| `identifier`      | string | Protein ID                  |
-| `x`               | float  | X coordinate                |
-| `y`               | float  | Y coordinate                |
-| `z`               | float  | Z coordinate (null for 2D)  |
+| Column            | Type   | Description                               |
+| ----------------- | ------ | ----------------------------------------- |
+| `projection_name` | string | Method name (e.g., `PCA_2`)               |
+| `protein_id`      | string | Protein ID (`identifier` in a v1/v2 file) |
+| `x`               | float  | X coordinate                              |
+| `y`               | float  | Y coordinate                              |
+| `z`               | float  | Z coordinate (null for 2D)                |
 
 ### Statistics (Optional, 5th Part)
 
@@ -385,7 +392,9 @@ bundle, one per question. Both are read from that part's footer before any row i
 
 Bundles written before format v3 (three to five parts, see
 [Legacy layout](#legacy-layout-3-to-5-parts)) still load in the web app and in the Python package.
-That support is **deprecated and will be removed in protspace 5.0.0**. Until then:
+That support is **deprecated and will be removed in protspace 5.0.0** from every reader except
+[`protspace convert`](/guide/python-cli#protspace-convert), which keeps reading v1 and v2 so an old
+file can always be upgraded. Until then:
 
 - the Python package logs one warning each time it reads a v1 or v2 bundle, naming
   `protspace convert`;
@@ -430,8 +439,8 @@ same one twice: 21% is what settled the counts-versus-offsets choice described b
 while scores were still float32, and 19% is the same comparison after scores widened to float64.
 
 Nothing above the container boundary changes. `read_tables()` decodes a v3 file back into the
-v2-shaped tables, so `protspace serve`, `protspace style`, `protspace transfer` and every script
-keep their string-cell logic.
+v2-shaped tables, so `protspace style`, `protspace transfer`, the deprecated `protspace serve` and
+every script keep their string-cell logic.
 
 ### Part 1: annotations
 
@@ -442,12 +451,12 @@ ties in every label dictionary's frequency order (see [Part 6](#part-6-payloads)
 the legend order and colours of an annotations table sorted differently from its projections.
 The manifest says how to read each one:
 
-| Manifest kind | Part 1 column                | Physical type | Holds                                              | Missing        |
-| ------------- | ---------------------------- | ------------- | -------------------------------------------------- | -------------- |
-| (identifier)  | `protein_id` or `identifier` | `BYTE_ARRAY`  | the protein ID; null and duplicate IDs are refused | not allowed    |
-| `categorical` | `<col>`                      | `INT32`       | a code into `dict:<col>`                           | `-1`           |
-| `multi`       | `<col>__count`               | `INT32`       | how many hits this row owns in `csr:<col>`         | a count of `0` |
-| `numeric`     | `<col>`                      | `DOUBLE`      | the value                                          | `NaN`          |
+| Manifest kind | Part 1 column  | Physical type | Holds                                              | Missing        |
+| ------------- | -------------- | ------------- | -------------------------------------------------- | -------------- |
+| (identifier)  | `protein_id`   | `BYTE_ARRAY`  | the protein ID; null and duplicate IDs are refused | not allowed    |
+| `categorical` | `<col>`        | `INT32`       | a code into `dict:<col>`                           | `-1`           |
+| `multi`       | `<col>__count` | `INT32`       | how many hits this row owns in `csr:<col>`         | a count of `0` |
+| `numeric`     | `<col>`        | `DOUBLE`      | the value                                          | `NaN`          |
 
 A column is `multi` when any row holds more than one value, or when any value carries a score or
 an evidence code. Part 1 then stores only the per-row hit counts; the hits themselves live in
@@ -462,7 +471,9 @@ One row per protein, aligned position by position with part 1, and one `FLOAT` c
 `<name>__x`, `<name>__y`, and `<name>__z` for a 3D projection. A protein with no coordinates in a
 projection is stored as `NaN` on every axis, never `0.0`: the origin is a real coordinate, and a
 missing point is not drawn. A projection is 3D when any of its rows has a finite `z` value and
-2D otherwise (a `z` of NaN counts as missing). A `dimensions` value in the input metadata that
+2D otherwise (a `z` of NaN counts as missing). Reading 3D projections is deprecated and ends in
+protspace 5.0.0; `protspace convert --flatten-3d` rewrites them as 2D projections of their X/Y
+view, which for any method but PCA is the 3D layout seen from one side rather than a 2D fit. A `dimensions` value in the input metadata that
 disagrees is ignored with a warning, and part 2 is written with the value the data gives, so it
 always agrees with the manifest. Both readers refuse a part 3 whose row count differs from part
 1's, rather than leaving the unread proteins at `(0, 0)` or dropping the extra rows. The web app
@@ -564,7 +575,7 @@ the only description of what the integer columns mean. It does not carry
 
 | Field                     | Meaning                                                                                                                                                                 |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `idColumn`                | which part 1 column holds the protein IDs                                                                                                                               |
+| `idColumn`                | which part 1 column holds the protein IDs: `protein_id` from every writer (an older web export wrote `identifier`), read by this field and never by name                |
 | `columns.*.kind`          | `categorical`, `multi` or `numeric`                                                                                                                                     |
 | `columns.*.numericType`   | `int` or `float`, decided over the placed proteins; numeric columns only                                                                                                |
 | `columns.*.scores`        | present and `true` when a `scores:<col>` payload exists; multi columns only                                                                                             |
@@ -693,6 +704,36 @@ coordinates gets a projection row, so a protein a projection does not cover has 
 projected protein that had no annotations row comes back with one whose every annotation is
 missing, and the identifier column comes back first whatever position it held before.
 
+## Read a Bundle in Python
+
+The `protspace` package reads every format version. `read_bundle_table` gives one row per protein
+as a pandas DataFrame, with the same columns and values as
+[`protspace export`](/guide/python-cli#protspace-export):
+
+```python
+from protspace.data.io.bundle import read_bundle_contents, read_bundle_table
+
+# protein_id, the projections asked for as <name>_x / <name>_y, then every annotation
+table = read_bundle_table("data.parquetbundle", projections=["UMAP 2"])
+table.to_csv("data.tsv", sep="\t", index=False)
+
+# The proteins in each automatic cluster of one projection (`--stats`)
+members = table.groupby("cluster_elbow_UMAP 2")["protein_id"].apply(list)
+
+# The stored tables themselves, in their v2 shape (see Tables above)
+contents = read_bundle_contents("data.parquetbundle")
+annotations = contents.annotations.to_pandas()  # raw cells, e.g. "label|0.9"
+projections = contents.projections.to_pandas()  # projection_name, protein_id, x, y, z
+statistics = contents.statistics  # a pyarrow table, or None without --stats
+```
+
+`read_bundle_table` decodes the cells for reading: score and evidence suffixes are dropped,
+encoded characters are decoded, multi-valued cells are joined with `;`, and a
+[missing value](#missing-values) is an empty string. `read_bundle_contents`
+hands back the cells as stored, in the [cell grammar](#encoding-format-v2), along with the
+`settings` and `statistics` parts. Projection names are those the web app shows, such as
+`ProtT5 — UMAP 2`.
+
 ## Creating Files
 
 Use the [Google Colab notebook](/guide/data-preparation) or [Python CLI](/guide/python-cli) to generate `.parquetbundle` files.
@@ -714,7 +755,7 @@ What else an export from the web app does:
 - a numeric column is written as `DOUBLE`, with its int/float identity in the manifest (`numericType`). An integral column is also declared `int64` to Python, so it reads back as `100`, not `100.0`.
 - a column loaded from a v3 bundle keeps the `sourceType` its manifest recorded, so Python reads a web re-export of a `bool`, `int32` or string column as that type again. The recorded type is kept only while the column still fits it: an integer type needs every value to be a whole number in its range that a `DOUBLE` holds exactly (up to ±2^53), or, for a column Python stored as exact decimal labels, every label to be a decimal integer in its range, `bool` needs the labels `true` and `false`, and a float type needs a numeric column. A column that no longer fits, or one loaded from a v1/v2 file, gets the exporter's own choice (`string`, `int64` or `double`). The EAT companion columns are the exception: the app folds them into its prediction overlay on load, so it writes them with the types `protspace transfer` gives them, `float` for `<col>__pred_confidence` and `string` for the other two.
 - a boolean column is written with the labels `true` and `false`, and a protein a projection does not cover gets `NaN` coordinates there, exactly as in a Python-written bundle.
-- the protein IDs are written to an `identifier` column, or to `protein_id` when an annotation is itself named `identifier` (a Python bundle of a table holding both columns keeps `protein_id` as its ID column and `identifier` as an annotation). Python reads the ID column from `protein_id` first, so either way it finds the IDs.
+- the protein IDs are written to a `protein_id` column, the manifest's `idColumn`, as in a Python-written bundle. An annotation named `identifier` is exported as an ordinary annotation beside it (a Python bundle of a table holding both columns has one). Exports from before protspace 4.17 named the ID column `identifier` unless an annotation took that name; every reader takes it from `idColumn`, so they read the same.
 - a statistics part read from the source bundle is re-emitted byte for byte, including columns this app version does not model.
 - all six parts are always written, with a zero-byte slot for absent settings or statistics.
 - a subset export (isolation, or an active filter) drops the statistics part, because whole-dataset scores would misdescribe a slice.

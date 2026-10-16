@@ -59,6 +59,7 @@ from protspace.data.annotations.encoding import (
     read_format_version,
     stamp_format_version,
 )
+from protspace.data.io.ids import PROTEIN_ID_COLUMN, id_column_by_name, with_protein_id
 
 logger = logging.getLogger(__name__)
 
@@ -562,7 +563,7 @@ def _encode_projections(
     The manifest lists the projections by first appearance in the data rows,
     as the v2 browser did, whatever order the metadata gives them in.
     """
-    required = {"projection_name", "identifier", "x", "y"}
+    required = {"projection_name", PROTEIN_ID_COLUMN, "x", "y"}
     missing = required - set(projections_data.column_names)
     if missing:
         raise ValueError(
@@ -609,7 +610,7 @@ def _encode_projections(
     for name in data_order:
         declared = declared_dimensions[name]
         rows = projections_data.filter(pc.equal(name_column, pa.scalar(name)))
-        identifiers = rows.column("identifier")
+        identifiers = rows.column(PROTEIN_ID_COLUMN)
         # ``encode_v3`` has already added every projected identifier to part 1,
         # so only a null identifier can miss here.
         if identifiers.null_count:
@@ -702,7 +703,7 @@ def _with_manifest_dimensions(
 
 
 def _add_unannotated_rows(
-    annotations: pa.Table, id_column: str, projected: pa.Array | None
+    annotations: pa.Table, projected: pa.Array | None
 ) -> pa.Table:
     """Append an all-missing annotations row per ``projected`` identifier it lacks.
 
@@ -711,7 +712,7 @@ def _add_unannotated_rows(
     """
     if projected is None:
         return annotations  # ``_encode_projections`` names the missing column
-    known = _as_string(annotations.column(id_column))
+    known = _as_string(annotations.column(PROTEIN_ID_COLUMN))
     absent = projected.filter(pc.invert(pc.is_in(_as_string(projected), known)))
     if not len(absent):
         return annotations
@@ -723,7 +724,7 @@ def _add_unannotated_rows(
     extra = pa.table(
         [
             pc.cast(absent, field.type)
-            if field.name == id_column
+            if field.name == PROTEIN_ID_COLUMN
             else pa.nulls(len(absent), field.type)
             for field in annotations.schema
         ],
@@ -757,7 +758,7 @@ def _require_v2_grammar(annotations: pa.Table) -> None:
 
 def _prepare_annotations(
     annotations: pa.Table, projected: pa.Array | None
-) -> tuple[pa.Table, str, pa.Array]:
+) -> tuple[pa.Table, pa.Array]:
     """Check the grammar stamp, add the ``projected`` rows it lacks, validate ids.
 
     The rows come back in the protein order the v2 browser built: ``projected``
@@ -768,28 +769,29 @@ def _prepare_annotations(
     projections (a user's table given to ``bundle -a``, say) still gets the
     legend order, colours and dataset hash v2 gave it.
 
-    Returns ``(annotations, id_column, ids)`` with ``ids`` as a string array.
+    The ID column is ``protein_id``, else ``identifier`` (an older table's name),
+    and comes back as ``protein_id``, the only name a bundle is written with.
+
+    Returns ``(annotations, ids)`` with ``ids`` as a string array.
     """
     _require_v2_grammar(annotations)
 
-    id_column = next(
-        (c for c in ("protein_id", "identifier") if c in annotations.column_names), None
-    )
-    if id_column is None:
+    if id_column_by_name(annotations.column_names) is None:
         raise ValueError(
             "annotations table has no 'protein_id' or 'identifier' column; "
             f"found {annotations.column_names}"
         )
-
-    annotations = _add_unannotated_rows(annotations, id_column, projected)
-    ids = _as_string(annotations.column(id_column))
+    annotations = _add_unannotated_rows(with_protein_id(annotations), projected)
+    ids = _as_string(annotations.column(PROTEIN_ID_COLUMN))
     if ids.null_count:
-        raise ValueError(f"annotations column '{id_column}' contains null values")
+        raise ValueError(
+            f"annotations column '{PROTEIN_ID_COLUMN}' contains null values"
+        )
     duplicated = pc.sum(pc.greater(pc.value_counts(ids).field("counts"), 1)).as_py()
     if duplicated:
         raise ValueError(
-            f"annotations column '{id_column}' contains {duplicated} duplicated value(s); "
-            "protein identifiers must be unique"
+            f"annotations column '{PROTEIN_ID_COLUMN}' contains {duplicated} "
+            "duplicated value(s); protein identifiers must be unique"
         )
 
     if projected is not None and len(projected):
@@ -801,12 +803,11 @@ def _prepare_annotations(
         if (order != np.arange(len(ids))).any():
             indices = pa.array(order)
             annotations, ids = annotations.take(indices), ids.take(indices)
-    return annotations, id_column, ids
+    return annotations, ids
 
 
 def _encode_part1(
     annotations: pa.Table,
-    id_column: str,
     ids: pa.Array,
     projection_manifest: list[dict[str, Any]],
     placed: np.ndarray | None = None,
@@ -820,12 +821,12 @@ def _encode_part1(
     num_rows = annotations.num_rows
     existing = set(annotations.column_names)
     evidence_dict: dict[str, int] = {}
-    columns: dict[str, pa.Array] = {id_column: ids}
+    columns: dict[str, pa.Array] = {PROTEIN_ID_COLUMN: ids}
     manifest_columns: dict[str, Any] = {}
     payloads: list[tuple[str, bytes]] = []
 
     for name in annotations.column_names:
-        if name == id_column:
+        if name == PROTEIN_ID_COLUMN:
             continue
         entry, array, column_payloads = _encode_annotation_column(
             annotations.column(name),
@@ -849,7 +850,7 @@ def _encode_part1(
         payloads.extend(_dict_payloads(_EVIDENCE_DICT_NAME, list(evidence_dict)))
 
     manifest = {
-        "idColumn": id_column,
+        "idColumn": PROTEIN_ID_COLUMN,
         "columns": manifest_columns,
         "projections": projection_manifest,
     }
@@ -892,19 +893,21 @@ def encode_v3(
     ``annotations`` must be stamped as v2 cell grammar; an unstamped or v1 table
     raises ``ValueError`` instead of being migrated on a guess (see
     :func:`~protspace.data.annotations.encoding.migrate_legacy_annotation_table`).
+    Either table may be keyed on ``protein_id`` or, as older ones are,
+    ``identifier``; part 1 is written keyed on ``protein_id``.
     """
+    projections_data = with_protein_id(projections_data)
     projected = (
-        pc.unique(projections_data.column("identifier")).drop_null()
-        if "identifier" in projections_data.column_names
+        pc.unique(projections_data.column(PROTEIN_ID_COLUMN)).drop_null()
+        if PROTEIN_ID_COLUMN in projections_data.column_names
         else None
     )
-    annotations, id_column, ids = _prepare_annotations(annotations, projected)
+    annotations, ids = _prepare_annotations(annotations, projected)
     projections_table, projection_manifest = _encode_projections(
         projections_metadata, projections_data, ids
     )
     part1, payloads = _encode_part1(
         annotations,
-        id_column,
         ids,
         projection_manifest,
         _placed_rows(projections_table, projection_manifest),
@@ -933,6 +936,14 @@ def _read_manifest(part1: bytes) -> tuple[dict[str, Any], dict[bytes, bytes]]:
             "it is not a v3 part"
         )
     return json.loads(raw_manifest), metadata
+
+
+def manifest_projections(part1: bytes) -> list[dict[str, Any]]:
+    """The ``{name, dimension}`` entries of a v3 part 1's manifest, in order.
+
+    Reads the footer only, so it costs nothing next to a decode.
+    """
+    return list(_read_manifest(part1)[0]["projections"])
 
 
 def _axes(projection: dict[str, Any]) -> tuple[str, ...]:
@@ -1150,7 +1161,7 @@ def _decode_projections(
     schema = pa.schema(
         [
             ("projection_name", pa.string()),
-            ("identifier", pa.string()),
+            (PROTEIN_ID_COLUMN, pa.string()),
             ("x", pa.float32()),
             ("y", pa.float32()),
             ("z", pa.float32()),
@@ -1167,7 +1178,7 @@ def _decode_projections(
             {
                 # ``take`` of a one-element array beats materialising N copies.
                 "projection_name": pa.array([name], type=pa.string()).take(row),
-                "identifier": identifiers,
+                PROTEIN_ID_COLUMN: identifiers,
                 "x": axes["x"],
                 "y": axes["y"],
                 "z": axes.get("z", pa.nulls(num_rows, pa.float32())),
@@ -1234,7 +1245,9 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
       too, so the two tables agree on the projection set and can be written
       back: the v2 browser derived that set from the rows, and the web writer
       stores such a projection when an export places nobody in it;
-    * the identifier column comes back first, wherever it sat before.
+    * the ID column comes back first, wherever it sat before, and named
+      ``protein_id`` whatever the manifest's ``idColumn`` calls it (an older
+      web export wrote ``identifier``); the long projections are keyed on it too.
     """
     if len(parts) != 4:
         raise ValueError(
@@ -1253,7 +1266,15 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
     )
 
     id_column = manifest["idColumn"]
-    columns: dict[str, pa.Array] = {id_column: _flat(annotations.column(id_column))}
+    if id_column != PROTEIN_ID_COLUMN and PROTEIN_ID_COLUMN in manifest["columns"]:
+        # Neither writer produces this: both take `protein_id` first.
+        raise ValueError(
+            f"v3 manifest idColumn '{id_column}' sits beside an annotation named "
+            f"'{PROTEIN_ID_COLUMN}'; the bundle cannot be read"
+        )
+    columns: dict[str, pa.Array] = {
+        PROTEIN_ID_COLUMN: _flat(annotations.column(id_column))
+    }
     for name, entry in manifest["columns"].items():
         kind = entry["kind"]
         if kind == "numeric":
@@ -1279,7 +1300,7 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
             raise ValueError(f"column '{name}' has unknown v3 kind '{kind}'")
 
     projections = _decode_projections(
-        parts[2], manifest["projections"], columns[id_column]
+        parts[2], manifest["projections"], columns[PROTEIN_ID_COLUMN]
     )
     projections_metadata = _with_manifest_dimensions(
         read_part(parts[1]), manifest["projections"]
@@ -1336,7 +1357,7 @@ def replace_annotations_v3(
             [old_ids.filter(pa.array(rows)) for rows in finite], type=old_ids.type
         )
     )
-    annotations, id_column, ids = _prepare_annotations(annotations, projected)
+    annotations, ids = _prepare_annotations(annotations, projected)
     position = np.asarray(pc.fill_null(pc.index_in(ids, value_set=old_ids), -1))
     new = np.flatnonzero(position >= 0)
     old = position[new]
@@ -1362,7 +1383,6 @@ def replace_annotations_v3(
     }
     part1, payloads = _encode_part1(
         annotations,
-        id_column,
         ids,
         projections,
         _placed_rows(realigned, projections),

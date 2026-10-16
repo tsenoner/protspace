@@ -10,7 +10,7 @@ from protspace.stats.annotation_select import (
 def _frame():
     return pd.DataFrame(
         {
-            "identifier": [f"p{i}" for i in range(6)],
+            "protein_id": [f"p{i}" for i in range(6)],
             "major_group": ["a", "a", "b", "b", "c", "c"],  # suitable (3 cats)
             "all_unique": [f"u{i}" for i in range(6)],  # unsuitable (all unique)
             "constant": ["x"] * 6,  # unsuitable (1 cat)
@@ -48,7 +48,7 @@ def test_build_labels_strips_evidence_scores():
     # compound value|score string (which would split one location into several).
     frame = pd.DataFrame(
         {
-            "identifier": [f"p{i}" for i in range(6)],
+            "protein_id": [f"p{i}" for i in range(6)],
             "cc_subcellular_location": [
                 "Cytoplasm|EXP",
                 "Cytoplasm|IEA",

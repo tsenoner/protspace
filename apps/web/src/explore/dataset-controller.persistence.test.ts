@@ -3,6 +3,7 @@ import {
   buildControllerOptions,
   dataErrorEvent,
   dataLoadedEvent,
+  TEST_DATA,
 } from './dataset-controller.fixtures';
 import { EXAMPLE_DATASETS } from './example-datasets';
 import { FastaPrepError } from './fasta-prep-client';
@@ -292,6 +293,60 @@ describe('dataset controller legacy bundle notice', () => {
     expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.info).not.toHaveBeenCalled();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
+  });
+});
+
+describe('dataset controller 3-D projection notice', () => {
+  const projection = (name: string, dimension: 2 | 3) => ({
+    name,
+    dimension,
+    data: new Float32Array(dimension),
+  });
+  const eventWith = (projections: ReturnType<typeof projection>[], bundleFormatVersion = 3) =>
+    dataLoadedEvent({
+      data: { ...TEST_DATA, projections },
+      settings: null,
+      source: 'user',
+      file,
+      bundleFormatVersion,
+    });
+
+  it('tells a user who imported 3-D projections that they are read until 5.0.0', async () => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventWith([projection('PCA 2', 2), projection('UMAP 3', 3)]));
+
+    expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(mocks.info).toHaveBeenCalledOnce();
+    const [notice] = mocks.info.mock.calls[0];
+    expect(notice.dedupeKey).toBe('three-d-projections');
+    expect(notice.description).toMatch(/^UMAP 3 is shown as their X\/Y view\./);
+    expect(notice.description).toMatch(/ends in ProtSpace 5\.0\.0/);
+    expect(notice.description).toMatch(/protspace convert --flatten-3d/);
+  });
+
+  it('shows both notices for a legacy bundle with 3-D projections', async () => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventWith([projection('UMAP 3', 3)], 2));
+
+    expect(mocks.info.mock.calls.map(([notice]) => notice.dedupeKey)).toEqual([
+      'legacy-bundle-format',
+      'three-d-projections',
+    ]);
+  });
+
+  it('stays quiet for a 2-D import', async () => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventWith([projection('PCA 2', 2)]));
+
+    expect(mocks.info).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet for a dataset the app serves itself, even a 3-D one', async () => {
+    const { controller } = buildController({ sequence: 3, kind: 'default' });
+    await controller.handleDataLoaded(eventWith([projection('UMAP 3', 3)]));
+
+    expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(mocks.info).not.toHaveBeenCalled();
   });
 });
 

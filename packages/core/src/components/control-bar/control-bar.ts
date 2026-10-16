@@ -140,7 +140,7 @@ export class ProtspaceControlBar extends LitElement {
   @state() private projectionHighlightIndex: number = -1;
 
   // Export configuration state
-  @state() private exportFormat: 'png' | 'pdf' | 'ids' | 'parquet' = EXPORT_DEFAULTS.FORMAT;
+  @state() private exportFormat: 'png' | 'pdf' | 'ids' | 'tsv' | 'parquet' = EXPORT_DEFAULTS.FORMAT;
   @state() private exportIncludeLegendSettings: boolean = true;
   private _scatterplotElement: ScatterplotElementLike | null = null;
   /**
@@ -1078,6 +1078,17 @@ export class ProtspaceControlBar extends LitElement {
                               title="Export protein IDs list"
                             >
                               IDs
+                            </button>
+                            <button
+                              class="btn-secondary btn-compact ${this.exportFormat === 'tsv'
+                                ? 'active'
+                                : ''}"
+                              @click=${() => {
+                                this.exportFormat = 'tsv';
+                              }}
+                              title="Export the visible proteins as a table (TSV): IDs, coordinates and annotations"
+                            >
+                              Table
                             </button>
                             <button
                               class="btn-secondary btn-compact ${this.exportFormat === 'parquet'

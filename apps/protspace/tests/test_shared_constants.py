@@ -46,6 +46,12 @@ REEXPORTS = [
         "ARROW_BOOLEAN_LABELS",
         shared.ARROW_BOOLEAN_LABELS,
     ),
+    (
+        "protspace.data.processors.custom_annotations",
+        "RESERVED_COLUMNS",
+        shared.NON_ANNOTATION_COLUMNS,
+    ),
+    ("protspace.data.io.ids", "PROTEIN_ID_COLUMN", shared.PROTEIN_ID_COLUMN),
 ]
 
 

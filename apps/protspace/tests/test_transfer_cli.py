@@ -7,6 +7,7 @@ import pyarrow as pa
 import pytest
 
 from protspace.analysis.classification import Rule
+from protspace.cli import transfer as transfer_cli
 from protspace.cli.transfer import run_transfer
 from protspace.data.annotations.encoding import stamp_format_version
 from tests.cli_output import plain
@@ -14,7 +15,7 @@ from tests.cli_output import plain
 
 def _three_protein_inputs(extra_columns=None):
     cols = {
-        "identifier": ["TRINITY_1", "P00001", "P00002"],
+        "protein_id": ["TRINITY_1", "P00001", "P00002"],
         "protein_category": ["", "neurotoxin", "enzyme"],
     }
     if extra_columns:
@@ -36,7 +37,7 @@ def _projection_tables(identifiers, name="PCA 2"):
         pa.table(
             {
                 "projection_name": [name] * len(identifiers),
-                "identifier": list(identifiers),
+                "protein_id": list(identifiers),
                 "x": [float(i) for i in range(len(identifiers))],
                 "y": [0.0] * len(identifiers),
             }
@@ -78,7 +79,7 @@ def test_run_transfer_predicts_for_query_with_missing_value():
         k=1,
         metric="euclidean",
     )
-    by_id = {r["identifier"]: r for r in out.to_pylist()}
+    by_id = {r["protein_id"]: r for r in out.to_pylist()}
     assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
     assert by_id["TRINITY_1"]["protein_category__pred_confidence"] > 0.9
     # Provenance: the label came from the nearest neurotoxin reference, P00001.
@@ -91,7 +92,7 @@ def test_run_transfer_treats_nan_as_missing():
     # never enrolled as the literal label "nan".
     annotations = pa.table(
         {
-            "identifier": ["TRINITY_1", "P00001", "P00002"],
+            "protein_id": ["TRINITY_1", "P00001", "P00002"],
             "score": [float("nan"), 1.0, float("nan")],
         }
     )
@@ -109,7 +110,7 @@ def test_run_transfer_treats_nan_as_missing():
         k=1,
         metric="euclidean",
     )
-    by_id = {r["identifier"]: r for r in out.to_pylist()}
+    by_id = {r["protein_id"]: r for r in out.to_pylist()}
     # TRINITY_1 (NaN) is a query missing a value -> transferred the only real
     # reference value (P00001's 1.0), never the P00002 NaN rendered as "nan".
     assert by_id["TRINITY_1"]["score__pred_value"] == "1.0"
@@ -162,7 +163,7 @@ def test_run_transfer_k_greater_than_one():
         k=2,
         metric="euclidean",
     )
-    by_id = {r["identifier"]: r for r in out.to_pylist()}
+    by_id = {r["protein_id"]: r for r in out.to_pylist()}
     assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
     # The nearest neighbour wins for any k here; only the confidence sees the
     # second vote (k=1 would give ~0.909).
@@ -188,7 +189,7 @@ def test_run_transfer_cosine_metric():
         k=1,
         metric="cosine",
     )
-    by_id = {r["identifier"]: r for r in out.to_pylist()}
+    by_id = {r["protein_id"]: r for r in out.to_pylist()}
     assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
     # Cosine-nearest neurotoxin reference is P00001 ([1,0] vs query [1,0.1]).
     assert by_id["TRINITY_1"]["protein_category__pred_source"] == "P00001"
@@ -198,7 +199,7 @@ def test_run_transfer_warns_when_nothing_transferred(caplog):
     # Query proteins all already have a value -> nothing to transfer -> warning.
     annotations = pa.table(
         {
-            "identifier": ["TRINITY_1", "P00001"],
+            "protein_id": ["TRINITY_1", "P00001"],
             "protein_category": ["already_set", "neurotoxin"],
         }
     )
@@ -317,14 +318,16 @@ def test_cli_no_query_match_is_clean_error(tmp_path):
     assert "matched no query proteins" in plain(result.output)
 
 
-def test_cli_both_id_columns_present_is_clean_error(tmp_path):
-    import click
+def test_cli_keys_a_bundle_holding_both_id_names_on_protein_id(tmp_path):
+    """Beside `protein_id`, `identifier` is an ordinary annotation (#551): the
+    web exporter and `bundle -a` both write such bundles."""
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
+    from protspace.data.io.bundle import read_tables
 
     bundle, h5 = _write_bundle_and_h5(
-        tmp_path, extra_columns={"identifier": ["TRINITY_1", "P00001"]}
+        tmp_path, extra_columns={"identifier": ["alias-1", "alias-2"]}
     )
     out = tmp_path / "out.parquetbundle"
     result = CliRunner().invoke(
@@ -339,15 +342,21 @@ def test_cli_both_id_columns_present_is_clean_error(tmp_path):
             "protein_category",
             "-o",
             str(out),
-            "--query-id-prefix",
-            "TRINITY_",
-            "--reference-id-prefix",
-            "P0",
+            # A filter on the annotation reaches it like on any other column.
+            "--query-where",
+            "identifier~alias-1",
         ],
     )
-    assert result.exit_code == click.UsageError.exit_code, result.output
-    assert isinstance(result.exception, SystemExit)
-    assert "both 'protein_id'" in plain(result.output)
+    assert result.exit_code == 0, result.output
+
+    annotations = read_tables(out)[0]
+    assert annotations.column_names[0] == "protein_id"
+    rows = {r["protein_id"]: r for r in annotations.to_pylist()}
+    assert rows["TRINITY_1"]["identifier"] == "alias-1"
+    assert rows["P00001"]["identifier"] == "alias-2"
+    assert rows["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+    assert rows["TRINITY_1"]["protein_category__pred_source"] == "P00001"
+    assert not rows["P00001"]["protein_category__pred_value"]  # a reference
 
 
 def test_transfer_help_renders():
@@ -522,7 +531,7 @@ def _transfer_rows(query_rule=None, categories=None):
         k=1,
         metric="euclidean",
     )
-    return {r["identifier"]: r for r in out.to_pylist()}
+    return {r["protein_id"]: r for r in out.to_pylist()}
 
 
 def test_run_transfer_without_rules_fills_missing_values():
@@ -629,7 +638,7 @@ def _write_legacy_bundle_and_h5(tmp_path, annotations, projected, names=("p", "p
     data = pa.table(
         {
             "projection_name": [names[1]] * len(projected),
-            "identifier": list(projected),
+            "protein_id": list(projected),
             "x": [float(i) for i in range(len(projected))],
             "y": [0.0] * len(projected),
         }
@@ -747,4 +756,312 @@ def test_cli_transfer_reports_a_legacy_bundle_v3_cannot_hold_as_a_usage_error(
     assert result.exit_code == click.UsageError.exit_code, result.output
     assert isinstance(result.exception, SystemExit)
     assert "cannot write" in plain(result.output)
+    assert not out_path.exists()
+
+
+# ── --report: every query's neighbours, beside the bundle ────────────────────
+
+
+def _four_protein_inputs():
+    """Two queries and three references on a line, so neighbour ranks are known."""
+    annotations = pa.table(
+        {
+            "protein_id": ["Q_near", "Q_far", "R_a", "R_b", "R_c"],
+            "fam": ["", "", "alpha", "beta", "alpha"],
+        }
+    )
+    embeddings = {
+        "Q_near": np.array([0.1, 0.0], dtype=np.float32),
+        "Q_far": np.array([30.0, 0.0], dtype=np.float32),
+        "R_a": np.array([0.0, 0.0], dtype=np.float32),
+        "R_b": np.array([1.0, 0.0], dtype=np.float32),
+        "R_c": np.array([3.0, 0.0], dtype=np.float32),
+    }
+    return annotations, embeddings
+
+
+def _run(annotations, embeddings, **kwargs):
+    return run_transfer(
+        annotations=annotations,
+        embeddings=embeddings,
+        transfer_columns=["fam"],
+        query_rule=Rule(),
+        reference_rule=Rule(),
+        metric="euclidean",
+        **kwargs,
+    )
+
+
+def test_run_transfer_report_has_one_row_per_query_at_k1():
+    annotations, embeddings = _four_protein_inputs()
+    report = []
+    _run(annotations, embeddings, k=1, report=report)
+    assert [(r["query_id"], r["rank"], r["reference_id"]) for r in report] == [
+        ("Q_near", 1, "R_a"),
+        ("Q_far", 1, "R_c"),
+    ]
+    near, far = report
+    assert near["column"] == "fam"
+    assert near["source_id"] == near["reference_id"]
+    # The raw distance, not the reliability index derived from it.
+    assert near["distance"] == pytest.approx(0.1, abs=1e-6)
+    assert far["distance"] == pytest.approx(27.0, abs=1e-4)
+    assert far["reliability"] == pytest.approx(0.5 / 27.5, abs=1e-6)
+
+
+def test_run_transfer_report_ranks_k_neighbours():
+    annotations, embeddings = _four_protein_inputs()
+    report = []
+    _run(annotations, embeddings, k=3, report=report)
+    near = [r for r in report if r["query_id"] == "Q_near"]
+    assert [r["rank"] for r in near] == [1, 2, 3]
+    assert [r["reference_id"] for r in near] == ["R_a", "R_b", "R_c"]
+    assert [r["reference_label"] for r in near] == ["alpha", "beta", "alpha"]
+    assert [r["reference_distance"] for r in near] == pytest.approx(
+        [0.1, 0.9, 2.9], abs=1e-5
+    )
+    # Every row of a query repeats its prediction.
+    assert {(r["label"], r["source_id"]) for r in near} == {("alpha", "R_a")}
+
+
+def test_run_transfer_report_shows_labels_decoded():
+    annotations = pa.table(
+        {"protein_id": ["Q", "R"], "fam": ["", "Kunitz%3B BPTI|0.9"]}
+    )
+    embeddings = {
+        "Q": np.array([0.0, 0.0], dtype=np.float32),
+        "R": np.array([1.0, 0.0], dtype=np.float32),
+    }
+    report = []
+    _run(annotations, embeddings, k=1, report=report)
+    assert report[0]["label"] == "Kunitz; BPTI"
+    assert report[0]["reference_label"] == "Kunitz; BPTI"
+
+
+def test_run_transfer_report_leaves_the_table_unchanged():
+    annotations, embeddings = _four_protein_inputs()
+    assert _run(annotations, embeddings, k=3, report=[]).equals(
+        _run(annotations, embeddings, k=3)
+    )
+
+
+def test_cli_transfer_writes_the_report(tmp_path):
+    import csv
+
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_tables
+    from protspace.data.io.predictions import REPORT_COLUMNS
+
+    bundle, h5 = _write_bundle_and_h5(tmp_path)
+    args = ["transfer", "-b", str(bundle), "-e", str(h5), "-t", "protein_category"]
+    with_report, without = (
+        tmp_path / "with.parquetbundle",
+        tmp_path / "without.parquetbundle",
+    )
+    report_path = tmp_path / "predictions.tsv"
+    result = CliRunner().invoke(
+        app, [*args, "-o", str(with_report), "--report", str(report_path)]
+    )
+    assert result.exit_code == 0, result.output
+    assert CliRunner().invoke(app, [*args, "-o", str(without)]).exit_code == 0
+
+    with open(report_path, newline="") as f:
+        rows = list(csv.reader(f, delimiter="\t"))
+    assert tuple(rows[0]) == REPORT_COLUMNS
+    (row,) = (dict(zip(rows[0], r, strict=True)) for r in rows[1:])
+    assert row["query_id"] == "TRINITY_1"
+    assert row["label"] == "neurotoxin"
+    assert row["reference_id"] == row["source_id"] == "P00001"
+    # Cosine, k=1: the reliability index is 1 - distance, both written out.
+    assert float(row["reliability"]) == pytest.approx(1 - float(row["distance"]))
+    assert read_tables(with_report)[0].equals(read_tables(without)[0])
+
+
+# ── --max-distance: near/distant by the nearest reference ────────────────────
+
+
+def _rows(table):
+    return {r["protein_id"]: r for r in table.to_pylist()}
+
+
+def test_run_transfer_max_distance_classes_queries_and_leaves_references_null():
+    annotations, embeddings = _four_protein_inputs()
+    rows = _rows(_run(annotations, embeddings, k=1, max_distance=0.5))
+    assert rows["Q_near"]["fam__neighbor"] == "near"  # R_a at 0.1
+    assert rows["Q_far"]["fam__neighbor"] == "distant"  # R_c at 27
+    assert all(rows[r]["fam__neighbor"] is None for r in ("R_a", "R_b", "R_c"))
+    # Without --skip-distant the distant query is still labelled.
+    assert rows["Q_far"]["fam__pred_value"] == "alpha"
+
+
+def test_run_transfer_max_distance_reads_the_nearest_reference_of_any_label():
+    # At 0.6, k=3 votes alpha (R_a at 0.6, R_c at 2.4) over beta (R_b at 0.4), so
+    # the source lies beyond the cutoff while the nearest reference is inside it.
+    annotations, embeddings = _four_protein_inputs()
+    embeddings["Q_near"] = np.array([0.6, 0.0], dtype=np.float32)
+    rows = _rows(_run(annotations, embeddings, k=3, max_distance=0.5))
+    assert rows["Q_near"]["fam__pred_source"] == "R_a"
+    assert rows["Q_near"]["fam__neighbor"] == "near"
+
+
+def test_run_transfer_skip_distant_leaves_distant_queries_unpredicted():
+    annotations, embeddings = _four_protein_inputs()
+    rows = _rows(
+        _run(annotations, embeddings, k=1, max_distance=0.5, skip_distant=True)
+    )
+    assert rows["Q_far"]["fam__neighbor"] == "distant"
+    assert rows["Q_far"]["fam__pred_value"] is None
+    assert rows["Q_far"]["fam__pred_confidence"] is None
+    assert rows["Q_near"]["fam__pred_value"] == "alpha"
+
+
+def test_run_transfer_warns_when_skip_distant_leaves_every_query_unpredicted(caplog):
+    annotations, embeddings = _four_protein_inputs()
+    with caplog.at_level(logging.WARNING):
+        rows = _rows(
+            _run(annotations, embeddings, k=1, max_distance=0.01, skip_distant=True)
+        )
+    assert rows["Q_near"]["fam__pred_value"] is None
+    assert rows["Q_far"]["fam__pred_value"] is None
+    assert "Every query of 'fam' is beyond --max-distance 0.01" in caplog.text
+    # The cause is the cutoff, not a column with nothing to fill.
+    assert "No annotations were transferred" not in caplog.text
+
+
+def test_run_transfer_auto_max_distance_is_the_reference_spacing_percentile():
+    # Each reference's nearest other reference: R_a 1 (R_b), R_b 1 (R_a), R_c 2 (R_b).
+    annotations, embeddings = _four_protein_inputs()
+    report = []
+    rows = _rows(_run(annotations, embeddings, k=1, max_distance="auto", report=report))
+    expected = float(np.percentile([1.0, 1.0, 2.0], 95))
+    assert [r["max_distance"] for r in report] == pytest.approx([expected] * 2)
+    assert {r["query_id"]: r["neighbor"] for r in report} == {
+        "Q_near": "near",
+        "Q_far": "distant",
+    }
+    assert rows["Q_near"]["fam__neighbor"] == "near"
+    assert rows["Q_far"]["fam__neighbor"] == "distant"
+
+
+def test_run_transfer_auto_max_distance_excludes_self_by_index():
+    # Two references on the same point: each one's nearest other is at 0, and it
+    # is the duplicate, not itself, whichever order the search returns them in.
+    annotations = pa.table({"protein_id": ["Q", "R1", "R2"], "fam": ["", "a", "a"]})
+    vec = np.array([1.0, 0.0], dtype=np.float32)
+    embeddings = {"Q": np.array([1.0, 1.0], dtype=np.float32), "R1": vec, "R2": vec}
+    report = []
+    _run(annotations, embeddings, k=1, max_distance="auto", report=report)
+    assert report[0]["max_distance"] == pytest.approx(0.0, abs=1e-6)
+    assert report[0]["neighbor"] == "distant"
+
+
+def test_auto_max_distance_samples_large_reference_sets(monkeypatch):
+    # Past AUTO_SAMPLE references the percentile comes from a seeded sample: the
+    # same references give the same cutoff, close to the full one.
+    refs = np.random.default_rng(1).normal(size=(400, 8)).astype(np.float32)
+    full = transfer_cli._auto_max_distance("fam", refs, "euclidean")
+    monkeypatch.setattr(transfer_cli, "AUTO_SAMPLE", 100)
+    sampled = transfer_cli._auto_max_distance("fam", refs, "euclidean")
+    assert sampled == transfer_cli._auto_max_distance("fam", refs, "euclidean")
+    assert sampled != full
+    assert sampled == pytest.approx(full, rel=0.1)
+
+
+def test_run_transfer_auto_max_distance_needs_two_references():
+    annotations = pa.table({"protein_id": ["Q", "R"], "fam": ["", "a"]})
+    embeddings = {
+        "Q": np.array([0.0, 0.0], dtype=np.float32),
+        "R": np.array([1.0, 0.0], dtype=np.float32),
+    }
+    with pytest.raises(ValueError, match="at least two references.*'fam'"):
+        _run(annotations, embeddings, k=1, max_distance="auto")
+
+
+def test_run_transfer_without_cutoff_drops_a_stale_neighbor_column():
+    annotations, embeddings = _four_protein_inputs()
+    first = _run(annotations, embeddings, k=1, max_distance=0.5)
+    # Re-transfer the overlaid table: the curated column is unchanged, so the
+    # same proteins are queries again, now without a cutoff.
+    again = _run(first, embeddings, k=1)
+    assert "fam__neighbor" not in again.column_names
+    assert again.column_names.count("fam__pred_value") == 1
+
+
+def test_cli_transfer_max_distance_writes_the_column_and_the_report(tmp_path):
+    import csv
+
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_tables
+
+    bundle, h5 = _write_bundle_and_h5(tmp_path)
+    out_path, report_path = tmp_path / "out.parquetbundle", tmp_path / "r.tsv"
+    result = CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            *("-b", str(bundle), "-e", str(h5), "-t", "protein_category"),
+            *("-o", str(out_path), "--report", str(report_path)),
+            *("--max-distance", "2", "--skip-distant"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    rows = {r["protein_id"]: r for r in read_tables(out_path)[0].to_pylist()}
+    assert rows["TRINITY_1"]["protein_category__neighbor"] == "near"
+    with open(report_path, newline="") as f:
+        (row,) = csv.DictReader(f, delimiter="\t")
+    assert (row["neighbor"], float(row["max_distance"])) == ("near", 2.0)
+
+
+def test_cli_transfer_unwritable_report_writes_nothing(tmp_path):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    bundle, h5 = _write_bundle_and_h5(tmp_path)
+    out_path = tmp_path / "out.parquetbundle"
+    (tmp_path / "taken").write_text("")
+    result = CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            *("-b", str(bundle), "-e", str(h5), "-t", "protein_category"),
+            *("-o", str(out_path), "--report", str(tmp_path / "taken" / "r.tsv")),
+        ],
+        env={"COLUMNS": "200"},
+    )
+    assert result.exit_code == 2
+    assert "is not a directory" in plain(result.output)
+    assert not out_path.exists()
+
+
+@pytest.mark.parametrize(
+    ("flags", "message"),
+    [
+        (["--max-distance", "-1"], "non-negative number or 'auto'"),
+        (["--max-distance", "near"], "non-negative number or 'auto'"),
+        (["--skip-distant"], "--skip-distant needs --max-distance"),
+    ],
+)
+def test_cli_transfer_bad_cutoff_is_a_usage_error(tmp_path, flags, message):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    bundle, h5 = _write_bundle_and_h5(tmp_path)
+    out_path = tmp_path / "out.parquetbundle"
+    result = CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            *("-b", str(bundle), "-e", str(h5), "-t", "protein_category"),
+            *("-o", str(out_path), *flags),
+        ],
+        env={"COLUMNS": "200"},
+    )
+    assert result.exit_code == 2
+    assert message in plain(result.output)
     assert not out_path.exists()

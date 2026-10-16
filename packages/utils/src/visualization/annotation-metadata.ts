@@ -16,7 +16,7 @@
  */
 
 import type { Annotation } from '../types.js';
-import { getEatBaseAnnotationKey } from './eat-overlay.js';
+import { getEatBaseAnnotationKey, getEatNeighborBaseKey } from './eat-overlay.js';
 
 export type AnnotationSource = 'UniProt' | 'InterPro' | 'Taxonomy' | 'TED' | 'Biocentral' | 'Other';
 
@@ -374,7 +374,8 @@ export function prettifyAnnotationName(column: string): string {
 /**
  * Resolve metadata for any annotation column. Returns the registry entry when known, otherwise a
  * synthesized entry: a prettified label, `Other` source, empty description (so no docs popover is
- * shown), and a predicted flag derived from the `predicted_` prefix convention.
+ * shown), and a predicted flag derived from the `predicted_` prefix convention. EAT companions are
+ * labelled after their base annotation: the confidence view, and the `<base>__neighbor` column.
  */
 export function getAnnotationMeta(
   column: string,
@@ -396,6 +397,17 @@ export function getAnnotationMeta(
       isPredicted: false,
       description:
         'Embedding Annotation Transfer reliability index from 0 to 1. This is a ranking signal, not a calibrated probability.',
+    };
+  }
+  const neighborBase = getEatNeighborBaseKey(column);
+  if (neighborBase) {
+    const base = getAnnotationMeta(neighborBase);
+    return {
+      label: `${base.label} — EAT neighbourhood`,
+      source: base.source,
+      isPredicted: false,
+      description:
+        'Whether the nearest reference protein lay within the distance cutoff of the Embedding Annotation Transfer: near or distant. Proteins that were not transfer queries have no value.',
     };
   }
   return {

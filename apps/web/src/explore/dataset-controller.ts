@@ -14,6 +14,7 @@ import {
   getDataLoadFailureNotification,
   getDatasetPersistenceFailureNotification,
   getLegacyBundleFormatNotification,
+  getThreeDProjectionNotification,
 } from './notifications';
 import {
   clearLastImportedFile,
@@ -558,6 +559,14 @@ export function createDatasetController({
         bundleFormatVersion < 3
       ) {
         notify.info(getLegacyBundleFormatNotification(bundleFormatVersion, unplacedProteinCount));
+      }
+
+      // Same rule for 3-D projections: shown as their X/Y view, read until 5.0.0.
+      const threeDProjections = data.projections
+        .filter((projection) => projection.dimension === 3)
+        .map((projection) => projection.name);
+      if (loadMeta.kind === 'user' && threeDProjections.length > 0) {
+        notify.info(getThreeDProjectionNotification(threeDProjections));
       }
 
       try {

@@ -26,6 +26,43 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+#: ``--max-distance auto``: the percentile of the references' distances to their
+#: nearest other reference that becomes the cutoff.
+AUTO_PERCENTILE = 95
+#: Above this many references the percentile is estimated from a fixed random
+#: sample of them (each still searched against all references), so ``auto``
+#: stays linear in the reference count instead of comparing every pair.
+AUTO_SAMPLE = 10_000
+
+
+def _auto_max_distance(column: str, ref_emb: np.ndarray, metric: str) -> float:
+    """The cutoff ``--max-distance auto`` picks for one column's references.
+
+    A query farther from every reference than 95% of the references are from
+    their own nearest neighbour sits outside the reference set's spacing. The
+    nearest *other* reference is found by index, not by distance: a duplicate
+    embedding is also at distance ~0, and cosine self-distance is not exactly 0.
+    Past :data:`AUTO_SAMPLE` references a seeded sample of them is used, so the
+    same references always give the same cutoff.
+    """
+    from protlabel.backends import nearest
+
+    if ref_emb.shape[0] < 2:
+        raise ValueError(
+            f"--max-distance auto needs at least two references with a value "
+            f"for {column!r}; found {ref_emb.shape[0]}"
+        )
+    rows = np.arange(ref_emb.shape[0])
+    if rows.size > AUTO_SAMPLE:
+        rows = np.sort(
+            np.random.default_rng(0).choice(rows, AUTO_SAMPLE, replace=False)
+        )
+    idx, dist = nearest(ref_emb[rows], ref_emb, k=2, metric=metric)
+    is_self = idx[:, 0] == rows
+    other = np.where(is_self, dist[:, 1], dist[:, 0])
+    return float(np.percentile(other, AUTO_PERCENTILE))
+
+
 def run_transfer(
     *,
     annotations: pa.Table,
@@ -36,19 +73,43 @@ def run_transfer(
     k: int = 1,
     metric: str = "cosine",
     format_version: int = 2,
+    report: list[dict] | None = None,
+    max_distance: float | str | None = None,
+    skip_distant: bool = False,
 ) -> pa.Table:
     """Pure core: classify, transfer per column, return the augmented table.
 
     ``embeddings`` maps protein id -> 1-D float32 vector. Proteins without an
     embedding cannot act as queries or references.
+
+    ``annotations`` is keyed on ``protein_id``, as :func:`read_tables` hands every
+    bundle back, or on ``identifier``, the column this function took before
+    protspace 4.17.0; the table comes back keyed as it was given.
+
+    ``report``, when given, receives one row per query and neighbour (see
+    :func:`protspace.data.io.predictions.report_rows`); the table is the same
+    either way.
+
+    ``max_distance`` (a distance, or ``"auto"`` to calibrate one per column on
+    the references) classes each query ``near`` or ``distant`` by the distance
+    to its nearest reference and writes ``COL__neighbor``; ``skip_distant``
+    then leaves the distant queries unpredicted.
     """
     from protlabel import eat
     from protspace.analysis.classification import classify
-    from protspace.data.io.predictions import add_overlay_columns
+    from protspace.data.io.ids import id_column_by_name
+    from protspace.data.io.predictions import (
+        add_overlay_columns,
+        report_rows,
+        set_neighbor_column,
+    )
 
     # Full-table identifiers, materialized once: reused both for the has-embedding
     # filter and for aligning every column's overlay (invariant across columns).
-    all_ids = [str(v) for v in annotations.column("identifier").to_pylist()]
+    id_col = id_column_by_name(annotations.column_names)
+    if id_col is None:
+        raise KeyError("annotations table has no 'protein_id' column")
+    all_ids = [str(v) for v in annotations.column(id_col).to_pylist()]
 
     # Restrict classification to proteins that actually have an embedding.
     has_emb = pa.array([i in embeddings for i in all_ids])
@@ -63,13 +124,13 @@ def run_transfer(
     # Materialize the embedded id column once (not the whole table); per-column
     # values are pulled inside the loop. Avoids GB-scale Python lists at
     # Swiss-Prot size, and is reused by both classify() and the transfer loop.
-    id_list = [str(v) for v in embedded.column("identifier").to_pylist()]
+    id_list = [str(v) for v in embedded.column(id_col).to_pylist()]
     query_idx, ref_idx = classify(
         embedded, query_rule, reference_rule, identifiers=id_list
     )
 
     out = annotations
-    total_transferred = 0
+    total_queries = 0
     for column in transfer_columns:
         if column not in annotations.column_names:
             raise KeyError(f"Transfer column {column!r} not in annotations table")
@@ -103,15 +164,60 @@ def run_transfer(
             logger.warning("No queries missing %r; nothing to transfer", column)
             continue
 
+        ref_matrix = np.vstack(ref_vecs)
         preds = eat(
             np.vstack(q_vecs),
             q_ids,
-            np.vstack(ref_vecs),
+            ref_matrix,
             ref_ids,
             ref_labels,
             k=k,
             metric=metric,
+            keep_neighbors=report is not None or max_distance is not None,
         )
+        rows = (
+            report_rows(column, preds, format_version=format_version)
+            if report is not None
+            else []
+        )
+
+        classes = None
+        if max_distance is not None:
+            cutoff = max_distance
+            if cutoff == "auto":
+                cutoff = _auto_max_distance(column, ref_matrix, metric)
+                logger.info(
+                    "Max distance for %r: %.6g (%dth percentile of %d references' "
+                    "distance to their nearest other reference%s)",
+                    column,
+                    cutoff,
+                    AUTO_PERCENTILE,
+                    min(len(ref_ids), AUTO_SAMPLE),
+                    f", a sample of {len(ref_ids)}"
+                    if len(ref_ids) > AUTO_SAMPLE
+                    else "",
+                )
+            # Near/distant is about the query's neighbourhood, so it reads the
+            # nearest reference of any label, not the winning label's source.
+            classes = {
+                p.query_id: "near" if p.neighbors[0].distance <= cutoff else "distant"
+                for p in preds
+            }
+            for row in rows:
+                row["neighbor"] = classes[row["query_id"]]
+                row["max_distance"] = cutoff
+            if skip_distant:
+                preds = [p for p in preds if classes[p.query_id] == "near"]
+                if not preds:
+                    logger.warning(
+                        "Every query of %r is beyond --max-distance %.6g, so none "
+                        "was predicted. Try --max-distance auto or a larger value.",
+                        column,
+                        cutoff,
+                    )
+        if report is not None:
+            report.extend(rows)
+
         out = add_overlay_columns(
             out,
             column,
@@ -119,10 +225,17 @@ def run_transfer(
             identifiers=all_ids,
             format_version=format_version,
         )
-        total_transferred += len(preds)
+        out = set_neighbor_column(out, column, classes, identifiers=all_ids)
+        total_queries += len(q_ids)
         logger.info("Transferred %r to %d quer(ies)", column, len(preds))
+        if len(preds) < len(q_ids):
+            logger.info(
+                "Left %d distant quer(ies) of %r unpredicted",
+                len(q_ids) - len(preds),
+                column,
+            )
 
-    if total_transferred == 0:
+    if total_queries == 0:
         logger.warning(
             "No annotations were transferred: the target column(s) have either "
             "no missing values to fill or no values to transfer from. If you "
@@ -130,6 +243,21 @@ def run_transfer(
             "proteins you meant."
         )
     return out
+
+
+def _parse_max_distance(value: str | None) -> float | str | None:
+    """``--max-distance``: ``auto``, a non-negative number, or not given."""
+    if value is None or value == "auto":
+        return value
+    try:
+        cutoff = float(value)
+    except ValueError:
+        cutoff = float("nan")
+    if not (cutoff >= 0 and np.isfinite(cutoff)):
+        raise typer.BadParameter(
+            f"--max-distance must be a non-negative number or 'auto', got {value!r}"
+        )
+    return cutoff
 
 
 @app.command(rich_help_panel=PANEL_REFINE)
@@ -216,6 +344,30 @@ def transfer(
             rich_help_panel="Transfer",
         ),
     ] = "cosine",
+    max_distance: Annotated[
+        str | None,
+        typer.Option(
+            "--max-distance",
+            help="Mark queries near/distant by the distance to their nearest reference (writes COL__neighbor); 'auto' calibrates it on the references.",
+            rich_help_panel="Transfer",
+        ),
+    ] = None,
+    skip_distant: Annotated[
+        bool,
+        typer.Option(
+            "--skip-distant",
+            help="Leave distant queries unpredicted (needs --max-distance).",
+            rich_help_panel="Transfer",
+        ),
+    ] = False,
+    report: Annotated[
+        Path | None,
+        typer.Option(
+            "--report",
+            help="Also write a TSV of every query's neighbours: label, source, distance, reliability.",
+            rich_help_panel="Input / Output",
+        ),
+    ] = None,
     verbose: Opt_Verbose = 0,
 ) -> None:
     """Fill missing annotations from nearest neighbours (EAT).
@@ -233,7 +385,8 @@ def transfer(
         upgrade_cell_grammar,
     )
     from protspace.data.io.bundle import read_tables, replace_annotations_in_bundle
-    from protspace.data.loaders import load_h5, split_h5_spec
+    from protspace.data.io.predictions import write_report
+    from protspace.data.loaders import load_h5, resolve_input_names, split_h5_spec
 
     def _parse_where(items: list[str] | None) -> list[tuple[str, str]]:
         clauses = []
@@ -258,10 +411,24 @@ def transfer(
         )
     if k < 1:
         raise typer.BadParameter("--k must be >= 1")
+    cutoff = _parse_max_distance(max_distance)
+    if skip_distant and cutoff is None:
+        raise typer.BadParameter("--skip-distant needs --max-distance")
+    # The report is written after the bundle, so a path that cannot hold a file
+    # (a directory, or a file where a parent directory should be) fails first.
+    if report is not None:
+        if report.is_dir():
+            raise typer.BadParameter(f"--report {report} is a directory")
+        nearest = next(p for p in report.absolute().parents if p.exists())
+        if not nearest.is_dir():
+            raise typer.BadParameter(f"--report {report}: {nearest} is not a directory")
 
-    # Load embeddings (optional ':name' override; colon/Windows-safe parsing).
-    h5_path, name_override = split_h5_spec(embeddings)
-    emb_set = load_h5([h5_path], name_override=name_override)
+    # Load embeddings (optional ':name' override; colon/Windows-safe parsing). The
+    # transfer reads only the vectors, so a single input always resolves a name.
+    ((h5_path, name, _),) = resolve_input_names(
+        [split_h5_spec(embeddings)], command="transfer"
+    )
+    emb_set = load_h5([h5_path], name_override=name)
     emb_map = {header: emb_set.data[i] for i, header in enumerate(emb_set.headers)}
 
     # Read the annotations part of the bundle.  read_tables hands back the v2
@@ -270,23 +437,10 @@ def transfer(
     # as the v2 browser keyed them (as `convert` does), so a repeated or null id
     # neither feeds the transfer a row the browser never showed nor fails the
     # v3 write at the end.
+    # read_tables keys every bundle on protein_id, so beside it an `identifier`
+    # column is an ordinary annotation, as every other reader takes it.
     annotations, _metadata, _projections = read_tables(bundle, keyed=True)
     input_format_version = read_format_version(annotations)
-
-    # Real bundles name the id column "protein_id"; run_transfer works on "identifier".
-    if (
-        "protein_id" in annotations.column_names
-        and "identifier" in annotations.column_names
-    ):
-        raise typer.BadParameter(
-            "Bundle annotations contain both 'protein_id' and 'identifier' columns; "
-            "cannot determine the id column unambiguously."
-        )
-    id_col = "protein_id" if "protein_id" in annotations.column_names else "identifier"
-    if id_col != "identifier":
-        annotations = annotations.rename_columns(
-            ["identifier" if n == id_col else n for n in annotations.column_names]
-        )
 
     for col in transfer_columns:
         if col not in annotations.column_names:
@@ -304,6 +458,7 @@ def transfer(
 
     # Translate input-driven errors from the core into clean CLI errors rather
     # than leaking raw KeyError/ValueError tracebacks to the user.
+    neighbour_rows = [] if report is not None else None
     try:
         augmented = run_transfer(
             annotations=annotations,
@@ -314,6 +469,9 @@ def transfer(
             k=k,
             metric=metric,
             format_version=input_format_version,
+            report=neighbour_rows,
+            max_distance=cutoff,
+            skip_distant=skip_distant,
         )
     except (KeyError, ValueError) as exc:
         # Use the raw message (KeyError stringifies with repr quotes) rather than
@@ -321,15 +479,9 @@ def transfer(
         message = exc.args[0] if exc.args else str(exc)
         raise typer.BadParameter(str(message)) from exc
 
-    # Rename id column back so the written bundle keeps its original name
-    # (the web frontend expects "protein_id").
-    if id_col != "identifier":
-        augmented = augmented.rename_columns(
-            [id_col if n == "identifier" else n for n in augmented.column_names]
-        )
-
-    # The renames dropped the stamp, so restore the grammar from the version read
-    # off the bundle: a v1 bundle's cells are migrated, v2 cells are re-stamped.
+    # Restore the grammar from the version read off the bundle, which the overlay
+    # columns' table rebuild does not carry: a v1 bundle's cells are migrated, v2
+    # cells are re-stamped.
     augmented = upgrade_cell_grammar(augmented, input_format_version)
 
     # A legacy input the v3 encoder still refuses (projection sets that disagree
@@ -340,3 +492,11 @@ def transfer(
     except ValueError as exc:
         raise typer.BadParameter(f"cannot write {output}: {exc}") from exc
     logger.info("Wrote transferred bundle to %s", output)
+    if report is not None:
+        try:
+            write_report(report, neighbour_rows)
+        except OSError as exc:
+            raise typer.BadParameter(
+                f"cannot write --report {report} (the bundle was written): {exc}"
+            ) from exc
+        logger.info("Wrote %d neighbour row(s) to %s", len(neighbour_rows), report)

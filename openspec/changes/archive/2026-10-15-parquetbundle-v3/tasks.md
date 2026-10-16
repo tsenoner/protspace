@@ -198,6 +198,12 @@
       hit at its last pipe
 - [x] 5.4 Merge the PR with a merge commit, never a squash (it touches `apps/protspace/`)
       (#477, merged 2026-10-02 as `952646cf`)
+- [x] 5.5 Before archiving, carve `--flatten-3d` out of the `bundle-conversion` requirement
+      "`protspace convert` SHALL leave a v3 input untouched": a v3 input holding 3-D projections is
+      rewritten when `--flatten-3d` is given, as `openspec/specs/deprecation-policy/spec.md` (from
+      `deprecate-3d-and-serve`) requires; without the flag, or with nothing to flatten, it is still
+      left untouched (main archived this change first, so the carve-out went straight into
+      `openspec/specs/bundle-conversion/spec.md` when `fix/user-feedback-triage` merged main)
 
 ## 6. Follow-ups for protspace 5.0.0 (tracked in #544)
 
@@ -207,11 +213,12 @@ listed without checkboxes:
 
 - Python: drop the legacy branch of `bundle._parse_bundle` (3 to 5 parts), the deprecation
   warning and `LEGACY_REMOVAL_VERSION`, and the `warn_legacy` plumbing of the readers and writers
-- Python: ~~`protspace convert` stops reading v1/v2 and names the last 4.x release that can~~
-  (superseded by #544: `convert` keeps reading them);
-  `style` and `transfer` no longer upgrade a legacy input; the v1 cell migration
+- Python: `protspace convert` keeps reading v1/v2 and stays the upgrade path, with a legacy
+  reader of its own once the general readers drop it (#544, and the maintainer decision of
+  2026-10-15 recorded in the `deprecate-3d-and-serve` change; it is not a deprecation-registry
+  entry); `style` and `transfer` no longer upgrade a legacy input; the v1 cell migration
   (`migrate_legacy_annotation_table`, `encode_legacy_cell`) and the v2 browser's id-column
-  fallback go with it
+  fallback move into convert's reader rather than going
 - Browser: remove the legacy path of `decodeParquetBundle`, `extractRowsFromParquetBundle`
   and the bundle-only parts of the row-based conversion it feeds (plain `.parquet` imports keep
   `convertParquetToVisualizationDataOptimized`), the `formatVersion` below 3 handling and the

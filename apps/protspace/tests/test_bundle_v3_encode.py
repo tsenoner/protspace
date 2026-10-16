@@ -51,7 +51,7 @@ def make_projections(names_dims=(("A", 2),), ids=None):
             rows.append(
                 {
                     "projection_name": name,
-                    "identifier": pid,
+                    "protein_id": pid,
                     "x": float(i),
                     "y": float(-i),
                     "z": float(i * 2) if dim == 3 else None,

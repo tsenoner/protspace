@@ -65,10 +65,10 @@ def test_a_bundle_is_not_owner_only(tmp_path, permissive_umask):
 
     bundle_path = tmp_path / "data.parquetbundle"
     tables = [
-        stamp_format_version(pa.table({"identifier": ["P1"]})),
+        stamp_format_version(pa.table({"protein_id": ["P1"]})),
         pa.table({"projection_name": ["PCA 2"], "dimensions": [2]}),
         pa.table(
-            {"projection_name": ["PCA 2"], "identifier": ["P1"], "x": [1.0], "y": [2.0]}
+            {"projection_name": ["PCA 2"], "protein_id": ["P1"], "x": [1.0], "y": [2.0]}
         ),
     ]
 

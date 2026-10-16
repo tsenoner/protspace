@@ -24,6 +24,7 @@ import {
   normalizeMissingValue,
   NA_VALUE,
   NA_DEFAULT_COLOR,
+  NON_ANNOTATION_COLUMNS,
 } from '@protspace/utils';
 import { validateRowsBasic } from './validation';
 import { findColumn, materializeMergedRows, type BundleExtractionResult } from './bundle';
@@ -31,22 +32,13 @@ import type { Rows, GenericRow } from './types';
 import { decodeField } from './annotation-codec';
 import { fastYield } from './fast-yield';
 
-/** Column names that should be excluded when identifying annotation columns */
-const ID_COLUMNS = [
-  'projection_name',
-  'x',
-  'y',
-  'z',
-  'identifier',
-  'protein_id',
-  'id',
-  'uniprot',
-  'entry',
-] as const;
-
-/** Creates a set of ID columns including the detected protein ID column */
+/**
+ * Column names excluded when identifying annotation columns: the shared
+ * NON_ANNOTATION_COLUMNS (the Python loader renames a custom file's column so
+ * named) plus the detected protein ID column.
+ */
 function getIdColumnsSet(proteinIdCol: string): Set<string> {
-  return new Set([...ID_COLUMNS, proteinIdCol]);
+  return new Set([...NON_ANNOTATION_COLUMNS, proteinIdCol]);
 }
 
 /** Keys to exclude when building metadata */

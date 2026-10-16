@@ -11,14 +11,13 @@ import type {
   ProjectionStatisticRow,
 } from '@protspace/utils';
 import {
-  AUTO_CLUSTER_SCORE_CAVEAT,
   NA_DISPLAY,
   annotationLabel,
   annotationStatSummary,
+  autoClusterScoreCaveat,
   clusterAgreement,
   formatStatValue,
   hasAnnotationStats,
-  isAutoClusterColumn,
   isAutoClusterColumnName,
   metricDescription,
   metricDisplay,
@@ -388,6 +387,7 @@ class ProtspaceProjectionMetadata extends LitElement {
     // A bundle prepared without an embedding pass has every embedding value null: naming a column
     // of entirely blank cells would only take width back from the label column for nothing.
     const hasEmbeddingReference = summary?.validity.some((metric) => metric.embedding !== null);
+    const clusterCaveat = autoClusterScoreCaveat(this.statisticsRows, this.selectedAnnotation);
     return html`
       <div class="annotation-stats">
         ${summary && summary.validity.length > 0
@@ -431,9 +431,7 @@ class ProtspaceProjectionMetadata extends LitElement {
                    construction. It sat below "Recovers" before, which reads as if it qualifies
                    the ARI/NMI rows — and those are the honest half, measured against
                    annotations the clustering did not choose. -->
-              ${isAutoClusterColumn(this.statisticsRows, this.selectedAnnotation)
-                ? html`<div class="stat-caveat">${AUTO_CLUSTER_SCORE_CAVEAT}</div>`
-                : nothing}
+              ${clusterCaveat ? html`<div class="stat-caveat">${clusterCaveat}</div>` : nothing}
             `
           : ''}
         ${agreement.entries.length > 0 ? this._renderRecovers(agreement) : ''}

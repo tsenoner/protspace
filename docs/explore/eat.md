@@ -22,6 +22,8 @@ For a curated column `COL`, transfer adds three companions and leaves `COL` itse
 
 A protein that already had a curated value gets no prediction at all, so the three columns are populated only where `COL` was empty.
 
+A transfer run with `--max-distance` adds a fourth column, `COL__neighbor`, shown in the Annotation dropdown as the annotation's name followed by **— EAT neighbourhood**. It holds `near` for a query whose nearest reference lay within the distance cutoff and `distant` for one whose did not, and nothing for proteins that were not queries. Unlike the confidence, it is an ordinary annotation: colour by it, filter by it, or hide one of its legend values. See [Near or distant](/guide/python-cli#near-or-distant) for how the cutoff is chosen.
+
 ## Finding Them
 
 Annotations carrying predictions are marked with an **EAT** badge in the [Annotation dropdown](/explore/control-bar#_2-annotation-selector), beside the annotation's name. The badge appears only for columns that have at least one transferred value, so it doubles as the list of what is worth exploring. If no annotation carries the badge, the bundle has no predictions in it.
@@ -83,7 +85,7 @@ They do survive everything that only changes the view. Connectors hold protein i
 
 ## Reading The Reliability Number
 
-The reliability index is a transform of the distance to the reference protein: closer neighbour, higher number. Its exact form depends on the `--metric` and `--k` used at transfer time, and the [reliability index](/guide/python-cli#reliability-index) section gives the formulas.
+The reliability index is a transform of the distance to the reference protein: closer neighbour, higher number. Its exact form depends on the `--metric` and `--k` used at transfer time, and the [reliability index](/guide/python-cli#reliability-index) section gives the formulas. The distance itself is not stored in the bundle; `protspace transfer --report` writes it, with each query's nearest references, to a [neighbour report](/guide/python-cli#neighbour-report).
 
 ::: warning Rank, not probability
 With the default `cosine` metric the reliability index is a bounded cosine similarity; with `--metric euclidean` it is the goPredSim transform, which was calibrated on ProtT5. On other embedding spaces, whose raw distances can be on a very different scale, treat it as a way of ranking predictions against each other rather than as a probability that the label is correct. A 0.9 is more trustworthy than a 0.6 in the same dataset, but it is not a 90% chance of being right. Values produced with different `--k` settings are not comparable at all.
@@ -128,6 +130,23 @@ The mirror runs both ways: edit or delete that condition in the filter builder a
 Because this is a real filter, it interacts with everything else that responds to a filtered view. In particular the [separation score](/explore/separation-scores) strips hide themselves while any filter is active, the reliability filter included, since whole-dataset scores would contradict a narrowed view.
 
 Exporting a bundle with settings included stores the **Show** state and the lower bound, so a dataset shared from **Hide below** reopens on the same view. The _mode_ and the upper bound are not stored yet, so the other two modes do not survive a round trip: **Keep between** reopens as **Hide below** at the band's lower edge, keeping everything above it, and **Hide above** reopens with no filter at all — it has no lower bound to store, so the saved value is 0. Re-pick the mode after loading such a bundle.
+
+## Which Unknowns Sit Near My References?
+
+A common question for a set of unknown proteins and a curated reference set: which unknowns resemble a reference closely enough to be worth a look, and which resemble nothing? Transfer answers it in the embedding itself, which is more faithful than proximity in a 2D projection: the layout distorts distances, and two projections that agree can share the same distortion.
+
+1. **Give the references a column the unknowns lack**, a family, class or reference ID. Transfer's queries are the proteins missing a value in that column, so a column the unknowns also fill (a dataset or group column) gives it nothing to do.
+2. **Run the transfer with a cutoff and a report**:
+
+   ```bash
+   protspace transfer -b space.parquetbundle -e emb.h5 -t toxin_family \
+     --max-distance auto --report predictions.tsv -o space_eat.parquetbundle
+   ```
+
+   Transfer reads only the vectors, so `-e` needs no `:name` suffix. `predictions.tsv` lists every unknown with its nearest reference, the raw distance and whether it is near or distant; sort it by `distance` for a candidate list. With `--k 5` it lists the five nearest references of each. See the [neighbour report](/guide/python-cli#neighbour-report).
+
+3. **Open the bundle here** and colour by **Toxin family — EAT neighbourhood** to see the near and distant unknowns, or colour by **Toxin family** and use the reliability filter's **Hide below** to keep only the confident transfers. Curated references stay visible either way: they are `N/A` in the neighbourhood column and carry no confidence.
+4. **Export the proteins you kept.** Coloured by the neighbourhood column, hide its `distant` legend value (or `near`) and `N/A` (the references), then **Export → Protein IDs**, or **Export → Table** for the same proteins with their coordinates and annotations, the `__pred_*` columns included: either export holds exactly the proteins still visible. See [Exporting](/explore/exporting#what-gets-exported). For everything at once, `protspace export space_eat.parquetbundle space.tsv` writes every protein with every annotation, the `__pred_*` and `__neighbor` columns included, as one table (see [`protspace export`](/guide/python-cli#protspace-export)).
 
 ## Trying It
 

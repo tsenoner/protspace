@@ -7,6 +7,10 @@ number of references).  The transferred label is argmax RI(p); its source is the
 nearest neighbour carrying that label.  Ties are broken deterministically by
 smallest source distance, then by lexically smallest label, so the result never
 depends on the (arbitrary) ordering of equidistant neighbours.
+
+With ``keep_neighbors=True`` each prediction also lists the k neighbours it was
+computed from, nearest first, so a caller can report them without a second
+search.
 """
 
 from __future__ import annotations
@@ -20,8 +24,22 @@ from protlabel.reliability import similarity
 
 
 @dataclass(frozen=True)
+class Neighbor:
+    """One of the references a prediction was computed from."""
+
+    reference_id: str
+    label: str
+    distance: float
+
+
+@dataclass(frozen=True)
 class Prediction:
-    """One transferred annotation for a query protein."""
+    """One transferred annotation for a query protein.
+
+    ``neighbors`` is empty unless :func:`eat` was asked to keep them; it then
+    holds the ``k`` nearest references, ascending by distance, equidistant ones
+    ordered by id.
+    """
 
     query_id: str
     label: str
@@ -30,6 +48,7 @@ class Prediction:
     reliability: float
     k: int
     metric: str
+    neighbors: tuple[Neighbor, ...] = ()
 
 
 def eat(
@@ -41,6 +60,7 @@ def eat(
     *,
     k: int = 1,
     metric: str = "euclidean",
+    keep_neighbors: bool = False,
 ) -> list[Prediction]:
     """Transfer the best-guess label to each query from its k nearest references."""
     if not (len(ref_ids) == len(ref_labels) == ref_emb.shape[0]):
@@ -82,6 +102,17 @@ def eat(
         # Normalise by eff_k (the goPredSim 1/k term, k capped to n_refs).
         ri = ri_by_label[best_label] / eff_k
         src_dist, src_id = nearest_src[best_label]
+        neighbors = ()
+        if keep_neighbors:
+            # Sorted by (distance, id), the source tie-break above, so the order
+            # never depends on how argsort ranked equidistant references.
+            neighbors = tuple(
+                Neighbor(reference_id=rid, label=lab, distance=d)
+                for d, rid, lab in sorted(
+                    (float(neigh_dist[j]), ref_ids[ref_i], ref_labels[ref_i])
+                    for j, ref_i in enumerate(neigh_idx)
+                )
+            )
         predictions.append(
             Prediction(
                 query_id=query_id,
@@ -91,6 +122,7 @@ def eat(
                 reliability=ri,
                 k=eff_k,
                 metric=metric,
+                neighbors=neighbors,
             )
         )
 

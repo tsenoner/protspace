@@ -128,3 +128,37 @@ ARROW_BOOLEAN_LABELS = (
     "false",
     "true",
 )
+
+# The column every table ProtSpace writes holds the protein IDs in: a
+# bundle's part 1 and its manifest `idColumn`, from the Python encoder and
+# the web exporter alike, and every parquet the Python package writes. A v3
+# reader takes the column the manifest's `idColumn` names, whatever it is
+# called; only a table without a manifest is found by name, and older files
+# named it `identifier` (read until protspace 5.0.0). Which column holds the
+# IDs is a rule, pinned by the bundle contract suite; this is only the name.
+PROTEIN_ID_COLUMN = "protein_id"
+
+# Suffix of the column `protspace transfer --max-distance` writes beside an
+# annotation `<col>`: `near` or `distant` per query. The web describes a
+# `<col>__neighbor` column by the annotation it belongs to; a different
+# spelling would show it as an unexplained raw column.
+EAT_NEIGHBOR_SUFFIX = "__neighbor"
+
+# Column names the web reader never shows as an annotation, compared
+# exactly: the id columns it may key a table on and the fields of a
+# projection row. The Python loader of a custom annotation file renames a
+# later column with one of these names to `<name>_annotation`, or the web
+# would hide it; the file's first column is its id column whatever its name.
+NON_ANNOTATION_COLUMNS = frozenset(
+    {
+        "projection_name",
+        "x",
+        "y",
+        "z",
+        "identifier",
+        "protein_id",
+        "id",
+        "uniprot",
+        "entry",
+    }
+)

@@ -14,6 +14,7 @@ from protspace.data.io.bundle import (
     write_bundle,
     write_directory,
 )
+from protspace.data.io.ids import PROTEIN_ID_COLUMN, with_protein_id
 from protspace.utils.constants import MDS_NAME, DimensionReductionConfig
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,6 @@ class BaseProcessor:
     def __init__(self, config: dict[str, Any], reducers: dict[str, Any]):
         self.config = config
         self.reducers = reducers
-        self.identifier_col = "identifier"
         self.custom_names = config.get("custom_names", {})
 
     def process_reduction(
@@ -164,11 +164,13 @@ class BaseProcessor:
             logger.info(f"Saved separate parquet files to: {base_path}")
 
     def _create_protein_annotations_table(self, metadata: pd.DataFrame) -> pa.Table:
-        """Create Apache Arrow table for protein annotations in wide format."""
-        df = metadata.copy()
+        """Create Apache Arrow table for protein annotations in wide format.
 
-        if self.identifier_col != "protein_id":
-            df = df.rename(columns={self.identifier_col: "protein_id"})
+        *metadata* is keyed on ``protein_id``; a frame keyed on the older name,
+        ``identifier`` (a caller's own, such as the Preparation notebook), is
+        written as ``protein_id`` too.
+        """
+        df = with_protein_id(metadata.copy())
 
         # Remove internal columns that are only needed for processing/caching
         cols_to_drop = [c for c in INTERNAL_ANNOTATIONS if c in df.columns]
@@ -208,7 +210,7 @@ class BaseProcessor:
             for i, header in enumerate(headers):
                 row = {
                     "projection_name": reduction["name"],
-                    "identifier": header,
+                    PROTEIN_ID_COLUMN: header,
                     "x": np.float32(reduction["data"][i][0]),
                     "y": np.float32(reduction["data"][i][1]),
                 }

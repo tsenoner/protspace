@@ -98,6 +98,8 @@ from protspace.data.io.bundle import (
 )
 from protspace.data.io.bundle import BundleContents as Bundle
 from protspace.data.io.bundle_v3 import CONTAINER_VERSION
+from protspace.data.io.ids import PROTEIN_ID_COLUMN as ID_COLUMN
+from protspace.data.io.ids import keyed_on_protein_id
 from protspace.data.io.settings_converter import (
     KELLYS_COLORS,
     LEGEND_SETTINGS_KEY,
@@ -124,7 +126,6 @@ GITHUB_REPO = "tsenoner/protspace"
 #: carries different bytes.
 DEFAULT_FILE_PATTERN = "{id}_{release}_v3.parquetbundle"
 
-ID_COLUMN = "protein_id"
 LEGACY_COLUMNS = ("length_fixed", "length_quantile")
 TOOLTIP_ONLY_COLUMNS = frozenset({"gene_name", "protein_name", "uniprot_kb_id"})
 PRED_MARKER = "__pred_"
@@ -365,12 +366,9 @@ def rebuild_bundle(
 
 
 def normalize_id(table: pa.Table) -> pa.Table:
-    """Name the identifier column ``protein_id`` (annotate writes ``identifier``)."""
-    names = table.column_names
-    if ID_COLUMN in names:
-        return table
-    source = "identifier" if "identifier" in names else names[0]
-    return table.rename_columns([ID_COLUMN if n == source else n for n in names])
+    """Name the identifier column ``protein_id`` (``annotate`` before protspace
+    4.17.0 wrote ``identifier``; a table without either is keyed on its first)."""
+    return keyed_on_protein_id(table)
 
 
 def extract_ann(bundle_path: Path) -> pa.Table:
@@ -474,12 +472,12 @@ def projection_ids(data: pa.Table) -> list[str]:
     """Identifiers of the first projection, in file order."""
     first = data.column("projection_name")[0].as_py()
     rows = data.filter(pc.equal(data.column("projection_name"), first))
-    return [str(v) for v in rows.column("identifier").to_pylist()]
+    return [str(v) for v in rows.column(ID_COLUMN).to_pylist()]
 
 
 def coordinates(data: pa.Table) -> pa.Table:
     """Long-format projections as one comparable table: ``projection_name``,
-    ``identifier`` (as text), ``x``, ``y`` and ``z`` at float32 (the precision a
+    ``protein_id`` (as text), ``x``, ``y`` and ``z`` at float32 (the precision a
     v3 file stores and the browser draws; a missing axis is null), sorted by
     projection and identifier."""
 
@@ -491,15 +489,13 @@ def coordinates(data: pa.Table) -> pa.Table:
     table = pa.table(
         {
             "projection_name": pc.cast(data.column("projection_name"), pa.string()),
-            "identifier": pc.cast(data.column("identifier"), pa.string()),
+            ID_COLUMN: pc.cast(data.column(ID_COLUMN), pa.string()),
             "x": axis("x"),
             "y": axis("y"),
             "z": axis("z"),
         }
     )
-    return table.sort_by(
-        [("projection_name", "ascending"), ("identifier", "ascending")]
-    )
+    return table.sort_by([("projection_name", "ascending"), (ID_COLUMN, "ascending")])
 
 
 def same_coordinates(a: pa.Table, b: pa.Table) -> bool:
@@ -1009,7 +1005,7 @@ def _coords(bundle: Bundle, projection: str):
     )
     if rows.num_rows == 0:
         raise BuildError(f"projection {projection!r} not in the bundle")
-    ids = [str(v) for v in rows.column("identifier").to_pylist()]
+    ids = [str(v) for v in rows.column(ID_COLUMN).to_pylist()]
     xy = np.column_stack(
         [
             np.asarray(rows.column("x").to_pylist(), dtype=float),

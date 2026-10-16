@@ -16,9 +16,10 @@ Every constant both sides must agree on SHALL be defined once, in the shared sou
 `contracts/shared-constants.json`, together with the reason it is shared. This covers the
 missing-value tokens, the `__NA__` sentinel, the N/A swatch colour, Kelly's colours in slot
 order, the categorical and gradient palette ids, the default categorical and numeric palettes,
-the labels of an Arrow boolean column, and the point shapes. Neither language SHALL hold a hand-written
-copy of these values. Each SHALL read them from its generated module, and the names existing
-code imports SHALL stay importable from where they were.
+the labels of an Arrow boolean column, the point shapes, the column names the web reader never
+shows as an annotation, and the name of the protein ID column every written table uses. Neither
+language SHALL hold a hand-written copy of these values. Each SHALL read them from its generated
+module, and the names existing code imports SHALL stay importable from where they were.
 
 #### Scenario: A missing-value spelling is added
 
@@ -38,6 +39,19 @@ code imports SHALL stay importable from where they were.
 - **WHEN** one of the Python names re-exported from the generated module (for example
   `KELLYS_COLORS` in `settings_converter.py`) is redefined as a hand-written value
 - **THEN** the Python test suite fails, naming the constant
+
+#### Scenario: A column name the web reader hides
+
+- **WHEN** a name is added to `NON_ANNOTATION_COLUMNS` in `contracts/shared-constants.json` and the
+  modules are regenerated
+- **THEN** the web reader leaves a column of that name out of the annotations, and the Python
+  custom annotation loader renames a later column of that name, with no other file edited
+
+#### Scenario: The protein ID column name
+
+- **WHEN** `PROTEIN_ID_COLUMN` is read on either side
+- **THEN** it is `protein_id`, and the generator refuses a source in which it is not one of the
+  `NON_ANNOTATION_COLUMNS`
 
 ### Requirement: Generated modules are committed and checked
 

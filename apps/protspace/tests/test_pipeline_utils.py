@@ -2,6 +2,7 @@
 
 import logging
 from collections import Counter
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -52,7 +53,7 @@ class TestParseMethodSpec:
         assert (spec.method, spec.dims, spec.overrides) == (method, dims, ())
 
     def test_invalid_no_digits(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="needs a dimension suffix, e.g. 'pca2'"):
             parse_method_spec("pca")
 
 
@@ -274,61 +275,57 @@ class TestDisambiguationSuffix:
 
 
 # ---------------------------------------------------------------------------
-# _resolve_annotation_names
+# split_annotation_args on a pipeline's annotations
 # ---------------------------------------------------------------------------
 
 
 class TestResolveAnnotationNames:
     def _resolve(self, annotations):
-        config = PipelineConfig(
-            methods=[MethodSpec("pca", 2)],
-            output_path=None,
-            annotations=annotations,
-        )
-        pipeline = ReductionPipeline(config)
-        return pipeline._resolve_annotation_names()
+        from protspace.data.processors.custom_annotations import split_annotation_args
+
+        return split_annotation_args(annotations or [])
 
     def test_none(self):
-        assert self._resolve(None) == ([], None)
+        assert self._resolve(None) == ([], [])
 
     def test_empty_list(self):
-        assert self._resolve([]) == ([], None)
+        assert self._resolve([]) == ([], [])
 
     def test_single(self):
-        assert self._resolve(["organism_name"]) == (["organism_name"], None)
+        assert self._resolve(["organism_name"]) == (["organism_name"], [])
 
     def test_comma_separated(self):
         assert self._resolve(["organism_name,ec_number"]) == (
             ["organism_name", "ec_number"],
-            None,
+            [],
         )
 
     def test_multiple_items(self):
         assert self._resolve(["organism_name", "ec_number"]) == (
             ["organism_name", "ec_number"],
-            None,
+            [],
         )
 
     def test_strips_whitespace(self):
         assert self._resolve(["  organism_name , ec_number  "]) == (
             ["organism_name", "ec_number"],
-            None,
+            [],
         )
 
     def test_skips_empty_parts(self):
-        assert self._resolve(["a,,b", ""]) == (["a", "b"], None)
+        assert self._resolve(["a,,b", ""]) == (["a", "b"], [])
 
     def test_csv_path(self):
-        assert self._resolve(["metadata.csv"]) == ([], "metadata.csv")
+        assert self._resolve(["metadata.csv"]) == ([], [Path("metadata.csv")])
 
     def test_csv_with_annotations(self):
         assert self._resolve(["metadata.csv", "default,pfam"]) == (
             ["default", "pfam"],
-            "metadata.csv",
+            [Path("metadata.csv")],
         )
 
     def test_tsv_path(self):
-        assert self._resolve(["data.tsv", "ec"]) == (["ec"], "data.tsv")
+        assert self._resolve(["data.tsv", "ec"]) == (["ec"], [Path("data.tsv")])
 
 
 def _cache_pipeline(tmp_path, **overrides):
@@ -380,7 +377,7 @@ class TestUniProtFailureCacheWriteThroughPipeline:
         """
         self._fail_one_batch(monkeypatch)
         cache_path = tmp_path / "all_annotations.parquet"
-        pd.DataFrame({"identifier": ["P01308"], "length": ["POISONED"]}).to_parquet(
+        pd.DataFrame({"protein_id": ["P01308"], "length": ["POISONED"]}).to_parquet(
             cache_path, index=False
         )
         pipeline = _cache_pipeline(
@@ -410,7 +407,7 @@ class TestAnnotationCacheMigration:
 
         pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 "xref_pdb": ["True"],
                 "gene_name": ["STALE_GENE"],
                 "protein_name": ["Protein"],
@@ -457,7 +454,7 @@ class TestAnnotationCacheMigration:
         cache_path = tmp_path / "all_annotations.parquet"
         pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 "xref_pdb": ["True"],
                 "gene_name": ["LEGACY_GENE"],
                 "protein_name": ["Legacy protein"],
@@ -501,7 +498,7 @@ class TestAnnotationCacheMigration:
 
         pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 "xref_pdb": ["True"],
                 "gene_name": ["INS"],
                 "protein_name": ["Insulin"],
@@ -551,7 +548,7 @@ class TestAnnotationCacheMigration:
         cache_path = tmp_path / "all_annotations.parquet"
         pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 "xref_pdb": ["True"],
                 "gene_name": ["INS"],
                 "protein_name": ["Insulin"],
@@ -599,7 +596,7 @@ class TestAnnotationCacheMigration:
         cache_path = tmp_path / "all_annotations.parquet"
         cached = pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 "xref_pdb": ["True"],
                 "signal_peptide": ["False"],
                 "gene_name": ["INS"],
@@ -651,7 +648,7 @@ class TestAnnotationCacheMigration:
         cache_path = tmp_path / "all_annotations.parquet"
         pd.DataFrame(
             {
-                "identifier": ["P01308"],
+                "protein_id": ["P01308"],
                 "xref_pdb": ["True"],
                 "gene_name": ["INS"],
                 "protein_name": ["Insulin"],
@@ -699,7 +696,7 @@ class TestAnnotationCacheMigration:
 
         legacy_cache = pd.DataFrame(
             {
-                "identifier": ["unresolved", "resolved_without_pdb"],
+                "protein_id": ["unresolved", "resolved_without_pdb"],
                 "xref_pdb": ["True", "True"],
                 "gene_name": ["", "STALE_GENE"],
                 "protein_name": ["", "Protein"],
@@ -795,7 +792,7 @@ class TestLegacyTedLabelMigration:
         """Write an annotation cache holding a pre-fix TED value."""
         pd.DataFrame(
             {
-                "identifier": ["W6JQJ9"],
+                "protein_id": ["W6JQJ9"],
                 "ted_domains": [cls.LEGACY],
                 "gene_name": [""],
                 "protein_name": [""],
@@ -823,7 +820,7 @@ class TestLegacyTedLabelMigration:
             "protspace.data.annotations.manager.ProteinAnnotationManager"
         ) as mock_manager:
             mock_manager.return_value.to_pd.return_value = pd.DataFrame(
-                {"identifier": ["W6JQJ9"], "ec": [""]}
+                {"protein_id": ["W6JQJ9"], "ec": [""]}
             )
             self._pipeline(
                 tmp_path, annotations=["ted_domains", "ec"]
@@ -880,14 +877,14 @@ class TestCompleteAnnotationCache:
         cached = pd.DataFrame(
             [
                 {
-                    "identifier": "custom_protein",
+                    "protein_id": "custom_protein",
                     "length": "",
                     "gene_name": "",
                     "protein_name": "",
                     "uniprot_kb_id": "",
                 },
                 {
-                    "identifier": "cached_protein",
+                    "protein_id": "cached_protein",
                     "length": "110",
                     "gene_name": "",
                     "protein_name": "",
@@ -922,7 +919,7 @@ class TestCompleteAnnotationCache:
         pd.DataFrame(
             [
                 {
-                    "identifier": "custom_protein",
+                    "protein_id": "custom_protein",
                     "length": "",
                     "gene_name": "",
                     "protein_name": "",
@@ -1259,7 +1256,7 @@ class TestPrecomputedMDSConfigIsolation:
 def _write_annotation_cache(cache_dir, identifiers, value):
     cached = pd.DataFrame(
         {
-            "identifier": identifiers,
+            "protein_id": identifiers,
             "protein_name": [value] * len(identifiers),
             "gene_name": [value] * len(identifiers),
             "uniprot_kb_id": [value] * len(identifiers),
@@ -1285,7 +1282,7 @@ def test_a_cache_missing_identifiers_is_filled_in_not_discarded(tmp_path, monkey
         captured["cached_data"] = manager.cached_data
         return pd.DataFrame(
             {
-                "identifier": ["P1", "P2", "P3"],
+                "protein_id": ["P1", "P2", "P3"],
                 "protein_name": ["cached", "cached", "new"],
             }
         )
@@ -1297,8 +1294,8 @@ def test_a_cache_missing_identifiers_is_filled_in_not_discarded(tmp_path, monkey
     )
 
     assert captured["headers"] == ["P1", "P2", "P3"]
-    assert captured["cached_data"]["identifier"].tolist() == ["P1", "P2"]
-    assert result["identifier"].tolist() == ["P1", "P2", "P3"]
+    assert captured["cached_data"]["protein_id"].tolist() == ["P1", "P2"]
+    assert result["protein_id"].tolist() == ["P1", "P2", "P3"]
 
 
 def test_a_failed_source_while_filling_in_leaves_the_cache_alone(tmp_path, monkeypatch):
@@ -1318,7 +1315,7 @@ def test_a_failed_source_while_filling_in_leaves_the_cache_alone(tmp_path, monke
 
     cache_path = tmp_path / "all_annotations.parquet"
     cached = pd.DataFrame(
-        {"identifier": ["OLD1"], "gene_name": ["OLD"], "pfam": ["PF00001"]}
+        {"protein_id": ["OLD1"], "gene_name": ["OLD"], "pfam": ["PF00001"]}
     )
     # Current, so this is a fill-in rather than a legacy InterPro refresh.
     cached.attrs = annotation_cache_version_attrs()
@@ -1344,8 +1341,8 @@ def test_a_failed_source_while_filling_in_leaves_the_cache_alone(tmp_path, monke
         tmp_path, annotations=["gene_name", "pfam"]
     )._fetch_annotations(["P01308"])
 
-    assert result.set_index("identifier").loc["P01308", "gene_name"] == "INS"
-    assert pd.read_parquet(cache_path)["identifier"].tolist() == ["OLD1"]
+    assert result.set_index("protein_id").loc["P01308", "gene_name"] == "INS"
+    assert pd.read_parquet(cache_path)["protein_id"].tolist() == ["OLD1"]
 
 
 class TestRowsOutsideTheRun:
@@ -1366,7 +1363,7 @@ class TestRowsOutsideTheRun:
             "sequence": ["MALW", "MGKI"],
         }
         cached = pd.DataFrame(
-            {"identifier": ["P01308", "P01315"], **uniprot, **columns}
+            {"protein_id": ["P01308", "P01315"], **uniprot, **columns}
         )
         cached.attrs = annotation_cache_version_attrs()
         cached.to_parquet(cache_dir / "all_annotations.parquet", index=False)
@@ -1408,9 +1405,9 @@ class TestRowsOutsideTheRun:
             ["P01308"]
         )
         cached = pd.read_parquet(tmp_path / "all_annotations.parquet")
-        assert cached.set_index("identifier").loc["P01308", "ted_domains"] == "-|90.0"
+        assert cached.set_index("protein_id").loc["P01308", "ted_domains"] == "-|90.0"
         # P01315 was never looked up, so no TED value may be cached for it.
-        assert "P01315" not in cached["identifier"].tolist()
+        assert "P01315" not in cached["protein_id"].tolist()
 
         monkeypatch.undo()
         monkeypatch.setattr(TedRetriever, "fetch_annotations", ted)
@@ -1434,7 +1431,7 @@ class TestRowsOutsideTheRun:
         )
 
         assert ted_calls == [["P01308"], ["P01315"]]
-        assert result.set_index("identifier").loc["P01315", "ted_domains"] == "-|90.0"
+        assert result.set_index("protein_id").loc["P01315", "ted_domains"] == "-|90.0"
 
     def test_a_refetched_source_keeps_its_cached_values_outside_the_run(
         self, tmp_path, monkeypatch
@@ -1466,7 +1463,7 @@ class TestRowsOutsideTheRun:
         )._fetch_annotations(["P01308"])
 
         cached = pd.read_parquet(tmp_path / "all_annotations.parquet")
-        by_id = cached.set_index("identifier")
+        by_id = cached.set_index("protein_id")
         assert by_id.loc["P01308", "smart"] == "SM00078|2.0"
         # P01315 has no fetched `smart`, and its cached `pfam` must not be
         # replaced by the empty value it got from a fetch it was not part of.
@@ -1498,7 +1495,7 @@ class TestRowsOutsideTheRun:
         )._fetch_annotations(["P01308"])
 
         by_id = pd.read_parquet(tmp_path / "all_annotations.parquet").set_index(
-            "identifier"
+            "protein_id"
         )
         assert by_id.loc["P01308", "ted_domains"] == "-|90.0"
         assert "P01315" not in by_id.index
@@ -1536,7 +1533,7 @@ class TestRowsOutsideTheRun:
         )
 
         by_id = pd.read_parquet(tmp_path / "all_annotations.parquet").set_index(
-            "identifier"
+            "protein_id"
         )
         assert by_id.loc["P01275", "gene_name"] == "GCG"
         assert by_id.loc["P01315", "gene_name"] == "IGF"
@@ -1562,7 +1559,7 @@ def test_annotation_cache_covering_the_request_is_reused(
         ["P2", "P1"]
     )
 
-    assert result["identifier"].tolist() == cached_ids
+    assert result["protein_id"].tolist() == cached_ids
     pd.testing.assert_frame_equal(
         pd.read_parquet(tmp_path / "all_annotations.parquet"), cached
     )
@@ -1710,3 +1707,21 @@ def test_precomputed_projection_cache_misses_a_changed_matrix(tmp_path):
     np.testing.assert_array_equal(
         changed["data"], np.full((3, 2), 9.0, dtype=np.float32)
     )
+
+
+def test_align_annotations_keys_every_header_and_leaves_missing_cells_empty():
+    """One row per header, in order, keyed on protein_id; a null and a protein the
+    annotations miss are empty, never "nan" (#550)."""
+    from protspace.data.processors.pipeline import align_annotations
+
+    fetched = pd.DataFrame(
+        {"accession": ["P2", "P1", "P1"], "family": ["b", float("nan"), "dup"]}
+    )
+    table = align_annotations(fetched, ["P1", "P2", "P3"])
+
+    assert table.columns.tolist() == ["protein_id", "family"]
+    assert table["protein_id"].tolist() == ["P1", "P2", "P3"]
+    assert table["family"].tolist() == ["", "b", ""]
+    assert align_annotations(pd.DataFrame({"protein_id": []}), ["P1"]).to_dict(
+        "list"
+    ) == {"protein_id": ["P1"]}

@@ -27,6 +27,7 @@ import pyarrow as pa
 from protspace._generated.shared_constants import (
     ARROW_BOOLEAN_LABELS as ARROW_BOOLEAN_LABELS,
 )
+from protspace._generated.shared_constants import PROTEIN_ID_COLUMN
 
 #: The annotation **cell grammar** version: ``1`` is the legacy raw-text grammar,
 #: ``2`` the percent-encoded one this module writes.  It is stamped under
@@ -240,10 +241,14 @@ def _migrate_cells(table: pa.Table) -> pa.Table:
 
     A dictionary-of-strings column comes back as its plain string type.
     """
+    # The id column is a key, never a cell: `protein_id`, else (an older table)
+    # `identifier`, which beside `protein_id` is an annotation like any other.
+    names = table.column_names
+    id_column = PROTEIN_ID_COLUMN if PROTEIN_ID_COLUMN in names else "identifier"
     columns = []
-    for name, column in zip(table.column_names, table.columns, strict=True):
+    for name, column in zip(names, table.columns, strict=True):
         text_type = _text_type(column.type)
-        if name in {"identifier", "protein_id"} or text_type is None:
+        if name == id_column or text_type is None:
             columns.append(column)
             continue
         opaque_source = name.endswith("__pred_source")

@@ -38,6 +38,7 @@ import pyarrow.parquet as pq
 import requests
 
 from protspace.data.annotations.configuration import INTERNAL_ANNOTATIONS
+from protspace.data.io.ids import id_column_by_name
 from protspace.data.io.settings_converter import KELLYS_COLORS, NA_PINNED_COLOR
 
 logger = logging.getLogger(__name__)
@@ -216,12 +217,13 @@ def _merge_full_length_columns(
 ) -> pa.Table:
     """Replace or add the sequence-based columns computed on full-length input.
 
-    Joined by protein id (``annotate`` names it ``identifier``); the always-
+    Joined by protein id (``protein_id``, or ``identifier`` in ``annotate``
+    output from before protspace 4.17.0); the always-
     included name columns ``annotate`` adds are ignored, the bundle has them.
     """
     if full_length is None:
         return annotations
-    id_col = "identifier" if "identifier" in full_length.column_names else "protein_id"
+    id_col = id_column_by_name(full_length.column_names)
     rows = {pid: i for i, pid in enumerate(full_length.column(id_col).to_pylist())}
     ids = annotations.column("protein_id").to_pylist()
     take = pa.array([rows.get(pid) for pid in ids], type=pa.int64())

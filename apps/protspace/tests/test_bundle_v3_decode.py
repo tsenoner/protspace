@@ -192,7 +192,7 @@ def test_projections_are_long_manifest_ordered_and_protein_ordered():
     assert decoded_metadata.column("projection_name").to_pylist() == ["PCA 2", "PCA 3"]
     columns = decoded_data.to_pydict()
     assert columns["projection_name"] == ["PCA 2"] * 3 + ["PCA 3"] * 3
-    assert columns["identifier"] == ["p0", "p1", "p2"] * 2
+    assert columns["protein_id"] == ["p0", "p1", "p2"] * 2
     assert columns["x"] == [0.0, 2.0, 4.0, 0.0, 3.0, 6.0]
     assert columns["z"] == [None, None, None, 2.0, 5.0, 8.0]
     assert decoded_data.schema.field("z").type == pa.float32()
@@ -224,13 +224,13 @@ def test_a_protein_absent_from_a_projection_comes_back_without_a_row():
         pa.compute.invert(
             pa.compute.and_(
                 pa.compute.equal(data.column("projection_name"), "PCA 3"),
-                pa.compute.equal(data.column("identifier"), "p1"),
+                pa.compute.equal(data.column("protein_id"), "p1"),
             )
         )
     )
     decoded, _, decoded_data = decode_v3(encode_v3(source, metadata, data))
     columns = decoded_data.to_pydict()
-    assert columns["identifier"] == ["p0", "p1", "p2", "p0", "p2"]
+    assert columns["protein_id"] == ["p0", "p1", "p2", "p0", "p2"]
     assert columns["x"] == [0.0, 2.0, 4.0, 0.0, 6.0]
     # p1 keeps its annotations and its PCA 2 row.
     assert decoded.column("kingdom").to_pylist() == ["A", "B", "C"]
@@ -243,16 +243,16 @@ def test_a_non_finite_coordinate_comes_back_without_a_row():
     z[1] = np.inf
     data = data.set_column(data.schema.get_field_index("z"), "z", pa.array(z))
     decoded_data = decode_v3(encode_v3(source, metadata, data))[2]
-    assert decoded_data.column("identifier").to_pylist() == ["p0", "p2"]
+    assert decoded_data.column("protein_id").to_pylist() == ["p0", "p2"]
 
 
 def test_an_annotation_only_protein_keeps_its_annotations():
     """No projection covers p2, so no projection row, but the file is lossless."""
     source = annotations_table(kingdom=["A", "B", "C"])
     metadata, data = projection_tables(3, (2,))
-    data = data.filter(pa.compute.not_equal(data.column("identifier"), pa.scalar("p2")))
+    data = data.filter(pa.compute.not_equal(data.column("protein_id"), pa.scalar("p2")))
     decoded, _, decoded_data = decode_v3(encode_v3(source, metadata, data))
-    assert decoded_data.column("identifier").to_pylist() == ["p0", "p1"]
+    assert decoded_data.column("protein_id").to_pylist() == ["p0", "p1"]
     assert decoded.column("protein_id").to_pylist() == ["p0", "p1", "p2"]
     assert decoded.column("kingdom").to_pylist() == ["A", "B", "C"]
 
@@ -491,12 +491,12 @@ def test_replace_annotations_v3_matches_the_decode_encode_round_trip(ids):
     metadata, data = projection_tables(4)
     uncovered = pc.and_(
         pc.equal(data.column("projection_name"), "PCA 2"),
-        pc.equal(data.column("identifier"), "p1"),
+        pc.equal(data.column("protein_id"), "p1"),
     )
     data = data.filter(pc.invert(uncovered))
     broken_z = pc.and_(
         pc.equal(data.column("projection_name"), "PCA 3"),
-        pc.equal(data.column("identifier"), "p2"),
+        pc.equal(data.column("protein_id"), "p2"),
     )
     z = pc.if_else(broken_z, pa.scalar(np.nan, pa.float32()), data.column("z"))
     data = data.set_column(data.schema.get_field_index("z"), "z", z)
@@ -515,7 +515,7 @@ def test_replace_annotations_v3_matches_the_decode_encode_round_trip(ids):
 def _with_missing_z(data: pa.Table, identifier: str) -> pa.Table:
     """``data`` with ``identifier``'s ``z`` nulled in every projection."""
     z = pc.if_else(
-        pc.equal(data.column("identifier"), identifier),
+        pc.equal(data.column("protein_id"), identifier),
         pa.scalar(None, data.schema.field("z").type),
         data.column("z"),
     )

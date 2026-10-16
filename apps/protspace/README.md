@@ -43,7 +43,7 @@ pip install protspace
 | --- | --- | --- |
 | `local` | `pip install "protspace[local]"` | on-device embedding (`--backend local`) instead of the Biocentral API |
 | `similarity` | `pip install "protspace[similarity]"` | MMseqs2 sequence-similarity projections (`-s/--similarity`) |
-| `frontend` | `pip install "protspace[frontend]"` | the local Dash viewer (`protspace serve`) |
+| `frontend` | `pip install "protspace[frontend]"` | the local Dash viewer (`protspace serve`, deprecated) |
 
 > **Upgrading an existing install:** `-s/--similarity` used to work out of the box because
 > MMseqs2 shipped in the base install. It now lives in the `similarity` extra, so add
@@ -86,7 +86,7 @@ protspace transfer -b output.parquetbundle -e embeddings/prot_t5.h5 -t superfami
 
 Or compute quality metrics inline during `prepare` with `--stats` (opt-in): annotation-based cluster-validity + faithfulness per projection. See the [CLI Reference](https://protspace.app/docs/guide/python-cli).
 
-Fill missing annotation values from the nearest annotated protein in embedding space with [`protspace transfer`](https://protspace.app/docs/guide/python-cli) — Embedding Annotation Transfer (EAT).
+Fill missing annotation values from the nearest annotated protein in embedding space with [`protspace transfer`](https://protspace.app/docs/guide/python-cli) — Embedding Annotation Transfer (EAT). `--report predictions.tsv` lists each query's nearest references with their distances, and `--max-distance auto` marks each query near or distant from the references. `protspace export output.parquetbundle output.tsv` writes a bundle as one table, one row per protein.
 
 Bundles in the older v1/v2 format still open, but that support ends in protspace 5.0.0. Upgrade them with `protspace convert old.parquetbundle new.parquetbundle` (or `--in-place`).
 

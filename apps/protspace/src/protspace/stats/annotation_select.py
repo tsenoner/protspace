@@ -12,6 +12,7 @@ import logging
 
 from protspace.core.constants import is_missing_value
 from protspace.data.annotations.scores import _strip_scores_from_cell
+from protspace.data.io.ids import PROTEIN_ID_COLUMN
 from protspace.stats.base import CLUSTER_COLUMN_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -97,7 +98,7 @@ def _is_suitable_column(series, cap: int) -> bool:
 
 
 def suitable_annotations(
-    frame, id_col: str = "identifier", max_card: int = 50
+    frame, id_col: str = PROTEIN_ID_COLUMN, max_card: int = 50
 ) -> list[str]:
     n = len(frame)
     cap = min(max_card, max(2, n // 2))
@@ -111,7 +112,7 @@ def suitable_annotations(
 
 
 def build_annotation_labels(
-    frame, selection, id_col: str = "identifier"
+    frame, selection, id_col: str = PROTEIN_ID_COLUMN
 ) -> dict[str, dict[str, str]]:
     """``{annotation name -> {protein id -> category}}`` for the selection.
 

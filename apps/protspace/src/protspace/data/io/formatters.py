@@ -9,6 +9,8 @@ from collections import namedtuple
 import pandas as pd
 import pyarrow as pa
 
+from protspace.data.io.ids import PROTEIN_ID_COLUMN
+
 ProteinAnnotations = namedtuple("ProteinAnnotations", ["identifier", "annotations"])
 
 
@@ -26,7 +28,7 @@ class DataFormatter:
         only later records carry.
         """
         return [
-            "identifier",
+            PROTEIN_ID_COLUMN,
             *dict.fromkeys(
                 header for protein in proteins for header in protein.annotations
             ),
@@ -48,10 +50,10 @@ class DataFormatter:
             proteins: List of ProteinAnnotations
 
         Returns:
-            DataFrame with identifier column and annotation columns
+            DataFrame with a protein_id column and annotation columns
         """
         if not proteins:
-            return pd.DataFrame(columns=["identifier"])
+            return pd.DataFrame(columns=[PROTEIN_ID_COLUMN])
 
         headers = DataFormatter.build_headers(proteins)
         data_rows = [DataFormatter.build_row(protein, headers) for protein in proteins]
@@ -82,11 +84,11 @@ class DataFormatter:
             proteins: List of ProteinAnnotations
 
         Returns:
-            List of dicts with identifier and annotations
+            List of dicts with protein_id and annotations
         """
         result = []
         for protein in proteins:
-            entry = {"identifier": protein.identifier}
+            entry = {PROTEIN_ID_COLUMN: protein.identifier}
             entry.update(protein.annotations)
             result.append(entry)
         return result

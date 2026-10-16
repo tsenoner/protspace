@@ -25,7 +25,6 @@ from protspace.data.processors.base_processor import BaseProcessor
 def test_create_protein_annotations_table_stamps_format_version():
     """Direct unit test of the table factory used by the prepare pipeline."""
     proc = BaseProcessor.__new__(BaseProcessor)  # bypass heavy __init__
-    proc.identifier_col = "protein_id"
     tbl = proc._create_protein_annotations_table(
         pd.DataFrame({"protein_id": ["P1"], "cath": ["6.20.10.10"]})
     )
@@ -69,7 +68,7 @@ def test_prepare_pipeline_bundle_round_trips_annotations(sample_data):
     assert annotations.column("protein_id").to_pylist() == sample_data["headers"]
     assert annotations.column("length").to_pylist() == ["100", "150", "200"]
     assert annotations.column("organism").to_pylist() == ["Homo sapiens"] * 3
-    assert projections.column("identifier").to_pylist() == sample_data["headers"]
+    assert projections.column("protein_id").to_pylist() == sample_data["headers"]
     coords = np.column_stack(
         [projections.column("x").to_numpy(), projections.column("y").to_numpy()]
     )
@@ -108,7 +107,7 @@ def _bundle_via_cli(tmp_path, annotations_table):
     data_df = pd.DataFrame(
         {
             "projection_name": ["PCA_2", "PCA_2"],
-            "identifier": ["P1", "P2"],
+            "protein_id": ["P1", "P2"],
             "x": [0.1, 0.2],
             "y": [0.3, 0.4],
         }
@@ -151,7 +150,7 @@ def test_cli_bundle_passes_annotate_output_through(tmp_path):
     cells = ["1.10.490.10 (Superfamily%3B old)|300", "PF1 (100%25 pure)"]
     output_path = _bundle_via_cli(
         tmp_path,
-        stamp_format_version(pa.table({"identifier": ["P1", "P2"], "cath": cells})),
+        stamp_format_version(pa.table({"protein_id": ["P1", "P2"], "cath": cells})),
     )
 
     assert read_tables(output_path)[0].column("cath").to_pylist() == cells
@@ -167,7 +166,7 @@ def test_cli_bundle_reads_an_unstamped_table_as_plain_v1_text(tmp_path):
         tmp_path,
         pa.table(
             {
-                "identifier": ["P1", "P2"],
+                "protein_id": ["P1", "P2"],
                 "note": ["50% identity", "Membrane (single-pass; type I)"],
             }
         ),
@@ -189,7 +188,7 @@ def test_cli_bundle_migrates_a_pandas_category_column_as_text(tmp_path):
 
     cells = ["Membrane (single-pass; type I)", "x%41y"]
     table = pa.Table.from_pandas(
-        pd.DataFrame({"identifier": ["P1", "P2"], "cat": pd.Categorical(cells)}),
+        pd.DataFrame({"protein_id": ["P1", "P2"], "cat": pd.Categorical(cells)}),
         preserve_index=False,
     )
     assert pa.types.is_dictionary(table.schema.field("cat").type)
@@ -223,7 +222,7 @@ def test_cli_bundle_passes_the_pipeline_cache_through(tmp_path):
     manager = ProteinAnnotationManager.__new__(ProteinAnnotationManager)
     manager.output_path = cache_path
     manager._write_cache(
-        pd.DataFrame({"identifier": ["P1", "P2"], "note": _cache_cells()})
+        pd.DataFrame({"protein_id": ["P1", "P2"], "note": _cache_cells()})
     )
 
     assert pq.read_metadata(cache_path).metadata[FORMAT_VERSION_KEY] == b"2"
@@ -237,7 +236,7 @@ def test_cli_bundle_reads_an_unstamped_pipeline_cache_as_v2(tmp_path):
     from protspace.data.annotations.encoding import annotation_cache_version_attrs
 
     cache_path = tmp_path / "all_annotations.parquet"
-    df = pd.DataFrame({"identifier": ["P1", "P2"], "note": _cache_cells()})
+    df = pd.DataFrame({"protein_id": ["P1", "P2"], "note": _cache_cells()})
     df.attrs.update(annotation_cache_version_attrs())
     df.to_parquet(cache_path, index=False)  # as `_write_cache` did, unstamped
     assert FORMAT_VERSION_KEY not in pq.read_metadata(cache_path).metadata
@@ -283,7 +282,7 @@ def test_annotate_command_stamps_format_version(tmp_path, monkeypatch):
 
         def to_pd(self):
             return pd.DataFrame(
-                {"identifier": ["P12345", "P67890"], "cath": ["a", "b"]}
+                {"protein_id": ["P12345", "P67890"], "cath": ["a", "b"]}
             )
 
     monkeypatch.setattr(mgr_mod, "ProteinAnnotationManager", _FakeManager)
@@ -335,7 +334,7 @@ def test_cli_bundle_stores_a_list_column_as_hits(tmp_path):
         tmp_path,
         pa.table(
             {
-                "identifier": ["P1", "P2"],
+                "protein_id": ["P1", "P2"],
                 "go_terms": pa.array([["GO:1", "GO:2"], ["GO:3"]]),
             }
         ),
@@ -365,7 +364,7 @@ def test_cli_bundle_reports_an_unstorable_column_without_a_traceback(tmp_path):
         pa.table(
             {
                 "projection_name": ["PCA_2"],
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "x": [0.1],
                 "y": [0.2],
             }
@@ -374,7 +373,7 @@ def test_cli_bundle_reports_an_unstorable_column_without_a_traceback(tmp_path):
     )
     annotations_path = tmp_path / "annotations.parquet"
     pq.write_table(
-        pa.table({"identifier": ["P1"], "odd": pa.array([{"a": 1}])}),
+        pa.table({"protein_id": ["P1"], "odd": pa.array([{"a": 1}])}),
         annotations_path,
     )
     output_path = tmp_path / "out.parquetbundle"

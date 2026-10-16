@@ -308,8 +308,16 @@ export function isAutoClusterColumn(
   statistics: readonly ProjectionStatisticRow[] | undefined,
   annotation: string,
 ): boolean {
-  if (!statistics?.length || !annotation) return false;
-  return statistics.some(
+  return clusterValidityRow(statistics, annotation) !== undefined;
+}
+
+/** The `cluster_validity` row of the auto-clustering whose membership column is `annotation`. */
+function clusterValidityRow(
+  statistics: readonly ProjectionStatisticRow[] | undefined,
+  annotation: string,
+): ProjectionStatisticRow | undefined {
+  if (!statistics?.length || !annotation) return undefined;
+  return statistics.find(
     (row) =>
       row.stat_family === 'cluster_validity' &&
       clusterColumnName(row.label_kind, row.space_name) === annotation,
@@ -342,12 +350,40 @@ export function isAutoClusterColumnName(annotation: string): boolean {
 
 /**
  * The caveat every surface must print alongside an auto-cluster column's own separation scores,
- * gated on `isAutoClusterColumn` above. One string rather than one per surface: it exists to stop
- * a number being misread, so the legend strips and the metadata panel must not be able to word it
- * differently, or to have it corrected in only one of the two.
+ * picked by `autoClusterScoreCaveat` below. One string per kind of clustering rather than one per
+ * surface: it exists to stop a number being misread, so the legend strips and the metadata panel
+ * must not be able to word it differently, or to have it corrected in only one of the two.
  */
 export const AUTO_CLUSTER_SCORE_CAVEAT =
   'K-means found these clusters in this projection, so these scores are optimistic.';
+
+/**
+ * The same caveat for a clustering of the source embedding (`--cluster-space embedding`), shared
+ * by all of that embedding's projections. K-means never saw this projection, so its scores here
+ * measure how well the layout kept the groups; the optimistic ones are the Embedding reference.
+ */
+export const EMBEDDING_CLUSTER_SCORE_CAVEAT =
+  'K-means found these clusters in the embedding, so its Embedding scores are optimistic; ' +
+  'the scores in this projection show how well the layout keeps them.';
+
+/**
+ * Which caveat `annotation`'s separation scores need, or `null` when it is not one of this
+ * bundle's auto-clusterings.
+ *
+ * The row `isAutoClusterColumn` matches; its `space_kind` says where
+ * K-means ran. An embedding clustering is scored in each projection as an `annotation_validity`
+ * row only, so its one `cluster_validity` row is the embedding's own.
+ */
+export function autoClusterScoreCaveat(
+  statistics: readonly ProjectionStatisticRow[] | undefined,
+  annotation: string,
+): string | null {
+  const found = clusterValidityRow(statistics, annotation);
+  if (!found) return null;
+  return found.space_kind === 'embedding'
+    ? EMBEDDING_CLUSTER_SCORE_CAVEAT
+    : AUTO_CLUSTER_SCORE_CAVEAT;
+}
 
 /** One annotation, and how well the selected auto-clustering recovers it. */
 export interface ClusterAgreementEntry {

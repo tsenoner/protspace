@@ -521,7 +521,7 @@ class ProteinAnnotationManager:
             return
 
         incomplete = ", ".join(sorted(self.incomplete_sources))
-        remaining = set(df.columns) - drop - {"identifier"}
+        remaining = set(df.columns) - drop - {df.columns[0]}
         without = df.drop(columns=[c for c in df.columns if c in drop])
         # An explicit refetch skips both guards: keeping the cached values there
         # would strand exactly the values the user asked to replace, and writing

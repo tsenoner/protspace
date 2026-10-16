@@ -68,7 +68,7 @@ class TestSettingsOnlyRead:
             pa.table(
                 {
                     "projection_name": ["pca2"] * 2,
-                    "identifier": ["p0", "p1"],
+                    "protein_id": ["p0", "p1"],
                     "x": [0.0, 1.0],
                     "y": [2.0, 3.0],
                 }

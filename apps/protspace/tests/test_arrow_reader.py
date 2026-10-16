@@ -32,7 +32,7 @@ def bundle(tmp_path):
             pa.table(
                 {
                     "projection_name": ["pca2", "pca2"],
-                    "identifier": ["P1", "P2"],
+                    "protein_id": ["P1", "P2"],
                     "x": [0.0, 1.0],
                     "y": [0.0, 1.0],
                     "z": [None, None],

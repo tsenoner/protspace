@@ -31,3 +31,17 @@ def sorted_subsample(n: int, threshold: int, rng) -> np.ndarray | None:
     if n <= threshold:
         return None
     return np.sort(rng.permutation(n)[:threshold])
+
+
+def canonical_order(
+    ids, n: int, rng_seed: int
+) -> tuple[np.ndarray | None, np.random.Generator]:
+    """The rows in canonical id order and the id-seeded generator to draw them with.
+
+    ``(None, default_rng(rng_seed))`` when *ids* is absent or not one per row: the
+    rows then keep their input order and the draw its plain seed.
+    """
+    if ids is None or len(ids) != n:
+        return None, np.random.default_rng(rng_seed)
+    order = np.argsort(np.asarray(ids), kind="stable")
+    return order, np.random.default_rng(id_seed(rng_seed, list(ids)))
