@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as ProtspaceUtils from '@protspace/utils';
 import type { StructureData, TedDomain } from '@protspace/utils';
 
@@ -24,6 +24,10 @@ import './structure-viewer';
 import type { ProtspaceStructureViewer } from './structure-viewer';
 import type { StructureColorMode } from './molstar-loader';
 import type { PsSegmented } from '../kit/segmented';
+import { stubPopoverApi } from '../legend/test-support/popover-stub';
+
+// Pressing the disabled TED option opens its reason tooltip, which calls showPopover.
+beforeAll(() => stubPopoverApi());
 
 const domains: TedDomain[] = [
   { domainNumber: 1, segments: [{ start: 10, end: 50 }] },
