@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -393,7 +394,9 @@ def test_install_falls_back_to_pip_when_uv_cannot_hold(monkeypatch):
     assert calls[-1][2:4] == ["pip", "install"] and calls[-1][-1] == "protspace[local]"
 
 
-def _run_preparation_eat_cell(monkeypatch, bundle_path, emb_set, column, **controls):
+def _run_preparation_eat_cell(
+    monkeypatch, bundle_path, emb_set, column, before_click=None, **controls
+):
     """Run the Preparation notebook's EAT cell and click Transfer on ``column``.
 
     Real widgets; ``display``, the panel's HTML helpers and Colab's ``files`` are
@@ -429,6 +432,8 @@ def _run_preparation_eat_cell(monkeypatch, bundle_path, emb_set, column, **contr
     namespace["eat_col"].value = column
     for name, value in controls.items():
         namespace[name].value = value
+    if before_click is not None:
+        before_click(namespace)
     namespace["_on_eat"](None)
     return downloads, namespace
 
@@ -1277,7 +1282,7 @@ def test_preparation_failure_advice_matches_the_error(
     namespace["_on_gen"](None)
 
     status = namespace["gen_status"].value
-    assert "Generate failed while loading the embeddings" in status
+    assert "Generate failed at step 1 of 5, loading the embeddings" in status
     assert advice in status
     if advice != "UniProt accessions":
         assert "UniProt accessions" not in status
@@ -1311,7 +1316,153 @@ def test_preparation_generate_refreshes_the_eat_columns(monkeypatch, tmp_path):
     namespace["tabs"].selected_index = 1
     _generate_pca_from_csv(namespace, csv)
 
-    assert "group" in namespace["eat_col"].options
+    assert "group" in [value for _, value in namespace["eat_col"].options]
+
+
+def test_preparation_progress_reads_the_packages_log_lines(monkeypatch, tmp_path):
+    """The reduction step counts projections from protspace's own log lines; a
+    reworded line would leave the bar stuck, so both templates are pinned."""
+    import protspace.data.processors.pipeline as pipeline
+
+    source = Path(pipeline.__file__).read_text()
+    assert "Applying {method.upper()} {dims} to '{emb_set.name}'" in source
+    assert "Using cached %s %d projection for '%s'" in source
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    pattern = namespace["_PROJECTION_LOG"]
+    assert pattern.match("Applying UMAP 2 to 'esm2_650m'").group("a") == "UMAP 2"
+    cached = "Using cached %s %d projection for '%s'" % ("PCA", 2, "prot_t5")  # noqa: UP031 -- as logging formats it
+    assert pattern.match(cached).group("c") == "PCA 2"
+
+
+def test_preparation_shows_each_step_and_ends_full(monkeypatch, tmp_path):
+    """From click to file, the run says which step of how many it is on."""
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    csv = tmp_path / "custom.csv"
+    csv.write_text("identifier,group\nprot000,a\n")
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["tabs"].selected_index = 1
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method in {"PCA", "UMAP"}
+    namespace["ann_preset"].value = namespace["_CSV_ONLY"]
+    namespace["csv_path_field"].value = str(csv)
+
+    shown, render = [], namespace["_Progress"]._render
+
+    def record(self):
+        render(self)
+        shown.append(namespace["gen_status"].value)
+
+    monkeypatch.setattr(namespace["_Progress"], "_render", record)
+    namespace["_on_gen"](None)
+
+    steps = [re.search(r"Step (\d) of (\d) \u00b7 ([^&]+)", v).groups() for v in shown]
+    assert ("1", "5", "Loading the embeddings") in steps
+    assert ("3", "5", "Reducing dimensions (PCA 2, 1 of 2)") in steps
+    assert ("3", "5", "Reducing dimensions (UMAP 2, 2 of 2)") in steps
+    assert any(label.startswith("Preparing the download") for *_, label in steps)
+    bar = namespace["gen_progress"]
+    assert (bar.value, bar.bar_style) == (bar.max, "success")
+    assert "Download started" in namespace["gen_status"].value
+    (bundle,) = downloads
+    assert Path(bundle).parent.name == "output"
+
+
+def test_preparation_offers_every_bundle_for_download(monkeypatch, tmp_path):
+    """A run with a CSV reaches files.download like any other; the bundle also
+    stays one click away, for a download that is slow or held back."""
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    assert namespace["bundles_box"].layout.display == "none"
+    csv = tmp_path / "custom.csv"
+    csv.write_text("identifier,group\nprot000,a\n")
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["tabs"].selected_index = 1
+    _generate_pca_from_csv(namespace, csv)
+
+    (bundle,) = downloads
+    assert bundle.endswith(".parquetbundle")
+    assert namespace["bundles_box"].layout.display == ""
+    assert namespace["bundle_pick"].value == str(Path(bundle))
+    namespace["_on_bundle_download"](None)
+    assert downloads == [bundle, str(Path(bundle))]
+
+
+def test_preparation_refuses_a_perplexity_the_input_cannot_support(
+    monkeypatch, tmp_path
+):
+    """t-SNE needs perplexity below the protein count; the default 30 on 20
+    proteins failed in scikit-learn after the embeddings and annotations."""
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "s.h5", n=20))
+    namespace["tabs"].selected_index = 1
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method == "t-SNE"
+    assert "not below the number of proteins (20)" in namespace["param_check"].value
+
+    loaded = []
+    namespace["load_h5"] = lambda *a, **k: loaded.append(a)
+    namespace["_on_gen"](None)
+    assert "Not started" in namespace["gen_status"].value
+    assert loaded == [] and downloads == []
+
+    namespace["pw"]["perplexity"].value = 6
+    assert namespace["param_check"].value == ""
+
+
+def test_preparation_eat_lists_only_columns_it_can_fill(tmp_path, monkeypatch):
+    """After Generate the target preselected `ec`, empty for every protein of a
+    non-UniProt dataset; a transfer on it could do nothing."""
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.data.io.bundle import write_bundle
+    from tests.bundle_v3_helpers import projection_tables
+
+    bundle, emb_set = _toxin_only_bundle(tmp_path)
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2", "p3"],
+                "fam": ["toxin", "toxin", "", ""],
+                "ec": ["", "", "", ""],
+                "kind": ["a", "b", "a", "b"],
+            }
+        )
+    )
+    write_bundle([annotations, *projection_tables(4, (2,))], bundle)
+    _, ns = _run_preparation_eat_cell(monkeypatch, bundle, emb_set, None)
+
+    assert ns["eat_col"].options == (
+        ("Pick an annotation\u2026", None),
+        ("fam (2 set / 2 missing)", "fam"),
+    )
+    assert ns["eat_col"].value is None
+    assert (
+        "Not listed: ec, kind" in ns["eat_status"].value
+        or "Pick the annotation" in ns["eat_status"].value
+    )
+
+
+def test_preparation_eat_disables_its_button_while_it_runs(tmp_path, monkeypatch):
+    """A long transfer looked stuck and invited a second click; the button is
+    off while it runs, as Generate's is, and the status says when it finished."""
+    import protspace.cli.transfer as transfer
+
+    seen, real = [], transfer.run_transfer
+    bundle, emb_set = _toxin_only_bundle(tmp_path)
+
+    def watch(namespace):
+        def run(**kwargs):
+            seen.append(namespace["eat_btn"].disabled)
+            return real(**kwargs)
+
+        monkeypatch.setattr(transfer, "run_transfer", run)
+        namespace["run_transfer"] = run
+
+    _, ns = _run_preparation_eat_cell(
+        monkeypatch, bundle, emb_set, "fam", before_click=watch
+    )
+    assert seen == [True] and ns["eat_btn"].disabled is False
+    assert "Done in" in ns["eat_status"].value
 
 
 @pytest.mark.parametrize(
