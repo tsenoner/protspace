@@ -82,10 +82,33 @@ class PCAReducer(DimensionReducer):
         return params
 
 
+def tsne_perplexity_problem(perplexity: float, n_proteins: int) -> str | None:
+    """Why t-SNE cannot run with this perplexity on this many proteins, or None.
+
+    scikit-learn needs perplexity below the number of samples; around a third of
+    it is the usual choice, and the config's floor is 5.
+    """
+    if perplexity < n_proteins:
+        return None
+    if n_proteins <= 5:
+        return (
+            f"t-SNE needs more than 5 proteins (its perplexity is at least 5); "
+            f"this dataset has {n_proteins}. Leave t-SNE out of the methods."
+        )
+    return (
+        f"t-SNE perplexity {perplexity:g} is not below the number of proteins "
+        f"({n_proteins:,}); it must be smaller, and about a third of it works best "
+        f"(here {max(5, n_proteins // 3)}). Lower the t-SNE perplexity."
+    )
+
+
 class TSNEReducer(DimensionReducer):
     """t-SNE (t-Distributed Stochastic Neighbor Embedding) reduction."""
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
+        problem = tsne_perplexity_problem(self.config.perplexity, data.shape[0])
+        if problem:
+            raise ValueError(problem)
         return TSNE(
             n_components=self.config.n_components,
             perplexity=self.config.perplexity,

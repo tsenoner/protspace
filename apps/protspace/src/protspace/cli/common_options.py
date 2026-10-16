@@ -208,7 +208,7 @@ Opt_MinDist = Annotated[
 Opt_Perplexity = Annotated[
     float,
     typer.Option(
-        help="t-SNE perplexity. Should be < n_samples/3.",
+        help="t-SNE perplexity (>= 5, below the number of proteins; about n/3 works best).",
         rich_help_panel="Projection",
         min=5.0,
     ),

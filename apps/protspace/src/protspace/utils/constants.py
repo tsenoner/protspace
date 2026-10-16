@@ -30,7 +30,7 @@ class DimensionReductionConfig:
         metric: Distance metric to use
         precomputed: Whether distances are precomputed
         min_dist: Minimum distance for UMAP (0-1)
-        perplexity: Perplexity for t-SNE (5-50)
+        perplexity: Perplexity for t-SNE (>= 5; must be below the number of proteins)
         learning_rate: Learning rate for t-SNE optimization (>0)
         mn_ratio: Ratio for PaCMAP (0-1)
         fp_ratio: Ratio for PaCMAP (>0)
@@ -47,7 +47,9 @@ class DimensionReductionConfig:
     )
     precomputed: bool = field(default=False)
     min_dist: float = field(default=0.1, metadata={"gte": 0, "lte": 1})
-    perplexity: int = field(default=30, metadata={"gte": 5, "lte": 50})
+    # No fixed ceiling: scikit-learn only needs it below the number of samples,
+    # which the pipeline checks once it knows them (tsne_perplexity_problem).
+    perplexity: int = field(default=30, metadata={"gte": 5})
     learning_rate: int = field(default=200, metadata={"gt": 0})
     mn_ratio: float = field(default=0.5, metadata={"gte": 0, "lte": 1})
     fp_ratio: float = field(default=2.0, metadata={"gt": 0})
