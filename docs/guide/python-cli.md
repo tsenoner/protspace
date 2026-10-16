@@ -413,7 +413,8 @@ the cache keeps them all; the run still returns only what it asked for.
 
 Projection caches are keyed by embedding name, method, dimensions and every parameter, so changing
 any parameter creates a new entry. Use `--refetch all` to bypass all caches, or `--refetch <stages>`
-selectively (for example `--refetch ted,biocentral`).
+selectively (for example `--refetch ted,biocentral`). A run that reused any cached result ends with
+a hint naming these flags; a first run into a new output directory reuses nothing and prints none.
 
 ### Annotation name caches
 

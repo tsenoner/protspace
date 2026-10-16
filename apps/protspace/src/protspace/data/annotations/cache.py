@@ -42,11 +42,20 @@ class AnnotationFetch:
     # UniProtKB release(s) the UniProt values in `frame` came from, fetched or
     # cached; "unknown" stands for values whose release was never recorded.
     uniprot_releases: set[str] = field(default_factory=set)
+    # Whether `frame` holds requested values an earlier run fetched: the cache
+    # covered some of the run's proteins and some requested column's source
+    # was not fetched again.
+    from_cache: bool = False
 
 
-def _from_manager(manager, frame: pd.DataFrame) -> AnnotationFetch:
+def _from_manager(
+    manager, frame: pd.DataFrame, *, from_cache: bool = False
+) -> AnnotationFetch:
     return AnnotationFetch(
-        frame, set(manager.incomplete_sources), set(manager.uniprot_releases)
+        frame,
+        set(manager.incomplete_sources),
+        set(manager.uniprot_releases),
+        from_cache=from_cache,
     )
 
 
@@ -301,7 +310,9 @@ def fetch_annotations(
                     )
                 ]
 
-        return AnnotationFetch(api_df, uniprot_releases=read_release_stamp(cached_df))
+        return AnnotationFetch(
+            api_df, uniprot_releases=read_release_stamp(cached_df), from_cache=True
+        )
 
     sources = AnnotationConfiguration.determine_sources_to_fetch(
         cached_annotations, required, sequences_supplied=sequences_supplied
@@ -365,6 +376,13 @@ def fetch_annotations(
     else:
         logger.info(f"Missing annotations: {missing}")
 
+    served_from_cache = not set(headers) <= set(missing_identifiers) and any(
+        columns and not sources[source]
+        for source, columns in AnnotationConfiguration.categorize_annotations_by_source(
+            required & cached_annotations
+        ).items()
+    )
+
     manager = ProteinAnnotationManager(
         headers=headers,
         annotations=fetch_list,
@@ -382,7 +400,7 @@ def fetch_annotations(
     frame = manager.to_pd()
     if fetch_list is not annotations:
         frame = _requested_columns(frame, annotations)
-    fetched = _from_manager(manager, frame)
+    fetched = _from_manager(manager, frame, from_cache=served_from_cache)
     if legacy_uniprot is not None and manager.uniprot_fetch_failed:
         logger.warning(
             "Legacy UniProt cache refresh failed; reusing the cached "

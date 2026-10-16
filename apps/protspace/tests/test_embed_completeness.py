@@ -325,6 +325,8 @@ class TestFastaOptionWiring:
         import protspace.data.processors.pipeline as pipeline_mod
 
         class _Capture:
+            reused_cache = False
+
             def __init__(self, config):
                 pass
 

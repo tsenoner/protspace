@@ -15,6 +15,9 @@ from protspace.data.loaders.h5 import parse_identifier
 
 logger = logging.getLogger(__name__)
 
+# The cached matrix in a run's cache directory, beside `similarity_headers.npy`.
+SIMILARITY_MATRIX_FILENAME = "similarity_matrix.npy"
+
 # Single source for both failure paths: this loader (direct library callers) and
 # the CLI's up-front guard, which imports it lazily on the error path only.
 MMSEQS_INSTALL_HINT = (
@@ -40,7 +43,7 @@ def compute_similarity(
         EmbeddingSet with precomputed=True, name="MMseqs2".
     """
     # --- Cache check ---
-    matrix_cache = cache_dir / "similarity_matrix.npy" if cache_dir else None
+    matrix_cache = cache_dir / SIMILARITY_MATRIX_FILENAME if cache_dir else None
     headers_cache = cache_dir / "similarity_headers.npy" if cache_dir else None
 
     if (
