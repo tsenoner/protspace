@@ -80,6 +80,19 @@
       "bufferBytes": 0,
       "glIsPerRender": 0
     },
+    "hover": {
+      "restage": 0,
+      "restagePos": 0,
+      "restageStyle": 0,
+      "render": 0,
+      "processData": 0,
+      "gridRebuild": 0,
+      "legendUpdate": 0,
+      "legendRebuild": 0,
+      "glSync": 0,
+      "bufferBytes": 0,
+      "glIsPerRender": 0
+    },
     "camera": {
       "restage": 0,
       "restagePos": 0,

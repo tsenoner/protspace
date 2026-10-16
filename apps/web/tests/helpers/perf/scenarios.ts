@@ -60,6 +60,7 @@ const SEGMENTS = {
   'projection-switch': { repeatable: true, frameBound: ['render'], glides: true },
   'projection-switch-instant': { repeatable: true, glideTwin: true },
   'legend-isolate': { repeatable: true },
+  hover: { repeatable: true },
   camera: { repeatable: true, frameBound: ['render', 'glSync'], drawsAll: true },
   resize: { repeatable: true },
   'panel-toggle': { repeatable: true },
@@ -261,7 +262,7 @@ export async function importBundle(page: Page, file: string): Promise<void> {
 
 type SegmentDef = Omit<SegmentSpec, 'timing'> & { name: SegmentName };
 
-/** Segments 2–13 in run order; `load` is measured by `measureLoad`. */
+/** Segments 2–14 in run order; `load` is measured by `measureLoad`. */
 export function buildSegments(page: Page, state: ExploreState, importFile: string): SegmentDef[] {
   const segments: SegmentDef[] = [
     {
@@ -315,6 +316,35 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
       // `i` is the legend's keyboard isolate toggle, without the clicks.
       reset: () => legendItem.press('i'),
       pixels: true,
+    },
+    {
+      name: 'hover',
+      // Real hovers over several points: the tooltip is template-only, nothing in WebGL draws it.
+      act: async () => {
+        const points = await page.locator('#myPlot').evaluate((element) => {
+          const plot = element as HTMLElement & {
+            _plotData: { length: number; xs: ArrayLike<number>; ys: ArrayLike<number> };
+            _svg: SVGSVGElement;
+            dataToClient(x: number, y: number): { x: number; y: number } | null;
+            pickInteractivePointAt(x: number, y: number): { id: string } | null;
+          };
+          // The pick takes coordinates local to the plot's SVG, the mouse client ones.
+          const svg = plot._svg.getBoundingClientRect();
+          const out: { x: number; y: number }[] = [];
+          const step = Math.max(1, Math.floor(plot._plotData.length / 200));
+          for (let s = 0; s < plot._plotData.length && out.length < 8; s += step) {
+            const at = plot.dataToClient(plot._plotData.xs[s], plot._plotData.ys[s]);
+            if (at && plot.pickInteractivePointAt(at.x - svg.left, at.y - svg.top)) out.push(at);
+          }
+          return out;
+        });
+        expect(points.length, 'no hoverable point found').toBeGreaterThan(0);
+        for (const at of points) await page.mouse.move(at.x, at.y, { steps: 3 });
+      },
+      reset: async () => {
+        const background = await plotBackground(page);
+        await page.mouse.move(background.x, background.y);
+      },
     },
     {
       name: 'camera',
