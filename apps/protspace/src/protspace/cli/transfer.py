@@ -188,11 +188,14 @@ def run_transfer(
                 cutoff = _auto_max_distance(column, ref_matrix, metric)
                 logger.info(
                     "Max distance for %r: %.6g (%dth percentile of %d references' "
-                    "distance to their nearest other reference)",
+                    "distance to their nearest other reference%s)",
                     column,
                     cutoff,
                     AUTO_PERCENTILE,
-                    len(ref_ids),
+                    min(len(ref_ids), AUTO_SAMPLE),
+                    f", a sample of {len(ref_ids)}"
+                    if len(ref_ids) > AUTO_SAMPLE
+                    else "",
                 )
             # Near/distant is about the query's neighbourhood, so it reads the
             # nearest reference of any label, not the winning label's source.
