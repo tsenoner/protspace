@@ -2,14 +2,16 @@ import { LitElement, html, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { segmentedStyles } from './choice.styles';
+import type { PsTooltip } from './tooltip';
 import './tooltip';
 
 export interface SegmentedOption {
   value: string;
   label: string;
   /**
-   * Shown but not choosable. The option is aria-disabled, not native disabled, so hover and focus
-   * still reach its tooltip; a click or an arrow key never selects it.
+   * Shown but not choosable. The option is aria-disabled, not native disabled: pointer hover, a
+   * click or a tap shows its tooltip, and assistive technology reads that as its description. A
+   * click, a tap or an arrow key never selects it, and arrow keys skip it.
    */
   disabled?: boolean;
   /** A ps-tooltip for the option, typically why it is disabled. */
@@ -51,8 +53,9 @@ export class PsSegmented extends LitElement {
               aria-disabled=${option.disabled ? 'true' : nothing}
               tabindex=${index === stop ? 0 : -1}
               data-value=${option.value}
-              @click=${() => {
-                if (!option.disabled) this.select(option.value);
+              @click=${(event: Event) => {
+                if (!option.disabled) return this.select(option.value);
+                this.explain(event.currentTarget as HTMLElement);
               }}
             >
               ${option.label}
@@ -60,6 +63,17 @@ export class PsSegmented extends LitElement {
             ${option.tooltip ? html`<ps-tooltip text=${option.tooltip}></ps-tooltip>` : nothing}`,
       )}
     </div>`;
+  }
+
+  /**
+   * A finger has no hover, so a press on a disabled option shows its reason. Focusing it first
+   * (Safari does not focus a pressed button) lets the next press elsewhere hide it via focusout.
+   */
+  private explain(button: HTMLElement): void {
+    const tip = button.nextElementSibling;
+    if (tip?.localName !== 'ps-tooltip') return;
+    button.focus();
+    (tip as PsTooltip).show();
   }
 
   private select(value: string, focus = false): void {

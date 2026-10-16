@@ -167,7 +167,7 @@ export const segmentedStyles = [
         inset 0 0 0 1px var(--ps-accent),
         var(--ps-shadow-sm);
     }
-    /* Disabled, not native disabled (its tooltip needs hover and focus): faint text, and the
+    /* Disabled, not native disabled (its tooltip needs hover and a press): faint text, and the
        checked chip keeps its ring. */
     button[aria-disabled='true'] {
       color: var(--ps-text-faint);
@@ -185,6 +185,11 @@ export const segmentedStyles = [
         forced-color-adjust: none;
         background: Highlight;
         color: HighlightText;
+      }
+      /* Forced colours turn the faint text into ButtonText; GrayText is the system's disabled
+         colour (not on the checked chip's Highlight fill, where it would not read). */
+      button[aria-disabled='true']:not([aria-checked='true']) {
+        color: GrayText;
       }
     }
   `,

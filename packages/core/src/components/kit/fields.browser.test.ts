@@ -261,13 +261,11 @@ describe('ps-segmented', () => {
     return { el, radios };
   }
 
-  it('a disabled option is aria-disabled and stays focusable for its reason', async () => {
-    const { el, radios } = await withDisabled();
+  it('a disabled option is aria-disabled, not natively disabled', async () => {
+    const { radios } = await withDisabled();
     expect(radios.map((r) => r.getAttribute('aria-disabled'))).toEqual([null, 'true', null]);
-    // Not native disabled: that would drop hover and focus, and with them the tooltip.
+    // Not native disabled: that would drop hover and clicks, and with them the tooltip.
     expect(radios[1].hasAttribute('disabled')).toBe(false);
-    radios[1].focus();
-    expect(el.shadowRoot!.activeElement).toBe(radios[1]);
     const style = getComputedStyle(radios[1]);
     // #94a3b8, the light --ps-text-faint (disabled text).
     expect(style.color).toBe('rgb(148, 163, 184)');
@@ -287,6 +285,55 @@ describe('ps-segmented', () => {
     expect(el.value).toBe('a');
     expect(onChange).not.toHaveBeenCalled();
     expect(radios.map((r) => r.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
+  });
+
+  it('clicking a disabled option shows its reason and still selects nothing', async () => {
+    const { el, radios } = await withDisabled();
+    const onChange = vi.fn();
+    el.addEventListener('change', onChange);
+    const tip = radios[1].nextElementSibling as HTMLElement;
+    // A real click (forced: Playwright waits for an aria-disabled element to become enabled).
+    await userEvent.click(radios[1], { force: true });
+    await expect
+      .poll(() => tip.shadowRoot?.querySelector('.tip')?.matches(':popover-open'))
+      .toBe(true);
+    expect(el.value).toBe('a');
+    expect(onChange).not.toHaveBeenCalled();
+    // A press elsewhere takes focus away, which hides it.
+    radios[0].focus();
+    await expect
+      .poll(() => tip.shadowRoot?.querySelector('.tip')?.matches(':popover-open'))
+      .toBe(false);
+  });
+
+  it('a disabled option is faint in dark too, apart from the enabled ones', async () => {
+    document.documentElement.dataset.theme = 'dark';
+    try {
+      const { radios } = await withDisabled();
+      // #64748b, the dark --ps-text-faint; enabled options keep --ps-text-muted (#94a3b8).
+      expect(getComputedStyle(radios[1]).color).toBe('rgb(100, 116, 139)');
+      expect(getComputedStyle(radios[2]).color).toBe('rgb(148, 163, 184)');
+    } finally {
+      delete document.documentElement.dataset.theme;
+    }
+  });
+
+  it('under forced colours a disabled option is GrayText, unlike an enabled one', async () => {
+    const session = cdp();
+    await session.send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'forced-colors', value: 'active' }],
+    });
+    try {
+      expect(matchMedia('(forced-colors: active)').matches).toBe(true);
+      const { radios } = await withDisabled();
+      const probe = document.createElement('span');
+      probe.style.color = 'GrayText';
+      document.body.append(probe);
+      expect(getComputedStyle(radios[1]).color).toBe(getComputedStyle(probe).color);
+      expect(getComputedStyle(radios[1]).color).not.toBe(getComputedStyle(radios[2]).color);
+    } finally {
+      await session.send('Emulation.setEmulatedMedia', { features: [] });
+    }
   });
 
   it('arrow keys skip a disabled option', async () => {
@@ -405,6 +452,31 @@ describe('choice controls under a coarse pointer', () => {
         expect(box.height).toBeCloseTo(34, 0);
         expect(box.width).toBeGreaterThanOrEqual(34 - 0.5);
       }
+    });
+  });
+
+  it('tapping a disabled option shows its reason and selects nothing', async () => {
+    await coarse(async () => {
+      const el = await mount<PsSegmented>('<ps-segmented label="Mode"></ps-segmented>');
+      el.options = [
+        { value: 'a', label: 'A' },
+        { value: 'b', label: 'B', disabled: true, tooltip: 'Available once B has loaded' },
+      ];
+      el.value = 'a';
+      await el.updateComplete;
+      const radio = el.shadowRoot!.querySelectorAll<HTMLElement>('[role="radio"]')[1];
+      const tip = radio.nextElementSibling as HTMLElement;
+      await expect.poll(() => radio.ariaDescribedByElements?.includes(tip)).toBe(true);
+      // A real touch tap: pointer events with pointerType "touch", then the click.
+      const box = radio.getBoundingClientRect();
+      const point = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+      const session = cdp();
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await expect
+        .poll(() => tip.shadowRoot?.querySelector('.tip')?.matches(':popover-open'))
+        .toBe(true);
+      expect(el.value).toBe('a');
     });
   });
 
