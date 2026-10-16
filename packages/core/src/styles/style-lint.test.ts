@@ -22,13 +22,10 @@ const MODULES = import.meta.glob<Record<string, CSSResultGroup>>(
  * last test fails while a listed module is already clean, so this list only shrinks.
  */
 const LEGACY = new Set<string>([
-  '../components/scatter-plot/projection-metadata/projection-metadata.styles.ts',
   '../components/scatter-plot/scatter-plot.styles.ts',
-  '../components/scatter-plot/tooltips/protein-tooltip.styles.ts',
   '../components/structure-viewer/structure-viewer.styles.ts',
   './mixins.ts',
   './overlay-mixins.ts',
-  './tokens.ts',
 ]);
 
 const COLOUR =
@@ -60,7 +57,7 @@ function cssOf(path: string): string {
     .join('\n');
 }
 
-/** Each sheet a module exports by name (tokens, overlayMixins, srOnlyMixin…), mapped to that module. */
+/** Each sheet a module exports by name (tokens, overlayMixins, segmentedControlMixin…), mapped to that module. */
 const OWNER = new Map<unknown, string>();
 for (const [path, exports] of Object.entries(MODULES)) {
   for (const value of Object.values(exports)) if (!Array.isArray(value)) OWNER.set(value, path);
@@ -120,16 +117,24 @@ function colourViolations(cssText: string): string[] {
 
 /**
  * Declarations that hard-code a colour or a font size, declare a token outside theme.ts, or read a
- * variable theme.ts does not define (a legacy one resolves to nothing once tokens.ts goes).
+ * variable that neither theme.ts, RUNTIME_VARS nor the checked CSS itself declares. A module may
+ * read a property it declares (--card-gap, the plot's --protspace-* sizes); a sheet it composes
+ * counts as its own, since cssOf returns both.
  */
 function cssViolations(cssText: string): string[] {
   const found: string[] = [];
   const css = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
-  for (const [, property, raw] of css.matchAll(/([\w-]+)\s*:\s*([^;{}]+)/g)) {
+  const declarations = [...css.matchAll(/([\w-]+)\s*:\s*([^;{}]+)/g)];
+  const own = new Set(
+    declarations
+      .map(([, property]) => property)
+      .filter((property) => property.startsWith('--') && !property.startsWith('--ps-')),
+  );
+  for (const [, property, raw] of declarations) {
     const value = raw.trim();
     const declaration = `${property}: ${value}`;
     const unknownVar = [...value.matchAll(/var\(\s*(--[\w-]+)/g)].some(
-      ([, name]) => !DEFINED.has(name) && !RUNTIME_VARS.has(name),
+      ([, name]) => !DEFINED.has(name) && !RUNTIME_VARS.has(name) && !own.has(name),
     );
     if (property.startsWith('--ps-') || COLOUR.test(value) || unknownVar) found.push(declaration);
     else if (property.startsWith('--')) continue;
@@ -224,6 +229,19 @@ describe('style lint', () => {
         '.a { color: var(--surface); background: #fff; border-color: var(--nowhere); gap: var(--spacing-sm); font-size: 12px; --gap: 2px; margin: var(--gap); max-height: var(--available-height); }',
       ),
     ).toEqual(['color: var(--surface)', 'background: #fff', 'border-color: var(--nowhere)']);
+  });
+
+  it('accepts a module reading a custom property it declares', () => {
+    expect(cssViolations(':host { --gap: 2px; } .a { margin: var(--gap); }')).toEqual([]);
+    // Declaring a token is still flagged, and declaring one does not make --gap known.
+    expect(cssViolations(':host { --ps-gap: 2px; } .a { margin: var(--gap); }')).toEqual([
+      '--ps-gap: 2px',
+      'margin: var(--gap)',
+    ]);
+    // A literal font size is still a literal behind an own property.
+    expect(cssViolations(':host { --size: 12px; } .a { font-size: var(--size); }')).toEqual([
+      'font-size: var(--size)',
+    ]);
   });
 
   it.each(paths.filter((path) => !LEGACY.has(path)))(

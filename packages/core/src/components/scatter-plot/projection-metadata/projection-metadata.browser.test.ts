@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { cdp, page, userEvent } from 'vitest/browser';
-import type { Projection } from '@protspace/utils';
+import type { Projection, ProjectionStatisticRow } from '@protspace/utils';
+import { adoptTheme } from '../../kit/adopt-theme';
 import { topLayer } from '../../kit/layers';
 import './projection-metadata';
 
@@ -163,5 +164,57 @@ describe('protspace-projection-metadata on a phone', () => {
     } finally {
       await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     }
+  });
+});
+
+type ScoredCard = ProjectionMetadataElement & {
+  statisticsRows?: readonly ProjectionStatisticRow[];
+  selectedAnnotation: string;
+};
+
+describe('protspace-projection-metadata type', () => {
+  beforeAll(() => adoptTheme());
+
+  /** A card with parameters and a scored annotation, so every row type renders. */
+  async function mountScored(): Promise<ShadowRoot> {
+    const el = document.createElement('protspace-projection-metadata') as ScoredCard;
+    el.projection = { name: 'ProtT5 — UMAP 2', metadata: { n_components: 2 } } as Projection;
+    el.statisticsRows = [
+      {
+        space_kind: 'projection',
+        space_name: 'ProtT5 — UMAP 2',
+        annotation: 'major_group',
+        stat_family: 'annotation_validity',
+        label_kind: 'annotation',
+        metric: 'silhouette',
+        metric_kind: 'validity',
+        value: 0.326,
+      } as ProjectionStatisticRow,
+    ];
+    el.selectedAnnotation = 'major_group';
+    document.body.append(el);
+    await el.updateComplete;
+    return el.shadowRoot!;
+  }
+
+  it("the card's header is 13 px and its rows 12 px", async () => {
+    const root = await mountScored();
+    const fontSize = (selector: string) => getComputedStyle(root.querySelector(selector)!).fontSize;
+    expect(fontSize('.header')).toBe('13px');
+    expect(fontSize('.item')).toBe('12px');
+    expect(fontSize('.annotation-stats')).toBe('12px');
+  });
+
+  it('the screen-reader text stays visually hidden', async () => {
+    const root = await mountScored();
+    const hidden = root.querySelector<HTMLElement>('.annotation-stats .sr-only')!;
+    expect(hidden.textContent).toContain('is better');
+    const box = hidden.getBoundingClientRect();
+    expect(box.width).toBeLessThanOrEqual(1);
+    expect(box.height).toBeLessThanOrEqual(1);
+    const style = getComputedStyle(hidden);
+    expect(style.position).toBe('absolute');
+    expect(style.overflow).toBe('hidden');
+    expect(style.clip).toBe('rect(0px, 0px, 0px, 0px)');
   });
 });

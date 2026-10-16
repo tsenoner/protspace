@@ -141,3 +141,69 @@ describe('protspace-protein-tooltip links', () => {
     expect(box.height).toBeLessThanOrEqual(150);
   });
 });
+
+/** A hover tooltip with an evidence-coded annotation and an EAT-transferred one. */
+const TYPED_VIEW: TooltipView = {
+  proteinId: 'P12345',
+  geneName: ['KIN1'],
+  proteinName: ['Serine kinase'],
+  uniprotKbId: ['KIN1_HUMAN'],
+  blocks: [
+    {
+      key: 'family',
+      label: 'Protein family',
+      displayValues: ['Kinase'],
+      numericValue: null,
+      numericType: 'float',
+      scores: [],
+      evidence: ['IC'],
+      predicted: null,
+    },
+    {
+      key: 'ec',
+      label: 'EC number',
+      displayValues: ['2.7.11.1'],
+      numericValue: null,
+      numericType: 'float',
+      scores: [],
+      evidence: [],
+      predicted: { value: '2.7.11.1', confidence: 0.8, source: 'Q99999' },
+    },
+  ],
+};
+
+describe('protspace-protein-tooltip type sizes', () => {
+  async function mountTyped(): Promise<ShadowRoot> {
+    const tooltip = document.createElement('protspace-protein-tooltip');
+    tooltip.view = TYPED_VIEW;
+    tooltip.className = 'visible';
+    document.body.append(tooltip);
+    await tooltip.updateComplete;
+    return tooltip.shadowRoot!;
+  }
+
+  const fontSize = (root: ShadowRoot, selector: string) =>
+    getComputedStyle(root.querySelector(selector)!).fontSize;
+
+  it('the annotation header and the evidence caption are 11 px', async () => {
+    // Mounted on its own, outside a plot: the sizes cannot come from the plot's :host.
+    const root = await mountTyped();
+    expect(fontSize(root, '.tooltip-annotation-header')).toBe('11px');
+    expect(fontSize(root, '.tooltip-annotation-evidence')).toBe('11px');
+    expect(fontSize(root, '.eat-provenance-heading')).toBe('11px');
+    expect(fontSize(root, '.eat-provenance-source')).toBe('11px');
+    // tooltip-height-estimate.ts budgets 16 px for the header row, its 2 px margin included.
+    const header = root.querySelector('.tooltip-annotation-header')!.getBoundingClientRect();
+    expect(header.height + 2).toBeLessThanOrEqual(16);
+  });
+
+  it('the protein name is 13 px and the annotation rows 12 px', async () => {
+    const root = await mountTyped();
+    expect(fontSize(root, '.tooltip')).toBe('14px');
+    expect(fontSize(root, '.tooltip-header')).toBe('12px');
+    expect(fontSize(root, '.tooltip-protein-id')).toBe('16px');
+    expect(fontSize(root, '.tooltip-gene-name')).toBe('12px');
+    expect(fontSize(root, '.tooltip-protein-name')).toBe('13px');
+    expect(fontSize(root, '.tooltip-annotation')).toBe('12px');
+  });
+});

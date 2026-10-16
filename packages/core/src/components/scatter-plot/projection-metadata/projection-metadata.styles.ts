@@ -1,8 +1,8 @@
 import { css } from 'lit';
-import { srOnlyMixin } from '../../../styles/mixins';
+import { srOnly } from '../../kit/kit-shared.styles';
 
 export const projectionMetadataStyles = [
-  srOnlyMixin,
+  srOnly,
   css`
     :host {
       /* Placed by its host (the view bar). Relative, so the card hangs below the trigger; the
@@ -124,8 +124,8 @@ export const projectionMetadataStyles = [
 
     .header {
       padding: 0.625rem 0.75rem;
-      font-size: 0.8125rem;
-      font-weight: 600;
+      font-size: var(--ps-text-base);
+      font-weight: var(--ps-weight-semibold);
       color: var(--ps-text);
       border-bottom: 1px solid var(--ps-border);
       background: var(--ps-surface-muted);
@@ -145,7 +145,7 @@ export const projectionMetadataStyles = [
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 0.75rem;
       margin-bottom: 0.5rem;
-      font-size: 0.75rem;
+      font-size: var(--ps-text-sm);
       line-height: 1.5;
       align-items: baseline;
     }
@@ -221,7 +221,7 @@ export const projectionMetadataStyles = [
       grid-template-columns: minmax(min-content, 1fr) auto auto;
       gap: 0.15rem 0.5rem;
       padding: 0.625rem 0.75rem;
-      font-size: 0.75rem;
+      font-size: var(--ps-text-sm);
       line-height: 1.5;
       color: var(--ps-text-muted);
     }

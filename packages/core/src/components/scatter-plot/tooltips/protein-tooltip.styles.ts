@@ -57,7 +57,7 @@ export const proteinTooltipStyles = css`
     border: 1px solid var(--ps-border);
     border-radius: 0.5rem;
     box-shadow: var(--ps-shadow-md);
-    font-size: 0.875rem;
+    font-size: var(--ps-text-md);
     min-width: 200px;
     max-width: var(--protspace-tooltip-effective-width, 350px);
     width: max-content;
@@ -67,8 +67,8 @@ export const proteinTooltipStyles = css`
 
   .tooltip-header {
     padding: 0.625rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--ps-text-sm);
+    font-weight: var(--ps-weight-semibold);
     color: var(--ps-text);
     border-bottom: 1px solid var(--ps-border);
     background: var(--ps-surface-muted);
@@ -79,22 +79,22 @@ export const proteinTooltipStyles = css`
   }
 
   .tooltip-protein-id {
-    font-size: 1rem;
+    font-size: var(--ps-text-lg);
     color: var(--ps-text);
   }
 
   .tooltip-protein-id-main {
-    font-size: 1rem;
+    font-size: var(--ps-text-lg);
     font-weight: 700;
   }
 
   .tooltip-uniprot-separator {
-    font-size: 1rem;
+    font-size: var(--ps-text-lg);
     color: var(--ps-text-faint);
   }
 
   .tooltip-uniprot-id {
-    font-size: 1rem;
+    font-size: var(--ps-text-lg);
     font-weight: 400;
     color: var(--ps-text-muted);
   }
@@ -102,7 +102,7 @@ export const proteinTooltipStyles = css`
   .tooltip-gene-name {
     font-weight: normal;
     color: var(--ps-text-muted);
-    font-size: 0.75rem;
+    font-size: var(--ps-text-sm);
     margin-bottom: 0.25rem;
     display: flex;
     gap: 0.25rem;
@@ -111,7 +111,7 @@ export const proteinTooltipStyles = css`
   .tooltip-protein-name {
     font-weight: normal;
     color: var(--ps-text-muted);
-    font-size: 0.8125rem;
+    font-size: var(--ps-text-base);
     line-height: 1.4;
     margin-bottom: 0.125rem;
     display: -webkit-box;
@@ -137,8 +137,8 @@ export const proteinTooltipStyles = css`
   }
 
   .tooltip-annotation-header {
-    font-size: 0.625rem;
-    font-weight: 600;
+    font-size: var(--ps-text-xs);
+    font-weight: var(--ps-weight-semibold);
     color: var(--ps-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -148,7 +148,7 @@ export const proteinTooltipStyles = css`
   }
 
   .tooltip-annotation {
-    font-size: 0.75rem;
+    font-size: var(--ps-text-sm);
     color: var(--ps-text-muted);
     display: flex;
     justify-content: space-between;
@@ -202,7 +202,7 @@ export const proteinTooltipStyles = css`
     flex-shrink: 0;
     white-space: nowrap;
     color: var(--ps-text-muted);
-    font-size: var(--text-caption);
+    font-size: var(--ps-text-xs);
     font-variant-numeric: tabular-nums;
   }
 
@@ -220,7 +220,7 @@ export const proteinTooltipStyles = css`
     display: flex;
     justify-content: space-between;
     gap: 0.5rem;
-    font-size: var(--text-caption);
+    font-size: var(--ps-text-xs);
     color: var(--ps-text-muted);
   }
 
@@ -262,7 +262,7 @@ export const proteinTooltipStyles = css`
       .tooltip-uniprot-separator,
       .tooltip-uniprot-id
     ) {
-    font-size: 0.875rem;
+    font-size: var(--ps-text-md);
   }
 
   .compact .tooltip-content {
@@ -280,7 +280,7 @@ export const proteinTooltipStyles = css`
     padding-top: var(--ps-space-2);
     border-top: 1px solid var(--ps-border);
     color: var(--ps-text);
-    font-size: 0.8125rem;
+    font-size: var(--ps-text-base);
   }
 
   .tooltip-swatch {
