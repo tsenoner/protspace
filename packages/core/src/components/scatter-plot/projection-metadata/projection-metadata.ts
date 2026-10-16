@@ -27,18 +27,10 @@ import {
   metricDisplay,
 } from '@protspace/utils';
 import { projectionMetadataStyles } from './projection-metadata.styles';
+import { modalCoverage, splitMetadata, type MetadataRow } from './projection-metadata-format';
 import '../../common/info-popover';
 import { icon } from '../../kit/icon';
 import { pushLayer } from '../../kit/layers';
-
-/** One rendered `<dt>/<dd>` pair. An empty `description` renders no ⓘ. */
-interface MetadataRow {
-  label: string;
-  value: string;
-  description: string;
-  /** Faithfulness scope ("local" / "global"), rendered as a group heading. Null groups first. */
-  scope?: string | null;
-}
 
 /**
  * The two agreement metrics, in the order the columns appear. Fixed rather than derived from the
@@ -90,39 +82,6 @@ const SEPARATION_SCOPE_DESCRIPTION =
   'keeps less: a small gap means it kept what was there, a large one means it lost some. ' +
   'A projection can also score higher than its embedding, when flattening happens to pull ' +
   'the categories apart; that describes the layout, not the proteins.';
-
-/** A faithfulness metric before display: the raw key is kept so it can be looked up. */
-interface QualityEntry {
-  metric: string;
-  scope: string | null;
-  value: unknown;
-  /** Proteins the comparison ran over. Shared by every faithfulness metric in a projection. */
-  sampleSize: number | null;
-  /** Whether that was a subsample rather than everything — a real caveat, previously hidden. */
-  sampled: boolean;
-}
-
-/**
- * The coverage most annotations in a block share. Modal, not maximal: the interesting case is the
- * one annotation that covers far fewer proteins than the rest, and comparing against the majority
- * is what makes it stand out. Null when nothing carries coverage.
- */
-function modalCoverage(entries: readonly ClusterAgreementEntry[]): number | null {
-  const counts = new Map<number, number>();
-  for (const entry of entries) {
-    if (entry.scored === null) continue;
-    counts.set(entry.scored, (counts.get(entry.scored) ?? 0) + 1);
-  }
-  let best: number | null = null;
-  let bestCount = 0;
-  for (const [value, count] of counts) {
-    if (count > bestCount) {
-      best = value;
-      bestCount = count;
-    }
-  }
-  return best;
-}
 
 @customElement('protspace-projection-metadata')
 export class ProtspaceProjectionMetadata extends LitElement {
@@ -254,7 +213,7 @@ export class ProtspaceProjectionMetadata extends LitElement {
   }
 
   render() {
-    const { parameters, quality, qualityScope } = this._splitMetadata();
+    const { parameters, quality, qualityScope } = splitMetadata(this.projection?.metadata);
     // `stats`: validity scored for this exact projection, so it is scoped by the panel it sits
     // in. `agreement` (below) is deliberately not scoped that way: ARI/NMI describe the
     // clustering itself, not whichever projection the panel happens to be open on, and the
@@ -302,7 +261,7 @@ export class ProtspaceProjectionMetadata extends LitElement {
         id="projection-metadata-content"
         role="tooltip"
       >
-        <!-- The projection's own name, which the panel never showed: _splitMetadata skips
+        <!-- The projection's own name, which the panel never showed: splitMetadata skips
              the "name" key, so a card describing one projection out of several did not say
              which. It also replaces the second header bar the stats block used to print
              (the annotation name), which duplicated the legend panel's own title and made
@@ -617,200 +576,6 @@ export class ProtspaceProjectionMetadata extends LitElement {
     // both blocks are computed once at prepare time and neither recomputes on a filter — so
     // stating it per section would repeat it. It is a card-level footer instead.
     return parts.join(' · ');
-  }
-
-  /**
-   * Reduction parameters and projection quality, kept apart. They answer different
-   * questions: the parameters are what was asked for, the quality is what came out, and
-   * a single flat list invites reading `n_neighbors` and `trustworthiness` as peers.
-   */
-  private _splitMetadata(): {
-    parameters: MetadataRow[];
-    quality: MetadataRow[];
-    /** One line under the faithfulness heading saying what it was computed over. */
-    qualityScope: string;
-  } {
-    if (!this.projection?.metadata) return { parameters: [], quality: [], qualityScope: '' };
-
-    const rawMetadata = this.projection.metadata;
-    const parameterEntries: Array<[string, unknown]> = [];
-    const qualityEntries: QualityEntry[] = [];
-
-    for (const [key, value] of Object.entries(rawMetadata)) {
-      const lowerKey = key.toLowerCase();
-      if (lowerKey === 'dimension' || lowerKey === 'dimensions' || lowerKey === 'name') {
-        continue;
-      }
-
-      if (this._isJsonField(lowerKey) && typeof value === 'string') {
-        const parsed = this._tryParseJson(value);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          for (const [innerKey, innerValue] of Object.entries(parsed)) {
-            if (
-              innerKey.toLowerCase() === 'quality' &&
-              !!innerValue &&
-              typeof innerValue === 'object' &&
-              !Array.isArray(innerValue)
-            ) {
-              qualityEntries.push(...this._qualityEntries(innerValue as Record<string, unknown>));
-            } else {
-              parameterEntries.push([innerKey, innerValue]);
-            }
-          }
-          continue;
-        }
-      }
-
-      if (lowerKey === 'quality' && !!value && typeof value === 'object' && !Array.isArray(value)) {
-        qualityEntries.push(...this._qualityEntries(value as Record<string, unknown>));
-        continue;
-      }
-
-      parameterEntries.push([key, value]);
-    }
-
-    const parameters: MetadataRow[] = parameterEntries.map(([key, value]) => ({
-      label: this._formatMetadataKey(key),
-      value: this._formatMetadataValue(value, key),
-      // Reduction parameters are the reducer's own knobs, documented by the reducer; only
-      // the metrics below have a registry entry to explain them.
-      description: '',
-    }));
-
-    const quality: MetadataRow[] = qualityEntries.map(({ metric, scope, value }) => {
-      const display = metricDisplay(metric);
-      // A description is exactly what "the registry knows this metric" means, so it also
-      // decides whether the registry's spelling ("kNN Overlap") beats the prettified key.
-      const known = display.description.length > 0;
-      return {
-        // The scope is a group heading now, not a suffix on every row. "(local)" / "(global)"
-        // on each of five labels cost more width than the panel has — "Spearman Distance
-        // (global) ⓘ" pushed its own value onto a second line.
-        label: known ? display.label : this._formatMetadataKey(metric),
-        // These are statistics, so they follow `formatStatValue` like every other score in
-        // the app rather than the generic metadata formatter's own rounding — which is still
-        // right for reduction parameters, and still handles the `value: null` a skipped
-        // metric is written as.
-        value:
-          typeof value === 'number' && Number.isFinite(value)
-            ? formatStatValue(value)
-            : this._formatMetadataValue(value, metric),
-        description: display.description,
-        scope,
-      };
-    });
-
-    return { parameters, quality, qualityScope: this._qualityScopeLine(qualityEntries) };
-  }
-
-  /**
-   * One entry per faithfulness metric, tagged with its scope ("local" neighbourhoods vs "global"
-   * layout). The shared provenance each metric carries (k, seed, sampling, source embedding) is
-   * dropped: it repeats per metric and would bury the five numbers worth reading.
-   */
-  private _qualityEntries(quality: Record<string, unknown>): QualityEntry[] {
-    return Object.entries(quality).map(([metric, entry]): QualityEntry => {
-      if (!entry || typeof entry !== 'object' || !('value' in entry)) {
-        return { metric, scope: null, value: entry, sampleSize: null, sampled: false };
-      }
-      const {
-        value,
-        scope,
-        sample_size: sampleSize,
-        sampled,
-      } = entry as {
-        value: unknown;
-        scope?: unknown;
-        sample_size?: unknown;
-        sampled?: unknown;
-      };
-      return {
-        metric,
-        scope: typeof scope === 'string' ? scope : null,
-        value,
-        sampleSize:
-          typeof sampleSize === 'number' && Number.isFinite(sampleSize) ? sampleSize : null,
-        sampled: sampled === true,
-      };
-    });
-  }
-
-  /**
-   * What the faithfulness numbers were computed over, which the panel dropped entirely: the
-   * provenance repeats identically on every metric, so it belongs once under the section
-   * rather than on each row. `sampled` is the part that matters — above a threshold the
-   * backend compares a subsample, and nothing said so.
-   */
-  private _qualityScopeLine(entries: QualityEntry[]): string {
-    const withSize = entries.find((entry) => entry.sampleSize !== null);
-    if (!withSize) return '';
-    const proteins = `${countNoun(withSize.sampleSize!, 'protein', 'proteins')} compared`;
-    return entries.some((entry) => entry.sampled) ? `${proteins} · subsampled` : proteins;
-  }
-
-  /**
-   * Check if a key indicates a JSON field
-   */
-  private _isJsonField(key: string): boolean {
-    return key === 'info' || key === 'info_json' || key.includes('json');
-  }
-
-  /**
-   * Safely parse JSON string
-   */
-  private _tryParseJson(value: string): unknown {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Format metadata key to Title Case
-   */
-  private _formatMetadataKey(key: string): string {
-    return key
-      .replace(/_/g, ' ')
-      .replace(/([A-Z])/g, ' $1')
-      .split(' ')
-      .filter((word) => word.length > 0)
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  }
-
-  /**
-   * Format metadata value with appropriate precision
-   */
-  private _formatMetadataValue(value: unknown, key: string): string {
-    if (value == null) return NA_DISPLAY;
-
-    const lowerKey = key.toLowerCase();
-    const isVarianceRatio =
-      lowerKey.includes('explained_variance') || lowerKey.includes('variance_ratio');
-
-    if (Array.isArray(value)) {
-      return value.map((item) => this._formatSingleValue(item, isVarianceRatio)).join(', ');
-    }
-
-    return this._formatSingleValue(value, isVarianceRatio);
-  }
-
-  /**
-   * Format a single metadata value
-   */
-  private _formatSingleValue(value: unknown, isVarianceRatio: boolean): string {
-    if (typeof value === 'number') {
-      if (Number.isInteger(value)) return value.toString();
-      return value.toFixed(isVarianceRatio ? 2 : 3);
-    }
-    if (typeof value === 'boolean') {
-      return value ? 'Yes' : 'No';
-    }
-    if (typeof value === 'object' && value !== null) {
-      return JSON.stringify(value);
-    }
-    return String(value);
   }
 }
 
