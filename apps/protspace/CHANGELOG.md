@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v4.16.8 (2026-10-16)
+
+### Bug Fixes
+
+- **prepare**: Name the reused stages in the --refetch hint
+  ([`1c42f04`](https://github.com/tsenoner/protspace/commit/1c42f042bf21e9ff370c6b9702c3a1ac25396be4))
+
+- **prepare**: Show the --refetch hint only after reusing cached work
+  ([`b0d4cb2`](https://github.com/tsenoner/protspace/commit/b0d4cb2692cf1f8387a715ee40c925fc0cfd0b9a))
+
+### Refactoring
+
+- **prepare**: Record cache hits where each stage decides to reuse
+  ([`7a55d27`](https://github.com/tsenoner/protspace/commit/7a55d27b8d4065709ca1ef3e2693fd927c3dd114))
+
+
 ## v4.16.7 (2026-10-15)
 
 ### Bug Fixes

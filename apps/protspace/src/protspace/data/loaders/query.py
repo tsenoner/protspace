@@ -14,6 +14,7 @@ from pathlib import Path
 import requests
 from tqdm import tqdm
 
+from protspace.data.cache_hits import note_cache_hit
 from protspace.data.io.atomic import staged_write
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ def resolve_query_fasta(
     ):
         headers = extract_identifiers_from_fasta(fasta_save)
         logger.warning("Using cached FASTA (%s sequences)", f"{len(headers):,}")
+        note_cache_hit("query")
         return headers, fasta_save
     return query_uniprot(query, save_to=fasta_save)
 

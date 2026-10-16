@@ -143,6 +143,7 @@ src/protspace/
 │   ├── convert.py              # v1/v2 → v3 bundle conversion
 │   └── export.py               # Bundle → TSV table
 ├── data/
+│   ├── cache_hits.py           # Stages that reused an earlier run's cache (each noted by its `--refetch` token where the stage decides to reuse); `prepare` names them in its hint
 │   ├── biocentral_connection.py # Biocentral server address + wait_for_server(): one wait for embedding and annotation, and a failure that says why
 │   ├── loaders/
 │   │   ├── embedding_set.py    # EmbeddingSet dataclass
@@ -312,6 +313,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_settings_converter.py` | Settings table ↔ visualization state conversion |
 | `test_uniprot_annotation_retriever.py` | UniProt API mocking, inactive entry resolution, `X-UniProt-Release` collected from every response on `releases`, every request through one session, a `Retry-After` on an inactive-entry or UniParc lookup holding the next request |
 | `test_pipeline_utils.py` | ReductionPipeline, `align_annotations` (one row per header keyed on `protein_id`, missing cells empty), projection cache identity (a changed, reordered or grown matrix under one embedding name misses; an unchanged rerun hits; `--refetch projections` always recomputes), annotation cache fill-in wiring, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
+| `test_prepare_cache_hint.py` | `prepare` prints the `--refetch` hint only after reusing cached work (a projection, the annotation cache), never on a fresh run, with `--refetch` or `--no-keep-tmp`; the hits `data/cache_hits.py` records: annotations on a full hit and a fill-in, not for a source fetched again or a cache without the run's proteins; a cached query FASTA, similarity matrix and embedding; every noted stage is a valid `--refetch` token, since the hint names them |
 | `test_stats.py` | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, auto-cluster self-validity (filed under the membership column, gated on it, and equal to driving `AnnotationValidityStatistic` directly so an out-of-band re-score cannot drift), faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency, `_align` no-id guard, silhouette→elbow fallback, cluster space (projection/embedding/both columns, embedding clustering scored in the embedding and in each of its projections, PCA reduction, order-invariance) |
 | `test_stats_cli.py` | `protspace stats` CLI + `prepare` stats wiring, `--stats-annotation` (auto/list) wiring, `--settings-out` guard, `--cluster-selection` validation, `--cluster-space` wiring/validation and its default pinned across CLI options, `PipelineConfig` and the statistic |
 | `test_stats_carriage.py` | Routing rows to bundle parts (metadata quality, annotation columns, cluster legend) |

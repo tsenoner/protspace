@@ -14,6 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 from protspace.data.annotations.configuration import SOURCE_ANNOTATIONS
+from protspace.data.cache_hits import note_cache_hit
 from protspace.data.io.atomic import staged_write
 from protspace.data.io.ids import PROTEIN_ID_COLUMN, with_protein_id
 
@@ -275,6 +276,7 @@ def fetch_annotations(
         and not refresh_columns
     ):
         logger.warning("Using cached annotations")
+        note_cache_hit("annotations")
         if annotations:
             cols = [PROTEIN_ID_COLUMN] + [
                 f for f in annotations if f in cached_df.columns
