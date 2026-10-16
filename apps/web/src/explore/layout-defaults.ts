@@ -13,13 +13,18 @@ export const SIDEBAR_WIDTH = { min: 240, max: 480, default: 300 } as const;
 /** The legend's share of the sidebar's height above the divider. */
 export const LEGEND_FRACTION = { min: 0.2, max: 0.8, default: 0.5 } as const;
 
-/** The floating structure card in px; its default spot is `inset` from the plot's bottom-right. */
+/**
+ * The floating structure card in px. Its default spot is `inset` from the plot's right edge and
+ * `bottomInset` from its bottom: the selection bar's 12 px offset, its 38 px height and the 14 px
+ * inset, so the default card clears Copy IDs and Clear.
+ */
 export const FLOATING_CARD = {
   minWidth: 280,
   minHeight: 240,
   defaultWidth: 340,
   defaultHeight: 360,
   inset: 14,
+  bottomInset: 64,
 } as const;
 
 /** The narrowest window that gets the desktop workbench (design decision 17). */

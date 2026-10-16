@@ -109,9 +109,10 @@ const FLOAT_STEP = 16;
 
 /**
  * Where the floating structure card goes in a plot area of `bounds`: the stored rectangle, or for
- * null the default 340 × 360 card 14 px in from the bottom-right corner. Its size is at least
- * 280 × 240 and at most the plot area, and it is moved inside the plot area. Render only: a card
- * stored outside a smaller window shows inside it, and storage keeps the user's rectangle.
+ * null the default 340 × 360 card 14 px in from the right edge and 64 px up from the bottom, above
+ * the selection bar (a plot too short for that puts it at the top). Its size is at least 280 × 240
+ * and at most the plot area, and it is moved inside the plot area. Render only: a card stored
+ * outside a smaller window shows inside it, and storage keeps the user's rectangle.
  */
 export function clampFloatRect(
   rect: FloatingRect | null,
@@ -128,7 +129,7 @@ export function clampFloatRect(
     areaHeight,
   );
   const x = rect ? rect.x : areaWidth - FLOATING_CARD.inset - width;
-  const y = rect ? rect.y : areaHeight - FLOATING_CARD.inset - height;
+  const y = rect ? rect.y : areaHeight - FLOATING_CARD.bottomInset - height;
   return {
     x: Math.min(Math.max(x, 0), areaWidth - width),
     y: Math.min(Math.max(y, 0), areaHeight - height),

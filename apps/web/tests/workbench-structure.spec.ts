@@ -7,6 +7,8 @@ import {
   importUserFile,
   openExplore,
   plotArea,
+  selectionBar,
+  selectionBarAction,
   waitForExploreDataLoad,
 } from './helpers/explore';
 import {
@@ -195,13 +197,14 @@ test('Pop out floats the card over the plot without resizing it', async ({ page 
 
   await floatStructure(page);
 
-  // The default card: 340 × 360, 14 px in from the plot area's bottom-right corner.
+  // The default card: 340 × 360, 14 px in from the plot area's right edge and 64 px up from its
+  // bottom, above the selection bar.
   const area = (await plotArea(page).boundingBox())!;
   const card = (await structurePanel(page).boundingBox())!;
   expectNear(card.width, 340);
   expectNear(card.height, 360);
   expectNear(area.x + area.width - (card.x + card.width), 14);
-  expectNear(area.y + area.height - (card.y + card.height), 14);
+  expectNear(area.y + area.height - (card.y + card.height), 64);
   // The legend takes the whole sidebar column.
   const body = (await page.locator('[data-workbench="body"]').boundingBox())!;
   expectNear((await page.locator('#myLegend').boundingBox())!.height, body.height);
@@ -216,6 +219,23 @@ test('Pop out floats the card over the plot without resizing it', async ({ page 
   await expect(workbench(page)).toHaveAttribute('data-structure', 'none');
   await expect(footer(page)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Resize structure' })).toHaveCount(0);
+});
+
+test('the default floating card leaves Copy IDs and Clear clickable', async ({ page }) => {
+  // 1280 × 720 with the sidebar open: the narrowest desktop plot the default card sits over.
+  await openExplore(page);
+  await clickProteinNearPlotCentre(page);
+  await floatStructure(page);
+  await expect(selectionBar(page)).toBeVisible();
+
+  // A trial click runs every actionability check, the hit test included, and clicks nothing: it
+  // fails if the card intercepts the pointer.
+  for (const name of ['Copy IDs', 'Clear'] as const) {
+    await selectionBarAction(page, name).click({ trial: true, timeout: 5_000 });
+  }
+  const bar = (await selectionBar(page).boundingBox())!;
+  const card = (await structurePanel(page).boundingBox())!;
+  expect(card.y + card.height).toBeLessThanOrEqual(bar.y);
 });
 
 test('docking and floating keep the same viewer and do not reload the structure', async ({

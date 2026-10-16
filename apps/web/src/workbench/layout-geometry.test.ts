@@ -100,8 +100,25 @@ describe('clampFloatRect', () => {
   // The plot area at 1280 × 720 with the sidebar open: 1280 − 300 − 44 by 720 − 48 − 44.
   const area = { width: 936, height: 628 };
 
-  it('clampFloatRect defaults to the bottom-right inset', () => {
-    expect(clampFloatRect(null, area)).toEqual({ x: 582, y: 254, width: 340, height: 360 });
+  it('clampFloatRect defaults above the selection bar', () => {
+    // 14 px from the right edge; 64 px from the bottom, clear of the bar's 12 px offset and
+    // 38 px height (Copy IDs and Clear stay clickable).
+    expect(clampFloatRect(null, area)).toEqual({ x: 582, y: 204, width: 340, height: 360 });
+  });
+
+  it('a stored card keeps its place', () => {
+    // Only the default moved: a card the user placed low over the bar stays there.
+    const low = { x: 582, y: 254, width: 340, height: 360 };
+    expect(clampFloatRect(low, area)).toEqual(low);
+  });
+
+  it('on a plot too short for the card above the bar, the default sits at the top', () => {
+    expect(clampFloatRect(null, { width: 936, height: 400 })).toEqual({
+      x: 582,
+      y: 0,
+      width: 340,
+      height: 360,
+    });
   });
 
   it('keeps a card inside a plot that shrank', () => {
