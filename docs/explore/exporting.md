@@ -82,7 +82,8 @@ one row per protein:
 
 - `protein_id`
 - the coordinates of the projection on screen, as `<projection>_x` and `<projection>_y` (for a
-  [deprecated 3D projection](/explore/control-bar#_1-projection-selector), the X/Y view you see; no `z`)
+  [deprecated 3D projection](/explore/control-bar#_1-projection-selector), the X/Y view you see,
+  which matches the 2D projection only for PCA; no `z`)
 - one column per annotation, `cluster_*` columns included. A cell holds the labels you see in the
   legend, joined with `;` when a protein has several; a numeric annotation holds its value, not its
   bin. Missing values are empty.
