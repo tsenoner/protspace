@@ -332,6 +332,67 @@ def test_install_cell_stops_when_pip_changed_a_loaded_package(path, monkeypatch)
     exec(source, {"__name__": "__notebook__"})  # after the restart
 
 
+def _install_helper(path: Path) -> str:
+    source = _install_cell(path)
+    start = source.index("# --- install helper:")
+    end = source.index("# --- end of install helper ---")
+    return source[start:end]
+
+
+def test_install_helper_is_the_same_in_every_notebook():
+    """One fix, three copies: a notebook cannot import a shared module before it
+    has installed one, so the copies are kept equal here instead."""
+    helpers = {path.name: _install_helper(path) for path in NOTEBOOKS}
+    assert len(set(helpers.values())) == 1, sorted(helpers)
+
+
+def _run_install_helper(monkeypatch, *, uv_fails=False):
+    """Call the helper with Colab's numpy "loaded"; return the commands run."""
+    import importlib.metadata as md
+    import subprocess
+    import sys
+    import types
+
+    loaded = types.ModuleType("fakenumpy")
+    loaded.__file__ = "/site-packages/fakenumpy/__init__.py"
+    monkeypatch.setitem(sys.modules, "fakenumpy", loaded)
+    monkeypatch.setattr(md, "packages_distributions", lambda: {"fakenumpy": ["numpy"]})
+    monkeypatch.setattr(md, "version", lambda dist: "2.1.3")
+    calls, held = [], []
+
+    def run(cmd, *_a, **_k):
+        calls.append(cmd)
+        if "--override" in cmd:
+            held.append(Path(cmd[cmd.index("--override") + 1]).read_text())
+            code = 1 if uv_fails else 0
+        else:
+            code = 0
+        return types.SimpleNamespace(returncode=code, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    namespace = {"__name__": "__notebook__"}
+    exec(compile(_install_helper(NOTEBOOKS[0]), "install", "exec"), namespace)
+    namespace["_install"](["protspace[local]"])
+    return calls, held
+
+
+def test_install_holds_what_the_session_loaded(monkeypatch):
+    """biocentral-api 2.x pins numpy>=2.4.1 through biotrainer-core; uv's
+    --override keeps the numpy Colab has in memory instead of replacing it."""
+    calls, held = _run_install_helper(monkeypatch)
+    assert held == ["numpy==2.1.3\n"]
+    assert [c[2:5] for c in calls] == [
+        ["pip", "install", "-qqq"],
+        ["uv", "pip", "install"],
+    ]
+    assert calls[-1][-1] == "protspace[local]"
+
+
+def test_install_falls_back_to_pip_when_uv_cannot_hold(monkeypatch):
+    calls, _ = _run_install_helper(monkeypatch, uv_fails=True)
+    assert calls[-1][2:4] == ["pip", "install"] and calls[-1][-1] == "protspace[local]"
+
+
 def _run_preparation_eat_cell(monkeypatch, bundle_path, emb_set, column, **controls):
     """Run the Preparation notebook's EAT cell and click Transfer on ``column``.
 
@@ -1363,7 +1424,7 @@ def test_clickthrough_installs_the_esm_sdk_only_for_its_models(
         compile(_clickthrough_cell("# @title 2. Install"), "click:2", "exec"), namespace
     )
 
-    (cmd,) = calls
+    cmd = calls[-1]
     assert ("esm" in cmd) is with_sdk
     assert "pyfaidx" in cmd
 
