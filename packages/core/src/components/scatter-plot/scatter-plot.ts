@@ -115,11 +115,11 @@ const CONFIG_INDEX_KEYS: readonly (keyof ScatterplotConfig)[] = [
 ];
 
 // Reactive keys whose changes need no catch-all WebGL redraw in updated(): they
-// affect only the template or are rendered by the selection block. Zoom
-// transforms already redraw through the interaction controller's RAF. Both
-// writers of _mergedConfig render themselves: the resize path draws on the spot,
-// and a config merge happens inside the update its `config` change already
-// renders, so its echo update redrew the same frame again.
+// affect only the template (the hover tooltip among them) or are rendered by the
+// selection block. Zoom transforms already redraw through the interaction
+// controller's RAF. Both writers of _mergedConfig render themselves: the resize
+// path draws on the spot, and a config merge happens inside the update its
+// `config` change already renders, so its echo update redrew the same frame again.
 const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
   'selectedProteinIds',
   'highlightedProteinIds',
@@ -130,6 +130,8 @@ const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
   'tapTooltips',
   'touchTooltipInsets',
   '_pinnedTooltip',
+  '_tooltipData',
+  '_tooltipHeight',
 ]);
 
 const NO_TOOLTIP_ACTIONS: readonly TooltipAction[] = [];
