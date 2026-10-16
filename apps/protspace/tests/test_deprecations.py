@@ -35,6 +35,8 @@ from protspace.deprecations import (
     SERVE_COMMAND,
     THREE_D_PROJECTION_READ,
     THREE_D_PROJECTIONS,
+    THREE_D_RECOMPUTE,
+    THREE_D_XY_VIEW,
     due,
     release_core,
 )
@@ -188,7 +190,11 @@ def test_the_web_3d_notice_names_the_3d_reading_removal_version():
     if not path.exists():
         pytest.skip("the web app is not part of this checkout")
     remove_in = DEPRECATIONS[THREE_D_PROJECTION_READ].remove_in
-    assert f"Reading 3-D projections ends in ProtSpace {remove_in}." in path.read_text()
+    source = path.read_text()
+    assert f"Reading 3-D projections ends in ProtSpace {remove_in}." in source
+    # The web notice repeats the CLI's advice word for word.
+    assert THREE_D_XY_VIEW in source
+    assert THREE_D_RECOMPUTE in source
 
 
 def test_the_web_notice_users_see_names_the_removal_version():
