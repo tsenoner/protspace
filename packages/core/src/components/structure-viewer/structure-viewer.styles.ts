@@ -1,4 +1,5 @@
-import { css } from 'lit';
+import { css, unsafeCSS } from 'lit';
+import { BELOW_DESKTOP_MEDIA } from '../../utils/breakpoints';
 
 const structureViewerStylesCore = css`
   :host {
@@ -275,7 +276,7 @@ const structureViewerStylesCore = css`
 
   /* Below desktop the viewer has half a panel row: keep only the colour legend. The host's size
      is the shell's to set (the workbench fills its structure section). */
-  @media (max-width: 950px) {
+  @media ${unsafeCSS(BELOW_DESKTOP_MEDIA)} {
     .interaction-tip {
       display: none;
     }

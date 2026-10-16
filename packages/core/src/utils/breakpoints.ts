@@ -16,6 +16,9 @@ export const LANDSCAPE_PHONE_MAX_HEIGHT = 500;
 /** A phone held upright: the app's `phone` layout. */
 export const PHONE_MEDIA = `(max-width: ${PHONE_MAX_WIDTH}px)`;
 
+/** Any window narrower than the desktop workbench: phone, landscape or tablet. */
+export const BELOW_DESKTOP_MEDIA = `(max-width: ${DESKTOP_MIN_WIDTH - 1}px)`;
+
 /** A phone on its side: the app's `landscape` layout. */
 export const LANDSCAPE_PHONE_MEDIA = `(orientation: landscape) and (max-height: ${LANDSCAPE_PHONE_MAX_HEIGHT}px) and (max-width: ${DESKTOP_MIN_WIDTH - 1}px)`;
 
