@@ -2,35 +2,64 @@
 
 The legend panel lets you filter, customize, and explore protein annotations. Most annotations are categorical, but scalar numeric annotations such as `length` are handled a little differently.
 
+## Rows
+
+Each category is one row: its colour, its name and its protein count. A long name ends in an
+ellipsis and shows in full on hover. Hovering a row shows three controls at its right:
+
+- an **eye**, which hides or shows the category,
+- a **drag handle**, which moves the row (see [Reordering](#reordering-and-draw-order)),
+- a **⋯** menu with **Show only this** and **Colour and shape**.
+
+On a touch screen the controls are always shown and every row is a 40 px target.
+
 ## Show And Hide Values
 
 Click any legend row to toggle its visibility:
 
-<img src="./images/legend-toggle.gif" alt="Toggle visibility" width="1000" height="563" loading="eager" fetchpriority="high" />
+![Hiding, showing and showing only one category](./images/legend-toggle.gif)
 
-- Click once to hide that value.
-- Click again to show it.
-- Double-click to isolate that value and hide the rest.
-- Double-click the isolated value again to show all values.
+- Click once, or press its eye, to hide that value. A hidden row stays in the list, dimmed, with a
+  crossed-out eye.
+- Click again, or press the eye again, to show it.
+- Double-click a row, or choose **Show only this** from its ⋯ menu, to show that value and hide the
+  rest.
+- Double-click the only shown value again (its ⋯ menu then reads **Show all**) to show all values.
 - If only one value remains visible, clicking it restores the full set.
+
+While categories are hidden, the plot's status corner shows `N categories hidden`; its ✕ shows them
+all again. On a touch screen, tap a row to hide or show it and double-tap it to show only that value.
+
+From the keyboard: the arrow keys, **Home** and **End** move between rows, **Enter** hides or shows
+the focused row, and **i** shows only it.
 
 ## Reordering And Draw Order
 
-Drag labels up or down to change draw order in the scatterplot. Items near the top are drawn on top of items below them.
+Drag a row by its handle up or down to change the draw order in the scatterplot. Items near the top
+are drawn on top of items below them.
 
-![Reorder labels](./images/legend-reorder.gif)
+![Dragging a row to the top, then sorting the legend by count](./images/legend-reorder.gif)
 
-The drag handle stays visible in each legend row so manual ordering is easy to discover. Dragging from any sort mode switches that annotation to `Manual order`.
+Dragging switches the annotation's order to **Your order**. On a touch screen, hold the handle for a
+moment, then drag. From the keyboard, focus a row's handle, press **Space** to pick the row up, move
+it with the arrow keys and press **Space** again to drop it (**Escape** cancels).
 
 ## The "Other" Group
 
-Categorical annotations can group less frequent values into `Other` once the visible list exceeds the current legend cap.
+Categorical annotations group less frequent values into `Other` once the visible list exceeds the
+current legend cap (**Max legend items** in the [settings](#settings)). The row reads
+`Other · N categories`.
 
-- Click `Other` to inspect the grouped values.
-- Extract values from `Other` to show them separately.
-- Drag values into `Other` to regroup them.
+![Searching Other and adding a category to the legend](./images/legend-others.gif)
 
-![Other group](./images/legend-others.gif)
+- Press **View** on the `Other` row to open a popover listing the grouped values, largest first,
+  each with its count.
+- Type in its search box to find one, then press **Add to legend** to give it its own row (the
+  legend cap rises by one). **Add all** moves every value out of `Other`.
+- Drag a row onto `Other` to group it there again.
+
+![The Other popover open beside the legend](./images/legend-other-popover.png){.light-only}
+![The Other popover open beside the legend](./images/legend-other-popover-dark.png){.dark-only}
 
 Numeric annotations do **not** use `Other`. They are binned directly from the raw numeric values.
 
@@ -50,18 +79,46 @@ When the dataset was prepared with statistics and the selected annotation was sc
 
 See [Separation Scores](/explore/separation-scores) for what the numbers mean and how they are computed.
 
+## Sorting
+
+The sort button in the legend's header shows the active order in its tooltip, such as
+`Sort: By count, largest first`. Press it to open
+the **Sort legend** menu:
+
+- **By count**, largest first (categorical annotations)
+- **By name** (categorical) or **By value** (numeric)
+- **By separation**, only when the selected annotation carries per-category
+  [separation scores](/explore/separation-scores) for the current projection: categories ordered by
+  how cleanly each one separates. It is display-only: it reorders the list without changing which
+  categories fall into `Other`, and it keeps working while the view is filtered.
+- **Your order**, the order you dragged the rows into
+- **Reverse order**, a checkbox that flips the active order:
+  - Numeric `By value`: low-to-high vs high-to-low
+  - `Your order`: reverses your order
+  - `By separation`: best-separating first vs worst-separating first
+  - `By count` and `By name`: the reverse of each
+
 ## Settings
 
-Click the cog icon in the top-right corner of the legend for advanced options.
+The sliders button in the legend's header opens **Legend settings** for the selected annotation. Changes apply
+as you make them: there is no Save button. A number applies a moment after you stop typing, or at
+once on **Enter** or when you leave the field.
+
+![The Legend settings popover open over the legend: palettes, Max legend items, Shape size, duplicate counts and Reset](./images/legend-settings.png){.light-only}
+![The Legend settings popover open over the legend: palettes, Max legend items, Shape size, duplicate counts and Reset](./images/legend-settings-dark.png){.dark-only}
+
+**Reset**, at the bottom, restores the defaults for the selected annotation: its colours, order,
+hidden categories, palette and item count, and the dataset's point size. It is unavailable while
+nothing is changed.
 
 ### Shared Settings
 
-| Setting                     | What it does                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Max legend items**        | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations: target maximum number of bins.                                                                                                                                                                                                                                       |
-| **Shape size / Point size** | Adjusts marker size in the scatterplot (range 1 to 64; a larger size from a bundle or an earlier session is capped at 64). The default follows the dataset's protein count, see [Default dot size](#default-dot-size). The size you pick holds for every annotation of the dataset. Numeric annotations use the label `Point size` because numeric legends always render circles. |
-| **Show duplicate counts**   | Shows duplicate count badges and spreads overlapping points when you expand them.                                                                                                                                                                                                                                                                                                 |
-| **Color palette**           | Picks the active palette for the selected annotation.                                                                                                                                                                                                                                                                                                                             |
+| Setting                                       | What it does                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Palette**                                   | Picks the active palette for the selected annotation from its swatches.                                                                                                                                                                                                                                                                                                           |
+| **Max legend items**                          | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations (labelled `Bins`): target maximum number of bins.                                                                                                                                                                                                                     |
+| **Shape size / Point size**                   | Adjusts marker size in the scatterplot (range 1 to 64; a larger size from a bundle or an earlier session is capped at 64). The default follows the dataset's protein count, see [Default dot size](#default-dot-size). The size you pick holds for every annotation of the dataset. Numeric annotations use the label `Point size` because numeric legends always render circles. |
+| **Show duplicate counts and spread overlaps** | Shows duplicate count badges and spreads overlapping points when you expand them.                                                                                                                                                                                                                                                                                                 |
 
 ### Default dot size
 
@@ -72,35 +129,13 @@ opens with dots small enough that one category does not cover the others:
 | ----------------------- | ------------ | ------ | ------ | ------- | ------- |
 | Default shape size      | 10           | 6      | 4      | 2       | 1       |
 
-The count is the whole dataset, so hiding categories, filtering or isolating does not change it. The
-settings dialog shows the dataset's default under the size field. To use another size, type it and
-press Save: it is then stored for the dataset and exported with **Include legend settings**. A size
-a bundle sets for an annotation, other than 10 or 30, also overrides the default. To return to the
-default, clear the size field and press Save. This drops the size you picked and every size a
-bundle set per annotation, but keeps the annotation's other settings. `Reset` does the same for the
-size, and also resets the selected annotation's colors, order and hidden values.
-
-### Sorting
-
-Categorical annotations support three sort modes:
-
-- `By category size`
-- `Alphabetical`
-- `Manual order`
-
-A fourth mode, `By separation`, appears only when the selected annotation carries per-category [separation scores](/explore/separation-scores) for the current projection, and orders categories by how cleanly each one separates. It is display-only: it reorders the list without changing which categories fall into `Other`, and it keeps working while the view is filtered.
-
-Numeric annotations support two sort modes:
-
-- `By numeric value`
-- `Manual order`
-
-The arrow button next to the cog reverses the current sort direction:
-
-- Numeric `By numeric value`: low-to-high vs high-to-low
-- Numeric `Manual order`: reverses the current manual order
-- Categorical `By separation`: best-separating first vs worst-separating first
-- Categorical: preserves the legacy reverse behavior
+The count is the whole dataset, so hiding categories, filtering or isolating does not change it.
+Legend settings show the dataset's default under the size field. A size you type is stored for the
+dataset and exported with **Include legend settings**. A size a bundle sets for an annotation, other
+than 10 or 30, also overrides the default. To return to the default, clear the size field. This
+drops the size you picked and every size a bundle set per annotation, but keeps the annotation's
+other settings. `Reset` does the same for the size, and also resets the selected annotation's
+colours, order and hidden values.
 
 ### Numeric Bin Distribution
 
@@ -114,7 +149,7 @@ When the selected annotation is numeric and a numeric gradient palette is active
 
 ### Reverse Gradient Direction
 
-Numeric annotations also expose a `Reverse gradient direction` toggle in the settings dialog.
+Numeric annotations also have a `Reverse gradient` switch in Legend settings.
 
 - Off: lower numeric values use the low end of the selected gradient and higher values use the high end.
 - On: the gradient is flipped so higher numeric values receive the colors that would normally be used for lower values, and vice versa.
@@ -138,7 +173,7 @@ The exact runtime bin edges are still used for membership. The displayed label i
 
 ### Why Fewer Bins Can Appear Than The Max
 
-For numeric annotations, `Max legend items` is a target cap, not a hard guarantee. You can request `10` bins and still see fewer when the data does not support all of them.
+For numeric annotations, `Max legend items` (`Bins`) is a target cap, not a hard guarantee. You can request `10` bins and still see fewer when the data does not support all of them.
 
 Common reasons:
 
@@ -155,7 +190,7 @@ This is why you might see `10` requested bins become `9`, and `9` become `8`, wi
 Some annotations are computational predictions rather than experimentally curated records. When one
 is selected, the legend header shows a ⚡ **Predicted** badge next to the annotation title, followed
 by the note `Computationally predicted, not experimentally curated.` The same ⚡ marker appears next
-to the annotation in the control bar's annotation dropdown.
+to the annotation in the view bar's **Color by** menu.
 
 The badge marks columns produced by a machine-learning model, a de-novo sequence-topology
 predictor, or predicted 3D structure. Reference signature matches such as Pfam, CATH-Gene3D and
@@ -204,12 +239,12 @@ If an imported bundle or saved browser state references an unsupported numeric g
 
 | Category  | Color     | Shape  |
 | --------- | --------- | ------ |
-| **Other** | `#999999` | Circle |
+| **Other** | `#888888` | Circle |
 | **N/A**   | `#DDDDDD` | Circle |
 
 ### Shapes
 
-Every category renders as a circle by default. To assign a different shape (square, diamond, plus, triangle-up, triangle-down) to an individual category, click the category's color/shape swatch in the legend, the popover has a Shape section underneath the color picker.
+Every category renders as a circle by default. To give a category another colour or shape (square, diamond, plus, triangle-up, triangle-down), choose **Colour and shape** from its row's ⋯ menu: the popover has a Shape section underneath the colour picker.
 
 Numeric and multi-label annotations always render as circles; per-category shape assignment is not available for those.
 
@@ -219,10 +254,10 @@ Legend settings are saved per dataset and per annotation in the browser.
 
 - Saved examples: visibility, palette, ordering, numeric binning settings, and duplicate-count preferences
 - Numeric binning settings such as palette, gradient direction, strategy, and target bin count are restored on reload/import
-- Numeric hidden values and manual order are only restored when the current numeric topology still matches the saved one
+- Numeric hidden values and your order are only restored when the current numeric topology still matches the saved one
 - The shape size is the exception: it is saved once per dataset, applies to every annotation, and
   travels in exported bundles with **Include legend settings**
-- Use `Reset` in the settings dialog to clear saved preferences for the selected annotation; it also
+- Use `Reset` in Legend settings to clear saved preferences for the selected annotation; it also
   clears the dataset's shape size and every annotation's own size, including sizes a bundle set
   per annotation, so the [default](#default-dot-size) applies to every annotation again
 
@@ -232,7 +267,7 @@ Legend settings are saved per dataset and per annotation in the browser.
 a numeric annotation the web app reinterprets or ignores most of them, because numeric legend
 entries are bin IDs such as `num:quantile:150:200` rather than per-value keys.
 
-`Bin distribution` and `Reverse gradient direction` are UI-only settings and cannot be authored from
+`Bin distribution` and `Reverse gradient` are UI-only settings and cannot be authored from
 the CLI.
 
 See [How CLI keys are reinterpreted for numeric columns](/guide/styling#how-cli-keys-are-reinterpreted-for-numeric-columns)
@@ -249,5 +284,6 @@ When proteins have multiple values, such as multiple EC numbers:
 ## Next Steps
 
 - [Separation Scores](/explore/separation-scores) - the strips at the top of the legend panel, and how well each category separates
-- [Control Bar Features](/explore/control-bar) - projections, filters, export, and import
+- [Bars and Tools](/explore/controls) - projections, colour, contours, search, import and export
+- [Filtering](/explore/filter) - narrow the plot to proteins that match conditions
 - [Viewing 3D Structures](/explore/structures) - AlphaFold integration

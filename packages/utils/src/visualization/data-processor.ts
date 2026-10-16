@@ -1,20 +1,14 @@
 import type { VisualizationData, PlotData } from '../types.js';
 import { EMPTY_PLOT_DATA } from './plot-data.js';
-import { DATA_EXTENT_PADDING } from './scales.js';
-import * as d3 from 'd3';
+import { fitScales, padDomain, type PlotMargin, type ScalePair } from './scales.js';
 
 // Memoize x/y extents per PlotData object reference. Resizes pass the same PlotData
 // (extents unchanged) and reuse the cached scan; any data/projection/plane change builds
 // a NEW PlotData via clonePlotData, correctly missing the cache.
 const extentCache = new WeakMap<PlotData, { x: [number, number]; y: [number, number] }>();
 
-// Shared d3 linear scale pair returned by createScales. Declared here (not in
-// @protspace/core's webgl/types.ts) because utils cannot import core; core's
-// webgl/types.ts re-exports this type.
-export type ScalePair = {
-  x: d3.ScaleLinear<number, number>;
-  y: d3.ScaleLinear<number, number>;
-};
+// The scale pair createScales returns lives with the fit in scales.ts.
+export type { ScalePair } from './scales.js';
 
 /** Whether `count` values of `values` from `start` are all finite. */
 function allFinite(values: ArrayLike<number>, count: number, start = 0): boolean {
@@ -136,7 +130,7 @@ export class DataProcessor {
     plotData: PlotData,
     width: number,
     height: number,
-    margin: { top: number; right: number; bottom: number; left: number },
+    margin: PlotMargin,
   ): ScalePair | null {
     if (plotData.length === 0) return null;
 
@@ -164,18 +158,13 @@ export class DataProcessor {
     const xExtent = extents.x;
     const yExtent = extents.y;
 
-    const xPadding = Math.abs(xExtent[1] - xExtent[0]) * DATA_EXTENT_PADDING;
-    const yPadding = Math.abs(yExtent[1] - yExtent[0]) * DATA_EXTENT_PADDING;
-
-    return {
-      x: d3
-        .scaleLinear()
-        .domain([xExtent[0] - xPadding, xExtent[1] + xPadding])
-        .range([margin.left, width - margin.right]),
-      y: d3
-        .scaleLinear()
-        .domain([yExtent[0] - yPadding, yExtent[1] + yPadding])
-        .range([height - margin.bottom, margin.top]),
-    };
+    // One pixels-per-unit for both axes, centred (design decision 3). The domain stays the
+    // padded extent at every size, so a resize is a rescale on the GPU, not a re-stage.
+    return fitScales(
+      padDomain({ xMin: xExtent[0], xMax: xExtent[1], yMin: yExtent[0], yMax: yExtent[1] }),
+      width,
+      height,
+      margin,
+    );
   }
 }

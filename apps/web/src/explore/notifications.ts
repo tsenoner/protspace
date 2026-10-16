@@ -2,8 +2,8 @@ import type {
   DataErrorEventDetail,
   LegendErrorEventDetail,
   RendererDegradedDetail,
-  SelectionDisabledNotificationDetail,
 } from '@protspace/core';
+import { countNoun } from '@protspace/utils';
 import type { NotifyOptions } from '../lib/notify';
 import { buildBugContext, buildMailto, clientContext } from '../lib/support';
 import type { ExampleDataset } from './example-datasets';
@@ -173,7 +173,7 @@ export function getUnknownExampleDatasetNotification(id: string): NotifyOptions 
 
 /** "1 protein" / "3 proteins": proteins a loaded file holds without coordinates. */
 function unplacedProteins(count: number): string {
-  return `${count.toLocaleString()} protein${count === 1 ? '' : 's'} without coordinates`;
+  return `${countNoun(count, 'protein', 'proteins')} without coordinates`;
 }
 
 /**
@@ -230,17 +230,35 @@ export function getExportFailureNotification(error: unknown): NotifyOptions {
   };
 }
 
-export function getSelectionDisabledNotification(
-  detail: SelectionDisabledNotificationDetail,
-): NotifyOptions {
-  const reason = detail.context?.reason ?? 'unknown';
-  const dataSize = detail.context?.dataSize ?? 'unknown';
-
+/** Why the plot turned selection off (its `auto-disable-selection` event). */
+export function getSelectionDisabledNotification({
+  reason,
+  dataSize,
+}: {
+  reason: string;
+  dataSize: number;
+}): NotifyOptions {
   return {
     title: 'Selection mode disabled.',
-    description: detail.message,
+    description:
+      reason === 'insufficient-data'
+        ? `Selection mode disabled: Only ${countNoun(dataSize, 'protein', 'proteins')} remaining`
+        : 'Selection mode disabled',
     durationMs: 5_000,
     dedupeKey: `selection-disabled:${reason}:${dataSize}`,
+  };
+}
+
+/** Copy IDs put the selection on the clipboard, one ID per line. */
+export function getSelectionCopiedNotification(count: number): NotifyOptions {
+  return { title: `Copied ${countNoun(count, 'protein ID', 'protein IDs')}` };
+}
+
+/** The clipboard refused Copy IDs (permission, or a page that is not a secure context). */
+export function getSelectionCopyFailedNotification(): NotifyOptions {
+  return {
+    title: 'Could not copy the IDs',
+    description: 'The browser did not allow access to the clipboard.',
   };
 }
 
@@ -321,5 +339,39 @@ export function getLoadRecoveryCopy(
     retryLabel: 'Try again',
     loadDefaultLabel: 'Load default',
     clearLabel: 'Clear stored data',
+  };
+}
+
+/** Reset or the filter chip's ✕ removed the filter; the toast offers Undo (decision 13). */
+export function getFilterRemovedNotification(): { title: string } {
+  return { title: 'Filter removed' };
+}
+
+/**
+ * The question before the recovery banner's "Clear stored data" or "Load default" deletes the
+ * OPFS copy, which nothing can restore.
+ */
+export function getClearStoredDataConfirm(
+  fileName: string,
+  action: 'clear' | 'load-default',
+): {
+  heading: string;
+  body: string;
+  confirmLabel: string;
+  danger: true;
+} {
+  if (action === 'load-default') {
+    return {
+      heading: 'Load the default dataset?',
+      body: `Loading the default deletes the copy of "${fileName}" saved in this browser. It cannot be undone.`,
+      confirmLabel: 'Load default',
+      danger: true,
+    };
+  }
+  return {
+    heading: 'Clear stored data?',
+    body: `This deletes the copy of "${fileName}" saved in this browser. It cannot be undone.`,
+    confirmLabel: 'Clear data',
+    danger: true,
   };
 }

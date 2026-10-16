@@ -26,15 +26,15 @@ export const overlayMixins = css`
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.8);
+    background: color-mix(in srgb, var(--ps-surface) 80%, transparent);
     z-index: var(--z-overlay);
   }
 
   .loading-spinner {
     width: 2.5rem;
     height: 2.5rem;
-    border: 2px solid var(--border);
-    border-top: 2px solid var(--primary);
+    border: 2px solid var(--ps-border);
+    border-top: 2px solid var(--ps-accent);
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
@@ -55,7 +55,7 @@ export const overlayMixins = css`
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--ps-scrim);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -64,9 +64,9 @@ export const overlayMixins = css`
   }
 
   .modal-content {
-    background: var(--surface);
+    background: var(--ps-surface-raised);
     border-radius: var(--radius);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--ps-shadow-lg);
     max-width: 90vw;
     max-height: 85vh;
   }
@@ -76,10 +76,10 @@ export const overlayMixins = css`
     position: absolute;
     z-index: var(--z-tooltip);
     padding: var(--spacing-sm);
-    background: rgba(255, 255, 255, 0.95);
-    border: var(--border-width) solid var(--border);
+    background: var(--ps-surface-raised);
+    border: var(--border-width) solid var(--ps-border);
     border-radius: var(--radius);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--ps-shadow-md);
     font-size: var(--text-sm);
     max-width: 200px;
     word-wrap: break-word;

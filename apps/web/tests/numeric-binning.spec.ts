@@ -1,8 +1,34 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
-import { dismissTourIfPresent, selectAnnotation, waitForExploreDataLoad } from './helpers/explore';
+import {
+  closeFilterPanel,
+  dismissTourIfPresent,
+  filterApplyButton,
+  filterResetButton,
+  getColorByOptions,
+  openFilter,
+  queryBuilder,
+  selectAnnotation,
+  waitForExploreDataLoad,
+} from './helpers/explore';
 import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
+import {
+  closeLegendSettings,
+  escapeRegex,
+  legendSettingsDialog,
+  legendSortButton,
+  legendSortLabel,
+  openLegendSettings,
+  pickLegendPalette,
+  readLegendSettings,
+  resetLegendSettings,
+  setBinDistribution,
+  setLegendSetting,
+  setLegendSort,
+  toggleLegendReverse,
+  toggleLegendSetting,
+} from './helpers/legend';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -147,17 +173,14 @@ async function waitForAnnotationAvailable(page: Page, annotation: string): Promi
           getCurrentData?: () => { annotations?: Record<string, unknown> };
         })
       | null;
-    const controlBar = document.querySelector('protspace-control-bar') as
-      | (Element & { annotations?: string[] })
-      | null;
 
-    const plotHasAnnotation =
+    return (
       Boolean(plot?.data?.annotations?.[nextAnnotation]) ||
-      Boolean(plot?.getCurrentData?.()?.annotations?.[nextAnnotation]);
-    const controlBarHasAnnotation = Boolean(controlBar?.annotations?.includes(nextAnnotation));
-
-    return plotHasAnnotation && controlBarHasAnnotation;
+      Boolean(plot?.getCurrentData?.()?.annotations?.[nextAnnotation])
+    );
   }, annotation);
+  // And Color by offers it.
+  await expect.poll(() => getColorByOptions(page)).toContain(annotation);
 }
 
 async function waitForLegendAnnotation(page: Page, annotation: string): Promise<void> {
@@ -211,170 +234,12 @@ async function getNumericState(page: Page) {
   });
 }
 
-async function readNumericPreview(page: Page) {
-  return page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const root = legend?.shadowRoot;
-    const gradientBar = root?.querySelector('.color-palette-gradient-bar') as HTMLElement | null;
-    const previewPanel = root?.querySelector(
-      '.color-palette-preview--continuous',
-    ) as HTMLElement | null;
-    const previewCaption = root?.querySelector(
-      '.color-palette-preview-caption',
-    ) as HTMLElement | null;
-    const scaleLabels = Array.from(
-      root?.querySelectorAll('.color-palette-gradient-scale span') ?? [],
-    ).map((node) => node.textContent?.trim() ?? '');
-    const distribution = root?.querySelector(
-      '#numeric-distribution-select',
-    ) as HTMLSelectElement | null;
-
-    return {
-      gradientBarCount: root?.querySelectorAll('.color-palette-gradient-bar').length ?? 0,
-      ariaLabel: gradientBar?.getAttribute('aria-label') ?? null,
-      caption: previewCaption?.textContent?.trim() ?? '',
-      panelHeight: previewPanel?.getBoundingClientRect().height ?? 0,
-      scaleLabels,
-      options: Array.from(distribution?.options ?? []).map((option) => ({
-        value: option.value,
-        label: option.textContent?.trim() ?? '',
-      })),
-    };
-  });
-}
-
-async function readNumericPreviewChrome(page: Page) {
-  return page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const gradientBar = legend?.shadowRoot?.querySelector(
-      '.color-palette-gradient-bar',
-    ) as HTMLElement | null;
-    if (!gradientBar) {
-      throw new Error('Numeric gradient preview not found');
-    }
-    const styles = window.getComputedStyle(gradientBar);
-    const rect = gradientBar.getBoundingClientRect();
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-      width: rect.width,
-      height: rect.height,
-      boxShadow: styles.boxShadow,
-      hasShadow: styles.boxShadow !== 'none',
-      borderRadius: styles.borderRadius,
-      transform: styles.transform,
-    };
-  });
-}
-
-async function readPalettePreviewChrome(
-  page: Page,
-  kind: 'numeric' | 'categorical',
-): Promise<{
-  height: number;
-  hasShadow: boolean;
-  borderRadius: string;
-}> {
-  return page.evaluate((previewKind) => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const root = legend?.shadowRoot;
-    const target =
-      previewKind === 'numeric'
-        ? (root?.querySelector('.color-palette-gradient-bar') as HTMLElement | null)
-        : (root?.querySelector('.color-palette-swatch') as HTMLElement | null);
-
-    if (!target) {
-      throw new Error(`Palette preview target not found for ${previewKind}`);
-    }
-
-    const styles = window.getComputedStyle(target);
-    return {
-      height: target.getBoundingClientRect().height,
-      hasShadow: styles.boxShadow !== 'none',
-      borderRadius: styles.borderRadius,
-    };
-  }, kind);
-}
-
-async function openLegendSettings(page: Page): Promise<void> {
-  await dismissTourIfPresent(page);
-  await page.locator('protspace-legend button[aria-label="Legend settings"]').click();
-  await expect(page.locator('protspace-legend #legend-settings-dialog')).toBeVisible();
-}
-
-async function readLegendSettingsDialog(page: Page) {
-  return page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const root = legend?.shadowRoot;
-    const labels = Array.from(root?.querySelectorAll('label') ?? []);
-    const includeShapesPresent = labels.some(
-      (l) => (l.textContent ?? '').trim() === 'Include shapes',
-    );
-    const palette = root?.querySelector('.color-palette-select') as HTMLSelectElement | null;
-    const distribution = root?.querySelector(
-      '#numeric-distribution-select',
-    ) as HTMLSelectElement | null;
-    const gradientBar = root?.querySelector('.color-palette-gradient-bar') as HTMLElement | null;
-    const sortingSection = root?.querySelector(
-      '#legend-sorting-section-title',
-    ) as HTMLElement | null;
-    const reverseButton = root?.querySelector('button.reverse-button') as HTMLButtonElement | null;
-    const maxVisibleLabel = (root?.querySelector('#max-visible-input') as HTMLInputElement | null)
-      ?.closest('.other-items-list-item')
-      ?.querySelector('.other-items-list-item-label') as HTMLLabelElement | null;
-    const shapeSizeLabel = (root?.querySelector('#shape-size-input') as HTMLInputElement | null)
-      ?.closest('.other-items-list-item')
-      ?.querySelector('.other-items-list-item-label') as HTMLLabelElement | null;
-    const sortingLabels = Array.from(
-      root?.querySelectorAll('input[type="radio"][name^="sort-type-"]') ?? [],
-    ).map((input) => input.closest('label')?.textContent?.trim() ?? '');
-    const selectedSortingLabel =
-      (
-        Array.from(root?.querySelectorAll('input[type="radio"][name^="sort-type-"]') ?? []).find(
-          (input) => (input as HTMLInputElement).checked,
-        ) as HTMLInputElement | undefined
-      )
-        ?.closest('label')
-        ?.textContent?.trim() ?? '';
-    const reverseGradientToggle = root?.querySelector(
-      '#reverse-gradient-toggle',
-    ) as HTMLInputElement | null;
-    const dialogTitle = root?.querySelector('#legend-settings-title') as HTMLElement | null;
-    const paletteOptionTexts = Array.from(palette?.options ?? []).map(
-      (option) => option.textContent?.trim() ?? '',
-    );
-
-    return {
-      title: dialogTitle?.textContent?.trim() ?? '',
-      includeShapesAbsent: !includeShapesPresent,
-      palette: palette?.value ?? null,
-      paletteOptions: Array.from(palette?.options ?? []).map((option) => option.value),
-      paletteOptionTexts,
-      reverseGradientChecked: reverseGradientToggle?.checked ?? false,
-      distribution: distribution?.value ?? null,
-      hasDistributionSelect: Boolean(distribution),
-      hasGradientPreview: Boolean(gradientBar),
-      hasSortingSection: Boolean(sortingSection),
-      sortingSectionTitle: sortingSection?.textContent?.trim() ?? '',
-      hasReverseButton: Boolean(reverseButton),
-      reverseButtonLabel: reverseButton?.getAttribute('aria-label') ?? '',
-      maxVisibleLabel: maxVisibleLabel?.textContent?.trim() ?? '',
-      shapeSizeLabel: shapeSizeLabel?.textContent?.trim() ?? '',
-      sortingLabels,
-      selectedSortingLabel,
-      logDisabled:
-        (distribution?.querySelector('option[value="logarithmic"]') as HTMLOptionElement | null)
-          ?.disabled ?? null,
-    };
-  });
+/** Viridis, linear bins and `bins` of them, applied live; then the popover closes. */
+async function rebinLength(page: Page, bins: string): Promise<void> {
+  await pickLegendPalette(page, 'Viridis');
+  await setBinDistribution(page, 'Linear');
+  await setLegendSetting(page, 'Bins', bins);
+  await closeLegendSettings(page);
 }
 
 async function readLegendDisplay(page: Page) {
@@ -382,9 +247,6 @@ async function readLegendDisplay(page: Page) {
     const legend = document.querySelector('protspace-legend') as HTMLElement & {
       shadowRoot: ShadowRoot;
     };
-    const reverseButton = legend?.shadowRoot?.querySelector(
-      'button.reverse-button',
-    ) as HTMLButtonElement | null;
     const items = Array.from(legend?.shadowRoot?.querySelectorAll('.legend-item') ?? []).map(
       (item) => {
         const element = item as HTMLElement;
@@ -399,40 +261,17 @@ async function readLegendDisplay(page: Page) {
         };
       },
     );
-    return {
-      items,
-      reverseButtonLabel: reverseButton?.getAttribute('aria-label') ?? '',
-    };
+    return { items };
   });
 }
 
-async function clickLegendReverseButton(page: Page): Promise<void> {
-  await page.locator('protspace-legend button.reverse-button').click();
-}
-
 // ─── Query-builder filter helpers ───────────────────────────────────────────
-// The control-bar Filter button opens the query builder (role="dialog"
-// "Filter Query Builder"). A condition row picks an annotation and one or more
-// of its values; "Apply & Isolate" isolates the scatter-plot to the matched
-// proteins (observed via getCurrentData()), and "Reset All" clears isolation.
+// The Filter button opens the query builder in the filter dialog. A condition row picks an
+// annotation and one or more of its values; "Apply & Isolate" isolates the scatter-plot to the
+// matched proteins (observed via getCurrentData()), and "Reset" clears isolation.
 // Numeric bins are listed in the value picker by their internal id
 // (e.g. "num:quantile:10:20.5"); these helpers map friendly bin labels (as the
 // legend shows them) to those internal ids via numericMetadata.bins.
-
-const FILTER_DIALOG = { name: 'Filter Query Builder' } as const;
-
-async function openQueryBuilder(page: Page): Promise<void> {
-  await dismissTourIfPresent(page);
-  const dialog = page.getByRole('dialog', FILTER_DIALOG);
-  if (await dialog.isVisible().catch(() => false)) {
-    return;
-  }
-  await page
-    .locator('protspace-control-bar')
-    .getByRole('button', { name: /^Filter/ })
-    .click();
-  await expect(dialog).toBeVisible();
-}
 
 /**
  * The annotation column of every top-level condition row, '' for a row with no
@@ -440,10 +279,8 @@ async function openQueryBuilder(page: Page): Promise<void> {
  * trigger shows the annotation's label, not its column name.
  */
 async function topRowAnnotations(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
-    const cb = document.querySelector('protspace-control-bar');
-    const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-    const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+  return queryBuilder(page).evaluate((qb) => {
+    const conds = qb.shadowRoot?.querySelector('.query-conditions');
     const rows = Array.from(conds?.children ?? []).filter(
       (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
     );
@@ -469,7 +306,7 @@ function conditionRow(page: Page, index: number) {
  * condition only when necessary. Returns the row's index.
  */
 async function ensureCondition(page: Page, annotation: string): Promise<number> {
-  await openQueryBuilder(page);
+  await openFilter(page);
   const existing = await rowIndexFor(page, annotation);
   if (existing >= 0) {
     return existing;
@@ -478,10 +315,7 @@ async function ensureCondition(page: Page, annotation: string): Promise<number> 
   let annotations = await topRowAnnotations(page);
   let emptyIndex = annotations.indexOf('');
   if (emptyIndex < 0) {
-    await page
-      .locator('protspace-query-builder')
-      .getByRole('button', { name: '+ Add condition' })
-      .click();
+    await queryBuilder(page).getByRole('button', { name: '+ Add condition' }).click();
     await expect
       .poll(async () => (await topRowAnnotations(page)).filter((t) => t === '').length)
       .toBeGreaterThan(0);
@@ -546,10 +380,8 @@ async function valueMap(
 }
 
 async function isValuePickerOpen(page: Page, rowIndex: number): Promise<boolean> {
-  return page.evaluate((idx) => {
-    const cb = document.querySelector('protspace-control-bar');
-    const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-    const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+  return queryBuilder(page).evaluate((qb, idx) => {
+    const conds = qb.shadowRoot?.querySelector('.query-conditions');
     const rows = Array.from(conds?.children ?? []).filter(
       (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
     );
@@ -569,29 +401,29 @@ async function openValuePicker(page: Page, rowIndex: number): Promise<void> {
   await expect.poll(async () => isValuePickerOpen(page, rowIndex)).toBe(true);
   // The value list renders synchronously, but wait until at least one item or an
   // existing chip is present so callers can read/select reliably.
-  await page.waitForFunction((idx) => {
-    const cb = document.querySelector('protspace-control-bar');
-    const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-    const conds = qb?.shadowRoot?.querySelector('.query-conditions');
-    const rows = Array.from(conds?.children ?? []).filter(
-      (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
-    );
-    const row = rows[idx] as (HTMLElement & { shadowRoot: ShadowRoot }) | undefined;
-    const picker = row?.shadowRoot?.querySelector('protspace-query-value-picker') as
-      | (HTMLElement & { shadowRoot: ShadowRoot })
-      | undefined;
-    const items = picker?.shadowRoot?.querySelectorAll('.value-picker-item').length ?? 0;
-    const chips = row?.shadowRoot?.querySelectorAll('.value-chip-text').length ?? 0;
-    return items + chips > 0;
-  }, rowIndex);
+  await expect
+    .poll(() =>
+      queryBuilder(page).evaluate((qb, idx) => {
+        const conds = qb.shadowRoot?.querySelector('.query-conditions');
+        const rows = Array.from(conds?.children ?? []).filter(
+          (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
+        );
+        const row = rows[idx] as (HTMLElement & { shadowRoot: ShadowRoot }) | undefined;
+        const picker = row?.shadowRoot?.querySelector('protspace-query-value-picker') as
+          | (HTMLElement & { shadowRoot: ShadowRoot })
+          | undefined;
+        const items = picker?.shadowRoot?.querySelectorAll('.value-picker-item').length ?? 0;
+        const chips = row?.shadowRoot?.querySelectorAll('.value-chip-text').length ?? 0;
+        return items + chips > 0;
+      }, rowIndex),
+    )
+    .toBe(true);
 }
 
 /** Read the internal value labels currently listed in the open value picker. */
 async function pickerItemValues(page: Page, rowIndex: number): Promise<string[]> {
-  return page.evaluate((idx) => {
-    const cb = document.querySelector('protspace-control-bar');
-    const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-    const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+  return queryBuilder(page).evaluate((qb, idx) => {
+    const conds = qb.shadowRoot?.querySelector('.query-conditions');
     const rows = Array.from(conds?.children ?? []).filter(
       (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
     );
@@ -610,10 +442,8 @@ async function pickerItemValues(page: Page, rowIndex: number): Promise<string[]>
 
 /** Read the internal value labels currently selected as chips on the row. */
 async function chipValues(page: Page, rowIndex: number): Promise<string[]> {
-  return page.evaluate((idx) => {
-    const cb = document.querySelector('protspace-control-bar');
-    const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-    const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+  return queryBuilder(page).evaluate((qb, idx) => {
+    const conds = qb.shadowRoot?.querySelector('.query-conditions');
     const rows = Array.from(conds?.children ?? []).filter(
       (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
     );
@@ -630,11 +460,9 @@ async function clickPickerValue(
   rowIndex: number,
   internalValue: string,
 ): Promise<boolean> {
-  return page.evaluate(
-    ({ idx, val }) => {
-      const cb = document.querySelector('protspace-control-bar');
-      const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-      const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+  return queryBuilder(page).evaluate(
+    (qb, { idx, val }) => {
+      const conds = qb.shadowRoot?.querySelector('.query-conditions');
       const rows = Array.from(conds?.children ?? []).filter(
         (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
       );
@@ -659,17 +487,15 @@ async function clickPickerValue(
 
 /** Remove every selected value chip from a condition row. */
 async function clearChips(page: Page, rowIndex: number): Promise<void> {
-  // Removing a chip dispatches condition-changed up through the control-bar and
+  // Removing a chip dispatches condition-changed up through the query builder and
   // back down, so the chip DOM only updates after an async Lit re-render. Wait
   // for the chip count to actually drop before the next click so we never
   // re-click a stale/detached button, and cap the loop so a removal regression
   // fails fast (a clear poll timeout) instead of spinning until the test timeout.
   let remaining = (await chipValues(page, rowIndex)).length;
   for (let guard = remaining + 5; guard > 0 && remaining > 0; guard -= 1) {
-    const removed = await page.evaluate((idx) => {
-      const cb = document.querySelector('protspace-control-bar');
-      const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-      const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+    const removed = await queryBuilder(page).evaluate((qb, idx) => {
+      const conds = qb.shadowRoot?.querySelector('.query-conditions');
       const rows = Array.from(conds?.children ?? []).filter(
         (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
       );
@@ -689,7 +515,7 @@ async function clearChips(page: Page, rowIndex: number): Promise<void> {
 
 /** Close any open annotation/value picker without closing the dialog. */
 async function closeOpenPickers(page: Page): Promise<void> {
-  const matchCount = page.locator('protspace-query-builder .match-count');
+  const matchCount = queryBuilder(page).locator('.match-count');
   if (await matchCount.isVisible().catch(() => false)) {
     await matchCount.click();
   }
@@ -757,22 +583,24 @@ async function setNumericFilter(
 }
 
 /**
- * Clear the active filter and isolation entirely via "Reset All". Leaves the
+ * Clear the active filter and isolation entirely via "Reset". Leaves the
  * builder open (matching the component behaviour). The single caller that filters
  * one annotation uses this to return to the unfiltered view.
  */
 async function disableFilter(page: Page, _annotation: string): Promise<void> {
-  await openQueryBuilder(page);
+  await openFilter(page);
   await closeOpenPickers(page);
-  await page.locator('protspace-query-builder .query-footer-reset').click();
+  await filterResetButton(page).click();
 }
 
 async function applyFiltersFromMenu(page: Page): Promise<void> {
   await closeOpenPickers(page);
-  const apply = page.locator('protspace-query-builder .btn-primary');
+  const apply = filterApplyButton(page);
   await expect(apply).toBeEnabled();
   await apply.click();
-  await expect(page.getByRole('dialog', FILTER_DIALOG)).toBeHidden();
+  // The panel stays open with the draft applied; back to the legend, as the dialog's close was.
+  await expect(apply).toBeDisabled();
+  await closeFilterPanel(page);
 }
 
 /**
@@ -801,81 +629,39 @@ async function readLegendDragHandles(page: Page): Promise<{ total: number; enabl
   });
 }
 
-async function dragLegendHandle(page: Page, fromIndex: number, toIndex: number): Promise<void> {
-  const dragCoordinates = await page.evaluate(
-    ({ sourceIndex, targetIndex }) => {
-      const legend = document.querySelector('protspace-legend') as HTMLElement & {
-        shadowRoot: ShadowRoot;
-      };
-      const handles = Array.from(
-        legend?.shadowRoot?.querySelectorAll('.legend-item:not(.legend-item-other) .drag-handle') ??
-          [],
-      ) as HTMLElement[];
-      if (handles.length <= Math.max(sourceIndex, targetIndex)) {
-        return null;
-      }
-
-      const source = handles[sourceIndex]?.getBoundingClientRect();
-      const target = handles[targetIndex]?.getBoundingClientRect();
-      if (!source || !target) {
-        return null;
-      }
-
-      return {
-        fromX: source.left + source.width / 2,
-        fromY: source.top + source.height / 2,
-        toX: target.left + target.width / 2,
-        toY: target.top + target.height / 2,
-      };
-    },
-    { sourceIndex: fromIndex, targetIndex: toIndex },
-  );
-
-  expect(dragCoordinates).not.toBeNull();
-
-  await page.mouse.move(dragCoordinates?.fromX ?? 0, dragCoordinates?.fromY ?? 0);
+/**
+ * Press the drag handle of the `index`-th sortable row the way a user does: the handle shows only
+ * on a hovered row, and showing it moves it (the name gives way), so hover the row first, then
+ * read the handle's box and check the pointer really lands on it.
+ */
+async function pressLegendHandle(page: Page, index: number): Promise<void> {
+  const rows = page.locator('protspace-legend .legend-item:not(.legend-item-other)');
+  await rows.nth(index).hover();
+  const handle = await page.evaluate((rowIndex) => {
+    const root = document.querySelector('protspace-legend')?.shadowRoot;
+    const row = root?.querySelectorAll('.legend-item:not(.legend-item-other)')[rowIndex];
+    const box = row?.querySelector('.drag-handle')?.getBoundingClientRect();
+    if (!root || !box) return null;
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    return { x, y, hit: root.elementFromPoint(x, y)?.closest('.drag-handle') !== null };
+  }, index);
+  expect(handle).toMatchObject({ hit: true });
+  await page.mouse.move(handle!.x, handle!.y);
   await page.mouse.down();
-  await page.mouse.move(dragCoordinates?.toX ?? 0, dragCoordinates?.toY ?? 0, { steps: 10 });
-  await page.mouse.up();
 }
 
-async function readCategoricalPreviewRows(page: Page): Promise<{
-  swatchCount: number;
-  firstRowCount: number;
-  overflows: boolean;
-  firstSwatchWidth: number;
-}> {
-  return page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const preview = legend?.shadowRoot?.querySelector(
-      '.color-palette-preview',
-    ) as HTMLElement | null;
-    const swatches = Array.from(
-      legend?.shadowRoot?.querySelectorAll('.color-palette-preview .color-palette-swatch') ?? [],
-    ) as HTMLElement[];
-    if (swatches.length === 0) {
-      return { swatchCount: 0, firstRowCount: 0, overflows: false, firstSwatchWidth: 0 };
-    }
-    const firstTop = Math.round(swatches[0].getBoundingClientRect().top);
-    return {
-      swatchCount: swatches.length,
-      firstRowCount: swatches.filter(
-        (swatch) => Math.round(swatch.getBoundingClientRect().top) === firstTop,
-      ).length,
-      overflows: (preview?.scrollWidth ?? 0) > (preview?.clientWidth ?? 0) + 1,
-      firstSwatchWidth: swatches[0]?.getBoundingClientRect().width ?? 0,
-    };
+async function dragLegendHandle(page: Page, fromIndex: number, toIndex: number): Promise<void> {
+  await pressLegendHandle(page, fromIndex);
+  const target = await page
+    .locator('protspace-legend .legend-item:not(.legend-item-other)')
+    .nth(toIndex)
+    .boundingBox();
+  expect(target).not.toBeNull();
+  await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height / 2, {
+    steps: 10,
   });
-}
-
-async function setSortMode(page: Page, annotation: string, mode: 'size' | 'alpha' | 'manual') {
-  const legend = page.locator('protspace-legend');
-  const inputs = legend.locator(`input[name="sort-type-${annotation}"][type="radio"]`);
-  const count = await inputs.count();
-  const index = mode === 'size' ? 0 : mode === 'alpha' ? 1 : count - 1;
-  await inputs.nth(index).click();
+  await page.mouse.up();
 }
 
 async function hoverFirstVisiblePoint(page: Page): Promise<void> {
@@ -925,7 +711,9 @@ async function hoverFirstVisiblePoint(page: Page): Promise<void> {
     return targets;
   });
 
-  for (const target of targets) {
+  // Hover is coalesced to a frame and the tooltip renders one update later; a loaded suite can
+  // take longer than the short probes, so the first target gets a real wait.
+  for (const [i, target] of targets.entries()) {
     await page.mouse.move(target.x, target.y, { steps: 4 });
     const hovered = await page
       .waitForFunction(
@@ -936,7 +724,7 @@ async function hoverFirstVisiblePoint(page: Page): Promise<void> {
           return Boolean(plot?.shadowRoot?.querySelector('protspace-protein-tooltip'));
         },
         undefined,
-        { timeout: 200 },
+        { timeout: i === 0 ? 3_000 : 300 },
       )
       .then(() => true)
       .catch(() => false);
@@ -971,47 +759,6 @@ async function readTooltipSummary(page: Page): Promise<{
   });
 }
 
-async function updateLegendSettings(
-  page: Page,
-  settings: {
-    maxVisibleValues: number;
-    paletteId: string;
-    strategy: 'linear' | 'quantile' | 'logarithmic';
-    reverseGradient?: boolean;
-  },
-): Promise<void> {
-  const legend = page.locator('protspace-legend');
-  await legend.locator('#max-visible-input').fill(String(settings.maxVisibleValues));
-  await legend.locator('.color-palette-select').first().selectOption(settings.paletteId);
-  const distributionSelect = legend.locator('#numeric-distribution-select');
-  if ((await distributionSelect.count()) > 0) {
-    await distributionSelect.selectOption(settings.strategy);
-  }
-  if (settings.reverseGradient !== undefined) {
-    const toggle = legend.locator('#reverse-gradient-toggle');
-    const checked = await toggle.isChecked();
-    if (checked !== settings.reverseGradient) {
-      await toggle.click();
-    }
-  }
-}
-
-async function clickDialogButton(page: Page, label: 'Cancel' | 'Save'): Promise<void> {
-  await page
-    .locator('protspace-legend #legend-settings-dialog')
-    .getByRole('button', { name: label })
-    .click();
-}
-
-async function waitForDialogClosed(page: Page): Promise<void> {
-  await page.waitForFunction(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    return !legend?.shadowRoot?.querySelector('#legend-settings-dialog');
-  });
-}
-
 test('raw numeric annotations are materialized into frontend bins', async ({ page }) => {
   await loadDataset(page);
 
@@ -1025,7 +772,7 @@ test('raw numeric annotations are materialized into frontend bins', async ({ pag
   expect(result.colors.at(-1)).toBe('#FACCFA');
 });
 
-test('numeric settings are staged, saved, and restored on re-import', async ({ page }) => {
+test('numeric settings apply live and are restored on re-import', async ({ page }) => {
   await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
@@ -1045,130 +792,59 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
   await expect
     .poll(async () => {
       const state = await getNumericState(page);
-      return {
-        rawKind: state.rawKind ?? null,
-        hasBins: (state.binCount ?? 0) > 0,
-      };
+      return { rawKind: state.rawKind ?? null, hasBins: (state.binCount ?? 0) > 0 };
     })
     .toEqual({ rawKind: 'numeric', hasBins: true });
 
-  await openLegendSettings(page);
-  const initialDialog = await readLegendSettingsDialog(page);
+  // Task 3.9's check: the order is the header's, not a settings section.
+  expect(await legendSortLabel(page)).toBe('By value, low to high');
+  const settings = await openLegendSettings(page);
   await expect(
-    page.locator('protspace-legend').getByRole('dialog', { name: 'Legend settings: length' }),
+    page.getByRole('dialog', { name: 'Legend settings: Sequence length' }),
   ).toBeVisible();
-  expect(initialDialog.includeShapesAbsent).toBe(true);
-  expect(initialDialog.palette).toBe('batlow');
-  expect(initialDialog.distribution).toBe('quantile');
-  expect(initialDialog.hasDistributionSelect).toBe(true);
-  expect(initialDialog.hasSortingSection).toBe(true);
-  expect(initialDialog.hasReverseButton).toBe(true);
-  expect(initialDialog.reverseButtonLabel).toBe('Show high to low');
-  expect(initialDialog.title).toBe('Legend settings: length');
-  expect(initialDialog.maxVisibleLabel).toBe('Max legend items');
-  expect(initialDialog.shapeSizeLabel).toBe('Point size');
-  expect(initialDialog.sortingLabels).toEqual(['By numeric value', 'Manual order']);
-  expect(initialDialog.reverseGradientChecked).toBe(false);
-  expect(initialDialog.paletteOptionTexts).toEqual([
-    'Batlow - Scientific sequential gradient',
-    'Cividis - Colorblind-friendly sequential gradient',
-    'Inferno - High-contrast sequential gradient',
-    'Plasma - Vivid sequential gradient',
-    'Viridis - Perceptually uniform sequential gradient',
-  ]);
-  expect(initialDialog.logDisabled).toBe(false);
-  const initialPreview = await readNumericPreview(page);
-  expect(initialPreview.ariaLabel).toBe('Batlow continuous gradient preview');
-  expect(initialPreview.caption).toBe('');
-  expect(initialPreview.scaleLabels).toEqual(['Low', 'High']);
-  expect((await readNumericPreview(page)).options).toContainEqual({
-    value: 'logarithmic',
-    label: 'Logarithmic',
+  expect(await readLegendSettings(page)).toMatchObject({
+    palette: 'Batlow',
+    distribution: 'Quantile',
+    reverseGradient: false,
   });
+  await expect(settings.getByRole('spinbutton', { name: 'Bins', exact: true })).toBeVisible();
+  await expect(settings.getByRole('spinbutton', { name: 'Point size', exact: true })).toBeVisible();
+  expect(
+    await settings
+      .getByRole('radio')
+      .evaluateAll((radios) => radios.map((radio) => radio.textContent?.trim() ?? '')),
+  ).toEqual(['Batlow', 'Cividis', 'Inferno', 'Plasma', 'Viridis']);
+  expect(
+    await settings
+      .getByRole('combobox', { name: 'Bin distribution' })
+      .evaluate(
+        (select: HTMLSelectElement) =>
+          select.querySelector<HTMLOptionElement>('option[value="logarithmic"]')?.disabled,
+      ),
+  ).toBe(false);
+  // No Save, no Cancel, and the order lives in the header's sort menu now.
+  await expect(settings.getByRole('button', { name: /^(Save|Cancel)$/ })).toHaveCount(0);
+  await expect(settings.getByText('Bin order')).toHaveCount(0);
+  await expect(settings.getByText('Include shapes')).toHaveCount(0);
 
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-  });
-  await expect.poll(readNumericPreview.bind(null, page)).toMatchObject({
-    ariaLabel: 'Plasma continuous gradient preview',
-  });
-  const plasmaPreview = await readNumericPreview(page);
-  expect(plasmaPreview.scaleLabels).toEqual(['Low', 'High']);
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
-
-  let state = await getNumericState(page);
-  expect(state.strategy).toBe('quantile');
-  expect(state.binCount).toBeGreaterThan(0);
-  expect(state.binCount).toBeLessThanOrEqual(10);
-  expect(state.colors[0]).toBe('#011959');
-
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-  });
-  await expect.poll(readNumericPreview.bind(null, page)).toMatchObject({
-    ariaLabel: 'Plasma continuous gradient preview',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getCurrentData?: () => {
-            annotations?: Record<
-              string,
-              {
-                colors?: string[];
-                numericMetadata?: { strategy?: string; binCount?: number };
-              }
-            >;
-          };
-        })
-      | null;
-    const lengthAnnotation = plot?.getCurrentData?.()?.annotations?.length;
-    return (
-      lengthAnnotation?.numericMetadata?.strategy === 'quantile' &&
-      lengthAnnotation?.numericMetadata?.binCount === 5 &&
-      lengthAnnotation?.colors?.[0] === '#0D0887'
-    );
-  });
-
-  state = await getNumericState(page);
-  expect(state.strategy).toBe('quantile');
-  expect(state.binCount).toBe(5);
+  await pickLegendPalette(page, 'Plasma');
+  await setLegendSetting(page, 'Bins', '5');
+  // Applied with the popover still open.
+  await expect(legendSettingsDialog(page)).toBeVisible();
+  await expect
+    .poll(() => getNumericState(page))
+    .toMatchObject({ strategy: 'quantile', binCount: 5 });
+  const state = await getNumericState(page);
   expect(state.colors[0]).toBe('#0D0887');
   expect(state.colors.at(-1)).toBe('#F0F921');
+  await closeLegendSettings(page);
 
   await loadBundleFromBytes(page, bundleBytes, 'phosphatase_no_binning.parquetbundle');
   await waitForAnnotationAvailable(page, 'length');
   await selectAnnotation(page, 'length');
-
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getCurrentData?: () => {
-            annotations?: Record<
-              string,
-              {
-                colors?: string[];
-                numericMetadata?: { strategy?: string; binCount?: number };
-              }
-            >;
-          };
-        })
-      | null;
-    const lengthAnnotation = plot?.getCurrentData?.()?.annotations?.length;
-    return (
-      lengthAnnotation?.numericMetadata?.strategy === 'quantile' &&
-      lengthAnnotation?.numericMetadata?.binCount === 5
-    );
-  });
+  await expect
+    .poll(() => getNumericState(page))
+    .toMatchObject({ strategy: 'quantile', binCount: 5 });
 });
 
 test('reset restores numeric settings defaults and clears saved state on re-import', async ({
@@ -1185,47 +861,33 @@ test('reset restores numeric settings defaults and clears saved state on re-impo
       | null;
     return typeof plot?.getCurrentData === 'function';
   });
-
   const bundleBytes = Array.from(fs.readFileSync(RAW_NUMERIC_BUNDLE_PATH));
   await loadBundleFromBytes(page, bundleBytes, 'phosphatase_no_binning.parquetbundle');
   await waitForAnnotationAvailable(page, 'length');
   await selectAnnotation(page, 'length');
   await waitForLegendAnnotation(page, 'length');
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-    reverseGradient: true,
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-
+  await pickLegendPalette(page, 'Plasma');
+  await toggleLegendSetting(page, 'Reverse gradient');
+  await setLegendSetting(page, 'Bins', '5');
+  await expect.poll(async () => (await getNumericState(page)).colors[0]).toBe('#F0F921');
   let state = await getNumericState(page);
   expect(state.strategy).toBe('quantile');
-  expect(state.colors[0]).toBe('#F0F921');
   expect(state.colors.at(-1)).toBe('#0D0887');
 
-  await openLegendSettings(page);
-  await page
-    .locator('protspace-legend #legend-settings-dialog')
-    .getByRole('button', { name: 'Reset' })
-    .click();
-  await waitForDialogClosed(page);
-
+  await resetLegendSettings(page);
+  // Reset keeps the popover open, showing the defaults.
+  await expect(legendSettingsDialog(page)).toBeVisible();
+  expect(await readLegendSettings(page)).toMatchObject({
+    palette: 'Batlow',
+    distribution: 'Quantile',
+    reverseGradient: false,
+  });
+  await expect.poll(async () => (await getNumericState(page)).colors[0]).toBe('#011959');
   state = await getNumericState(page);
   expect(state.strategy).toBe('quantile');
-  expect(state.colors[0]).toBe('#011959');
   expect(state.colors.at(-1)).toBe('#FACCFA');
-
-  await openLegendSettings(page);
-  let dialog = await readLegendSettingsDialog(page);
-  expect(dialog.palette).toBe('batlow');
-  expect(dialog.distribution).toBe('quantile');
-  expect(dialog.reverseGradientChecked).toBe(false);
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await closeLegendSettings(page);
 
   await loadBundleFromBytes(page, bundleBytes, 'phosphatase_no_binning.parquetbundle');
   await waitForAnnotationAvailable(page, 'length');
@@ -1236,17 +898,15 @@ test('reset restores numeric settings defaults and clears saved state on re-impo
   expect(state.strategy).toBe('quantile');
   expect(state.colors[0]).toBe('#011959');
   expect(state.colors.at(-1)).toBe('#FACCFA');
-
-  await openLegendSettings(page);
-  dialog = await readLegendSettingsDialog(page);
-  expect(dialog.palette).toBe('batlow');
-  expect(dialog.distribution).toBe('quantile');
-  expect(dialog.reverseGradientChecked).toBe(false);
+  expect(await readLegendSettings(page)).toMatchObject({
+    palette: 'Batlow',
+    distribution: 'Quantile',
+    reverseGradient: false,
+  });
+  await closeLegendSettings(page);
 });
 
-test('closing the settings dialog discards staged numeric changes like cancel', async ({
-  page,
-}) => {
+test('closing the settings popover keeps the numeric changes it applied', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
 
@@ -1254,51 +914,37 @@ test('closing the settings dialog discards staged numeric changes like cancel', 
   expect(initialState.strategy).toBe('quantile');
   expect(initialState.colors[0]).toBe('#011959');
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-    reverseGradient: true,
-  });
-
+  await pickLegendPalette(page, 'Plasma');
+  await toggleLegendSetting(page, 'Reverse gradient');
+  await setLegendSetting(page, 'Bins', '5');
+  // The settings button closes the popover it opened.
   await page
-    .locator('protspace-legend #legend-settings-dialog')
-    .getByRole('button', { name: 'Close settings' })
+    .locator('protspace-legend')
+    .getByRole('button', { name: 'Legend settings', exact: true })
     .click();
-  await waitForDialogClosed(page);
+  await expect(legendSettingsDialog(page)).toBeHidden();
 
+  await expect.poll(async () => (await getNumericState(page)).colors[0]).toBe('#F0F921');
   const state = await getNumericState(page);
   expect(state.strategy).toBe('quantile');
-  expect(state.colors[0]).toBe('#011959');
-  expect(state.colors.at(-1)).toBe('#FACCFA');
+  expect(state.colors.at(-1)).toBe('#0D0887');
 });
 
-test('pressing escape closes the settings dialog and discards staged numeric changes', async ({
+test('Escape closes the settings popover and keeps a value typed just before it', async ({
   page,
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
 
-  const initialState = await getNumericState(page);
-  expect(initialState.strategy).toBe('quantile');
-  expect(initialState.colors[0]).toBe('#011959');
-
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-    reverseGradient: true,
-  });
-
+  const settings = await openLegendSettings(page);
+  // No blur: Escape right after typing must still apply the pending value.
+  await settings.getByRole('spinbutton', { name: 'Bins', exact: true }).fill('5');
   await page.keyboard.press('Escape');
-  await waitForDialogClosed(page);
+  await expect(legendSettingsDialog(page)).toBeHidden();
 
-  const state = await getNumericState(page);
-  expect(state.strategy).toBe('quantile');
-  expect(state.colors[0]).toBe('#011959');
-  expect(state.colors.at(-1)).toBe('#FACCFA');
+  await expect.poll(async () => (await getNumericState(page)).binCount).toBe(5);
+  expect((await readLegendSettings(page)).maxItems).toBe('5');
+  await closeLegendSettings(page);
 });
 
 test('changing only max legend items recalculates numeric colors for the same gradient palette', async ({
@@ -1314,18 +960,13 @@ test('changing only max legend items recalculates numeric colors for the same gr
   expect(initialState.colors[0]).toBe('#011959');
   expect(initialState.colors.at(-1)).toBe('#FACCFA');
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'cividis',
-    strategy: 'linear',
-  });
+  await pickLegendPalette(page, 'Cividis');
+  await setBinDistribution(page, 'Linear');
+  await setLegendSetting(page, 'Bins', '5');
+  await closeLegendSettings(page);
 
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-
+  await expect.poll(async () => (await getNumericState(page)).binCount).toBe(5);
   const savedState = await getNumericState(page);
-  expect(savedState.binCount).toBe(5);
   expect(savedState.colors).not.toEqual(initialState.colors);
   expect(savedState.colors[0]).toBe('#00224E');
   expect(savedState.colors.at(-1)).toBe('#FEE838');
@@ -1339,113 +980,91 @@ test('reversing the numeric gradient swaps the low and high bin colors', async (
   expect(initialState.colors.length).toBeGreaterThan(1);
   expect(initialState.colors[0]).toBe('#011959');
   expect(initialState.colors.at(-1)).toBe('#FACCFA');
+  expect((await readLegendSettings(page)).reverseGradient).toBe(false);
 
-  await openLegendSettings(page);
-  const initialDialog = await readLegendSettingsDialog(page);
-  expect(initialDialog.reverseGradientChecked).toBe(false);
+  await pickLegendPalette(page, 'Cividis');
+  await setBinDistribution(page, 'Linear');
+  await toggleLegendSetting(page, 'Reverse gradient');
+  await closeLegendSettings(page);
 
-  await updateLegendSettings(page, {
-    maxVisibleValues: 10,
-    paletteId: 'cividis',
-    strategy: 'linear',
-    reverseGradient: true,
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-
-  const reversedState = await getNumericState(page);
-  expect(reversedState.colors[0]).toBe('#FEE838');
-  expect(reversedState.colors.at(-1)).toBe('#00224E');
-
-  await openLegendSettings(page);
-  const reversedDialog = await readLegendSettingsDialog(page);
-  expect(reversedDialog.reverseGradientChecked).toBe(true);
+  await expect.poll(async () => (await getNumericState(page)).colors[0]).toBe('#FEE838');
+  expect((await getNumericState(page)).colors.at(-1)).toBe('#00224E');
+  expect((await readLegendSettings(page)).reverseGradient).toBe(true);
+  await closeLegendSettings(page);
 });
 
-test('numeric palette preview stays compact even for large max legend item counts', async ({
+test('numeric palette swatches stay inside the settings popover with 100 bins', async ({
   page,
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
+  await setLegendSetting(page, 'Bins', '100');
+  await setBinDistribution(page, 'Logarithmic');
 
-  await updateLegendSettings(page, {
-    maxVisibleValues: 100,
-    paletteId: 'cividis',
-    strategy: 'logarithmic',
-  });
-
-  await expect
-    .poll(async () => (await readNumericPreview(page)).ariaLabel)
-    .toBe('Cividis continuous gradient preview');
-
-  const preview = await readNumericPreview(page);
-  expect(preview.caption).toBe('');
-  expect(preview.gradientBarCount).toBe(1);
-  expect(preview.scaleLabels).toEqual(['Low', 'High']);
+  const settings = await openLegendSettings(page);
+  const panel = (await legendSettingsDialog(page).boundingBox())!;
+  const swatches = settings.getByRole('radio');
+  await expect(swatches).toHaveCount(5);
+  for (const swatch of await swatches.all()) {
+    const box = (await swatch.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(panel.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
+    await expect(swatch.locator('.swatch-gradient')).toHaveCount(1);
+  }
+  expect(panel.y + panel.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  await closeLegendSettings(page);
 });
 
-test('numeric palette preview remains bounded when hovered', async ({ page }) => {
+test('numeric and categorical palette swatches share the same chrome', async ({ page }) => {
   await loadDataset(page);
-  await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
-
-  const beforeHover = await readNumericPreviewChrome(page);
-  await page.locator('protspace-legend').locator('.color-palette-preview--continuous').hover();
-  await expect
-    .poll(async () => (await readNumericPreviewChrome(page)).width)
-    .toBeGreaterThan(beforeHover.width);
-  const afterHover = await readNumericPreviewChrome(page);
-  expect(afterHover.height).toBeLessThan(beforeHover.height * 1.08);
-});
-
-test('numeric gradient preview uses the same rendered chrome as categorical swatches', async ({
-  page,
-}) => {
-  await loadDataset(page);
+  const chrome = async () => {
+    const settings = await openLegendSettings(page);
+    const result = await settings
+      .getByRole('radio')
+      .first()
+      .evaluate((radio) => {
+        const strip = radio.querySelector('.swatch-chips, .swatch-gradient') as HTMLElement;
+        return {
+          swatchRadius: getComputedStyle(radio).borderRadius,
+          stripRadius: getComputedStyle(strip).borderRadius,
+          stripHeight: strip.getBoundingClientRect().height,
+        };
+      });
+    await closeLegendSettings(page);
+    return result;
+  };
 
   await selectAnnotation(page, 'family');
-  await openLegendSettings(page);
-  const categoricalChrome = await readPalettePreviewChrome(page, 'categorical');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
-
+  const categorical = await chrome();
   await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
-  const numericChrome = await readNumericPreviewChrome(page);
-
-  expect(numericChrome.borderRadius).toBe(categoricalChrome.borderRadius);
-  expect(numericChrome.hasShadow).toBe(true);
-  expect(categoricalChrome.hasShadow).toBe(true);
+  const numeric = await chrome();
+  expect(numeric).toEqual(categorical);
 });
 
-test('categorical annotations do not expose gradient palettes or gradient previews', async ({
+test('categorical annotations do not expose gradient palettes or gradient controls', async ({
   page,
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'family');
-  await openLegendSettings(page);
+  // Task 3.9's check: the sort button is there, and the order is categorical.
+  await expect(legendSortButton(page)).toBeVisible();
+  expect(await legendSortLabel(page)).not.toMatch(/^By value/);
+  const settings = await openLegendSettings(page);
 
-  const dialog = await readLegendSettingsDialog(page);
+  await expect(page.getByRole('dialog', { name: 'Legend settings: Family' })).toBeVisible();
+  expect(
+    await settings
+      .getByRole('radio')
+      .evaluateAll((radios) => radios.map((radio) => radio.textContent?.trim() ?? '')),
+  ).toEqual(['Dark2', "Kelly's Colors", 'Okabe-Ito', 'Set2', 'Tableau 10', 'Tol Bright']);
+  await expect(settings.locator('.swatch-gradient')).toHaveCount(0);
+  await expect(settings.getByRole('combobox', { name: 'Bin distribution' })).toHaveCount(0);
+  await expect(settings.getByRole('switch', { name: 'Reverse gradient' })).toHaveCount(0);
   await expect(
-    page.locator('protspace-legend').getByRole('dialog', { name: 'Legend settings: family' }),
+    settings.getByRole('spinbutton', { name: 'Max legend items', exact: true }),
   ).toBeVisible();
-  expect(dialog.hasGradientPreview).toBe(false);
-  expect(dialog.hasDistributionSelect).toBe(false);
-  expect(dialog.hasSortingSection).toBe(true);
-  expect(dialog.hasReverseButton).toBe(true);
-  expect(dialog.reverseButtonLabel).toBe('Reverse z-order (keep Other last)');
-  expect(dialog.title).toBe('Legend settings: family');
-  expect(dialog.maxVisibleLabel).toBe('Max legend items');
-  expect(dialog.shapeSizeLabel).toBe('Shape size');
-  expect(dialog.paletteOptions).toEqual([
-    'dark2',
-    'kellys',
-    'okabeIto',
-    'set2',
-    'tableau10',
-    'tolBright',
-  ]);
+  await expect(settings.getByRole('spinbutton', { name: 'Shape size', exact: true })).toBeVisible();
+  await closeLegendSettings(page);
 });
 
 test('drag handles stay active outside manual mode and keep Other disabled', async ({ page }) => {
@@ -1475,11 +1094,7 @@ test('clicking a legend row toggles visibility without switching categorical sor
   const firstRow = page.locator('protspace-legend .legend-item-main').first();
   await firstRow.click();
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
 
 test('same-slot pointer drag does not switch categorical sorting to manual', async ({ page }) => {
@@ -1493,11 +1108,7 @@ test('same-slot pointer drag does not switch categorical sorting to manual', asy
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
 
 test('dropping a pointer drag outside the legend keeps categorical sorting unchanged', async ({
@@ -1507,43 +1118,16 @@ test('dropping a pointer drag outside the legend keeps categorical sorting uncha
   await selectAnnotation(page, 'family');
 
   const initialLegend = await readLegendDisplay(page);
-  const dragCoordinates = await page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const handle = legend?.shadowRoot?.querySelector('.drag-handle') as HTMLElement | null;
-    const legendBounds = legend?.shadowRoot
-      ?.querySelector('.legend-container')
-      ?.getBoundingClientRect();
-    const handleBounds = handle?.getBoundingClientRect();
-    if (!handleBounds || !legendBounds) {
-      return null;
-    }
-
-    return {
-      fromX: handleBounds.left + handleBounds.width / 2,
-      fromY: handleBounds.top + handleBounds.height / 2,
-      toX: legendBounds.left - 80,
-      toY: legendBounds.top - 80,
-    };
-  });
-
-  expect(dragCoordinates).not.toBeNull();
-
-  await page.mouse.move(dragCoordinates?.fromX ?? 0, dragCoordinates?.fromY ?? 0);
-  await page.mouse.down();
-  await page.mouse.move(dragCoordinates?.toX ?? 0, dragCoordinates?.toY ?? 0, { steps: 10 });
+  const legendBounds = (await page.locator('protspace-legend .legend-container').boundingBox())!;
+  await pressLegendHandle(page, 0);
+  await page.mouse.move(legendBounds.x - 80, legendBounds.y - 80, { steps: 10 });
   await page.mouse.up();
 
   await expect
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
 
 test('categorical keyboard escape restores order and keeps non-manual sorting', async ({
@@ -1570,11 +1154,7 @@ test('categorical keyboard escape restores order and keeps non-manual sorting', 
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
 
 test('categorical keyboard reorder promotes to manual order and keeps Other fixed', async ({
@@ -1595,11 +1175,7 @@ test('categorical keyboard reorder promotes to manual order and keeps Other fixe
   );
   expect(reorderedLegend.items.at(-1)?.value).toBe(initialLegend.items.at(-1)?.value);
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
 test('real phosphatase bundle rebins length to five bins without leaving the UI stuck', async ({
@@ -1638,16 +1214,8 @@ test('real phosphatase bundle rebins length to five bins without leaving the UI 
   expect(initialNumericState.binCount).toBeGreaterThan(0);
   expect(initialNumericState.binCount).toBeLessThanOrEqual(10);
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-
   const startedAt = Date.now();
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await rebinLength(page, '5');
 
   await page.waitForFunction(() => {
     const plot = document.querySelector('protspace-scatterplot') as
@@ -1678,11 +1246,8 @@ test('real phosphatase bundle rebins length to five bins without leaving the UI 
   expect(finalNumericState.colors).not.toEqual(initialNumericState.colors);
   expect(finalNumericState.colors[0]).toBe('#440154');
   expect(finalNumericState.colors.at(-1)).toBe('#FDE725');
-  await openLegendSettings(page);
-  const reopenedDialog = await readLegendSettingsDialog(page);
-  expect(reopenedDialog.distribution).toBe('linear');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect((await readLegendSettings(page)).distribution).toBe('Linear');
+  await closeLegendSettings(page);
 });
 
 test('numeric header toggle reverses rendered bin order without changing color assignments', async ({
@@ -1692,9 +1257,9 @@ test('numeric header toggle reverses rendered bin order without changing color a
   await selectAnnotation(page, 'length');
 
   const initialLegend = await readLegendDisplay(page);
-  expect(initialLegend.reverseButtonLabel).toBe('Show high to low');
+  expect(await legendSortLabel(page)).toBe('By value, low to high');
 
-  await clickLegendReverseButton(page);
+  await toggleLegendReverse(page);
 
   await page.waitForFunction((firstValue) => {
     const legend = document.querySelector('protspace-legend') as HTMLElement & {
@@ -1705,7 +1270,7 @@ test('numeric header toggle reverses rendered bin order without changing color a
   }, initialLegend.items[0]?.value ?? '');
 
   const reversedLegend = await readLegendDisplay(page);
-  expect(reversedLegend.reverseButtonLabel).toBe('Show low to high');
+  expect(await legendSortLabel(page)).toBe('By value, high to low');
   expect(reversedLegend.items.map((item) => item.value)).toEqual(
     [...initialLegend.items.map((item) => item.value)].reverse(),
   );
@@ -1719,17 +1284,9 @@ test('numeric header toggle reverses rendered bin order without changing color a
 test('linear numeric bins can realize fewer values than requested', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 20,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await rebinLength(page, '20');
 
-  const realizedState = await getNumericState(page);
-  expect(realizedState.binCount).toBeLessThan(20);
+  await expect.poll(async () => (await getNumericState(page)).binCount).toBeLessThan(20);
   // (Bins are a legend/coloring concern only; numeric filtering is a raw-value
   // range input, so there is no per-bin filter list to count against here.)
 });
@@ -1745,32 +1302,29 @@ test('numeric legend labels are display summaries without comparison markers', a
   expect(legend.items.every((item) => !item.label.includes('.'))).toBe(true);
 });
 
-test('categorical palette preview keeps eleven swatches on the first row at desktop width', async ({
+test('categorical palette swatches fit the settings popover at 1280 and 1100 px wide', async ({
   page,
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'family');
-  await openLegendSettings(page);
-
-  const preview = await readCategoricalPreviewRows(page);
-  expect(preview.swatchCount).toBeGreaterThanOrEqual(11);
-  expect(preview.firstRowCount).toBe(11);
-  expect(preview.overflows).toBe(false);
-  expect(preview.firstSwatchWidth).toBeGreaterThanOrEqual(32);
-  expect(preview.firstSwatchWidth).toBeLessThanOrEqual(40);
-});
-
-test('categorical palette preview wraps cleanly at a narrower desktop width', async ({ page }) => {
-  await page.setViewportSize({ width: 1100, height: 720 });
-  await loadDataset(page);
-  await selectAnnotation(page, 'family');
-  await openLegendSettings(page);
-
-  const preview = await readCategoricalPreviewRows(page);
-  expect(preview.swatchCount).toBeGreaterThanOrEqual(11);
-  expect(preview.overflows).toBe(false);
-  expect(preview.firstRowCount).toBeLessThanOrEqual(11);
-  expect(preview.firstRowCount).toBeGreaterThanOrEqual(8);
+  for (const width of [1280, 1100]) {
+    await page.setViewportSize({ width, height: 720 });
+    const settings = await openLegendSettings(page);
+    const panel = (await legendSettingsDialog(page).boundingBox())!;
+    expect(panel.x).toBeGreaterThanOrEqual(0);
+    expect(panel.x + panel.width).toBeLessThanOrEqual(width);
+    const swatches = settings.getByRole('radio');
+    await expect(swatches).toHaveCount(6);
+    for (const swatch of await swatches.all()) {
+      const box = (await swatch.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(panel.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
+      // Eight chips each; Tol Bright has only seven colours.
+      const name = ((await swatch.textContent()) ?? '').trim();
+      await expect(swatch.locator('.chip')).toHaveCount(name === 'Tol Bright' ? 7 : 8);
+    }
+    await closeLegendSettings(page);
+  }
 });
 
 test('categorical pointer drag from size-asc keeps Other fixed and promotes to manual', async ({
@@ -1778,7 +1332,7 @@ test('categorical pointer drag from size-asc keeps Other fixed and promotes to m
 }) => {
   await loadDemoDataset(page);
 
-  await clickLegendReverseButton(page);
+  await toggleLegendReverse(page);
   const ascendingLegend = await readLegendDisplay(page);
   expect(ascendingLegend.items.at(-1)?.label.startsWith('Other')).toBe(true);
 
@@ -1790,22 +1344,15 @@ test('categorical pointer drag from size-asc keeps Other fixed and promotes to m
   const reorderedLegend = await readLegendDisplay(page);
   expect(reorderedLegend.items.at(-1)?.label.startsWith('Other')).toBe(true);
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
 test('categorical pointer drag from alphabetical reverse promotes to manual order', async ({
   page,
 }) => {
   await loadDemoDataset(page);
-  await openLegendSettings(page);
-  await setSortMode(page, 'order', 'alpha');
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-  await clickLegendReverseButton(page);
+  await setLegendSort(page, 'By name');
+  await toggleLegendReverse(page);
 
   const reversedAlphaLegend = await readLegendDisplay(page);
   await dragLegendHandle(page, 0, 1);
@@ -1813,11 +1360,7 @@ test('categorical pointer drag from alphabetical reverse promotes to manual orde
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .not.toEqual(reversedAlphaLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
 test('numeric range filters isolate to the matching subset and reset restores the full view', async ({
@@ -1919,6 +1462,7 @@ test('numeric pointer drag promotes value order to manual and reverse does not r
   await selectAnnotation(page, 'length');
 
   const initialLegend = await readLegendDisplay(page);
+  expect(await legendSortLabel(page)).toBe('By value, low to high');
   await dragLegendHandle(page, 0, 1);
 
   await page.waitForFunction((previousFirstValue) => {
@@ -1930,22 +1474,17 @@ test('numeric pointer drag promotes value order to manual and reverse does not r
   }, initialLegend.items[0]?.value ?? '');
 
   const manuallyReorderedLegend = await readLegendDisplay(page);
-  expect(initialLegend.reverseButtonLabel).toBe('Show high to low');
 
-  await openLegendSettings(page);
-  const reorderedDialog = await readLegendSettingsDialog(page);
-  expect(reorderedDialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 
-  await clickLegendReverseButton(page);
+  await toggleLegendReverse(page);
 
   await expect
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual([...manuallyReorderedLegend.items.map((item) => item.value)].reverse());
 
   const reversedLegend = await readLegendDisplay(page);
-  expect(reversedLegend.reverseButtonLabel).toBe('Reverse manual order');
+  expect(await legendSortLabel(page)).toBe('Your order, reversed');
   expect(Object.fromEntries(reversedLegend.items.map((item) => [item.value, item.color]))).toEqual(
     Object.fromEntries(manuallyReorderedLegend.items.map((item) => [item.value, item.color])),
   );
@@ -1954,21 +1493,17 @@ test('numeric pointer drag promotes value order to manual and reverse does not r
 test('numeric pointer drag from high-to-low value order promotes to manual', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
-  await clickLegendReverseButton(page);
+  await toggleLegendReverse(page);
 
   const reversedLegend = await readLegendDisplay(page);
-  expect(reversedLegend.reverseButtonLabel).toBe('Show low to high');
+  expect(await legendSortLabel(page)).toBe('By value, high to low');
   await dragLegendHandle(page, 0, 1);
 
   await expect
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .not.toEqual(reversedLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
 test('keyboard pickup without movement keeps numeric sorting in value order', async ({ page }) => {
@@ -1985,11 +1520,7 @@ test('keyboard pickup without movement keeps numeric sorting in value order', as
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By numeric value');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By value/);
 });
 
 test('keyboard escape cancels pickup and keeps numeric sorting in value order', async ({
@@ -2017,11 +1548,7 @@ test('keyboard escape cancels pickup and keeps numeric sorting in value order', 
   });
   expect(activeValue).toBe(initialLegend.items[0]?.value ?? null);
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By numeric value');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By value/);
 });
 
 test('keyboard escape after moving restores numeric order and value sorting', async ({ page }) => {
@@ -2047,11 +1574,7 @@ test('keyboard escape after moving restores numeric order and value sorting', as
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By numeric value');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By value/);
 });
 
 test('numeric keyboard reordering persists across reload', async ({ page }) => {
@@ -2091,11 +1614,7 @@ test('numeric keyboard reordering persists across reload', async ({ page }) => {
   const reorderedLegend = await readLegendDisplay(page);
   expect(reorderedLegend.items[2]?.value).toBe(initialLegend.items[0]?.value);
 
-  await openLegendSettings(page);
-  const reorderedDialog = await readLegendSettingsDialog(page);
-  expect(reorderedDialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 
   // (Numeric filtering no longer mirrors legend order — it is a raw-value range
   // input — so the former filter-order assertion is dropped; the reload below
@@ -2144,17 +1663,11 @@ test('topology-changing numeric rebins drop stale manual order on reload', async
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(manualLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await rebinLength(page, '5');
 
-  const rebinnedLegend = await readLegendDisplay(page);
-  expect(rebinnedLegend.items.length).toBeLessThan(manualLegend.items.length);
+  await expect
+    .poll(async () => (await readLegendDisplay(page)).items.length)
+    .toBeLessThan(manualLegend.items.length);
 
   await loadBundleFromBytes(
     page,
@@ -2165,10 +1678,7 @@ test('topology-changing numeric rebins drop stale manual order on reload', async
   await selectAnnotation(page, 'length');
 
   const reloadedLegend = await readLegendDisplay(page);
-  await openLegendSettings(page);
-  await setSortMode(page, 'length', 'alpha');
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await setLegendSort(page, 'By value');
 
   const numericOrderLegend = await readLegendDisplay(page);
   expect(reloadedLegend.items.map((item) => item.label)).toEqual(
@@ -2192,16 +1702,30 @@ test('categorical manual reorder and reverse continue to work', async ({ page })
   const afterReorder = await readLegendDisplay(page);
   expect(afterReorder.items[1]?.value).toBe(initialLegend.items[0]?.value);
 
-  await openLegendSettings(page);
-  const reorderedDialog = await readLegendSettingsDialog(page);
-  expect(reorderedDialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 
-  await clickLegendReverseButton(page);
+  await toggleLegendReverse(page);
+  const reversed = [...afterReorder.items.map((item) => item.value)].reverse();
   await expect
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
-    .toEqual([...afterReorder.items.map((item) => item.value)].reverse());
+    .toEqual(reversed);
+
+  // A later item pass, here a live settings edit, keeps the reversed order (it used to flip back).
+  const { size } = await readLegendSettings(page);
+  await setLegendSetting(page, 'Shape size', size === '20' ? '24' : '20');
+  await closeLegendSettings(page);
+  expect((await readLegendDisplay(page)).items.map((item) => item.value)).toEqual(reversed);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
+
+  // Capping the list keeps the top rows and puts Other last; it used to keep the bottom ones.
+  await setLegendSetting(page, 'Max legend items', String(reversed.length - 1));
+  await closeLegendSettings(page);
+  await expect
+    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
+    .toEqual([...reversed.slice(0, -1), expect.any(String)]);
+  const capped = (await readLegendDisplay(page)).items;
+  expect(capped[0]?.value).toBe(reversed[0]);
+  expect(capped.at(-1)?.label.startsWith('Other')).toBe(true);
 });
 
 test('categorical drag-promoted manual order persists after re-import', async ({ page }) => {
@@ -2233,14 +1757,10 @@ test('categorical drag-promoted manual order persists after re-import', async ({
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(manualLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
-test('long categorical legend labels wrap instead of clipping', async ({ page }) => {
+test('long categorical legend labels end in an ellipsis on one line', async ({ page }) => {
   await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
@@ -2262,53 +1782,32 @@ test('long categorical legend labels wrap instead of clipping', async ({ page })
   await selectAnnotation(page, 'ec');
   await waitForLegendAnnotation(page, 'ec');
 
-  const wrappedLabel = await page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const items = Array.from(legend?.shadowRoot?.querySelectorAll('.legend-item') ?? []);
-    const target = items.find((item) => {
-      const label = item.querySelector('.legend-text')?.textContent?.trim() ?? '';
-      return label.includes('phosphatidylinositol') || label.includes('protein-serine/threonine');
-    }) as HTMLElement | undefined;
+  const row = page
+    .locator('protspace-legend .legend-item')
+    .filter({ hasText: /phosphatidylinositol|protein-serine\/threonine/ })
+    .first();
+  await expect(row).toBeVisible();
 
-    if (!target) {
-      return null;
-    }
-
-    const button = target.querySelector('.legend-item-main') as HTMLElement | null;
-    const text = target.querySelector('.legend-text') as HTMLElement | null;
-    const count = target.querySelector('.legend-count') as HTMLElement | null;
-
-    if (!button || !text || !count) {
-      return null;
-    }
-
-    const style = window.getComputedStyle(text);
-    const lineHeight = Number.parseFloat(style.lineHeight) || 0;
-
+  const label = await row.evaluate((element) => {
+    const text = element.querySelector('.legend-text') as HTMLElement;
+    const count = element.querySelector('.legend-count') as HTMLElement;
     return {
-      label: text.textContent?.trim() ?? '',
-      rowHeight: target.getBoundingClientRect().height,
+      text: text.textContent?.trim() ?? '',
       textHeight: text.getBoundingClientRect().height,
-      lineHeight,
-      textScrollWidth: text.scrollWidth,
-      textClientWidth: text.clientWidth,
-      buttonScrollWidth: button.scrollWidth,
-      buttonClientWidth: button.clientWidth,
+      lineHeight: Number.parseFloat(getComputedStyle(text).lineHeight) || 0,
+      truncated: text.scrollWidth > text.clientWidth,
       countText: count.textContent?.trim() ?? '',
+      countFits: count.scrollWidth <= count.clientWidth + 1,
     };
   });
 
-  expect(wrappedLabel).not.toBeNull();
-  expect(wrappedLabel?.label ?? '').toContain('phosphat');
-  expect(wrappedLabel?.countText ?? '').not.toBe('');
-  expect(wrappedLabel?.textHeight ?? 0).toBeGreaterThan((wrappedLabel?.lineHeight ?? 0) * 1.5);
-  expect(wrappedLabel?.textScrollWidth ?? 0).toBeLessThanOrEqual(
-    (wrappedLabel?.textClientWidth ?? 0) + 1,
-  );
-  expect(wrappedLabel?.buttonScrollWidth ?? 0).toBeLessThanOrEqual(
-    (wrappedLabel?.buttonClientWidth ?? 0) + 1,
+  expect(label.text).toContain('phosphat');
+  expect(label.countText).not.toBe('');
+  expect(label.countFits).toBe(true);
+  expect(label.textHeight).toBeLessThanOrEqual(label.lineHeight * 1.5);
+  expect(label.truncated).toBe(true);
+  await expect(row.locator('.legend-item-main')).toHaveAccessibleName(
+    new RegExp(`^${escapeRegex(label.text)}: `),
   );
 });
 
@@ -2317,14 +1816,7 @@ test('numeric tooltip shows the raw value within the current bin range after reb
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await rebinLength(page, '5');
 
   // The numeric tooltip shows the raw value (no bin label / comparison markers).
   // To verify it shows the *hovered point's* value — not a stale or
@@ -2389,30 +1881,20 @@ test('zero-match query disables Apply & Isolate and leaves the view unchanged (n
   // A zero-match query cannot be isolated: the builder reports zero matches and
   // keeps "Apply & Isolate" disabled, so the view never collapses to empty or
   // falls back to the full data via a stale filter.
-  await openQueryBuilder(page);
+  await openFilter(page);
   await expect
     .poll(async () =>
-      page.evaluate(() => {
-        const cb = document.querySelector('protspace-control-bar') as
-          | (HTMLElement & { shadowRoot: ShadowRoot })
-          | null;
-        const qb = cb?.shadowRoot?.querySelector('protspace-query-builder') as
-          | (HTMLElement & { shadowRoot: ShadowRoot })
-          | null;
-        return qb?.shadowRoot?.querySelector('.match-count')?.textContent?.trim() ?? '';
-      }),
+      ((await queryBuilder(page).locator('.match-count').textContent()) ?? '').trim(),
     )
-    // Anchor to the start: the count renders as "<n> of <total> proteins
-    // matched", so a bare .toContain('0 of') would also match "10 of", "20 of",
-    // etc. Require the matched count itself to be exactly 0.
+    // Anchor to the start: the count reads "<n> of <total> proteins match", so a bare .toContain('0 of') would also match "10 of"
     .toMatch(/^0 of /);
-  await expect(page.locator('protspace-query-builder .btn-primary')).toBeDisabled();
+  await expect(filterApplyButton(page)).toBeDisabled();
+  // The builder says why: the count is in, and it is zero.
+  await expect(queryBuilder(page).locator('#apply-reason')).toHaveText('No proteins match');
   expect(await isolatedCount(page)).toBe(fullCount);
 
-  await page
-    .getByRole('dialog', { name: 'Filter Query Builder' })
-    .getByRole('button', { name: 'Cancel' })
-    .click();
+  // Cancel is the builder's own button, so it is found inside the builder wherever the dialog is.
+  await queryBuilder(page).getByRole('button', { name: 'Cancel' }).click();
 
   const legend = await readLegendDisplay(page);
   expect(legend.items.length).toBeGreaterThan(0);
@@ -2448,14 +1930,7 @@ test('rebinning replaces the numeric bins (stale bin labels are gone)', async ({
     return staleValue;
   });
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await rebinLength(page, '5');
 
   // After rebinning, the annotation exposes an entirely new set of bins, so the
   // stale bin label must be gone from the current bins. Read the current bins
@@ -2482,10 +1957,10 @@ test('loading a new dataset clears active filters before rendering the replaceme
   await expect.poll(async () => isolatedCount(page)).toBe(6);
   expect(
     await page.evaluate(() => {
-      const cb = document.querySelector('protspace-control-bar') as unknown as
-        | (Element & { filterActive?: boolean })
+      const plot = document.querySelector('protspace-scatterplot') as unknown as
+        | (Element & { filtersActive?: boolean })
         | null;
-      return cb?.filterActive ?? false;
+      return plot?.filtersActive ?? false;
     }),
   ).toBe(true);
 
@@ -2504,11 +1979,9 @@ test('loading a new dataset clears active filters before rendering the replaceme
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & { getCurrentData?: () => { protein_ids?: string[] } })
       | null;
-    const cb = document.querySelector('protspace-control-bar') as unknown as
-      | (Element & { filterActive?: boolean })
-      | null;
     return {
-      filterActive: cb?.filterActive ?? false,
+      filterActive:
+        (plot as (Element & { filtersActive?: boolean }) | null)?.filtersActive ?? false,
       visibleCount: plot?.getCurrentData?.()?.protein_ids?.length ?? 0,
     };
   });

@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './projection-metadata';
+import { ESCAPE_ORDER, onEscapeFallback, topLayer } from '../../kit/layers';
 import type { Projection, ProjectionStatisticRow } from '@protspace/utils';
 
 type ProjectionMetadataElement = HTMLElement & {
@@ -10,6 +11,7 @@ type ProjectionMetadataElement = HTMLElement & {
   statisticsRows?: readonly ProjectionStatisticRow[];
   selectedAnnotation: string;
   viewIsSubset: boolean;
+  annotationDefinitions?: Record<string, unknown>;
   updateComplete: Promise<unknown>;
 };
 
@@ -119,7 +121,13 @@ describe('protspace-projection-metadata quality rows', () => {
     expect(parameterRow!.querySelector('protspace-info-popover')).toBeNull();
   });
 
-  it('pins open on click and closes on Escape or an outside click', async () => {
+  /** A press as the layer stack hears it: down and up on the same element. */
+  function press(target: EventTarget): void {
+    target.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }));
+    target.dispatchEvent(new Event('pointerup', { bubbles: true, composed: true }));
+  }
+
+  it('pins open on click; a press inside keeps it, a press outside the card closes it', async () => {
     // Hover alone made the panel unusable for its own content: reading a metric's ⓘ, or
     // selecting a value, means moving the pointer off the card.
     const el = await setup({ n_components: 2 });
@@ -134,39 +142,56 @@ describe('protspace-projection-metadata quality rows', () => {
     expect(content().classList.contains('is-pinned')).toBe(true);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
-    // A pointerdown inside the panel must not dismiss it — that is the whole point.
-    content().dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }));
+    // A press inside the panel must not dismiss it — that is the whole point.
+    press(content());
     await el.updateComplete;
     expect(content().classList.contains('is-pinned')).toBe(true);
 
-    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }));
+    press(document.body);
     await el.updateComplete;
     expect(content().classList.contains('is-pinned')).toBe(false);
-
-    trigger.click();
-    await el.updateComplete;
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await el.updateComplete;
-    expect(content().classList.contains('is-pinned')).toBe(false);
+    el.remove();
   });
 
-  it('stops listening on the document once unpinned or removed', async () => {
-    // The listeners are document-wide and this component exists per scatter-plot, so a leak
-    // here dismisses unrelated panels and keeps a detached element alive.
+  it('Escape closes the pinned panel, focuses the trigger, and a selection fallback does not run', async () => {
+    const fallback = vi.fn(() => true);
+    const release = onEscapeFallback(ESCAPE_ORDER.selection, fallback);
     const el = await setup({ n_components: 2 });
-    const added = vi.spyOn(document, 'addEventListener');
-    const removed = vi.spyOn(document, 'removeEventListener');
-
-    (el.shadowRoot!.querySelector('.trigger') as HTMLButtonElement).click();
+    const trigger = el.shadowRoot!.querySelector('.trigger') as HTMLButtonElement;
+    trigger.focus();
+    trigger.click();
     await el.updateComplete;
-    expect(added).toHaveBeenCalledTimes(2); // pointerdown + keydown
 
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+      }),
+    );
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('.content')!.classList.contains('is-pinned')).toBe(false);
+    expect(el.shadowRoot!.activeElement).toBe(trigger);
+    expect(fallback).not.toHaveBeenCalled();
+    release();
     el.remove();
-    await el.updateComplete;
-    expect(removed).toHaveBeenCalledTimes(2);
+  });
 
-    added.mockRestore();
-    removed.mockRestore();
+  it('is a layer only while pinned: unpinning or removal releases it', async () => {
+    const el = await setup({ n_components: 2 });
+    const trigger = el.shadowRoot!.querySelector('.trigger') as HTMLButtonElement;
+    expect(topLayer()).toBeUndefined();
+
+    trigger.click();
+    expect(topLayer()).toBeDefined();
+    trigger.click();
+    expect(topLayer()).toBeUndefined();
+
+    trigger.click();
+    el.remove();
+    expect(topLayer()).toBeUndefined();
   });
 
   it('says what the faithfulness metrics were computed over, and when it was a subsample', async () => {
@@ -211,6 +236,42 @@ describe('protspace-projection-metadata quality rows', () => {
     const el = await setup({ quality: { continuity: qualityEntry(null, 'local') } });
 
     expect(rows(el)).toEqual([['Continuity', 'N/A']]);
+  });
+
+  it('counts in the plural each number needs', async () => {
+    const one = await setup({
+      quality: { knn_overlap: { ...qualityEntry(0.62, 'local'), sample_size: 1 } },
+    });
+    expect(
+      one.shadowRoot!.querySelector('[data-section="quality"] .section-scope')!.textContent!.trim(),
+    ).toBe('1 protein compared');
+
+    document.body.innerHTML = '';
+    const scored = await setup(
+      { n_components: 2 },
+      {
+        statistics: [statRow({ extra_json: '{"n_categories": 1, "n_labels": 1}' })],
+        selectedAnnotation: 'major_group',
+      },
+    );
+    expect(statsBlock(scored)!.textContent).toContain('1 category · 1 protein scored');
+  });
+
+  it('names the annotation by its definition', async () => {
+    const el = document.createElement('protspace-projection-metadata') as ProjectionMetadataElement;
+    el.projection = { name: 'ProtT5 — UMAP 2', metadata: { n_components: 2 } } as Projection;
+    el.statisticsRows = [statRow({ annotation: 'score__eat_confidence' })];
+    el.selectedAnnotation = 'score__eat_confidence';
+    // A user's column whose name only looks like an EAT confidence one keeps its own name.
+    el.annotationDefinitions = {
+      score__eat_confidence: { kind: 'numeric', values: [], colors: [], shapes: [] },
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('.stat-annotation-chip')!.textContent!.trim()).toBe(
+      'Score eat confidence',
+    );
   });
 });
 
@@ -611,5 +672,27 @@ describe('auto-cluster agreement placement', () => {
     );
 
     expect(statsBlock(el)!.textContent).not.toContain('optimistic');
+  });
+});
+
+describe('protspace-projection-metadata placement', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('caps the card at the viewport height below it', async () => {
+    const el = await setup({ n_components: 2 });
+    const content = el.shadowRoot!.querySelector('.content') as HTMLElement;
+    const top = vi.spyOn(content, 'getBoundingClientRect');
+
+    top.mockReturnValue({ top: 100 } as DOMRect);
+    window.dispatchEvent(new Event('resize'));
+    expect(content.style.maxHeight).toBe(`${window.innerHeight - 100 - 8}px`);
+
+    // Never below the 200 px a scrolling card needs to be usable.
+    top.mockReturnValue({ top: window.innerHeight - 50 } as DOMRect);
+    window.dispatchEvent(new Event('resize'));
+    expect(content.style.maxHeight).toBe('200px');
   });
 });

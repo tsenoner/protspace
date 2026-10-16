@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeExtent, computePaddedExtent, DATA_EXTENT_PADDING } from './data-extent';
+import { DATA_EXTENT_PADDING } from '@protspace/utils';
+import { computeExtent, computePaddedExtent } from './data-extent';
 
 describe('computeExtent', () => {
   it('returns min/max over the first `length` entries', () => {

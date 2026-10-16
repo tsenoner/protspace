@@ -48,3 +48,14 @@ export function createStructureErrorEventDetail(
     originalError,
   };
 }
+
+/** `structure-protein-change`: the user picked another of the selected proteins to show. */
+export interface StructureProteinChangeDetail {
+  proteinId: string;
+}
+
+export function createStructureProteinChangeDetail(
+  proteinId: string,
+): StructureProteinChangeDetail {
+  return { proteinId };
+}

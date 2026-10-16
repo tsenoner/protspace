@@ -3,6 +3,12 @@ import Sortable from 'sortablejs';
 import type { LegendItem, LegendSortMode } from '../types';
 import { LEGEND_VALUES } from '../config';
 
+/** How long a finger rests on a drag handle before the row lifts; a swipe moves first and scrolls. */
+const TOUCH_DRAG_DELAY_MS = 250;
+
+/** Sortable's class for the copy of the row that follows a finger in a touch drag. */
+const FALLBACK_CLASS = 'sortable-fallback';
+
 /**
  * Callback interface for drag events
  */
@@ -30,6 +36,16 @@ export class DragController implements ReactiveController {
 
   private preDragChildNodes: Node[] = [];
   private highlightedOtherEl: HTMLElement | null = null;
+  private dragging = false;
+
+  /**
+   * While a row is lifted, a finger's move drags it instead of scrolling the list. Sortable does
+   * this itself except on Chrome for Android, and a handle's touch-action cannot change once its
+   * touch has started, so the list stops the scroll here.
+   */
+  private onTouchMove = (event: Event): void => {
+    if (this.dragging && event.cancelable) event.preventDefault();
+  };
 
   constructor(host: ReactiveControllerHost, callbacks: DragCallbacks) {
     this.host = host;
@@ -60,6 +76,7 @@ export class DragController implements ReactiveController {
     }
 
     this.containerEl = container;
+    container.addEventListener('touchmove', this.onTouchMove, { passive: false });
 
     this.sortableInstance = new Sortable(container, {
       animation: 200,
@@ -68,6 +85,12 @@ export class DragController implements ReactiveController {
       chosenClass: 'legend-item-chosen',
       dragClass: 'legend-item-drag',
       handle: '.drag-handle',
+      // On touch a row lifts only after the finger rests on its handle; a swipe that starts on a
+      // handle moves past the threshold first, so it scrolls the list. Mouse drags start at once.
+      delay: TOUCH_DRAG_DELAY_MS,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 5,
+      fallbackClass: FALLBACK_CLASS,
       swapThreshold: 0.65,
       direction: 'vertical',
       disabled: !enabled,
@@ -83,7 +106,12 @@ export class DragController implements ReactiveController {
   }
 
   private handleDragStart(evt: Sortable.SortableEvent): void {
-    this.preDragChildNodes = Array.from(evt.from.childNodes);
+    this.dragging = true;
+    // A touch drag floats a copy of the row in the list (Sortable's fallback). Sortable removes it
+    // on drop, before `restoreDom` runs, so it must not be put back with the rows.
+    this.preDragChildNodes = Array.from(evt.from.childNodes).filter(
+      (node) => !(node instanceof Element && node.classList.contains(FALLBACK_CLASS)),
+    );
   }
 
   private handleDragMove(evt: Sortable.MoveEvent): boolean | -1 | 1 | void {
@@ -114,6 +142,7 @@ export class DragController implements ReactiveController {
   }
 
   private handleDragEnd(evt: Sortable.SortableEvent): void {
+    this.dragging = false;
     const wasMergeTarget = this.highlightedOtherEl !== null;
     this.clearOtherHighlight();
 
@@ -217,6 +246,8 @@ export class DragController implements ReactiveController {
       }
       this.preDragChildNodes = [];
     }
+    // A copy an interrupted touch drag left behind would stay as a stray row.
+    container.querySelectorAll(`:scope > .${FALLBACK_CLASS}`).forEach((node) => node.remove());
 
     // Force Lit to re-render with correct state
     this.host.requestUpdate();
@@ -237,7 +268,9 @@ export class DragController implements ReactiveController {
       this.sortableInstance.destroy();
       this.sortableInstance = null;
     }
+    this.containerEl?.removeEventListener('touchmove', this.onTouchMove);
     this.containerEl = null;
+    this.dragging = false;
     this.preDragChildNodes = [];
   }
 

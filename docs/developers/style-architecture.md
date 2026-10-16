@@ -6,47 +6,46 @@ ProtSpace uses a modular CSS architecture based on Lit's `css` tagged template l
 
 ### When to Split Files
 
-| Lines   | Pattern                           | Example                       |
-| ------- | --------------------------------- | ----------------------------- |
-| <150    | Single `.styles.ts` file          | `search`, `annotation-select` |
-| 150-300 | Monolithic or add `responsive.ts` | `structure-viewer`            |
-| 300+    | Modular `styles/` directory       | `control-bar`, `legend`       |
+| Lines   | Pattern                     | Example                       |
+| ------- | --------------------------- | ----------------------------- |
+| <150    | Single `.styles.ts` file    | `search`, `annotation-select` |
+| 150-300 | Monolithic                  | `structure-viewer`            |
+| 300+    | Modular `styles/` directory | `legend`                      |
 
 ### Modular Structure
 
 ```
 component-name/
-├── component-name.styles.ts    # Imports only
+├── component-name.styles.ts    # Composes the kit's shared sheets and the modules below; no rules
 └── styles/
-    ├── theme.ts                # CSS custom properties
-    ├── layout.ts               # Structure, containers
-    ├── [feature].ts            # Feature-specific styles
-    └── responsive.ts           # Media queries (always last)
+    ├── layout.ts               # The host and its frame
+    └── [piece].ts              # One module per piece of the element (header, row, picker, ...)
 ```
+
+A child element (a popover, a strip) has its own co-located `*.styles.ts` instead of a module here.
 
 ## Import Order
 
-**Always follow this order** (CSS cascade depends on it):
+Shared sheets first, then the component's own modules, broad to specific, since a later sheet
+wins a tie in specificity:
 
 ```typescript
 export const componentStyles = [
-  // 1. Foundation
-  tokens,
+  // 1. The kit's shared sheets (kit/kit-shared.styles.ts), only those needed
+  kitHost, // host font and colour
+  focusRing, // the one focus ring
+  reducedMotion,
+  srOnly,
 
-  // 2. Shared mixins (only what's needed)
-  buttonMixin,
-  dropdownMixin,
-  overlayMixins,
-
-  // 3. Component styles
-  themeStyles,
+  // 2. The component's modules: the frame, then its pieces
   layoutStyles,
   featureStyles,
-
-  // 4. Responsive (ALWAYS LAST)
-  responsiveStyles,
 ];
 ```
+
+New styles read `--ps-*` tokens (see Custom Properties) and do not compose the legacy `tokens`,
+`buttonMixin` or `overlayMixins`; only modules in `LEGACY` still use them, in the older order
+`tokens`, mixins, `themeStyles`, features, `responsiveStyles`.
 
 ## Responsive Design
 
@@ -65,7 +64,8 @@ Defined in `tokens.ts`:
 
 ### Media Query Rules
 
-- **Modular components**: All `@media` in `styles/responsive.ts` (imported last)
+- **Modular components**: a media query sits in the module whose rules it adapts (for example
+  `@media (pointer: coarse)` in the legend's `row.ts`), after that module's other rules
 - **Monolithic components**: All `@media` at end of file
 - **Always add breakpoint comments**:
 
@@ -80,7 +80,30 @@ Defined in `tokens.ts`:
 
 ## Custom Properties
 
-### Naming Convention
+### Design tokens
+
+Colours, font sizes, spacing, radii, shadows and durations are `--ps-*` tokens, declared only in
+`packages/core/src/styles/theme.ts` (light values on `:root`, dark values under
+`[data-theme='dark']`, and under `[data-theme='system']` while the OS prefers dark, so a
+`system` page follows the OS live). New styles read these tokens and declare none:
+`packages/core/src/styles/style-lint.test.ts` fails a stylesheet that hard-codes a colour or a
+font size, declares a `--ps-*` token, or reads a variable `theme.ts` does not define. Modules
+written before the tokens are listed in its `LEGACY` set, which only shrinks.
+A `LEGACY` module may still read a non-colour alias from `tokens.ts` (spacing, type, z-index), but
+no colour: `tokens.ts` declares none, and the lint fails a legacy module that hard-codes one or
+reads an alias nothing declares. The web app's `workbench.css` and `tour/product-tour.css` are
+held to the colour rule too.
+
+The scatter plot reads three tokens for what it draws: `--ps-plot-bg` (its background),
+`--ps-plot-other` (Other points) and `--ps-plot-na` (N/A points whose colour is the default
+`#DDDDDD`; a picked N/A colour is kept). Their light values are the data's own colours. When a
+theme change gives either grey a new value, the plot restyles its points once, colour only;
+anything else (re-setting `data-theme`, an OS flip under an explicit theme) redraws nothing.
+Exports always draw the light values on white.
+
+### Component properties
+
+Older components still expose custom properties of their own:
 
 ```
 --[component-prefix]-[category]-[property]-[modifier?]
@@ -89,28 +112,54 @@ Defined in `tokens.ts`:
 **Examples:**
 
 ```css
---legend-bg                     /* component background */
---legend-item-padding           /* element spacing */
---legend-text-secondary         /* semantic color */
+--protspace-height              /* element sizing */
+--protspace-width               /* element sizing */
 ```
 
-### Rules
+Rules for these:
 
-1. **Always reference tokens**: `--legend-bg: var(--surface)`
-2. **Define in `:host` only** (or `theme.ts` if modular)
-3. **Use only when**:
-   - Runtime override needed, OR
-   - Used 3+ times
-4. **Group with comments**: `/* Layout */`, `/* Colors */`, `/* Sizing */`
+1. **Sizes only**: colours come from the `--ps-*` tokens, so a component property never holds a
+   colour (`--protspace-height: 100%`)
+2. **Define in `:host` only**
+3. **Use only when** a runtime override is needed, or the value is used 3+ times
+4. **Group with comments**: `/* Layout */`, `/* Sizing */`
+
+The scatter plot no longer has colour properties: its background, border, brush and lasso, the
+overlay chips, EAT connectors and spiderfy marks, the protein tooltip and the projection card
+read `--ps-*` tokens (`--ps-plot-bg`, `--ps-accent`, `--ps-surface-raised`, `--ps-plot-connector`,
+`--ps-eat`, `--ps-eat-endpoint` and the role colours), so setting those on `:root` restyles it in
+both themes. A host-declared colour property would block the theme, so none is offered. Its
+remaining `--protspace-*` properties are sizes, opacities and timings.
+
+The structure viewer's colour properties (`--protspace-viewer-bg`, `-border`, `-header-bg`,
+`-text`, `-text-muted`, `-error`, `-loading`) are gone too: its frame, header, footer, loading veil
+and colour-mode control read the tokens, and the Mol\* canvas takes `--ps-surface` as its
+background, set again whenever a theme change gives that token another value. Its
+`--protspace-viewer-width`, `-height` and `-border-radius` stay.
 
 ### Component Prefixes
 
-| Component        | Prefix                 |
-| ---------------- | ---------------------- |
-| Legend           | `--legend-*`           |
-| Scatter-plot     | `--protspace-*`        |
-| Structure-viewer | `--protspace-viewer-*` |
-| Control-bar      | Uses tokens only       |
+| Component            | Prefix                              |
+| -------------------- | ----------------------------------- |
+| Legend               | `--ps-*` tokens only                |
+| Scatter-plot         | `--protspace-*` (sizes only)        |
+| Structure-viewer     | `--protspace-viewer-*` (sizes only) |
+| Kit and new elements | `--ps-*` tokens only                |
+
+### Theming the legend
+
+The legend reads `--ps-*` tokens only; its former legend-specific custom properties are gone.
+To restyle it, set the `--ps-*` tokens on `:root`. The legend draws no card of its own (no border, radius
+or shadow) and fills the height its container gives it, as the workbench sidebar does. An
+embedder that wants a card adds one on the host:
+
+```css
+protspace-legend {
+  height: 480px;
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-lg);
+}
+```
 
 ## Examples
 
@@ -137,20 +186,25 @@ export const searchStyles = [tokens, searchStylesCore];
 
 ```typescript
 // legend.styles.ts
-import { tokens } from '../../styles/tokens';
-import { buttonMixin } from '../../styles/mixins';
-import { themeStyles } from './styles/theme';
+import { focusRing, kitHost, reducedMotion, srOnly } from '../kit/kit-shared.styles';
 import { layoutStyles } from './styles/layout';
-import { itemStyles } from './styles/item';
-import { responsiveStyles } from './styles/responsive';
+import { headerStyles } from './styles/header';
+import { rowStyles } from './styles/row';
+import { pickerStyles } from './styles/picker';
+import { eatStyles } from './styles/eat';
+import { stripStyles } from './styles/strips';
 
 export const legendStyles = [
-  tokens,
-  buttonMixin,
-  themeStyles,
+  kitHost,
+  focusRing,
+  reducedMotion,
+  srOnly,
   layoutStyles,
-  itemStyles,
-  responsiveStyles, // Always last
+  headerStyles,
+  rowStyles,
+  pickerStyles,
+  eatStyles,
+  stripStyles,
 ];
 ```
 
@@ -158,15 +212,15 @@ export const legendStyles = [
 
 ### DO ✓
 
-- Keep files under 200 lines
+- Keep a module to one piece of the element
 - Use tokens for all values
 - Add breakpoint comments to media queries
-- Import only needed mixins
-- Follow standard import order
+- Compose only the kit sheets you need
+- Follow the import order above
 
 ### DON'T ✗
 
-- Scatter media queries throughout files
+- Put a media query away from the rules it adapts
 - Create custom properties for one-off values
 - Duplicate styles between files
 - Use hard-coded values
@@ -174,21 +228,26 @@ export const legendStyles = [
 
 ## Reference Implementation
 
-Study **control-bar** as the ideal modular pattern:
+Study **legend** as the modular pattern:
 
 ```typescript
-// control-bar.styles.ts (35 lines)
-export const controlBarStyles = [
-  tokens,
-  buttonMixin,
-  inputMixin,
-  dropdownMixin,
-  layoutStyles,
-  filterStyles,
-  exportStyles,
-  responsiveStyles, // Always last
+// legend.styles.ts
+export const legendStyles = [
+  kitHost, // shared kit sheets first: host font and colour,
+  focusRing, // the one focus ring,
+  reducedMotion, // no motion when the user asked for less,
+  srOnly, // the visually hidden class
+  layoutStyles, // then one module per piece of the element
+  headerStyles,
+  rowStyles,
+  pickerStyles,
+  eatStyles,
+  stripStyles,
 ];
 ```
+
+The Other and settings popovers are child elements (`legend-other-popover.ts`,
+`legend-settings-popover.ts`), each with its own `*.styles.ts`.
 
 ## Migration Checklist
 
@@ -196,10 +255,10 @@ When refactoring a component:
 
 - [ ] Component >150 lines or has 3+ concerns?
 - [ ] Create `styles/` directory if needed
-- [ ] Extract theme, layout, features to separate files
-- [ ] Move all media queries to end (or `responsive.ts`)
+- [ ] Extract the frame (`layout.ts`) and one module per piece to `styles/`
+- [ ] Read only `--ps-*` tokens; remove the module from `LEGACY` in `style-lint.test.ts`
 - [ ] Add breakpoint comments
-- [ ] Update imports following standard order
+- [ ] Compose the kit's shared sheets first, then the modules
 - [ ] Test: `npm run dev`, verify visuals unchanged
 - [ ] Run: `npm run test && npm run lint && npm run type-check`
 
@@ -207,8 +266,7 @@ When refactoring a component:
 
 | Component         | Organization | Status        |
 | ----------------- | ------------ | ------------- |
-| control-bar       | Modular      | ✅ Reference  |
-| legend            | Modular      | ✅ Refactored |
+| legend            | Modular      | ✅ Reference  |
 | structure-viewer  | Monolithic   | ✅ Updated    |
 | scatter-plot      | Per-feature  | ✅ Refactored |
 | annotation-select | Monolithic   | ✓ Good as-is  |
@@ -236,4 +294,4 @@ each ship their own co-located `.styles.ts`, so no single stylesheet grows large
 
 ---
 
-See implementations in `/packages/core/src/components/` and central tokens in `/packages/core/src/styles/tokens.ts`.
+See implementations in `/packages/core/src/components/` and the `--ps-*` tokens in `/packages/core/src/styles/theme.ts`.

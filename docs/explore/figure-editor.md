@@ -1,22 +1,31 @@
 # Figure Editor
 
-The Figure Editor is a full-screen tool for creating publication-ready figures from your ProtSpace visualization. It provides live preview, journal-specific dimension presets, overlays, zoom insets, and legend customization, all in a single interface.
+The Figure Editor is a window-filling dialog for creating publication-ready figures from your ProtSpace visualization. It provides live preview, journal-specific dimension presets, overlays, zoom insets, and legend customization, all in a single interface.
 
-<img src="./images/figure-editor-overview.png" alt="Figure Editor - full-screen modal showing the live preview canvas on the left, settings sidebar with journal presets, dimensions, legend and overlay controls on the right, and the overlay toolbar at the bottom" width="1536" height="864" loading="eager" fetchpriority="high" />
+<img src="./images/figure-editor-overview.png" class="light-only" alt="The Figure Editor filling the window: the live preview of the figure on the left with the overlay toolbar under it, and the settings sidebar on the right with journal presets, dimensions, legend and overlay controls" width="1248" height="688" loading="eager" fetchpriority="high" />
+<img src="./images/figure-editor-overview-dark.png" class="dark-only" alt="The Figure Editor in the dark theme: dark sidebar and toolbar around the same white figure preview" width="1248" height="688" loading="lazy" />
 
 ## Opening the Figure Editor
 
-1. Click **Export** in the control bar
-2. With **PNG** or **PDF** selected, click **Figure Editor**
+1. Click **Export** in the app bar
+2. Choose **Figure editor…**
 
-The editor opens as a full-screen modal with a **preview canvas** on the left and a **settings sidebar** on the right.
+The editor opens as a dialog that fills the window, with a **preview canvas** on the left and a
+**settings sidebar** on the right. **Close**, the dialog's **×** and **Escape** close it; when an
+overlay or inset is selected, the first **Escape** only deselects it.
 
-To download immediately without opening the editor, use **Quick Export**. It always exports your
+::: info Figures stay light in dark mode
+The editor's sidebar, toolbar and footer follow the page's theme, but the preview and the exported
+figure are always light: a white (or transparent) background with the light colours. A figure looks
+the same whichever theme you made it in.
+:::
+
+To download immediately without opening the editor, use **Quick PNG** or **Quick PDF**. It always exports your
 current view at 2048 × 1024 px and does not use the editor's settings.
 
 The editor always renders the full view, what a double-click on the plot shows, not your current
 zoom. Its dots are therefore drawn at their unzoomed size, while Quick Export keeps the zoom and the
-larger dots that come with it. [Contours](/explore/control-bar#_10-contours) are not drawn in the
+larger dots that come with it. [Contours](/explore/controls#contours) are not drawn in the
 preview or the exported figure yet; see [Exporting Results](/explore/exporting#dot-size-in-images).
 
 ## Journal Presets
@@ -134,17 +143,17 @@ The selected item is highlighted in the sidebar and gets resize/rotate handles o
 
 ### Removing items
 
-| Key                           | Effect                                            |
-| ----------------------------- | ------------------------------------------------- |
-| **Delete** or **Backspace**   | Remove the currently selected overlay or inset    |
-| **Escape**                    | Clear the selection (item stays)                  |
-| **× button on a sidebar row** | Remove that specific row, regardless of selection |
+| Key                           | Effect                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| **Delete** or **Backspace**   | Remove the currently selected overlay or inset                            |
+| **Escape**                    | Clear the selection (item stays); with nothing selected, close the editor |
+| **× button on a sidebar row** | Remove that specific row, regardless of selection                         |
 
 While focus is inside an editable input (e.g. a label's text field), Delete/Backspace edit text as usual, they don't remove the overlay.
 
 ## Overlay tools
 
-![Figure Editor with four overlays placed on the demo map: a black circle around the arthropod phospholipase D cluster with a "PLD" label above it, and a "Kunitz" label with an arrow pointing into the venom Kunitz-type cluster; the sidebar lists them in its Overlays section](./images/figure-editor-overlays.png)
+![The Figure Editor with four overlays on the demo map: a circle with the label "Cluster 1" beside it, and an arrow with the label "Cluster 2"; the sidebar lists them under Overlays (4)](./images/figure-editor-overlays.png)
 
 The toolbar at the bottom of the preview switches between drawing tools.
 
@@ -176,7 +185,7 @@ Click to place a text label. Default text is "Label" and can be renamed in the s
 
 ### Zoom-inset tool
 
-![Figure Editor with a zoom inset placed: a dashed source rectangle marks a small cluster on the left of the plot, the magnified target rectangle sits below it in the lower-left with a solid border and connector lines, sidebar shows Zoom Insets with Dot size and Border controls](./images/figure-editor-zoom-inset.png)
+![The Figure Editor with a zoom inset: a dashed source rectangle around a small cluster, the magnified target rectangle in the lower left with a solid border and connector lines, and Zoom Insets (1) in the sidebar with its Dot size and Border controls](./images/figure-editor-zoom-inset.png)
 
 Creates a magnified view of a region. Two-phase workflow:
 
@@ -235,12 +244,12 @@ The PDF page size is computed exactly from the configured Width/Height in mm at 
 
 ## Footer buttons
 
-| Button         | Action                                                                                                                                                                               |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **New Figure** | Clears all overlays and insets but keeps layout settings (dimensions, DPI, preset, legend, format). Useful when you've changed the underlying visualization and want a fresh canvas. |
-| **Reset**      | Resets everything to defaults, dimensions, DPI, preset, legend, overlays, insets, format, background.                                                                                |
-| **Cancel**     | Closes the editor. Your current state is saved to localStorage.                                                                                                                      |
-| **Export**     | Renders the figure at full resolution and downloads it. State is saved to localStorage.                                                                                              |
+| Button         | Action                                                                                                                                                                                                                                                                              |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **New figure** | Clears all overlays and insets but keeps layout settings (dimensions, DPI, preset, legend, format). Useful when you've changed the underlying visualization and want a fresh canvas. **Undo** in the footer brings the previous state back for a few seconds, until your next edit. |
+| **Reset**      | Resets everything to defaults, dimensions, DPI, preset, legend, overlays, insets, format, background. **Undo** in the footer brings the previous state back for a few seconds, until your next edit.                                                                                |
+| **Close**      | Closes the editor (so do the dialog's **×** and **Escape**). Your current state is saved to localStorage.                                                                                                                                                                           |
+| **Export**     | Renders the figure at full resolution and downloads it. State is saved to localStorage.                                                                                                                                                                                             |
 
 ## State persistence
 
@@ -282,16 +291,15 @@ Pixel-based properties (stroke width, font size) are scaled proportionally when 
 
 ## Keyboard and mouse
 
-| Action                          | Effect                                          |
-| ------------------------------- | ----------------------------------------------- |
-| Click overlay backdrop          | Close the editor                                |
-| Click × in sidebar header       | Close the editor                                |
-| Click toolbar button            | Switch active tool                              |
-| Click sidebar overlay/inset row | Select that item                                |
-| Click an item on the canvas     | Select that item                                |
-| **Delete** / **Backspace**      | Remove the selected item (skipped while typing) |
-| **Escape**                      | Clear the selection                             |
-| Drag on canvas (drawing tool)   | Create overlay/inset                            |
-| Drag on canvas (select tool)    | Move selected item                              |
-| Drag handle (select tool)       | Resize/rotate selected item                     |
-| Drag legend (free position)     | Move legend on canvas                           |
+| Action                          | Effect                                                                |
+| ------------------------------- | --------------------------------------------------------------------- |
+| Click × in the dialog header    | Close the editor                                                      |
+| Click toolbar button            | Switch active tool                                                    |
+| Click sidebar overlay/inset row | Select that item                                                      |
+| Click an item on the canvas     | Select that item                                                      |
+| **Delete** / **Backspace**      | Remove the selected item (skipped while a field or control has focus) |
+| **Escape**                      | Clear the selection, then close the editor                            |
+| Drag on canvas (drawing tool)   | Create overlay/inset                                                  |
+| Drag on canvas (select tool)    | Move selected item                                                    |
+| Drag handle (select tool)       | Resize/rotate selected item                                           |
+| Drag legend (free position)     | Move legend on canvas                                                 |

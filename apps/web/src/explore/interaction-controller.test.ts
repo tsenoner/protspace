@@ -16,7 +16,8 @@ function setup(autoSync: boolean) {
   const controller = createInteractionController({
     plotElement: { selectedAnnotation: 'family', getCurrentData: () => data } as never,
     legendElement: legendElement as never,
-    structureViewer: {} as never,
+    requestStructure: vi.fn(),
+    showSelection: vi.fn(),
   });
   return { controller, legendElement };
 }
@@ -39,5 +40,65 @@ describe('interaction controller legend updates', () => {
     controller.updateLegend();
 
     expect(legendElement.forceSync).toHaveBeenCalledOnce();
+  });
+});
+
+describe('interaction controller structure requests', () => {
+  it('a selection passes its ids to showSelection', () => {
+    const requestStructure = vi.fn();
+    const showSelection = vi.fn();
+    const controller = createInteractionController({
+      plotElement: { selectedAnnotation: 'family', getCurrentData: () => data } as never,
+      legendElement: { autoSync: true, forceSync: vi.fn() } as never,
+      requestStructure,
+      showSelection,
+    });
+
+    controller.handleSelectionChange(['p0', 'p1']);
+    expect(showSelection).toHaveBeenCalledExactlyOnceWith(['p0', 'p1']);
+    // The controller's own copy, not a second one per change.
+    expect(showSelection.mock.calls[0][0]).toBe(controller.getSelectedProteins());
+    expect(requestStructure).not.toHaveBeenCalled();
+
+    // An empty selection still reaches the structure, which only clears its choices.
+    controller.handleSelectionChange([]);
+    expect(showSelection).toHaveBeenLastCalledWith([]);
+    expect(controller.getSelectedProteins()).toEqual([]);
+  });
+});
+
+describe('interaction controller protein clicks', () => {
+  it("a plain click asks for the clicked protein's structure; a modified click does not", () => {
+    const requestStructure = vi.fn();
+    const controller = createInteractionController({
+      plotElement: { clearProvenanceConnectors: vi.fn() } as never,
+      legendElement: { autoSync: true, forceSync: vi.fn() } as never,
+      requestStructure,
+      showSelection: vi.fn(),
+    });
+    const click = (detail: object) =>
+      controller.handleProteinClick(new CustomEvent('protein-click', { detail }));
+
+    click({ proteinId: 'P1' });
+    expect(requestStructure).toHaveBeenCalledExactlyOnceWith('P1');
+
+    for (const key of ['ctrl', 'meta', 'shift']) {
+      click({
+        proteinId: 'P2',
+        modifierKeys: { ctrl: false, meta: false, shift: false, alt: false, [key]: true },
+      });
+    }
+    expect(requestStructure).not.toHaveBeenCalledWith('P2');
+  });
+});
+
+describe('interaction controller undo history', () => {
+  it('the controller owns one history', () => {
+    const { controller } = setup(true);
+    expect(controller.history).toBe(controller.history);
+    controller.history.record({ kind: 'selection', before: [], after: ['p0'] });
+    expect(controller.history.canUndo()).toBe(true);
+    // Each controller has its own: a remount starts with nothing to undo.
+    expect(setup(true).controller.history.canUndo()).toBe(false);
   });
 });

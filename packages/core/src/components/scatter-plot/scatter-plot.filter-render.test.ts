@@ -191,7 +191,7 @@ describe('scatter-plot query-filter clear restores the full plot', () => {
   it('clearing an active filter via updated() rebuilds _plotData with all proteins', () => {
     const sp = makeScatter();
 
-    // Apply a filter (control-bar query-apply path) and run the lifecycle.
+    // Apply a filter (the filter controller's apply path) and run the lifecycle.
     sp.filteredProteinIds = ['p3', 'p4', 'p5'];
     sp.filtersActive = true;
     sp.updated(
@@ -202,7 +202,7 @@ describe('scatter-plot query-filter clear restores the full plot', () => {
     );
     expect(plotIds(sp._plotData).sort()).toEqual(['p3', 'p4', 'p5']);
 
-    // Reset All (control-bar query-reset path): clear the channel, lifecycle runs.
+    // Reset All (the filter controller's reset path): clear the channel, lifecycle runs.
     sp.filteredProteinIds = [];
     sp.filtersActive = false;
     sp.updated(
@@ -327,23 +327,23 @@ describe('scatter-plot visible point count', () => {
 
     it('builds no id table for the first point count', async () => {
       const { sp, idle, label } = await load(makeFamilyData());
-      expect(label()).toBe('6 points');
+      expect(label()).toBe('6 proteins');
       expect(sp._style.model().idsUniqueIfIndexed()).toBeNull();
       // With every id once, the idle build leaves the label alone.
       idle.run();
       expect(sp._style.model().idsUniqueIfIndexed()).toBe(true);
       expect(sp.isUpdatePending).toBe(false);
-      expect(label()).toBe('6 points');
+      expect(label()).toBe('6 proteins');
     });
 
     it('counts a repeated protein id once from the idle build of the id table on', async () => {
       const d = makeFamilyData({ n: 2 });
       const { sp, idle, label } = await load({ ...d, protein_ids: ['dup', 'dup'] });
       // Each slot counts until the idle build finds the repeat.
-      expect(label()).toBe('2 points');
+      expect(label()).toBe('2 proteins');
       idle.run();
       await sp.updateComplete;
-      expect(label()).toBe('1 points');
+      expect(label()).toBe('1 protein');
     });
   });
 

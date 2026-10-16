@@ -1,14 +1,25 @@
 import '@protspace/core'; // Registers all web components
 import type { RendererDegradedDetail } from '@protspace/core';
+import { onEscapeFallback } from '@protspace/core';
 import type { EatReliabilityState } from '@protspace/utils';
+import { isMacOrIos } from '@protspace/utils';
 import { notify } from '../lib/notify';
-import { getRendererDegradedNotification } from './notifications';
-import { startProductTour } from '../tour/product-tour';
-import { bindControlBarEvents } from './control-bar-events';
+import {
+  getClearStoredDataConfirm,
+  getFilterRemovedNotification,
+  getRendererDegradedNotification,
+} from './notifications';
+import { chooseTour, type TourKind } from '../tour/storage-key';
 import { createDatasetController } from './dataset-controller';
+import { confirmAction } from './confirm-dialog';
 import { getElements, waitForElements } from './elements';
 import { createExportHandler } from './export-handler';
+import type { ExploreControls } from './explore-controls';
+import { createFilterController } from './filter-controller';
+import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
+import { focusFilterTitle, getLayout, openPanel, subscribeLayout } from './layout-state';
+import { getLayoutMode, subscribeLayoutMode } from './layout-mode';
 import { createLifecycle } from './lifecycle';
 import {
   countFastaSequences,
@@ -26,14 +37,34 @@ import {
 } from './fasta-prep-limits';
 import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL, toExampleDatasetSummary } from './example-datasets';
 import { createLoadQueue } from './load-queue';
-import { createLoadingOverlayController } from './loading-overlay';
+import {
+  LOADING_COPY,
+  createLoadFocusReturn,
+  createLoadingOverlayController,
+  type LoadingOverlayController,
+} from './loading-overlay';
+import { loadLastImportedFile, readStoredImportSummary } from './opfs-dataset-store';
+import { createSelectionController } from './selection-controller';
+import { createStatusController } from './status-controller';
+import { createStructureController } from './structure-controller';
+import { bindPhoneDim, touchDarkSource } from './phone-dim';
+import { bindTouchTooltipInsets } from './touch-tooltip-insets';
+import { createUndoController, type UndoEntry } from './undo-controller';
 import {
   handleCancelledExampleLoad,
   loadDatasetAfterNavigation,
   startInitialExploreLoad,
 } from './startup';
 import { NOOP_CONTROLLER, type ExploreController } from './types';
+import { createViewBarController } from './view-bar-controller';
 import { createViewController } from './view-controller';
+import {
+  createDatasetNamePublisher,
+  datasetPhaseFor,
+  getWorkbenchStatus,
+  setWorkbenchStatus,
+  subscribeWorkbenchStatus,
+} from './workbench-status';
 
 function addTrackedEventListener(
   lifecycle: ReturnType<typeof createLifecycle>,
@@ -46,6 +77,18 @@ function addTrackedEventListener(
   lifecycle.addCleanup(() => target.removeEventListener(type, listener, options));
 }
 
+/**
+ * The tour this visit gets on its first load. Storage that cannot be read starts none: with no
+ * record to write, the tour would replay on every visit.
+ */
+function firstVisitTour(): TourKind | null {
+  try {
+    return chooseTour((key) => localStorage.getItem(key));
+  } catch {
+    return null;
+  }
+}
+
 export async function initializeExploreRuntime(): Promise<ExploreController> {
   await waitForElements();
 
@@ -54,21 +97,94 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     return NOOP_CONTROLLER;
   }
 
-  const { controlBar, dataLoader, legendElement, plotElement, structureViewer } = elements;
+  const {
+    dataLoader,
+    exportMenu,
+    importMenu,
+    legendElement,
+    plotElement,
+    queryBuilder,
+    structureViewer,
+    projectionSelect,
+    annotationSelect,
+    contoursMenu,
+    projectionMetadata,
+    plotTools,
+    selectionBar,
+    plotStatus,
+    proteinSearch,
+  } = elements;
   const lifecycle = createLifecycle();
 
-  controlBar.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
-  controlBar.examplesDocsUrl = EXAMPLES_DOCS_URL;
+  // What the structure viewer shows and when: a protein loads only where it can be seen.
+  const structureController = createStructureController({
+    viewer: structureViewer,
+    plotElement,
+    layoutMode: { get: getLayoutMode, subscribe: subscribeLayoutMode },
+  });
+  lifecycle.addCleanup(() => structureController.dispose());
+  // A tap-pinned tooltip stays clear of the tool strip and the status corner over the plot.
+  lifecycle.addCleanup(bindTouchTooltipInsets(plotElement, plotTools, plotStatus));
 
+  importMenu.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
+  importMenu.examplesDocsUrl = EXAMPLES_DOCS_URL;
+
+  // The app bar names the dataset on screen and its size.
+  const publishDatasetName = createDatasetNamePublisher(() => plotElement.data);
+  // What is on screen, for the Import menu's "Last file" (hidden while that file shows).
+  let currentDatasetName = '';
+  let currentExampleId: string | null = null;
   const setCurrentDatasetName = (name: string) => {
-    controlBar.currentDatasetName = name;
+    currentDatasetName = name;
+    publishDatasetName(name);
   };
 
   const setCurrentExampleId = (id: string | null) => {
-    controlBar.currentExampleId = id;
+    currentExampleId = id;
+    importMenu.currentExampleId = id;
   };
 
-  const overlayController = createLoadingOverlayController();
+  // A remounted page starts from an empty app bar, and no empty state, until its own first load.
+  lifecycle.addCleanup(() =>
+    setWorkbenchStatus({ datasetName: null, proteinCount: null, datasetPhase: 'starting' }),
+  );
+
+  // What the plot area shows (workbench-status.ts): the overlay while a load runs, the plot once a
+  // dataset is on screen, the empty state once startup has ended with nothing to show.
+  let overlayShown = false;
+  let startupSettled = false;
+  const syncDatasetPhase = () => {
+    if (lifecycle.isDisposed()) return;
+    setWorkbenchStatus({
+      datasetPhase: datasetPhaseFor({
+        overlayShown,
+        // `datasetController` is declared below; this runs only once a load has begun.
+        displayed: datasetController.hasDisplayedDataset(),
+        startupSettled,
+      }),
+    });
+  };
+  const loadingOverlay = createLoadingOverlayController();
+  // When the control focused before the load is gone, the dataset button, which names the result.
+  const focusReturn = createLoadFocusReturn(() =>
+    document.querySelector<HTMLElement>('[data-workbench="dataset"]'),
+  );
+  const overlayController: LoadingOverlayController = {
+    update(show, progress, message, subMessage, note) {
+      if (show && !overlayShown) focusReturn.remember();
+      loadingOverlay.update(show, progress, message, subMessage, note);
+      if (show !== overlayShown) {
+        overlayShown = show;
+        syncDatasetPhase();
+        if (!show) focusReturn.restore();
+      }
+    },
+    setCancelHandler: (handler, label) => loadingOverlay.setCancelHandler(handler, label),
+    dispose() {
+      overlayShown = false;
+      loadingOverlay.dispose();
+    },
+  };
   lifecycle.addCleanup(() => overlayController.dispose());
 
   const loadQueue = createLoadQueue({
@@ -154,12 +270,19 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       if (abandonIfSuperseded()) {
         return;
       }
-      const showProgress = (progress: number, subMessage: string) => {
+      // The title stays "Preparing FASTA…"; the line under the bar says what the server is doing.
+      const showProgress = (progress: number, detail: string) => {
         if (preparation.isCurrent()) {
-          overlayController.update(true, progress, 'Preparing FASTA…', subMessage);
+          overlayController.update(true, progress, detail, LOADING_COPY.fastaTitle);
         }
       };
-      overlayController.update(true, 5, 'Preparing FASTA…', 'Uploading…', colabNote);
+      overlayController.update(
+        true,
+        5,
+        LOADING_COPY.fastaUploading,
+        LOADING_COPY.fastaTitle,
+        colabNote,
+      );
       let lastProgress = 5;
       let creep = 0;
 
@@ -256,20 +379,194 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     loadQueue.dispose();
   });
 
-  const viewController = createViewController({
-    plotElement,
-    controlBar,
-  });
-  lifecycle.addCleanup(() => viewController.dispose());
-
   const interactionController = createInteractionController({
     legendElement,
     plotElement,
-    structureViewer,
+    requestStructure: (proteinId) => structureController.request(proteinId),
+    showSelection: (proteinIds) => structureController.select(proteinIds),
   });
 
+  const selectionController = createSelectionController({
+    plotElement,
+    plotTools,
+    selectionBar,
+    proteinSearch,
+    interactionController,
+    history: interactionController.history,
+    registerEscape: onEscapeFallback,
+    notify,
+  });
+  lifecycle.addCleanup(() => selectionController.dispose());
+
+  // Before the filter controller: both hear annotation-change on the document, and the filter's
+  // reliability mirror runs last, as the control bar's did.
+  const viewBarController = createViewBarController({
+    plotElement,
+    projectionSelect,
+    annotationSelect,
+    contoursMenu,
+    projectionMetadata,
+    interactionController,
+    root: document,
+    onUserChange(kind) {
+      if (kind === 'projection') viewController.handleUserProjectionChange();
+      else if (kind === 'annotation') viewController.handleUserAnnotationChange();
+      else if (kind === 'tooltip') viewController.handleUserTooltipAnnotationsChange();
+      else viewController.handleUserDensityLayerChange();
+    },
+  });
+  lifecycle.addCleanup(() => viewBarController.dispose());
+
+  const viewController = createViewController({
+    plotElement,
+    pickers: viewBarController,
+  });
+  lifecycle.addCleanup(() => viewController.dispose());
+  lifecycle.addCleanup(
+    bindPhoneDim(
+      plotElement,
+      { get: getLayoutMode, subscribe: subscribeLayoutMode },
+      touchDarkSource(),
+    ),
+  );
+
+  // The Filter panel counts only while it is on screen: open on the desktop sidebar's Filter
+  // panel; below 951 px whenever Filter is the chosen panel, except in a folded phone panel,
+  // which shows only its header.
+  const isFilterPanelShown = () => {
+    const { panel, sidebarOpen, panelFolded } = getLayout();
+    if (panel !== 'filter') return false;
+    const mode = getLayoutMode();
+    if (mode === 'desktop') return sidebarOpen;
+    return mode !== 'phone' || !panelFolded;
+  };
+  // "Filter removed" with Undo (decisions 13 and 15): the toast is a shortcut to the history step
+  // it names, and goes as soon as a newer step would make its Undo take back something else.
+  let stopWatchingFilterUndo: (() => void) | null = null;
+  const offerFilterUndo = (entry: UndoEntry) => {
+    stopWatchingFilterUndo?.();
+    const { history } = interactionController;
+    let unsubscribe: () => void = () => {};
+    // Ends this toast's watch only: an older toast that closes late must not end a newer one's.
+    const stop = () => {
+      unsubscribe();
+      if (stopWatchingFilterUndo === stop) stopWatchingFilterUndo = null;
+    };
+    const toast = notify.undoable({
+      ...getFilterRemovedNotification(),
+      onUndo: () => {
+        stop();
+        undoController.undoEntry(entry);
+      },
+      // Dismissed or timed out: the watcher goes with the toast.
+      onClose: stop,
+    });
+    unsubscribe = history.subscribe(() => {
+      if (history.peekUndo() === entry) return;
+      stop();
+      toast.dismiss();
+    });
+    stopWatchingFilterUndo = stop;
+  };
+  lifecycle.addCleanup(() => stopWatchingFilterUndo?.());
+  const filterController = createFilterController({
+    plotElement,
+    legendElement,
+    queryBuilder,
+    root: document,
+    isPanelShown: isFilterPanelShown,
+    subscribePanel(listener) {
+      const unsubscribe = subscribeLayout(listener);
+      const unsubscribeMode = subscribeLayoutMode(listener);
+      return () => {
+        unsubscribe();
+        unsubscribeMode();
+      };
+    },
+    // Apply, Reset and the chip's ✕ are undo steps; the EAT slider is not (it reports nothing).
+    onFilterCommitted(commit) {
+      const entry: UndoEntry = { kind: 'filter', ...commit };
+      interactionController.history.record(entry);
+      // Apply needs no toast: the chip and the count show it. A removal offers Undo.
+      if (commit.cause !== 'apply') offerFilterUndo(entry);
+    },
+  });
+  lifecycle.addCleanup(() => filterController.dispose());
+  const statusController = createStatusController({
+    plotElement,
+    plotStatus,
+    getStatus: getWorkbenchStatus,
+    subscribeStatus: subscribeWorkbenchStatus,
+    // The chip leads where the view bar's Filter does, focus included: the heading, then the draft.
+    openFilter: () => {
+      openPanel('filter');
+      requestAnimationFrame(focusFilterTitle);
+    },
+    clearFilter: () => filterController.clear(),
+    openLegend: () => openPanel('legend'),
+    showAllCategories: () => legendElement.showAllCategories(),
+    resetIsolation: () => selectionController.resetIsolation(),
+  });
+  lifecycle.addCleanup(() => statusController.dispose());
+  // Clear and Show only these hide the bar they were pressed in. Show only these hands focus to
+  // the isolation chip that takes its place, Clear to the tool strip.
+  selectionBar.returnFocus = (action) => {
+    if (action === 'isolate' && plotStatus.focusChip('isolation')) return;
+    plotTools.focusTool();
+  };
+  lifecycle.addCleanup(() => {
+    selectionBar.returnFocus = null;
+  });
+
+  // ⌘Z / Ctrl+Z, ⇧ to redo (design decision 13): each controller applies the steps it recorded.
+  const undoController = createUndoController({
+    history: interactionController.history,
+    root: document,
+    isMac: isMacOrIos,
+    // A modal or a load owns the keys. The figure editor's dialog lives in its element's shadow
+    // root, where `ps-dialog[open]` cannot see it, so the element itself counts while it is in the
+    // page; during a load, an undo would act on the dataset being replaced.
+    isModalOpen: () =>
+      getWorkbenchStatus().datasetPhase === 'loading' ||
+      document.querySelector('dialog[open], ps-dialog[open], protspace-publish-modal') !== null,
+    apply(entry, direction) {
+      if (entry.kind === 'filter') {
+        filterController.restore(direction === 'undo' ? entry.before : entry.after);
+      } else {
+        selectionController.applyHistory(entry, direction);
+      }
+    },
+  });
+  lifecycle.addCleanup(() => undoController.dispose());
+
+  // The dataset pipeline's one seam to the controls (explore-controls.ts).
+  const controls: ExploreControls = {
+    resetForNewDataset() {
+      // The steps name proteins of the dataset that is going away.
+      interactionController.history.clear();
+      selectionController.resetForNewDataset();
+      viewBarController.resetForNewDataset();
+      exportMenu.reset();
+      filterController.resetForNewDataset();
+    },
+    setHasFileSettings(value) {
+      exportMenu.hasFileSettings = value;
+    },
+    showInitialView(view) {
+      viewBarController.showInitialView(view);
+      filterController.setSelectedAnnotation(view.annotation);
+    },
+    clearStructure() {
+      structureController.clear();
+    },
+  };
+
+  // The recovery banner's "Clear stored data" and "Load default" delete the stored import: ask
+  // first.
+  const confirmClear = (fileName: string, action: 'clear' | 'load-default') =>
+    confirmAction(getClearStoredDataConfirm(fileName, action));
   const datasetController = createDatasetController({
-    controlBar,
+    controls,
     dataLoader,
     getIsDisposed: lifecycle.isDisposed,
     interactionController,
@@ -277,7 +574,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     loadQueue,
     overlayController,
     plotElement,
-    structureViewer,
     setCurrentExampleId,
     setCurrentDatasetName,
     viewController,
@@ -285,11 +581,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       if (lifecycle.isDisposed()) {
         return;
       }
-      handleCancelledExampleLoad(datasetController, viewController, cancel).catch(
-        (error: unknown) => {
+      handleCancelledExampleLoad(datasetController, viewController, cancel, confirmClear)
+        .catch((error: unknown) => {
           console.error('Startup load after a cancelled download failed:', error);
-        },
-      );
+        })
+        .finally(syncDatasetPhase);
     },
   });
   // An example fetch/decode still in flight when the page is torn down (a
@@ -301,20 +597,18 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     datasetController.beginUserRequest();
   });
 
-  const handleExport = createExportHandler({
-    controlBar,
+  createExportHandler({
+    exportMenu,
+    listen(type, listener) {
+      addTrackedEventListener(lifecycle, exportMenu, type, listener);
+    },
     getSelectedProteins: interactionController.getSelectedProteins,
     getUnplacedProteinCount: datasetController.getUnplacedProteinCount,
     legendElement,
     plotElement,
+    notify,
   });
 
-  addTrackedEventListener(
-    lifecycle,
-    controlBar,
-    'protein-selection-change',
-    interactionController.handleSelectionChange,
-  );
   addTrackedEventListener(
     lifecycle,
     plotElement,
@@ -339,13 +633,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     'legend-error',
     interactionController.handleLegendError,
   );
-  // Two-way reliability mirror (#6b): the legend control drives the shared
-  // `EAT_confidence >= x or N/A` query filter on the control bar, and a direct edit of
-  // that filter pulls the control back. Each direction guards on the reliability
-  // state, keyed per eat-confidence column, so they can't ping-pong.
+  // The legend's reliability control drives the shared `EAT_confidence >= x or N/A` filter
+  // condition; the filter controller moves the control back when the query changes (#6b).
   addTrackedEventListener(lifecycle, legendElement, 'eat-overlay-change', (event: Event) => {
-    // The full state (mode + both bounds) is what reaches the query — the scalar
-    // threshold alone cannot express "hide above" or "keep between".
+    // The full state (mode + both bounds) reaches the query: the scalar threshold alone cannot
+    // express "hide above" or "keep between".
     const { reliability } = (
       event as CustomEvent<{
         enabled: boolean;
@@ -353,11 +645,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         reliability: EatReliabilityState;
       }>
     ).detail;
-    controlBar.setEatReliability(legendElement.selectedAnnotation, reliability);
-  });
-  addTrackedEventListener(lifecycle, controlBar, 'eat-threshold-mirror', (event: Event) => {
-    const { state } = (event as CustomEvent<{ value: number; state: EatReliabilityState }>).detail;
-    legendElement.setReliabilityState(state);
+    filterController.setEatReliability(legendElement.selectedAnnotation, reliability);
   });
   addTrackedEventListener(
     lifecycle,
@@ -373,12 +661,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   );
   addTrackedEventListener(
     lifecycle,
-    structureViewer,
-    'structure-close',
-    interactionController.handleStructureClose,
-  );
-  addTrackedEventListener(
-    lifecycle,
     plotElement,
     'data-change',
     interactionController.handlePlotDataChange,
@@ -390,21 +672,28 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     const detail = (event as CustomEvent<RendererDegradedDetail>).detail;
     notify.warning(getRendererDegradedNotification(detail));
   });
-  addTrackedEventListener(lifecycle, plotElement, 'file-dropped', (event: Event) => {
+  // The shell's drop handler (use-file-drop.ts) dispatches dropped files on the data loader.
+  addTrackedEventListener(lifecycle, dataLoader, 'file-dropped', (event: Event) => {
     const file = (event as CustomEvent<{ file?: File }>).detail.file;
     if (file) {
       void dataLoader.loadFromFile(file);
     }
   });
-  bindControlBarEvents({
-    addControlBarListener(type, listener, options) {
-      addTrackedEventListener(lifecycle, controlBar, type, listener, options);
+  const importMenuBinding = bindImportMenu({
+    listen(type, listener) {
+      addTrackedEventListener(lifecycle, importMenu, type, listener);
     },
+    importMenu,
+    dataLoader,
     datasetController,
-    handleExport,
-    interactionController,
-    viewController,
+    readSummary: readStoredImportSummary,
+    loadLastFile: loadLastImportedFile,
+    subscribeToDatasetChanges: (callback) => datasetController.subscribeToDatasetChanges(callback),
+    getCurrentExampleId: () => currentExampleId,
+    getShownName: () => currentDatasetName,
+    warn: (title) => notify.warning({ title }),
   });
+  lifecycle.addCleanup(() => importMenuBinding.dispose());
 
   addTrackedEventListener(
     lifecycle,
@@ -419,10 +708,10 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     datasetController.handleLoadingProgress,
   );
   addTrackedEventListener(lifecycle, dataLoader, 'data-loaded', (event: Event) => {
-    void datasetController.handleDataLoaded(event);
+    void datasetController.handleDataLoaded(event).finally(syncDatasetPhase);
   });
   addTrackedEventListener(lifecycle, dataLoader, 'data-error', (event: Event) => {
-    void datasetController.handleDataError(event);
+    void datasetController.handleDataError(event).finally(syncDatasetPhase);
   });
   addTrackedEventListener(
     lifecycle,
@@ -430,15 +719,17 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     'data-loaded',
     () => {
       lifecycle.scheduleTimeout(() => {
-        startProductTour();
+        const kind = firstVisitTour();
+        // driver.js and its CSS load only when a tour runs, so they stay out of the explore chunk.
+        // The first load is slow: Explore may be gone by the time it resolves.
+        if (kind)
+          void import('../tour/product-tour').then((tour) => {
+            if (!lifecycle.isDisposed()) tour.startTour(kind);
+          });
       }, 800);
     },
     { once: true },
   );
-
-  addTrackedEventListener(lifecycle, plotElement, 'tour-start', () => {
-    startProductTour({ force: true });
-  });
 
   interactionController.updateLegend();
 
@@ -449,7 +740,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   let hasStartedInitialDatasetLoad = false;
 
   console.log('ProtSpace components loaded and connected!');
-  console.log('Use the control bar to change annotations and toggle selection modes!');
+  console.log('Use the view bar to change the view and the plot tools to select proteins.');
 
   return {
     setRequestedView(requested) {
@@ -482,15 +773,27 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
           datasetController,
           plotElement,
           requestedExampleId: exampleId,
+          confirmClear,
         });
       } else {
-        request = loadDatasetAfterNavigation(datasetController, viewController, exampleId);
+        request = loadDatasetAfterNavigation(
+          datasetController,
+          viewController,
+          exampleId,
+          confirmClear,
+        );
       }
       // The URL sync hook only waits for this to settle; a failure has
       // already been reported to the user by the load itself.
-      return request.catch((error: unknown) => {
-        console.error('Dataset request failed:', error);
-      });
+      return request
+        .catch((error: unknown) => {
+          console.error('Dataset request failed:', error);
+        })
+        .finally(() => {
+          // Startup has ended: with nothing on screen now, the plot invites a drop.
+          startupSettled = true;
+          syncDatasetPhase();
+        });
     },
     cancelPendingMenuLoad() {
       if (lifecycle.isDisposed()) {

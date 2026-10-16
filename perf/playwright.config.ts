@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import * as path from 'path';
-import { tourCompletedStorageState } from '../apps/web/tests/helpers/tour-storage-state';
+import { DEFAULT_LAYOUT } from '../apps/web/src/explore/layout-defaults';
+import { exploreStorageState } from '../apps/web/tests/helpers/tour-storage-state';
 
 // PERF_WEBGL_PORT moves the suite's own dev server off 8080, the default dev port, which
 // another checkout's server may hold.
@@ -20,8 +21,11 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
     // Keep the product tour off the canvas for the whole measured window; see
-    // the helper for what it costs when it runs.
-    storageState: tourCompletedStorageState(BASE_URL),
+    // the helper for what it costs when it runs. The layout, the stored light theme and the light
+    // colour scheme are pinned, as newPerfContext pins them: the sidebar's width sets the plot's
+    // size (design decision 4).
+    colorScheme: 'light',
+    storageState: exploreStorageState(BASE_URL, { layout: DEFAULT_LAYOUT, theme: 'light' }),
     trace: 'retain-on-failure',
     screenshot: 'off',
     video: 'off',

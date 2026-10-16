@@ -14,12 +14,16 @@ import type {
 import {
   DataProcessor,
   buildTooltipView,
+  padDomain,
   EMPTY_PLOT_DATA,
   clonePlotData,
   materializePlotDataPoint,
   getProteinAnnotationValues,
+  countNoun,
+  annotationLabel,
+  formatCount,
 } from '@protspace/utils';
-import type { ScalePair } from '@protspace/utils';
+import type { DataDomain, ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
 import {
   isLegendColorMappingDetail,
@@ -28,26 +32,31 @@ import {
   type LegendZOrderChangeEvent,
 } from '../legend/legend-mapping-events';
 import { scatterplotStyles } from './scatter-plot.styles';
-import './projection-metadata/projection-metadata';
-import './tooltips/protspace-tips';
 import './tooltips/protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
 import { PointStyleState } from './styling/point-style-state';
 import { WebGLRenderer, computeSizeScaleFactor, pointRadiusCss } from './webgl';
-import { resolveColor } from './webgl/color-utils';
-import { BackgroundColorCache } from './styling/background-color-cache';
+import type { PlotNeutrals } from './styling/plot-neutrals';
+import { PlotTheme } from './styling/plot-theme';
 import type {
   BrushSelectionDetail,
   ProteinClickDetail,
   RendererDegradedDetail,
+  TooltipAction,
+  TooltipActionDetail,
 } from './scatter-plot.events';
+import { ESCAPE_ORDER, onEscapeFallback, pushLayer } from '../kit/layers';
 import { PointGridController, type GridStash } from './interaction/point-grid-controller';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
 import {
+  COMPACT_TOOLTIP_WIDTH,
   computeTooltipStyle,
+  computeTouchTooltipStyle,
   effectiveTooltipWidth,
+  NO_TOUCH_TOOLTIP_INSETS,
   TOOLTIP_FALLBACK_HEIGHT,
+  type TouchTooltipInsets,
 } from './tooltips/tooltip-position';
 import { NumericRecomputeRunner } from './styling/numeric-recompute-runner';
 import {
@@ -66,6 +75,7 @@ import {
 } from './provenance/connector-overlay-controller';
 import { RenderLoop } from './render-loop';
 import { DataViews } from './data-views';
+import { zoomTransformFor } from './interaction/zoom-to-points';
 
 export type {
   ProvenanceConnectorPair,
@@ -73,7 +83,13 @@ export type {
   ProvenanceConnectorStatus,
 } from './provenance/connector-overlay-controller';
 
+/** An export's knockout colour: white, whatever the theme or the figure's background (exports are light). */
+const EXPORT_KNOCKOUT = [1, 1, 1] as const;
+
 const HIT_RADIUS_MIN_PX = 4;
+// A fingertip is far less precise than a cursor: a tap picks the nearest protein within 20 px,
+// half the 40 px touch target.
+const TOUCH_HIT_RADIUS_PX = 20;
 
 // D3 wheel zoom accumulates scale multiplicatively, so a symmetric round trip
 // can finish a few ULPs above identity even though the view is visually reset.
@@ -110,7 +126,13 @@ const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
   '_focusedValues',
   '_isZoomedIn',
   '_mergedConfig',
+  'tooltipActions',
+  'tapTooltips',
+  'touchTooltipInsets',
+  '_pinnedTooltip',
 ]);
+
+const NO_TOOLTIP_ACTIONS: readonly TooltipAction[] = [];
 
 /** Same keys, same values. Style getters read these maps only by key lookup. */
 function sameMapping<T>(current: Record<string, T> | null, next: Record<string, T>): boolean {
@@ -157,8 +179,31 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Array }) filteredProteinIds: string[] = [];
   @property({ type: Boolean, attribute: 'filters-active' }) filtersActive = false;
   @property({ type: Object }) config: Partial<ScatterplotConfig> = {};
-  @property({ type: Boolean, attribute: 'show-tour-button' }) showTourButton = false;
   @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
+  /**
+   * The host shows the count elsewhere (the app's status corner): the plot does not draw its own.
+   * The recalculating note and the connector status still show.
+   */
+  @property({ type: Boolean, attribute: 'hide-status' }) hideStatus = false;
+  /**
+   * Buttons a plain click on a protein offers in its tooltip, which then stays (pinned) until
+   * Escape, a press outside the plot, the next click, a zoom or pan, a data or projection
+   * change, or until this becomes empty (a touch pin outlives that, see `tapTooltips`). Hovers over
+   * other proteins leave it. A button dispatches `tooltip-action` with its id and the protein.
+   * Empty (the default) keeps mouse tooltips hover-only.
+   */
+  @property({ attribute: false }) tooltipActions: readonly TooltipAction[] = [];
+  /**
+   * Whether a touch tap on a protein pins its tooltip, offering `tooltipActions` (none is fine:
+   * touch has no hover to show a tooltip otherwise). False: a tap pins nothing, and turning it
+   * false ends a pin. Mouse clicks follow `tooltipActions` alone.
+   */
+  @property({ attribute: false }) tapTooltips = true;
+  /**
+   * Strips (px) along each plot edge that the host's own chrome covers, such as a tool strip or a
+   * selection bar over the plot. A tap-pinned tooltip stays clear of them. All 0 by default.
+   */
+  @property({ attribute: false }) touchTooltipInsets: TouchTooltipInsets = NO_TOUCH_TOOLTIP_INSETS;
 
   // State
   @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
@@ -168,6 +213,19 @@ export class ProtspaceScatterplot extends LitElement {
     view: TooltipView;
   } | null = null;
   @state() private _tooltipHeight: number | null = null;
+  // The tooltip a click pinned at its protein: a mouse click while tooltipActions offered buttons,
+  // or a tap (`touch`, placed for a finger) while tapTooltips holds.
+  @state() private _pinnedTooltip: {
+    point: PlotDataPoint;
+    view: TooltipView;
+    touch: boolean;
+  } | null = null;
+  // Releases the pin's layer (kit/layers.ts), through which Escape and outside presses end it.
+  private _releasePinnedTooltip: (() => void) | null = null;
+  // The Escape fallback that hides the EAT connectors (ESCAPE_ORDER.connectors), while connected.
+  private _releaseConnectorEscape: (() => void) | null = null;
+  // The expanded duplicate-stack spider's layer: Escape collapses it before any fallback.
+  private _releaseSpiderLayer: (() => void) | null = null;
   @state() private _mergedConfig = DEFAULT_CONFIG;
   // Plain field, NOT @state: render() never reads _transform (it drives the
   // canvas imperatively via the zoom RAF + d3 attr()), so reactivity here only
@@ -175,6 +233,9 @@ export class ProtspaceScatterplot extends LitElement {
   // getter closures passed to WebGLRenderer and the duplicate-overlay/hit-test
   // reads are pull-based and keep working unchanged.
   private _transform = d3.zoomIdentity;
+  // Whether _updateSizeAndRender has measured the element yet; until then _mergedConfig holds the
+  // default size, which no view was drawn at.
+  private _sizeMeasured = false;
   @state() private _isolationHistory: string[][] = [];
   @state() private _isolationMode = false;
   private _zOrderMapping: Record<string, number> | null = null;
@@ -184,6 +245,9 @@ export class ProtspaceScatterplot extends LitElement {
   @state() private _numericRecomputeRunning = false;
   @state() private _connectorStatus: ProvenanceConnectorStatus | null = null;
   @state() private _isZoomedIn = false;
+  // What view-status-change and hidden-values-change last reported, so each fires on a change only.
+  private _lastViewStatus: { count: number; zoomedIn: boolean } | null = null;
+  private _lastHiddenCount = 0;
 
   // Queries
   @query('canvas') private _canvas?: HTMLCanvasElement;
@@ -236,6 +300,7 @@ export class ProtspaceScatterplot extends LitElement {
     zOrderMapping: () => this._zOrderMapping,
     colorMapping: () => this._colorMapping,
     shapeMapping: () => this._shapeMapping,
+    neutrals: () => this._neutrals(),
     canDrawMarks: () => this._webglRenderer?.canDrawMarks ?? true,
     // If an id repeats, render the point count again.
     onIdsRepeat: () => this.requestUpdate(),
@@ -285,9 +350,17 @@ export class ProtspaceScatterplot extends LitElement {
     isEnabled: () => !!this._mergedConfig.enableDuplicateStackUI,
     isSelectionMode: () => this.selectionMode,
     getColor: (p) => this._style.getters().getColors(p)[0] ?? '#888888',
-    onPointActivate: (e, p) => this._handleClick(e, p),
-    onHover: (e, p) => this._handleMouseOver(e, p),
+    // The spiderfy node stops its pointerdown from reaching the svg, so the controller's
+    // touchInput can be stale here; the node's own pointerup says what pressed it.
+    onPointActivate: (e, p) =>
+      this._handleClick(e, p, (e as Partial<PointerEvent>).pointerType === 'touch'),
+    // A tap's compat mouseenter on a spider node: touch sends no mouseleave to end that hover.
+    onHover: (e, p) => {
+      if (this._interaction?.touchInput) return;
+      this._handleMouseOver(e, p);
+    },
     onHoverEnd: () => this._clearHoverState(),
+    onExpandedChange: (expanded) => this._syncSpiderLayer(expanded),
   });
 
   private _connectorOverlay = new ConnectorOverlayController({
@@ -376,8 +449,11 @@ export class ProtspaceScatterplot extends LitElement {
     );
   }
 
-  /** Resolved plot background; see the class for what invalidates it. */
-  private _background = new BackgroundColorCache(this);
+  /** The plot's themed values: the knockout background and the neutral greys (see the class). */
+  private readonly _theme = new PlotTheme(this, () => this._handleThemeChange());
+
+  /** The greys the live view draws Other and default-coloured N/A points with: the theme's. */
+  private readonly _neutrals = (): PlotNeutrals => this._theme.neutrals();
 
   constructor() {
     super();
@@ -412,35 +488,39 @@ export class ProtspaceScatterplot extends LitElement {
   private _createWebglRenderer() {
     if (!this._canvas) return;
     const style = this._style;
-    const styles = {
-      getColors: (p: PlotDataPoint) => style.getters().getColors(p),
-      getPointSize: (p: PlotDataPoint) => style.getters().getPointSize(p),
-      getShape: (p: PlotDataPoint) => style.getters().getPointShape(p),
-      isPredicted: (p: PlotDataPoint) => style.getters().isPredicted(p),
-      isMultilabel: () => style.getters().isMultilabel(),
-    };
+    type Getters = ReturnType<PointStyleState['getters']>;
+    // The per-point getters over the live getters (the theme's greys) or the export's light ones.
+    const pointStyles = (getters: () => Getters) => ({
+      getColors: (p: PlotDataPoint) => getters().getColors(p),
+      getPointSize: (p: PlotDataPoint) => getters().getPointSize(p),
+      getShape: (p: PlotDataPoint) => getters().getPointShape(p),
+      isPredicted: (p: PlotDataPoint) => getters().isPredicted(p),
+      isMultilabel: () => getters().isMultilabel(),
+    });
+    const exported = () => style.exportGetters();
     this._webglRenderer = new WebGLRenderer(this._canvas, {
       getScales: () => this._scales,
       getTransform: () => this._transform,
       getConfig: () => this._mergedConfig,
       // The live view stages nothing marked while it draws the marks on the GPU.
       style: {
-        ...styles,
+        ...pointStyles(() => style.getters()),
         getOpacity: (p: PlotDataPoint) => style.stageModel().opacityOf(p),
         getDepth: (p: PlotDataPoint) => style.stageGetters().getDepth(p),
         createStylePass: () => style.stageGetters().createStylePass(style.stageModel()),
         getPointMarks: (pd: PlotData) => style.pointMarks(pd),
       },
-      // An export stages the selection with every other style.
+      // An export stages the selection with every other style, in the light greys.
       exportStyle: {
-        ...styles,
+        ...pointStyles(exported),
         getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
-        getDepth: (p: PlotDataPoint) => style.getters().getDepth(p),
+        getDepth: (p: PlotDataPoint) => exported().getDepth(p),
         // The getters above resolve the visibility model per point; a pass
         // resolves it once, for every point it stages.
-        createStylePass: () => style.getters().createStylePass(style.model()),
+        createStylePass: () => exported().createStylePass(style.model()),
       },
-      getKnockoutColor: () => this._background.get(),
+      getKnockoutColor: () => this._theme.background(),
+      getNeutralColor: () => this._neutrals().other,
       onContextLost: this._handleWebglContextLost,
       onDegraded: (detail) =>
         this.dispatchEvent(
@@ -460,15 +540,17 @@ export class ProtspaceScatterplot extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.resizeObserver.observe(this);
-    this._background.connect();
+    this._theme.connect();
 
     this.addEventListener('legend-zorder-change', this._handleZOrderChange);
     this.addEventListener('legend-colormapping-change', this._handleColorMappingChange);
-    this.addEventListener('dragover', this.handleDragOver);
-    this.addEventListener('dragenter', this.handleDragEnter);
-    this.addEventListener('dragleave', this.handleDragLeave);
-    this.addEventListener('drop', this.handleDrop);
-    window.addEventListener('keydown', this._handleConnectorKeydown);
+    // After the top layer and before the host's own fallbacks (the selection, the tool).
+    this._releaseConnectorEscape ??= onEscapeFallback(ESCAPE_ORDER.connectors, () => {
+      if (!this.hasActiveProvenanceConnectors()) return false;
+      this.clearProvenanceConnectors();
+      return true;
+    });
+    if (this._dupOverlay.hasExpanded()) this._syncSpiderLayer(true);
     window.addEventListener('keydown', this._handleShiftKey);
     window.addEventListener('keyup', this._handleShiftKey);
     window.addEventListener('blur', this._handleWindowBlur);
@@ -485,7 +567,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   disconnectedCallback() {
     this.resizeObserver.disconnect();
-    this._background.disconnect();
+    this._theme.disconnect();
     this._pointGrid.cancel();
     this._renderLoop.cancel();
     if (this._hoverRaf !== null) {
@@ -515,56 +597,18 @@ export class ProtspaceScatterplot extends LitElement {
     super.disconnectedCallback();
     this.removeEventListener('legend-zorder-change', this._handleZOrderChange);
     this.removeEventListener('legend-colormapping-change', this._handleColorMappingChange);
-    this.removeEventListener('dragover', this.handleDragOver);
-    this.removeEventListener('dragenter', this.handleDragEnter);
-    this.removeEventListener('dragleave', this.handleDragLeave);
-    this.removeEventListener('drop', this.handleDrop);
-    window.removeEventListener('keydown', this._handleConnectorKeydown);
+    this._releaseConnectorEscape?.();
+    this._releaseConnectorEscape = null;
+    this._syncSpiderLayer(false);
     window.removeEventListener('keydown', this._handleShiftKey);
     window.removeEventListener('keyup', this._handleShiftKey);
     window.removeEventListener('blur', this._handleWindowBlur);
     this._tooltipData = null;
+    this._unpinTooltip();
     this._hoveredPoint = null;
     this._shiftDown = false;
     this._focusedValues = null;
   }
-
-  private _handleConnectorKeydown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape' && this._connectorOverlay.hasActiveRequest()) {
-      this.clearProvenanceConnectors();
-    }
-  };
-
-  private handleDragOver = (e: DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer!.dropEffect = 'copy';
-    this.setAttribute('dragging', '');
-  };
-
-  private handleDragEnter = (e: DragEvent) => {
-    e.preventDefault();
-    this.setAttribute('dragging', '');
-  };
-
-  private handleDragLeave = (e: DragEvent) => {
-    e.preventDefault();
-    this.removeAttribute('dragging');
-  };
-
-  private handleDrop = (e: DragEvent) => {
-    e.preventDefault();
-    this.removeAttribute('dragging');
-    const files = e.dataTransfer?.files;
-    if (files && files.length > 0) {
-      this.dispatchEvent(
-        new CustomEvent('file-dropped', {
-          detail: { file: files[0] },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    }
-  };
 
   private _handleZOrderChange = (event: Event) => {
     const { detail } = event as LegendZOrderChangeEvent;
@@ -617,10 +661,25 @@ export class ProtspaceScatterplot extends LitElement {
     }
   };
 
+  /**
+   * The theme gave the neutral greys new values (`PlotTheme` compares them): restyle colour only,
+   * as a colour-only legend change does. One render; nothing re-sorted or re-staged.
+   */
+  private _handleThemeChange() {
+    this._style.invalidateGetters();
+    if (this._plotData.length > 0) {
+      this._webglRenderer?.invalidateCategoryStyles();
+      this._renderLoop.request();
+    }
+    // An open spider's nodes are SVG, filled from the getters when it is drawn.
+    if (this._dupOverlay.hasExpanded()) this._dupOverlay.updateSelectionOverlays();
+  }
+
   willUpdate(changedProperties: Map<string, unknown>) {
     // Before `updated()` rebuilds the style getters, so this render already uses the re-derived
     // focus (a change here joins the current update instead of scheduling another one).
     this._reconcileFocus(changedProperties);
+    this._reconcilePinnedTooltip(changedProperties);
   }
 
   updated(changedProperties: Map<string, unknown>) {
@@ -650,6 +709,42 @@ export class ProtspaceScatterplot extends LitElement {
         }),
       );
     }
+    this._reportStatus(changedProperties);
+  }
+
+  /**
+   * Tells the host what a status display shows. `view-status-change` fires when the visible count
+   * or the zoomed-in flag changed since the last report: a zoom frame that crosses no boundary
+   * schedules no update, so it reports nothing. `hidden-values-change` fires when the number of
+   * hidden category values changed.
+   */
+  private _reportStatus(changedProperties: Map<string, unknown>): void {
+    if (changedProperties.has('hiddenAnnotationValues')) {
+      const count = this.hiddenAnnotationValues.length;
+      if (count !== this._lastHiddenCount) {
+        this._lastHiddenCount = count;
+        this.dispatchEvent(
+          new CustomEvent('hidden-values-change', {
+            detail: { count },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      }
+    }
+    if (!this.data) return;
+    const count = this._getVisiblePointCount();
+    const zoomedIn = this._isZoomedIn;
+    const last = this._lastViewStatus;
+    if (last && last.count === count && last.zoomedIn === zoomedIn) return;
+    this._lastViewStatus = { count, zoomedIn };
+    this.dispatchEvent(
+      new CustomEvent('view-status-change', {
+        detail: { count, zoomedIn },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private _reconcileProvenanceConnectors(changedProperties: Map<string, unknown>): void {
@@ -764,7 +859,7 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderPerf.maybeAutoRunFromUrl();
       }
 
-      // Dispatch data-change event for auto-sync with control bar and other components
+      // Dispatch data-change event for auto-sync with the legend and other listeners
       if (
         (changedProperties.has('data') ||
           changedProperties.has('filteredProteinIds') ||
@@ -912,13 +1007,13 @@ export class ProtspaceScatterplot extends LitElement {
     // updates such as zoom/pan (_transform), selection overlays, or the self-triggered
     // _tooltipHeight update. Clearing _tooltipData to null IS a _tooltipData change,
     // so the null-reset path in _measureTooltipHeight still fires correctly.
-    if (changedProperties.has('_tooltipData')) {
+    if (changedProperties.has('_tooltipData') || changedProperties.has('_pinnedTooltip')) {
       this._measureTooltipHeight();
     }
   }
 
   private _measureTooltipHeight() {
-    if (!this._tooltipData) {
+    if (!this._tooltipData && !this._pinnedTooltip) {
       this._tooltipMeasureToken++; // invalidate any in-flight async measurement
       if (this._tooltipHeight !== null) {
         this._tooltipHeight = null;
@@ -940,7 +1035,9 @@ export class ProtspaceScatterplot extends LitElement {
       () => {
         // Guard against: (a) a newer hover that bumped the token while we were
         // waiting, or (b) the tooltip being cleared while we were waiting.
-        if (token !== this._tooltipMeasureToken || !this._tooltipData) return;
+        if (token !== this._tooltipMeasureToken || (!this._tooltipData && !this._pinnedTooltip)) {
+          return;
+        }
         const height = el.offsetHeight;
         if (height > 0 && height !== this._tooltipHeight) {
           this._tooltipHeight = height;
@@ -1193,14 +1290,20 @@ export class ProtspaceScatterplot extends LitElement {
       queryByPixels: (x0, y0, x1, y1) => this._pointGrid.index().queryByPixels(x0, y0, x1, y1),
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
       onTransform: (t) => {
+        const before = this._transform;
         this._transform = t;
         this._isZoomedIn = t.k > 1 + ZOOM_IDENTITY_EPSILON;
         this._connectorOverlay.updateZoomScale(t.k);
+        // A zoom or pan moves the protein away from its pinned tooltip. A reset glide that is
+        // already at the identity emits the same transform each frame and moves nothing.
+        if (t.k !== before.k || t.x !== before.x || t.y !== before.y) this._unpinTooltip();
       },
       onSelect: (ids, clearVisual) => this._commitSelection(ids, clearVisual),
       onHover: (event) => this._handleCanvasMouseMove(event),
       onHoverEnd: () => this._handleCanvasMouseOut(),
-      onClick: (event) => this._handleCanvasClick(event),
+      onClick: (event, touch) => this._handleCanvasClick(event, touch),
+      // A brush or lasso start ends a pin, as a click does (phase 4 ruling).
+      onSelectStart: () => this._unpinTooltip(),
       renderWebGL: (trigger) => this._renderWebGL(trigger),
       updateSelectionOverlays: (opts) => this._updateSelectionOverlays(opts),
     };
@@ -1209,6 +1312,8 @@ export class ProtspaceScatterplot extends LitElement {
   private _updateSizeAndRender() {
     const width = this.clientWidth || 800;
     const height = this.clientHeight || 600;
+    // Read with the old size and scales, before _mergedConfig takes the new size.
+    const centre = this._viewCentreDatum(width, height);
 
     if (this._canvas) {
       if (!this._webglRenderer) {
@@ -1242,12 +1347,49 @@ export class ProtspaceScatterplot extends LitElement {
     }
 
     this._mergedConfig = { ...this._mergedConfig, width, height };
+    this._sizeMeasured = true;
+    // Same zoom, same data at the centre (design decision 4). syncTransform draws nothing: the
+    // synchronous draw below shows the new transform.
+    if (centre) this._recentreView(centre, width, height);
+    else this._interaction?.refreshBrushExtent();
     // Scales depend on width/height; rebuild spatial index to keep hit-testing accurate after resize
     this._pointGrid.scheduleRebuild();
     // Synchronous: resize() just cleared the canvas (see RenderLoop).
     this._renderLoop.now();
     this._updateSelectionOverlays();
     this._connectorOverlay.render();
+  }
+
+  /**
+   * The data point at the centre of the view, read before a resize takes effect, or null when the
+   * resize need not move the view: no data or no measured size yet, the same size, the identity
+   * view (the fit is centred, so it keeps its centre already, and staying exactly identity keeps
+   * `_isZoomedIn` false and the perf pixel round trip exact), or a reset gliding to the identity.
+   */
+  private _viewCentreDatum(width: number, height: number): { x: number; y: number } | null {
+    const scales = this._scales;
+    const t = this._transform;
+    if (!this._sizeMeasured || !scales) return null;
+    const { width: oldWidth, height: oldHeight } = this._mergedConfig;
+    if (oldWidth === width && oldHeight === height) return null;
+    if (t.k === 1 && t.x === 0 && t.y === 0) return null;
+    if (this._interaction?.isResetting) return null;
+    return {
+      x: scales.x.invert((oldWidth / 2 - t.x) / t.k),
+      y: scales.y.invert((oldHeight / 2 - t.y) / t.k),
+    };
+  }
+
+  /** Keeps the zoom factor and translates so `datum` sits at the centre of the resized view. */
+  private _recentreView(datum: { x: number; y: number }, width: number, height: number): void {
+    const scales = this._scales;
+    if (!scales) return;
+    const { k } = this._transform;
+    this._interaction?.syncTransform(
+      d3.zoomIdentity
+        .translate(width / 2 - k * scales.x(datum.x), height / 2 - k * scales.y(datum.y))
+        .scale(k),
+    );
   }
 
   // HiDPI setup and quality handled by WebGLRenderer
@@ -1408,6 +1550,8 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _handleMouseOver(event: MouseEvent, point: PlotDataPoint) {
+    // A pin ignores hovers: the way to its buttons often crosses other proteins.
+    if (this._pinnedTooltip) return;
     if (!this.data) return;
     const { x, y } = this._getLocalPointerPosition(event);
     const view = buildTooltipView(
@@ -1437,7 +1581,7 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
-  private _handleClick(event: MouseEvent, point: PlotDataPoint) {
+  private _handleClick(event: MouseEvent, point: PlotDataPoint, touch = false) {
     const view = this.data
       ? buildTooltipView(
           this.data,
@@ -1464,6 +1608,11 @@ export class ProtspaceScatterplot extends LitElement {
         composed: true,
       }),
     );
+    // A tap pins while tapTooltips holds, with or without actions; a mouse click needs an action.
+    const pins = touch ? this.tapTooltips : this.tooltipActions.length > 0;
+    if (view && pins && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      this._pinTooltip(point, view, touch);
+    }
   }
 
   /**
@@ -1497,14 +1646,18 @@ export class ProtspaceScatterplot extends LitElement {
    * point index `findNearest`, the isInteractive guard, and the within-radius
    * distance check. Callers branch only on the result.
    */
-  pickInteractivePointAt(mouseX: number, mouseY: number): PlotDataPoint | null {
+  pickInteractivePointAt(
+    mouseX: number,
+    mouseY: number,
+    minRadiusPx = HIT_RADIUS_MIN_PX,
+  ): PlotDataPoint | null {
     if (!this._scales) return null;
 
     const k = this._transform.k;
     const dataX = (mouseX - this._transform.x) / k;
     const dataY = (mouseY - this._transform.y) / k;
 
-    const hitRadius = Math.max(this._drawnPointRadiusCss(), HIT_RADIUS_MIN_PX);
+    const hitRadius = Math.max(this._drawnPointRadiusCss(), minRadiusPx);
     const nearestSlot = this._pointGrid.index().findNearest(dataX, dataY, hitRadius / k);
     if (nearestSlot < 0) return null;
 
@@ -1539,10 +1692,12 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Handle click events for canvas rendering
+   * Handle click events for canvas rendering. A tap (`touch`) picks within TOUCH_HIT_RADIUS_PX.
    */
-  private _handleCanvasClick(event: MouseEvent): void {
+  private _handleCanvasClick(event: MouseEvent, touch = false): void {
     if (!this._scales) return;
+    // Any click on the plot ends a pin; a plain click on a protein pins anew below.
+    this._unpinTooltip();
 
     // If the click originated from the spiderfy UI, let the spiderfy handlers deal with it.
     // This avoids collapsing the expanded stack (and early-returning) before a spiderfy node can be selected.
@@ -1555,7 +1710,11 @@ export class ProtspaceScatterplot extends LitElement {
     const hadExpanded = this._dupOverlay.collapseExpanded();
 
     const [mouseX, mouseY] = d3.pointer(event);
-    const nearestPoint = this.pickInteractivePointAt(mouseX, mouseY);
+    const nearestPoint = this.pickInteractivePointAt(
+      mouseX,
+      mouseY,
+      touch ? TOUCH_HIT_RADIUS_PX : HIT_RADIUS_MIN_PX,
+    );
     if (!nearestPoint) {
       this.clearProvenanceConnectors();
       return;
@@ -1568,7 +1727,7 @@ export class ProtspaceScatterplot extends LitElement {
     // This prevents accidental selection when the user is simply trying to close the spiderfy UI.
     if (hadExpanded) return;
 
-    this._handleClick(event, nearestPoint);
+    this._handleClick(event, nearestPoint, touch);
   }
 
   /**
@@ -1662,32 +1821,193 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
+   * Pans and zooms, untweened, to frame the plotted, visible proteins among `ids`: one lands at
+   * the plot centre at 8× or more, several are fitted inside a 40 px margin. Returns false and
+   * leaves the view alone when none of them is plotted and visible (unknown, filtered out,
+   * isolated away or hidden by the legend).
+   */
+  zoomToProteins(ids: readonly string[]): boolean {
+    const scales = this._scales;
+    const plotData = this._plotData;
+    if (!scales || !this._interaction || plotData.length === 0 || ids.length === 0) return false;
+    const { visible } = this._style.interactable(plotData);
+    const originalIndices = plotData.originalIndices;
+    let found = 0;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const include = (slot: number) => {
+      if (slot < 0 || slot >= plotData.length || visible[slot] !== 1) return;
+      const x = scales.x(plotData.xs[slot]);
+      const y = scales.y(plotData.ys[slot]);
+      found++;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    };
+    if (ids.length === 1) {
+      // A search hit: one indexOf, never a set over every plotted protein.
+      const proteinIndex = plotData.proteinIds.indexOf(ids[0]);
+      if (proteinIndex >= 0) {
+        include(originalIndices ? originalIndices.indexOf(proteinIndex) : proteinIndex);
+      }
+    } else {
+      const wanted = new Set(ids);
+      for (let slot = 0; slot < plotData.length; slot++) {
+        if (visible[slot] !== 1) continue;
+        const id = plotData.proteinIds[originalIndices ? originalIndices[slot] : slot];
+        if (wanted.has(id)) include(slot);
+      }
+    }
+    if (found === 0) return false;
+    const { width, height, zoomExtent } = this._mergedConfig;
+    // The box's two corners stand for every point in it.
+    const t = zoomTransformFor(
+      [
+        [minX, minY],
+        [maxX, maxY],
+      ],
+      { width, height, margin: 40, currentK: this._transform.k, extent: zoomExtent, singleK: 8 },
+    );
+    if (!t) return false;
+    this._interaction.setTransform(d3.zoomIdentity.translate(t.x, t.y).scale(t.k));
+    return true;
+  }
+
+  /** The tooltip on screen: the pinned one, at its protein, else the hovered protein's. */
+  private _shownTooltip(): { x: number; y: number; view: TooltipView } | null {
+    const pinned = this._pinnedTooltip;
+    if (!pinned) return this._tooltipData;
+    const scales = this._scales;
+    if (!scales) return null;
+    const t = this._transform;
+    return {
+      x: scales.x(pinned.point.x) * t.k + t.x,
+      y: scales.y(pinned.point.y) * t.k + t.y,
+      view: pinned.view,
+    };
+  }
+
+  /**
    * Content-scaled fallback height derived from the tooltip view model.
    * Used when the async DOM measurement has not yet resolved (first hover or
    * hover that changed data). Delegates to the pure `estimateTooltipHeight`
    * helper so the logic is unit-testable without a DOM.
    */
   private _estimateTooltipHeight(): number {
-    if (!this._tooltipData) return TOOLTIP_FALLBACK_HEIGHT;
-    return estimateTooltipHeight(
-      this._tooltipData.view,
-      effectiveTooltipWidth(this._mergedConfig.width),
-    );
+    const shown = this._shownTooltip();
+    if (!shown) return TOOLTIP_FALLBACK_HEIGHT;
+    return estimateTooltipHeight(shown.view, effectiveTooltipWidth(this._mergedConfig.width));
   }
 
   private _getTooltipStyle() {
-    if (!this._tooltipData) return '';
-
-    const { x, y } = this._tooltipData;
+    const shown = this._shownTooltip();
+    if (!shown) return '';
     const config = this._mergedConfig;
-    return computeTooltipStyle({
-      x,
-      y,
+    const input = {
+      x: shown.x,
+      y: shown.y,
       height: this._tooltipHeight ?? this._estimateTooltipHeight(),
       viewportWidth: config.width,
       viewportHeight: config.height,
+    };
+    return this._pinnedTooltip?.touch
+      ? computeTouchTooltipStyle(
+          { ...input, width: COMPACT_TOOLTIP_WIDTH },
+          this.touchTooltipInsets,
+        )
+      : computeTooltipStyle(input);
+  }
+
+  private _renderTooltip() {
+    const shown = this._shownTooltip();
+    if (!shown) return '';
+    const pinned = this._pinnedTooltip !== null;
+    // A tap pins the compact card: the full details would cover a phone's plot and the protein.
+    const touch = this._pinnedTooltip?.touch === true;
+    // Shift-focus fades the hover tooltip; a pinned one stays.
+    const className = pinned ? 'visible pinned' : this._focusedValues ? '' : 'visible';
+    return html`
+      <protspace-protein-tooltip
+        class=${className}
+        style="${this._getTooltipStyle()}"
+        .view=${shown.view}
+        .actions=${pinned ? this.tooltipActions : NO_TOOLTIP_ACTIONS}
+        .links=${pinned && !touch}
+        .compact=${touch}
+        .color=${touch ? this._pinnedColor() : ''}
+        @protein-tooltip-action=${this._handleTooltipAction}
+      ></protspace-protein-tooltip>
+    `;
+  }
+
+  /** The pinned protein's colour in the plot, for the compact card's swatch. */
+  private _pinnedColor(): string {
+    const pinned = this._pinnedTooltip;
+    return pinned ? (this._style.getters().getColors(pinned.point)[0] ?? '') : '';
+  }
+
+  private _pinTooltip(point: PlotDataPoint, view: TooltipView, touch: boolean): void {
+    this._pinnedTooltip = { point, view, touch };
+    // Presses on the plot end the pin through the click and zoom handlers; the layer handles
+    // Escape and presses anywhere else.
+    this._releasePinnedTooltip ??= pushLayer({
+      close: () => this._unpinTooltip(),
+      elements: [this],
     });
   }
+
+  private _unpinTooltip(): void {
+    this._releasePinnedTooltip?.();
+    this._releasePinnedTooltip = null;
+    this._pinnedTooltip = null;
+  }
+
+  /** A layer while the spider is open; the plot's own click already collapses it, so no outside press. */
+  private _syncSpiderLayer(expanded: boolean): void {
+    if (expanded && this.isConnected) {
+      this._releaseSpiderLayer ??= pushLayer({
+        close: () => this.closeExpandedDuplicateStack(),
+        elements: [this],
+        dismissOnOutsidePress: false,
+      });
+      return;
+    }
+    if (expanded) return;
+    this._releaseSpiderLayer?.();
+    this._releaseSpiderLayer = null;
+  }
+
+  /**
+   * A pin ends with its data, with its points' positions, when taps stop pinning, or (a mouse
+   * pin) with the last action. A touch pin needs no action: it is how a finger reads a protein.
+   */
+  private _reconcilePinnedTooltip(changedProperties: Map<string, unknown>): void {
+    const pinned = this._pinnedTooltip;
+    if (!pinned) return;
+    const actionsGone =
+      !pinned.touch && changedProperties.has('tooltipActions') && this.tooltipActions.length === 0;
+    const tapsOff = changedProperties.has('tapTooltips') && !this.tapTooltips;
+    if (actionsGone || tapsOff || this._geometryInputsChanged(changedProperties)) {
+      this._unpinTooltip();
+    }
+  }
+
+  private _handleTooltipAction = (event: Event) => {
+    const pinned = this._pinnedTooltip;
+    if (!pinned) return;
+    const { id } = (event as CustomEvent<{ id: string }>).detail;
+    this._unpinTooltip();
+    this.dispatchEvent(
+      new CustomEvent<TooltipActionDetail>('tooltip-action', {
+        detail: { id, proteinId: pinned.point.id },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  };
 
   render() {
     const config = this._mergedConfig;
@@ -1720,59 +2040,20 @@ export class ProtspaceScatterplot extends LitElement {
           style="position: absolute; top: 0; left: 0; max-width: ${config.width}px; max-height: ${config.height}px; z-index: 3; background: transparent;"
         ></svg>
 
-        <protspace-projection-metadata
-          .projection=${this.data?.projections[this.selectedProjectionIndex] ?? null}
-          .statisticsRows=${this.data?.statisticsRows}
-          selected-annotation=${this.selectedAnnotation}
-          .viewIsSubset=${this.filtersActive || this.isIsolationMode()}
-        ></protspace-projection-metadata>
-
-        <protspace-tips
-          data-driver-id="tips"
-          .showTourButton=${this.showTourButton}
-        ></protspace-tips>
-
-        ${this._tooltipData
-          ? html`
-              <protspace-protein-tooltip
-                class=${this._focusedValues ? '' : 'visible'}
-                style="${this._getTooltipStyle()}"
-                .view=${this._tooltipData.view}
-              >
-              </protspace-protein-tooltip>
-            `
-          : ''}
-        ${this.selectionMode || this.selectedProteinIds.length > 0
-          ? html`
-              <div
-                class="mode-indicator"
-                style="z-index: 10; display: flex; flex-direction: column; gap: 4px;"
-              >
-                ${this.selectionMode
-                  ? html`<div>
-                      Selection Mode (${this.selectionTool === 'lasso' ? 'Lasso' : 'Rectangle'})
-                    </div>`
-                  : ''}
-                ${this.selectedProteinIds.length > 0
-                  ? html`<div style="font-size: 11px; opacity: 0.8;">
-                      ${this.selectedProteinIds.length} proteins selected
-                    </div>`
-                  : ''}
-              </div>
-            `
-          : ''}
-        ${this.data
+        ${this._renderTooltip()}
+        ${this.data && !this.hideStatus
           ? html`
               <div class="plot-indicator" role="status" aria-live="polite">
-                ${`${this._getVisiblePointCount()} points${this._isZoomedIn ? ' · Zoomed in' : ''}`}
+                ${`${countNoun(this._getVisiblePointCount(), 'protein', 'proteins')}${
+                  this._isZoomedIn ? ' · Zoomed in' : ''
+                }`}
               </div>
             `
           : ''}
         ${this._numericRecomputeRunning
           ? html`
               <div class="plot-indicator" style="left: auto; right: 0.5rem;">
-                Recalculating bins for
-                ${this._numericRecompute.runningAnnotation() ?? 'annotation'}...
+                ${this._recalculatingText()}
               </div>
             `
           : ''}
@@ -1795,7 +2076,14 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _formatConnectorStatus(status: ProvenanceConnectorStatus): string {
-    return `${status.missingEndpoints} hidden (off-view)`;
+    return `${formatCount(status.missingEndpoints)} hidden (off view)`;
+  }
+
+  /** "Recalculating bins for EC number…": the running annotation by its display name. */
+  private _recalculatingText(): string {
+    const key = this._numericRecompute.runningAnnotation();
+    const label = key ? annotationLabel(key, this.data?.annotations[key]) : 'annotation';
+    return `Recalculating bins for ${label}…`;
   }
 
   /** Draw a bounded set of EAT source-to-target pairs in the current plot view. */
@@ -2028,7 +2316,7 @@ export class ProtspaceScatterplot extends LitElement {
   /**
    * Clear isolation state without reprocessing. Use before loading new data.
    * Dispatches `data-isolation-reset` when state actually changed, so listeners
-   * (e.g. the control bar's Reset chip) stay in sync. Pass `{ silent: true }`
+   * (e.g. the plot tools' Reset) stay in sync. Pass `{ silent: true }`
    * when the caller will dispatch its own reset event with a fuller payload.
    */
   clearIsolationState(options?: { silent?: boolean }): void {
@@ -2085,6 +2373,46 @@ export class ProtspaceScatterplot extends LitElement {
           isFiltered: false,
           isolationMode: false,
         },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /**
+   * Undoes one Show only step (the app's undo history). With more than one step it drops the last
+   * and shows the step before it; with one it leaves isolation as `resetIsolation()` does.
+   */
+  popIsolation(): void {
+    if (this._isolationHistory.length === 0) return;
+    if (this._isolationHistory.length === 1) {
+      this.resetIsolation();
+      return;
+    }
+    // A new array: the isolated subset is memoised on the history, so the shorter one recomputes it.
+    this._isolationHistory = this._isolationHistory.slice(0, -1);
+    this.selectedProteinIds = [];
+    // Forget the build, as resetIsolation does: the fast coordinate path would keep the narrower
+    // subset.
+    this._plotDataBuild = null;
+    this._reprocessAndRefresh();
+    this.resetZoom();
+
+    const currentData = this.getCurrentData();
+    this.dispatchEvent(
+      new CustomEvent('data-isolation', {
+        detail: {
+          isolationHistory: this._isolationHistory,
+          isolationMode: this._isolationMode,
+          dataSize: currentData?.protein_ids.length ?? 0,
+        },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    this.dispatchEvent(
+      new CustomEvent('data-change', {
+        detail: { data: currentData, isSplitData: true, isolationMode: true },
         bubbles: true,
         composed: true,
       }),
@@ -2195,11 +2523,7 @@ export class ProtspaceScatterplot extends LitElement {
       dataDomain,
       pointSizeReference,
       resetView,
-      resolveColor(
-        backgroundColor === 'transparent'
-          ? getComputedStyle(this).backgroundColor
-          : backgroundColor,
-      ),
+      EXPORT_KNOCKOUT,
     );
 
     // Composite with badges canvas if present. For the unzoomed (resetView)
@@ -2286,10 +2610,9 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Margin used for a render at the given export dimensions. Returned values
-   * are in *export pixel space*. The publish modal uses this to translate
-   * inset source rects (in canvas-norm 0–1) into accurate data-coordinate
-   * viewports, instead of approximating with the raw extent.
+   * Margins of the data area in a reset-view export at the given size, in export pixels: the
+   * edges of the fitted rectangle, centring slack included. The publish modal uses this to
+   * translate inset source rects (in canvas-norm 0–1) into accurate data-coordinate viewports.
    */
   public getRenderInfo(
     exportWidth: number,
@@ -2300,26 +2623,16 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Data extent of the most recently rendered points. With `padded: true`
-   * applies the same 5% padding the renderer uses by default — so the
-   * returned domain matches what the main plot is actually showing.
+   * Data extent of the most recently rendered points. With `padded: true` it applies
+   * DATA_EXTENT_PADDING, as the live scales do, so the returned domain is the one the main plot
+   * is fitted to.
    */
-  public getDataExtent(
-    options: { padded?: boolean } = {},
-  ): { xMin: number; xMax: number; yMin: number; yMax: number } | null {
+  public getDataExtent(options: { padded?: boolean } = {}): DataDomain | null {
     if (!this._webglRenderer) return null;
     this._renderLoop.flush();
     const ext = this._webglRenderer.getDataExtent();
     if (!ext) return null;
-    if (!options.padded) return ext;
-    const xPad = Math.abs(ext.xMax - ext.xMin) * 0.05;
-    const yPad = Math.abs(ext.yMax - ext.yMin) * 0.05;
-    return {
-      xMin: ext.xMin - xPad,
-      xMax: ext.xMax + xPad,
-      yMin: ext.yMin - yPad,
-      yMax: ext.yMax + yPad,
-    };
+    return options.padded ? padDomain(ext) : ext;
   }
 }
 

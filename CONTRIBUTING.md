@@ -140,7 +140,7 @@ packages/
 │   └── src/components/
 │       ├── scatter-plot/     # WebGL2 renderer, interaction, tooltips
 │       ├── legend/
-│       ├── control-bar/
+│       ├── kit/              # ps-* elements: buttons, menus, popovers, dialogs
 │       ├── data-loader/
 │       └── structure-viewer/ # Mol* integration
 └── utils/         # Color, data-processing, export utilities
@@ -263,6 +263,13 @@ pnpm perf:scale    # Timings and memory over the number of points
 pnpm perf:webgl    # Cross-browser WebGL render passes
 ```
 
+`pnpm test` and `pnpm test:ci` also run core's `*.browser.test.ts` files in headless Chromium.
+Install it once:
+
+```bash
+pnpm exec playwright install --only-shell chromium
+```
+
 The perf commands read their datasets from `perf/datasets/`, so run `pnpm perf:fetch` first. See
 [perf/README.md](perf/README.md) for each command and its flags.
 
@@ -314,7 +321,7 @@ to exercise the large-dataset path.
 pnpm dev:docs      # Start dev server (localhost:5174)
 pnpm docs:build    # Build static site
 pnpm docs:preview  # Preview production build
-pnpm docs:images   # Generate all documentation images (screenshots, animations, GIFs)
+pnpm docs:images   # Generate all documentation images (starts its own app server on :8096)
 ```
 
 **Generated pages:** two pages are written by scripts, so edit their sources and regenerate
@@ -326,8 +333,15 @@ rather than editing the page. `pnpm precommit` and CI fail when either is stale.
 - `docs/explore/example-datasets.md`: from the example catalog
   (`apps/web/src/explore/example-datasets.ts`), the bundle manifest
   (`apps/web/src/explore/example-manifest.ts`) and `docs/scripts/example-details.ts`; regenerate
-  with `pnpm docs:examples`. Its thumbnails come from the opt-in `examples-live` E2E project
-  (see `docs/explore/images/README.md`).
+  with `pnpm docs:examples`. Its thumbnails come from the docs captures
+  (`pnpm docs:screenshots -g "examples/"`; see `docs/explore/images/README.md`).
+
+**Docs images:** every image under `docs/explore/images/` comes from one capture manifest, its
+entries grouped by docs page in `scripts/docs-screenshots/scenes/`
+(`docs/explore/images/README.md` describes the pipeline). The captures start their own app server
+on port 8096 (`DOCS_CAPTURE_PORT` changes it) and a headed Chromium; the examples other than the
+startup demo need `pnpm examples:fetch` first. `pnpm docs:images` makes them all and
+`pnpm docs:images:check` is the pre-commit lint; the README has the commands for one image.
 
 **Documentation standards:**
 

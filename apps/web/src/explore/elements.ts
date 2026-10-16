@@ -1,25 +1,55 @@
 import type {
-  ProtspaceControlBar,
+  ProtspaceAnnotationSelect,
+  ProtspaceContoursMenu,
+  ProtspaceExportMenu,
+  ProtspaceImportMenu,
   ProtspaceLegend,
+  ProtspacePlotTools,
+  ProtspaceProjectionMetadata,
+  ProtspaceProjectionSelect,
+  ProtspaceProteinSearch,
+  ProtspaceQueryBuilder,
   ProtspaceScatterplot,
+  ProtspaceSelectionBar,
+  ProtspacePlotStatus,
   ProtspaceStructureViewer,
   DataLoader as ProtspaceDataLoader,
 } from '@protspace/core';
 
 interface ExploreElements {
-  controlBar: ProtspaceControlBar;
   dataLoader: ProtspaceDataLoader;
+  exportMenu: ProtspaceExportMenu;
+  importMenu: ProtspaceImportMenu;
   legendElement: ProtspaceLegend;
   plotElement: ProtspaceScatterplot;
   structureViewer: ProtspaceStructureViewer;
+  queryBuilder: ProtspaceQueryBuilder;
+  projectionSelect: ProtspaceProjectionSelect;
+  annotationSelect: ProtspaceAnnotationSelect;
+  contoursMenu: ProtspaceContoursMenu;
+  projectionMetadata: ProtspaceProjectionMetadata;
+  plotTools: ProtspacePlotTools;
+  selectionBar: ProtspaceSelectionBar;
+  plotStatus: ProtspacePlotStatus;
+  proteinSearch: ProtspaceProteinSearch;
 }
 
 const REQUIRED_TAGS = [
   'protspace-scatterplot',
   'protspace-legend',
   'protspace-structure-viewer',
-  'protspace-control-bar',
   'protspace-data-loader',
+  'protspace-import-menu',
+  'protspace-export-menu',
+  'protspace-query-builder',
+  'protspace-projection-select',
+  'protspace-annotation-select',
+  'protspace-contours-menu',
+  'protspace-projection-metadata',
+  'protspace-plot-tools',
+  'protspace-selection-bar',
+  'protspace-plot-status',
+  'protspace-protein-search',
 ] as const;
 
 export async function waitForElements(): Promise<void> {
@@ -32,25 +62,77 @@ export function getElements(doc: Document = document): ExploreElements | null {
   const structureViewer = doc.getElementById(
     'myStructureViewer',
   ) as ProtspaceStructureViewer | null;
-  const controlBar = doc.getElementById('myControlBar') as ProtspaceControlBar | null;
   const dataLoader = doc.getElementById('myDataLoader') as ProtspaceDataLoader | null;
+  const importMenu = doc.getElementById('myImportMenu') as ProtspaceImportMenu | null;
+  const exportMenu = doc.getElementById('myExportMenu') as ProtspaceExportMenu | null;
+  const queryBuilder = doc.getElementById('myQueryBuilder') as ProtspaceQueryBuilder | null;
+  const projectionSelect = doc.getElementById(
+    'myProjectionSelect',
+  ) as ProtspaceProjectionSelect | null;
+  const annotationSelect = doc.getElementById(
+    'myAnnotationSelect',
+  ) as ProtspaceAnnotationSelect | null;
+  const contoursMenu = doc.getElementById('myContoursMenu') as ProtspaceContoursMenu | null;
+  const projectionMetadata = doc.getElementById(
+    'myProjectionMetadata',
+  ) as ProtspaceProjectionMetadata | null;
+  const plotTools = doc.getElementById('myPlotTools') as ProtspacePlotTools | null;
+  const selectionBar = doc.getElementById('mySelectionBar') as ProtspaceSelectionBar | null;
+  const plotStatus = doc.getElementById('myPlotStatus') as ProtspacePlotStatus | null;
+  const proteinSearch = doc.getElementById('myProteinSearch') as ProtspaceProteinSearch | null;
 
-  if (!plotElement || !legendElement || !structureViewer || !controlBar || !dataLoader) {
+  if (
+    !plotElement ||
+    !legendElement ||
+    !structureViewer ||
+    !dataLoader ||
+    !importMenu ||
+    !exportMenu ||
+    !queryBuilder ||
+    !projectionSelect ||
+    !annotationSelect ||
+    !contoursMenu ||
+    !projectionMetadata ||
+    !plotTools ||
+    !selectionBar ||
+    !plotStatus ||
+    !proteinSearch
+  ) {
     console.error('Could not find one or more required explore elements.', {
       plotElement,
       legendElement,
       structureViewer,
-      controlBar,
       dataLoader,
+      importMenu,
+      exportMenu,
+      queryBuilder,
+      projectionSelect,
+      annotationSelect,
+      contoursMenu,
+      projectionMetadata,
+      plotTools,
+      selectionBar,
+      plotStatus,
+      proteinSearch,
     });
     return null;
   }
 
   return {
-    controlBar,
     dataLoader,
+    exportMenu,
+    importMenu,
     legendElement,
     plotElement,
     structureViewer,
+    queryBuilder,
+    projectionSelect,
+    annotationSelect,
+    contoursMenu,
+    projectionMetadata,
+    plotTools,
+    selectionBar,
+    plotStatus,
+    proteinSearch,
   };
 }

@@ -78,6 +78,39 @@
       })(window.location);
     </script>
     <!-- End Single Page Apps for GitHub Pages -->
+
+    <!-- The explore page's theme before first paint (design decision 16), on /explore only and
+         after the redirect above, which turns /?/explore into /explore. theme-boot.test.ts pins
+         the key, the choices, the default and the colour to theme-defaults.ts and theme.ts. -->
+    <script data-theme-boot>
+      (function () {
+        if (!/^\/explore\/?$/.test(location.pathname)) return;
+        var theme = 'system';
+        try {
+          var stored = JSON.parse(localStorage.getItem('protspace:theme'));
+          if (stored === 'system' || stored === 'light' || stored === 'dark') theme = stored;
+        } catch (error) {
+          // No storage (private mode, blocked site data) or a value that is not JSON: the default.
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
+    <style data-theme-boot>
+      /* The dark surface until the explore chunk adopts the tokens. Unlayered, so it beats the
+         landing's @layer base white body; #0f172a is dark --ps-surface. */
+      :root[data-theme='dark'],
+      :root[data-theme='dark'] body {
+        color-scheme: dark;
+        background: #0f172a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root[data-theme='system'],
+        :root[data-theme='system'] body {
+          color-scheme: dark;
+          background: #0f172a;
+        }
+      }
+    </style>
   </head>
 
   <body>

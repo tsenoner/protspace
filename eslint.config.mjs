@@ -78,6 +78,34 @@ export default [
     },
   },
   {
+    // The workbench shell paints before the explore runtime loads (design decision 5). A value
+    // import of @protspace/core pulls all of core into the shell chunk, and the data loader then
+    // upgrades before the runtime wires it, so early loads never render. Types only; shared
+    // values go through @protspace/utils.
+    files: ['apps/web/src/workbench/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@protspace/core',
+              allowTypeImports: true,
+              message: 'The shell may import @protspace/core only as types; use @protspace/utils.',
+            },
+          ],
+          patterns: [
+            {
+              group: ['@protspace/core/*', '!@protspace/core/kit'],
+              allowTypeImports: true,
+              message: 'The shell may import @protspace/core only as types.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Tooling, not shipped code: the docs-screenshot pipeline, the Playwright e2e
     // and perf suites, the bundle contract tests and the docs build scripts. They
     // drive a browser through component internals that carry no public types, and

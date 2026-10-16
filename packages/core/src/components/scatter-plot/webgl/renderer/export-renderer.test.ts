@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { DataProcessor } from '@protspace/utils';
 import type { PlotData, ScatterplotConfig } from '@protspace/utils';
 import { ExportRenderer } from './export-renderer';
 import { computePaddedExtent, computeExtent } from './data-extent';
@@ -53,26 +54,19 @@ describe('ExportRenderer.createExportScales (static)', () => {
     expect(ExportRenderer.createExportScales(config, empty, 400, 300)).toBeNull();
   });
 
-  it('default path: pads the data extent and insets the range by the scaled margins', () => {
+  it('default path: fits the padded extent inside the scaled margins with one scale, centred', () => {
+    // 11 × 22 once padded. At 800 × 600 the inner area is 760 × 560, so y sets the scale
+    // (560 / 22 px per unit) and the 280 px wide fit is centred in x.
     const pd = makePlotData([0, 10], [0, 20]);
-    const exportWidth = 800;
-    const exportHeight = 600;
-    const scales = ExportRenderer.createExportScales(config, pd, exportWidth, exportHeight);
+    const scales = ExportRenderer.createExportScales(config, pd, 800, 600);
     expect(scales).not.toBeNull();
     const { x, y } = scales!;
 
-    // Domain is the 5%-padded data extent.
     const padded = computePaddedExtent(pd.xs, pd.ys, pd.length);
     expect(x.domain()).toEqual([padded.xMin, padded.xMax]);
     expect(y.domain()).toEqual([padded.yMin, padded.yMax]);
-
-    // Range is inset by margins scaled from the fixed reference.
-    const scaleX = exportWidth / REF_W;
-    const scaleY = exportHeight / REF_H;
-    expect(x.range()[0]).toBeCloseTo(20 * scaleX); // left
-    expect(x.range()[1]).toBeCloseTo(exportWidth - 20 * scaleX); // right
-    expect(y.range()[0]).toBeCloseTo(exportHeight - 20 * scaleY); // bottom
-    expect(y.range()[1]).toBeCloseTo(20 * scaleY); // top
+    expect(x.range()).toEqual([260, 540]);
+    expect(y.range()).toEqual([580, 20]);
   });
 
   it('dataDomain path: full-bleed range with no padding and no margins', () => {
@@ -87,7 +81,7 @@ describe('ExportRenderer.createExportScales (static)', () => {
     expect(x.domain()).toEqual([domain.xMin, domain.xMax]);
     expect(y.domain()).toEqual([domain.yMin, domain.yMax]);
 
-    // Range fills the canvas edge-to-edge (x: 0->W, y: H->0).
+    // Range fills the canvas edge-to-edge (x: 0->W, y: H->0), each axis on its own.
     expect(x.range()).toEqual([0, exportWidth]);
     expect(y.range()).toEqual([exportHeight, 0]);
   });
@@ -95,22 +89,33 @@ describe('ExportRenderer.createExportScales (static)', () => {
   it('falls back to a 20px default margin when config.margin is absent', () => {
     const noMargin: ScatterplotConfig = { width: 1000, height: 800 };
     const pd = makePlotData([0, 10], [0, 20]);
-    const scales = ExportRenderer.createExportScales(noMargin, pd, REF_W, REF_H);
-    const { x } = scales!;
-    // At the reference size the scale factor is 1, so the inset equals 20px.
-    expect(x.range()[0]).toBeCloseTo(20);
-    expect(x.range()[1]).toBeCloseTo(REF_W - 20);
+    const { x, y } = ExportRenderer.createExportScales(noMargin, pd, REF_W, REF_H)!;
+    // At the reference size the scale factor is 1, so the margins are 20 px.
+    expect(x.range()).toEqual([260, 540]);
+    expect(y.range()).toEqual([580, 20]);
+  });
+
+  it("an export has the live plot's shape at the same aspect", () => {
+    const margin = { top: 40, right: 40, bottom: 40, left: 40 };
+    const pd = makePlotData([0, 10, 3], [0, 20, 7]);
+    const live = DataProcessor.createScales(pd, 800, 600, margin)!;
+    // Twice the reference size: the margins scale to 80 px, so the export is the live plot doubled.
+    const exported = ExportRenderer.createExportScales({ margin }, pd, 1600, 1200)!;
+    expect(exported.x.domain()).toEqual(live.x.domain());
+    expect(exported.y.domain()).toEqual(live.y.domain());
+    exported.x.range().forEach((value, i) => expect(value).toBeCloseTo(2 * live.x.range()[i], 9));
+    exported.y.range().forEach((value, i) => expect(value).toBeCloseTo(2 * live.y.range()[i], 9));
   });
 });
 
 describe('ExportRenderer.getRenderInfo (static)', () => {
-  it('returns margins in export-pixel space, scaled from the fixed reference', () => {
+  it('without data, returns the margins scaled from the fixed reference', () => {
     const config: ScatterplotConfig = {
       margin: { top: 10, right: 30, bottom: 40, left: 50 },
     };
     const exportWidth = 1600; // 2x reference width
     const exportHeight = 1200; // 2x reference height
-    const info = ExportRenderer.getRenderInfo(config, exportWidth, exportHeight);
+    const info = ExportRenderer.getRenderInfo(config, null, exportWidth, exportHeight);
     expect(info.marginLeft).toBeCloseTo(50 * (exportWidth / REF_W));
     expect(info.marginRight).toBeCloseTo(30 * (exportWidth / REF_W));
     expect(info.marginTop).toBeCloseTo(10 * (exportHeight / REF_H));
@@ -118,11 +123,44 @@ describe('ExportRenderer.getRenderInfo (static)', () => {
   });
 
   it('uses the 20px default margin when config.margin is absent', () => {
-    const info = ExportRenderer.getRenderInfo({}, REF_W, REF_H);
+    const info = ExportRenderer.getRenderInfo({}, null, REF_W, REF_H);
     expect(info.marginLeft).toBeCloseTo(20);
     expect(info.marginRight).toBeCloseTo(20);
     expect(info.marginTop).toBeCloseTo(20);
     expect(info.marginBottom).toBeCloseTo(20);
+  });
+
+  it('with data, returns the edges of the fitted area, centring slack included', () => {
+    const pd = makePlotData([0, 10], [0, 20]);
+    expect(ExportRenderer.getRenderInfo({}, pd, REF_W, REF_H)).toEqual({
+      marginLeft: 260,
+      marginRight: 260,
+      marginTop: 20,
+      marginBottom: 20,
+    });
+  });
+
+  it("getRenderInfo's effective margins with the padded extent reproduce createExportScales exactly", () => {
+    const config: ScatterplotConfig = { margin: { top: 12, right: 30, bottom: 44, left: 72 } };
+    const pd = makePlotData([-3.5, 8, 2.25, 0.5], [10, -6, 4, 1.75]);
+    const extent = computePaddedExtent(pd.xs, pd.ys, pd.length);
+    for (const [width, height] of [
+      [800, 600],
+      [1920, 1080],
+      [1000, 1400],
+    ]) {
+      const scales = ExportRenderer.createExportScales(config, pd, width, height)!;
+      const info = ExportRenderer.getRenderInfo(config, pd, width, height);
+      // The publish modal's inset inversion (publish-modal.ts), run forwards.
+      const areaWidth = width - info.marginLeft - info.marginRight;
+      const areaHeight = height - info.marginTop - info.marginBottom;
+      for (let i = 0; i < pd.length; i++) {
+        const tx = (pd.xs[i] - extent.xMin) / (extent.xMax - extent.xMin);
+        const ty = (extent.yMax - pd.ys[i]) / (extent.yMax - extent.yMin);
+        expect(info.marginLeft + tx * areaWidth).toBeCloseTo(scales.x(pd.xs[i]), 9);
+        expect(info.marginTop + ty * areaHeight).toBeCloseTo(scales.y(pd.ys[i]), 9);
+      }
+    }
   });
 });
 

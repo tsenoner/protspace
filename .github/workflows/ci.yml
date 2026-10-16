@@ -48,6 +48,21 @@ jobs:
       - name: Run quality checks
         run: pnpm quality:ci
 
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      # Same key as e2e.yml, so each workflow restores the browser the others cached.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-shell-${{ steps.pw.outputs.version }}
+
+      - name: Install Chromium for the core browser tests
+        timeout-minutes: 5
+        run: pnpm exec playwright install --only-shell chromium
+
       - name: Run test suite
         run: pnpm test:ci
 

@@ -3,20 +3,26 @@ import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
   clickLegendItem,
+  datasetSwitcher,
   dismissTourIfPresent,
   getCurrentDatasetName,
   getFirstLegendItemValue,
   getProteinCount,
+  importMenu,
+  importTrigger,
   importUserFile,
   isLegendItemHidden,
   openExplore,
   openImportMenu,
+  pickExample,
   waitForExploreDataLoad,
+  waitForExploreInteractionReady,
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
 import { TOXPROT_5181_FIXTURE, TOXPROT_5181_V3_FIXTURE } from './helpers/fixtures';
 import { readStoredImport } from './helpers/opfs';
+import { seedTourSeen } from './helpers/tour-storage-state';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
@@ -196,26 +202,6 @@ async function loadCustomDatasetFromPath(
   );
 }
 
-async function loadDemoDatasetFromImportMenu(page: Page): Promise<void> {
-  await openImportMenu(page);
-  await page.locator('protspace-control-bar [data-example-id="demo"]').click();
-}
-
-async function isImportChevronVisible(page: Page): Promise<boolean> {
-  return page.evaluate(() => {
-    const controlBar = document.querySelector('protspace-control-bar');
-    const chevron = controlBar?.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .chevron-down',
-    );
-
-    if (!(chevron instanceof Element)) {
-      return false;
-    }
-
-    return getComputedStyle(chevron).display !== 'none';
-  });
-}
-
 async function dispatchCustomEvent(
   page: Page,
   selector: string,
@@ -352,7 +338,7 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
     await waitForPersistedExploreDataset(page);
 
-    await loadDemoDatasetFromImportMenu(page);
+    await pickExample(page, 'demo');
     await waitForProteinCount(page, defaultCount);
 
     await page.reload();
@@ -366,8 +352,19 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     await page.setViewportSize({ width: 568, height: 527 });
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
+    await waitForExploreInteractionReady(page);
 
-    expect(await isImportChevronVisible(page)).toBe(true);
+    // 568 px is the phone layout: the Import button gives way and the dataset name opens the same
+    // panel (a closed disclosure until pressed), not an immediate action.
+    await expect(importTrigger(page)).toBeHidden();
+    await expect(datasetSwitcher(page)).toBeVisible();
+    await expect(datasetSwitcher(page)).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(datasetSwitcher(page)).not.toHaveAttribute('aria-expanded', 'true');
+    await datasetSwitcher(page).click();
+    await expect(
+      importMenu(page).getByRole('dialog', { name: 'Import', exact: true }),
+    ).toBeVisible();
+    await expect(datasetSwitcher(page)).toHaveAttribute('aria-expanded', 'true');
   });
 
   test('remounting Explore keeps a single queued import path active', async ({ page }) => {
@@ -387,9 +384,8 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
 test.describe('Persisted dataset failure handling', () => {
   test('queued user imports win over corrupted OPFS fallback recovery', async ({ page }) => {
+    await seedTourSeen(page);
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
-
       const originalDefine = customElements.define.bind(customElements);
       customElements.define = (name, constructor, options) => {
         if (name === 'protspace-data-loader') {
@@ -465,8 +461,8 @@ test.describe('Persisted dataset failure handling', () => {
   test('OPFS access restrictions show a toast without blocking the current session load', async ({
     page,
   }) => {
+    await seedTourSeen(page);
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
       Object.defineProperty(navigator.storage, 'getDirectory', {
         configurable: true,
         value: async () => {
@@ -494,8 +490,8 @@ test.describe('Persisted dataset failure handling', () => {
   test('unsupported browsers show an OPFS support toast without blocking the current session load', async ({
     page,
   }) => {
+    await seedTourSeen(page);
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
       Object.defineProperty(navigator.storage, 'getDirectory', {
         configurable: true,
         value: undefined,
@@ -591,19 +587,14 @@ test.describe('Unified app notifications', () => {
     expect(await getCurrentDatasetName(page)).not.toBe('corrupt.parquetbundle');
   });
 
-  test('selection-disabled-notification uses the unified warning toast path', async ({ page }) => {
-    await dispatchCustomEvent(page, '#myControlBar', 'selection-disabled-notification', {
-      message: 'Selection mode disabled: Only 1 point remaining',
-      severity: 'warning',
-      source: 'control-bar',
-      context: {
-        reason: 'insufficient-data',
-        dataSize: 1,
-      },
+  test('auto-disable-selection uses the unified warning toast path', async ({ page }) => {
+    await dispatchCustomEvent(page, '#myPlot', 'auto-disable-selection', {
+      reason: 'insufficient-data',
+      dataSize: 1,
     });
 
     await expect(page.getByText('Selection mode disabled.')).toBeVisible();
-    await expect(page.getByText('Selection mode disabled: Only 1 point remaining')).toBeVisible();
+    await expect(page.getByText('Selection mode disabled: Only 1 protein remaining')).toBeVisible();
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
@@ -627,7 +618,7 @@ test.describe('Unified app notifications', () => {
   test('successful parquet exports show the unified success toast', async ({ page }) => {
     const downloadPromise = page.waitForEvent('download');
 
-    await dispatchCustomEvent(page, '#myControlBar', 'export', {
+    await dispatchCustomEvent(page, '#myExportMenu', 'export', {
       type: 'parquet',
       includeLegendSettings: false,
       includeExportOptions: false,
@@ -635,8 +626,9 @@ test.describe('Unified app notifications', () => {
 
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toContain('.parquetbundle');
-    await expect(page.getByText('Export ready.')).toBeVisible();
-    await expect(page.getByText(/\.parquetbundle/i)).toBeVisible();
+    const toast = page.locator('[data-sonner-toast]').filter({ hasText: 'Export ready.' });
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText(/\.parquetbundle/i);
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
@@ -656,7 +648,7 @@ test.describe('Unified app notifications', () => {
       plot.getCurrentData = () => null;
     });
 
-    await dispatchCustomEvent(page, '#myControlBar', 'export', {
+    await dispatchCustomEvent(page, '#myExportMenu', 'export', {
       type: 'parquet',
       includeLegendSettings: false,
       includeExportOptions: false,

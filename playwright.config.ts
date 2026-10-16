@@ -1,91 +1,68 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright configuration for documentation screenshot automation.
- * See https://playwright.dev/docs/test-configuration
+ * The docs media captures in scripts/docs-screenshots/ (`pnpm docs:screenshots` for the PNGs,
+ * `pnpm docs:animations` for the GIF recordings, which `pnpm docs:gifs` converts): the runner
+ * turns each manifest entry into one test per output file, and docs/explore/images/README.md
+ * describes the pipeline.
+ *
+ * It starts its own dev server on DOCS_CAPTURE_PORT (default 8096), with this checkout's packages
+ * built first and without VITE_STARTUP_DATASET_URL, so the captures show the product demo, never
+ * the fixture an e2e server pins. It never reuses a running server. PLAYWRIGHT_BASE_URL points the
+ * captures at one instead, and starts nothing.
  */
+const PORT = process.env.DOCS_CAPTURE_PORT ?? '8096';
+if (!/^\d+$/.test(PORT)) {
+  throw new Error(`DOCS_CAPTURE_PORT must be a port number, got "${PORT}"`);
+}
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${PORT}`;
+
 export default defineConfig({
   testDir: './scripts/docs-screenshots',
 
-  // Run tests sequentially for consistent screenshots
+  // One capture at a time, in manifest order, never retried: a failure is a broken scene.
   fullyParallel: false,
-
-  // Fail the build on CI if you accidentally left test.only in the source code
-  forbidOnly: !!process.env.CI,
-
-  // No retries for screenshot generation
-  retries: 0,
-
-  // Single worker for consistent captures
   workers: 1,
-
-  // Reporter
+  retries: 0,
+  forbidOnly: !!process.env.CI,
   reporter: 'list',
 
-  // Timeout for each test (60s)
-  timeout: 60000,
-
-  // Shared settings for all projects
   use: {
-    // Base URL for the app. PLAYWRIGHT_BASE_URL points the captures at a dev server on
-    // another port, as it does for the E2E config.
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080',
-
-    // Capture trace on failure for debugging
-    trace: 'on-first-retry',
-
-    // Screenshot settings
-    screenshot: 'off', // We handle screenshots manually
-
-    // Video recording for GIF animations
-    video: {
-      mode: 'on',
-      size: { width: 1536, height: 864 },
-    },
+    baseURL: BASE_URL,
+    // The runner shoots each image itself.
+    screenshot: 'off',
+    // Headed on macOS for the system GPU's WebGL; CI runs headless on SwiftShader.
+    headless: !!process.env.CI,
   },
 
-  // Configure projects
+  webServer: process.env.PLAYWRIGHT_BASE_URL
+    ? undefined
+    : {
+        command: `pnpm turbo run build --filter=@protspace/app^... && pnpm --filter @protspace/app exec vite --port ${PORT} --strictPort`,
+        url: BASE_URL,
+        reuseExistingServer: false,
+        timeout: 180_000,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        // Set empty, so a value in the caller's shell cannot pin the startup demo to a fixture.
+        env: { VITE_STARTUP_DATASET_URL: '' },
+        gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
+      },
+
   projects: [
     {
-      name: 'screenshots',
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 1536, height: 864 },
-        // Disable video for static screenshots
-        video: 'off',
-        // WebGL support: use headless mode based on environment
-        // On macOS, headless: false uses system GPU for better WebGL support
-        // On CI, headless: true uses SwiftShader (software rendering)
-        // For better WebGL on CI, consider using xvfb with headless: false
-        headless: !!process.env.CI,
-      },
-      // Any `capture-*static.spec.ts` registers itself; no per-file listing.
-      testMatch: /static\.spec\.ts$/,
+      // Screenshots: one test per PNG in the manifest (runner.ts sets each one's device).
+      name: 'docs-png',
+      use: { ...devices['Desktop Chrome'], video: 'off' },
+      testMatch: /capture-png\.spec\.ts$/,
     },
     {
-      name: 'animations',
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 1536, height: 864 },
-        // Enable video recording for animations
-        video: {
-          mode: 'on',
-          size: { width: 1536, height: 864 },
-        },
-        // WebGL support: use headless mode based on environment
-        // On macOS, headless: false uses system GPU for better WebGL support
-        // On CI, headless: true uses SwiftShader (software rendering)
-        // For better WebGL on CI, consider using xvfb with headless: false
-        headless: !!process.env.CI,
-      },
-      // Any `capture-*animations.spec.ts` registers itself; no per-file listing.
-      testMatch: /animations\.spec\.ts$/,
+      // GIFs: one test per GIF in the manifest; runner.ts records each in a context of its own.
+      name: 'docs-gif',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /capture-gif\.spec\.ts$/,
     },
   ],
 
-  // Output directories
   outputDir: './test-results/',
-
-  // Don't start a web server - assume dev server is already running
-  // Run `pnpm dev:app` before running screenshot generation
 });

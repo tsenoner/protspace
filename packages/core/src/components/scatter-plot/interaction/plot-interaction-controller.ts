@@ -29,9 +29,18 @@ export interface PlotInteractionHost {
   onSelect(ids: string[], clearVisual: () => void): void;
   onHover(event: MouseEvent, point: PlotDataPoint | null): void;
   onHoverEnd(): void;
-  onClick(event: MouseEvent): void;
+  /** `touch`: the click came from a finger's tap, which has no hover before it. */
+  onClick(event: MouseEvent, touch: boolean): void;
+  /** A brush or lasso gesture started: the host ends a pinned tooltip so none floats over it. */
+  onSelectStart(): void;
   renderWebGL(trigger: RenderWebGLTrigger): void;
   updateSelectionOverlays(opts?: { duplicateImmediate?: boolean }): void;
+}
+
+/** Whether a d3 zoom gesture came from a finger: d3-zoom hears touch events, not pointer events. */
+function isTouchSource(event: unknown): boolean {
+  const type = (event as { type?: unknown } | null)?.type;
+  return typeof type === 'string' && type.startsWith('touch');
 }
 
 /**
@@ -54,6 +63,9 @@ export class PlotInteractionController {
   private _isLassoing = false;
   // Selection mode turned on before the host had scales: its tool is not set up yet.
   private _selectionAwaitsScales = false;
+  // From a touch press until the mouse moves again. A tap is followed by compat mouse events, which
+  // must not start a hover: touch has no mouseleave to end one.
+  private _touchInput = false;
 
   private _zoomRafId: number | null = null;
   private _lassoRafId: number | null = null;
@@ -74,6 +86,10 @@ export class PlotInteractionController {
   get selectionAwaitsScales() {
     return this._selectionAwaitsScales;
   }
+  /** Whether the latest press on the plot was a finger's (until a mouse moves over it again). */
+  get touchInput(): boolean {
+    return this._touchInput;
+  }
 
   /**
    * Whether initialize() actually wired d3 zoom to a host SVG. A non-null
@@ -85,6 +101,11 @@ export class PlotInteractionController {
    */
   get isZoomReady(): boolean {
     return this._zoom !== null && this._svgSelection !== null;
+  }
+
+  /** Whether a resetZoom transition is still gliding to the identity. */
+  get isResetting(): boolean {
+    return this._resetsInFlight > 0;
   }
 
   initialize(): void {
@@ -108,6 +129,10 @@ export class PlotInteractionController {
     this._zoom = d3
       .zoom<SVGSVGElement, unknown>()
       .scaleExtent(this.host.getMergedConfig().zoomExtent)
+      // A finger's pan or pinch ends any hover tooltip; a pin ends with the transform change.
+      .on('start', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+        if (isTouchSource(event.sourceEvent)) this.host.onHoverEnd();
+      })
       .on('zoom', (event) => this.applyZoom(event.transform));
     this._svgSelection.call(this._zoom);
     this._setupDblClickHandlers();
@@ -140,15 +165,7 @@ export class PlotInteractionController {
       });
     }
     // Keep brush extent in sync with the viewport when scroll-zooming in selection mode.
-    // Skip if a brush gesture is in progress — re-applying the brush resets D3's drag state.
-    if (
-      this.host.getSelectionMode() &&
-      this.host.getSelectionTool() === 'rectangle' &&
-      this._brush &&
-      !this._isBrushing
-    ) {
-      this.updateBrushExtent();
-    }
+    this.refreshBrushExtent();
   }
 
   resetZoom(): void {
@@ -202,6 +219,37 @@ export class PlotInteractionController {
     this._zoom.transform(this._svgSelection, t);
   }
 
+  /**
+   * Adopt `t` without drawing, for a host that draws once itself: a resize that re-centres the
+   * view. Unlike the three methods above it bypasses the behaviour, so it fires no zoom event and
+   * schedules no zoom-frame draw, but it writes d3's stored transform (`__zoom` on the SVG) itself,
+   * so the next wheel or drag starts from `t`.
+   */
+  syncTransform(t: d3.ZoomTransform): void {
+    this._svgSelection?.property('__zoom', t);
+    this.host.onTransform(t);
+    const value = t.toString();
+    this._mainGroup?.attr('transform', value);
+    this._brushGroup?.attr('transform', value);
+    this._overlayGroup?.attr('transform', value);
+    this.refreshBrushExtent();
+  }
+
+  /**
+   * Fit the rectangle brush to the visible area again, after a zoom, pan or resize moved it.
+   * Skipped while a brush gesture runs: re-applying the brush resets d3's drag state.
+   */
+  refreshBrushExtent(): void {
+    if (
+      this.host.getSelectionMode() &&
+      this.host.getSelectionTool() === 'rectangle' &&
+      this._brush &&
+      !this._isBrushing
+    ) {
+      this.updateBrushExtent();
+    }
+  }
+
   /** Disable D3's built-in double-click zoom and attach our own reset handler. */
   private _setupDblClickHandlers(): void {
     if (!this._svgSelection) return;
@@ -217,9 +265,25 @@ export class PlotInteractionController {
 
     // Use event delegation on the SVG overlay for canvas interactions
     this._svgSelection
-      .on('mousemove.canvas', (event) => this.host.onHover(event, null))
-      .on('click.canvas', (event) => this.host.onClick(event))
+      .on('pointerdown.input', (event: PointerEvent) => {
+        this._touchInput = event.pointerType === 'touch';
+      })
+      .on('pointermove.input', (event: PointerEvent) => {
+        if (event.pointerType === 'mouse') this._touchInput = false;
+      })
+      .on('mousemove.canvas', (event: MouseEvent) => {
+        if (!this._touchInput) this.host.onHover(event, null);
+      })
+      .on('click.canvas', (event: MouseEvent) =>
+        this.host.onClick(event, this._isTouchClick(event)),
+      )
       .on('mouseout.canvas', () => this.host.onHoverEnd());
+  }
+
+  /** A click names its pointer in Chromium and Firefox (a PointerEvent); else the last press does. */
+  private _isTouchClick(event: MouseEvent): boolean {
+    const type = (event as Partial<PointerEvent>).pointerType;
+    return type ? type === 'touch' : this._touchInput;
   }
 
   updateSelectionMode(): void {
@@ -264,8 +328,10 @@ export class PlotInteractionController {
     this._brush = d3
       .brush()
       .handleSize(0)
-      .on('start', () => {
+      .on('start', (event: d3.D3BrushEvent<unknown>) => {
         this._isBrushing = true;
+        // A user's press, not a programmatic brush.move.
+        if (event.sourceEvent) this.host.onSelectStart();
       })
       .on('end', (event) => {
         this._isBrushing = false;
@@ -330,6 +396,7 @@ export class PlotInteractionController {
   }
 
   beginLasso(start: [number, number]): void {
+    this.host.onSelectStart();
     this._isLassoing = true;
     this._lassoVertices = [start];
 

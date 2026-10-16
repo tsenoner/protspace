@@ -24,9 +24,9 @@ A protein that already had a curated value gets no prediction at all, so the thr
 
 ## Finding Them
 
-Annotations carrying predictions are marked with an **EAT** badge in the [Annotation dropdown](/explore/control-bar#_2-annotation-selector), beside the annotation's name. The badge appears only for columns that have at least one transferred value, so it doubles as the list of what is worth exploring. If no annotation carries the badge, the bundle has no predictions in it.
+Annotations carrying predictions are marked with an **EAT** badge in the [Color by menu](/explore/controls#color-by), beside the annotation's name. The badge appears only for columns that have at least one transferred value, so it doubles as the list of what is worth exploring. If no annotation carries the badge, the bundle has no predictions in it.
 
-![The EAT badge in the annotation dropdown](./images/eat-annotation-badge.png)
+![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge.png)
 
 This is not the ⚡ **Predicted** badge, which marks a whole column as computational based on its name. An **EAT** badge means the opposite: the column is curated, and only some of its cells were filled in. See [Predicted Annotations](/explore/legend#predicted-annotations).
 
@@ -36,7 +36,7 @@ Select a badged annotation and the legend grows an extra section at the top.
 
 At the top of the [legend panel](/explore/legend), above the separation strips and the category list, a block titled **Predicted (transferred)** appears whenever the annotation you are colouring by has predictions. It holds three things.
 
-![The Predicted (transferred) legend controls](./images/eat-legend-section.png)
+![The Predicted (transferred) section at the top of the legend: Show, the reliability filter with its mode, slider and percentage, and the Observed and Predicted by EAT counts](./images/eat-legend-section.png)
 
 **Show** turns the overlay on and off. It is on by default. With it on, every transferred protein is coloured by its borrowed value and joins that value's legend row, so the row counts and the plot both reflect the filled-in column. Turn it off and those proteins fall straight back to their curated cell, which is empty, so they return to `N/A`. The curated data is never modified, so toggling is cheap and lossless.
 
@@ -75,11 +75,11 @@ A protein that is both a transferred protein and a source for others takes the f
 
 Endpoints get an unfilled halo so you can find the termini without the emphasis covering the markers underneath. Clicking still selects the protein exactly as it always did: the connectors are drawn on top of normal selection, not instead of it.
 
-A heavily reused source can have hundreds of dependants, so the fan-out is capped at **20 lines**, taking the highest-confidence targets first with the protein identifier as a deterministic tie-break. Candidates whose legend category is hidden are excluded outright. Candidates that exist but are currently off-view, removed by a filter or by [isolation](/explore/control-bar#_6-isolate-button), are reported instead of drawn: a small status strip appears at the bottom of the plot reading `3 hidden (off-view)` with a × to dismiss it. It shows only when something is actually missing, so a fully drawable click is silent.
+A heavily reused source can have hundreds of dependants, so the fan-out is capped at **20 lines**, taking the highest-confidence targets first with the protein identifier as a deterministic tie-break. Candidates whose legend category is hidden are excluded outright. Candidates that exist but are currently off-view, removed by a filter or by [Show only these](/explore/controls#selection-bar), are reported instead of drawn: a small status strip appears at the top of the plot reading `3 hidden (off view)` with a × to dismiss it. It shows only when something is actually missing, so a fully drawable click is silent.
 
 Connectors are transient state and clear on Escape, on the status strip's close button, on clicking empty plot space, on clearing the selection, on changing the annotation, on toggling a legend category's visibility, on turning **Show** off, and on loading new data.
 
-They do survive everything that only changes the view. Connectors hold protein identifiers rather than coordinates, so switching projection (`ProtT5 — PCA 2` to `ProtT5 — UMAP 2`, say), flipping a 3D plane, panning, zooming, filtering, or isolating re-resolves both endpoints against the new layout rather than dropping the lines. An endpoint that a filter removed comes back as a line when the filter is cleared, without a second click.
+They do survive everything that only changes the view. Connectors hold protein identifiers rather than coordinates, so switching projection (`ProtT5 — PCA 2` to `ProtT5 — UMAP 2`, say), flipping a 3D plane, panning, zooming, filtering, or **Show only these** re-resolves both endpoints against the new layout rather than dropping the lines. An endpoint that a filter removed comes back as a line when the filter is cleared, without a second click.
 
 ## Reading The Reliability Number
 
@@ -109,7 +109,7 @@ The coloured part of the track is always the part you keep — to the right of t
 
 Curated values are never affected in any mode. The filter applies only to transferred cells, so tightening it leaves the observed data whole. This is a different outcome from turning **Show** off: **Show** returns transferred proteins to `N/A`, while the filter removes them from the view the way any other filter condition does.
 
-The control is a front end for an ordinary filter. Moving it off its neutral position writes a single condition into the [filter query](/explore/control-bar#_7-filter-button) on a numeric column the app synthesises at load time for each transferred annotation:
+The control is a front end for an ordinary filter. Moving it off its neutral position writes a single condition into the [filter](/explore/filter#building-a-filter) on a numeric column the app synthesises at load time for each transferred annotation:
 
 ```
 Hide below x      ->  <annotation> — EAT confidence >= x        or N/A
@@ -119,10 +119,10 @@ Keep between a, b ->  <annotation> — EAT confidence between a,b or N/A
 
 The trailing **or N/A** is what keeps curated proteins visible: they carry no confidence score, so no comparison can match them, and the condition has to say so explicitly.
 
-The mirror runs both ways: edit or delete that condition in the filter builder and the control follows, whichever comparison operator you used and wherever in the query it sits. Each transferred annotation gets its own condition, so tuning one does not disturb another, and your unrelated filter conditions are left alone.
+The mirror runs both ways: edit or delete that condition in the [Filter panel](/explore/filter#reliability-and-the-filter) and the control follows, whichever comparison operator you used and wherever in the query it sits. Each transferred annotation gets its own condition, so tuning one does not disturb another, and your unrelated filter conditions are left alone.
 
 ::: tip The EAT confidence column is filter-only
-`<annotation> — EAT confidence` is not offered in the Annotation dropdown, because colouring by it would say nothing about the proteins that were never predicted. It exists in the filter column picker, where a raw confidence threshold is what you actually want. It is synthesised on load and is not written back into exported bundles.
+`<annotation> — EAT confidence` is not offered in Color by, because colouring by it would say nothing about the proteins that were never predicted. It exists in the Filter panel's annotation picker, where a raw confidence threshold is what you actually want. It is synthesised on load and is not written back into exported bundles.
 :::
 
 Because this is a real filter, it interacts with everything else that responds to a filtered view. In particular the [separation score](/explore/separation-scores) strips hide themselves while any filter is active, the reliability filter included, since whole-dataset scores would contradict a narrowed view.
@@ -140,5 +140,6 @@ It opens coloured by `toxin_class` with every transfer shown: the 659 rings, one
 ## Next Steps
 
 - [Using the Legend](/explore/legend) - the panel the EAT section lives in, and per-category visibility
-- [Control Bar Features](/explore/control-bar) - the annotation dropdown and the filter query builder
+- [Bars and Tools](/explore/controls) - Color by and the other controls
+- [Filtering](/explore/filter) - the filter panel the reliability control writes into
 - [Using Python CLI](/guide/python-cli#protspace-transfer) - `protspace transfer`, its flags, and the reliability formulas

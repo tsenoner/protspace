@@ -5,26 +5,22 @@ import { segmentedControlMixin } from '../../styles/mixins';
 
 const structureViewerStylesCore = css`
   :host {
+    /* Sizes only: every colour comes from a --ps-* token (theme.ts), so an embedder restyles the
+       viewer in both themes by setting those on :root. The frame is the panel's surface, the
+       colour the Mol* canvas also takes, so frame and canvas meet without a seam. */
     --protspace-viewer-width: 100%;
     --protspace-viewer-height: 100%;
-    --protspace-viewer-bg: var(--surface);
-    --protspace-viewer-border: var(--border);
     --protspace-viewer-border-radius: 6px;
-    --protspace-viewer-header-bg: var(--disabled-bg);
-    --protspace-viewer-text: var(--text-primary);
-    --protspace-viewer-text-muted: var(--text-secondary);
-    --protspace-viewer-error: #c53030;
-    --protspace-viewer-loading: var(--primary);
 
     display: flex;
     flex-direction: column;
     width: 100%;
 
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--ps-shadow-md);
     box-sizing: border-box;
     position: relative;
-    background: var(--protspace-viewer-bg);
-    border: 1px solid var(--protspace-viewer-border);
+    background: var(--ps-surface);
+    border: 1px solid var(--ps-border);
     flex-shrink: 1;
     flex-grow: 1;
     min-height: 150px;
@@ -35,22 +31,26 @@ const structureViewerStylesCore = css`
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
     padding: 0.4rem 0.4rem 0.4rem 1.2rem;
-    background: var(--protspace-viewer-header-bg);
-    border-bottom: 1px solid var(--protspace-viewer-border);
+    background: var(--ps-surface-muted);
     border-radius: 6px 6px 0 0;
   }
 
   .header-actions {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 0.25rem;
   }
 
   .title {
-    font-size: 1rem;
-    font-weight: 500;
-    color: var(--protspace-viewer-text);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ps-space-2);
+    font-size: var(--ps-text-base);
+    font-weight: var(--ps-weight-semibold);
+    color: var(--ps-text);
     margin: 0;
   }
 
@@ -64,110 +64,77 @@ const structureViewerStylesCore = css`
 
   .header-title-row {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
   }
 
   .protein-id {
-    font-size: 0.875rem;
-    color: var(--protspace-viewer-text-muted);
+    font-size: var(--ps-text-base);
+    color: var(--ps-text-muted);
   }
 
-  .header-links {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    column-gap: 0.35rem;
-    row-gap: 0.1rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    font-size: 0.75rem;
-  }
-
-  .header-links-item {
+  /* With several selected proteins the id is a ghost button that opens the menu of them. */
+  .protein-pick {
     display: inline-flex;
-    align-items: baseline;
-  }
-
-  .header-link {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.1rem;
-    color: var(--protspace-viewer-text-muted);
-    text-decoration: none;
+    align-items: center;
+    gap: var(--ps-space-1);
+    min-height: var(--ps-control-sm);
+    padding: 0 var(--ps-space-1-5);
+    border: 0;
+    border-radius: var(--ps-radius);
+    background: transparent;
+    color: var(--ps-text-muted);
+    font-family: inherit;
+    font-size: var(--ps-text-base);
     cursor: pointer;
-    transition: color 0.2s;
   }
 
-  /*
-   * Underline the label only. A text-decoration set on the anchor propagates
-   * into its descendants and cannot be cancelled there, so underlining the
-   * anchor would drag the arrow under the same line.
-   */
-  .header-link-label {
-    text-decoration: underline;
-    text-decoration-style: dotted;
-    text-decoration-color: color-mix(in srgb, var(--protspace-viewer-text-muted) 45%, transparent);
-    text-underline-offset: 2px;
-    transition: text-decoration-color 0.2s;
+  .protein-pick:hover,
+  .protein-pick[aria-expanded='true'] {
+    background: var(--ps-surface-hover);
+    color: var(--ps-text);
   }
 
-  /*
-   * The separator is a CSS rule rather than a hand-placed element, so adding a
-   * resource cannot forget one or misplace it. It hangs off the list item, not
-   * the link, so it stays out of the link's name, click area and focus ring,
-   * and it trails its own item so a wrapped row starts on a label. The empty
-   * alt text keeps screen readers from announcing it; the first declaration is
-   * the fallback for engines without that syntax.
-   */
-  .header-links-item:not(:last-child)::after {
-    content: '·';
-    content: '·' / '';
-    margin-left: 0.35rem;
-    color: var(--protspace-viewer-text-muted);
-    opacity: 0.5;
+  .protein-pick:focus-visible {
+    outline: var(--ps-focus-width) solid var(--ps-focus);
+    outline-offset: var(--ps-focus-offset);
   }
 
-  .header-link-external {
-    font-size: 0.85em;
-    line-height: 1;
-    opacity: 0.7;
-  }
-
-  .header-link:hover,
-  .header-link:focus-visible {
-    color: var(--protspace-viewer-text);
-  }
-
-  .header-link:hover .header-link-label,
-  .header-link:focus-visible .header-link-label {
-    text-decoration-style: solid;
-    text-decoration-color: currentColor;
-  }
-
-  .header-link:focus-visible {
-    outline: 2px solid var(--protspace-viewer-loading);
-    outline-offset: 2px;
-    border-radius: 2px;
+  /* The links row continues the header's band and ends it with the header's line. */
+  .resource-links {
+    background: var(--ps-surface-muted);
+    border-bottom: 1px solid var(--ps-border);
   }
 
   .close-button {
     background: none;
     border: none;
-    font-size: 1.25rem;
-    color: var(--protspace-viewer-text-muted);
+    display: inline-grid;
+    place-items: center;
+    color: var(--ps-text-muted);
     cursor: pointer;
-    padding: 0.5rem 0.7rem;
-    line-height: 1;
+    padding: 6px;
     border-radius: 0.25rem;
     transition: color 0.2s;
   }
 
   .close-button:hover {
-    color: var(--protspace-viewer-text);
-    background: rgba(0, 0, 0, 0.04);
+    color: var(--ps-text);
+    background: var(--ps-surface-hover);
+  }
+
+  /* Touch: the close and protein-pick buttons are 40 px targets (the app's header is 44 px). */
+  @media (pointer: coarse) {
+    .close-button,
+    .protein-pick {
+      min-width: var(--ps-touch-target);
+      min-height: var(--ps-touch-target);
+    }
+
+    .segmented > .segmented-btn {
+      min-height: var(--ps-touch-target);
+    }
   }
 
   .viewer-container {
@@ -176,7 +143,7 @@ const structureViewerStylesCore = css`
     /* Take only the height the header and footer leave, so the footer never overflows */
     flex: 1 1 0;
     min-height: 0;
-    background: var(--protspace-viewer-bg);
+    background: var(--ps-surface);
     border-radius: 0 0 6px 6px;
   }
 
@@ -184,11 +151,11 @@ const structureViewerStylesCore = css`
   .loading-overlay {
     /* Extend with column layout for text */
     flex-direction: column;
-    background: rgba(255, 255, 255, 0.9);
+    background: color-mix(in srgb, var(--ps-surface) 90%, transparent);
   }
 
   .loading-text {
-    color: var(--protspace-viewer-text-muted);
+    color: var(--ps-text-muted);
     font-size: 0.875rem;
     margin-top: 1rem;
   }
@@ -200,7 +167,7 @@ const structureViewerStylesCore = css`
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: var(--protspace-viewer-bg);
+    background: var(--ps-surface);
     z-index: var(--z-overlay);
     padding: 2rem;
     border-radius: 0 0 6px 6px;
@@ -208,7 +175,7 @@ const structureViewerStylesCore = css`
   }
 
   .error-title {
-    color: var(--protspace-viewer-error);
+    color: var(--ps-danger);
     font-weight: 600;
     margin-bottom: 0.5rem;
   }
@@ -220,20 +187,20 @@ const structureViewerStylesCore = css`
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: var(--protspace-viewer-bg);
+    background: var(--ps-surface);
     z-index: var(--z-canvas);
     padding: 2rem;
     text-align: center;
   }
 
   .empty-title {
-    color: var(--protspace-viewer-text);
+    color: var(--ps-text);
     font-weight: 600;
     margin-bottom: 0.5rem;
   }
 
   .empty-message {
-    color: var(--protspace-viewer-text-muted);
+    color: var(--ps-text-muted);
     font-size: 0.875rem;
   }
 
@@ -244,14 +211,20 @@ const structureViewerStylesCore = css`
     border-radius: 0 0 6px 6px;
   }
 
+  /* Mol*'s layout is absolutely positioned: the mount holds it, so the canvas follows the mount's
+     whole-pixel box (_snapMount). */
+  .molstar-mount {
+    position: relative;
+  }
+
   .color-toolbar,
   .tips {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--disabled-bg);
-    border-top: 1px solid var(--protspace-viewer-border);
-    color: var(--protspace-viewer-text-muted);
+    background: var(--ps-surface-muted);
+    border-top: 1px solid var(--ps-border);
+    color: var(--ps-text-muted);
     font-size: 0.75rem;
   }
 
@@ -269,17 +242,10 @@ const structureViewerStylesCore = css`
     font-weight: 600;
   }
 
-  /* Bridge the viewer's theming hooks into the shared segmented control */
-  .color-mode-group {
-    --segmented-border: var(--protspace-viewer-border);
-    --segmented-bg: var(--protspace-viewer-bg);
-    --segmented-text: var(--protspace-viewer-text-muted);
-    --segmented-hover-bg: color-mix(
-      in srgb,
-      var(--protspace-viewer-text) 8%,
-      var(--protspace-viewer-bg)
-    );
-    --segmented-hover-text: var(--protspace-viewer-text);
+  /* The TED button's ps-tooltip follows it, so the mixin's :last-child misses its end corners. */
+  .segmented > .segmented-btn:has(+ ps-tooltip:last-child) {
+    border-top-right-radius: calc(var(--radius) - var(--border-width));
+    border-bottom-right-radius: calc(var(--radius) - var(--border-width));
   }
 
   .tips {
@@ -292,26 +258,20 @@ const structureViewerStylesCore = css`
     font-weight: 600;
   }
 
+  /* The body part only groups the rows for a host; it adds no box. */
+  .body {
+    display: contents;
+  }
+
   /* Spin animation provided by overlayMixins */
 
   /* ----------------------------- Responsive ------------------------------------ */
 
+  /* Below desktop the viewer has half a panel row: keep only the colour legend. The host's size
+     is the shell's to set (the workbench fills its structure section). */
   @media (max-width: 950px) {
-    /* --breakpoint-lg */
-    :host {
-      width: calc(50% - 6px);
-    }
-
-    /* The stacked layout leaves the panel short and half-width; keep only the color legend */
     .interaction-tip {
       display: none;
-    }
-  }
-
-  @media (max-width: 550px) {
-    /* --breakpoint-xs */
-    :host {
-      width: 100%;
     }
   }
 `;

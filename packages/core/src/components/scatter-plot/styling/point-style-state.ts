@@ -1,6 +1,7 @@
 import type { PlotData, ScatterplotConfig, VisualizationData } from '@protspace/utils';
 import type { PointMarks } from '../webgl/types';
 import { createStyleGetters } from './style-getters';
+import { LIGHT_NEUTRALS, sameNeutrals, type PlotNeutrals } from './plot-neutrals';
 import { computeVisibilityModel } from './visibility-model';
 import type { VisibilityInputs, VisibilityModel } from './visibility-model';
 
@@ -23,6 +24,8 @@ interface PointStyleHost {
   zOrderMapping(): Record<string, number> | null;
   colorMapping(): Record<string, string> | null;
   shapeMapping(): Record<string, string> | null;
+  /** The greys the live view draws Other and default-coloured N/A points with: the theme's. */
+  neutrals(): PlotNeutrals;
   /** Whether the renderer can draw marks for the dataset; true without a renderer. */
   canDrawMarks(): boolean;
   /** The id index found a protein id more than once. */
@@ -89,6 +92,9 @@ export class PointStyleState {
     model: VisibilityModel;
     getters: StyleGetters;
   } | null = null;
+  // The light getters an export stages while the live view's greys are not light, with the
+  // getters they were built beside (`exportGetters`).
+  private _exportGetters: { from: StyleGetters; getters: StyleGetters } | null = null;
   // The last marks `pointMarks` built, with the plot slots and the selection
   // and highlight they were built for.
   private _pointMarks: {
@@ -234,6 +240,7 @@ export class PointStyleState {
       this._visibilityModelKey = null;
     }
     this._styleGetters = null;
+    this._exportGetters = null;
     this._interactable = null;
     this.clearMarks();
   }
@@ -317,7 +324,7 @@ export class PointStyleState {
     return ids;
   }
 
-  /** The style getters for the current data and visual state, which an export stages. */
+  /** The style getters for the current data and visual state, in the theme's neutral greys. */
   getters(): StyleGetters {
     if (!this._styleGetters) {
       this._styleGetters = this.build();
@@ -325,14 +332,30 @@ export class PointStyleState {
     return this._styleGetters;
   }
 
+  /**
+   * The style getters an export stages: {@link getters} with the light neutral greys whatever
+   * the theme, so a figure exported in dark is the one exported in light. The live getters
+   * themselves while their greys are light; otherwise built once beside them.
+   */
+  exportGetters(): StyleGetters {
+    const getters = this.getters();
+    if (sameNeutrals(this.host.neutrals(), LIGHT_NEUTRALS)) return getters;
+    const cached = this._exportGetters;
+    if (cached?.from === getters) return cached.getters;
+    this._exportGetters = { from: getters, getters: this.build(this.model(), LIGHT_NEUTRALS) };
+    return this._exportGetters.getters;
+  }
+
   /** Build the getters again on their next use. */
   invalidateGetters() {
     this._styleGetters = null;
+    this._exportGetters = null;
   }
 
   /** Build the getters again now. */
   refreshGetters() {
     this._styleGetters = this.build();
+    this._exportGetters = null;
   }
 
   /**
@@ -416,7 +439,10 @@ export class PointStyleState {
   }
 
   /** Build style getters for the current data and visual state. */
-  private build(model: VisibilityModel = this.model()): StyleGetters {
+  private build(
+    model: VisibilityModel = this.model(),
+    neutrals: PlotNeutrals = this.host.neutrals(),
+  ): StyleGetters {
     const host = this.host;
     const data = host.data();
     const config = host.config();
@@ -442,6 +468,7 @@ export class PointStyleState {
         eatOverlayEnabled: host.eatOverlayEnabled(),
       },
       model,
+      neutrals,
     );
   }
 }

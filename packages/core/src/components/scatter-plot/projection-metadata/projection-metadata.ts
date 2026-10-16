@@ -3,6 +3,7 @@ import { property, state } from 'lit/decorators.js';
 import type { PropertyValues } from 'lit';
 import { customElement } from '../../../utils/safe-custom-element';
 import type {
+  Annotation,
   AnnotationStatMetric,
   AnnotationStatSummary,
   ClusterAgreement,
@@ -16,6 +17,8 @@ import {
   annotationLabel,
   annotationStatSummary,
   clusterAgreement,
+  countNoun,
+  formatCount,
   formatStatValue,
   hasAnnotationStats,
   isAutoClusterColumn,
@@ -25,6 +28,8 @@ import {
 } from '@protspace/utils';
 import { projectionMetadataStyles } from './projection-metadata.styles';
 import '../../common/info-popover';
+import { icon } from '../../kit/icon';
+import { pushLayer } from '../../kit/layers';
 
 /** One rendered `<dt>/<dd>` pair. An empty `description` renders no ⓘ. */
 interface MetadataRow {
@@ -120,7 +125,7 @@ function modalCoverage(entries: readonly ClusterAgreementEntry[]): number | null
 }
 
 @customElement('protspace-projection-metadata')
-class ProtspaceProjectionMetadata extends LitElement {
+export class ProtspaceProjectionMetadata extends LitElement {
   @property({ type: Object }) projection: Projection | null = null;
   /** Rows of the optional `statistics.parquet` part; absent unless prepared with `--stats`. */
   @property({ type: Array }) statisticsRows?: readonly ProjectionStatisticRow[];
@@ -132,6 +137,9 @@ class ProtspaceProjectionMetadata extends LitElement {
    * so this only changes how the scope line describes them, never the numbers.
    */
   @property({ type: Boolean }) viewIsSubset = false;
+  /** The dataset's annotation definitions: runtime columns (EAT confidence) are named by them. */
+  @property({ attribute: false })
+  annotationDefinitions: Readonly<Record<string, Pick<Annotation, 'runtime'>>> = {};
 
   /** Whether the Recovers list is showing every annotation or just the best `RECOVERS_COLLAPSED`. */
   @state() private _recoversExpanded = false;
@@ -149,29 +157,16 @@ class ProtspaceProjectionMetadata extends LitElement {
    * reading a metric's ⓘ, or selecting a number, means travelling outside the card.
    */
   @state() private _pinned = false;
+  // While pinned the card is a layer (decision 11): Escape and a press outside close it before
+  // the page's own Escape (the selection) hears the press.
+  private _releaseLayer: (() => void) | null = null;
 
   static styles = projectionMetadataStyles;
 
   /** Smallest card worth showing before scrolling; below this a "scrollable" card is unusable. */
   private static readonly MIN_CARD_HEIGHT = 200;
-  /** Breathing room kept between the bottom of the card and the plot's edge. */
+  /** Breathing room kept between the bottom of the card and the viewport's edge. */
   private static readonly CARD_MARGIN = 8;
-
-  /**
-   * Created lazily and guarded: `ResizeObserver` is absent in jsdom and under SSR, and as a
-   * field initializer its constructor ran before the element could render at all. The measured
-   * cap still applies without it; only tracking a later resize is lost.
-   */
-  private _resize: ResizeObserver | null = null;
-
-  firstUpdated() {
-    // No measurement here: Lit runs `updated()` immediately after this in the same pass, and
-    // it already writes the cap.
-    // The plot host resizes with the window and with the side panels opening/closing.
-    if (typeof ResizeObserver === 'undefined' || !this.offsetParent) return;
-    this._resize = new ResizeObserver(() => this._updateMaxHeight());
-    this._resize.observe(this.offsetParent);
-  }
 
   updated(changed: PropertyValues) {
     // Only when the content that sets the natural height can actually have changed. This reads
@@ -190,62 +185,73 @@ class ProtspaceProjectionMetadata extends LitElement {
   }
 
   /**
-   * Cap the card at the space actually left inside the scatter-plot, which clips its overflow.
-   *
-   * Measured rather than expressed in CSS. The constraint is the plot host's height, and this
-   * card cannot reach it: percentages resolve against its own `:host`, which is only as tall as
-   * the 32px trigger. Viewport units miss by however far down the page the plot begins —
-   * measured at 209px, i.e. a 974px cap where only 827px fits. `container-type: size` on the
-   * host would express it exactly but also makes the host the containing block for
-   * `position: fixed` descendants, which would strand the side-placed ⓘ popovers.
+   * Caps the card at the room left below it in the viewport, and keeps it inside the viewport's
+   * width. The card opens from the view bar, with the whole plot height free below it, so the
+   * viewport is the bound; a measured cap still beats a CSS one because the card's top depends on
+   * where the bar sits.
    */
   private _updateMaxHeight(): void {
-    const host = this.offsetParent as HTMLElement | null;
     const content = this.shadowRoot?.querySelector('.content') as HTMLElement | null;
-    if (!host || !content) return;
+    if (!content) return;
     const { MIN_CARD_HEIGHT, CARD_MARGIN } = ProtspaceProjectionMetadata;
-    // Measured, not reconstructed from the trigger's box plus a copy of the stylesheet's gap:
-    // that copy had to be kept in step with `--card-gap` by hand, and a drift between them
-    // would silently mis-size the cap.
-    const cardTop = content.getBoundingClientRect().top - host.getBoundingClientRect().top;
-    const available = host.clientHeight - cardTop - CARD_MARGIN;
-    content.style.maxHeight = `${Math.max(MIN_CARD_HEIGHT, available)}px`;
+    const available = window.innerHeight - content.getBoundingClientRect().top - CARD_MARGIN;
+    // max-height caps the content box: the card's borders come on top of it.
+    const borders = content.offsetHeight - content.clientHeight;
+    content.style.maxHeight = `${Math.max(MIN_CARD_HEIGHT, available - borders)}px`;
+    this._keepInsideViewport(content);
+  }
+
+  /**
+   * Slides the card left when it would cross the viewport's right edge (the button sits far right
+   * on a phone's view bar), never past the left margin. Measured from the host, so the card's own
+   * inline offset never feeds back into the next measurement.
+   */
+  private _keepInsideViewport(content: HTMLElement): void {
+    const { CARD_MARGIN } = ProtspaceProjectionMetadata;
+    const hostLeft = this.getBoundingClientRect().left;
+    const overflow = hostLeft + content.offsetWidth - (window.innerWidth - CARD_MARGIN);
+    if (overflow <= 0) {
+      content.style.left = '';
+      return;
+    }
+    content.style.left = `${Math.max(CARD_MARGIN, hostLeft - overflow) - hostLeft}px`;
+  }
+
+  private _onWindowResize = () => this._updateMaxHeight();
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('resize', this._onWindowResize);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._resize?.disconnect();
-    this._resize = null;
+    window.removeEventListener('resize', this._onWindowResize);
     this._setPinned(false);
   }
 
   private _setPinned(pinned: boolean): void {
     if (this._pinned === pinned) return;
     this._pinned = pinned;
-    // Bound once per toggle rather than kept for the element's lifetime: an always-on
-    // document listener on a component that exists per scatter-plot is a cost for a state
-    // that is off almost always.
     if (pinned) {
-      document.addEventListener('pointerdown', this._onDocumentPointerDown, true);
-      document.addEventListener('keydown', this._onDocumentKeydown, true);
+      this._releaseLayer = pushLayer({ close: () => this._closeFromLayer(), elements: [this] });
     } else {
-      document.removeEventListener('pointerdown', this._onDocumentPointerDown, true);
-      document.removeEventListener('keydown', this._onDocumentKeydown, true);
+      this._releaseLayer?.();
+      this._releaseLayer = null;
     }
   }
 
-  /** `composedPath` rather than `contains`: the click may originate inside a nested shadow root. */
-  private _onDocumentPointerDown = (event: Event) => {
-    if (!event.composedPath().includes(this)) this._setPinned(false);
-  };
-
-  private _onDocumentKeydown = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape') return;
-    // Let a pinned ⓘ inside the panel take Escape first; it closes on its own keydown handler
-    // and stopping here would leave the user pressing Escape twice with nothing happening.
+  /**
+   * Escape or a press outside the card. Focus goes back to the trigger only when it was in the
+   * card: a press outside leaves it on what the user pressed.
+   */
+  private _closeFromLayer(): void {
+    const focusWasInside = this.shadowRoot?.activeElement != null;
     this._setPinned(false);
-    (this.shadowRoot?.querySelector('.trigger') as HTMLElement | null)?.focus();
-  };
+    if (focusWasInside) {
+      (this.shadowRoot?.querySelector('.trigger') as HTMLElement | null)?.focus();
+    }
+  }
 
   render() {
     const { parameters, quality, qualityScope } = this._splitMetadata();
@@ -288,20 +294,13 @@ class ProtspaceProjectionMetadata extends LitElement {
         aria-describedby="projection-metadata-content"
         @click=${() => this._setPinned(!this._pinned)}
       >
-        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M7 14v4" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M11 10v8" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15 6v12" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19 8v10" />
-        </svg>
+        ${icon('info', 16)}
       </button>
 
       <div
         class="content ${this._pinned ? 'is-pinned' : ''}"
         id="projection-metadata-content"
         role="tooltip"
-        data-info-popover-boundary
       >
         <!-- The projection's own name, which the panel never showed: _splitMetadata skips
              the "name" key, so a card describing one projection out of several did not say
@@ -400,7 +399,10 @@ class ProtspaceProjectionMetadata extends LitElement {
                 <span
                   >Separation, scored on
                   <span class="stat-annotation-chip"
-                    >${annotationLabel(this.selectedAnnotation)}</span
+                    >${annotationLabel(
+                      this.selectedAnnotation,
+                      this.annotationDefinitions[this.selectedAnnotation],
+                    )}</span
                   ></span
                 >
                 <protspace-info-popover
@@ -515,7 +517,10 @@ class ProtspaceProjectionMetadata extends LitElement {
       <div class="stat-metric">
         <span class="stat-metric-label">
           <span class="stat-metric-name"
-            >${annotationLabel(entry.annotation)}${entry.categories === null
+            >${annotationLabel(
+              entry.annotation,
+              this.annotationDefinitions[entry.annotation],
+            )}${entry.categories === null
               ? nothing
               : html`<span class="recovers-meta"> · ${entry.categories} cat</span>`}</span
           >
@@ -531,8 +536,11 @@ class ProtspaceProjectionMetadata extends LitElement {
              coverage reads identically to a high number on all of it. -->
         ${entry.scored !== null && entry.scored !== this._recoversPopulation
           ? html`<span class="recovers-coverage"
-              >${entry.scored.toLocaleString()} of
-              ${this._recoversPopulation?.toLocaleString() ?? 'the dataset'} scored</span
+              >${formatCount(entry.scored)} of
+              ${this._recoversPopulation === null
+                ? 'the dataset'
+                : formatCount(this._recoversPopulation)}
+              scored</span
             >`
           : nothing}
       </div>
@@ -596,17 +604,14 @@ class ProtspaceProjectionMetadata extends LitElement {
       // K. Saying "categories" there hid that, and left K unstated in the one section whose
       // numbers are about the clusters themselves.
       const isClustering = isAutoClusterColumnName(this.selectedAnnotation);
-      const noun = isClustering
-        ? categories === 1
-          ? 'cluster'
-          : 'clusters'
-        : categories === 1
-          ? 'category'
-          : 'categories';
-      parts.push(`${categories} ${noun}`);
+      parts.push(
+        isClustering
+          ? countNoun(categories, 'cluster', 'clusters')
+          : countNoun(categories, 'category', 'categories'),
+      );
     }
     if (scored !== null) {
-      parts.push(`${scored.toLocaleString()} ${scored === 1 ? 'protein' : 'proteins'} scored`);
+      parts.push(`${countNoun(scored, 'protein', 'proteins')} scored`);
     }
     // Deliberately NOT "full dataset" here. That is true of the faithfulness numbers too —
     // both blocks are computed once at prepare time and neither recomputes on a filter — so
@@ -739,7 +744,7 @@ class ProtspaceProjectionMetadata extends LitElement {
   private _qualityScopeLine(entries: QualityEntry[]): string {
     const withSize = entries.find((entry) => entry.sampleSize !== null);
     if (!withSize) return '';
-    const proteins = `${withSize.sampleSize!.toLocaleString()} proteins compared`;
+    const proteins = `${countNoun(withSize.sampleSize!, 'protein', 'proteins')} compared`;
     return entries.some((entry) => entry.sampled) ? `${proteins} · subsampled` : proteins;
   }
 

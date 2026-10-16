@@ -1,0 +1,187 @@
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { adoptTheme } from '../kit/adopt-theme';
+import type { PsButton, PsIconButton } from '../kit/button';
+import { topLayer } from '../kit/layers';
+import type { ProtspaceQueryBuilder } from './query-builder';
+import './query-builder';
+import { createCondition, createGroup } from './query-types';
+import type { FilterQuery } from './query-types';
+import type { ProtspaceData } from './types';
+import { cdp } from 'vitest/browser';
+
+beforeAll(() => adoptTheme());
+afterEach(() => document.body.replaceChildren());
+
+const data: ProtspaceData = {
+  protein_ids: ['P1', 'P2', 'P3', 'P4', 'P5'],
+  annotations: { organism: { kind: 'categorical', values: ['Human', 'Mouse'] } },
+  annotation_data: { organism: [[0], [1], [0], [1], [1]] },
+};
+
+type Row = HTMLElement & { updateComplete: Promise<unknown> };
+
+async function mount(query: FilterQuery, width = 360): Promise<ProtspaceQueryBuilder> {
+  const builder = document.createElement('protspace-query-builder');
+  builder.embedded = true;
+  builder.dirty = true;
+  builder.annotations = ['organism'];
+  builder.data = data;
+  builder.query = query;
+  builder.style.cssText = `display: block; width: ${width}px; height: 600px`;
+  document.body.append(builder);
+  await builder.updateComplete;
+  for (const row of rows(builder)) await row.updateComplete;
+  return builder;
+}
+
+const rows = (builder: ProtspaceQueryBuilder): Row[] => [
+  ...builder.shadowRoot!.querySelectorAll<Row>('protspace-query-condition-row'),
+];
+const inner = (button: PsButton | PsIconButton) => button.shadowRoot!.querySelector('button')!;
+
+describe('protspace-query-builder in a narrow panel', () => {
+  it('Apply is described by the visible reason', async () => {
+    const builder = await mount([createCondition({ annotation: 'organism' })]);
+    const apply = builder.shadowRoot!.querySelector<PsButton>('.query-footer-apply')!;
+    await apply.updateComplete;
+    const reason = builder.shadowRoot!.querySelector<HTMLElement>('#apply-reason')!;
+
+    expect(reason.textContent!.trim()).toBe('Choose a value for condition 1');
+    expect(reason.checkVisibility()).toBe(true);
+    expect(inner(apply).disabled).toBe(true);
+    expect(inner(apply).ariaDescribedByElements?.[0]).toBe(reason);
+  });
+
+  it('the ✕ buttons are named Remove condition / Remove group', async () => {
+    const builder = await mount([createGroup()]);
+    const removeGroup = builder.shadowRoot!.querySelector<PsIconButton>(
+      '.group-header .condition-remove',
+    )!;
+    await removeGroup.updateComplete;
+    expect(inner(removeGroup).getAttribute('aria-label')).toBe('Remove group');
+
+    const removeRow =
+      rows(builder)[0].shadowRoot!.querySelector<PsIconButton>('.condition-remove')!;
+    await removeRow.updateComplete;
+    expect(inner(removeRow).getAttribute('aria-label')).toBe('Remove condition');
+  });
+
+  it('at 260 px wide a row stacks and nothing overflows horizontally', async () => {
+    const builder = await mount(
+      [createCondition({ annotation: 'organism', values: ['Human', 'Mouse'] })],
+      260,
+    );
+    const row = rows(builder)[0];
+    const root = row.shadowRoot!;
+    const trigger = root.querySelector('.annotation-select-trigger')!.getBoundingClientRect();
+    const values = root.querySelector('.condition-values')!.getBoundingClientRect();
+    const box = root.querySelector<HTMLElement>('.condition-row')!;
+
+    expect(values.top).toBeGreaterThanOrEqual(trigger.bottom - 1);
+    expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth);
+    expect(row.getBoundingClientRect().right).toBeLessThanOrEqual(
+      builder.getBoundingClientRect().right + 0.5,
+    );
+    const footer = builder.shadowRoot!.querySelector<HTMLElement>('.query-footer')!;
+    expect(footer.scrollWidth).toBeLessThanOrEqual(footer.clientWidth);
+  });
+
+  it('rows show their numbers, group leaves included', async () => {
+    const builder = await mount([
+      createCondition({ annotation: 'organism', values: ['Human'] }),
+      createGroup({
+        logicalOp: 'AND',
+        conditions: [createCondition(), createCondition({ logicalOp: 'OR' })],
+      }),
+    ]);
+    const all = rows(builder);
+    expect(
+      all.map((row) => row.shadowRoot!.querySelector('.condition-number')!.textContent!.trim()),
+    ).toEqual(['1', '2', '3']);
+    expect(
+      all.map((row) => row.shadowRoot!.querySelector('.condition-row')!.getAttribute('aria-label')),
+    ).toEqual(['Condition 1', 'Condition 2', 'Condition 3']);
+  });
+
+  it('closePopups releases an open picker’s layer', async () => {
+    const builder = await mount([createCondition()]);
+    const row = rows(builder)[0];
+    row.shadowRoot!.querySelector<HTMLButtonElement>('.annotation-select-trigger')!.click();
+    await row.updateComplete;
+    expect(topLayer()).toBeDefined();
+
+    builder.closePopups();
+    await row.updateComplete;
+    await row.updateComplete;
+
+    expect(topLayer()).toBeUndefined();
+  });
+
+  it('under a coarse pointer a value chip’s remove is a 40 px target and the chip stays 22 px tall', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      expect(matchMedia('(pointer: coarse)').matches).toBe(true);
+      const builder = await mount([
+        createCondition({ annotation: 'organism', values: ['Human', 'Mouse'] }),
+      ]);
+      const row = rows(builder)[0].shadowRoot!;
+      const chip = row.querySelector('.value-chip')!.getBoundingClientRect();
+      const remove = row.querySelector<HTMLElement>('.value-chip-remove')!;
+      const box = remove.getBoundingClientRect();
+      expect(chip.height).toBeCloseTo(22, 0);
+      expect(box.width).toBeGreaterThanOrEqual(40 - 0.5);
+      expect(box.height).toBeGreaterThanOrEqual(40 - 0.5);
+      // A press near the target's corner, outside the chip, still reaches the button.
+      expect(row.elementFromPoint(box.left + 2, box.top + 2)).toBe(remove);
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
+  });
+
+  it('under a coarse pointer a chip’s remove target never covers another chip', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      const values = ['Human', 'Mouse', 'Yeast', 'Fly', 'Worm', 'Frog'];
+      const builder = await mount([createCondition({ annotation: 'organism', values })], 200);
+      const row = rows(builder)[0].shadowRoot!;
+      const chips = [...row.querySelectorAll<HTMLElement>('.value-chip')];
+      const lines = new Set(chips.map((chip) => Math.round(chip.getBoundingClientRect().top)));
+      expect(lines.size).toBeGreaterThan(1);
+      for (const [i, chip] of chips.entries()) {
+        const c = chip.getBoundingClientRect();
+        const midY = c.top + c.height / 2;
+        // The chip's own left edge and its top and bottom edges belong to it, not to a
+        // neighbour's remove target.
+        for (const [x, y] of [
+          [c.left + 3, midY],
+          [c.left + c.width / 3, c.top + 1],
+          [c.left + c.width / 3, c.bottom - 1],
+        ]) {
+          const hit = row.elementFromPoint(x, y)!;
+          expect(hit.closest('.value-chip'), `chip ${i} at ${x},${y}`).toBe(chip);
+        }
+      }
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
+  });
+
+  it('a picker opened near the bottom of the screen opens upward and stays on it', async () => {
+    const builder = await mount([createCondition()]);
+    builder.style.cssText =
+      'display: block; width: 360px; height: 160px; position: fixed; left: 0; bottom: 40px';
+    await builder.updateComplete;
+    const row = rows(builder)[0];
+    row.shadowRoot!.querySelector<HTMLButtonElement>('.annotation-select-trigger')!.click();
+    await row.updateComplete;
+
+    const picker = row.shadowRoot!.querySelector<HTMLElement>('.annotation-picker')!;
+    const box = picker.getBoundingClientRect();
+    expect(box.top).toBeGreaterThanOrEqual(8);
+    expect(box.bottom).toBeLessThanOrEqual(innerHeight - 8);
+    const trigger = row.shadowRoot!.querySelector('.annotation-select-trigger')!;
+    expect(box.bottom).toBeLessThanOrEqual(trigger.getBoundingClientRect().top);
+  });
+});

@@ -4,22 +4,31 @@ ProtSpace allows you to export publication-ready figures, raw data, and protein 
 
 ## Export Button
 
-Click **Export** in the control bar to see available formats:
+Click **Export** in the app bar to open its menu (on a phone: **More**, then **Export**):
 
-| Format          | Description                                               |
-| --------------- | --------------------------------------------------------- |
-| **PNG**         | Raster image of the current view with legend              |
-| **PDF**         | PDF document of the current view with legend              |
-| **Protein IDs** | Text file with newline-separated identifiers              |
-| **Parquet**     | `.parquetbundle` file with all data and optional settings |
+![The Export menu open under the Export button](./images/export-menu.png)
+
+| Item                             | What it does                                                     |
+| -------------------------------- | ---------------------------------------------------------------- |
+| **Figure editor…**               | Opens the full-screen editor for publication figures             |
+| **Quick PNG**                    | Downloads a raster image of the current view with legend         |
+| **Quick PDF**                    | Downloads a PDF of the current view with legend                  |
+| **Protein IDs (.txt)**           | Downloads the visible proteins' identifiers, one per line        |
+| **Data bundle (.parquetbundle)** | Downloads a `.parquetbundle` with all data and optional settings |
+
+**Include legend settings**, below them, decides whether a data bundle carries your legend
+settings. Every export confirms with a message naming the downloaded file:
+
+![The notification after an export](./images/toast.png){.light-only}
+![The notification after an export](./images/toast-dark.png){.dark-only}
 
 ## Image Export (PNG / PDF)
 
-When PNG or PDF is selected, you have two export paths:
+Images have two paths:
 
 ### Figure Editor (Recommended)
 
-Click **Figure Editor** to open a full-screen editor with live preview. This is the primary workflow for creating publication-quality figures. See the [Figure Editor guide](./figure-editor) for full documentation.
+Choose **Figure editor…** to open a full-screen editor with live preview. This is the primary workflow for creating publication-quality figures. See the [Figure Editor guide](./figure-editor) for full documentation.
 
 Key features:
 
@@ -34,7 +43,7 @@ Key features:
 
 ### Quick Export
 
-Click **Quick Export** to download an image immediately, with no preview. It always uses fixed
+Choose **Quick PNG** or **Quick PDF** to download an image immediately, with no preview. It always uses fixed
 defaults, a 2048 × 1024 px image with the legend on the right, and keeps your current zoom and pan;
 it does not use Figure Editor settings. For another size or layout, or for the full plot, use the
 Figure Editor.
@@ -46,9 +55,15 @@ so its dots match the size you see on screen. The Figure Editor always renders t
 dots are drawn at their unzoomed size.
 
 ::: warning Contours are not exported yet
-[Contours](/explore/control-bar#_10-contours) are not drawn in exported images: Quick Export PNG and
+[Contours](/explore/controls#contours) are not drawn in exported images: Quick Export PNG and
 PDF, the Figure Editor and its zoom insets show the points only. The Figure Editor preview shows
 exactly what will be exported. Tracked in [#498](https://github.com/tsenoner/protspace/issues/498).
+:::
+
+::: info Exports are always light
+Quick PNG and PDF, the Figure Editor's preview and its exports always use the light colours (a
+white background and the light greys for `Other` and `N/A`), whatever theme the app shows, so a
+figure looks the same whoever made it. See [Light and dark](/explore/#light-and-dark).
 :::
 
 ## Parquet Export
@@ -74,12 +89,14 @@ Exports a plain text file with one protein ID per line. Useful for downstream an
 
 ## What Gets Exported
 
-| State             | Exported Data          |
-| ----------------- | ---------------------- |
-| Proteins isolated | Only isolated proteins |
-| No isolation      | All proteins           |
+| State                                                       | Exported Data                    |
+| ----------------------------------------------------------- | -------------------------------- |
+| A [filter](/explore/filter) applied, or **Show only these** | Only the proteins the plot shows |
+| Neither                                                     | All proteins                     |
 
-Use isolation to export specific subsets.
+To export a subset, filter the plot, or select its proteins and press **Show only these** in the
+selection bar. To export everything, clear both with the ✕ on their chips in the plot's
+[status corner](/explore/scatterplot#status-corner).
 
 A subset export drops the statistics: the scores were computed over the whole dataset, so keeping
 them in a slice would make them read as describing that slice.

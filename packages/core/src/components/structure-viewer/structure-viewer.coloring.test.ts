@@ -135,7 +135,11 @@ describe('structure viewer color control', () => {
     const tedButton = colorButton(element, 'ted-domains');
 
     expect(tedButton?.disabled).toBe(true);
-    expect(tedButton?.title).toContain('unavailable');
+    // The reason sits in the ps-tooltip after the button, not a native title.
+    expect(tedButton?.hasAttribute('title')).toBe(false);
+    expect((tedButton?.nextElementSibling as HTMLElement & { text: string }).text).toContain(
+      'unavailable',
+    );
   });
 
   it('switches the loaded representation to TED and back to pLDDT', async () => {

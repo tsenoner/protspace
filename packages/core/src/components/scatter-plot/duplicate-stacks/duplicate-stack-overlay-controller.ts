@@ -71,13 +71,25 @@ interface DuplicateStackOverlayDeps {
   onPointActivate: (event: MouseEvent, p: PlotDataPoint) => void; // host _handleClick
   onHover: (event: MouseEvent, p: PlotDataPoint) => void; // host _handleMouseOver
   onHoverEnd: () => void; // host _clearHoverState
+  /** The spider opened (true) or closed (false); the host keeps an Escape layer while it is open. */
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 export class DuplicateStackOverlayController {
   private stacks: ViewportDuplicateStack[] = [];
   private byKey = new Map<string, ViewportDuplicateStack>();
   private pointIdToKey = new Map<string, string>();
-  private expandedKey: string | null = null;
+  private _expandedKey: string | null = null;
+  // Every expand and collapse path writes `expandedKey`; the setter tells the host when the spider
+  // opens or closes.
+  private get expandedKey(): string | null {
+    return this._expandedKey;
+  }
+  private set expandedKey(key: string | null) {
+    const wasOpen = this._expandedKey !== null;
+    this._expandedKey = key;
+    if (wasOpen !== (key !== null)) this.deps.onExpandedChange?.(key !== null);
+  }
   // Anchor position the user clicked to open the current spider. Stored separately
   // from the per-viewport stack object so it survives the rebuild that happens on
   // every pan/zoom (see applyExpandedAnchor).

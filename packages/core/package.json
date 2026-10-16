@@ -15,6 +15,11 @@
       "types": "./dist/components/publish/index.d.ts",
       "import": "./dist/publish.mjs",
       "require": "./dist/publish.js"
+    },
+    "./kit": {
+      "types": "./dist/components/kit/index.d.ts",
+      "import": "./dist/kit.mjs",
+      "require": "./dist/kit.js"
     }
   },
   "files": [
@@ -39,16 +44,19 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@floating-ui/dom": "^1.7.6",
     "@protspace/utils": "workspace:*",
     "d3": "^7.9.0",
     "hyparquet": "^1.31.1",
     "hysnappy": "^1.1.1",
     "lit": "^3.3.3",
+    "lucide": "^0.462.0",
     "sortablejs": "^1.15.7"
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",
     "@types/sortablejs": "^1.15.9",
+    "@vitest/browser-playwright": "^4.1.9",
     "eslint": "^10.5.0",
     "hyparquet-writer": "^0.16.10",
     "jsdom": "^27.4.0",

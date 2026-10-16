@@ -1,5 +1,6 @@
 import { LitElement, html, svg, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
+import { classMap } from 'lit/directives/class-map.js';
 import { formatStatValue } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import { categoryScoreStripStyles } from './category-score-strip.styles';
@@ -15,6 +16,11 @@ export interface ScoreStripPoint {
    * is read against, shown in the tooltip.
    */
   embedding?: number | null;
+  /**
+   * The category has no legend row (it sits in Other). Its `color` stays the data grey; on screen
+   * the dot takes the themed --ps-plot-other.
+   */
+  other?: true;
 }
 
 const STRIP_HEIGHT = 44;
@@ -106,7 +112,10 @@ class ProtspaceScoreStrip extends LitElement {
           ${this.points.map(
             (point) =>
               svg`<circle
-            class="${point.category === this.highlighted ? 'is-highlighted' : ''}"
+            class=${classMap({
+              'is-highlighted': point.category === this.highlighted,
+              other: !!point.other,
+            })}
             data-category="${point.category}"
             cx="${position(point.value)}%"
             cy="${AXIS_Y}"

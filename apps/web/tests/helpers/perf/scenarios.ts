@@ -2,13 +2,20 @@ import { expect, type Browser, type BrowserContext, type Page } from '@playwrigh
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_LAYOUT } from '../../../src/explore/layout-defaults';
 import {
+  annotationSelect,
+  colorByTrigger,
   dismissTourIfPresent,
+  importMenu,
+  openImportMenu,
+  searchInput,
   selectAnnotation,
   selectProjection,
   waitForExploreDataLoad,
 } from '../explore';
-import { tourCompletedStorageState } from '../tour-storage-state';
+import { collapseSidebar, expandSidebar } from '../workbench';
+import { exploreStorageState } from '../tour-storage-state';
 import {
   installProbes,
   readSnapshot,
@@ -55,6 +62,9 @@ const SEGMENTS = {
   'legend-isolate': { repeatable: true },
   camera: { repeatable: true, frameBound: ['render', 'glSync'], drawsAll: true },
   resize: { repeatable: true },
+  'panel-toggle': { repeatable: true },
+  'panel-expand': { repeatable: true },
+  'theme-switch': { repeatable: true },
   'search-select': { repeatable: true },
   import: { frameBound: LOAD_FRAME_BOUND },
   'import-no-settings': { frameBound: LOAD_FRAME_BOUND },
@@ -136,12 +146,18 @@ async function blockExternalRequests(page: Page, baseUrl: string): Promise<void>
   );
 }
 
-/** A context with the viewport and pixel ratio the segments assume, past the tour. */
+/**
+ * A context with the viewport and pixel ratio the segments assume, past the tour, with the layout,
+ * the stored theme (light) and the colour scheme pinned: the sidebar's width sets the plot's size,
+ * which feeds the point scale and the Auto contour strength, so an unpinned layout would make runs
+ * incomparable.
+ */
 export function newPerfContext(browser: Browser, baseUrl: string): Promise<BrowserContext> {
   return browser.newContext({
     viewport: VIEWPORT,
     deviceScaleFactor: 1,
-    storageState: tourCompletedStorageState(baseUrl),
+    colorScheme: 'light',
+    storageState: exploreStorageState(baseUrl, { layout: DEFAULT_LAYOUT, theme: 'light' }),
   });
 }
 
@@ -196,6 +212,23 @@ export async function plotBackground(page: Page): Promise<{ x: number; y: number
   return point;
 }
 
+/**
+ * Opens Color by and waits until its popover is open and its entry transition has finished, so a
+ * timed pick measures the app's work, not Playwright waiting for the moving rows to hold still.
+ */
+async function openColorByMenu(page: Page): Promise<void> {
+  await colorByTrigger(page).click();
+  const host = await annotationSelect(page).elementHandle();
+  await page.waitForFunction((el) => {
+    const panel = el?.shadowRoot?.querySelector('ps-popover')?.shadowRoot?.querySelector('.panel');
+    return (
+      !!panel?.matches(':popover-open') &&
+      panel.getAnimations({ subtree: true }).every((a) => a.playState === 'finished')
+    );
+  }, host);
+  await host?.dispose();
+}
+
 async function plotCenter(page: Page): Promise<{ x: number; y: number }> {
   const box = await page.locator('#myPlot').boundingBox();
   if (!box) throw new Error('#myPlot has no bounding box');
@@ -203,10 +236,8 @@ async function plotCenter(page: Page): Promise<{ x: number; y: number }> {
 }
 
 export async function importBundle(page: Page, file: string): Promise<void> {
-  const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
-  if (!(await ownDataset.isVisible().catch(() => false))) {
-    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
-  }
+  await openImportMenu(page);
+  const ownDataset = importMenu(page).locator('[data-driver-id="import-own-dataset"]');
   // A refused file (too large, unreadable) never loads: fail with its message instead.
   const loaded = page.evaluate(
     () =>
@@ -230,7 +261,7 @@ export async function importBundle(page: Page, file: string): Promise<void> {
 
 type SegmentDef = Omit<SegmentSpec, 'timing'> & { name: SegmentName };
 
-/** Segments 2–11 in run order; `load` is measured by `measureLoad`. */
+/** Segments 2–13 in run order; `load` is measured by `measureLoad`. */
 export function buildSegments(page: Page, state: ExploreState, importFile: string): SegmentDef[] {
   const segments: SegmentDef[] = [
     {
@@ -239,6 +270,8 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
     },
     {
       name: 'annotation-switch',
+      // Opening the picker is not timed: its rows move during the popover's entry transition.
+      setup: () => openColorByMenu(page),
       act: () => selectAnnotation(page, state.switchTo),
       reset: () => selectAnnotation(page, state.annotation),
       pixels: true,
@@ -310,21 +343,55 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
       pixels: true,
     },
     {
+      name: 'panel-toggle',
+      // Collapsing widens the plot under the sliding sidebar: one resize, one render and one grid
+      // rebuild (design decision 4). The reset expands it back to the pinned width.
+      act: () => collapseSidebar(page),
+      reset: () => expandSidebar(page),
+      pixels: true,
+    },
+    {
+      name: 'panel-expand',
+      // Expanding slides the sidebar in over the plot, then narrows it: one resize, one render
+      // and one grid rebuild (decision 4). panel-toggle's reset checks the round trip's pixels.
+      setup: () => collapseSidebar(page),
+      act: () => expandSidebar(page),
+    },
+    {
+      name: 'theme-switch',
+      // Dark gives the plot's neutral greys new values: one colour-only restyle and one render,
+      // nothing re-sorted, re-processed or rebuilt (design decision 16). The attribute is what
+      // every consumer watches, so the segment sets it rather than going through the menu.
+      act: () =>
+        page.evaluate(() => {
+          document.documentElement.dataset.theme = 'dark';
+        }),
+      reset: () =>
+        page.evaluate(() => {
+          document.documentElement.dataset.theme = 'light';
+        }),
+      pixels: true,
+    },
+    {
       name: 'search-select',
       act: async () => {
-        const input = page.locator(
-          'protspace-control-bar protspace-protein-search #protein-search-input',
-        );
+        const input = searchInput(page);
         await input.fill(state.accession);
         await input.press('Enter');
       },
       reset: async () => {
-        const input = page.locator(
-          'protspace-control-bar protspace-protein-search #protein-search-input',
-        );
+        const input = searchInput(page);
         await input.press('Escape');
         await input.blur();
         await page.keyboard.press('Escape');
+        // The pick zoomed in on the protein (design decision 15): fit the view again and let the
+        // 750 ms transition finish, so the pixel check and the next segment start from the full
+        // view.
+        await page
+          .getByRole('toolbar', { name: 'Plot tools' })
+          .getByRole('button', { name: 'Fit to view', exact: true })
+          .click();
+        await settle(page);
         // Selecting a protein opens its structure viewer, and clearing the selection
         // leaves it open; close it so later segments start from the same layout.
         const viewer = page.locator('#myStructureViewer');

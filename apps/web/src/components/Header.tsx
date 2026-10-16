@@ -10,7 +10,7 @@ import { getNavigation } from '../../../../config/navigation';
 const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
 
 // Ghost-style Feedback CTA: transparent, on-brand blue text/icon with a faint blue
-// hover — de-emphasized vs. the app-shell primary (#3c83f6). Both headers are light, so
+// hover — de-emphasized vs. the app-shell primary (#3c83f6). The header is light, so
 // the canonical ProtSpace blue (#00a3e0, ~2.6:1 on white) is darkened to #006d96
 // (~5.3:1) to clear WCAG AA.
 const FEEDBACK_BUTTON_CLASS =
@@ -19,35 +19,25 @@ const FEEDBACK_BUTTON_CLASS =
 const mode = import.meta.env.MODE === 'production' ? 'production' : 'development';
 const navItems = getNavigation(mode);
 
-export const HEADER_HEIGHT_CLASS = 'h-12';
+const HEADER_HEIGHT_CLASS = 'h-12';
+const textClass = 'text-foreground';
+const hoverTextClass = 'hover:text-primary';
+const mutedTextClass = 'text-foreground/80';
+const dropdownClasses =
+  'absolute top-full right-0 mt-2 w-48 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border bg-background border-border/40';
 
 type HeaderProps = {
-  /**
-   * Visual style variant for different page backgrounds.
-   * - default: uses the site theme background (white)
-   * - light: matches Explore's #f4f4f4 canvas
-   */
-  variant?: 'default' | 'light';
   className?: string;
 };
 
-const Header = ({ variant = 'default', className }: HeaderProps) => {
+/** The site header of the landing and privacy pages; the explore page has its own app bar. */
+const Header = ({ className }: HeaderProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
-  const textClass = variant === 'light' ? 'text-slate-900' : 'text-foreground';
-  const hoverTextClass = variant === 'light' ? 'hover:text-slate-700' : 'hover:text-primary';
-  const mutedTextClass = variant === 'light' ? 'text-slate-700' : 'text-foreground/80';
-
   const headerClasses = cn(
-    'fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-lg',
-    variant === 'light' ? 'bg-[#f4f4f4]/95 border-black/5' : 'bg-background/85 border-border',
+    'fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-lg bg-background/85 border-border',
     className,
-  );
-
-  const dropdownClasses = cn(
-    'absolute top-full right-0 mt-2 w-48 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border',
-    variant === 'light' ? 'bg-white border-black/5' : 'bg-background border-border/40',
   );
 
   return (
@@ -92,7 +82,7 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
                             'block px-4 py-2 text-sm first:rounded-t-lg last:rounded-b-lg transition-colors',
                             textClass,
                             hoverTextClass,
-                            variant === 'light' ? 'hover:bg-black/5' : 'hover:bg-muted/50',
+                            'hover:bg-muted/50',
                           )}
                         >
                           {subItem.text}

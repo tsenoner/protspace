@@ -10,6 +10,8 @@ import './structure-viewer';
 
 const hover = (plot: Element, proteinId: string | null) =>
   plot.dispatchEvent(new CustomEvent('protein-hover', { detail: { proteinId } }));
+const press = (plot: Element, pointerType: string) =>
+  plot.dispatchEvent(new PointerEvent('pointerdown', { pointerType, bubbles: true }));
 
 describe('protspace-structure-viewer Mol* prefetch', () => {
   let plot: HTMLElement;
@@ -46,9 +48,24 @@ describe('protspace-structure-viewer Mol* prefetch', () => {
     expect(prefetchMolstar).toHaveBeenCalledTimes(1);
   });
 
+  it('a touch pointerdown on the plot prefetches Mol* once', () => {
+    // Touch has no hover: the first finger on the plot is the earliest sign.
+    press(plot, 'touch');
+    expect(prefetchMolstar).toHaveBeenCalledTimes(1);
+    press(plot, 'touch');
+    hover(plot, 'P12345');
+    expect(prefetchMolstar).toHaveBeenCalledTimes(1);
+  });
+
+  it('a mouse pointerdown prefetches nothing', () => {
+    press(plot, 'mouse');
+    expect(prefetchMolstar).not.toHaveBeenCalled();
+  });
+
   it('stops listening when the viewer is removed', () => {
     viewer.remove();
     hover(plot, 'P12345');
+    press(plot, 'touch');
     expect(prefetchMolstar).not.toHaveBeenCalled();
   });
 

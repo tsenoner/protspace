@@ -27,6 +27,10 @@ export default defineConfig({
       entry: {
         core: resolve(__dirname, 'src/index.ts'),
         publish: resolve(__dirname, 'src/components/publish/index.ts'),
+        // The kit alone (tokens and ps-* elements), for a page that paints before the full core
+        // loads: the explore route imports it first. core re-exports it, so one module defines
+        // the elements whichever entry a page imports.
+        kit: resolve(__dirname, 'src/components/kit/index.ts'),
       },
       formats: ['es', 'cjs'],
     },
@@ -34,7 +38,9 @@ export default defineConfig({
       // hyparquet is shared with @protspace/utils' bundle writer (hyparquet-writer imports its
       // modules), so it is left to the app to bundle once. The inline decode worker is built
       // separately (`worker` above) and still carries its own copy: a blob worker cannot import.
-      external: ['lit', 'd3', '@protspace/utils', /^hyparquet(\/|$)/],
+      // Every lit/* subpath is external too: a bundled lit/directives/* module brings its own lit-html.
+      // @floating-ui/* stays external: the web app already ships it through Radix.
+      external: [/^lit(\/|$)/, /^@floating-ui\//, 'd3', '@protspace/utils', /^hyparquet(\/|$)/],
       output: {
         globals: {
           lit: 'Lit',

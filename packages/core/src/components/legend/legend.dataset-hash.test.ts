@@ -16,6 +16,7 @@ import { decodeParquetBundle } from '../data-loader/utils/bundle';
 import {
   mountLegendWithScatterplot,
   type MockScatterplot,
+  settleLegend,
 } from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 
@@ -50,13 +51,9 @@ function makeData(prefix = 'p', withPredictions = true): VisualizationData {
 }
 
 /** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 async function mount(data: VisualizationData) {
   const { legend, plot } = await mountLegendWithScatterplot(data, 'ec');
-  await settle(legend);
+  await settleLegend(legend);
   return { legend: legend as HashedLegend, plot };
 }
 
@@ -91,7 +88,7 @@ describe('legend dataset hash', () => {
     expect(generateLegacyDatasetHash(data)).not.toBe(workerHash);
 
     const { legend } = await mountLegendWithScatterplot(data, annotation);
-    await settle(legend);
+    await settleLegend(legend);
 
     expect((legend as HashedLegend)._persistenceController._datasetHash).toBe(workerHash);
   });
@@ -160,7 +157,7 @@ describe('legend state under the hash without predictions', () => {
 
     legend.clearForNewDataset(hash, true);
     showData(plot, data);
-    await settle(legend);
+    await settleLegend(legend);
 
     expect(legend._persistenceController._datasetHash).toBe(hash);
     expect(localStorage.getItem(legendKey(legacy, 'ec'))).toBeNull();

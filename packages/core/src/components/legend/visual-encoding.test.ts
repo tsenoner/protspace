@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getVisualEncoding, SlotTracker, SPECIAL_SLOTS } from './visual-encoding';
+import { NEUTRAL_VALUE_COLOR } from '../scatter-plot/config';
 
 describe('visual-encoding', () => {
   describe('getVisualEncoding', () => {
-    it('returns special color for Other category', () => {
+    it("Other's colour is NEUTRAL_VALUE_COLOR", () => {
+      // The plot draws Other points in this grey, so a light export's legend matches its points.
       const encoding = getVisualEncoding(0, 'Other');
-      expect(encoding.color).toBe('#999999');
+      expect(encoding.color).toBe(NEUTRAL_VALUE_COLOR);
       expect(encoding.shape).toBe('circle');
     });
 

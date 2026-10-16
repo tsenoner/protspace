@@ -141,8 +141,8 @@ describe('loadExampleDataset', () => {
     expect(overlayController.update).toHaveBeenCalledWith(
       true,
       0,
-      `Downloading ${DEMO.label}…`,
       `0.0 / ${(DEMO.sizeBytes / 1e6).toFixed(1)} MB`,
+      `Downloading ${DEMO.label.split(' · ')[0]}…`,
     );
 
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
@@ -278,11 +278,11 @@ function streamedResponse(chunkSizes: number[], headers: Record<string, string> 
   return new Response(stream, { headers });
 }
 
-/** The download phase's overlay updates: `[progress, sub-message]`, while it downloads. */
+/** The download phase's overlay updates: `[progress, amount]`, while it downloads. */
 function downloadUpdates(update: ReturnType<typeof vi.fn>): Array<[number, string]> {
   return update.mock.calls
-    .filter(([show, , message]) => show === true && String(message).startsWith('Downloading '))
-    .map(([, progress, , subMessage]) => [progress as number, subMessage as string]);
+    .filter(([show, , , title]) => show === true && String(title).startsWith('Downloading '))
+    .map(([, progress, amount]) => [progress as number, amount as string]);
 }
 
 describe('example download progress', () => {
@@ -393,26 +393,24 @@ describe('example download progress', () => {
   });
 });
 
-describe('loadExampleDatasetAndClearPersistedFile', () => {
-  it('loads the requested example flagged to replace the stored import, without clearing it up front', async () => {
+describe('loadChosenExample', () => {
+  it('loads the requested example and leaves the stored import alone', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchMock);
 
     const { controller, dataLoader, loadQueue } = createController();
 
-    const resultPromise = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
+    const resultPromise = controller.loadChosenExample(OTHER, 'menu');
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
     loadQueue.resolveOutcome(1, true);
 
     expect(await resultPromise).toBe('loaded');
-    // The clear happens in handleDataLoaded once the example has decoded
-    // (covered end to end in example-dataset-load.test.ts), never before the
-    // fetch — a failed download must not delete the import still on screen.
+    // A menu choice keeps the stored import, so the Import menu's "Last file" can reopen it.
     expect(clearLastImportedFile).not.toHaveBeenCalled();
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(
       expect.any(File),
       'default',
-      { entry: OTHER, source: 'menu', replacesStoredImport: true },
+      { entry: OTHER, source: 'menu', replacesStoredImport: false },
       expect.any(Number),
     );
   });
@@ -487,7 +485,7 @@ describe('request precedence: a user request beats a startup load that began ear
     const { controller, dataLoader, loadQueue } = createController();
 
     const startup = controller.loadPersistedOrDefaultDataset();
-    const click = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
+    const click = controller.loadChosenExample(OTHER, 'menu');
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
     read.resolve(new File(['x'], 'mine.parquetbundle'));
 
@@ -515,7 +513,7 @@ describe('request precedence: a user request beats a startup load that began ear
     const { controller, dataLoader, loadQueue } = createController();
 
     const startup = controller.loadPersistedOrDefaultDataset();
-    const click = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
+    const click = controller.loadChosenExample(OTHER, 'menu');
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
     read.resolve(null);
 
@@ -535,7 +533,7 @@ describe('request precedence: a user request beats a startup load that began ear
 
     const startup = controller.loadPersistedOrDefaultDataset();
     await vi.waitFor(() => expect(readLastLoadStatus).toHaveBeenCalled());
-    void controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
+    void controller.loadChosenExample(OTHER, 'menu');
     status.resolve({ status: 'error', failedAttempts: 1 });
 
     expect(await startup).toEqual({ kind: 'preempted' });
@@ -551,7 +549,7 @@ describe('request precedence: a user request beats a startup load that began ear
     const { controller } = createController();
 
     const startup = controller.loadPersistedOrDefaultDataset();
-    void controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
+    void controller.loadChosenExample(OTHER, 'menu');
     read.reject(new StoredDatasetCorruptError('corrupt'));
 
     expect(await startup).toEqual({ kind: 'preempted' });
@@ -624,7 +622,7 @@ describe('cancelPendingExampleLoad', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { controller, overlayController, loadQueue } = createController();
 
-    const pending = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
+    const pending = controller.loadChosenExample(OTHER, 'menu');
     overlayController.update.mockClear();
 
     expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe('cancelled');
@@ -710,7 +708,7 @@ describe('the Cancel button of an example download', () => {
       onExampleLoadCancelled,
     });
 
-    const result = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
+    const result = controller.loadChosenExample(OTHER, 'menu');
     const cancel = cancelButtonHandler(overlayController.setCancelHandler);
     const epochBefore = controller.currentRequestEpoch();
     overlayController.update.mockClear();
@@ -815,12 +813,12 @@ describe('Retry on a failed example download', () => {
     return options.action.onClick;
   };
 
-  it('repeats a failed menu choice as it was, replacing the stored import', async () => {
+  it('repeats a failed menu choice as it was, keeping the stored import', async () => {
     const fetchMock = failThenSucceed();
     vi.stubGlobal('fetch', fetchMock);
     const { controller, dataLoader, loadQueue } = createController();
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu')).toBe('failed');
+    expect(await controller.loadChosenExample(OTHER, 'menu')).toBe('failed');
     retryAction()();
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
 
@@ -828,7 +826,7 @@ describe('Retry on a failed example download', () => {
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(
       expect.any(File),
       'default',
-      expect.objectContaining({ entry: OTHER, source: 'menu', replacesStoredImport: true }),
+      expect.objectContaining({ entry: OTHER, source: 'menu', replacesStoredImport: false }),
       expect.any(Number),
     );
   });
@@ -852,7 +850,7 @@ describe('an example that has begun replacing the plot', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse()));
     const { controller, dataLoader, loadQueue, overlayController } = createController();
 
-    const result = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
+    const result = controller.loadChosenExample(OTHER, 'menu');
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
     const loadEpoch = loadQueue.registerFileLoad.mock.calls[0]![3] as number;
     // Still decoding: a Back/Forward cancels it.

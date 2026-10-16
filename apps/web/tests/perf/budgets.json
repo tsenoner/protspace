@@ -1,6 +1,6 @@
 {
   "$comment": "Max allowed per segment on data.parquetbundle. null = report only. Update: PERF_UPDATE_BUDGETS=1 pnpm perf:counts, review the diff, commit.",
-  "recordedAt": "0533c00d",
+  "recordedAt": "30eca2da",
   "segments": {
     "load": {
       "restage": 2,
@@ -106,11 +106,50 @@
       "bufferBytes": 0,
       "glIsPerRender": 0
     },
-    "search-select": {
+    "panel-toggle": {
       "restage": 0,
       "restagePos": 0,
       "restageStyle": 0,
       "render": 1,
+      "processData": 0,
+      "gridRebuild": 1,
+      "legendUpdate": 0,
+      "legendRebuild": 0,
+      "glSync": 0,
+      "bufferBytes": 0,
+      "glIsPerRender": 0
+    },
+    "panel-expand": {
+      "restage": 0,
+      "restagePos": 0,
+      "restageStyle": 0,
+      "render": 1,
+      "processData": 0,
+      "gridRebuild": 1,
+      "legendUpdate": 0,
+      "legendRebuild": 0,
+      "glSync": 0,
+      "bufferBytes": 0,
+      "glIsPerRender": 0
+    },
+    "theme-switch": {
+      "restage": 0,
+      "restagePos": 0,
+      "restageStyle": 0,
+      "render": 1,
+      "processData": 0,
+      "gridRebuild": 0,
+      "legendUpdate": 0,
+      "legendRebuild": 0,
+      "glSync": 0,
+      "bufferBytes": 0,
+      "glIsPerRender": 0
+    },
+    "search-select": {
+      "restage": 0,
+      "restagePos": 0,
+      "restageStyle": 0,
+      "render": 2,
       "processData": 0,
       "gridRebuild": 0,
       "legendUpdate": 0,

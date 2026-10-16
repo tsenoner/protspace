@@ -1,661 +1,634 @@
-import { css } from 'lit';
+import { css, unsafeCSS } from 'lit';
+import { LANDSCAPE_PHONE_MEDIA, PHONE_MEDIA } from '../../utils/breakpoints';
+import { focusRing, kitHost, reducedMotion } from '../kit/kit-shared.styles';
 
 /**
- * Publish Modal Styles
- *
- * Full-screen modal with 65/35 preview-to-sidebar split.
- * Follows the same token / overlay mixin pattern as the legend modal.
+ * The figure editor inside its full-screen ps-dialog: the preview (canvas, then the tool strip)
+ * beside a 340 px settings column, the settings under the preview on a phone held upright, and
+ * the footer the dialog slots in.
  */
-export const publishModalStyles = css`
-  /* ─── Full-screen modal overlay ─────────────────────────── */
-  .publish-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: stretch;
-    justify-content: center;
-    z-index: var(--z-modal);
-    overscroll-behavior: contain;
-  }
-
-  .publish-container {
-    display: flex;
-    width: 100%;
-    height: 100%;
-    background: var(--surface);
-    overflow: hidden;
-  }
-
-  /* ─── Preview area (left 65%) ───────────────────────────── */
-  .publish-preview {
-    flex: 1 1 65%;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    background: #f0f2f5;
-    position: relative;
-  }
-
-  .publish-preview-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-bottom: var(--border-width) solid var(--border);
-    background: var(--surface);
-    flex-shrink: 0;
-  }
-
-  .publish-preview-header h2 {
-    margin: 0;
-    font-size: var(--text-md);
-    font-weight: var(--font-semibold);
-    color: var(--text-dark);
-  }
-
-  .publish-preview-info {
-    font-size: var(--text-xs);
-    color: var(--muted);
-  }
-
-  .publish-preview-canvas-container {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--spacing-lg);
-    overflow: hidden;
-    position: relative;
-  }
-
-  .publish-preview-canvas {
-    max-width: 100%;
-    max-height: 100%;
-    box-shadow: var(--shadow-lg);
-    background: #ffffff;
-    image-rendering: auto;
-  }
-
-  .publish-preview-toolbar {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-top: var(--border-width) solid var(--border);
-    background: var(--surface);
-    flex-shrink: 0;
-  }
-
-  /* Shared toggle button base — used for tool buttons, preset grid.
-   * Mirrors the control-bar dropdown-trigger / filter-active pattern. */
-  .publish-toggle-btn {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    border: var(--border-width) solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
-    font-size: var(--text-sm);
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: var(--transition-fast);
-  }
-
-  .publish-toggle-btn:hover {
-    background: var(--hover-bg);
-    border-color: var(--border-hover);
-  }
-
-  /* Active = blue border only, same hover as unselected.
-   * Matches filter-active in query-builder.styles.ts.
-   * Double class to beat global button.active specificity. */
-  .publish-toggle-btn.publish-toggle-btn.active {
-    border-color: var(--primary);
-    color: var(--primary);
-    background: var(--surface);
-  }
-
-  .publish-toggle-btn.publish-toggle-btn.active:hover {
-    background: var(--hover-bg);
-    border-color: var(--primary);
-  }
-
-  .publish-tool-btn {
-    font-size: var(--text-sm);
-  }
-
-  .publish-tool-btn svg {
-    width: 14px;
-    height: 14px;
-    stroke: currentColor;
-    fill: none;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .tool-separator {
-    width: 1px;
-    height: 20px;
-    background: var(--border);
-    margin: 0 var(--spacing-xs);
-  }
-
-  /* ─── Sidebar (right 35%) ───────────────────────────────── */
-  .publish-sidebar {
-    flex: 0 0 340px;
-    min-width: 280px;
-    max-width: 400px;
-    display: flex;
-    flex-direction: column;
-    border-left: var(--border-width) solid var(--border);
-    background: var(--surface);
-    overflow: hidden;
-  }
-
-  .publish-sidebar-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-bottom: var(--border-width) solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .publish-sidebar-header h3 {
-    margin: 0;
-    font-size: var(--text-base);
-    font-weight: var(--font-semibold);
-    color: var(--text-dark);
-  }
-
-  .publish-close-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: none;
-    border-radius: var(--radius);
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    transition: var(--transition-fast);
-  }
-
-  .publish-close-btn:hover {
-    background: var(--hover-bg);
-    color: var(--text-dark);
-  }
-
-  .publish-close-btn svg {
-    width: 16px;
-    height: 16px;
-    stroke: currentColor;
-    fill: none;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .publish-sidebar-content {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: var(--spacing-md);
-    scrollbar-width: thin;
-  }
-
-  .publish-sidebar-footer {
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-top: var(--border-width) solid var(--border);
-    display: flex;
-    gap: var(--spacing-xs);
-    flex-shrink: 0;
-  }
-
-  .publish-sidebar-footer button {
-    flex: 1;
-  }
-
-  .publish-sidebar-footer button.btn-danger {
-    flex: 0 0 auto;
-  }
-
-  /* ─── Sidebar sections ──────────────────────────────────── */
-  .publish-section {
-    margin-bottom: var(--spacing-md);
-  }
-
-  .publish-section-title {
-    font-size: var(--text-xs);
-    font-weight: var(--font-semibold);
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: var(--spacing-sm);
-  }
-
-  /* ─── Preset grid ───────────────────────────────────────── */
-  .publish-preset-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--spacing-xs);
-    margin-bottom: var(--spacing-sm);
-  }
-
-  .publish-preset-btn {
-    justify-content: space-between;
-    padding: 6px 8px;
-    font-size: var(--text-xs);
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .publish-preset-dims {
-    font-size: 10px;
-    color: var(--muted);
-    font-weight: var(--font-normal);
-  }
-
-  .publish-preset-btn.active .publish-preset-dims {
-    color: var(--primary);
-    opacity: 0.7;
-  }
-
-  /* ─── Form rows ─────────────────────────────────────────── */
-  .publish-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--spacing-xs);
-  }
-
-  .publish-row label {
-    font-size: var(--text-sm);
-    color: var(--muted);
-    white-space: nowrap;
-  }
-
-  /*
-   * Slider rows (Size %, Font size, Columns, Stroke, etc.):
-   *   - Override the row's space-between so label and slider sit close together,
-   *     not at opposite ends of the row.
-   *   - Fix label-cell width to the longest label so sliders share a left start
-   *     across rows. Tight 8px gap to the slider.
-   *   - Fix slider width so sliders also share a right end.
-   *   - Narrow the number input (default 5rem is wider than these small values
-   *     ever need).
-   */
-  .publish-row:has(.publish-input-group) {
-    justify-content: flex-start;
-    gap: 8px;
-  }
-
-  .publish-row:has(.publish-input-group) > label {
-    flex: 0 0 55px;
-  }
-
-  .publish-row > .publish-input-group {
-    flex-wrap: nowrap;
-    gap: 4px;
-  }
-
-  .publish-row > .publish-input-group > .publish-slider {
-    flex: 0 0 110px;
-  }
-
-  .publish-row > .publish-input-group > .publish-row-input {
-    width: 2.5rem;
-  }
-
-  .publish-row-input {
-    width: 5rem;
-    padding: 2px 4px;
-    font-size: var(--text-sm);
-    font-weight: var(--font-medium);
-    color: var(--text-dark);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: calc(var(--radius) / 2);
-    text-align: right;
-    transition: var(--transition-fast);
-  }
-
-  .publish-row-input:hover {
-    background: var(--hover-bg);
-    border-color: var(--border);
-  }
-
-  .publish-row-input:focus {
-    outline: none;
-    background: var(--surface);
-    border-color: var(--primary);
-    box-shadow:
-      0 0 0 1px var(--primary),
-      0 0 0 3px var(--focus-ring-bg);
-  }
-
-  /* Hide spinner */
-  .publish-row-input::-webkit-inner-spin-button,
-  .publish-row-input::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-  .publish-row-input[type='number'] {
-    -moz-appearance: textfield;
-  }
-
-  .publish-unit {
-    font-size: var(--text-xs);
-    color: var(--muted);
-    margin-left: 2px;
-  }
-
-  .publish-input-group {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
-  /* ─── Select (dropdown) ─────────────────────────────────── */
-  .publish-select {
-    padding: 3px 6px;
-    font-size: var(--text-sm);
-    border: var(--border-width) solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
-    color: var(--text-primary);
-    cursor: pointer;
-  }
-
-  .publish-select:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow:
-      0 0 0 1px var(--primary),
-      0 0 0 3px var(--focus-ring-bg);
-  }
-
-  /* ─── Checkbox ──────────────────────────────────────────── */
-  .publish-checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    font-size: var(--text-sm);
-    color: var(--text-primary);
-    cursor: pointer;
-    user-select: none;
-    margin-bottom: var(--spacing-xs);
-  }
-
-  .publish-checkbox {
-    width: 14px;
-    height: 14px;
-    cursor: pointer;
-    accent-color: var(--primary);
-    flex-shrink: 0;
-  }
-
-  /* ─── Format toggle ─────────────────────────────────────── */
-  .publish-format-toggle {
-    display: flex;
-    gap: var(--spacing-xs);
-  }
-
-  .publish-format-toggle button {
-    flex: 1;
-    padding: 4px 8px;
-    font-size: var(--text-sm);
-  }
-
-  /* ─── Overlays list ─────────────────────────────────────── */
-  .publish-overlay-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 4px 8px;
-    border: var(--border-width) solid var(--border);
-    border-radius: var(--radius);
-    margin-bottom: var(--spacing-xs);
-    font-size: var(--text-xs);
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: var(--transition-fast);
-  }
-
-  .publish-overlay-item:hover {
-    background: var(--hover-bg);
-    border-color: var(--border-hover);
-  }
-
-  .publish-overlay-item.selected {
-    background: var(--primary-light);
-    border-color: var(--primary);
-  }
-
-  .publish-overlay-item .delete-btn {
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius);
-  }
-
-  .publish-overlay-item .delete-btn:hover {
-    background: var(--hover-bg);
-    color: var(--danger);
-  }
-
-  .publish-overlay-item .delete-btn svg {
-    width: 12px;
-    height: 12px;
-    stroke: currentColor;
-    fill: none;
-    stroke-width: 2;
-  }
-
-  /* ─── Warning message ───────────────────────────────────── */
-  .publish-warning {
-    font-size: var(--text-xs);
-    color: var(--danger);
-    padding: 4px 8px;
-    background: rgba(228, 33, 33, 0.06);
-    border-radius: var(--radius);
-    margin-bottom: var(--spacing-xs);
-  }
-
-  .publish-warning a {
-    color: var(--danger);
-    font-weight: var(--font-semibold);
-    text-decoration: underline;
-    cursor: pointer;
-  }
-
-  /* ─── Slider ─────────────────────────────────────────── */
-  .publish-slider {
-    flex: 1;
-    min-width: 60px;
-    height: 4px;
-    accent-color: var(--primary);
-    cursor: pointer;
-  }
-
-  /* ─── Responsive ────────────────────────────────────────── */
-  @media (max-width: 800px) {
+export const publishModalStyles = [
+  kitHost,
+  focusRing,
+  reducedMotion,
+  css`
+    /* ─── Layout ────────────────────────────────────────────── */
     .publish-container {
+      display: flex;
+      gap: var(--ps-space-5);
+      height: 100%;
+      min-height: 0;
+    }
+
+    .publish-preview {
+      flex: 1 1 65%;
+      min-width: 0;
+      display: flex;
       flex-direction: column;
+      border-radius: var(--ps-radius-lg);
+      background: var(--ps-surface-muted);
+      overflow: hidden;
     }
+
+    .publish-preview-canvas-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 0;
+      padding: var(--ps-space-6);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .publish-preview-canvas {
+      max-width: 100%;
+      max-height: 100%;
+      box-shadow: var(--ps-shadow-lg);
+      /* Fixed light paper in both themes (exports are light): a white figure paints over it; a
+         transparent one shows the checkerboard, never the dark surface its legend text would
+         vanish on. */
+      background: repeating-conic-gradient(var(--ps-paper-check) 0 25%, var(--ps-paper) 0 50%) 50% /
+        16px 16px;
+      image-rendering: auto;
+    }
+
+    .publish-preview-toolbar {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-1);
+      padding: var(--ps-space-2) var(--ps-space-3);
+      border-top: 1px solid var(--ps-border);
+      background: var(--ps-surface);
+      flex-shrink: 0;
+    }
+
     .publish-sidebar {
-      flex: 0 0 auto;
-      max-width: none;
-      max-height: 45vh;
-      border-left: none;
-      border-top: var(--border-width) solid var(--border);
+      flex: 0 0 340px;
+      min-width: 280px;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
     }
-  }
 
-  /* ─── Dimensions panel (Photoshop-style) ────────────────── */
-  .publish-dim-readout {
-    font-size: var(--text-xs);
-    color: var(--muted);
-    margin-bottom: 8px;
-  }
+    .publish-sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding-right: var(--ps-space-1);
+      scrollbar-width: thin;
+    }
 
-  .publish-dim-readout strong {
-    color: var(--fg);
-    margin: 0 4px;
-  }
+    /* ─── Toggle buttons: tools, presets, format ─────────────── */
+    .publish-toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-1);
+      min-height: var(--ps-control-sm);
+      padding: var(--ps-space-1) var(--ps-space-2);
+      border: 1px solid var(--ps-border-control);
+      border-radius: var(--ps-radius);
+      background: var(--ps-surface);
+      color: var(--ps-text);
+      font-family: inherit;
+      font-size: var(--ps-text-sm);
+      cursor: pointer;
+      transition:
+        background-color var(--ps-duration-fast) var(--ps-ease),
+        border-color var(--ps-duration-fast) var(--ps-ease);
+    }
 
-  .publish-dim-pair {
-    display: grid;
-    grid-template-columns: auto 1fr auto auto;
-    grid-template-rows: auto auto;
-    gap: 6px 8px;
-    align-items: center;
-    margin-bottom: 8px;
-  }
+    .publish-toggle-btn:hover {
+      background: var(--ps-surface-hover);
+      border-color: var(--ps-border-strong);
+    }
 
-  .publish-dim-pair > .publish-dim-label {
-    grid-column: 1;
-    font-size: var(--text-xs);
-    color: var(--muted);
-    white-space: nowrap;
-  }
+    .publish-toggle-btn.active {
+      border-color: var(--ps-accent);
+      color: var(--ps-accent-text);
+      background: var(--ps-accent-tint);
+    }
 
-  .publish-dim-pair > .publish-dim-control {
-    grid-column: 2;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
+    .publish-tool-btn svg {
+      width: 14px;
+      height: 14px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.75;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
 
-  .publish-dim-control > .publish-slider {
-    flex: 1;
-    min-width: 50px;
-  }
+    .tool-separator {
+      width: 1px;
+      height: 20px;
+      margin: 0 var(--ps-space-1);
+      background: var(--ps-border);
+    }
 
-  .publish-dim-value {
-    width: 3.5rem;
-    flex: 0 0 auto;
-  }
+    /* ─── Sections ───────────────────────────────────────────── */
+    .publish-section {
+      margin-bottom: var(--ps-space-5);
+    }
 
-  .publish-dim-pair > .publish-aspect-lock {
-    grid-column: 3;
-    grid-row: 1 / span 2;
-    align-self: stretch;
-  }
+    .publish-section-title {
+      margin-bottom: var(--ps-space-2);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      font-weight: var(--ps-weight-semibold);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
 
-  .publish-dim-pair > .publish-unit-select {
-    grid-column: 4;
-    grid-row: 1 / span 2;
-    align-self: center;
-  }
+    .publish-preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--ps-space-1);
+      margin-bottom: var(--ps-space-2);
+    }
 
-  .publish-unit-select {
-    width: 64px;
-    font-size: var(--text-xs);
-  }
+    .publish-preset-btn {
+      justify-content: space-between;
+      font-size: var(--ps-text-xs);
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
-  .publish-aspect-lock {
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
+    .publish-preset-dims {
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      font-weight: normal;
+    }
 
-  .publish-aspect-lock svg {
-    fill: none;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    display: block;
-    overflow: visible;
-  }
+    .publish-preset-btn.active .publish-preset-dims {
+      color: var(--ps-accent-text);
+    }
 
-  /* Brackets — thin always-muted lines anchoring the chain to W and H rows. */
-  .publish-aspect-lock .aspect-lock-bracket {
-    stroke: var(--muted);
-    stroke-width: 1.25;
-  }
+    /* ─── Rows ───────────────────────────────────────────────── */
+    .publish-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--ps-space-1);
+    }
 
-  /* Chain — heavier stroke than brackets so the link reads as the focal point. */
-  .publish-aspect-lock .aspect-lock-state-locked,
-  .publish-aspect-lock .aspect-lock-state-unlocked {
-    stroke: var(--muted);
-    stroke-width: 1.75;
-    transition: stroke 120ms;
-  }
+    .publish-row.publish-row-tight {
+      margin-bottom: 0;
+    }
 
-  .publish-aspect-lock.locked .aspect-lock-state-locked {
-    stroke: var(--primary, #3b82f6);
-  }
+    .publish-row.publish-row-text {
+      margin-bottom: var(--ps-space-0-5);
+    }
 
-  /* CSS toggles which chain state group is rendered. */
-  .publish-aspect-lock .aspect-lock-state-locked,
-  .publish-aspect-lock .aspect-lock-state-unlocked {
-    display: none;
-  }
+    .publish-row label {
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+      white-space: nowrap;
+    }
 
-  .publish-aspect-lock.locked .aspect-lock-state-locked {
-    display: inline;
-  }
+    /* Slider rows: label and slider sit together, and sliders share their start and end. */
+    .publish-row:has(.publish-input-group) {
+      justify-content: flex-start;
+      gap: var(--ps-space-2);
+    }
 
-  .publish-aspect-lock:not(.locked) .aspect-lock-state-unlocked {
-    display: inline;
-  }
+    .publish-row:has(.publish-input-group) > label {
+      flex: 0 0 55px;
+    }
 
-  .publish-aspect-lock:hover:not([disabled]) .aspect-lock-state-locked,
-  .publish-aspect-lock:hover:not([disabled]) .aspect-lock-state-unlocked {
-    stroke: var(--primary, #3b82f6);
-  }
+    .publish-row > .publish-input-group {
+      flex-wrap: nowrap;
+      gap: var(--ps-space-1);
+    }
 
-  .publish-aspect-lock[disabled] {
-    cursor: not-allowed;
-    opacity: 0.4;
-  }
+    .publish-row > .publish-input-group > .publish-slider {
+      flex: 0 0 110px;
+    }
 
-  .publish-aspect-lock[disabled] .aspect-lock-state-locked,
-  .publish-aspect-lock[disabled] .aspect-lock-state-unlocked,
-  .publish-aspect-lock[disabled] .aspect-lock-bracket {
-    stroke: var(--muted);
-  }
+    .publish-row > .publish-input-group > .publish-row-input {
+      width: 2.5rem;
+    }
 
-  .publish-dim-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--spacing-xs);
-  }
+    .publish-input-group {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+    }
 
-  .publish-dim-row label {
-    font-size: var(--text-xs);
-    color: var(--muted);
-  }
+    .publish-row-input {
+      width: 5rem;
+      padding: var(--ps-space-0-5) var(--ps-space-1);
+      border: 1px solid transparent;
+      border-radius: var(--ps-radius-sm);
+      background: transparent;
+      color: var(--ps-text);
+      font-family: inherit;
+      font-size: var(--ps-text-sm);
+      font-weight: var(--ps-weight-medium);
+      text-align: right;
+    }
 
-  .publish-info {
-    cursor: help;
-    margin-left: 4px;
-    color: var(--muted);
-  }
+    .publish-row-input:hover {
+      background: var(--ps-surface-hover);
+      border-color: var(--ps-border);
+    }
 
-  .publish-resample-note {
-    font-size: var(--text-xs);
-    color: var(--primary, #3b82f6);
-    margin-top: 4px;
-  }
-`;
+    .publish-row-input:focus {
+      background: var(--ps-surface);
+      border-color: var(--ps-accent);
+    }
+
+    .publish-row-input.publish-label-input {
+      width: 8rem;
+      text-align: left;
+    }
+
+    /* Hide the number spinners. */
+    .publish-row-input::-webkit-inner-spin-button,
+    .publish-row-input::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .publish-row-input[type='number'] {
+      -moz-appearance: textfield;
+    }
+
+    .publish-unit {
+      margin-left: var(--ps-space-0-5);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+    }
+
+    .publish-select {
+      padding: var(--ps-space-0-5) var(--ps-space-1-5);
+      border: 1px solid var(--ps-border-control);
+      border-radius: var(--ps-radius);
+      background: var(--ps-surface);
+      color: var(--ps-text);
+      font-family: inherit;
+      font-size: var(--ps-text-sm);
+      cursor: pointer;
+    }
+
+    .publish-checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-2);
+      margin-bottom: var(--ps-space-1);
+      color: var(--ps-text);
+      font-size: var(--ps-text-sm);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .publish-checkbox {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+      accent-color: var(--ps-accent);
+      cursor: pointer;
+    }
+
+    .publish-format-toggle {
+      display: flex;
+      gap: var(--ps-space-1);
+    }
+
+    .publish-format-toggle .publish-toggle-btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    .publish-slider {
+      flex: 1;
+      min-width: 60px;
+      height: 4px;
+      accent-color: var(--ps-accent);
+      cursor: pointer;
+    }
+
+    /* ─── Overlay and inset rows ─────────────────────────────── */
+    .publish-overlay-item {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--ps-space-1);
+      margin-bottom: var(--ps-space-1);
+      padding: var(--ps-space-1) var(--ps-space-2);
+      border: 1px solid var(--ps-border);
+      border-radius: var(--ps-radius);
+      color: var(--ps-text);
+      font-size: var(--ps-text-xs);
+      cursor: pointer;
+    }
+
+    .publish-overlay-item:hover {
+      background: var(--ps-surface-hover);
+      border-color: var(--ps-border-strong);
+    }
+
+    .publish-overlay-item.selected {
+      background: var(--ps-accent-tint);
+      border-color: var(--ps-accent);
+    }
+
+    .publish-item-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .publish-overlay-item .delete-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: none;
+      border-radius: var(--ps-radius-sm);
+      background: transparent;
+      color: var(--ps-text-muted);
+      cursor: pointer;
+    }
+
+    .publish-overlay-item .delete-btn:hover {
+      background: var(--ps-surface-hover);
+      color: var(--ps-danger);
+    }
+
+    .publish-empty-hint {
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+    }
+
+    .publish-warning {
+      margin-bottom: var(--ps-space-2);
+      padding: var(--ps-space-1) var(--ps-space-2);
+      border-radius: var(--ps-radius);
+      background: color-mix(in srgb, var(--ps-danger) 8%, transparent);
+      color: var(--ps-danger);
+      font-size: var(--ps-text-xs);
+    }
+
+    .publish-warning a {
+      color: var(--ps-danger);
+      font-weight: var(--ps-weight-semibold);
+      text-decoration: underline;
+      cursor: pointer;
+    }
+
+    /* ─── Dimensions (Photoshop-style) ───────────────────────── */
+    .publish-dim-readout {
+      margin-bottom: var(--ps-space-2);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+    }
+
+    .publish-dim-readout strong {
+      margin: 0 var(--ps-space-1);
+      color: var(--ps-text);
+    }
+
+    .publish-dim-pair {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      grid-template-rows: auto auto;
+      gap: var(--ps-space-1-5) var(--ps-space-2);
+      align-items: center;
+      margin-bottom: var(--ps-space-2);
+    }
+
+    .publish-dim-pair > .publish-dim-label {
+      grid-column: 1;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      white-space: nowrap;
+    }
+
+    .publish-dim-pair > .publish-dim-control {
+      grid-column: 2;
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-1-5);
+      min-width: 0;
+    }
+
+    .publish-dim-control > .publish-slider {
+      flex: 1;
+      min-width: 50px;
+    }
+
+    .publish-dim-value {
+      width: 3.5rem;
+      flex: 0 0 auto;
+    }
+
+    .publish-dim-pair > .publish-aspect-lock {
+      grid-column: 3;
+      grid-row: 1 / span 2;
+      align-self: stretch;
+    }
+
+    .publish-dim-pair > .publish-unit-select {
+      grid-column: 4;
+      grid-row: 1 / span 2;
+      align-self: center;
+    }
+
+    .publish-unit-select {
+      width: 64px;
+      font-size: var(--ps-text-xs);
+    }
+
+    .publish-aspect-lock {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .publish-aspect-lock svg {
+      display: block;
+      overflow: visible;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* Brackets: thin muted lines anchoring the chain to the Width and Height rows. */
+    .publish-aspect-lock .aspect-lock-bracket {
+      stroke: var(--ps-text-muted);
+      stroke-width: 1.25;
+    }
+
+    /* The chain: a heavier stroke than the brackets, so the link reads as the focal point. */
+    .publish-aspect-lock .aspect-lock-state-locked,
+    .publish-aspect-lock .aspect-lock-state-unlocked {
+      display: none;
+      stroke: var(--ps-text-muted);
+      stroke-width: 1.75;
+      transition: stroke var(--ps-duration-fast) var(--ps-ease);
+    }
+
+    .publish-aspect-lock.locked .aspect-lock-state-locked {
+      display: inline;
+      stroke: var(--ps-accent);
+    }
+
+    .publish-aspect-lock:not(.locked) .aspect-lock-state-unlocked {
+      display: inline;
+    }
+
+    .publish-aspect-lock:hover:not([disabled]) .aspect-lock-state-locked,
+    .publish-aspect-lock:hover:not([disabled]) .aspect-lock-state-unlocked {
+      stroke: var(--ps-accent);
+    }
+
+    .publish-aspect-lock[disabled] {
+      cursor: not-allowed;
+      opacity: 0.4;
+    }
+
+    .publish-aspect-lock[disabled] .aspect-lock-state-locked,
+    .publish-aspect-lock[disabled] .aspect-lock-state-unlocked,
+    .publish-aspect-lock[disabled] .aspect-lock-bracket {
+      stroke: var(--ps-text-muted);
+    }
+
+    .publish-dim-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--ps-space-1);
+    }
+
+    .publish-dim-row label {
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+    }
+
+    .publish-info {
+      display: inline-flex;
+      margin-left: var(--ps-space-1);
+      color: var(--ps-text-muted);
+      cursor: help;
+    }
+
+    .publish-resample-note {
+      margin-top: var(--ps-space-1);
+      color: var(--ps-accent-text);
+      font-size: var(--ps-text-xs);
+    }
+
+    /* ─── Footer (slotted into the dialog's footer) ──────────── */
+    .publish-footer {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      gap: var(--ps-space-2);
+      min-width: 0;
+    }
+
+    .publish-footer-status {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      justify-content: flex-end;
+      gap: var(--ps-space-3);
+      min-width: 0;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+    }
+
+    .publish-undo {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-1);
+    }
+
+    .publish-undo-icon {
+      display: inline-flex;
+    }
+
+    .publish-export-error {
+      margin: 0;
+      min-width: 0;
+      color: var(--ps-danger);
+      font-size: var(--ps-text-sm);
+    }
+
+    /* Touch: the tools, presets and format toggles, the number fields and the selects are 40 px
+       targets. */
+    @media (pointer: coarse) {
+      .publish-toggle-btn,
+      .publish-row-input,
+      .publish-select {
+        min-height: var(--ps-touch-target);
+      }
+
+      .publish-aspect-lock {
+        min-width: var(--ps-touch-target);
+        min-height: var(--ps-touch-target);
+      }
+    }
+
+    /* Tablets and narrow windows: the settings under the preview. */
+    @media (max-width: 800px) {
+      .publish-container {
+        flex-direction: column;
+      }
+      .publish-sidebar {
+        flex: 0 0 auto;
+        max-width: none;
+        max-height: 45vh;
+      }
+    }
+
+    /* Phones: the preview takes the top 40% and the settings the rest, scrolling inside. */
+    @media ${unsafeCSS(PHONE_MEDIA)} {
+      .publish-container {
+        flex-direction: column;
+        gap: var(--ps-space-3);
+      }
+      .publish-preview {
+        flex: 0 0 40%;
+      }
+      /* Five tools are wider than a phone: they wrap rather than run off the edge. */
+      .publish-preview-toolbar {
+        flex-wrap: wrap;
+      }
+      .publish-sidebar {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: none;
+        max-height: none;
+        overflow: auto;
+      }
+    }
+
+    /* A phone on its side is too short to stack: preview and settings stay side by side. Last, so
+       it wins over both rules above (a 640 × 360 phone matches all three). */
+    @media ${unsafeCSS(LANDSCAPE_PHONE_MEDIA)} {
+      .publish-container {
+        flex-direction: row;
+      }
+      .publish-preview {
+        flex: 1 1 auto;
+      }
+      .publish-sidebar {
+        flex: 0 0 min(50vw, 340px);
+        min-width: 0;
+        max-width: none;
+        max-height: none;
+      }
+    }
+  `,
+];

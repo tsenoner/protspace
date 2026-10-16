@@ -6,6 +6,7 @@
  * string that keeps the tooltip on-screen: anchored lower-right of the cursor,
  * flipped to the left when it would overflow the right edge, and clamped to the
  * viewport on all four sides. No DOM access — unit-testable in isolation.
+ * computeTouchTooltipStyle places a tooltip a tap pinned, wholly inside the plot.
  */
 
 /** Min gap (px) kept between the tooltip and any viewport edge. */
@@ -30,6 +31,8 @@ export interface TooltipStyleInput {
   viewportWidth: number;
   /** Viewport height (config.height) in px. */
   viewportHeight: number;
+  /** A tap-pinned card's own width, when it is narrower than the hover tooltip's. */
+  width?: number;
 }
 
 /**
@@ -73,4 +76,59 @@ export function computeTooltipStyle(input: TooltipStyleInput): string {
   return `left: ${left}px; top: ${top}px; --protspace-tooltip-effective-width: ${tooltipWidth}px;${
     transform ? ` transform: ${transform};` : ''
   }`;
+}
+
+/** Width (px) of the compact card a tap pins on a touch screen (the phone mockup's card). */
+export const COMPACT_TOOLTIP_WIDTH = 240;
+
+/** Gap (px) between a tap-pinned tooltip and its protein, so the finger does not cover the card. */
+const TOUCH_TOOLTIP_CLEARANCE = 16;
+
+/**
+ * Strips (px) along each plot edge that a host's own chrome covers (a tool strip, a status line,
+ * a selection bar). A tap-pinned tooltip stays TOOLTIP_EDGE_PADDING clear of them.
+ */
+export interface TouchTooltipInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export const NO_TOUCH_TOOLTIP_INSETS: TouchTooltipInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+/**
+ * Placement for a tooltip a tap pinned. A finger has no cursor to sit beside, and on a phone the
+ * plot is barely wider than the card, so the card is centred on the protein and kept wholly inside
+ * the plot, TOOLTIP_EDGE_PADDING clear of each edge's inset: above the protein when it fits, else
+ * below it, else against the edge farther from it. It takes the hover tooltip's width (or the
+ * card's own `width`, when narrower), narrowed to what the insets leave, and `--protspace-tooltip-max-height` caps it to the room between them.
+ */
+export function computeTouchTooltipStyle(
+  input: TooltipStyleInput,
+  insets: TouchTooltipInsets = NO_TOUCH_TOOLTIP_INSETS,
+): string {
+  const { x, y, height, viewportWidth, viewportHeight } = input;
+  const pad = TOOLTIP_EDGE_PADDING;
+  const minLeft = insets.left + pad;
+  const maxRight = viewportWidth - insets.right - pad;
+  const minTop = insets.top + pad;
+  const floor = viewportHeight - insets.bottom - pad;
+
+  const cardWidth = Math.min(input.width ?? Infinity, effectiveTooltipWidth(viewportWidth));
+  const width = Math.max(0, Math.min(cardWidth, maxRight - minLeft));
+  const left = Math.max(minLeft, Math.min(x - width / 2, maxRight - width));
+
+  const above = y - TOUCH_TOOLTIP_CLEARANCE - height;
+  const below = y + TOUCH_TOOLTIP_CLEARANCE;
+  let top: number;
+  // Above a protein inside the bottom inset, the card still ends on the inset.
+  if (above >= minTop) top = Math.min(above, floor - height);
+  else if (below + height <= floor) top = below;
+  else top = y > (minTop + floor) / 2 ? minTop : floor - height;
+  top = Math.max(minTop, top);
+  // A card taller than the room between the insets scrolls inside it rather than run under them.
+  const room = Math.max(0, floor - minTop);
+
+  return `left: ${left}px; top: ${top}px; --protspace-tooltip-effective-width: ${width}px; --protspace-tooltip-max-height: ${room}px;`;
 }

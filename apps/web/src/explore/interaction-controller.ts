@@ -1,8 +1,8 @@
 import type {
   LegendErrorEventDetail,
+  ProteinClickDetail,
   ProtspaceLegend,
   ProtspaceScatterplot,
-  ProtspaceStructureViewer,
   StructureErrorEventDetail,
   StructureLoadEvent,
 } from '@protspace/core';
@@ -10,11 +10,16 @@ import type { VisualizationData } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import { getLegendErrorNotification } from './notifications';
 import { EatProvenanceResolver } from './eat-provenance';
+import { undoEntrySize, type UndoEntry } from './undo-controller';
+import { createUndoHistory, type UndoHistory } from './undo-history';
 
 interface InteractionControllerOptions {
   legendElement: ProtspaceLegend;
   plotElement: ProtspaceScatterplot;
-  structureViewer: ProtspaceStructureViewer;
+  /** Asks for a protein's structure; the structure controller decides when it loads. */
+  requestStructure(proteinId: string): void;
+  /** Offers the selection's proteins to the structure, which picks the one to show. */
+  showSelection(proteinIds: readonly string[]): void;
 }
 
 interface ActiveProvenanceClick {
@@ -25,26 +30,33 @@ interface ActiveProvenanceClick {
 }
 
 export interface InteractionController {
+  /**
+   * The undo history (design decision 13): selection, show-only and filter steps, as protein-id
+   * arrays. The selection and filter controllers record and apply their own steps.
+   */
+  history: UndoHistory<UndoEntry>;
   updateLegend(): void;
   getSelectedProteins(): string[];
-  handleSelectionChange(event: Event): void;
+  /** The selection changed: remember it and offer it to the structure. */
+  handleSelectionChange(proteinIds: readonly string[]): void;
   handleProteinClick(event: Event): void;
   handlePlotDataChange(): void;
   handleLegendError(event: Event): void;
   handleStructureLoad(event: Event): void;
   handleStructureError(event: Event): void;
-  handleStructureClose(event: Event): void;
   handleAnnotationChange(): void;
 }
 
 export function createInteractionController({
   legendElement,
   plotElement,
-  structureViewer,
+  requestStructure,
+  showSelection,
 }: InteractionControllerOptions): InteractionController {
   let selectedProteins: string[] = [];
   let activeProvenanceClick: ActiveProvenanceClick | null = null;
   const eatProvenance = new EatProvenanceResolver();
+  const history = createUndoHistory<UndoEntry>({ size: undoEntrySize });
 
   const resolveProvenanceClick = (click: ActiveProvenanceClick) =>
     eatProvenance.resolve(
@@ -79,25 +91,23 @@ export function createInteractionController({
   };
 
   return {
+    history,
     updateLegend,
     getSelectedProteins() {
       return selectedProteins;
     },
-    handleSelectionChange(event) {
-      const customEvent = event as CustomEvent<{ proteinIds?: string[] }>;
-      selectedProteins = Array.isArray(customEvent.detail.proteinIds)
-        ? [...customEvent.detail.proteinIds]
-        : [];
-
-      if (selectedProteins.length > 0) {
-        structureViewer.loadProtein(selectedProteins[selectedProteins.length - 1]);
-      }
+    handleSelectionChange(proteinIds) {
+      selectedProteins = [...proteinIds];
+      showSelection(selectedProteins);
     },
     handleProteinClick(event) {
-      const detail = (
-        event as CustomEvent<{ proteinId?: string; point?: { originalIndex?: number } }>
-      ).detail;
+      const detail = (event as CustomEvent<Partial<ProteinClickDetail>>).detail;
       const proteinId = detail?.proteinId;
+      // A plain click shows the clicked protein's structure, also one whose viewer was closed
+      // or that the click deselected. It runs after the selection controller's listener, so it
+      // wins over the selection's last protein.
+      const keys = detail?.modifierKeys;
+      if (proteinId && !keys?.ctrl && !keys?.meta && !keys?.shift) requestStructure(proteinId);
       const originalIndex = detail?.point?.originalIndex;
       const data = plotElement.data;
       const annotation = plotElement.selectedAnnotation;
@@ -162,13 +172,6 @@ export function createInteractionController({
     handleStructureError(event) {
       const customEvent = event as CustomEvent<StructureErrorEventDetail>;
       console.warn('Structure viewer error:', customEvent.detail);
-    },
-    handleStructureClose(event) {
-      const customEvent = event as CustomEvent<{ proteinId?: string }>;
-      console.log(
-        `🔒 Structure viewer closed for protein: ${customEvent.detail.proteinId || 'none'}`,
-      );
-      console.log('Structure viewer should now be hidden');
     },
     handleAnnotationChange() {
       clearProvenance();

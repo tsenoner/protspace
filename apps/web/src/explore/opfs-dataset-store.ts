@@ -98,7 +98,13 @@ function migrateMetadata(raw: Record<string, unknown>): StoredDatasetMetadata {
   };
 }
 
-async function readMetadata(): Promise<StoredDatasetMetadata | null> {
+/**
+ * Reads the stored metadata. Corrupt metadata throws `StoredDatasetCorruptError` and, unless
+ * `clearCorrupt` is false, clears the store first. Only the startup restore and status updates
+ * clear: the Import menu's summary can run before the restore, and clearing there would drop the
+ * store without the "Saved dataset was cleared." warning.
+ */
+async function readMetadata({ clearCorrupt = true } = {}): Promise<StoredDatasetMetadata | null> {
   const directory = await getStoreDirectory(false);
   if (!directory) return null;
 
@@ -114,12 +120,12 @@ async function readMetadata(): Promise<StoredDatasetMetadata | null> {
   try {
     parsed = JSON.parse(metadataText);
   } catch {
-    await clearStoreDirectory();
+    if (clearCorrupt) await clearStoreDirectory();
     throw new StoredDatasetCorruptError('Stored dataset metadata could not be parsed.');
   }
 
   if (!isValidMetadata(parsed)) {
-    await clearStoreDirectory();
+    if (clearCorrupt) await clearStoreDirectory();
     throw new StoredDatasetCorruptError('Stored dataset metadata is invalid.');
   }
 
@@ -353,6 +359,27 @@ export async function readLastLoadStatus(): Promise<{
     lastError: metadata.lastError,
     failedAttempts: metadata.failedAttempts,
   };
+}
+
+/**
+ * The stored import's name, size and save time, for the Import menu's "Last file" row. Reads the
+ * metadata only, never the bytes: it runs on every dataset change. Null when nothing is stored,
+ * OPFS is missing, or the metadata is corrupt. It never clears a corrupt store: that is the startup
+ * restore's job, which also warns the user.
+ */
+export async function readStoredImportSummary(): Promise<{
+  name: string;
+  size: number;
+  storedAt: string;
+} | null> {
+  try {
+    const metadata = await readMetadata({ clearCorrupt: false });
+    return metadata
+      ? { name: metadata.name, size: metadata.size, storedAt: metadata.storedAt }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function clearLastImportedFile(): Promise<void> {
