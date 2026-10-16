@@ -61,6 +61,17 @@ describe('computeTooltipStyle', () => {
     );
   });
 
+  it('keeps clear of the host chrome along the bottom and top edges', () => {
+    // A selection bar covers the bottom 80 px: top = 600 - 80 - 15 - 120 = 385
+    const input = { ...base, y: 580, height: 120, viewportHeight: 600 };
+    expect(computeTooltipStyle(input, { top: 0, bottom: 80 })).toBe(
+      'left: 215px; top: 385px; --protspace-tooltip-effective-width: 350px;',
+    );
+    expect(computeTooltipStyle({ ...base, y: 30 }, { top: 40, bottom: 0 })).toContain(
+      `top: ${40 + TOOLTIP_EDGE_PADDING}px;`,
+    );
+  });
+
   it('clamps the top down to padding when the cursor is near the top edge', () => {
     const input = { ...base, y: 30 }; // y - 60 = -30 < padding
     expect(computeTooltipStyle(input)).toBe(

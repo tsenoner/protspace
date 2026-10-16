@@ -44,7 +44,14 @@ export function effectiveTooltipWidth(viewportWidth: number): number {
   return Math.max(0, Math.min(TOOLTIP_MAX_WIDTH, viewportWidth - 2 * TOOLTIP_EDGE_PADDING));
 }
 
-export function computeTooltipStyle(input: TooltipStyleInput): string {
+/**
+ * Placement for a hover tooltip. `insets` (the host's chrome strips) only bound it vertically: a
+ * selection bar or status corner along the bottom would otherwise cover its lower rows.
+ */
+export function computeTooltipStyle(
+  input: TooltipStyleInput,
+  insets: Pick<TouchTooltipInsets, 'top' | 'bottom'> = { top: 0, bottom: 0 },
+): string {
   const { x, y, height: tooltipHeight, viewportWidth, viewportHeight } = input;
   const tooltipWidth = effectiveTooltipWidth(viewportWidth);
 
@@ -65,13 +72,10 @@ export function computeTooltipStyle(input: TooltipStyleInput): string {
     left = tooltipWidth + TOOLTIP_EDGE_PADDING;
   }
 
-  // Vertical: clamp to the viewport using the resolved height.
-  if (top + tooltipHeight > viewportHeight - TOOLTIP_EDGE_PADDING) {
-    top = viewportHeight - tooltipHeight - TOOLTIP_EDGE_PADDING;
-  }
-  if (top < TOOLTIP_EDGE_PADDING) {
-    top = TOOLTIP_EDGE_PADDING;
-  }
+  // Vertical: clamp to the viewport, less the insets, using the resolved height.
+  const floor = viewportHeight - insets.bottom - TOOLTIP_EDGE_PADDING;
+  if (top + tooltipHeight > floor) top = floor - tooltipHeight;
+  top = Math.max(top, insets.top + TOOLTIP_EDGE_PADDING);
 
   return `left: ${left}px; top: ${top}px; --protspace-tooltip-effective-width: ${tooltipWidth}px;${
     transform ? ` transform: ${transform};` : ''

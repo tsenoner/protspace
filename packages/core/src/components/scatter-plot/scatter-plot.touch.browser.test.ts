@@ -185,6 +185,21 @@ describe('scatterplot touch', () => {
     });
   });
 
+  it('a hover tooltip keeps clear of the bottom inset (the selection bar)', async () => {
+    const plot = await mountPlot();
+    plot.touchTooltipInsets = { top: 0, right: 0, bottom: 120, left: 0 };
+    // P1 sits in the plot's bottom-left corner, under the bottom inset.
+    mouse(plot, 'mousemove', at(plot, 'P1'));
+    await vi.waitFor(async () => {
+      await plot.updateComplete;
+      const tip = tooltip(plot)!;
+      expect(tip).not.toBeNull();
+      const card = tip.getBoundingClientRect();
+      expect(card.height).toBeGreaterThan(0);
+      expect(card.bottom).toBeLessThanOrEqual(plot.getBoundingClientRect().bottom - 120);
+    });
+  });
+
   it('a tap pins the compact card beside its protein; a mouse click pins the full one', async () => {
     const plot = await mountPlot([VIEW_STRUCTURE]);
     const p2 = at(plot, 'P2');

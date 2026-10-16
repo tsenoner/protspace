@@ -201,7 +201,8 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ attribute: false }) tapTooltips = true;
   /**
    * Strips (px) along each plot edge that the host's own chrome covers, such as a tool strip or a
-   * selection bar over the plot. A tap-pinned tooltip stays clear of them. All 0 by default.
+   * selection bar over the plot. A tap-pinned tooltip stays clear of them; a hover tooltip stays
+   * clear of the top and bottom strips. All 0 by default.
    */
   @property({ attribute: false }) touchTooltipInsets: TouchTooltipInsets = NO_TOUCH_TOOLTIP_INSETS;
 
@@ -1918,7 +1919,7 @@ export class ProtspaceScatterplot extends LitElement {
           { ...input, width: COMPACT_TOOLTIP_WIDTH },
           this.touchTooltipInsets,
         )
-      : computeTooltipStyle(input);
+      : computeTooltipStyle(input, this.touchTooltipInsets);
   }
 
   private _renderTooltip() {

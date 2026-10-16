@@ -123,7 +123,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     layoutMode: { get: getLayoutMode, subscribe: subscribeLayoutMode },
   });
   lifecycle.addCleanup(() => structureController.dispose());
-  // A tap-pinned tooltip stays clear of the tool strip and the status corner over the plot.
+  // Tooltips stay clear of the tool strip and the status corner (and selection bar) over the plot.
   lifecycle.addCleanup(bindTouchTooltipInsets(plotElement, plotTools, plotStatus));
 
   importMenu.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
