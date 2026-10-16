@@ -485,10 +485,23 @@ test('a press, a cancelled drag or a key that moves nothing leaves the default c
     })
     .toBe(14);
 
-  // At the corner, an arrow key that moves nothing writes nothing.
+  // At the corner, an arrow key that moves nothing writes nothing. The default sits 76 px above
+  // the bottom, more than one 64 px step: press as many steps as the distance takes.
   await card.focus();
-  await page.keyboard.press('Shift+ArrowDown');
-  await page.keyboard.press('Shift+ArrowRight');
+  const gap = async () => {
+    const area = (await plotArea(page).boundingBox())!;
+    const box = (await card.boundingBox())!;
+    return {
+      right: Math.round(area.x + area.width - (box.x + box.width)),
+      bottom: Math.round(area.y + area.height - (box.y + box.height)),
+    };
+  };
+  const toEdge = await gap();
+  for (let i = 0; i < Math.ceil(toEdge.bottom / 64); i++)
+    await page.keyboard.press('Shift+ArrowDown');
+  for (let i = 0; i < Math.ceil(toEdge.right / 64); i++)
+    await page.keyboard.press('Shift+ArrowRight');
+  await expect.poll(gap).toEqual({ right: 0, bottom: 0 });
   expect((await readLayout(page))!.floatingRect).not.toBeNull();
   await page.evaluate((key) => {
     const w = window as unknown as { __layoutWrites: number };
