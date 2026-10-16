@@ -74,6 +74,11 @@ This notebook:
 - Generates embeddings using various protein language models (ProtT5, ESM2, etc.)
 - Outputs an HDF5 file ready for ProtSpace
 
+Pick the model in its **1. Settings** step and attach a GPU (**Runtime → Change runtime type → T4
+GPU**) before **Run all**. The EvolutionaryScale models (ESM3, ESM C) need the `esm` SDK, which the
+notebook installs only for them: it replaces Colab's transformers with an older one, and the models
+are gated, so they also need a Hugging Face login. Every other model runs on Colab's own packages.
+
 ### Option C: Use Your Own Embeddings
 
 For advanced users with custom embeddings, save them as an HDF5 file where each protein is stored as a dataset named by its identifier.
