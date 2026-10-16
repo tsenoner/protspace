@@ -183,6 +183,9 @@ test.describe('the Escape order', () => {
     await expect(editor).toBeAttached();
     // Draw a circle with the Circle tool, then select it from its row in the sidebar.
     await editor.getByRole('button', { name: 'Circle', exact: true }).click();
+    await expect
+      .poll(() => figurePreviewCanvas(page).evaluate((c: HTMLCanvasElement) => c.width > 0))
+      .toBe(true);
     const canvas = (await figurePreviewCanvas(page).boundingBox())!;
     const cx = canvas.x + canvas.width * 0.4;
     const cy = canvas.y + canvas.height * 0.4;

@@ -12,6 +12,7 @@ import {
   openImportMenu,
   selectAnnotation,
 } from './helpers/explore';
+import { figureEditor } from './helpers/figure';
 import { openLegendOther, openLegendSettings } from './helpers/legend';
 import { themeButton } from './helpers/theme';
 import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
@@ -108,7 +109,7 @@ const STATES: State[] = [
     name: 'the figure editor',
     open: async (page) => {
       await exportAction(page, 'Figure editor…');
-      await expect(page.getByRole('dialog', { name: 'Figure editor' })).toBeVisible();
+      await expect(figureEditor(page)).toBeVisible();
     },
   },
   {

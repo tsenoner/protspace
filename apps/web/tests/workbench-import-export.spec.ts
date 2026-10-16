@@ -20,7 +20,7 @@ import {
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
-import { figureEditorContent } from './helpers/figure';
+import { figureEditor, figureEditorContent } from './helpers/figure';
 import { PHOSPHATASE_1587_FIXTURE, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
 
@@ -249,7 +249,7 @@ test.describe('Import and Export menus', () => {
     await expect.poll(() => getSelectedProteinIds(page)).toEqual([id]);
 
     await exportAction(page, 'Figure editor…');
-    const editor = page.getByRole('dialog', { name: 'Figure editor' });
+    const editor = figureEditor(page);
     await expect(editor).toBeVisible();
 
     await page.keyboard.press('Escape');
