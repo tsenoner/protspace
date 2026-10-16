@@ -35,7 +35,8 @@ import { scatterplotStyles } from './scatter-plot.styles';
 import './tooltips/protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
 import { PointStyleState } from './styling/point-style-state';
-import { WebGLRenderer, computeSizeScaleFactor, pointRadiusCss } from './webgl';
+import { WebGLRenderer, pointRadiusCss } from './webgl';
+import { compositeExportCanvas, exportBadgeScale } from './export-capture';
 import type { PlotNeutrals } from './styling/plot-neutrals';
 import { PlotTheme } from './styling/plot-theme';
 import type {
@@ -2529,51 +2530,17 @@ export class ProtspaceScatterplot extends LitElement {
       EXPORT_KNOCKOUT,
     );
 
-    // Composite with badges canvas if present. For the unzoomed (resetView)
-    // capture, render the full-extent badge set at the OUTPUT geometry via
-    // the overlay controller (#301/#302): positions go through the same
-    // export scales as the WebGL dots and the badge canvas matches
-    // webglCanvas's physical dims, so the drawImage below is a 1:1 copy
-    // (equal src/dst rects). The inset path (dataDomain set) keeps the live
-    // canvas — its badge handling is a separate, pre-existing concern — and
-    // the non-resetView path keeps the live canvas stretched to the output
-    // dims, exactly as before.
+    // Composite with badges canvas if present. For the unzoomed (resetView) capture, render the
+    // full-extent badge set at the OUTPUT geometry via the overlay controller (#301/#302), through
+    // the WebGL dots' export scales and at webglCanvas's physical dims, so it composites 1:1. The
+    // inset path (dataDomain set) keeps the live canvas — its badge handling is a separate,
+    // pre-existing concern — and the non-resetView path keeps the live canvas stretched to the
+    // output dims, exactly as before.
     const badgesCanvas =
       resetView && !dataDomain
         ? this._captureExportBadges(webglCanvas, dpr, pointSizeReference)
-        : this._badgesCanvas;
-    if (badgesCanvas && badgesCanvas.width > 0 && badgesCanvas.height > 0) {
-      const ctx = webglCanvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(
-          badgesCanvas,
-          0,
-          0,
-          badgesCanvas.width,
-          badgesCanvas.height,
-          0,
-          0,
-          webglCanvas.width,
-          webglCanvas.height,
-        );
-      }
-    }
-
-    // Apply background color if the canvas has transparency
-    if (backgroundColor && backgroundColor !== 'transparent') {
-      const outputCanvas = document.createElement('canvas');
-      outputCanvas.width = webglCanvas.width;
-      outputCanvas.height = webglCanvas.height;
-      const ctx = outputCanvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = backgroundColor;
-        ctx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
-        ctx.drawImage(webglCanvas, 0, 0);
-        return outputCanvas;
-      }
-    }
-
-    return webglCanvas;
+        : (this._badgesCanvas ?? null);
+    return compositeExportCanvas(webglCanvas, badgesCanvas, backgroundColor);
   }
 
   /**
@@ -2591,24 +2558,11 @@ export class ProtspaceScatterplot extends LitElement {
   ): HTMLCanvasElement | null {
     const scales = this._webglRenderer?.createExportScales(webglCanvas.width, webglCanvas.height);
     if (!scales) return null;
-    // webglCanvas.width/height are PHYSICAL (logical × dpr); pointSizeReference
-    // and the config dims are LOGICAL. Use logical reference dims so
-    // sizeScaleFactor matches the dots' factor exactly and the dpr applied below
-    // is not squared (mirrors ExportRenderer.initializeOffscreenContext). No-op
-    // at dpr = 1.
-    const logicalWidth = webglCanvas.width / dpr;
-    const logicalHeight = webglCanvas.height / dpr;
-    const sizeScaleFactor = computeSizeScaleFactor(
-      pointSizeReference?.width ?? logicalWidth,
-      pointSizeReference?.height ?? logicalHeight,
-      this._mergedConfig.width,
-      this._mergedConfig.height,
-    );
     return this._dupOverlay.captureBadges({
       scales,
       width: webglCanvas.width,
       height: webglCanvas.height,
-      badgeScale: dpr * sizeScaleFactor,
+      badgeScale: exportBadgeScale(webglCanvas, dpr, pointSizeReference, this._mergedConfig),
     });
   }
 
