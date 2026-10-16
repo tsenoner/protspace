@@ -6,12 +6,18 @@ output directory, which reuses nothing, must not print it. Read from
 sees CLI logs.
 """
 
+import re
+from pathlib import Path
+from types import SimpleNamespace
+
 import h5py
 import numpy as np
 import pandas as pd
 from typer.testing import CliRunner
 
 from protspace.cli.app import app
+from protspace.cli.common_options import REFETCH_SHORTHANDS, REFETCH_STAGES
+from protspace.cli.prepare import _embed_all
 from protspace.data.annotations.cache import fetch_annotations
 from protspace.data.annotations.encoding import annotation_cache_version_attrs
 from protspace.data.annotations.retrievers.uniprot_retriever import (
@@ -23,7 +29,7 @@ from protspace.data.loaders.query import query_cache_path, resolve_query_fasta
 from protspace.data.loaders.similarity import compute_similarity
 from tests.cli_output import plain
 
-HINT = "--refetch all to recompute everything"
+HINT = "to recompute them, or --refetch all"
 
 
 def _uniprot_row(identifier):
@@ -92,7 +98,7 @@ def test_fresh_run_prints_no_hint_and_rerun_does(tmp_path):
 
     second = _prepare(h5_path, csv_path, output_dir)
     assert "Using 1 cached projection" in second
-    assert HINT in second
+    assert f"--refetch projections {HINT}" in second
 
 
 def test_rerun_with_refetch_prints_no_hint(tmp_path):
@@ -124,7 +130,7 @@ def test_rerun_reusing_only_the_annotation_cache_prints_the_hint(tmp_path, monke
     second = _prepare(h5_path, "gene_name", output_dir, method="pca3")
     assert "Using cached annotations" in second
     assert "cached projection" not in second
-    assert HINT in second
+    assert f"--refetch annotations {HINT}" in second
 
 
 class TestAnnotationCacheHits:
@@ -197,3 +203,29 @@ def test_a_cached_similarity_matrix_is_a_hit(tmp_path):
     hits = record_cache_hits()
     compute_similarity(tmp_path / "unused.fasta", ["P1", "P2"], cache_dir=tmp_path)
     assert hits == ["similarity"]
+
+
+def test_cached_embeddings_are_a_hit(tmp_path, monkeypatch):
+    import protspace.data.loaders.fasta as fasta_module
+
+    # An embedding cache the stub leaves untouched, as a full resume does.
+    (tmp_path / "prot_t5.h5").write_bytes(b"cached")
+    monkeypatch.setattr(
+        fasta_module, "embed_fasta", lambda *_a, **_kw: SimpleNamespace()
+    )
+
+    hits = record_cache_hits()
+    _embed_all(["prot_t5"], tmp_path / "seq.fasta", tmp_path, None, [])
+    assert hits == ["embed"]
+
+
+def test_every_noted_stage_is_a_refetch_token():
+    # The hint passes the noted stages to --refetch, so each must parse.
+    src = Path(__file__).parents[1] / "src" / "protspace"
+    noted = {
+        stage
+        for path in src.rglob("*.py")
+        for stage in re.findall(r'note_cache_hit\("(\w+)"\)', path.read_text())
+    }
+    assert noted == {"query", "embed", "similarity", "annotations", "projections"}
+    assert noted <= REFETCH_STAGES | set(REFETCH_SHORTHANDS)
