@@ -686,6 +686,23 @@ test.describe('search on a phone', () => {
     await expect(searchInput(page)).toBeFocused();
   });
 
+  test('Ctrl+K under a modal dialog leaves search closed', async ({ page }) => {
+    await openExplorePhone(page);
+    const rows = await openMoreSheet(page);
+    await rows.getByRole('button', { name: 'Help & shortcuts', exact: true }).tap();
+    await rows.getByRole('button', { name: 'Keyboard shortcuts', exact: true }).tap();
+    const shortcuts = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+    await expect(shortcuts).toBeVisible();
+
+    // The dialog leaves the bar inert: the field can take no focus, so search must not open
+    // behind the dialog, where nothing could close it.
+    await page.keyboard.press('Control+k');
+    await expect(appBar(page)).not.toHaveAttribute('data-search-open');
+    await page.keyboard.press('Escape');
+    await expect(shortcuts).toBeHidden();
+    await expect(appBar(page)).not.toHaveAttribute('data-search-open');
+  });
+
   test('at 320 px the dataset name keeps more than 40 px', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 640 });
     await openExplorePhone(page);

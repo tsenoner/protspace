@@ -99,13 +99,16 @@ export function AppBar() {
   };
   // Ctrl/⌘K on a phone. Closed, the field is display: none, so the search's own shortcut focuses
   // nothing: open search as the search button does, which shows the field and focuses it. Wider,
-  // or with search open, the search's own handler is enough and this listener is gone.
+  // or with search open, the search's own handler is enough and this listener is gone. A modal
+  // dialog or the loading overlay leaves the bar inert: the field takes no focus, and search
+  // closes again rather than stay open behind it with nothing to close it.
   useEffect(() => {
     if (!compact || searchOpen) return;
     const onShortcut = (event: globalThis.KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key !== 'k' || event.isComposing) return;
       event.preventDefault();
       openSearch();
+      if (!centerRef.current?.matches(':focus-within')) setSearchWanted(false);
     };
     window.addEventListener('keydown', onShortcut);
     return () => window.removeEventListener('keydown', onShortcut);
