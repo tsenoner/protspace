@@ -77,10 +77,19 @@ children of one list for drag-and-drop, and the e2e, perf and tour code reach ro
 | `legend-color-picker.ts`                 | `ColorPickerController`: the colour and shape picker, a `ps-popover` on the layer stack                                                                                                                                                                                                                        |
 | `legend-items-state.ts`                  | Pure functions: sort, palette and numeric helpers, and the reading of a stored record                                                                                                                                                                                                                          |
 
-Templates take explicit view models and handlers; the controllers beside the templates are Lit
-reactive controllers that keep their own transient state and timers, and the `controllers/` classes
-that hold the legend's own logic are plain classes over the element (below); the pure functions
-return new arrays that `legend.ts` assigns before it syncs the plot.
+Templates take explicit view models and handlers. Two kinds of controller hold the logic:
+
+- Lit reactive controllers keep their own transient state and timers and reach the element through
+  callbacks: those beside the templates (`LegendKeyboardController`, `ColorPickerController`,
+  `EatReliabilityController`, …) and `PersistenceController`, `DragController` and
+  `ScatterplotSyncController` in `controllers/`.
+- Plain classes in `controllers/` (`LegendDataController`, `ItemActionsController`,
+  `ReorderController`) hold the legend's own logic and read and write the element's state
+  directly (below).
+
+The pure functions in `legend-items-state.ts` return new values rather than changing their input.
+Whoever calls them, `legend.ts` or one of the plain controllers, assigns the result and syncs the
+plot.
 
 ### Controllers
 
