@@ -276,18 +276,11 @@ def test_cells_carry_ids_when_the_format_requires_them(path: Path):
 
 def _install_cell(path: Path) -> str:
     """The install cell up to its import block, which needs Colab."""
-    (source,) = [src for _, src in _code_cells(path) if src.startswith("# @title 1.")]
+    (source,) = [src for _, src in _code_cells(path) if "_loaded_distributions" in src]
     return source.split("# A preloaded module")[0]
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb",
-        NOTEBOOK_DIR / "ProtSpace_Transfer.ipynb",
-    ],
-    ids=lambda p: p.name,
-)
+@pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
 def test_install_cell_stops_when_pip_changed_a_loaded_package(path, monkeypatch):
     """Colab had numpy loaded when pip upgraded it; the cell's imports passed and
     Generate failed on `_blas_supports_fpe` until a manual restart."""
@@ -1312,3 +1305,183 @@ def test_clickthrough_stamps_the_model_name():
         )
     ]
     assert stamped, "the Embeddings notebook writes no model_name attribute"
+
+
+def _clickthrough_cell(title: str) -> str:
+    (source,) = [
+        src
+        for _, src in _code_cells(
+            NOTEBOOK_DIR / "ClickThrough_GenerateEmbeddings.ipynb"
+        )
+        if src.startswith(title)
+    ]
+    return source
+
+
+@pytest.mark.parametrize(
+    ("model", "with_sdk"),
+    [
+        ("facebook/esm2_t6_8M_UR50D", False),
+        ("Rostlab/prot_t5_xl_half_uniref50-enc", False),
+        ("EvolutionaryScale/esmc-300m-2024-12", True),
+    ],
+)
+def test_clickthrough_installs_the_esm_sdk_only_for_its_models(
+    monkeypatch, model, with_sdk
+):
+    """The `esm` SDK pins transformers < 5: installed for every model, it replaced
+    Colab's transformers 5 and huggingface_hub 1, and made transformers 4 import
+    TensorFlow and JAX, whose start-up output was the warnings users saw."""
+    import subprocess
+    import types
+
+    settings = _clickthrough_cell("# @title 1. Settings").replace(
+        'model_name = "Rostlab/prot_t5_xl_half_uniref50-enc"', f'model_name = "{model}"'
+    )
+    namespace = {"__name__": "__notebook__"}
+    exec(compile(settings, "click:1", "exec"), namespace)
+
+    calls = []
+
+    def pip(cmd, *_a, **_k):
+        calls.append(cmd)
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", pip)
+    exec(
+        compile(_clickthrough_cell("# @title 2. Install"), "click:2", "exec"), namespace
+    )
+
+    (cmd,) = calls
+    assert ("esm" in cmd) is with_sdk
+    assert "pyfaidx" in cmd
+
+
+def test_clickthrough_imports_survive_huggingface_hub_1_and_skip_tensorflow():
+    """huggingface_hub 1.x (Colab's) has no HfFolder; and TensorFlow/JAX must be
+    switched off before transformers is first imported."""
+    tree = ast.parse(_clickthrough_cell("# @title 3. Import"))
+    hub_names = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "huggingface_hub"
+        for alias in node.names
+    }
+    assert hub_names and "HfFolder" not in hub_names
+
+    statements = list(ast.walk(tree))
+    first_transformers = min(
+        n.lineno
+        for n in statements
+        if isinstance(n, ast.ImportFrom) and n.module == "transformers"
+    )
+    switched_off = {
+        n.args[0].value
+        for n in statements
+        if isinstance(n, ast.Call)
+        and getattr(n.func, "attr", None) == "setdefault"
+        and n.lineno < first_transformers
+    }
+    assert {"USE_TF", "USE_FLAX", "USE_JAX"} <= switched_off
+
+
+def test_clickthrough_hub_imports_exist_in_the_installed_hub():
+    hub = pytest.importorskip("huggingface_hub")
+    tree = ast.parse(_clickthrough_cell("# @title 3. Import"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "huggingface_hub":
+            assert all(hasattr(hub, alias.name) for alias in node.names)
+
+
+class _FakeBatch(dict):
+    def to(self, _device):
+        return self
+
+
+def _clickthrough_functions(monkeypatch):
+    """The Functions cell with a fake 4-dim model behind setup_model."""
+    import types
+
+    torch = pytest.importorskip("torch")
+    import h5py
+    import numpy as np
+    import pandas as pd
+
+    def tokenizer(sequences, **_kwargs):
+        longest = max(len(s) for s in sequences) + 2
+        mask = torch.tensor(
+            [[1] * (len(s) + 2) + [0] * (longest - len(s) - 2) for s in sequences]
+        )
+        return _FakeBatch(input_ids=mask.clone(), attention_mask=mask)
+
+    class Model:
+        device = "cpu"
+
+        def eval(self):
+            return self
+
+        def __call__(self, input_ids, attention_mask):
+            hidden = torch.arange(input_ids.numel() * 4, dtype=torch.float32)
+            return types.SimpleNamespace(
+                last_hidden_state=hidden.reshape(*input_ids.shape, 4)
+            )
+
+    namespace = {
+        "__name__": "__notebook__", "torch": torch, "h5py": h5py, "np": np, "pd": pd,
+        "tqdm": lambda *a, **k: types.SimpleNamespace(update=lambda n: None, close=lambda: None),
+    }  # fmt: skip
+    exec(
+        compile(_clickthrough_cell("# @title ### Functions"), "click:fn", "exec"),
+        namespace,
+    )
+    namespace["setup_model"] = lambda checkpoint: (
+        Model(),
+        tokenizer,
+        "esm_transformer",
+    )
+    return namespace
+
+
+def test_clickthrough_writes_named_embeddings_and_skips_long_sequences(
+    monkeypatch, tmp_path, capsys
+):
+    import h5py
+    import pandas as pd
+
+    namespace = _clickthrough_functions(monkeypatch)
+    df = pd.DataFrame(
+        {"header": ["a", "b", "long"], "sequence": ["MKV", "MKVL", "M" * 12]}
+    )
+    out = tmp_path / "seqs_esm2_8m.h5"
+    namespace["create_embedding"](
+        "facebook/esm2_t6_8M_UR50D", df, output_file=str(out), max_len=10,
+        batch_size=2, model_key="esm2_8m",
+    )  # fmt: skip
+
+    with h5py.File(out) as f:
+        assert sorted(f) == ["a", "b"] and f.attrs["model_name"] == "esm2_8m"
+        assert f["a"].shape == (4,)
+    assert "longer than 10 residues (e.g. long)" in capsys.readouterr().out
+
+
+def test_clickthrough_says_which_headers_hdf5_cannot_name(monkeypatch, tmp_path):
+    import pandas as pd
+
+    namespace = _clickthrough_functions(monkeypatch)
+    df = pd.DataFrame({"header": ["sp/P1", "ok"], "sequence": ["MKV", "MKV"]})
+    with pytest.raises(SystemExit, match=r"(?s)1 FASTA header\(s\) contain '/'.*sp/P1"):
+        namespace["create_embedding"]("x", df, output_file=str(tmp_path / "x.h5"))
+
+
+@pytest.mark.parametrize(
+    ("error", "advice"),
+    [
+        (OSError("401 Client Error: Unauthorized"), "it is gated"),
+        (ConnectionError("Max retries exceeded"), "did not answer"),
+        (ImportError("No module named 'esm'"), "installs the `esm` SDK"),
+    ],
+)
+def test_clickthrough_load_failure_says_what_to_do(monkeypatch, error, advice):
+    namespace = _clickthrough_functions(monkeypatch)
+    stop = namespace["_load_failure"]("EvolutionaryScale/esm3-sm-open-v1", error)
+    assert isinstance(stop, SystemExit) and advice in str(stop)
