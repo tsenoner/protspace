@@ -379,23 +379,21 @@ test('the card moves and resizes from the keyboard, and stays over the plot when
     })
     .toBeLessThanOrEqual(1);
   const moved = (await card.boundingBox())!;
-  expect((await readLayout(page))!.floatingRect).toMatchObject({
-    x: Math.round(moved.x - (await plotArea(page).boundingBox())!.x),
-  });
+  const movedX = Math.round(moved.x - (await plotArea(page).boundingBox())!.x);
+  // The move is stored (and the card re-rendered from it) before the grip's keys start.
+  await expect.poll(async () => (await readLayout(page))!.floatingRect?.x).toBe(movedX);
 
-  // The grip resizes it from the keyboard.
+  // The grip resizes it from the keyboard, one step at a time, each polled.
   const grip = page.getByRole('button', { name: 'Resize structure' });
   await grip.focus();
+  await expect(grip).toBeFocused();
   await page.keyboard.press('ArrowRight');
+  await expect
+    .poll(async () => Math.abs((await card.boundingBox())!.width - (start.width + 16)))
+    .toBeLessThanOrEqual(1);
   await page.keyboard.press('ArrowDown');
   await expect
-    .poll(async () => {
-      const box = (await card.boundingBox())!;
-      return Math.max(
-        Math.abs(box.width - (start.width + 16)),
-        Math.abs(box.height - (start.height + 16)),
-      );
-    })
+    .poll(async () => Math.abs((await card.boundingBox())!.height - (start.height + 16)))
     .toBeLessThanOrEqual(1);
 
   // Collapsing the sidebar leaves the card over the plot, and the rail's Structure focuses it.
