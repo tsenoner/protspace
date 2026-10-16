@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -274,44 +275,149 @@ def test_cells_carry_ids_when_the_format_requires_them(path: Path):
     assert not missing, f"{path.name}: cells {missing} have no id"
 
 
-class _Widget:
-    """Just enough of an ipywidgets widget for a cell to build and read its panel."""
-
-    def __init__(self, *children, **kwargs):
-        self.value = kwargs.get("value", "")
-        self.options = kwargs.get("options", [])
-
-    def on_click(self, _callback):
-        pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_exc):
-        return False
+def _install_cell(path: Path) -> str:
+    """The install cell up to its import block, which needs Colab."""
+    (source,) = [src for _, src in _code_cells(path) if "_loaded_distributions" in src]
+    return source.split("# A preloaded module")[0]
 
 
-def _run_preparation_eat_cell(monkeypatch, bundle_path, emb_set, column):
-    """Run the Preparation notebook's EAT cell and click Transfer on ``column``.
+@pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
+def test_install_cell_stops_when_pip_changed_a_loaded_package(path, monkeypatch):
+    """Colab had numpy loaded when pip upgraded it; the cell's imports passed and
+    Generate failed on `_blas_supports_fpe` until a manual restart."""
+    import importlib.metadata as md
+    import subprocess
+    import sys
+    import types
+    from pathlib import PurePosixPath
 
-    The widgets, ``display`` and Colab's ``files`` are stubbed; the protspace
-    calls are the real ones, so the cell is exercised against this package.
-    """
+    disk = {"fakepkg": "1.0", "nsdist": "1.0"}
+    upgrade = {"to": "2.0"}
+
+    def pip(cmd, *_a, **_k):
+        assert "pip" in cmd
+        if upgrade["to"]:
+            disk.update(fakepkg=upgrade["to"], nsdist=upgrade["to"])
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    loaded = types.ModuleType("fakepkg")
+    loaded.__file__ = "/site-packages/fakepkg/__init__.py"
+    # A namespace package (no __file__) shared by many distributions, as `google`
+    # is in Colab: nsdist's subpackage is not loaded, so its upgrade is harmless.
+    namespace_pkg = types.ModuleType("nsfake")
+    monkeypatch.setitem(sys.modules, "fakepkg", loaded)
+    monkeypatch.setitem(sys.modules, "nsfake", namespace_pkg)
+    monkeypatch.setattr(
+        md,
+        "packages_distributions",
+        lambda: {"fakepkg": ["fakepkg"], "nsfake": ["nsdist"]},
+    )
+    monkeypatch.setattr(md, "version", lambda dist: disk[dist])
+    monkeypatch.setattr(
+        md, "distribution",
+        lambda dist: types.SimpleNamespace(files=[PurePosixPath("nsfake/sub/__init__.py")]),
+    )  # fmt: skip
+    monkeypatch.setattr(subprocess, "run", pip)
+    source = compile(_install_cell(path), f"{path.name}:install", "exec")
+
+    session = {"__name__": "__notebook__"}
+    with pytest.raises(SystemExit, match=r"fakepkg \(1\.0 \u2192 2\.0\)") as stopped:
+        exec(source, session)
+    assert "Restart session" in str(stopped.value)
+    assert "nsdist" not in str(stopped.value)
+
+    upgrade["to"] = None  # pip finds nothing left to do, the old copy is still loaded
+    with pytest.raises(SystemExit, match="fakepkg"):
+        exec(source, session)
+
+    exec(source, {"__name__": "__notebook__"})  # after the restart
+
+
+def _install_helper(path: Path) -> str:
+    source = _install_cell(path)
+    start = source.index("# --- install helper:")
+    end = source.index("# --- end of install helper ---")
+    return source[start:end]
+
+
+def test_install_helper_is_the_same_in_every_notebook():
+    """One fix, three copies: a notebook cannot import a shared module before it
+    has installed one, so the copies are kept equal here instead."""
+    helpers = {path.name: _install_helper(path) for path in NOTEBOOKS}
+    assert len(set(helpers.values())) == 1, sorted(helpers)
+
+
+def _run_install_helper(monkeypatch, *, uv_fails=False):
+    """Call the helper with Colab's numpy "loaded"; return the commands run."""
+    import importlib.metadata as md
+    import subprocess
     import sys
     import types
 
-    widgets = types.ModuleType("ipywidgets")
-    for name in ("Button", "Dropdown", "HBox", "HTML", "IntText", "Output", "Text"):
-        setattr(widgets, name, _Widget)
-    widgets.VBox = _Widget
-    monkeypatch.setitem(sys.modules, "ipywidgets", widgets)
+    loaded = types.ModuleType("fakenumpy")
+    loaded.__file__ = "/site-packages/fakenumpy/__init__.py"
+    monkeypatch.setitem(sys.modules, "fakenumpy", loaded)
+    monkeypatch.setattr(md, "packages_distributions", lambda: {"fakenumpy": ["numpy"]})
+    monkeypatch.setattr(md, "version", lambda dist: "2.1.3")
+    calls, held = [], []
 
+    def run(cmd, *_a, **_k):
+        calls.append(cmd)
+        if "--override" in cmd:
+            held.append(Path(cmd[cmd.index("--override") + 1]).read_text())
+            code = 1 if uv_fails else 0
+        else:
+            code = 0
+        return types.SimpleNamespace(returncode=code, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    namespace = {"__name__": "__notebook__"}
+    exec(compile(_install_helper(NOTEBOOKS[0]), "install", "exec"), namespace)
+    namespace["_install"](["protspace[local]"])
+    return calls, held
+
+
+def test_install_holds_what_the_session_loaded(monkeypatch):
+    """biocentral-api 2.x pins numpy>=2.4.1 through biotrainer-core; uv's
+    --override keeps the numpy Colab has in memory instead of replacing it."""
+    calls, held = _run_install_helper(monkeypatch)
+    assert held == ["numpy==2.1.3\n"]
+    assert [c[2:5] for c in calls] == [
+        ["pip", "install", "-qqq"],
+        ["uv", "pip", "install"],
+    ]
+    assert calls[-1][-1] == "protspace[local]"
+
+
+def test_install_falls_back_to_pip_when_uv_cannot_hold(monkeypatch):
+    calls, _ = _run_install_helper(monkeypatch, uv_fails=True)
+    assert calls[-1][2:4] == ["pip", "install"] and calls[-1][-1] == "protspace[local]"
+
+
+def _run_preparation_eat_cell(
+    monkeypatch, bundle_path, emb_set, column, before_click=None, **controls
+):
+    """Run the Preparation notebook's EAT cell and click Transfer on ``column``.
+
+    Real widgets; ``display``, the panel's HTML helpers and Colab's ``files`` are
+    stubbed, and the protspace calls are the real ones, so the cell is exercised
+    against this package. ``controls`` sets EAT widgets by name before the click
+    (``eat_k=3``, ``eat_skip=True``). Returns (downloads, namespace).
+    """
+    import html
+    import types
+
+    pytest.importorskip("ipywidgets")
     downloads = []
     namespace = {
         "__name__": "__notebook__",
         "Path": Path,
         "display": lambda *_a, **_k: None,
         "clear_output": lambda *_a, **_k: None,
+        "IHTML": lambda html_text: html_text,
+        "_card": lambda kind, text: f"[{kind}] {text}",
+        "_hint": lambda text: text,
+        "_esc": lambda value: html.escape(str(value), quote=False),
         "files": types.SimpleNamespace(download=downloads.append),
         "_eat_bundle_path": str(bundle_path),
         "_eat_emb_set": emb_set,
@@ -324,10 +430,12 @@ def _run_preparation_eat_cell(monkeypatch, bundle_path, emb_set, column):
     exec(compile(source, "ProtSpace_Preparation.ipynb:eat", "exec"), namespace)
 
     namespace["eat_col"].value = column
-    namespace["eat_k"].value = 1
-    namespace["eat_metric"].value = "cosine"
+    for name, value in controls.items():
+        namespace[name].value = value
+    if before_click is not None:
+        before_click(namespace)
     namespace["_on_eat"](None)
-    return downloads
+    return downloads, namespace
 
 
 def test_preparation_eat_cell_writes_a_transferred_bundle(tmp_path, monkeypatch):
@@ -355,7 +463,9 @@ def test_preparation_eat_cell_writes_a_transferred_bundle(tmp_path, monkeypatch)
         data=np.array([[1.0, 0.0], [0.9, 0.1], [0.0, 1.0]], dtype=np.float32),
     )
 
-    downloads = _run_preparation_eat_cell(monkeypatch, bundle, emb_set, "loc")
+    downloads, _ = _run_preparation_eat_cell(
+        monkeypatch, bundle, emb_set, "loc", eat_cutoff="off"
+    )
 
     out = tmp_path / "data.eat.parquetbundle"
     assert downloads == [str(out)]
@@ -395,7 +505,9 @@ def test_preparation_eat_cell_keeps_an_identifier_annotation(tmp_path, monkeypat
         data=np.array([[1.0, 0.0], [0.9, 0.1], [0.0, 1.0]], dtype=np.float32),
     )
 
-    downloads = _run_preparation_eat_cell(monkeypatch, bundle, emb_set, "loc")
+    downloads, _ = _run_preparation_eat_cell(
+        monkeypatch, bundle, emb_set, "loc", eat_cutoff="off"
+    )
 
     out = tmp_path / "data.eat.parquetbundle"
     assert downloads == [str(out)]
@@ -403,6 +515,103 @@ def test_preparation_eat_cell_keeps_an_identifier_annotation(tmp_path, monkeypat
     assert transferred.column("protein_id").to_pylist() == ["p0", "p1", "p2"]
     assert transferred.column("identifier").to_pylist() == ["a0", "a1", "a2"]
     assert transferred.column("loc__pred_source").to_pylist() == ["", "p0", ""]
+
+
+def _toxin_only_bundle(tmp_path):
+    """References all one family, one query beside them and one far from both:
+    the setup that gave an external user "every unknown is a toxin"."""
+    import types
+
+    import numpy as np
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.data.io.bundle import write_bundle
+    from tests.bundle_v3_helpers import projection_tables
+
+    # p0, p1: the references; p2 sits beside them, p3 is far from both.
+    ids = ["p0", "p1", "p2", "p3"]
+    annotations = stamp_format_version(
+        pa.table({"protein_id": ids, "fam": ["toxin", "toxin", "", ""]})
+    )
+    bundle = tmp_path / "data.parquetbundle"
+    write_bundle([annotations, *projection_tables(4, (2,))], bundle)
+    vectors = [[1.0, 0.0], [0.99, 0.14], [0.98, 0.2], [-1.0, 0.05]]
+    emb_set = types.SimpleNamespace(headers=ids, data=np.array(vectors, np.float32))
+    return bundle, emb_set
+
+
+def test_preparation_eat_cell_marks_distant_queries_by_default(tmp_path, monkeypatch):
+    """The cell calibrates a cutoff unless told otherwise, says how many queries
+    are distant, and offers the neighbour report as a download."""
+    from protspace.data.io.bundle import read_tables
+
+    bundle, emb_set = _toxin_only_bundle(tmp_path)
+    downloads, ns = _run_preparation_eat_cell(monkeypatch, bundle, emb_set, "fam")
+
+    out = tmp_path / "data.eat.parquetbundle"
+    report = tmp_path / "data.eat.neighbours.tsv"
+    assert downloads == [str(out)]
+    table = read_tables(out)[0].to_pydict()
+    neighbor = dict(zip(table["protein_id"], table["fam__neighbor"], strict=True))
+    assert (neighbor["p2"], neighbor["p3"]) == ("near", "distant")
+    predicted = dict(zip(table["protein_id"], table["fam__pred_value"], strict=True))
+    # Marked, not withheld: the label is still there for the user to judge.
+    assert predicted["p3"] == "toxin"
+    assert "1 of 2 queries near a reference, 1 distant" in ns["eat_status"].value
+
+    assert ns["eat_report_btn"].disabled is False
+    ns["_on_eat_report"](None)
+    assert downloads == [str(out), str(report)]
+    assert report.read_text().splitlines()[0].split("\t")[:2] == ["column", "query_id"]
+
+
+def test_preparation_eat_cell_can_leave_distant_queries_unpredicted(
+    tmp_path, monkeypatch
+):
+    from protspace.data.io.bundle import read_tables
+
+    bundle, emb_set = _toxin_only_bundle(tmp_path)
+    _, ns = _run_preparation_eat_cell(
+        monkeypatch, bundle, emb_set, "fam", eat_skip=True
+    )
+
+    table = read_tables(tmp_path / "data.eat.parquetbundle")[0].to_pydict()
+    predicted = dict(zip(table["protein_id"], table["fam__pred_value"], strict=True))
+    assert (predicted["p2"], predicted["p3"]) == ("toxin", "")
+    assert "left unpredicted" in ns["eat_status"].value
+
+
+def test_preparation_eat_cell_runs_on_a_release_without_the_cutoff(
+    tmp_path, monkeypatch
+):
+    """Cell 1 installs the released protspace, whose run_transfer (4.16.8) has no
+    cutoff or report: the cell transfers without them and says what is missing."""
+    import protspace.cli.transfer as transfer
+    import protspace.data.io.predictions as predictions
+
+    current = transfer.run_transfer
+
+    def released(
+        *, annotations, embeddings, transfer_columns, query_rule, reference_rule,
+        k=1, metric="cosine", format_version=2,
+    ):  # fmt: skip
+        return current(
+            annotations=annotations, embeddings=embeddings,
+            transfer_columns=transfer_columns, query_rule=query_rule,
+            reference_rule=reference_rule, k=k, metric=metric,
+            format_version=format_version,
+        )  # fmt: skip
+
+    monkeypatch.setattr(transfer, "run_transfer", released)
+    monkeypatch.delattr(predictions, "write_report")
+    bundle, emb_set = _toxin_only_bundle(tmp_path)
+    downloads, ns = _run_preparation_eat_cell(monkeypatch, bundle, emb_set, "fam")
+
+    assert downloads == [str(tmp_path / "data.eat.parquetbundle")]
+    assert ns["eat_cutoff"].disabled and ns["eat_skip"].disabled
+    assert ns["eat_report_btn"].disabled
+    assert "need a protspace newer than" in ns["eat_status"].value
 
 
 def test_transfer_notebook_shows_only_the_predicted_rows(tmp_path, monkeypatch):
@@ -430,6 +639,7 @@ def test_transfer_notebook_shows_only_the_predicted_rows(tmp_path, monkeypatch):
     write_bundle(
         [annotations, *projection_tables(3, (2,))], tmp_path / "results.parquetbundle"
     )
+    (tmp_path / "predictions.tsv").write_text("")  # step 3 finished
 
     shown = []
     (source,) = [
@@ -648,7 +858,7 @@ def test_preparation_names_an_unnamed_h5_and_generates(monkeypatch, tmp_path, ca
     _generate_pca_from_csv(namespace, csv)
 
     output = capsys.readouterr().out
-    assert "embedding name 'esm2_650m'" in output
+    assert "embedding name 'esm2_650m'" in namespace["h5_status"].value
     assert "Running on toxins_esm2_650m.h5 (40 proteins" in output
     (bundle,) = downloads
     assert _projection_names(bundle) == ["ESM2-650M — PCA 2"]
@@ -699,15 +909,16 @@ def test_preparation_reupload_of_a_same_named_file_is_the_one_loaded(
 
 def test_preparation_h5_tab_shows_no_cli_syntax(monkeypatch, tmp_path, capsys):
     """The resolver's log line says to append `:<model>`, which the path field
-    does not take; the tab points at its Embedder dropdown instead."""
+    does not take; the tab points at its Model dropdown instead."""
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
     namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
     namespace["_on_h5_load"]()
 
-    output = capsys.readouterr().out
+    output = capsys.readouterr().out + namespace["h5_status"].value
     assert "embedding name 'results'" in output
-    assert ":<model>" not in output and ":esm2_650m" not in output
-    assert "Pick it under Embedder" in output
+    assert ":&lt;model&gt;" not in output and ":<model>" not in output
+    assert ":esm2_650m" not in output
+    assert "Pick it under Model" in output
 
 
 @pytest.mark.parametrize(
@@ -871,7 +1082,7 @@ def test_preparation_refuses_an_empty_tab_instead_of_the_example(
 
     namespace["_on_gen"](None)
 
-    assert "Upload H5 tab has no file loaded" in capsys.readouterr().out
+    assert "Embeddings (.h5) tab has no file loaded" in capsys.readouterr().out
     assert downloads == [] and network == []
 
 
@@ -879,7 +1090,7 @@ def test_preparation_says_when_no_file_arrived(monkeypatch, tmp_path, capsys):
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
     namespace["h5_path_field"].value = str(tmp_path / "missing.h5")
     namespace["_on_h5_load"]()
-    assert "No file received at" in capsys.readouterr().out
+    assert "No file received at" in namespace["h5_status"].value
     assert 1 not in namespace["input_args"]
 
 
@@ -895,6 +1106,363 @@ def test_preparation_parameter_defaults_are_the_clis(monkeypatch, tmp_path):
     assert {k: w.value for k, w in namespace["pw"].items()} == {
         k: cli[k] for k in namespace["pw"]
     }
+
+
+def test_preparation_sliders_stay_within_the_config(monkeypatch, tmp_path):
+    """The perplexity slider went to 500 while protspace takes 5 to 50, so t-SNE
+    failed at Generate after the embeddings and annotations were done."""
+    from dataclasses import fields
+
+    from protspace.utils.constants import DimensionReductionConfig
+
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    bounds = {f.name: f.metadata for f in fields(DimensionReductionConfig)}
+    sliders = {k: w for k, w in namespace["pw"].items() if hasattr(w, "min")}
+    assert set(sliders) == set(namespace["pw"]) - {"metric"}
+    for name, slider in sliders.items():
+        meta = bounds[name]
+        assert slider.min >= meta.get("gte", slider.min), name
+        assert slider.min > meta.get("gt", slider.min - 1), name
+        assert slider.max <= meta.get("lte", slider.max), name
+        assert slider.max < meta.get("lt", slider.max + 1), name
+        for value in (slider.min, slider.max):
+            DimensionReductionConfig(**{name: value})
+    assert isinstance(namespace["pw"]["perplexity"].value, int)
+
+
+def test_preparation_slider_defaults_sit_on_their_step_grid(monkeypatch, tmp_path):
+    """The browser snaps a slider to min + k * step: learning_rate (min 1, step 10)
+    showed the CLI's 200 as 201, and moved it there on the first touch."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    for name, slider in namespace["pw"].items():
+        if not hasattr(slider, "step"):
+            continue
+        steps = (slider.value - slider.min) / slider.step
+        assert abs(steps - round(steps)) < 1e-9, (name, slider.value, slider.min)
+
+
+def _string_constants(root: Path) -> list[str]:
+    """Every string literal under *root*, adjacent pieces joined as Python joins them."""
+    found = []
+    for py in root.rglob("*.py"):
+        for node in ast.walk(ast.parse(py.read_text())):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                found.append(node.value)
+    return found
+
+
+def test_preparation_panel_wording_matches_the_package(monkeypatch, tmp_path, capsys):
+    """Log lines told Colab users to pass `--refetch` and `-f`. The panel
+    rewrites each such phrase; a phrase the package no longer says would leave
+    its replacement dead, so each is pinned to the package's source."""
+    import logging
+
+    import protspace
+
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    source = _string_constants(Path(protspace.__file__).parent)
+    for cli in namespace["_PANEL_WORDING"]:
+        assert any(cli in text for text in source), f"no longer in the package: {cli!r}"
+
+    logging.getLogger("protspace.data.annotations.cache").warning(
+        "All cached annotations are empty. Use --refetch annotations to re-fetch, "
+        "or provide a FASTA file with -f."
+    )
+    output = capsys.readouterr().out
+    assert "--refetch" not in output and " -f" not in output
+    assert "Fetch annotations again" in output
+
+
+def test_preparation_accession_pattern_is_the_retrievers(monkeypatch, tmp_path):
+    import inspect
+
+    from protspace.data.annotations.retrievers.uniprot_retriever import (
+        UniProtRetriever,
+    )
+
+    (pattern,) = [
+        node.args[0].value
+        for node in ast.walk(ast.parse(inspect.getsource(UniProtRetriever)))
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "attr", None) == "compile"
+        and isinstance(node.args[0], ast.Constant)
+    ]
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    assert namespace["_UNIPROT_ACCESSION"].pattern == pattern
+
+
+@pytest.mark.parametrize("with_csv", [True, False], ids=["csv", "no-csv"])
+def test_preparation_skips_uniprot_when_no_id_is_an_accession(
+    monkeypatch, tmp_path, with_csv
+):
+    """5,035 TRINITY_/sp| IDs and the Default annotations: the run fetched from
+    UniProt for nothing and cached the empty result for every later run."""
+    from protspace.data.io.bundle import read_tables
+
+    namespace, downloads, network = _run_preparation_panel(monkeypatch, tmp_path)
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["tabs"].selected_index = 1
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method == "PCA"
+    if with_csv:
+        csv = tmp_path / "custom.csv"
+        csv.write_text("identifier,group\nprot000,a\n")
+        namespace["csv_path_field"].value = str(csv)
+    namespace["_on_gen"](None)
+
+    status = namespace["gen_status"].value
+    assert "is a UniProt accession" in status
+    assert ("custom CSV alone" if with_csv else "no annotations") in status
+    (bundle,) = downloads
+    columns = read_tables(bundle)[0].column_names
+    assert ("group" in columns) is with_csv
+    assert network == []
+
+
+def test_preparation_restores_its_settings_after_a_restart(monkeypatch, tmp_path):
+    """A restart (the install cell may ask for one) cleared every field."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    h5 = _clickthrough_h5(tmp_path / "results_esm2_650m.h5")
+    csv = tmp_path / "custom.csv"
+    csv.write_text("identifier,group\nprot000,a\n")
+    namespace["h5_path_field"].value = str(h5)
+    namespace["tabs"].selected_index = 1
+    namespace["pw"]["n_neighbors"].value = 40
+    _generate_pca_from_csv(namespace, csv)
+
+    restarted, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    assert restarted["tabs"].selected_index == 1
+    assert restarted["input_args"][1]["path"] == str(h5)
+    assert restarted["input_args"][1]["name"] == "esm2_650m"
+    assert [m for m, t in restarted["method_toggles"].items() if t.value] == ["PCA"]
+    assert restarted["pw"]["n_neighbors"].value == 40
+    assert restarted["ann_preset"].value == restarted["_CSV_ONLY"]
+    assert restarted["csv_path_field"].value == str(csv)
+    assert "Restored the settings" in restarted["gen_status"].value
+
+
+def test_preparation_loads_the_newest_upload_after_a_restart(monkeypatch, tmp_path):
+    h5 = _clickthrough_h5(tmp_path / "source.h5")
+    _run_preparation_panel(
+        monkeypatch, tmp_path, uploads={"seqs_prot_t5.h5": h5.read_bytes()}
+    )
+    restarted, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    assert restarted["tabs"].selected_index == 1
+    assert restarted["input_args"][1]["name"] == "prot_t5"
+
+
+@pytest.mark.parametrize(
+    ("error", "advice"),
+    [
+        (
+            AttributeError(
+                "module 'numpy._core._multiarray_umath' has no attribute "
+                "'_blas_supports_fpe'"
+            ),
+            "Restart session",
+        ),
+        (ValueError("perplexity must be less than n_samples"), "Change perplexity"),
+        (RuntimeError("something new"), "UniProt accessions"),
+    ],
+    ids=["stale-numpy", "parameter", "unknown"],
+)
+def test_preparation_failure_advice_matches_the_error(
+    monkeypatch, tmp_path, error, advice
+):
+    """Every failure printed the same UniProt/Biocentral/caching list, the numpy
+    and perplexity failures included."""
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["tabs"].selected_index = 1
+
+    def fail(*_a, **_k):
+        raise error
+
+    namespace["load_h5"] = fail
+    namespace["_on_gen"](None)
+
+    status = namespace["gen_status"].value
+    assert "Generate failed at step 1 of 5, loading the embeddings" in status
+    assert advice in status
+    if advice != "UniProt accessions":
+        assert "UniProt accessions" not in status
+    assert downloads == [] and namespace["gen_btn"].disabled is False
+
+
+def test_preparation_new_path_clears_the_old_status(monkeypatch, tmp_path):
+    """After the upload cell filled the path, the tab still showed the previous
+    path's "No file received", which read like an error about the new file."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    namespace["h5_path_field"].value = str(tmp_path / "file.h5")
+    assert "No file received" in namespace["h5_status"].value
+
+    h5 = _clickthrough_h5(tmp_path / "up.h5")
+    namespace["_use_uploaded"]("h5", str(h5))
+    assert "No file received" not in namespace["h5_status"].value
+    assert "Ready: up.h5" in namespace["h5_status"].value
+
+    namespace["h5_path_field"].value = ""
+    assert namespace["h5_status"].value == "" and 1 not in namespace["input_args"]
+
+
+def test_preparation_generate_refreshes_the_eat_columns(monkeypatch, tmp_path):
+    """The EAT cell's target list stayed empty until 'Reload columns'."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    exec(compile(_preparation_cell("# @title 3."), "prep:3", "exec"), namespace)
+    assert namespace["eat_col"].options == ()
+    csv = tmp_path / "custom.csv"
+    csv.write_text("identifier,group\nprot000,a\n")
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["tabs"].selected_index = 1
+    _generate_pca_from_csv(namespace, csv)
+
+    assert "group" in [value for _, value in namespace["eat_col"].options]
+
+
+def test_preparation_progress_reads_the_packages_log_lines(monkeypatch, tmp_path):
+    """The reduction step counts projections from protspace's own log lines; a
+    reworded line would leave the bar stuck, so both templates are pinned."""
+    import protspace.data.processors.pipeline as pipeline
+
+    source = Path(pipeline.__file__).read_text()
+    assert "Applying {method.upper()} {dims} to '{emb_set.name}'" in source
+    assert "Using cached %s %d projection for '%s'" in source
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    pattern = namespace["_PROJECTION_LOG"]
+    assert pattern.match("Applying UMAP 2 to 'esm2_650m'").group("a") == "UMAP 2"
+    cached = "Using cached %s %d projection for '%s'" % ("PCA", 2, "prot_t5")  # noqa: UP031 -- as logging formats it
+    assert pattern.match(cached).group("c") == "PCA 2"
+
+
+def test_preparation_shows_each_step_and_ends_full(monkeypatch, tmp_path):
+    """From click to file, the run says which step of how many it is on."""
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    csv = tmp_path / "custom.csv"
+    csv.write_text("identifier,group\nprot000,a\n")
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["tabs"].selected_index = 1
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method in {"PCA", "UMAP"}
+    namespace["ann_preset"].value = namespace["_CSV_ONLY"]
+    namespace["csv_path_field"].value = str(csv)
+
+    shown, render = [], namespace["_Progress"]._render
+
+    def record(self):
+        render(self)
+        shown.append(namespace["gen_status"].value)
+
+    monkeypatch.setattr(namespace["_Progress"], "_render", record)
+    namespace["_on_gen"](None)
+
+    steps = [re.search(r"Step (\d) of (\d) \u00b7 ([^&]+)", v).groups() for v in shown]
+    assert ("1", "5", "Loading the embeddings") in steps
+    assert ("3", "5", "Reducing dimensions (PCA 2, 1 of 2)") in steps
+    assert ("3", "5", "Reducing dimensions (UMAP 2, 2 of 2)") in steps
+    assert any(label.startswith("Preparing the download") for *_, label in steps)
+    bar = namespace["gen_progress"]
+    assert (bar.value, bar.bar_style) == (bar.max, "success")
+    assert "Download started" in namespace["gen_status"].value
+    (bundle,) = downloads
+    assert Path(bundle).parent.name == "output"
+
+
+def test_preparation_offers_every_bundle_for_download(monkeypatch, tmp_path):
+    """A run with a CSV reaches files.download like any other; the bundle also
+    stays one click away, for a download that is slow or held back."""
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    assert namespace["bundles_box"].layout.display == "none"
+    csv = tmp_path / "custom.csv"
+    csv.write_text("identifier,group\nprot000,a\n")
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["tabs"].selected_index = 1
+    _generate_pca_from_csv(namespace, csv)
+
+    (bundle,) = downloads
+    assert bundle.endswith(".parquetbundle")
+    assert namespace["bundles_box"].layout.display == ""
+    assert namespace["bundle_pick"].value == str(Path(bundle))
+    namespace["_on_bundle_download"](None)
+    assert downloads == [bundle, str(Path(bundle))]
+
+
+def test_preparation_refuses_a_perplexity_the_input_cannot_support(
+    monkeypatch, tmp_path
+):
+    """t-SNE needs perplexity below the protein count; the default 30 on 20
+    proteins failed in scikit-learn after the embeddings and annotations."""
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "s.h5", n=20))
+    namespace["tabs"].selected_index = 1
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method == "t-SNE"
+    assert "not below the number of proteins (20)" in namespace["param_check"].value
+
+    loaded = []
+    namespace["load_h5"] = lambda *a, **k: loaded.append(a)
+    namespace["_on_gen"](None)
+    assert "Not started" in namespace["gen_status"].value
+    assert loaded == [] and downloads == []
+
+    namespace["pw"]["perplexity"].value = 6
+    assert namespace["param_check"].value == ""
+
+
+def test_preparation_eat_lists_only_columns_it_can_fill(tmp_path, monkeypatch):
+    """After Generate the target preselected `ec`, empty for every protein of a
+    non-UniProt dataset; a transfer on it could do nothing."""
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.data.io.bundle import write_bundle
+    from tests.bundle_v3_helpers import projection_tables
+
+    bundle, emb_set = _toxin_only_bundle(tmp_path)
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2", "p3"],
+                "fam": ["toxin", "toxin", "", ""],
+                "ec": ["", "", "", ""],
+                "kind": ["a", "b", "a", "b"],
+            }
+        )
+    )
+    write_bundle([annotations, *projection_tables(4, (2,))], bundle)
+    _, ns = _run_preparation_eat_cell(monkeypatch, bundle, emb_set, None)
+
+    assert ns["eat_col"].options == (
+        ("Pick an annotation\u2026", None),
+        ("fam (2 set / 2 missing)", "fam"),
+    )
+    assert ns["eat_col"].value is None
+    assert (
+        "Not listed: ec, kind" in ns["eat_status"].value
+        or "Pick the annotation" in ns["eat_status"].value
+    )
+
+
+def test_preparation_eat_disables_its_button_while_it_runs(tmp_path, monkeypatch):
+    """A long transfer looked stuck and invited a second click; the button is
+    off while it runs, as Generate's is, and the status says when it finished."""
+    import protspace.cli.transfer as transfer
+
+    seen, real = [], transfer.run_transfer
+    bundle, emb_set = _toxin_only_bundle(tmp_path)
+
+    def watch(namespace):
+        def run(**kwargs):
+            seen.append(namespace["eat_btn"].disabled)
+            return real(**kwargs)
+
+        monkeypatch.setattr(transfer, "run_transfer", run)
+        namespace["run_transfer"] = run
+
+    _, ns = _run_preparation_eat_cell(
+        monkeypatch, bundle, emb_set, "fam", before_click=watch
+    )
+    assert seen == [True] and ns["eat_btn"].disabled is False
+    assert "Done in" in ns["eat_status"].value
 
 
 @pytest.mark.parametrize(
@@ -960,3 +1528,183 @@ def test_clickthrough_stamps_the_model_name():
         )
     ]
     assert stamped, "the Embeddings notebook writes no model_name attribute"
+
+
+def _clickthrough_cell(title: str) -> str:
+    (source,) = [
+        src
+        for _, src in _code_cells(
+            NOTEBOOK_DIR / "ClickThrough_GenerateEmbeddings.ipynb"
+        )
+        if src.startswith(title)
+    ]
+    return source
+
+
+@pytest.mark.parametrize(
+    ("model", "with_sdk"),
+    [
+        ("facebook/esm2_t6_8M_UR50D", False),
+        ("Rostlab/prot_t5_xl_half_uniref50-enc", False),
+        ("EvolutionaryScale/esmc-300m-2024-12", True),
+    ],
+)
+def test_clickthrough_installs_the_esm_sdk_only_for_its_models(
+    monkeypatch, model, with_sdk
+):
+    """The `esm` SDK pins transformers < 5: installed for every model, it replaced
+    Colab's transformers 5 and huggingface_hub 1, and made transformers 4 import
+    TensorFlow and JAX, whose start-up output was the warnings users saw."""
+    import subprocess
+    import types
+
+    settings = _clickthrough_cell("# @title 1. Settings").replace(
+        'model_name = "Rostlab/prot_t5_xl_half_uniref50-enc"', f'model_name = "{model}"'
+    )
+    namespace = {"__name__": "__notebook__"}
+    exec(compile(settings, "click:1", "exec"), namespace)
+
+    calls = []
+
+    def pip(cmd, *_a, **_k):
+        calls.append(cmd)
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", pip)
+    exec(
+        compile(_clickthrough_cell("# @title 2. Install"), "click:2", "exec"), namespace
+    )
+
+    cmd = calls[-1]
+    assert ("esm" in cmd) is with_sdk
+    assert "pyfaidx" in cmd
+
+
+def test_clickthrough_imports_survive_huggingface_hub_1_and_skip_tensorflow():
+    """huggingface_hub 1.x (Colab's) has no HfFolder; and TensorFlow/JAX must be
+    switched off before transformers is first imported."""
+    tree = ast.parse(_clickthrough_cell("# @title 3. Import"))
+    hub_names = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "huggingface_hub"
+        for alias in node.names
+    }
+    assert hub_names and "HfFolder" not in hub_names
+
+    statements = list(ast.walk(tree))
+    first_transformers = min(
+        n.lineno
+        for n in statements
+        if isinstance(n, ast.ImportFrom) and n.module == "transformers"
+    )
+    switched_off = {
+        n.args[0].value
+        for n in statements
+        if isinstance(n, ast.Call)
+        and getattr(n.func, "attr", None) == "setdefault"
+        and n.lineno < first_transformers
+    }
+    assert {"USE_TF", "USE_FLAX", "USE_JAX"} <= switched_off
+
+
+def test_clickthrough_hub_imports_exist_in_the_installed_hub():
+    hub = pytest.importorskip("huggingface_hub")
+    tree = ast.parse(_clickthrough_cell("# @title 3. Import"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "huggingface_hub":
+            assert all(hasattr(hub, alias.name) for alias in node.names)
+
+
+class _FakeBatch(dict):
+    def to(self, _device):
+        return self
+
+
+def _clickthrough_functions(monkeypatch):
+    """The Functions cell with a fake 4-dim model behind setup_model."""
+    import types
+
+    torch = pytest.importorskip("torch")
+    import h5py
+    import numpy as np
+    import pandas as pd
+
+    def tokenizer(sequences, **_kwargs):
+        longest = max(len(s) for s in sequences) + 2
+        mask = torch.tensor(
+            [[1] * (len(s) + 2) + [0] * (longest - len(s) - 2) for s in sequences]
+        )
+        return _FakeBatch(input_ids=mask.clone(), attention_mask=mask)
+
+    class Model:
+        device = "cpu"
+
+        def eval(self):
+            return self
+
+        def __call__(self, input_ids, attention_mask):
+            hidden = torch.arange(input_ids.numel() * 4, dtype=torch.float32)
+            return types.SimpleNamespace(
+                last_hidden_state=hidden.reshape(*input_ids.shape, 4)
+            )
+
+    namespace = {
+        "__name__": "__notebook__", "torch": torch, "h5py": h5py, "np": np, "pd": pd,
+        "tqdm": lambda *a, **k: types.SimpleNamespace(update=lambda n: None, close=lambda: None),
+    }  # fmt: skip
+    exec(
+        compile(_clickthrough_cell("# @title ### Functions"), "click:fn", "exec"),
+        namespace,
+    )
+    namespace["setup_model"] = lambda checkpoint: (
+        Model(),
+        tokenizer,
+        "esm_transformer",
+    )
+    return namespace
+
+
+def test_clickthrough_writes_named_embeddings_and_skips_long_sequences(
+    monkeypatch, tmp_path, capsys
+):
+    import h5py
+    import pandas as pd
+
+    namespace = _clickthrough_functions(monkeypatch)
+    df = pd.DataFrame(
+        {"header": ["a", "b", "long"], "sequence": ["MKV", "MKVL", "M" * 12]}
+    )
+    out = tmp_path / "seqs_esm2_8m.h5"
+    namespace["create_embedding"](
+        "facebook/esm2_t6_8M_UR50D", df, output_file=str(out), max_len=10,
+        batch_size=2, model_key="esm2_8m",
+    )  # fmt: skip
+
+    with h5py.File(out) as f:
+        assert sorted(f) == ["a", "b"] and f.attrs["model_name"] == "esm2_8m"
+        assert f["a"].shape == (4,)
+    assert "longer than 10 residues (e.g. long)" in capsys.readouterr().out
+
+
+def test_clickthrough_says_which_headers_hdf5_cannot_name(monkeypatch, tmp_path):
+    import pandas as pd
+
+    namespace = _clickthrough_functions(monkeypatch)
+    df = pd.DataFrame({"header": ["sp/P1", "ok"], "sequence": ["MKV", "MKV"]})
+    with pytest.raises(SystemExit, match=r"(?s)1 FASTA header\(s\) contain '/'.*sp/P1"):
+        namespace["create_embedding"]("x", df, output_file=str(tmp_path / "x.h5"))
+
+
+@pytest.mark.parametrize(
+    ("error", "advice"),
+    [
+        (OSError("401 Client Error: Unauthorized"), "it is gated"),
+        (ConnectionError("Max retries exceeded"), "did not answer"),
+        (ImportError("No module named 'esm'"), "installs the `esm` SDK"),
+    ],
+)
+def test_clickthrough_load_failure_says_what_to_do(monkeypatch, error, advice):
+    namespace = _clickthrough_functions(monkeypatch)
+    stop = namespace["_load_failure"]("EvolutionaryScale/esm3-sm-open-v1", error)
+    assert isinstance(stop, SystemExit) and advice in str(stop)

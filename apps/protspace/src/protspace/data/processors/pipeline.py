@@ -109,6 +109,28 @@ def _embedding_fingerprint(emb_set: EmbeddingSet) -> str:
     return digest.hexdigest()[:16]
 
 
+def check_method_params(
+    methods: list[MethodSpec], reducer_params: ReducerParams, n_proteins: int
+) -> None:
+    """Raise ValueError for a method parameter these proteins cannot support.
+
+    t-SNE's perplexity must stay below the number of proteins. n_neighbors is
+    not checked: UMAP, PaCMAP and LocalMAP lower it themselves and say so.
+    """
+    from protspace.utils.constants import TSNE_NAME
+
+    defaults = asdict(reducer_params)
+    for spec in methods:
+        if spec.method != TSNE_NAME:
+            continue
+        from protspace.utils.reducers import tsne_perplexity_problem
+
+        perplexity = {**defaults, **spec.overrides_dict}["perplexity"]
+        problem = tsne_perplexity_problem(perplexity, n_proteins)
+        if problem:
+            raise ValueError(problem)
+
+
 # Valid override parameter names (from ReducerParams fields)
 _VALID_OVERRIDE_KEYS = {f.name for f in fields(ReducerParams)}
 # Field types for coercion
@@ -303,6 +325,11 @@ class ReductionPipeline:
 
         # Validate all sets share the same headers (or compute intersection)
         all_headers = self._validate_headers(embedding_sets)
+        # Before the annotations: a parameter the data cannot support should not
+        # cost a full annotation fetch before it is refused.
+        check_method_params(
+            self.config.methods, self.config.reducer_params, len(all_headers)
+        )
 
         # Fetch annotations (pass embedding sets so FASTA sequences can be reused)
         metadata = self._fetch_annotations(all_headers, embedding_sets)

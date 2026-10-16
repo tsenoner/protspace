@@ -74,14 +74,19 @@ This notebook:
 - Generates embeddings using various protein language models (ProtT5, ESM2, etc.)
 - Outputs an HDF5 file ready for ProtSpace
 
+Pick the model in its **1. Settings** step and attach a GPU (**Runtime → Change runtime type → T4
+GPU**) before **Run all**. The EvolutionaryScale models (ESM3, ESM C) need the `esm` SDK, which the
+notebook installs only for them: it replaces Colab's transformers with an older one, and the models
+are gated, so they also need a Hugging Face login. Every other model runs on Colab's own packages.
+
 ### Option C: Use Your Own Embeddings
 
 For advanced users with custom embeddings, save them as an HDF5 file where each protein is stored as a dataset named by its identifier.
 
-You do not need to name the model behind any of these files. The notebook's **Embedder** choice
+You do not need to name the model behind any of these files. The notebook's **Model** choice
 defaults to **Auto-detect**, which reads the file's `model_name` attribute (the Embeddings notebook
 writes it), else a model key at the end of the file name (`toxins_esm2_650m.h5` is `esm2_650m`),
-else the file name itself. The name labels the projections; pick the embedder by hand if the
+else the file name itself. The name labels the projections; pick the model by hand if the
 label comes out wrong. The same rules apply in the [CLI](/guide/python-cli#model-name-resolution-i-file-h5-name).
 
 ## Step 2: Run the Notebook
@@ -89,7 +94,10 @@ label comes out wrong. The same rules apply in the [CLI](/guide/python-cli#model
 1. Click the Colab badge at the top of this page to open the notebook
 2. Choose **Runtime → Run all**. Setup takes about 30 seconds, then the control panel appears.
    Run all never stops to ask for a file, and building the panel downloads nothing: the
-   example dataset is fetched when you click **Generate**
+   example dataset is fetched when you click **Generate**. Setup keeps the packages Colab has
+   already loaded (numpy, pandas) at their versions, so it needs no restart. If one changed all
+   the same, the setup cell stops and names it: choose **Runtime → Restart session**, then
+   **Run all** again. The second run installs nothing and takes seconds
 3. Get your file into the Colab runtime, if you use one, in any of three ways:
    - **Upload cell**: tick the box in **Optional: upload a file from your computer**, run that
      cell and pick the file. It lands in a new `upload-…` folder, so a corrected file uploaded
@@ -103,12 +111,18 @@ label comes out wrong. The same rules apply in the [CLI](/guide/python-cli#model
    through a widget, because widget uploads of about 10 MB and up fail without an error.
 
 4. In the panel's **1 · Input data** section, open the tab you want:
-   - **Example Dataset**: one of the pre-computed ProtT5 datasets
-   - **Upload H5**: enter the file's path, click **Load**, and check the **Ready** line, which
-     shows the protein count, the dimensions and the embedding name
-   - **Upload FASTA**: enter the path and click **Load**, then select the embedder(s) and the
+   - **Example dataset**: one of the pre-computed ProtT5 datasets
+   - **Embeddings (.h5)**: enter the file's path (it loads when you press Enter or click
+     **Load**) and check the **Ready** line, which shows the protein count, the dimensions and
+     the embedding name
+   - **Sequences (FASTA)**: enter the path and click **Load**, then select the model(s) and the
      embedding backend below the tabs
-   - **UniProt Query**: type a query and click **Set Query**, then select the embedder(s)
+   - **UniProt query**: type a query and click **Set query**, then select the model(s)
+
+   The line beside **Generate** says what it will run on. The panel keeps its settings in the
+   runtime: after **Runtime → Restart session**, Run all brings back the last Generate's tab,
+   paths, methods and annotation choices, and loads the newest uploaded file when nothing was
+   generated yet.
 
 ## Step 3: Configure Options
 
@@ -124,7 +138,10 @@ To add your own columns, give a CSV or TSV (gzipped is fine) with the protein ID
 column, whatever that column is called (the full rules are under
 [Custom annotation files](/guide/python-cli#custom-annotation-files)): enter its path, or choose it
 with **Choose CSV/TSV**. Pick **CSV only (no UniProt fetch)** to use just those columns, for example
-when your IDs are not UniProt accessions.
+when your IDs are not UniProt accessions. When none of an `.h5` file's IDs is a UniProt
+accession, the panel fetches nothing from UniProt anyway and uses the CSV alone (or makes a bundle
+without annotations), and says so. Tick **Fetch annotations again** to replace annotations an earlier
+run in this runtime fetched for the same proteins, instead of reusing them.
 
 ### Dimensionality Reduction
 
@@ -139,7 +156,10 @@ Choose which 2-D projections to generate:
 
 ### Parameters (Optional)
 
-Fine-tune settings for each method. The defaults are the CLI's:
+Fine-tune settings for each method. The defaults are the CLI's, and each slider covers only the
+values the CLI accepts. t-SNE's perplexity must stay below the number of proteins (about a third of
+it works best). The Methods section says so as soon as the loaded input is too small for the
+value, and Generate does not start until it is changed:
 
 | Method   | Parameters                                                              |
 | -------- | ----------------------------------------------------------------------- |
@@ -163,15 +183,33 @@ ProtSpace renders these scores in the legend and the projection metadata panel. 
 1. Click **Generate**. It runs on the input tab that is open; if that tab has nothing loaded it
    says so and runs nothing. It first prints the input it runs on, with the protein count
 2. Wait for processing (time depends on dataset size). The button is disabled until the run
-   ends, and progress lines appear below it
-3. The `.parquetbundle` downloads to your computer. If the browser blocks it, take it from the
-   Colab Files pane under `output/`
+   ends. A bar and a status box below it show the step (for example _Step 3 of 6 · Reducing
+   dimensions (UMAP 2, 2 of 4)_) and the time since the click, and protspace's own progress
+   lines appear under that
+3. When it is done, the status box names the `.parquetbundle`, its size and the time taken, and
+   says the download has started. The browser saves the file when the transfer ends, which for a
+   large bundle can be a while after _Done_. **Download bundle** downloads any bundle of this
+   runtime again (its list shows each with its size and time), and the Colab Files pane has them
+   under `output/`
+4. If a run fails, the status box names the step and the error, with the advice that fits it
+   (restart the session for a package the install replaced, change a parameter, attach a GPU when
+   Biocentral is down); the details for a bug report are printed below it
 
 ## Optional: fill missing annotations (EAT)
 
 The Preparation notebook has an **Embedding Annotation Transfer** panel below the Generate button.
-It fills blank annotation values on your query proteins from their nearest annotated neighbour in
-embedding space, with a reliability score attached. The
+It fills blank annotation values on your query proteins from their nearest annotated neighbours in
+embedding space, with a reliability score attached. Its column list fills in after each Generate
+and offers only the columns with values to copy and gaps to fill, each with its counts (for
+example _family (2,544 set / 2,491 missing)_). A run shows its steps and elapsed time like Generate.
+
+A label is copied however far the nearest reference is, so the panel sets a **distance cutoff**,
+calibrated on the references by default (the CLI's `--max-distance auto`), and marks each query
+**near** or **distant** in a `COL__neighbor` column; the status box counts both and warns when
+most queries are distant. Tick **Leave distant queries unpredicted** to fill only the near ones.
+References from one family give every query that family, so check **Download neighbour report**:
+a TSV with each query's nearest references and their distances, the CLI's `--report`. On a
+protspace release without these options the panel says so and transfers without them. The
 [Transfer notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ProtSpace_Transfer.ipynb)
 runs the same transfer on its own, using the `protspace transfer` CLI.
 

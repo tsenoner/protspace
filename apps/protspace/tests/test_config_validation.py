@@ -34,13 +34,11 @@ class TestConfigValidation:
 
     def test_perplexity_boundaries(self):
         DimensionReductionConfig(perplexity=5)  # gte=5
-        DimensionReductionConfig(perplexity=50)  # lte=50
+        DimensionReductionConfig(perplexity=51)  # no ceiling: the data sets it
 
     def test_perplexity_out_of_range(self):
         with pytest.raises(ValueError, match="perplexity"):
             DimensionReductionConfig(perplexity=4)
-        with pytest.raises(ValueError, match="perplexity"):
-            DimensionReductionConfig(perplexity=51)
 
     def test_learning_rate_must_be_positive(self):
         with pytest.raises(ValueError, match="learning_rate"):
