@@ -3,7 +3,7 @@
 5.0.0 stops reading 3-D projections everywhere but ``protspace convert``, which
 stays the upgrade path. Until then every Python read of a bundle's projections
 warns once, and ``convert --flatten-3d`` writes them as 2-D projections that keep
-their X/Y view.
+their X/Y view (the same as the 2-D projection only for PCA).
 """
 
 import io
@@ -156,6 +156,8 @@ def test_each_projection_read_of_a_3d_bundle_warns_once(
     assert "(UMAP 3)" in warnings[0]
     assert "removed in protspace 5.0.0" in warnings[0]
     assert "protspace convert --flatten-3d" in warnings[0]
+    assert "Recompute them with the 2-D method (e.g. umap2)" in warnings[0]
+    assert "For PCA the X/Y view is the same as pca2" in warnings[0]
 
 
 def test_a_2d_bundle_does_not_warn(tmp_path, caplog):
@@ -264,6 +266,8 @@ def test_flatten_rewrites_in_place(tmp_path):
     output = plain(result.output)
     assert f"Rewrote {src} (v3) with 2-D projections" in output
     assert f"UMAP 3 -> UMAP 3{FLATTENED_SUFFIX}" in output
+    assert "For PCA the X/Y view is the same as pca2" in output
+    assert "Recompute those with the 2-D method (e.g. umap2)" in output
     assert three_d_projection_names(read_bundle_contents(src).projections) == []
 
 
@@ -289,7 +293,9 @@ def test_without_the_flag_a_3d_v3_bundle_is_left_untouched_with_a_warning(tmp_pa
     assert "nothing to do" in output
     assert "holds 3-D projections (UMAP 3), kept as 3-D" in output
     assert "ends in protspace 5.0.0" in output
+    assert "Recompute them with the 2-D method (e.g. umap2)" in output
     assert "--flatten-3d" in output
+    assert "For PCA the X/Y view is the same as pca2" in output
     assert src.read_bytes() == before
 
 
@@ -337,6 +343,8 @@ def test_convert_help_names_flatten_3d():
     result = CliRunner().invoke(app, ["convert", "--help"])
     output = plain(result.output)
     assert "--flatten-3d" in output
+    assert "For PCA the X/Y view is the same as pca2" in output
+    assert "recomputing with the 2-D method (e.g. umap2) is better" in output
     assert "protspace 5.0.0" in output
 
 

@@ -67,6 +67,13 @@ LEGACY_ID_COLUMN = "legacy-id-column"
 #: The web viewer users are pointed to instead of ``protspace serve``.
 EXPLORE_URL = "https://protspace.app/explore"
 
+#: What the X/Y view of a 3-D projection is, for every message that offers it.
+THREE_D_XY_VIEW = (
+    "For PCA the X/Y view is the same as pca2; for UMAP, t-SNE, PaCMAP and other "
+    "non-linear methods it is the 3-D layout seen from one side, which can overlap "
+    "points that are far apart."
+)
+
 _REGISTRY = (
     Deprecation(
         key=THREE_D_PROJECTIONS,
@@ -143,9 +150,10 @@ _REGISTRY = (
         remove_in="5.0.0",
         message=(
             "{name} holds 3-D projections ({projections}). Reading 3-D projections "
-            "is deprecated and will be removed in protspace {remove_in}; use 2-D "
-            "projections instead (`protspace convert --flatten-3d` turns a "
-            "bundle's 3-D projections into 2-D ones that keep their X/Y view)."
+            "is deprecated and will be removed in protspace {remove_in}. Recompute "
+            "them with the 2-D method (e.g. umap2) when you have the embeddings, or "
+            "run `protspace convert --flatten-3d` to keep their X/Y view as 2-D. "
+            f"{THREE_D_XY_VIEW}"
         ),
         removal=(
             "apps/protspace/src/protspace/data/io/bundle_v3.py: drop the z axis "

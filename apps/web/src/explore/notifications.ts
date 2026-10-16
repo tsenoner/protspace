@@ -178,8 +178,9 @@ function unplacedProteins(count: number): string {
 
 /**
  * A user imported a bundle holding 3-D projections: they load, shown as their X/Y view,
- * but reading them ends in protspace 5.0.0. `protspace convert --flatten-3d` writes them
- * as 2-D projections of that same view, so the picture does not change.
+ * but reading them ends in protspace 5.0.0. Only for PCA is that view the 2-D projection;
+ * for a non-linear method it is the 3-D layout seen from one side, so recomputing with the
+ * 2-D method beats `protspace convert --flatten-3d`, which keeps the view as it is.
  */
 export function getThreeDProjectionNotification(projectionNames: readonly string[]): NotifyOptions {
   const shown = projectionNames.slice(0, 3).join(', ');
@@ -188,7 +189,7 @@ export function getThreeDProjectionNotification(projectionNames: readonly string
   const verb = projectionNames.length === 1 ? 'is' : 'are';
   return {
     title: 'This file has 3-D projections.',
-    description: `${listed} ${verb} shown as their X/Y view. Reading 3-D projections ends in ProtSpace 5.0.0. To keep this view, run "protspace convert --flatten-3d" on the file: it turns them into 2-D projections.`,
+    description: `${listed} ${verb} shown as their X/Y view. For PCA this is the same as its 2-D projection; for UMAP, t-SNE and other non-linear methods it is the 3-D layout seen from one side, which can overlap points that are far apart. Reading 3-D projections ends in ProtSpace 5.0.0. Recompute them with the 2-D method (e.g. umap2) if you have the embeddings, or run "protspace convert --flatten-3d" on the file to keep this view as 2-D.`,
     durationMs: 12_000,
     dedupeKey: 'three-d-projections',
   };
