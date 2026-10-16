@@ -130,13 +130,33 @@ previous phase left. A phase ends with the app working and every test green.
 - [x] 7.15 Importing, exporting, phones and tablets, FAQ
 - [x] 7.16 Developer docs, the images README, allowlists retired
 
-## 8. Wrap-up (plan: `plans/phase-8-wrap-up.md`)
+## 8. Wrap-up (plan for part A: `plans/phase-8a-cleanup.md`; part B is planned after #526 merges)
 
-- [ ] 8.1 `tokens.ts`, replaced mixins and dead CSS deleted; lint allowlist empty; no element file
-      over about 800 lines
-- [ ] 8.2 Full verification: unit, browser, e2e (desktop and mobile), accessibility, perf at 573K,
+8A. Cleanup:
+
+- [ ] 8.1 The style lint accepts a module's own properties; tooltip and projection details on tokens
+- [ ] 8.2 The scatter plot's sheet reads tokens only
+- [ ] 8.3 `ps-segmented` options can be disabled with a reason
+- [ ] 8.4 The structure viewer on `ps-segmented` and tokens; `tokens.ts`, `mixins.ts`,
+      `overlay-mixins.ts` and the lint allowlist deleted
+- [ ] 8.5 Developer and design docs describe the final style setup; `scatter-plot.ts` recorded as
+      the exception to the 800-line target
+- [ ] 8.6 Projection details: formatting in its own module
+- [ ] 8.7 Legend: the data pipeline in `LegendDataController`
+- [ ] 8.8 Legend: item actions and keyboard reorder in controllers; the unused state event deleted
+- [ ] 8.9 Legend: settings in `SettingsController`; the legend's size recorded
+- [ ] 8.10 Scatter plot: a hover redraws no points; export compositing in its own module
+- [ ] 8.11 The floating structure card's default clears the selection bar
+- [ ] 8.12 Ctrl/⌘K opens search on a phone
+- [ ] 8.13 The e2e specs reach the figure editor through the shared helpers
+- [ ] 8.14 `feat/mobile-responsive` archived as `archive/mobile-landing` and deleted (local only)
+
+8B. After #526 merges (planned then, numbered from 8.15):
+
+- [ ] Rebase onto `main`; main's Table (TSV) export ported into the export menu
+- [ ] Full verification: unit, browser, e2e (desktop and mobile), accessibility, perf at 573K,
       a real-device pass by the user
-- [ ] 8.3 Spec files written from the final code (the capabilities in `proposal.md`);
+- [ ] Spec files written from the final code (the capabilities in `proposal.md`);
       `openspec validate explore-workbench --strict` passes
-- [ ] 8.4 `feat/mobile-responsive` retired after the user agrees; PR description
-- [ ] 8.5 OpenSpec archive as the last commit
+- [ ] PR description
+- [ ] OpenSpec archive as the last commit
