@@ -190,6 +190,14 @@ Opt_NoLog = Annotated[
 # ---------------------------------------------------------------------------
 
 
+def _file_stamp(path: Path | None) -> tuple[int, int] | None:
+    """*path*'s modification time and size, or ``None`` if there is no file."""
+    if path is None or not path.exists():
+        return None
+    stat = path.stat()
+    return stat.st_mtime_ns, stat.st_size
+
+
 def _embed_all(
     embedders: list[str],
     fasta_path: Path,
@@ -201,6 +209,7 @@ def _embed_all(
     force_reembed: bool = False,
 ) -> list[str]:
     """Embed all models, return list of cache-hit model names."""
+    from protspace.data.cache_hits import note_cache_hit
     from protspace.data.loaders.fasta import embed_fasta
 
     cached_names: list[str] = []
@@ -209,9 +218,7 @@ def _embed_all(
         # Delete cache to force re-embedding
         if force_reembed and emb_cache and emb_cache.exists():
             emb_cache.unlink()
-        old_mtime = (
-            emb_cache.stat().st_mtime if emb_cache and emb_cache.exists() else None
-        )
+        old_stamp = _file_stamp(emb_cache)
         emb_set = embed_fasta(
             fasta_path,
             emb_name,
@@ -221,11 +228,14 @@ def _embed_all(
         )
         emb_set.fasta_path = fasta_path
         embedding_sets.append(emb_set)
-        # Cache hit if file existed before and was not modified
-        if old_mtime is not None and emb_cache.stat().st_mtime == old_mtime:
+        # Cache hit if file existed before and was not modified. The size too:
+        # a coarse-timestamp filesystem can leave the mtime of a quick resume
+        # unchanged.
+        if old_stamp is not None and _file_stamp(emb_cache) == old_stamp:
             cached_names.append(emb_name)
 
     if cached_names:
+        note_cache_hit("embed")
         logger.warning(
             "Using %d cached embedding%s (%s)",
             len(cached_names),
@@ -371,12 +381,15 @@ def prepare(
         return
 
     # --- Build embedding sets ---
+    from protspace.data.cache_hits import record_cache_hits
     from protspace.data.loaders import EmbeddingSet, load_h5
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
 
     embed_config = build_embed_config(backend, batch_size, max_length)
     embedding_sets: list[EmbeddingSet] = []
     fasta_for_similarity: Path | None = fasta
+    # Stages reusing a result an earlier run cached in `cache_dir`.
+    cache_hits = record_cache_hits()
 
     try:
         if query:
@@ -515,10 +528,13 @@ def prepare(
         pipeline = ReductionPipeline(config)
         pipeline.run(embedding_sets)
 
-        if keep_tmp and not refetch_stages:
+        # Only after a run that reused something: a fresh run has nothing to
+        # recompute. A warning, so a default-verbosity rerun shows it.
+        if cache_hits and not refetch_stages:
+            reused = ",".join(dict.fromkeys(cache_hits))
             logger.warning(
-                "Hint: use --refetch all to recompute everything, "
-                "or --refetch <stages> selectively"
+                f"Hint: reused cached results from {cache_dir}; use "
+                f"--refetch {reused} to recompute them, or --refetch all"
             )
 
     except (FileNotFoundError, ValueError) as e:

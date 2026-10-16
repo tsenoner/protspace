@@ -47,6 +47,7 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
     UniProtRetriever,
 )
 from protspace.data.annotations.transformers.transformer import AnnotationTransformer
+from protspace.data.cache_hits import note_cache_hit
 from protspace.data.io.atomic import staged_write
 from protspace.data.io.fasta import count_residues
 from protspace.data.io.formatters import DataFormatter
@@ -245,6 +246,13 @@ class ProteinAnnotationManager:
         self._fetched_sources = set()
         plan = self._fetch_plan(fill_in)
         self._uniprot_mode = plan["uniprot"]
+        if len(fill_in) < len(self.headers) and any(
+            plan[s] != "all" and self._requests(s) and self._cached_values(s)
+            for s in SOURCE_ORDER
+        ):
+            # A source this run asks for keeps cached values for some of its
+            # proteins (`fill_in` is the request less the cached rows).
+            note_cache_hit("annotations")
         # Sources that go over the network this run, in fetch order.
         pending = [s for s in SOURCE_ORDER if plan[s] and self._requests(s)]
 

@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from protspace.data.cache_hits import note_cache_hit
 from protspace.data.io.atomic import staged_write
 from protspace.data.loaders import EmbeddingSet
 from protspace.data.loaders.embedding_set import (
@@ -661,6 +662,7 @@ class ReductionPipeline:
                 computed_count += 1
 
         if cached_projections:
+            note_cache_hit("projections")
             logger.warning(
                 "Using %d cached projection%s",
                 len(cached_projections),
