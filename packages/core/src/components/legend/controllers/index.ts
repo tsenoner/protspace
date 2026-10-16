@@ -9,3 +9,5 @@ export { LegendDataController } from './data-controller';
 export { ItemActionsController } from './item-actions-controller';
 
 export { ReorderController } from './reorder-controller';
+
+export { SettingsController } from './settings-controller';

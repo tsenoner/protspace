@@ -9,7 +9,7 @@ import {
   type NumericBinningStrategy,
 } from '@protspace/utils';
 import type { ProtspaceLegendSettingsPopover } from './legend-settings-popover';
-import type { LegendDisplaySettings, LegendPersistedSettings, LegendSortMode } from './types';
+import type { LegendPersistedSettings, LegendSortMode } from './types';
 
 // Import the component to register the custom element for integration coverage.
 import './legend';
@@ -26,10 +26,8 @@ type LegendTestElement = HTMLElement & {
   annotationData: { name: string; values: string[]; kind?: 'categorical' | 'numeric' };
   maxVisibleValues: number;
   updated: (changedProperties: Map<string, unknown>) => void;
-  _renderSettingsPopover: (label: string) => unknown;
-  _applyDisplaySettings: (patch: Partial<LegendDisplaySettings>) => void;
-  _handleSettingsReset: () => void;
   _data: ProtspaceLegend['_data'];
+  _settings: ProtspaceLegend['_settings'];
   _updateLegendItems: () => void;
   _scatterplotController: {
     scatterplot: {
@@ -99,7 +97,7 @@ describe('ProtspaceLegend numeric settings inference', () => {
     configureNumeric(el);
     const container = document.createElement('div');
 
-    render(el._renderSettingsPopover('Score'), container);
+    render(el._settings.render('Score'), container);
 
     const popover = container.querySelector(
       'protspace-legend-settings-popover',
@@ -113,7 +111,7 @@ describe('ProtspaceLegend numeric settings inference', () => {
     const el = createLegend();
     configureNumeric(el);
 
-    el._applyDisplaySettings({ paletteId: 'kellys' });
+    el._settings.apply({ paletteId: 'kellys' });
 
     expect(el._selectedPaletteId).toBe(DEFAULT_NUMERIC_PALETTE_ID);
     expect(el._numericSettingsByAnnotation.score.paletteId).toBe(DEFAULT_NUMERIC_PALETTE_ID);
@@ -123,8 +121,8 @@ describe('ProtspaceLegend numeric settings inference', () => {
     const el = createLegend();
     configureNumeric(el);
 
-    el._applyDisplaySettings({ maxVisibleValues: 5 });
-    el._applyDisplaySettings({ numericStrategy: 'linear' });
+    el._settings.apply({ maxVisibleValues: 5 });
+    el._settings.apply({ numericStrategy: 'linear' });
 
     expect(el.maxVisibleValues).toBe(5);
     expect(el._numericSettingsByAnnotation.score).toMatchObject({
@@ -144,7 +142,7 @@ describe('ProtspaceLegend numeric settings inference', () => {
     el._updateLegendItems = vi.fn();
     setSourceAnnotationKind(el, 'numeric');
 
-    el._handleSettingsReset();
+    el._settings.reset();
 
     expect(el._annotationSortModes.score).toBe('alpha-asc');
     expect(el._selectedPaletteId).toBe(DEFAULT_NUMERIC_PALETTE_ID);

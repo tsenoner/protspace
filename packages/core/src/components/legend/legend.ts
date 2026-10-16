@@ -2,10 +2,7 @@ import { LitElement, html, type TemplateResult } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import {
-  DEFAULT_NUMERIC_PALETTE_ID,
-  DEFAULT_NUMERIC_STRATEGY,
   isNumericAnnotation,
-  normalizeNumericPaletteId,
   annotationLabel,
   DEFAULT_EAT_RELIABILITY,
   isPredictedAnnotation,
@@ -19,7 +16,6 @@ import type { AnnotationData, LegendSettingsMap } from '@protspace/utils';
 // Configuration and styles
 import { LEGEND_DEFAULTS, LEGEND_STYLES, LEGEND_VALUES, LEGEND_EVENTS } from './config';
 
-import type { PointShape } from '@protspace/utils';
 import { legendStyles } from './legend.styles';
 import '../common/info-popover';
 
@@ -31,6 +27,7 @@ import {
   LegendDataController,
   ItemActionsController,
   ReorderController,
+  SettingsController,
 } from './controllers';
 
 // Processors and renderers
@@ -61,19 +58,13 @@ import {
 // Helpers
 import {
   calculatePointSize,
-  defaultShapeSize,
-  getDefaultSortMode,
   getItemClasses,
   isItemSelected,
   createItemActionEvent,
   computeOtherConcreteValues,
 } from './legend-helpers';
 import type { EatPopulationCounts } from './eat-population-counts';
-import {
-  applyPaletteColors,
-  normalizeCategoricalPaletteId,
-  sortItemsForDisplay,
-} from './legend-items-state';
+import { sortItemsForDisplay } from './legend-items-state';
 
 import { createLegendErrorEventDetail } from './legend.events';
 import {
@@ -90,10 +81,8 @@ import type {
   LegendItem,
   LegendSortMode,
   OtherItem,
-  PersistedCategoryData,
   LegendErrorEventDetail,
   LegendErrorSource,
-  LegendDisplaySettings,
 } from './types';
 
 /**
@@ -153,10 +142,6 @@ export class ProtspaceLegend extends LitElement {
   // Internal State
   // ─────────────────────────────────────────────────────────────────
 
-  /** The sort button while its menu is open (the menu's anchor); null when closed. */
-  @state() private _sortMenu: HTMLElement | null = null;
-  /** The settings button while the settings popover is open under it (design decision 12). */
-  @state() private _settingsAnchor: HTMLElement | null = null;
   @state() private _statusMessage = '';
   /**
    * Category under the pointer, from a legend row or from a score strip. Read by
@@ -168,15 +153,18 @@ export class ProtspaceLegend extends LitElement {
   @query('.legend-items')
   private _legendItemsEl?: HTMLDivElement;
 
-  @query('protspace-legend-settings-popover')
-  private _settingsPopover?: ProtspaceLegendSettingsPopover;
-
   // ─────────────────────────────────────────────────────────────────
   // Read and written by the legend's controllers (controllers/*); not public API.
   // ─────────────────────────────────────────────────────────────────
 
   @state() _legendItems: LegendItem[] = [];
   @state() _sortedLegendItems: LegendItem[] = [];
+  /** The sort button while its menu is open (the menu's anchor); null when closed. */
+  @state() _sortMenu: HTMLElement | null = null;
+  /** The settings button while the settings popover is open under it (design decision 12). */
+  @state() _settingsAnchor: HTMLElement | null = null;
+  @query('protspace-legend-settings-popover')
+  _settingsPopover?: ProtspaceLegendSettingsPopover;
   @state() _otherItems: OtherItem[] = [];
   @state() _hiddenValues: string[] = [];
   @state() _annotationSortModes: Record<string, LegendSortMode> = {};
@@ -310,7 +298,7 @@ export class ProtspaceLegend extends LitElement {
 
   /** Closes the annotation's own overlays, landing their pending edits on it first. */
   _closeAnnotationOverlays(): void {
-    this._closeSettings();
+    this._settings.close();
     this._colorPicker.close();
   }
 
@@ -351,6 +339,8 @@ export class ProtspaceLegend extends LitElement {
   readonly _actions = new ItemActionsController(this);
   /** Keyboard reorder and what a drag commits (controllers/reorder-controller.ts). */
   readonly _reorder = new ReorderController(this);
+  /** Settings popover, live edits, picker commits (controllers/settings-controller.ts). */
+  readonly _settings = new SettingsController(this);
 
   _scatterplotController = new ScatterplotSyncController(this, {
     onDataChange: (data, annotation, projectionName) =>
@@ -392,7 +382,7 @@ export class ProtspaceLegend extends LitElement {
     onSortMenu: (anchor) => {
       this._sortMenu = this._sortMenu ? null : anchor;
     },
-    onSettings: (anchor) => this._openSettings(anchor),
+    onSettings: (anchor) => this._settings.open(anchor),
     onTitlePointerEnter: (e) => {
       const title = e.currentTarget as HTMLElement;
       this._nameTooltip.hover(title, title);
@@ -407,11 +397,11 @@ export class ProtspaceLegend extends LitElement {
     },
   };
 
-  private _colorPicker = new ColorPickerController(this, {
+  _colorPicker = new ColorPickerController(this, {
     getItem: (value) => this._legendItems.find((item) => item.value === value),
-    preview: (value, color) => this._previewColor(value, color),
-    commitColor: (value, color) => this._handleColorChange(value, color),
-    commitShape: (value, shape) => this._handleShapeChange(value, shape),
+    preview: (value, color) => this._settings.previewColor(value, color),
+    commitColor: (value, color) => this._settings.commitColor(value, color),
+    commitShape: (value, shape) => this._settings.commitShape(value, shape),
     isMultilabel: () => this._isMultilabelAnnotation(),
   });
 
@@ -429,7 +419,7 @@ export class ProtspaceLegend extends LitElement {
 
   private _nameTooltip = new TruncatedNameTooltip(this);
 
-  private _rowMenu = new LegendRowMenu(this, {
+  _rowMenu = new LegendRowMenu(this, {
     getItems: () => this._legendItems,
     isNumeric: () => this._isNumericAnnotation(),
     isolate: (value) => this._actions.isolate(value),
@@ -644,7 +634,7 @@ export class ProtspaceLegend extends LitElement {
    */
   public clearForNewDataset(datasetHash: string, clearPersistedState: boolean = true): void {
     // A value typed into the settings popover belongs to the dataset it was typed for.
-    this._closeSettings();
+    this._settings.close();
     // A colour still waiting for its delay lands on the dataset it was picked on, not the next one.
     this._colorPicker.close();
 
@@ -795,288 +785,6 @@ export class ProtspaceLegend extends LitElement {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // Settings Popover
-  // ─────────────────────────────────────────────────────────────────
-
-  /** The header's settings button: opens the settings popover under it, or closes it. */
-  private _openSettings(anchor: HTMLElement): void {
-    if (this._settingsAnchor) {
-      this._closeSettings();
-      return;
-    }
-    // One legend overlay at a time; a keyboard reorder in progress is dropped, as the dialog did.
-    this._reorder.clear();
-    this._colorPicker.close();
-    this._rowMenu.close();
-    this._sortMenu = null;
-    this._otherPopover.close();
-    this._settingsAnchor = anchor;
-    this.dispatchEvent(new CustomEvent(LEGEND_EVENTS.CUSTOMIZE, { bubbles: true, composed: true }));
-  }
-
-  private _closeSettings(): void {
-    if (!this._settingsAnchor) return;
-    // A value typed but not yet committed is kept, not lost with the popover.
-    this._settingsPopover?.flush();
-    this._settingsAnchor = null;
-  }
-
-  /**
-   * Applies one edit from the settings popover at once (design decision 12), then runs the tail
-   * the dialog's Save ran, once: the items, the plot and the stored record follow.
-   */
-  private _applyDisplaySettings(patch: Partial<LegendDisplaySettings>): void {
-    const annotation = this.selectedAnnotation;
-    const current = this._numericSettingsByAnnotation[annotation];
-    const numeric = this._isCurrentAnnotationNumeric()
-      ? {
-          binCount: current?.binCount ?? this.maxVisibleValues,
-          strategy: current?.strategy ?? DEFAULT_NUMERIC_STRATEGY,
-          paletteId: normalizeNumericPaletteId(current?.paletteId ?? DEFAULT_NUMERIC_PALETTE_ID),
-          reverseGradient: current?.reverseGradient ?? false,
-        }
-      : null;
-
-    if (patch.maxVisibleValues !== undefined) {
-      this.maxVisibleValues = patch.maxVisibleValues;
-      if (numeric) numeric.binCount = patch.maxVisibleValues;
-    }
-    if (patch.shapeSize !== undefined) {
-      if (patch.shapeSize === null) {
-        // An emptied size field returns the dataset to its default, as Reset does for the size.
-        this._data.clearShapeSize();
-      } else {
-        const size = Math.min(patch.shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
-        if (size !== this.shapeSize) {
-          this._persistenceController.saveShapeSize(size);
-          this.shapeSize = size;
-        }
-      }
-    }
-    if (patch.paletteId !== undefined) {
-      if (numeric) {
-        numeric.paletteId = normalizeNumericPaletteId(patch.paletteId);
-        this._selectedPaletteId = numeric.paletteId;
-      } else {
-        this._selectedPaletteId = normalizeCategoricalPaletteId(patch.paletteId);
-        this._legendItems = applyPaletteColors(this._legendItems, this._selectedPaletteId);
-        // Ahead of the update below, which keeps stored colours over palette ones.
-        this._syncLegendColorsToPersistence();
-      }
-    }
-    if (numeric && patch.numericStrategy !== undefined) numeric.strategy = patch.numericStrategy;
-    if (numeric && patch.reverseGradient !== undefined) {
-      numeric.reverseGradient = patch.reverseGradient;
-    }
-    if (patch.enableDuplicateStackUI !== undefined) {
-      this._enableDuplicateStackUI = patch.enableDuplicateStackUI;
-    }
-    if (numeric) {
-      this._numericSettingsByAnnotation = {
-        ...this._numericSettingsByAnnotation,
-        [annotation]: numeric,
-      };
-    }
-
-    this._updateLegendItems();
-    this._syncLegendColorsToPersistence();
-    this._scatterplotController.syncHiddenValues();
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.updateConfig({
-      pointSize: calculatePointSize(this.shapeSize),
-      enableDuplicateStackUI: this._enableDuplicateStackUI,
-    });
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  /** Reset from the popover: today's scope, and the popover stays open on the defaults. */
-  private async _resetSettingsKeepingOpen(): Promise<void> {
-    this._handleSettingsReset();
-    await this.updateComplete;
-    const popover = this._settingsPopover;
-    // Closed meanwhile, or removed with the legend: there is nothing to focus.
-    if (!popover || this._settingsAnchor === null || !this.isConnected) return;
-    await popover.updateComplete;
-    // Reset disables itself once nothing is stored; focus moves to the palette, not the body.
-    popover.focusFirst();
-  }
-
-  /** Something to reset: a record stored for the annotation, or a size picked for the dataset. */
-  private _canResetSettings(): boolean {
-    return (
-      this._persistenceController.hasPersistedSettings() ||
-      this._persistenceController.loadShapeSize() !== null
-    );
-  }
-
-  /**
-   * The size the size field shows: the live one, capped at the field's bound, or null while it
-   * is the dataset's default, which the empty field stands for (its placeholder names it).
-   */
-  private _fieldShapeSize(): number | null {
-    // The storage read last: this runs at every legend render, the popover closed or not.
-    const isDefault =
-      this._annotationShapeSize === null &&
-      this.shapeSize === defaultShapeSize(this._datasetProteinCount) &&
-      this._persistenceController.loadShapeSize() === null;
-    return isDefault ? null : Math.min(this.shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
-  }
-
-  /**
-   * The popover's view of the live state; there is no draft. A fresh object at each render is
-   * fine: the popover's `settings` compares field by field, so an unchanged one re-renders nothing.
-   */
-  private _displaySettings(isNumeric: boolean): LegendDisplaySettings {
-    const numeric = this._numericSettingsByAnnotation[this.selectedAnnotation];
-    return {
-      maxVisibleValues: this.maxVisibleValues,
-      shapeSize: this._fieldShapeSize(),
-      enableDuplicateStackUI: this._enableDuplicateStackUI,
-      paletteId: isNumeric
-        ? normalizeNumericPaletteId(numeric?.paletteId ?? DEFAULT_NUMERIC_PALETTE_ID)
-        : normalizeCategoricalPaletteId(this._selectedPaletteId),
-      numericStrategy: numeric?.strategy ?? DEFAULT_NUMERIC_STRATEGY,
-      reverseGradient: numeric?.reverseGradient ?? false,
-    };
-  }
-
-  /**
-   * The settings popover, rendered once as the last child of `.legend-container` and never keyed:
-   * it flushes a pending edit when removed, so a remount would send a stale `settings-change`.
-   */
-  private _renderSettingsPopover(label: string) {
-    const open = this._settingsAnchor !== null;
-    const isNumeric = this._isCurrentAnnotationNumeric();
-    return html`<protspace-legend-settings-popover
-      .anchor=${this._settingsAnchor}
-      .open=${open}
-      .settings=${this._displaySettings(isNumeric)}
-      .numeric=${isNumeric}
-      .defaultShapeSize=${defaultShapeSize(this._datasetProteinCount)}
-      .logBinningAvailable=${this.annotationData.numericMetadata?.logSupported ?? true}
-      .canReset=${open && this._canResetSettings()}
-      .annotationLabel=${label}
-      @settings-change=${(event: CustomEvent<Partial<LegendDisplaySettings>>) =>
-        this._applyDisplaySettings(event.detail)}
-      @settings-reset=${() => void this._resetSettingsKeepingOpen()}
-      @ps-open=${() => this._settingsPopover?.focusFirst()}
-      @ps-close=${() => {
-        this._settingsAnchor = null;
-      }}
-    ></protspace-legend-settings-popover>`;
-  }
-
-  private _handleColorChange(value: string, newColor: string): void {
-    // Update the color immediately
-    this._legendItems = this._legendItems.map((item) =>
-      item.value === value ? { ...item, color: newColor } : item,
-    );
-
-    // Sync to persistence
-    this._syncLegendColorsToPersistence();
-
-    // Update scatterplot and save (color-only change, no z-order change)
-    this._scatterplotController.dispatchColorMappingChange(true);
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  /**
-   * Shows a colour while it is dragged: the row repaints now, the plot when the edit commits. The
-   * item is changed in place, as before the split, so a drag does not re-sort the list or
-   * re-derive the score strips on every tick.
-   */
-  private _previewColor(value: string, color: string): void {
-    const item = this._legendItems.find((i) => i.value === value);
-    if (!item) return;
-    item.color = color;
-    this.requestUpdate();
-  }
-
-  private _handleShapeChange(value: string, newShape: PointShape): void {
-    // Update the shape immediately
-    this._legendItems = this._legendItems.map((item) =>
-      item.value === value ? { ...item, shape: newShape } : item,
-    );
-
-    // Sync to persistence
-    this._syncLegendColorsToPersistence();
-
-    // Update scatterplot and save (shape change, no z-order change)
-    this._scatterplotController.dispatchColorMappingChange(true);
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  private _handleSettingsReset(): void {
-    // Remove localStorage and clear pending categories
-    this._persistenceController.removeSettings();
-    this._persistenceController.clearPendingCategories();
-
-    // Reset all settings to defaults. The shape size is the dataset's, so it is cleared for every
-    // annotation rather than stored, and the default from the protein count applies again.
-    this.maxVisibleValues = LEGEND_DEFAULTS.maxVisibleValues;
-    this._data.clearShapeSize();
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-
-    this._selectedPaletteId = isNumericAnnotation ? DEFAULT_NUMERIC_PALETTE_ID : 'kellys';
-    if (isNumericAnnotation) {
-      this._numericSettingsByAnnotation = {
-        ...this._numericSettingsByAnnotation,
-        [this.selectedAnnotation]: {
-          binCount: LEGEND_DEFAULTS.maxVisibleValues,
-          strategy: DEFAULT_NUMERIC_STRATEGY,
-          paletteId: DEFAULT_NUMERIC_PALETTE_ID,
-          reverseGradient: false,
-        },
-      };
-      this._data.setNumericManualOrderIds(this.selectedAnnotation, undefined);
-    }
-
-    this._annotationSortModes = {
-      ...this._annotationSortModes,
-      [this.selectedAnnotation]: isNumericAnnotation
-        ? 'alpha-asc'
-        : getDefaultSortMode(this.selectedAnnotation),
-    };
-
-    this._hiddenValues = [];
-    this._enableDuplicateStackUI = false;
-
-    // Reset slot tracker so colors are reassigned from scratch
-    this._processorContext.slotTracker.reset();
-
-    // Clear legend items so processor creates fresh ones with default colors
-    this._legendItems = [];
-
-    this._scatterplotController.updateConfig({
-      pointSize: calculatePointSize(this.shapeSize),
-      enableDuplicateStackUI: this._enableDuplicateStackUI,
-    });
-
-    this._updateLegendItems();
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.dispatchColorMappingChange();
-    this.requestUpdate();
-  }
-
-  private _syncLegendColorsToPersistence(): void {
-    const categories: Record<string, PersistedCategoryData> = {};
-    const persistVisualEncodings = !this._isCurrentAnnotationNumeric();
-    this._legendItems.forEach((item) => {
-      if (item.value !== LEGEND_VALUES.OTHER) {
-        categories[item.value] = {
-          zOrder: item.zOrder,
-          color: persistVisualEncodings ? item.color : '',
-          shape: persistVisualEncodings ? item.shape : '',
-        };
-      }
-    });
-    this._persistenceController.setPendingCategories(categories);
-  }
-
-  // ─────────────────────────────────────────────────────────────────
   // Rendering
   // ─────────────────────────────────────────────────────────────────
 
@@ -1112,8 +820,7 @@ export class ProtspaceLegend extends LitElement {
           this._renderLegendItem(item, index),
         )}
         ${this._colorPicker.render()} ${this._rowMenu.render()} ${this._nameTooltip.render()}
-        ${this._renderSortMenu()} ${this._otherPopover.render()}
-        ${this._renderSettingsPopover(title)}
+        ${this._renderSortMenu()} ${this._otherPopover.render()} ${this._settings.render(title)}
       </div>
     `;
   }

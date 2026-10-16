@@ -25,8 +25,7 @@ type ShapeSizeLegend = HTMLElement & {
   shapeSize: number;
   selectedAnnotation: string;
   annotationData: { name: string; values: string[]; kind?: 'categorical' | 'numeric' };
-  _applyDisplaySettings: (patch: { shapeSize?: number | null }) => void;
-  _handleSettingsReset: () => void;
+  _settings: ProtspaceLegend['_settings'];
   _updateLegendItems: () => void;
   _scatterplotController: { updateConfig: (config: { pointSize?: number }) => void };
   _persistenceController: {
@@ -76,7 +75,7 @@ function makeLegend(proteinCount = 2) {
       JSON.stringify({ shapeSize, maxVisibleValues: 10, hiddenValues: [], categories: {} }),
     );
   /** Commit a size from the settings popover's size field, null for an emptied one. */
-  const pick = (shapeSize: number | null) => el._applyDisplaySettings({ shapeSize });
+  const pick = (shapeSize: number | null) => el._settings.apply({ shapeSize });
   /** Give the legend data with these annotations, which Reset and exports go through. */
   const annotate = (...annotations: string[]) => {
     el.data = {
@@ -135,7 +134,7 @@ describe('legend shape size', () => {
     switchTo('a');
     pick(12);
     switchTo('b');
-    el._handleSettingsReset();
+    el._settings.reset();
     expect(el.shapeSize).toBe(10);
     switchTo('a');
     expect(el.shapeSize).toBe(10);
@@ -383,7 +382,7 @@ describe('legend default shape size from the protein count', () => {
     expect(storedPick()).toBe('12');
     annotate('a', 'b');
 
-    el._handleSettingsReset();
+    el._settings.reset();
     expect(el.shapeSize).toBe(2);
     expect(pointSizes.at(-1)).toBe(16);
     expect(storedPick()).toBeNull();
@@ -441,7 +440,7 @@ describe('legend default shape size from the protein count', () => {
     expect(el.shapeSize).toBe(5);
     annotate('a', 'b');
 
-    el._handleSettingsReset();
+    el._settings.reset();
     expect(el.shapeSize).toBe(2);
     switchTo('b');
     expect(el.shapeSize).toBe(2);
@@ -449,9 +448,6 @@ describe('legend default shape size from the protein count', () => {
 });
 
 type MockPlot = Awaited<ReturnType<typeof mountLegendWithScatterplot>>['plot'];
-type ResettableLegend = ProtspaceLegend & {
-  _handleSettingsReset: () => void;
-};
 
 function makeData(count: number, prefix = 'p'): VisualizationData {
   const codes = Int32Array.from({ length: count }, (_, i) => i % 2);
@@ -485,7 +481,7 @@ describe('legend default shape size with a scatterplot', () => {
     const data = makeData(count);
     const { legend, plot } = await mountLegendWithScatterplot(data, 'group');
     await settleLegend(legend);
-    return { data, legend: legend as ResettableLegend, plot };
+    return { data, legend, plot };
   }
 
   const pointSize = (plot: MockPlot) => (plot.config as { pointSize?: number }).pointSize;
@@ -516,7 +512,7 @@ describe('legend default shape size with a scatterplot', () => {
     await settleLegend(legend);
     expect(legend.shapeSize).toBe(4);
 
-    legend._handleSettingsReset();
+    legend._settings.reset();
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
   });
