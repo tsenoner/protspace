@@ -134,22 +134,22 @@ previous phase left. A phase ends with the app working and every test green.
 
 8A. Cleanup:
 
-- [ ] 8.1 The style lint accepts a module's own properties; tooltip and projection details on tokens
-- [ ] 8.2 The scatter plot's sheet reads tokens only
-- [ ] 8.3 `ps-segmented` options can be disabled with a reason
-- [ ] 8.4 The structure viewer on `ps-segmented` and tokens; `tokens.ts`, `mixins.ts`,
+- [x] 8.1 The style lint accepts a module's own properties; tooltip and projection details on tokens
+- [x] 8.2 The scatter plot's sheet reads tokens only
+- [x] 8.3 `ps-segmented` options can be disabled with a reason
+- [x] 8.4 The structure viewer on `ps-segmented` and tokens; `tokens.ts`, `mixins.ts`,
       `overlay-mixins.ts` and the lint allowlist deleted
-- [ ] 8.5 Developer and design docs describe the final style setup; `scatter-plot.ts` recorded as
+- [x] 8.5 Developer and design docs describe the final style setup; `scatter-plot.ts` recorded as
       the exception to the 800-line target
-- [ ] 8.6 Projection details: formatting in its own module
-- [ ] 8.7 Legend: the data pipeline in `LegendDataController`
-- [ ] 8.8 Legend: item actions and keyboard reorder in controllers; the unused state event deleted
-- [ ] 8.9 Legend: settings in `SettingsController`; the legend's size recorded
-- [ ] 8.10 Scatter plot: a hover redraws no points; export compositing in its own module
-- [ ] 8.11 The floating structure card's default clears the selection bar
-- [ ] 8.12 Ctrl/⌘K opens search on a phone
-- [ ] 8.13 The e2e specs reach the figure editor through the shared helpers
-- [ ] 8.14 `feat/mobile-responsive` archived as `archive/mobile-landing` and deleted (local only)
+- [x] 8.6 Projection details: formatting in its own module
+- [x] 8.7 Legend: the data pipeline in `LegendDataController`
+- [x] 8.8 Legend: item actions and keyboard reorder in controllers; the unused state event deleted
+- [x] 8.9 Legend: settings in `SettingsController`; the legend's size recorded
+- [x] 8.10 Scatter plot: a hover redraws no points; export compositing in its own module
+- [x] 8.11 The floating structure card's default clears the selection bar
+- [x] 8.12 Ctrl/⌘K opens search on a phone
+- [x] 8.13 The e2e specs reach the figure editor through the shared helpers
+- [x] 8.14 `feat/mobile-responsive` archived as `archive/mobile-landing` and deleted (local only)
 
 8B. After #526 merges (planned then, numbered from 8.15):
 
