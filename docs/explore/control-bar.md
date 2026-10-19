@@ -20,6 +20,12 @@ Switch between different dimensionality reduction methods:
 
 Different projections reveal different patterns - try switching between them!
 
+When you switch projections, the points glide from where they are to their new positions over about
+0.8 seconds, so you can follow where each group goes. This also works inside an isolated view. While
+the points move, duplicate-count badges, expanded stacks and EAT connectors are hidden, and hovering
+shows no tooltip. If your system asks for reduced motion, the points jump to their new positions at
+once.
+
 ::: info URL persistence
 Your current projection is reflected in the page URL, so refresh, browser back/forward navigation, and shared links reopen the same view when possible. A bare `/explore` URL stays unchanged on first load; ProtSpace writes projection and annotation params after you change the view or when it needs to normalize an invalid URL value.
 :::

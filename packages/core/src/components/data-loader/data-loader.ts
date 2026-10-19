@@ -2,24 +2,12 @@ import type { PropertyValues } from 'lit';
 import { LitElement, html } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { parquetReadObjects } from 'hyparquet';
-import { isParquetBundle, type VisualizationData, type BundleSettings } from '@protspace/utils';
+import type { VisualizationData, BundleSettings } from '@protspace/utils';
 import { dataLoaderStyles } from './data-loader.styles';
 import { createDataErrorEventDetail, type DataErrorEventDetail } from './data-loader.events';
-import { readFileOptimized } from './utils/file-io';
-import { decodeParquetBundle } from './utils/bundle';
-import { convertParquetToVisualizationDataOptimized } from './utils/conversion';
-import {
-  assertValidFileExtension,
-  assertWithinFileSizeLimit,
-  assertValidParquetMagic,
-  validateRowsBasic,
-} from './utils/validation';
-import {
-  decodeBundleInWorker,
-  isWorkerDecodeSupported,
-  type WorkerDecodeResult,
-} from './decode-worker-client';
+import { assertValidFileExtension, assertWithinFileSizeLimit } from './utils/validation';
+import { decodeBundle } from './bundle-decoder';
+import { decodePlainParquet } from './legacy';
 
 /** Whether data was loaded by user action or automatically (e.g. page reload) */
 export type DataLoadSource = 'user' | 'auto';
@@ -155,12 +143,8 @@ export class DataLoader extends LitElement {
       const arrayBuffer = await response.arrayBuffer();
       this.completeStep();
 
-      // 3) Parse parquet
-      const table = await parquetReadObjects({ file: arrayBuffer });
-      this.completeStep();
-
-      // 4) Convert
-      const visualizationData = await convertParquetToVisualizationDataOptimized(table);
+      // 3) Parse parquet, 4) Convert
+      const visualizationData = await decodePlainParquet(arrayBuffer, () => this.completeStep());
       this.completeStep();
       this.dispatchDataLoaded({ data: visualizationData, settings: null, source });
     } catch (error) {
@@ -208,7 +192,7 @@ export class DataLoader extends LitElement {
     this.dispatchLoadingStart();
 
     try {
-      // Plan initial steps common to both branches: validate size, read ArrayBuffer
+      // Plan initial steps: validate size, read ArrayBuffer
       this.beginProgress(2);
 
       // 1) Early size validation
@@ -216,47 +200,22 @@ export class DataLoader extends LitElement {
       this.completeStep();
 
       // 2) Read the file into one ArrayBuffer
-      const arrayBuffer = await readFileOptimized(file);
+      const arrayBuffer = await file.arrayBuffer();
       this.completeStep();
 
-      // Branch-specific steps
-      if (file.name.endsWith('.parquetbundle') || isParquetBundle(arrayBuffer)) {
-        // For bundles: decode+convert in worker (or main-thread fallback)
-        this.addSteps(1);
-        let decoded: WorkerDecodeResult;
-        if (isWorkerDecodeSupported()) {
-          try {
-            decoded = await decodeBundleInWorker(arrayBuffer);
-          } catch (workerError) {
-            // Fallback: main-thread decode (worker unsupported / runtime failure).
-            console.warn('Worker decode failed, falling back to main thread:', workerError);
-            decoded = await decodeParquetBundle(arrayBuffer);
-          }
-        } else {
-          decoded = await decodeParquetBundle(arrayBuffer);
-        }
-        this.completeStep();
-        this.dispatchDataLoaded({
-          data: decoded.data,
-          settings: decoded.settings,
-          source,
-          file,
-          bundleFormatVersion: decoded.formatVersion,
-          unplacedProteinCount: decoded.unplacedProteinCount,
-        });
-      } else {
-        // For regular parquet: validate magic -> parse -> validate rows -> convert
-        this.addSteps(4);
-        assertValidParquetMagic(arrayBuffer);
-        this.completeStep();
-        const table = await parquetReadObjects({ file: arrayBuffer });
-        this.completeStep();
-        validateRowsBasic(table);
-        this.completeStep();
-        const visualizationData = await convertParquetToVisualizationDataOptimized(table);
-        this.completeStep();
-        this.dispatchDataLoaded({ data: visualizationData, settings: null, source, file });
-      }
+      // 3) Decode+convert in worker (or main-thread fallback). Only a .parquetbundle
+      // gets this far: assertValidFileExtension turned anything else away.
+      this.addSteps(1);
+      const decoded = await decodeBundle(arrayBuffer, () => file.arrayBuffer());
+      this.completeStep();
+      this.dispatchDataLoaded({
+        data: decoded.data,
+        settings: decoded.settings,
+        source,
+        file,
+        bundleFormatVersion: decoded.formatVersion,
+        unplacedProteinCount: decoded.unplacedProteinCount,
+      });
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       this.error = originalError.message;

@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   StoredDatasetCorruptError,
+  beginSaveImportedFile,
   clearLastImportedFile,
   isSupported,
   loadLastImportedFile,
   markLastLoadStatus,
   readLastLoadStatus,
   restoreLastLoadStatus,
-  saveLastImportedFile,
 } from './opfs-dataset-store';
 import { getDatasetPersistenceFailureNotification } from './notifications';
 
@@ -25,6 +25,10 @@ class MockWritableFileStream {
 
   async close() {
     this.onClose(new Blob(this.chunks));
+  }
+
+  async abort() {
+    this.chunks = [];
   }
 }
 
@@ -124,6 +128,21 @@ afterEach(() => {
 });
 
 describe('opfs-dataset-store', () => {
+  it('stores a pending copy only on commit, and an aborted one never', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['first'], 'first.parquetbundle')).commit();
+
+    const failed = beginSaveImportedFile(new File(['second'], 'second.parquetbundle'));
+    let stored = await loadLastImportedFile();
+    expect(stored?.name).toBe('first.parquetbundle');
+    await failed.abort();
+
+    stored = await loadLastImportedFile();
+    expect(stored?.name).toBe('first.parquetbundle');
+    expect(await stored?.text()).toBe('first');
+  });
+
   it('saves and loads an imported file round-trip', async () => {
     const root = new MockDirectoryHandle();
     stubNavigator(root);
@@ -133,7 +152,7 @@ describe('opfs-dataset-store', () => {
       lastModified: 123,
     });
 
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     const loaded = await loadLastImportedFile();
 
     expect(loaded).not.toBeNull();
@@ -181,9 +200,9 @@ describe('opfs-dataset-store', () => {
     expect(isSupported()).toBe(false);
     await expect(loadLastImportedFile()).resolves.toBeNull();
     await expect(clearLastImportedFile()).resolves.toBeUndefined();
-    await expect(saveLastImportedFile(new File(['x'], 'custom.parquetbundle'))).rejects.toThrow(
-      /not supported/i,
-    );
+    await expect(
+      beginSaveImportedFile(new File(['x'], 'custom.parquetbundle')).commit(),
+    ).rejects.toThrow(/not supported/i);
   });
 
   // The persistence toast recognises this error by its exact message, a copy of the
@@ -191,9 +210,9 @@ describe('opfs-dataset-store', () => {
   it('rejects a save with the error the persistence toast names as unsupported', async () => {
     stubNavigator();
 
-    const error = await saveLastImportedFile(new File(['x'], 'custom.parquetbundle')).catch(
-      (e: unknown) => e,
-    );
+    const error = await beginSaveImportedFile(new File(['x'], 'custom.parquetbundle'))
+      .commit()
+      .catch((e: unknown) => e);
 
     expect(getDatasetPersistenceFailureNotification(error)).toMatchObject({
       description: expect.stringMatching(/does not support the Origin Private File System/),
@@ -215,7 +234,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('pending');
     expect(await readLastLoadStatus()).toEqual({
       status: 'pending',
@@ -229,7 +248,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('pending');
     await markLastLoadStatus('pending');
     await markLastLoadStatus('pending');
@@ -241,7 +260,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('pending');
     await markLastLoadStatus('pending');
     await markLastLoadStatus('success');
@@ -257,7 +276,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('error', { error: 'boom' });
     expect(await readLastLoadStatus()).toEqual({
       status: 'error',
@@ -271,7 +290,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     const dir = await root.getDirectoryHandle('protspace-last-import');
     const handle = await dir.getFileHandle('metadata.json');
     const writable = await handle.createWritable();
@@ -297,7 +316,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('success'); // failedAttempts = 0
     await markLastLoadStatus('pending'); // prev was success → counter stays 0
     expect((await readLastLoadStatus())?.failedAttempts).toBe(0);
@@ -316,7 +335,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('error', { error: 'boom' });
     const before = await readLastLoadStatus();
     await markLastLoadStatus('pending');
@@ -343,7 +362,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('pending');
     await clearLastImportedFile();
     expect(await readLastLoadStatus()).toBeNull();

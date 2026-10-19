@@ -4,22 +4,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 
-// jsdom has no Worker, so the worker path only runs when isWorkerDecodeSupported is mocked.
-vi.mock('./decode-worker-client', () => ({
-  isWorkerDecodeSupported: vi.fn(() => false),
-  decodeBundleInWorker: vi.fn(),
-}));
-vi.mock('./utils/bundle', async (importOriginal) => ({
-  ...(await importOriginal<typeof Bundle>()),
-  decodeParquetBundle: vi.fn(),
-}));
+// The worker choice and its fallback live in decodeBundle (bundle-decoder.test.ts).
+vi.mock('./bundle-decoder', () => ({ decodeBundle: vi.fn() }));
 
 import './data-loader';
 import type { DataLoadedEventDetail } from './data-loader';
 import type { DataErrorEventDetail } from './data-loader.events';
-import { decodeBundleInWorker, isWorkerDecodeSupported } from './decode-worker-client';
-import { decodeParquetBundle } from './utils/bundle';
-import type * as Bundle from './utils/bundle';
+import { decodeBundle } from './bundle-decoder';
 
 const DATA = { protein_ids: ['P1'] } as unknown as VisualizationData;
 const DECODED = { data: DATA, settings: null, formatVersion: 2, unplacedProteinCount: 3 };
@@ -57,11 +48,10 @@ describe('data-loader loading a file itself (no loadFromFileHandler)', () => {
     dataLoader.addEventListener('data-error', (event) =>
       errors.push((event as CustomEvent<DataErrorEventDetail>).detail),
     );
-    vi.mocked(decodeParquetBundle).mockResolvedValue(DECODED);
+    vi.mocked(decodeBundle).mockResolvedValue(DECODED);
   });
 
   afterEach(() => {
-    vi.mocked(isWorkerDecodeSupported).mockReturnValue(false);
     vi.clearAllMocks();
     vi.restoreAllMocks();
   });
@@ -82,12 +72,12 @@ describe('data-loader loading a file itself (no loadFromFileHandler)', () => {
 
   it('rejects an oversized file without reading it, and clears the loading state', async () => {
     const { file } = bundleFile();
-    Object.defineProperty(file, 'size', { value: 501 * 1024 * 1024 });
+    Object.defineProperty(file, 'size', { value: 2049 * 1024 * 1024 });
 
     await dataLoader.loadFromFile(file);
 
     expect(errors).toHaveLength(1);
-    expect(errors[0].message).toMatch(/^File too large: 501\.00MB exceeds limit/);
+    expect(errors[0].message).toBe('File too large: 2049.00 MB exceeds the 2048 MB limit');
     expect(file.arrayBuffer).not.toHaveBeenCalled();
     expect(dataLoader.hasAttribute('loading')).toBe(false);
     expect(loaded).toEqual([]);
@@ -98,7 +88,7 @@ describe('data-loader loading a file itself (no loadFromFileHandler)', () => {
 
     await dataLoader.loadFromFile(file, { source: 'auto' });
 
-    expect(decodeParquetBundle).toHaveBeenCalledWith(bytes);
+    expect(decodeBundle).toHaveBeenCalledWith(bytes, expect.any(Function));
     expect(errors).toEqual([]);
     expect(loaded).toEqual([
       {
@@ -111,36 +101,6 @@ describe('data-loader loading a file itself (no loadFromFileHandler)', () => {
       },
     ]);
     expect(loadingStarts).toBe(1);
-    expect(dataLoader.hasAttribute('loading')).toBe(false);
-  });
-
-  it('uses the worker result when the worker decodes the bundle', async () => {
-    vi.mocked(isWorkerDecodeSupported).mockReturnValue(true);
-    vi.mocked(decodeBundleInWorker).mockResolvedValue({ ...DECODED, formatVersion: 3 });
-    const { file, bytes } = bundleFile();
-
-    await dataLoader.loadFromFile(file);
-
-    expect(decodeBundleInWorker).toHaveBeenCalledWith(bytes);
-    expect(decodeParquetBundle).not.toHaveBeenCalled();
-    expect(loaded).toHaveLength(1);
-    expect(loaded[0].bundleFormatVersion).toBe(3);
-  });
-
-  it('falls back to the main-thread decode when the worker rejects', async () => {
-    vi.mocked(isWorkerDecodeSupported).mockReturnValue(true);
-    vi.mocked(decodeBundleInWorker).mockRejectedValue(new Error('worker crashed'));
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { file, bytes } = bundleFile();
-
-    await dataLoader.loadFromFile(file);
-
-    expect(decodeBundleInWorker).toHaveBeenCalledWith(bytes);
-    expect(decodeParquetBundle).toHaveBeenCalledWith(bytes);
-    expect(warn).toHaveBeenCalledOnce();
-    expect(errors).toEqual([]);
-    expect(loaded).toHaveLength(1);
-    expect(loaded[0]).toMatchObject({ data: DATA, bundleFormatVersion: 2, file });
     expect(dataLoader.hasAttribute('loading')).toBe(false);
   });
 });

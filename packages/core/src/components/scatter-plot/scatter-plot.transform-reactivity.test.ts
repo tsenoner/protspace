@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * F-48 characterization: writing `_transform` must NOT schedule a Lit reactive
+ * Characterization: writing `_transform` must NOT schedule a Lit reactive
  * update. As `@state() _transform`, Lit would install a reactive accessor, so a
  * write would call `requestUpdate('_transform', old)`, enqueue an update, and
  * once that update flushed `updated()` would run and (because `_transform` is
@@ -12,7 +12,7 @@
  * The load-bearing signal: a `_transform` write does not call `requestUpdate`,
  * the single Lit hook that schedules an update (and hence the downstream
  * `updated()` -> `_renderPlot()` pass for this non-selection key). Spying
- * `requestUpdate` pins exactly the cause F-48 removes, with no downstream noise.
+ * `requestUpdate` pins exactly the cause the plain-field change removes, with no downstream noise.
  *
  * The element is constructed via `createElement` and NEVER appended: a reactive
  * `@state` setter calls `requestUpdate` synchronously on write, so the signal is
@@ -25,30 +25,15 @@
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import * as d3 from 'd3';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
+import { createPlot } from './test-support/plot-fixture';
 
-import './scatter-plot';
-
-type TransformInternals = HTMLElement & {
-  _transform: d3.ZoomTransform;
-  requestUpdate(name?: PropertyKey, oldValue?: unknown): void;
-};
-
-describe('F-48 _transform is not a reactive Lit property', () => {
+describe('_transform is not a reactive Lit property', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it('writing _transform does not call requestUpdate (no Lit update scheduled)', () => {
-    const sp = document.createElement('protspace-scatterplot') as TransformInternals;
+    const sp = createPlot();
     // Not appended: a reactive @state setter still calls requestUpdate
     // synchronously on write, so the spy captures the scheduling hook without
     // any connection / updateComplete await (which would hang on an un-appended

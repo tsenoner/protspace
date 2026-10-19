@@ -1,42 +1,11 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from 'vitest';
-import { render as litRender, type TemplateResult } from 'lit';
-
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-import type { ProtspaceScatterplot } from './scatter-plot';
-
-type ConnectorSeam = {
-  _connectorOverlay: {
-    set: ReturnType<typeof vi.fn>;
-    clear: ReturnType<typeof vi.fn>;
-    render: ReturnType<typeof vi.fn>;
-    hasActiveRequest: ReturnType<typeof vi.fn>;
-    invalidateDataCache: ReturnType<typeof vi.fn>;
-  };
-  _mergedConfig: { selectedOpacity: number };
-  _connectorStatus: { shown: number; total: number; missingEndpoints: number } | null;
-  _getInteractableProteinIds(): ReadonlySet<string>;
-  _formatConnectorStatus(status: {
-    shown: number;
-    total: number;
-    missingEndpoints: number;
-  }): string;
-  _reconcileProvenanceConnectors(changed: Map<string, unknown>): void;
-  render(): TemplateResult;
-};
+import { render as litRender } from 'lit';
+import { createPlot } from './test-support/plot-fixture';
 
 function makePlot() {
-  const plot = document.createElement('protspace-scatterplot') as ProtspaceScatterplot;
+  const plot = createPlot();
   const overlay = {
     set: vi.fn(),
     clear: vi.fn(),
@@ -44,8 +13,8 @@ function makePlot() {
     hasActiveRequest: vi.fn(() => true),
     invalidateDataCache: vi.fn(),
   };
-  (plot as unknown as ConnectorSeam)._connectorOverlay = overlay;
-  return { plot, overlay, seam: plot as unknown as ConnectorSeam };
+  plot._connectorOverlay = overlay as never;
+  return { plot, overlay };
 }
 
 describe('scatter-plot provenance connector contract', () => {
@@ -67,10 +36,10 @@ describe('scatter-plot provenance connector contract', () => {
   });
 
   it('clears connector-owned highlights and stale state on an annotation change', () => {
-    const { plot, overlay, seam } = makePlot();
+    const { plot, overlay } = makePlot();
     plot.highlightedProteinIds = ['source', 'target'];
 
-    seam._reconcileProvenanceConnectors(new Map([['selectedAnnotation', 'ec']]));
+    plot._reconcileProvenanceConnectors(new Map([['selectedAnnotation', 'ec']]));
 
     expect(overlay.clear).toHaveBeenCalledOnce();
     expect(plot.highlightedProteinIds).toEqual([]);
@@ -78,9 +47,9 @@ describe('scatter-plot provenance connector contract', () => {
   });
 
   it('releases the dataset-owned lookup when data identity changes', () => {
-    const { overlay, seam } = makePlot();
+    const { plot, overlay } = makePlot();
 
-    seam._reconcileProvenanceConnectors(new Map([['data', undefined]]));
+    plot._reconcileProvenanceConnectors(new Map([['data', undefined]]));
 
     expect(overlay.clear).toHaveBeenCalledOnce();
     expect(overlay.invalidateDataCache).toHaveBeenCalledOnce();
@@ -89,7 +58,7 @@ describe('scatter-plot provenance connector contract', () => {
   it.each(['source', 'target'])(
     'clears an active pair when its %s category is hidden',
     (endpoint) => {
-      const { plot, overlay, seam } = makePlot();
+      const { plot, overlay } = makePlot();
       plot.setProvenanceConnectors({
         pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
         totalCandidates: 1,
@@ -97,7 +66,7 @@ describe('scatter-plot provenance connector contract', () => {
       overlay.clear.mockClear();
 
       plot.hiddenAnnotationValues = [`hidden-${endpoint}`];
-      seam._reconcileProvenanceConnectors(new Map([['hiddenAnnotationValues', []]]));
+      plot._reconcileProvenanceConnectors(new Map([['hiddenAnnotationValues', []]]));
 
       expect(overlay.clear).toHaveBeenCalledOnce();
       expect(plot.highlightedProteinIds).toEqual([]);
@@ -105,9 +74,9 @@ describe('scatter-plot provenance connector contract', () => {
   );
 
   it('rerenders geometry for projection and filter changes', () => {
-    const { overlay, seam } = makePlot();
+    const { plot, overlay } = makePlot();
 
-    seam._reconcileProvenanceConnectors(
+    plot._reconcileProvenanceConnectors(
       new Map([
         ['selectedProjectionIndex', 0],
         ['filteredProteinIds', []],
@@ -118,31 +87,31 @@ describe('scatter-plot provenance connector contract', () => {
   });
 
   it('announces eligible endpoints that are unavailable outside the current view', () => {
-    const { seam } = makePlot();
+    const { plot } = makePlot();
 
-    expect(seam._formatConnectorStatus({ shown: 0, total: 1, missingEndpoints: 1 })).toBe(
+    expect(plot._formatConnectorStatus({ shown: 0, total: 1, missingEndpoints: 1 })).toBe(
       '1 hidden (off-view)',
     );
   });
 
   it('omits the connector-status chip once every connector endpoint is visible', () => {
-    const { seam } = makePlot();
-    seam._connectorStatus = { shown: 1, total: 1, missingEndpoints: 0 };
+    const { plot } = makePlot();
+    plot._connectorStatus = { shown: 1, total: 1, missingEndpoints: 0 };
 
     const host = document.createElement('div');
     const shadow = host.attachShadow({ mode: 'open' });
-    litRender(seam.render(), shadow);
+    litRender(plot.render(), shadow);
 
     expect(shadow.querySelector('.connector-status')).toBeNull();
   });
 
   it('renders the terse connector-status chip once an endpoint is off-view', () => {
-    const { seam } = makePlot();
-    seam._connectorStatus = { shown: 0, total: 1, missingEndpoints: 1 };
+    const { plot } = makePlot();
+    plot._connectorStatus = { shown: 0, total: 1, missingEndpoints: 1 };
 
     const host = document.createElement('div');
     const shadow = host.attachShadow({ mode: 'open' });
-    litRender(seam.render(), shadow);
+    litRender(plot.render(), shadow);
 
     const chip = shadow.querySelector('.connector-status');
     expect(chip).not.toBeNull();
@@ -150,9 +119,9 @@ describe('scatter-plot provenance connector contract', () => {
   });
 
   it('suppresses a pair that becomes non-interactable under connector-owned highlighting', () => {
-    const { plot, overlay, seam } = makePlot();
-    seam._mergedConfig = { ...seam._mergedConfig, selectedOpacity: 0 };
-    seam._getInteractableProteinIds = vi.fn(() => {
+    const { plot, overlay } = makePlot();
+    plot._mergedConfig = { ...plot._mergedConfig, selectedOpacity: 0 };
+    plot._getInteractableProteinIds = vi.fn(() => {
       expect(plot.highlightedProteinIds).toEqual(['source', 'target']);
       return new Set();
     });
@@ -162,7 +131,7 @@ describe('scatter-plot provenance connector contract', () => {
       totalCandidates: 1,
     });
 
-    expect(seam._getInteractableProteinIds).toHaveBeenCalledOnce();
+    expect(plot._getInteractableProteinIds).toHaveBeenCalledOnce();
     expect(overlay.set).not.toHaveBeenCalled();
     expect(overlay.clear).toHaveBeenCalledOnce();
     expect(plot.highlightedProteinIds).toEqual([]);

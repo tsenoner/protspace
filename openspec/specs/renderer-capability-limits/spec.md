@@ -38,24 +38,6 @@ fall back to the WebGL2 specification floor of 2048 rather than proceeding unbou
 - **WHEN** a scatter-plot renders repeatedly against one WebGL context
 - **THEN** the device limit is queried once, at context acquisition, and not during rendering
 
-### Requirement: Buffer capacity SHALL be bounded by the renderer's own point cap
-
-The renderer SHALL bound planned buffer capacity by its maximum drawable point count, so that
-geometric growth across reloads within a session cannot allocate for more points than the renderer
-will ever draw. The bound SHALL NOT reduce capacity below the amount a single load actually
-requires.
-
-#### Scenario: Geometric growth cannot overshoot the cap
-
-- **WHEN** a session loads a dataset just under the cap and then another slightly larger one, so
-  that 1.5x growth would exceed the cap
-- **THEN** planned capacity is bounded at the cap rounded up to allocation granularity
-
-#### Scenario: A load larger than the cap is not starved
-
-- **WHEN** capacity is planned for a point count above the cap
-- **THEN** the planner returns enough capacity for that point count rather than the cap
-
 ### Requirement: The renderer SHALL reduce marker fidelity rather than point coverage
 
 The renderer SHALL reduce the number of label slices per point, and SHALL NOT reduce the number of
@@ -230,30 +212,6 @@ so that no dirty check can be tripped by motion alone.
 - **WHEN** the selected annotation, the colour mapping, the projection, or the dataset changes
 - **THEN** the renderer re-stages as before — this requirement constrains camera motion only
 
-### Requirement: The loader and the renderer SHALL share one point cap
-
-The loader's row limit and the renderer's staging clamp SHALL derive from a single constant, so a
-dataset the loader admits is always drawn in full. The relationship SHALL be pinned by a test rather
-than by a comment. The renderer SHALL NOT silently discard points: any clamp it retains SHALL be
-unreachable through the loader.
-
-#### Scenario: A dataset at the limit is fully drawn
-
-- **WHEN** a single-projection bundle at the maximum admitted size is loaded
-- **THEN** the number of points drawn equals the number of proteins reported
-
-#### Scenario: A dataset over the limit is refused with an explanation
-
-- **WHEN** a bundle exceeds the limit
-- **THEN** the load fails with a message naming the limit, what it counts, and what to do about it
-- **AND** no partial dataset is displayed
-
-#### Scenario: Multiple projections are counted correctly
-
-- **WHEN** a bundle carries more than one projection
-- **THEN** the row limit accounts for proteins multiplied by projections, so proteins per projection
-  can never exceed what the renderer draws
-
 ### Requirement: The drawn point count SHALL be observable
 
 The renderer SHALL expose the number of points its last stage actually drew, and the number of bytes
@@ -294,3 +252,47 @@ necessarily altering any sampled style value.
 - **WHEN** hidden values reduce every point to a single rendered colour
 - **THEN** the annotation is still treated as multi-value and the atlas is retained, so restoring a
   hidden value needs no reallocation
+
+### Requirement: Buffer capacity SHALL be bounded by what the device can draw
+
+The renderer SHALL bound planned buffer capacity by the device bound: the smaller of its drawable
+limit (2^26 points, set by its widest vertex buffer) and one mark texel per point
+(`MAX_TEXTURE_SIZE²`). Geometric growth across reloads within a session SHALL NOT allocate past
+it. The bound SHALL NOT reduce capacity below the amount a single load actually requires.
+
+#### Scenario: Geometric growth cannot overshoot the device bound
+
+- **WHEN** a session loads a dataset just under the device bound and then another slightly larger
+  one, so that 1.5x growth would exceed it
+- **THEN** planned capacity is bounded at the device bound rounded up to allocation granularity
+
+#### Scenario: A load larger than the mark texture is not starved
+
+- **WHEN** capacity is planned for a point count above `MAX_TEXTURE_SIZE²` and within the drawable
+  limit
+- **THEN** the planner returns enough capacity for that point count
+- **AND** the marks are staged with the other styles instead of the mark texture
+
+### Requirement: A dataset past the drawable limit SHALL be refused, not truncated
+
+The renderer SHALL draw every point it is handed, up to its drawable limit of 2^26 points. Past
+it, the renderer SHALL draw none of them, allocate nothing for them, and report the point count
+and the limit through the host-message channel, which the application surfaces as a "Too many
+points to draw" warning. The renderer SHALL NOT draw a subset of a dataset.
+
+#### Scenario: Every point of a dataset within the limit is drawn
+
+- **WHEN** a dataset within the drawable limit is loaded
+- **THEN** the number of points drawn equals the number of points handed to the renderer
+
+#### Scenario: A dataset past the limit is refused with an explanation
+
+- **WHEN** a dataset holds more points than the drawable limit
+- **THEN** nothing is drawn and no point buffer is allocated
+- **AND** a warning naming the point count and the limit is surfaced once, and later renders
+  neither repeat it nor retry the allocation
+
+#### Scenario: The next dataset that fits is drawn as usual
+
+- **WHEN** a dataset within the limit is loaded after one that was refused
+- **THEN** it is staged and drawn in full

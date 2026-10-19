@@ -7,37 +7,15 @@
  * `_plotData`/`_scales`/`_transform`, and one copy went stale when PlotData
  * became columnar.
  */
-import { vi, describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import * as d3 from 'd3';
 import type { PlotData } from '@protspace/utils';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-type GeometryInternals = HTMLElement & {
-  _plotData: PlotData;
-  _transform: d3.ZoomTransform;
-  _cachedScales: { x(v: number): number; y(v: number): number } | null;
-  _scalesCacheDeps: unknown;
-  _dupOverlay: unknown;
-  dataToClient(x: number, y: number): { x: number; y: number } | null;
-  getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
-  getDuplicateStacks(): { key: string; x: number; y: number; count: number }[];
-  getExpandedDuplicateStackKey(): string | null;
-};
+import { createPlot, type PlotInternals } from './test-support/plot-fixture';
 
 /** Three proteins; `originalIndices` plots only p0 and p2, as isolation would. */
-function makeScatter(originalIndices: Int32Array | null = null): GeometryInternals {
-  const sp = document.createElement('protspace-scatterplot') as GeometryInternals;
+function makeScatter(originalIndices: Int32Array | null = null): PlotInternals {
+  const sp = createPlot();
   const proteinIds = ['p0', 'p1', 'p2'];
   sp._plotData = originalIndices
     ? ({
@@ -56,14 +34,12 @@ function makeScatter(originalIndices: Int32Array | null = null): GeometryInterna
         originalIndices: null,
         proteinIds,
       } as PlotData);
-  // Scales double the data coordinate; primed with matching deps so the cached
-  // getter returns them verbatim (same technique as scatter-plot.pick.test.ts).
-  sp._cachedScales = { x: (v) => v * 2, y: (v) => v * 2 };
-  sp._scalesCacheDeps = {
+  // Scales double the data coordinate; primed with the current length and key so the
+  // cached getter returns them verbatim (same technique as scatter-plot.pick.test.ts).
+  sp._scalesCache = {
+    scales: { x: (v) => v * 2, y: (v) => v * 2 },
     plotDataLength: sp._plotData.length,
-    width: 800,
-    height: 600,
-    margin: { top: 40, right: 40, bottom: 40, left: 40 },
+    key: sp._scalesKey(),
   };
   sp._transform = d3.zoomIdentity.translate(5, 7).scale(3);
   sp.getBoundingClientRect = () => ({ left: 100, top: 200 }) as DOMRect;

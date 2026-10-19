@@ -1,8 +1,23 @@
 """Fixtures shared across the protspace test modules."""
 
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_logging():
+    """``setup_logging`` in the CLI swaps the root handlers for one bound to the
+    runner's stderr, which is closed once ``invoke`` returns. Undo it after every
+    test, or a later command that logs without calling ``setup_logging``
+    (``style``) writes a ``--- Logging error ---`` traceback into its output."""
+    root = logging.getLogger()
+    handlers, level = root.handlers[:], root.level
+    yield
+    root.handlers[:] = handlers
+    root.setLevel(level)
 
 
 @pytest.fixture

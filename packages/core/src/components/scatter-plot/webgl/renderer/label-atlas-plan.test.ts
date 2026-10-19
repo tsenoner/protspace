@@ -5,7 +5,7 @@ import { MAX_LABELS, planLabelAtlas } from './label-atlas-plan';
 // so these cases describe geometry the renderer can really ask for.
 const SWISS_PROT_CAPACITY = 573_696; // 573,649 proteins snapped to 256
 const CLAMPED_CAPACITY = 1_000_192; // the old 1,000,000 renderer clamp, snapped to 256
-const TWO_MILLION_CAPACITY = 2_000_128; // the ceiling #456 raises the clamp to
+const TWO_MILLION_CAPACITY = 2_000_128; // the later 2,000,000 clamp (#456), snapped to 256
 
 describe('planLabelAtlas', () => {
   it('keeps the historical geometry on a device with ample limits', () => {

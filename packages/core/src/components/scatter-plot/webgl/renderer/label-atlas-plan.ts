@@ -12,17 +12,10 @@
  * the export renderer derive atlas geometry, so the two cannot drift.
  */
 
+import { MIN_MAX_TEXTURE_SIZE } from './device-limits';
+
 /** Label slices a point can carry at full fidelity. */
 export const MAX_LABELS = 8;
-
-/**
- * The WebGL2 / GLES3 guaranteed minimum for `gl.MAX_TEXTURE_SIZE`.
- *
- * Doubles as the conservative fallback for a context that has not been probed
- * yet, or whose driver reports nonsense: planning against the floor can only
- * under-commit, never over-commit.
- */
-export const MIN_MAX_TEXTURE_SIZE = 2048;
 
 /**
  * Candidate atlas widths, narrowest first. The narrowest is the spec floor

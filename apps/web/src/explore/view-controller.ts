@@ -143,7 +143,7 @@ export function createViewController({
   };
 
   const selectDensityLayer = (density: DensityLayerMode) => {
-    controlBar.densityLayer = density;
+    controlBar.applyDensityLayerSelection(density);
     plotElement.config = { ...(plotElement.config ?? {}), densityLayer: density };
   };
 

@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 import '../legend';
+import { createLocalStorageMock } from './local-storage-mock';
 import type { ProtspaceLegend } from '../legend';
 
 /**
@@ -91,24 +92,7 @@ export async function settle(legend: ProtspaceLegend): Promise<void> {
  * whose fixtures hash the same leak saved settings into each other; specs clear the store in a
  * `beforeEach`. Node does not hand jsdom a usable `localStorage` without `--localstorage-file`,
  * so without this stub persistence silently no-ops locally but runs in CI, and `clear()` throws.
- * Same shape as the mock in `packages/utils/src/storage/storage-service.test.ts`.
  */
 export function stubLocalStorage(): void {
-  let store: Record<string, string> = {};
-  vi.stubGlobal('localStorage', {
-    getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => {
-      store[key] = value;
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: (index: number) => Object.keys(store)[index] ?? null,
-  });
+  vi.stubGlobal('localStorage', createLocalStorageMock());
 }

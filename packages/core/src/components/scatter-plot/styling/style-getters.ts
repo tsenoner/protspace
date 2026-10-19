@@ -9,8 +9,11 @@ import {
   normalizeShapeName,
   toInternalValue,
 } from '@protspace/utils';
+import type { PointStylePass } from '../webgl/types';
+import { composePaintDepth, SELECTED_OPACITY_THRESHOLD } from '../paint-depth';
 import { computeVisibilityModel } from './visibility-model';
 import type { VisibilityModel } from './visibility-model';
+import { CategoryStyles, createCategoryStylePass } from './style-pass';
 
 export interface StyleConfig {
   selectedProteinIds: string[];
@@ -138,11 +141,13 @@ export function createStyleGetters(
     return styleConfig.sizes.base;
   };
 
-  const getPointShape = (point: PlotDataPoint): string => {
-    if (!data || !styleConfig.selectedAnnotation) return 'circle';
+  // What a point's annotation values mean for its shape, colours and z-order.
+  // The getters apply these to one point's values, read in place; the staging
+  // pass applies them once per category (style-pass.ts), so the two cannot disagree.
+  // Shape and z-order read only the value count, the first value and whether any
+  // value is in "Other".
+  const shapeOf = (count: number, first: string | undefined): string => {
     if (isNumeric) return 'circle';
-
-    const count = valueCountOf(point.originalIndex);
 
     // multilabel points only support circle for now
     if (count > 1) return 'circle';
@@ -150,7 +155,7 @@ export function createStyleGetters(
     // Defensive guard — shouldn't happen since DataProcessor normalizes nulls to __NA__
     if (count === 0) return 'circle';
 
-    const annotationValue = valueOf(point.originalIndex, 0);
+    const annotationValue = first!;
     if (annotationValue && otherValuesSet.has(annotationValue)) return 'circle';
 
     const k = toInternalValue(annotationValue);
@@ -161,15 +166,7 @@ export function createStyleGetters(
     return 'circle';
   };
 
-  const getColors = (point: PlotDataPoint): string[] => {
-    if (!data || !styleConfig.selectedAnnotation) return [NEUTRAL_VALUE_COLOR];
-
-    const annotationValueArray = getProteinAnnotationValues(
-      data,
-      point.originalIndex,
-      styleConfig.selectedAnnotation,
-    );
-
+  const colorsOfValues = (annotationValueArray: readonly string[]): string[] => {
     // Defensive guard
     if (annotationValueArray.length === 0) return [NEUTRAL_VALUE_COLOR];
 
@@ -187,6 +184,20 @@ export function createStyleGetters(
 
     // Remove multiple neutral colors from multiple other annotations
     return [...new Set(colors)];
+  };
+
+  const getPointShape = (point: PlotDataPoint): string => {
+    if (!data || !styleConfig.selectedAnnotation) return 'circle';
+    if (isNumeric) return 'circle';
+    const count = valueCountOf(point.originalIndex);
+    return shapeOf(count, count > 0 ? valueOf(point.originalIndex, 0) : undefined);
+  };
+
+  const getColors = (point: PlotDataPoint): string[] => {
+    if (!data || !styleConfig.selectedAnnotation) return [NEUTRAL_VALUE_COLOR];
+    return colorsOfValues(
+      getProteinAnnotationValues(data, point.originalIndex, styleConfig.selectedAnnotation),
+    );
   };
 
   /**
@@ -220,6 +231,40 @@ export function createStyleGetters(
       : 0;
   const Z_EPS = 1e-3; // must be small enough to not override opacity-based depth differences
 
+  /** The z-order offset of a legend rank, or of a value the legend does not rank. */
+  const zOffsetOfRank = (order: number | undefined): number => {
+    if (typeof order === 'number' && Number.isFinite(order) && zMax > 0) {
+      const orderNorm = Math.min(1, Math.max(0, order / zMax));
+      return orderNorm * Z_EPS;
+    }
+    // Unknown values go to the back within an opacity tier.
+    return zMax > 0 ? Z_EPS : 0;
+  };
+
+  /** The legend z-order offset getDepth adds for a point with these values. */
+  const zOffsetOf = (count: number, anyOther: boolean, first: string | undefined): number => {
+    if (!zMap) return 0;
+    let key: string;
+
+    if (count > 0) {
+      // Check if this point belongs to the "Other" category
+      key = anyOther ? 'Other' : toInternalValue(first);
+    } else {
+      // Defensive fallback — shouldn't happen since DataProcessor normalizes nulls
+      key = '__NA__';
+    }
+
+    return zOffsetOfRank(zMap[key]);
+  };
+
+  /** getDepth from a base opacity and the z-order offset of the point's values. */
+  const depthOf = (baseOpacity: number, zOffset: number): number => {
+    // Base depth in [0,1]: higher opacity -> smaller depth -> wins with LESS
+    const depth = 1 - Math.min(1, Math.max(0, baseOpacity)) + zOffset;
+    // Clamp to a safe range (shader expects roughly [0,1])
+    return Math.min(1, Math.max(0, depth));
+  };
+
   /**
    * Depth used by WebGL depth test:
    * - Primary: base opacity (more opaque wins), ignoring hidden state
@@ -231,44 +276,76 @@ export function createStyleGetters(
    * buffer rebuild + O(N log N) re-sort.
    */
   const getDepth = (point: PlotDataPoint): number => {
-    const opacity = getBaseOpacity(point);
-    // Base depth in [0,1]: higher opacity -> smaller depth -> wins with LESS
-    let depth = 1 - Math.min(1, Math.max(0, opacity));
-
+    let zOffset = 0;
     if (data && zMap && styleConfig.selectedAnnotation) {
-      const count = valueCountOf(point.originalIndex);
-      let key: string;
-
-      if (count > 0) {
-        // Check if this point belongs to the "Other" category
-        let isOther = false;
-        for (let k = 0; k < count && !isOther; k++) {
-          isOther = otherValuesSet.has(valueOf(point.originalIndex, k));
-        }
-        if (isOther) {
-          key = 'Other';
-        } else {
-          const raw = valueOf(point.originalIndex, 0);
-          key = toInternalValue(raw);
-        }
-      } else {
-        // Defensive fallback — shouldn't happen since DataProcessor normalizes nulls
-        key = '__NA__';
-      }
-
-      const order = zMap[key];
-      if (typeof order === 'number' && Number.isFinite(order) && zMax > 0) {
-        const orderNorm = Math.min(1, Math.max(0, order / zMax));
-        depth = depth + orderNorm * Z_EPS;
-      } else if (zMap && zMax > 0) {
-        // Unknown values go to the back within an opacity tier.
-        depth = depth + Z_EPS;
-      }
+      const oi = point.originalIndex;
+      const count = valueCountOf(oi);
+      let anyOther = false;
+      for (let k = 0; k < count && !anyOther; k++) anyOther = otherValuesSet.has(valueOf(oi, k));
+      zOffset = zOffsetOf(count, anyOther, count > 0 ? valueOf(oi, 0) : undefined);
     }
-
-    // Clamp to a safe range (shader expects roughly [0,1])
-    return Math.min(1, Math.max(0, depth));
+    return depthOf(getBaseOpacity(point), zOffset);
   };
+
+  // Built on the first pass and reused by every later pass over these getters.
+  let categoryStyles: CategoryStyles | null = null;
+  /**
+   * A staging pass over every point (see style-pass.ts). `opacityModel` is what
+   * `getOpacity` should read: the scatter plot passes the model it would resolve
+   * per point, which can be newer than the one these getters were built with.
+   */
+  const createStylePass = (opacityModel: VisibilityModel = visibility): PointStylePass => {
+    categoryStyles ??= new CategoryStyles({
+      data,
+      selectedAnnotation: styleConfig.selectedAnnotation,
+      pointSize: styleConfig.sizes.base,
+      depthModel: visibility,
+      predictedCells,
+      zOrderActive: !!(data && zMap && styleConfig.selectedAnnotation),
+      colorsOfValues,
+      shapeOfValues: (values) => shapeOf(values.length, values[0]),
+      zOffsetOfValues: (values) =>
+        zOffsetOf(
+          values.length,
+          values.some((v) => otherValuesSet.has(v)),
+          values[0],
+        ),
+      depthOf,
+    });
+    return createCategoryStylePass(categoryStyles, opacityModel);
+  };
+
+  /**
+   * Whether a renderer can draw the selection and highlight as marks over points
+   * staged with nothing marked (`PointMarks`) and give the frame staging them
+   * gives. Staging puts a point at the selected opacity in the selected paint
+   * tier and every other one below it, so the selected opacity has to reach that
+   * tier and the other two must not, nor be 0, which changes what draws at all.
+   * Inside a tier the order is the z-order offset's at one opacity, so at each of
+   * the three the float32 depth the sort reads has to keep every offset apart:
+   * two categories tied at one opacity interleave by slot, and at another not.
+   */
+  const canMarkOnGpu = (): boolean => {
+    const { base, selected, faded } = styleConfig.opacities;
+    const belowTier = (opacity: number) => opacity > 0 && opacity < SELECTED_OPACITY_THRESHOLD;
+    if (selected < SELECTED_OPACITY_THRESHOLD || !belowTier(base) || !belowTier(faded)) {
+      return false;
+    }
+    // Every offset zOffsetOf can give.
+    const offsets = zMap
+      ? [zOffsetOfRank(undefined), ...Object.values(zMap).map(zOffsetOfRank)]
+      : [0];
+    const ascending = [...new Set(offsets)].sort((a, b) => a - b);
+    return [base, selected, faded].every((opacity) =>
+      [false, true].every((predicted) => {
+        const depths = ascending.map((z) =>
+          Math.fround(composePaintDepth(depthOf(opacity, z), opacity, predicted)),
+        );
+        return depths.every((depth, i) => i === 0 || depth > depths[i - 1]);
+      }),
+    );
+  };
+  let marksOnGpu: boolean | null = null;
 
   return {
     getPointSize,
@@ -278,5 +355,7 @@ export function createStyleGetters(
     getDepth,
     isPredicted,
     isMultilabel: () => multilabel,
+    createStylePass,
+    canMarkOnGpu: () => (marksOnGpu ??= canMarkOnGpu()),
   };
 }

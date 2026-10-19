@@ -242,6 +242,69 @@ describe('legend-data-processor', () => {
       expect(asObject(counts)).toEqual({ A: 1 });
     });
 
+    // ─── key order ──────────────────────────────────────────────────────────
+    // Storage lists A, B, C. The proteins meet them out of that order, with an
+    // out-of-range code ('__NA__') in between: p0 -> C, p1 -> A + code 9, p2 -> nothing,
+    // p3 -> B + C. Int32Array holds one code per protein, so it spreads those hits out.
+    const ORDER_VALUES = ['A', 'B', 'C'];
+    const orderKinds: Array<[string, AnnotationData, string[]]> = [
+      ['Int32Array', new Int32Array([2, 0, 9, -1, 1, 2]), ['C', 'A', NA_VALUE, 'B']],
+      [
+        'sparse-multi',
+        {
+          kind: 'sparse-multi',
+          base: new Int32Array([2, -1, -1, -1]),
+          overrides: new Map<number, readonly number[]>([
+            [1, [0, 9]],
+            [3, [1, 2]],
+          ]),
+          length: 4,
+        },
+        ['C', 'A', NA_VALUE, 'B'],
+      ],
+      ['dense number[][]', [[2], [0, 9], [], [1, 2]], ['C', 'A', NA_VALUE, 'B']],
+      [
+        'csr',
+        {
+          kind: 'csr',
+          offsets: new Int32Array([0, 1, 3, 3, 5]),
+          codes: new Int32Array([2, 0, 9, 1, 2]),
+          length: 4,
+        },
+        ['C', 'A', NA_VALUE, 'B'],
+      ],
+    ];
+
+    it.each(orderKinds)(
+      'with proteinOrder, lists values as the legacy per-protein list did on %s storage',
+      (_name, colData, order) => {
+        const proteins = colData.length;
+        const counts = LegendDataProcessor.countFromStorage(
+          colData,
+          ORDER_VALUES,
+          proteins,
+          null,
+          ['B'],
+          true,
+        );
+        // Known values stay first, as in the legacy count.
+        expect([...counts.keys()]).toEqual(['B', ...order.filter((key) => key !== 'B')]);
+        expect([...counts]).toEqual([
+          ...legacyCounts(colData, ORDER_VALUES, proteins, null, ['B']),
+        ]);
+      },
+    );
+
+    it('lists values in storage order, __NA__ last, without proteinOrder', () => {
+      const counts = LegendDataProcessor.countFromStorage(
+        new Int32Array([2, 0, 9, -1, 1, 2]),
+        ORDER_VALUES,
+        6,
+        null,
+      );
+      expect([...counts.keys()]).toEqual(['A', 'B', 'C', NA_VALUE]);
+    });
+
     // ─── isolation misalignment the flat-array path had ─────────────────────
     // The legacy list held one entry per HIT, not per protein, while
     // filteredIndices holds PROTEIN indices. Any storage that compacts (a
@@ -256,12 +319,11 @@ describe('legend-data-processor', () => {
       const colData = new Int32Array([-1, 0, 1, 0]);
       const isolated = new Set([0, 1]); // proteins p0 (unbinned) and p1 ('low')
 
+      // Legacy list was ['low', 'high', 'low'] for proteins p1, p2, p3, so index
+      // 1 resolved to p2's 'high' -- a protein that is not isolated at all.
       expect(asObject(LegendDataProcessor.countFromStorage(colData, bins, 4, isolated))).toEqual({
         low: 1,
       });
-      // Legacy list was ['low', 'high', 'low'] for proteins p1, p2, p3, so index
-      // 1 resolved to p2's 'high' -- a protein that is not isolated at all.
-      expect(asObject(legacyCounts(colData, bins, 4, isolated))).toEqual({ low: 1, high: 1 });
     });
 
     it('counts every label of an isolated multi-valued protein', () => {
@@ -269,13 +331,12 @@ describe('legend-data-processor', () => {
       const colData: readonly (readonly number[])[] = [[0, 1], [0], [1]];
       const isolated = new Set([0]); // protein p0, which carries both labels
 
+      // Legacy list was ['A', 'B', 'A', 'B'], so index 0 kept only 'A' and p0's
+      // second label was attributed to a protein that was filtered out.
       expect(asObject(LegendDataProcessor.countFromStorage(colData, labels, 3, isolated))).toEqual({
         A: 1,
         B: 1,
       });
-      // Legacy list was ['A', 'B', 'A', 'B'], so index 0 kept only 'A' and p0's
-      // second label was attributed to a protein that was filtered out.
-      expect(asObject(legacyCounts(colData, labels, 3, isolated))).toEqual({ A: 1 });
     });
   });
 

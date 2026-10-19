@@ -14,12 +14,6 @@ function makeGl() {
     deleteProgram: vi.fn(),
     deleteFramebuffer: vi.fn(),
     deleteRenderbuffer: vi.fn(),
-    isProgram: vi.fn(() => true),
-    isVertexArray: vi.fn(() => true),
-    isBuffer: vi.fn(() => true),
-    isTexture: vi.fn(() => true),
-    isFramebuffer: vi.fn(() => true),
-    isRenderbuffer: vi.fn(() => true),
   } as unknown as WebGL2RenderingContext;
 }
 
@@ -46,13 +40,13 @@ function makeDensity(): DensityResources {
 }
 
 describe('GLResources', () => {
-  it('createAll allocates all vertex buffers plus the quad and label texture', () => {
+  it('createAll allocates all vertex buffers plus the quad, label, record and mark textures', () => {
     const gl = makeGl();
     const res = new GLResources();
     res.createAll(gl);
-    expect(gl.createBuffer).toHaveBeenCalledTimes(8); // 7 attrib + quad
+    expect(gl.createBuffer).toHaveBeenCalledTimes(10); // 7 attrib + record id + glide start + quad
     expect(gl.createVertexArray).toHaveBeenCalledTimes(0); // VAO built in createPointVAO, not here
-    expect(gl.createTexture).toHaveBeenCalledTimes(1); // label color texture
+    expect(gl.createTexture).toHaveBeenCalledTimes(1); // label colours
     expect(res.dataPositionBuffer).not.toBeNull();
     expect(res.sizeBuffer).not.toBeNull();
     expect(res.colorBuffer).not.toBeNull();
@@ -61,6 +55,8 @@ describe('GLResources', () => {
     expect(res.shapeBuffer).not.toBeNull();
     expect(res.predictedBuffer).not.toBeNull();
     expect(res.quadBuffer).not.toBeNull();
+    expect(res.recordBuffer).not.toBeNull();
+    expect(res.prevPositionBuffer).not.toBeNull();
     expect(res.labelColorTexture).not.toBeNull();
   });
 
@@ -72,7 +68,7 @@ describe('GLResources', () => {
     res.gammaCorrectionProgram = { k: 'gamma' } as unknown as WebGLProgram;
     res.pointVao = { k: 'vao' } as unknown as WebGLVertexArrayObject;
     res.deleteAll(gl);
-    expect(gl.deleteBuffer).toHaveBeenCalledTimes(8);
+    expect(gl.deleteBuffer).toHaveBeenCalledTimes(10);
     expect(gl.deleteTexture).toHaveBeenCalledTimes(1);
     expect(gl.deleteVertexArray).toHaveBeenCalledTimes(1);
     expect(gl.deleteProgram).toHaveBeenCalledTimes(2);
@@ -85,7 +81,7 @@ describe('GLResources', () => {
     res.linearFramebuffer = makeFramebuffer();
     res.deleteAll(gl);
     expect(gl.deleteFramebuffer).toHaveBeenCalledTimes(1);
-    expect(gl.deleteTexture).toHaveBeenCalledTimes(2); // label texture + framebuffer color texture
+    expect(gl.deleteTexture).toHaveBeenCalledTimes(2); // label, framebuffer's
     expect(gl.deleteRenderbuffer).toHaveBeenCalledTimes(1);
     expect(res.linearFramebuffer).toBeNull();
   });
@@ -101,35 +97,6 @@ describe('GLResources', () => {
     expect(gl.deleteTexture).toHaveBeenCalledTimes(1);
     expect(res.density).toBeNull();
   });
-
-  it('validate returns true when every present handle is live', () => {
-    const gl = makeGl();
-    const res = new GLResources();
-    res.createAll(gl);
-    res.pointProgram = { k: 'prog' } as unknown as WebGLProgram;
-    expect(res.validate(gl)).toBe(true);
-  });
-
-  it('validate returns false when there is no point program', () => {
-    const gl = makeGl();
-    const res = new GLResources();
-    res.createAll(gl);
-    expect(res.validate(gl)).toBe(false);
-  });
-
-  it('validate returns false when a present buffer is not a live GL buffer', () => {
-    const gl = makeGl();
-    const res = new GLResources();
-    res.createAll(gl);
-    res.pointProgram = { k: 'prog' } as unknown as WebGLProgram;
-    (gl.isBuffer as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
-    expect(res.validate(gl)).toBe(false);
-  });
-
-  // NOTE: validate() byte-faithfully mirrors the original isRendererStateValid,
-  // which deliberately did NOT check quadBuffer or linearFramebuffer. Tests for
-  // those checks were removed because asserting them would lock in a behavior
-  // change (changing when ensureGL resets) that is out of scope for F-61.
 
   it('reset nulls every handle without touching gl', () => {
     const gl = makeGl();
@@ -152,6 +119,8 @@ describe('GLResources', () => {
     expect(res.shapeBuffer).toBeNull();
     expect(res.predictedBuffer).toBeNull();
     expect(res.quadBuffer).toBeNull();
+    expect(res.recordBuffer).toBeNull();
+    expect(res.prevPositionBuffer).toBeNull();
     expect(res.labelColorTexture).toBeNull();
     expect(res.linearFramebuffer).toBeNull();
     expect(res.density).toBeNull();

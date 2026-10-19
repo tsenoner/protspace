@@ -1,20 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  readMaxTextureSize,
-  sanitizeMaxTextureSize,
-  drainGlErrors,
   allocateLabelAtlas,
   refreshLabelAtlas,
   uploadPlaceholderAtlas,
 } from './label-atlas-texture';
-import { MIN_MAX_TEXTURE_SIZE, type LabelAtlasPlan } from './label-atlas-plan';
+import type { LabelAtlasPlan } from './label-atlas-plan';
 
 const GL = {
   TEXTURE_2D: 0x0de1,
   RGBA: 0x1908,
   RGBA8: 0x8058,
   UNSIGNED_BYTE: 0x1401,
-  MAX_TEXTURE_SIZE: 0x0d33,
   TEXTURE_MIN_FILTER: 0x2801,
   TEXTURE_MAG_FILTER: 0x2800,
   NEAREST: 0x2600,
@@ -27,12 +23,11 @@ const GL = {
  * error until `getError` returns and clears it. That is the only property these
  * helpers depend on, and the one the un-drained version got wrong.
  */
-function mockGL(opts: { errors?: number[]; maxTextureSize?: unknown } = {}) {
+function mockGL(opts: { errors?: number[] } = {}) {
   const queue = [...(opts.errors ?? [])];
   let flag: number = GL.NO_ERROR;
   const gl = {
     ...GL,
-    getParameter: vi.fn(() => opts.maxTextureSize),
     getError: vi.fn(() => {
       const raised = flag;
       flag = GL.NO_ERROR;
@@ -62,37 +57,6 @@ const plan = (over: Partial<LabelAtlasPlan> = {}): LabelAtlasPlan => ({
   pointCapacity: 573_696,
   byteLength: 2048 * 2241 * 4,
   ...over,
-});
-
-describe('sanitizeMaxTextureSize', () => {
-  it('falls back to the spec floor for anything unusable', () => {
-    for (const bad of [undefined, null, NaN, Infinity, 0, -1, '4096']) {
-      expect(sanitizeMaxTextureSize(bad)).toBe(MIN_MAX_TEXTURE_SIZE);
-    }
-  });
-
-  it('passes a usable limit through', () => {
-    expect(sanitizeMaxTextureSize(4096)).toBe(4096);
-  });
-});
-
-describe('readMaxTextureSize', () => {
-  it('reads the device limit', () => {
-    expect(readMaxTextureSize(mockGL({ maxTextureSize: 16384 }).gl)).toBe(16384);
-  });
-
-  it('substitutes the spec floor when the driver reports nonsense', () => {
-    expect(readMaxTextureSize(mockGL({ maxTextureSize: null }).gl)).toBe(MIN_MAX_TEXTURE_SIZE);
-  });
-});
-
-describe('drainGlErrors', () => {
-  it('clears a stale flag and terminates when clean', () => {
-    const { gl, spies, raiseStale } = mockGL();
-    raiseStale(GL.INVALID_VALUE);
-    drainGlErrors(gl);
-    expect(spies.getError()).toBe(GL.NO_ERROR);
-  });
 });
 
 describe('allocateLabelAtlas', () => {

@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
 /**
- * F-26 characterization lock — `_styleGettersCache` invalidation lifecycle.
+ * Characterization lock — the style getters cache invalidation lifecycle.
  *
- * `_getStyleGetters` rebuilds the cached getters ONLY when `_styleGettersCache`
- * is null. The documented invalidation entry points null it:
+ * `PointStyleState.getters()` (the host's `_style`) rebuilds the cached getters
+ * ONLY after `invalidateGetters()`. The documented entry points call it:
  *   - `_handleColorMappingChange`        — legend color/shape mapping change
  *   - `_handleZOrderChange`              — legend z-order change
  *   - `_refreshSelectedAnnotationValues` — selected-annotation switch
  *
- * NOTE (plan B7/F-26): `_processData` itself does NOT null `_styleGettersCache`,
+ * NOTE: `_processData` itself does NOT invalidate the getters,
  * so the selected-annotation case is driven through the real nulling path in
  * `_refreshSelectedAnnotationValues` rather than through `_processData`.
  *
- * The lock asserts: while nothing invalidates, repeat `_getStyleGetters()`
+ * The lock asserts: while nothing invalidates, repeat `_style.getters()`
  * returns the SAME instance (the memo is a perf contract, so identity is the
  * only observable there); each entry point yields a FRESH instance whose
  * getters return the NEW style, so a rebuild over stale inputs fails too.
@@ -41,7 +41,7 @@ type Internals = HTMLElement & {
   selectedAnnotation: string;
   _processData(): void;
   _refreshSelectedAnnotationValues(dataToUse: VisualizationData): void;
-  _getStyleGetters(): StyleGetters;
+  _style: { getters(): StyleGetters };
   _handleColorMappingChange(e: Event): void;
   _handleZOrderChange(e: Event): void;
 };
@@ -80,7 +80,7 @@ function famData(): VisualizationData {
 
 const point = (i: number): PlotDataPoint => ({ id: `p${i}`, x: i, y: i, originalIndex: i });
 
-describe('_styleGettersCache invalidation lifecycle (F-26 characterization lock)', () => {
+describe('style getters invalidation lifecycle (characterization lock)', () => {
   function primed(): Internals {
     const sp = document.createElement('protspace-scatterplot') as Internals;
     sp.data = famData();
@@ -89,45 +89,45 @@ describe('_styleGettersCache invalidation lifecycle (F-26 characterization lock)
     return sp;
   }
 
-  it('repeat _getStyleGetters() returns the SAME instance while nothing invalidates', () => {
+  it('repeat _style.getters() returns the SAME instance while nothing invalidates', () => {
     const sp = primed();
-    expect(sp._getStyleGetters()).toBe(sp._getStyleGetters());
+    expect(sp._style.getters()).toBe(sp._style.getters());
   });
 
   it('a colormapping change forces fresh getters that return the new color', () => {
     const sp = primed();
-    const before = sp._getStyleGetters();
+    const before = sp._style.getters();
     expect(before.getColors(point(0))).toEqual(['#f00']);
     sp._handleColorMappingChange(
       new CustomEvent('legend-colormapping-change', {
         detail: { colorMapping: { A: '#00f', B: '#0f0' }, shapeMapping: {}, colorOnly: true },
       }),
     );
-    const after = sp._getStyleGetters();
+    const after = sp._style.getters();
     expect(after).not.toBe(before);
     expect(after.getColors(point(0))).toEqual(['#00f']);
   });
 
   it('a z-order change forces fresh getters that separate the reordered values', () => {
     const sp = primed();
-    const before = sp._getStyleGetters();
+    const before = sp._style.getters();
     expect(before.getDepth(point(0))).toBe(before.getDepth(point(2)));
     sp._handleZOrderChange(
       new CustomEvent('legend-zorder-change', { detail: { zOrderMapping: { A: 1, B: 0 } } }),
     );
-    const after = sp._getStyleGetters();
+    const after = sp._style.getters();
     expect(after).not.toBe(before);
     expect(after.getDepth(point(0))).not.toBe(after.getDepth(point(2)));
   });
 
   it('a selectedAnnotation refresh (via _refreshSelectedAnnotationValues) forces fresh getters on the new annotation', () => {
     const sp = primed();
-    const before = sp._getStyleGetters();
+    const before = sp._style.getters();
     // _processData does NOT null the cache; the real nulling path for a
     // selected-annotation switch is _refreshSelectedAnnotationValues.
     sp.selectedAnnotation = 'shade';
     sp._refreshSelectedAnnotationValues(sp.data);
-    const after = sp._getStyleGetters();
+    const after = sp._style.getters();
     expect(after).not.toBe(before);
     expect(after.getColors(point(0))).toEqual(['#abcdef']); // shade Y
     expect(after.getColors(point(1))).toEqual(['#123456']); // shade X
