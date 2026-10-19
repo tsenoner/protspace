@@ -189,6 +189,25 @@ test.describe('Import and Export menus', () => {
     await expectUrlParam(page, 'dataset', null);
   });
 
+  test('a user import disables no example; a chosen example is then disabled', async ({ page }) => {
+    await serveExampleFixtures(page);
+    const other = e2eExample('other');
+    await openExplore(page);
+
+    await importUserFile(page, TOXPROT_5181_FIXTURE);
+    await waitForProteinCount(page, 5181);
+    await openImportMenu(page);
+    const examples = importMenu(page).locator('[data-example-id]');
+    expect(await examples.count()).toBeGreaterThan(1);
+    for (const item of await examples.all()) await expect(item).toBeEnabled();
+    await page.keyboard.press('Escape');
+
+    await pickExample(page, other.id);
+    await expectUrlParam(page, 'dataset', other.id);
+    await openImportMenu(page);
+    await expect(importMenu(page).locator(`[data-example-id="${other.id}"]`)).toBeDisabled();
+  });
+
   test('Quick PNG downloads a file and shows Export ready.', async ({ page }) => {
     await openExplore(page);
 
