@@ -366,7 +366,7 @@ export function createDatasetController({
       }
 
       // From here the load replaces the stored import (saving a user import,
-      // clearing it for a menu choice) and then the plot, so it finishes even
+      // clearing it for Load default) and then the plot, so it finishes even
       // when a newer user request supersedes it meanwhile. Stopping between
       // the two would leave the store out of step with the screen: the import
       // still on screen deleted, or a new one saved as 'pending' but never
