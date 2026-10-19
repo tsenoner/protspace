@@ -20,11 +20,12 @@ const VIEW_STRUCTURE: TooltipAction = { id: 'view-structure', label: 'View struc
 
 /**
  * Whether the structure can be seen with this layout. Off desktop the panel under the plot never
- * collapses, so it always can; on desktop a floating card always can, and a docked one only while
- * the sidebar is open.
+ * collapses, so it always can; on desktop not once the rail's Structure button hid it, else a
+ * floating card always can, and a docked one only while the sidebar is open.
  */
 export function isStructureVisible(layout: LayoutState, mode: LayoutMode): boolean {
   if (mode !== 'desktop') return true;
+  if (layout.structureHidden) return false;
   return layout.structurePlacement === 'floating' || layout.sidebarOpen;
 }
 
@@ -73,7 +74,7 @@ function singleAddition(previous: readonly string[], next: readonly string[]): s
 
 /**
  * What the structure viewer shows, and when (design decision 2). A protein requested while the
- * structure is hidden (docked in a collapsed sidebar) only waits behind the rail's dot: no
+ * structure is hidden (docked in a collapsed sidebar, or hidden by the rail) only waits behind the rail's dot: no
  * AlphaFold request and no Mol* start in a hidden box. It loads once a layout or breakpoint change
  * makes the structure visible. The viewer no longer shows or hides itself: the shell places it
  * from `structureProteinId` in the workbench status. On phones the structure is a sheet: it opens
@@ -145,7 +146,8 @@ export function createStructureController({
   };
 
   // What a pinned tooltip offers and whether a tap pins one (design decisions 2 and 17). Desktop:
-  // "View structure" only where a click cannot show the structure, docked in a collapsed sidebar.
+  // "View structure" only where a click cannot show the structure: docked in a collapsed sidebar,
+  // or hidden by the rail's Structure button.
   // Tablet: nothing, its structure is always in view; a tap still pins, to read a protein. Phone
   // and landscape: "View structure" expands the folded sheet; while the sheet is up a tap pins
   // nothing, so no tooltip opens under it (expanding also ends a pin: tapTooltips turns false).
@@ -155,10 +157,7 @@ export function createStructureController({
     const { structureSheet, structureProteinId } = getWorkbenchStatus();
     const sheet = hasStructureSheet(mode);
     const sheetUp = sheet && structureSheet === 'expanded' && structureProteinId !== null;
-    const offer =
-      mode === 'desktop'
-        ? layout.structurePlacement === 'docked' && !layout.sidebarOpen
-        : sheet && !sheetUp;
+    const offer = mode === 'desktop' ? !isStructureVisible(layout, mode) : sheet && !sheetUp;
     if (offer !== plotElement.tooltipActions.length > 0) {
       plotElement.tooltipActions = offer ? [VIEW_STRUCTURE] : [];
     }
@@ -175,9 +174,12 @@ export function createStructureController({
     const focused =
       typeof document !== 'undefined' && document.activeElement === event.currentTarget;
     request(proteinId);
-    // A phone expands its sheet; elsewhere the sidebar opens, which loads a waiting protein.
+    // A phone expands its sheet; elsewhere the structure shows again and a docked one opens the
+    // sidebar, which loads a waiting protein.
     if (hasStructureSheet(layoutMode.get())) setStructureSheet('expanded');
-    else updateLayout({ sidebarOpen: true });
+    else if (getLayout().structurePlacement === 'floating')
+      updateLayout({ structureHidden: false });
+    else updateLayout({ structureHidden: false, sidebarOpen: true });
     // A frame on, the sheet or the sidebar has rendered and the section is no longer inert.
     if (focused) {
       requestAnimationFrame(() =>

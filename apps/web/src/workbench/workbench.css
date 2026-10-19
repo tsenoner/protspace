@@ -684,7 +684,7 @@
   background: var(--ps-surface);
 }
 
-/* The rail's Structure button focuses the section. */
+/* View structure from the keyboard focuses the section. */
 .wb-structure:focus-visible {
   outline: var(--ps-focus-width) solid var(--ps-focus);
   outline-offset: calc(-1 * var(--ps-focus-width));
@@ -1202,6 +1202,16 @@
   border-radius: var(--ps-radius-lg);
   background: var(--ps-surface-raised);
   box-shadow: var(--ps-shadow-lg);
+}
+
+/* Hidden by the rail's Structure button: laid out as before (Mol* keeps its size), not painted
+   and inert; a docked section leaves its room to the legend or the Filter panel. */
+.workbench[data-layout='desktop'][data-structure-hidden] :is(#myLegend, #wb-filter-panel) {
+  height: 100%;
+}
+
+.workbench[data-layout='desktop'][data-structure-hidden] .wb-structure {
+  visibility: hidden;
 }
 
 .workbench[data-structure='floating'] #myStructureViewer::part(header) {

@@ -87,6 +87,11 @@ export interface LayoutState {
    * independent of sidebarOpen: collapsing the desktop sidebar never folds the phone panel.
    */
   panelFolded: boolean;
+  /**
+   * The rail's Structure button hid the viewer (docked section or floating card). Desktop only:
+   * below 951 px the structure shows as it always does, and storage keeps the choice.
+   */
+  structureHidden: boolean;
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
@@ -97,6 +102,7 @@ export const DEFAULT_LAYOUT: LayoutState = {
   floatingRect: null,
   panel: 'legend',
   panelFolded: false,
+  structureHidden: false,
 };
 
 /** The icon rail at the sidebar's right edge, shown at desktop widths. */

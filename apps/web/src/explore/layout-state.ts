@@ -68,6 +68,10 @@ export function parseLayout(raw: unknown): LayoutState {
     panel: isPanel(value.panel) ? value.panel : DEFAULT_LAYOUT.panel,
     panelFolded:
       typeof value.panelFolded === 'boolean' ? value.panelFolded : DEFAULT_LAYOUT.panelFolded,
+    structureHidden:
+      typeof value.structureHidden === 'boolean'
+        ? value.structureHidden
+        : DEFAULT_LAYOUT.structureHidden,
   };
 }
 
@@ -84,7 +88,8 @@ function sameLayout(a: LayoutState, b: LayoutState): boolean {
     a.structurePlacement === b.structurePlacement &&
     sameRect(a.floatingRect, b.floatingRect) &&
     a.panel === b.panel &&
-    a.panelFolded === b.panelFolded
+    a.panelFolded === b.panelFolded &&
+    a.structureHidden === b.structureHidden
   );
 }
 

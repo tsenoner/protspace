@@ -396,14 +396,13 @@ test('the card moves and resizes from the keyboard, and stays over the plot when
     .poll(async () => Math.abs((await card.boundingBox())!.height - (start.height + 16)))
     .toBeLessThanOrEqual(1);
 
-  // Collapsing the sidebar leaves the card over the plot, and the rail's Structure focuses it.
+  // Collapsing the sidebar leaves the card over the plot: the rail's Structure still reads shown.
   await collapseSidebar(page);
   await expect(page.locator('#myStructureViewer')).toBeVisible();
-  await rail(page)
-    .getByRole('button', { name: /^Structure: / })
-    .click();
-  await expect(card).toBeFocused();
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'collapsed');
+  await expect(rail(page).getByRole('button', { name: /^Structure: / })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 });
 
 test('below 951 px there is no Pop out and a stored floating card shows docked', async ({
@@ -694,4 +693,61 @@ test("Mol*'s background follows the theme", async ({ page }) => {
   await expect.poll(background).toBe(0x0f172a);
   await chooseTheme(page, 'Light');
   await expect.poll(background).toBe(0xffffff);
+});
+
+test("the rail's Structure button hides and shows the structure, docked and floating, across a reload", async ({
+  page,
+}) => {
+  await openExplore(page);
+  const id = await clickProteinNearPlotCentre(page);
+  const toggle = rail(page).getByRole('button', { name: `Structure: ${id}` });
+  const viewer = page.locator('#myStructureViewer');
+  const body = (await page.locator('[data-workbench="body"]').boundingBox())!;
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(viewer).toBeVisible();
+
+  // Docked: hiding gives the legend the whole column; the protein stays loaded.
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(viewer).toBeHidden();
+  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect
+    .poll(async () => (await page.locator('#myLegend').boundingBox())!.height)
+    .toBeCloseTo(body.height, 0);
+  expect(await readLayout(page)).toMatchObject({ structureHidden: true });
+
+  // A reload keeps it hidden; the click shows it docked again.
+  await page.reload();
+  await waitForExploreDataLoad(page);
+  const reloadedId = await clickProteinNearPlotCentre(page);
+  const reloaded = rail(page).getByRole('button', { name: `Structure: ${reloadedId}` });
+  await expect(reloaded).toHaveAttribute('aria-pressed', 'false');
+  await expect(viewer).toBeHidden();
+  // A plain click respects the choice: the protein waits behind the dot.
+  await expect(viewer).toHaveJSProperty('proteinId', null);
+  await reloaded.click();
+  await expect(reloaded).toHaveAttribute('aria-pressed', 'true');
+  await expect(viewer).toBeVisible();
+  await expect(viewer).toHaveJSProperty('proteinId', reloadedId);
+  await expect(workbench(page)).toHaveAttribute('data-structure', 'docked');
+
+  // Floating: hiding hides the card, showing brings back the card, not a docked section.
+  await floatStructure(page);
+  await reloaded.click();
+  await expect(reloaded).toHaveAttribute('aria-pressed', 'false');
+  await expect(structurePanel(page)).toBeHidden();
+  await reloaded.click();
+  await expect(reloaded).toHaveAttribute('aria-pressed', 'true');
+  await expect(workbench(page)).toHaveAttribute('data-structure', 'floating');
+  await expect(structurePanel(page)).toBeVisible();
+  await expectCardInsidePlotArea(page);
+
+  // Collapsed and docked: the button opens the sidebar with the structure shown.
+  await dockStructure(page);
+  await collapseSidebar(page);
+  await expect(reloaded).toHaveAttribute('aria-pressed', 'false');
+  await reloaded.click();
+  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(reloaded).toHaveAttribute('aria-pressed', 'true');
+  await expect(viewer).toBeVisible();
 });

@@ -58,6 +58,7 @@ describe('layout store', () => {
       floatingRect: { x: 40, y: 24, width: 360, height: 300 },
       panel: 'filter',
       panelFolded: true,
+      structureHidden: true,
     };
     updateLayout(layout);
     resetLayoutForTests();
@@ -74,6 +75,7 @@ describe('layout store', () => {
         floatingRect: 'bottom-right',
         panel: 'structure',
         panelFolded: 'yes',
+        structureHidden: 'yes',
       }),
     ).toEqual(DEFAULT_LAYOUT);
     // A bad field leaves the good ones alone.
@@ -204,6 +206,16 @@ describe('layout store', () => {
     updateLayout({ panelFolded: true });
     resetLayoutForTests();
     expect(getLayout().panelFolded).toBe(true);
+  });
+
+  it('structureHidden parses, defaults to false and survives a round trip', () => {
+    expect(getLayout().structureHidden).toBe(false);
+    expect(parseLayout({ structureHidden: true }).structureHidden).toBe(true);
+    expect(parseLayout({ structureHidden: 1 }).structureHidden).toBe(false);
+
+    updateLayout({ structureHidden: true });
+    resetLayoutForTests();
+    expect(getLayout().structureHidden).toBe(true);
   });
 
   it('an old stored layout without panelFolded loads unfolded', () => {

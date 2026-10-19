@@ -398,19 +398,6 @@ test('a protein clicked while collapsed waits behind the Structure dot; Structur
   await expect(page.locator('#myStructureViewer')).toBeVisible();
 });
 
-test('Structure in an open sidebar focuses the docked structure', async ({ page }) => {
-  await stubStructureRequests(page);
-  await openExplore(page);
-  const id = await clickProteinNearPlotCentre(page);
-  await expect(page.locator('#myStructureViewer')).toBeVisible();
-
-  const structure = rail(page).getByRole('button', { name: `Structure: ${id}` });
-  await structure.focus();
-  await page.keyboard.press('Enter');
-  await expect(structurePanel(page)).toBeFocused();
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
-});
-
 test('the edge is the Tab stop after the plot tools, and the rail toggle names no dangling id', async ({
   page,
 }) => {

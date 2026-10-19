@@ -159,7 +159,7 @@ export function StructurePanel({
     <section
       ref={ref}
       inert={inert}
-      // The rail's Structure button focuses the section. Docked it is no Tab stop of its own; a
+      // View structure from the keyboard focuses the section. Docked it is no Tab stop of its own; a
       // floating card is one, so the arrow keys can move it.
       tabIndex={floating ? 0 : -1}
       className="wb-structure"

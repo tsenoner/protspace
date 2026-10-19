@@ -111,6 +111,17 @@ describe('isStructureVisible', () => {
       true,
     );
   });
+
+  it('isStructureVisible: a structure hidden from the rail is not visible on desktop, docked or floating', () => {
+    const hidden = { ...DEFAULT_LAYOUT, structureHidden: true };
+    expect(isStructureVisible(hidden, 'desktop')).toBe(false);
+    expect(isStructureVisible({ ...hidden, structurePlacement: 'floating' }, 'desktop')).toBe(
+      false,
+    );
+    for (const mode of ['tablet', 'phone', 'landscape'] as const) {
+      expect(isStructureVisible(hidden, mode)).toBe(true);
+    }
+  });
 });
 
 describe('createStructureController', () => {
@@ -250,6 +261,34 @@ describe('createStructureController', () => {
     expect(getLayout().sidebarOpen).toBe(true);
     expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P1');
     expect(plot.tooltipActions).toEqual([]);
+  });
+
+  it('a hidden structure: a request waits, View structure is offered and shows it again', () => {
+    const { viewer, plot, controller } = setup();
+    const viewStructure = [{ id: 'view-structure', label: 'View structure' }];
+    updateLayout({ structureHidden: true });
+    expect(plot.tooltipActions).toEqual(viewStructure);
+    controller.request('P1');
+    expect(viewer.loadProtein).not.toHaveBeenCalled();
+
+    plot.dispatchEvent(
+      new CustomEvent('tooltip-action', { detail: { id: 'view-structure', proteinId: 'P1' } }),
+    );
+
+    expect(getLayout()).toMatchObject({ structureHidden: false, sidebarOpen: true });
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P1');
+    expect(plot.tooltipActions).toEqual([]);
+  });
+
+  it('View structure shows a hidden floating card without opening the sidebar', () => {
+    const { viewer, plot, controller } = setup();
+    updateLayout({ structurePlacement: 'floating', sidebarOpen: false, structureHidden: true });
+    controller.request('P1');
+    plot.dispatchEvent(
+      new CustomEvent('tooltip-action', { detail: { id: 'view-structure', proteinId: 'P1' } }),
+    );
+    expect(getLayout()).toMatchObject({ structureHidden: false, sidebarOpen: false });
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P1');
   });
 
   it('View structure loads the protein the tooltip named, not the one that was waiting', () => {

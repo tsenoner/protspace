@@ -55,6 +55,8 @@ export function Workbench() {
   const placement = desktop ? layout.structurePlacement : 'docked';
   // The empty footer under the legend, the docked viewer, or the floating card over the plot.
   const structure = structureProteinId === null ? 'none' : placement;
+  // The rail's Structure button hid the viewer: desktop only, and only once there is a protein.
+  const structureHidden = desktop && structure !== 'none' && layout.structureHidden;
   // Phones show the structure as a sheet at the bottom edge, folded or expanded (decision 17).
   const sheet = hasStructureSheet(mode);
   const sidebarCap = useSyncExternalStore(subscribeWindowWidth, getSidebarCap);
@@ -88,6 +90,7 @@ export function Workbench() {
       className="workbench"
       data-layout={mode}
       data-structure={structure}
+      data-structure-hidden={structureHidden ? '' : undefined}
       data-sidebar={phase}
       data-panel={layout.panel}
       // The phone's bottom panel shows only its header (only phones fold it).
@@ -143,7 +146,7 @@ export function Workbench() {
         />
         <StructurePanel
           ref={structureRef}
-          inert={sidebarHidden && structure !== 'floating'}
+          inert={structureHidden || (sidebarHidden && structure !== 'floating')}
           // With no protein the section is the docked footer: no card, no grip.
           placement={structure === 'floating' ? 'floating' : 'docked'}
           canFloat={desktop}
@@ -157,9 +160,9 @@ export function Workbench() {
           panel={layout.panel}
           structureProteinId={structureProteinId}
           structureDocked={placement === 'docked'}
+          structureHidden={layout.structureHidden}
           filterApplied={appliedFilterConditions > 0}
           toggleRef={railToggleRef}
-          structureRef={structureRef}
         />
         <div className="wb-drop-area" aria-hidden="true">
           Drop to open this file
