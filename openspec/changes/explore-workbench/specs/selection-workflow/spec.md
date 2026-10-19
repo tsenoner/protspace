@@ -108,14 +108,15 @@ clear it.
 ### Requirement: Undoable resets offer an Undo
 
 Removing the filter with Reset in the Filter panel or with the filter chip's ✕ SHALL show a "Filter
-removed" notification with an Undo button that restores the filter, its chip and its count; a
-newer step SHALL dismiss that notification. In the figure editor, New figure and Reset SHALL offer
+removed" notification with an Undo button that takes back that step of the undo history; a newer
+step SHALL dismiss that notification. In the figure editor, New figure and Reset SHALL offer
 Undo, which brings the previous figure back.
 
 #### Scenario: Reset in the Filter panel
 
-- **WHEN** the user resets an applied filter and presses Undo in the notification
-- **THEN** the filter, its chip and its count come back
+- **WHEN** the user resets an applied filter in the Filter panel
+- **THEN** a "Filter removed" notification with Undo shows, and its Undo is the history step
+  query-builder-filtering records
 
 #### Scenario: A newer step
 
@@ -131,7 +132,9 @@ Undo, which brings the previous figure back.
 
 The recovery banner's Clear stored data SHALL open a dialog named "Clear stored data?" whose Cancel
 has focus and keeps the banner; only its Clear data SHALL clear the stored data and load the
-default dataset.
+default dataset. The banner's Load default SHALL likewise ask first, in a dialog named "Load the
+default dataset?", whose Load default alone deletes the stored import and loads the default
+dataset.
 
 #### Scenario: Confirming
 

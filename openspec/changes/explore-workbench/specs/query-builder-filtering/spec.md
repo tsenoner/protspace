@@ -2,6 +2,8 @@
 
 - FROM: `### Requirement: Filter query builder is opened from the control bar`
 - TO: `### Requirement: Filter queries are built in the Filter panel`
+- FROM: `### Requirement: Reset All clears the active filter`
+- TO: `### Requirement: Reset clears the active filter`
 
 ## MODIFIED Requirements
 
@@ -63,7 +65,7 @@ dataset, or equals the filter already applied.
   with the reason "No proteins match", and the view stays on the full dataset (it cannot be
   applied, so it neither collapses to empty nor falls back via a stale filter)
 
-### Requirement: Reset All clears the active filter
+### Requirement: Reset clears the active filter
 
 The query builder SHALL provide `Reset`, which clears the applied filter and the draft (the filter
 channel is released: `filteredProteinIds = []`, `filtersActive = false`; the Filter button's count,

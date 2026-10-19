@@ -23,7 +23,8 @@ Keyboard shortcuts SHALL open a dialog, with focus inside, listing every keyboar
 shortcut of the explore page in titled groups, Mod written as ⌘ on Apple platforms and Ctrl
 elsewhere. The list SHALL name the search shortcut, the legend's I, undo and redo under History,
 the figure editor's Delete and its Escape that deselects before it closes, and the Escape steps in
-the order one press at a time takes them. Escape SHALL close the dialog and return focus to Help.
+the order one press at a time takes them. Escape SHALL close the dialog and return focus to Help
+(to More on a phone).
 
 #### Scenario: Opening the list
 
@@ -90,12 +91,14 @@ collapsed sidebar on the legend, unfolded, and show the legend if the Filter pan
 
 ### Requirement: Ending the tour gives the page back
 
-The tour SHALL end with Finish, Skip, its close button or Escape; when it ends, focus SHALL return
-to Help, every target SHALL get its own state back, and the plot's selection SHALL be kept.
+The tour SHALL end with Finish, Skip, its close button or Escape. When it ends, focus SHALL return
+to the control that had it when the tour started (Help, or More on a phone; the tour's home control
+if that one is gone); a tour that started by itself SHALL move focus nowhere. Every target SHALL
+get its own state back, and the plot's selection SHALL be kept.
 
 #### Scenario: Focus after the tour
 
-- **WHEN** the tour ends
+- **WHEN** the user starts the tour from Help and it ends
 - **THEN** focus is on Help
 
 #### Scenario: Escape during the tour

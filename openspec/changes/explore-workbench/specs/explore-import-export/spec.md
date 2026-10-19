@@ -4,8 +4,8 @@
 
 The app bar's Import button and the dataset name SHALL open the same Import panel, a dialog named
 Import, under whichever was pressed, with focus on its first action. The panel SHALL offer Open a
-file…, which opens the file chooser; Last file, only while a file the user imported is stored in
-the browser, which reopens it; and the example datasets, the current one disabled with a check.
+file…, which opens the file chooser, then Last file and the example datasets as example-datasets
+describes them.
 It SHALL say which files are read in the browser and which are sent to the server
 (".parquetbundle files are read in your browser. FASTA files (.fasta, .fa, .fna) are sent to the
 server for embedding."). The arrow keys SHALL move between its actions, skipping the disabled
@@ -91,8 +91,9 @@ the control that opened it.
 ### Requirement: The loading overlay says what is happening
 
 While a dataset loads, the overlay `#progressive-loading` SHALL cover the workbench and say what
-it is doing: a local file is "Reading your file in the browser" and "Reading {name}…", never an
-upload; an example is "Opening {label}"; a stored file is reopened "from this browser". While it
+it is doing: a local bundle is "Reading your file in the browser" and "Reading {name}…", never an
+upload; a FASTA file, which is sent to the server, is "Preparing FASTA…" and "Uploading to the
+embedding server…"; an example is "Opening {label}"; a stored file is reopened "from this browser". While it
 shows, Tab SHALL NOT reach the workbench. When the load ends, focus SHALL return to the control
 that started it, not to the page.
 

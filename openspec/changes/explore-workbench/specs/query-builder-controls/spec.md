@@ -49,7 +49,7 @@ one dropdown to the next.
 
 - **WHEN** the user presses Escape with a picker open in the query builder
 - **THEN** the picker closes
-- **AND** the layer below it, such as a dialog around the builder, stays open
+- **AND** the Filter panel stays open and the selection is kept
 
 #### Scenario: Opening from the trigger
 

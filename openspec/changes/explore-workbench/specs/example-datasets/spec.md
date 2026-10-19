@@ -2,7 +2,7 @@
 
 ### Requirement: Choosing an example from the Import menu
 
-The Import menu SHALL be one panel in the app bar, opened by Import, by the dataset name, and on a
+The Import panel SHALL be one dialog in the app bar, opened by Import, by the dataset name, and on a
 phone by the More sheet's Import data. It SHALL offer "Open a file…" first, with the formats it
 reads; then, while an imported file is stored and is not the dataset on screen, a "Last file" row
 that reopens it; then every catalog entry under an "Examples" heading: the demo first, then the rest
@@ -28,29 +28,29 @@ default view, and SHALL keep the user's stored import, which "Last file" then re
 
 #### Scenario: Learn about an example
 
-- **WHEN** the user opens an example's info control in the Import menu
+- **WHEN** the user opens an example's info control in the Import panel
 - **THEN** its description, its insight and a link to `/docs/explore/example-datasets#<id>` are shown, and the example is not loaded
 
 #### Scenario: A large example
 
-- **WHEN** the Import menu lists `swissprot`
+- **WHEN** the Import panel lists `swissprot`
 - **THEN** its item shows a "Large" badge, and its info states the download size, the expected browser memory and the load time
 
 #### Scenario: The menu says examples reopen curated
 
-- **WHEN** the Import menu lists at least one example
+- **WHEN** the Import panel lists at least one example
 - **THEN** the "Examples" heading shows the "About these examples" link and the hint that changes made to an example are not kept
 
 #### Scenario: Last file after an example
 
 - **WHEN** the user imports a file and then chooses an example
-- **THEN** the Import menu offers the imported file under "Last file", and choosing it reopens that
+- **THEN** the Import panel offers the imported file under "Last file", and choosing it reopens that
   file
 - **AND** while the imported file is on screen, no "Last file" row is offered
 
 ### Requirement: Request precedence
 
-A user-initiated dataset request SHALL take precedence over any app-initiated load that began before it. User-initiated requests are a menu choice, a Back/Forward navigation (including one to an entry without `dataset=`), a file import, a recovery-banner button, a Retry and a Cancel. App-initiated loads are the startup restore of the stored import, the startup demo, the recovery load after a corrupt stored import, and the fallback after a failed deep link. An app-initiated load preempted by a user request SHALL stop before starting any load, and SHALL show no recovery banner and no notification. While a URL-driven switch to a dataset is pending, a history navigation that changes only the view parameters for that same dataset SHALL be recorded and applied by the pending load, not resolved against the dataset still on screen. A Back/Forward navigation while a menu-chosen example is loading SHALL cancel that load: its download is aborted, the loading overlay is dismissed if the navigation starts no load of its own, and no history entry is pushed for it. Once that example has decoded and begun replacing the plot (a menu choice keeps the stored import), a Back/Forward that changes only the view parameters SHALL NOT cancel it: the example finishes on its curated view and pushes its own entry, and the entry the navigation landed on is left unchanged. A load superseded by a newer user request before it has begun replacing the stored import and the plot, whether an example, the startup restore of the stored import or a user import, SHALL NOT render, save the import, or change the URL; a superseded restore that decoded SHALL still record that it loaded, so no recovery banner is offered for it. A load superseded after that point SHALL finish replacing the stored import and the plot, and SHALL be named as the dataset on screen until the newer request's own load replaces it, but SHALL NOT change the URL, the view the newer request asked for, or the loading overlay that request shows. A startup load run by a user request while that restore is still in flight SHALL wait for it and restore the import, not offer recovery. A user request SHALL abort a FASTA preparation still running, and the loading overlay's Cancel SHALL act on the newest request. A restore preempted after it marked the stored import's load as pending SHALL put the previous status back.
+A user-initiated dataset request SHALL take precedence over any app-initiated load that began before it. User-initiated requests are a menu choice, a Back/Forward navigation (including one to an entry without `dataset=`), a file import, a recovery-banner button, a Retry and a Cancel. App-initiated loads are the startup restore of the stored import, the startup demo, the recovery load after a corrupt stored import, and the fallback after a failed deep link. An app-initiated load preempted by a user request SHALL stop before starting any load, and SHALL show no recovery banner and no notification. While a URL-driven switch to a dataset is pending, a history navigation that changes only the view parameters for that same dataset SHALL be recorded and applied by the pending load, not resolved against the dataset still on screen. A Back/Forward navigation while a menu-chosen example is loading SHALL cancel that load: its download is aborted, the loading overlay is dismissed if the navigation starts no load of its own, and no history entry is pushed for it. Once that example has decoded and begun replacing the plot (a menu choice keeps the stored import), a Back/Forward that changes only the view parameters SHALL NOT cancel it: the example finishes on its curated view and pushes its own entry, and the entry the navigation landed on is left unchanged. A load superseded by a newer user request before it has begun replacing the plot, whether an example, the startup restore of the stored import or a user import, SHALL NOT render, save the import, or change the URL; a superseded restore that decoded SHALL still record that it loaded, so no recovery banner is offered for it. A load superseded after that point SHALL finish what it began (saving a user import, clearing the stored import for the recovery banner's Load default, and replacing the plot), and SHALL be named as the dataset on screen until the newer request's own load replaces it, but SHALL NOT change the URL, the view the newer request asked for, or the loading overlay that request shows. A startup load run by a user request while that restore is still in flight SHALL wait for it and restore the import, not offer recovery. A user request SHALL abort a FASTA preparation still running, and the loading overlay's Cancel SHALL act on the newest request. A restore preempted after it marked the stored import's load as pending SHALL put the previous status back.
 
 #### Scenario: A menu choice during the startup restore
 
