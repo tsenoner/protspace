@@ -336,7 +336,15 @@ test.describe('the bars on a phone on its side', () => {
     await rows.getByRole('button', { name: /^Export/ }).tap();
     await expect(moreSheet(page)).toBeHidden();
     await expect(exportMenuList(page)).toBeVisible();
-    await expectWithinViewport(page, exportMenuList(page));
+    // At touch size the menu is taller than the 360 px screen (a80b0742 added Table (.tsv)), so
+    // its panel stops above the bottom edge and the list scrolls inside it: measure the panel.
+    await expectWithinViewport(page, exportMenu(page).locator('ps-menu ps-popover .panel'));
+    // The items are slotted into the list, so they are found from the menu's host.
+    const lastItem = exportMenu(page).getByRole('menuitemcheckbox', {
+      name: 'Include legend settings',
+    });
+    await lastItem.scrollIntoViewIfNeeded();
+    await expectWithinViewport(page, lastItem);
     await page.keyboard.press('Escape');
     await expect(exportMenuList(page)).toBeHidden();
 
