@@ -54,6 +54,14 @@ downloaded until the structure is visible. A dot on the rail's **Structure** but
 protein, and its tooltip names it; click the button, or **View structure** in the protein's pinned
 tooltip, to open the sidebar and load it.
 
+### Hiding the structure
+
+On desktop windows, the rail's **Structure** button hides the structure and shows it again. Hidden,
+a docked structure leaves the whole sidebar to the legend or the filter, and a floating card goes
+away; the next click brings it back where it was. The structure stays hidden after a reload. A
+click on a protein while it is hidden chooses the protein without showing it; **View structure** in
+the protein's pinned tooltip shows it.
+
 ### On phones
 
 On a phone the structure is a sheet at the bottom of the screen; on a phone on its side it sits

@@ -61,8 +61,15 @@ returns. A window resized back and forth by a few pixels around a threshold SHAL
 The sidebar SHALL keep a 44 px rail with Legend, Structure and Filter items and a Collapse sidebar
 / Expand sidebar toggle, all named and visible while the sidebar is collapsed. The toggle SHALL
 report the sidebar's state through `aria-expanded`, and the Legend and Filter items SHALL report
-the open panel through `aria-pressed`; what the Filter item opens is query-builder-filtering's. A
-collapsed sidebar SHALL be inert. Its left edge SHALL be a separator the user drags
+the open panel through `aria-pressed`; what the Filter item opens is query-builder-filtering's.
+The Structure item SHALL be disabled until a protein is picked; then it SHALL show and hide the
+structure, docked or floating, and report through `aria-pressed` whether the structure is on
+screen. Hidden, a docked structure SHALL leave its room to the legend or Filter panel and a
+floating card SHALL not show; showing it again SHALL keep the placement it had, and a docked one
+SHALL open a collapsed sidebar. The hidden state SHALL persist with the layout, and a stored
+layout without it SHALL load with the structure shown. A plain protein click SHALL leave a hidden
+structure hidden; View structure in the pinned tooltip SHALL show it. A collapsed sidebar SHALL be
+inert. Its left edge SHALL be a separator the user drags
 or moves with the arrow keys (Shift for larger steps, Home and End for the ends): a drag SHALL
 preview over the plot and commit on release. The width SHALL stay within 240–480 px and SHALL be
 clamped further so the plot keeps at least 480 px of the window.
@@ -90,6 +97,16 @@ clamped further so the plot keeps at least 480 px of the window.
 - **THEN** the rail's Structure button shows a dot, and Structure opens the sidebar with that
   protein's structure
 - **AND** the protein's pinned tooltip offers View structure, which does the same
+
+#### Scenario: Structure hides and shows the structure
+
+- **WHEN** a protein's structure is on screen, docked or floating, and the user clicks the rail's
+  Structure item
+- **THEN** the structure hides, the item reports not pressed, and a docked section leaves the
+  whole column to the legend
+- **AND** clicking it again shows the structure in the same placement and the item reports pressed
+- **AND** after a reload the structure stays hidden, and a protein clicked then waits behind the
+  rail's dot until Structure shows it
 
 ### Requirement: The legend and the structure share the sidebar under a divider
 

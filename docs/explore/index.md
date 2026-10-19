@@ -60,7 +60,7 @@ The plot shows your proteins as points in 2D. Points close together have similar
 The rail on the sidebar's right edge switches between its three panels and folds the sidebar away:
 
 - **Legend** shows the categories of the current colouring.
-- **Structure** shows the selected protein in 3D; a dot on its rail button means a protein is loaded.
+- **Structure** shows or hides the selected protein in 3D, docked or floating; a dot on its rail button means a protein is loaded.
 - **Filter** builds a [filter](/explore/filter) from annotation values.
 
 **Collapse sidebar**, the rail's last button, folds the sidebar to the rail and gives the plot the whole width; **Expand sidebar** brings it back. Drag the sidebar's left edge to make it wider or narrower.
