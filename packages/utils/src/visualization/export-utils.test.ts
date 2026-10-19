@@ -412,6 +412,31 @@ describe('exporters report the file they wrote', () => {
     expect(download).not.toHaveBeenCalled();
   });
 
+  it('exportTable returns its file name and revokes its Blob URL only after the download starts', () => {
+    const exporter = createExporter(createMockElement());
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:table');
+    const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const download = vi.spyOn(exporter as any, 'downloadFile').mockImplementation(() => {});
+
+    expect(exporter.exportTable()).toBe('protspace_pca_species_2024-01-15.tsv');
+    expect((created.mock.calls[0][0] as Blob).type).toBe('text/tab-separated-values');
+    expect(download).toHaveBeenCalledWith('blob:table', 'protspace_pca_species_2024-01-15.tsv');
+    expect(revoked).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
+    expect(revoked).toHaveBeenCalledWith('blob:table');
+  });
+
+  it('exportTable returns null with no data', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exporter = createExporter(createMockElement({ getCurrentData: () => null }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const download = vi.spyOn(exporter as any, 'downloadFile').mockImplementation(() => {});
+
+    expect(exporter.exportTable()).toBeNull();
+    expect(download).not.toHaveBeenCalled();
+  });
+
   it('exportPNG returns the generated file name', async () => {
     const exporter = createExporter(createMockElement());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -537,9 +562,13 @@ async function exportTableText(
   vi.spyOn(exporter as any, 'downloadFile').mockImplementation((_url, name) => {
     fileName = name as string;
   });
+  vi.useFakeTimers();
   try {
     exporter.exportTable();
+    // The Blob URL is revoked a second after the download starts.
+    vi.runAllTimers();
   } finally {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   }
   expect(fileName).toMatch(/\.tsv$/);

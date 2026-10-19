@@ -6,6 +6,7 @@ const exporter = vi.hoisted(() => ({
   exportPNG: vi.fn(),
   exportPDF: vi.fn(),
   exportProteinIds: vi.fn(),
+  exportTable: vi.fn(),
 }));
 const bundle = vi.hoisted(() => ({
   exportParquetBundle: vi.fn(),
@@ -69,6 +70,7 @@ afterEach(() => {
   exporter.exportPNG.mockReset();
   exporter.exportPDF.mockReset();
   exporter.exportProteinIds.mockReset();
+  exporter.exportTable.mockReset();
   bundle.exportParquetBundle.mockReset();
 });
 
@@ -78,20 +80,23 @@ describe('createExportHandler', () => {
     expect([...listeners.keys()].sort()).toEqual(['export', 'open-publish-editor']);
   });
 
-  it('each quick image type toasts with the returned file name', async () => {
+  it('each quick export type toasts with the returned file name', async () => {
     const { notify, exportAs } = setup({ unplaced: 3 });
     exporter.exportPNG.mockResolvedValue('protspace_pca_species_2026-10-13.png');
     exporter.exportPDF.mockResolvedValue('protspace_pca_species_2026-10-13.pdf');
     exporter.exportProteinIds.mockReturnValue('protein_ids.txt');
+    exporter.exportTable.mockReturnValue('protspace_pca_species_2026-10-13.tsv');
 
     await exportAs({ type: 'png' });
     await exportAs({ type: 'pdf' });
     await exportAs({ type: 'ids' });
+    await exportAs({ type: 'tsv' });
 
     expect(notify.success.mock.calls.map(([options]) => options)).toEqual([
       getExportSuccessNotification('protspace_pca_species_2026-10-13.png'),
       getExportSuccessNotification('protspace_pca_species_2026-10-13.pdf'),
       getExportSuccessNotification('protein_ids.txt'),
+      getExportSuccessNotification('protspace_pca_species_2026-10-13.tsv'),
     ]);
     expect(notify.error).not.toHaveBeenCalled();
   });

@@ -951,20 +951,15 @@ test('exports the visible proteins as a table, the same set as the ID export', a
   // 619 curated + the 119 transfers at or above 0.6 (see the reliability filter test).
   await expect.poll(async () => (await readRenderedProteinIds(page)).length).toBe(738);
 
-  const controlBar = page.locator('protspace-control-bar');
-  const download = async (format: 'IDs' | 'Table', action: string) => {
-    if (!(await controlBar.locator('.export-menu').isVisible())) {
-      await controlBar.getByRole('button', { name: 'Export', exact: true }).click();
-    }
-    await controlBar.getByRole('button', { name: format, exact: true }).click();
+  const download = async (item: 'Protein IDs (.txt)' | 'Table (.tsv)') => {
     const downloadPromise = page.waitForEvent('download');
-    await controlBar.getByRole('button', { name: action, exact: true }).click();
+    await exportAction(page, item);
     const file = await downloadPromise;
     return { name: file.suggestedFilename(), text: fs.readFileSync((await file.path())!, 'utf8') };
   };
 
-  const ids = (await download('IDs', 'Export IDS')).text.split('\n');
-  const table = await download('Table', 'Export TSV');
+  const ids = (await download('Protein IDs (.txt)')).text.split('\n');
+  const table = await download('Table (.tsv)');
   expect(table.name).toMatch(/\.tsv$/);
 
   const [header, ...rows] = table.text

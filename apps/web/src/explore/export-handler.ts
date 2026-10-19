@@ -211,9 +211,11 @@ export function createExportHandler(options: ExportHandlerOptions): void {
       const fileName =
         type === 'ids'
           ? exporter.exportProteinIds(exportOptions)
-          : type === 'png'
-            ? await exporter.exportPNG(exportOptions)
-            : await exporter.exportPDF(exportOptions);
+          : type === 'tsv'
+            ? exporter.exportTable(exportOptions)
+            : type === 'png'
+              ? await exporter.exportPNG(exportOptions)
+              : await exporter.exportPDF(exportOptions);
       if (fileName === null) {
         throw new Error('No data available for export');
       }

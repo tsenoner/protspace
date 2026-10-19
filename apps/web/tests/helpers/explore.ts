@@ -531,6 +531,7 @@ export async function exportAction(
     | 'Quick PNG'
     | 'Quick PDF'
     | 'Protein IDs (.txt)'
+    | 'Table (.tsv)'
     | 'Data bundle (.parquetbundle)',
 ): Promise<void> {
   await openExportMenu(page);

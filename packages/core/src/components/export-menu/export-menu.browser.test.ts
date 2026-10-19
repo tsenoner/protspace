@@ -67,7 +67,7 @@ const defaults = (type: ExportEventDetail['type'], includeLegendSettings = true)
 });
 
 describe('protspace-export-menu', () => {
-  it('lists the five exports, the legend-settings checkbox and the contours note, in a menu named Export', async () => {
+  it('lists the six exports, the legend-settings checkbox and the contours note, in a menu named Export', async () => {
     await open();
 
     const items = [...root().querySelectorAll('ps-menu-item')] as PsMenuItem[];
@@ -76,6 +76,7 @@ describe('protspace-export-menu', () => {
       'png',
       'pdf',
       'ids',
+      'tsv',
       'parquet',
       'include-settings',
     ]);
@@ -84,6 +85,7 @@ describe('protspace-export-menu', () => {
       'Quick PNG',
       'Quick PDF',
       'Protein IDs (.txt)',
+      'Table (.tsv)',
       'Data bundle (.parquetbundle)',
       'Include legend settings',
     ]);
@@ -109,17 +111,19 @@ describe('protspace-export-menu', () => {
         .toHaveAccessibleDescription('Quick exports leave out contours.');
     }
     expect(item('ids').hasAttribute('aria-describedby')).toBe(false);
+    expect(item('tsv').hasAttribute('aria-describedby')).toBe(false);
   });
 
   it('each quick item dispatches export with its type and the EXPORT_DEFAULTS sizes, and closes the menu', async () => {
     const seen = exportsSeen();
-    for (const type of ['png', 'pdf', 'ids', 'parquet'] as const) {
+    const types = ['png', 'pdf', 'ids', 'tsv', 'parquet'] as const;
+    for (const type of types) {
       await open();
       item(type).click();
       await settle();
       expect(isOpen(), type).toBe(false);
     }
-    expect(seen).toEqual([defaults('png'), defaults('pdf'), defaults('ids'), defaults('parquet')]);
+    expect(seen).toEqual(types.map((type) => defaults(type)));
   });
 
   it('Figure editor… fires open-publish-editor and no export', async () => {

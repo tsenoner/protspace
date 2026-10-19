@@ -518,11 +518,11 @@ export class ProtSpaceExporter {
    * the selected projection's coordinates, then one column per annotation. Column names and cell
    * values match `protspace export`, so a script reads either file.
    */
-  exportTable(_options: ExportOptions = {}): void {
+  exportTable(_options: ExportOptions = {}): string | null {
     const data = this.element.getCurrentData();
     if (!data) {
       console.error('No data available for export');
-      return;
+      return null;
     }
 
     const tsv = buildProteinTable(
@@ -530,14 +530,18 @@ export class ProtSpaceExporter {
       this.visibleProteinIndices(data),
       this.element.selectedProjectionIndex,
     );
+    const fileName = this.generateExportFileName('tsv');
     // A Blob, not a data: URI as for the IDs: a table can be megabytes, past some browsers'
     // URI length limit.
     const url = URL.createObjectURL(new Blob([tsv], { type: 'text/tab-separated-values' }));
     try {
-      this.downloadFile(url, this.generateExportFileName('tsv'));
+      this.downloadFile(url, fileName);
     } finally {
-      URL.revokeObjectURL(url);
+      // Not straight after the click, as for the IDs: Firefox and Safari can abort a download
+      // whose URL is revoked before it starts.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
+    return fileName;
   }
 
   /**

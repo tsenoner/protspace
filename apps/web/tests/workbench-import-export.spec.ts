@@ -213,7 +213,7 @@ test.describe('Import and Export menus', () => {
     ).toBeVisible();
   });
 
-  test('the menu names its five exports and the contours note', async ({ page }) => {
+  test('the menu names its six exports and the contours note', async ({ page }) => {
     await openExplore(page);
     await openExportMenu(page);
 
@@ -226,6 +226,7 @@ test.describe('Import and Export menus', () => {
       'Quick PNG',
       'Quick PDF',
       'Protein IDs (.txt)',
+      'Table (.tsv)',
       'Data bundle (.parquetbundle)',
     ]) {
       await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();

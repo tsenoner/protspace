@@ -11,7 +11,7 @@ import { exportMenuStyles } from './export-menu.styles';
 
 /** What an `export` event asks the host to produce. */
 export interface ExportEventDetail {
-  type: 'png' | 'pdf' | 'ids' | 'parquet';
+  type: 'png' | 'pdf' | 'ids' | 'tsv' | 'parquet';
   imageWidth: number;
   imageHeight: number;
   legendWidthPercent: number;
@@ -25,6 +25,7 @@ const QUICK_EXPORTS: ReadonlyArray<{ value: ExportEventDetail['type']; label: st
   { value: 'png', label: 'Quick PNG' },
   { value: 'pdf', label: 'Quick PDF' },
   { value: 'ids', label: 'Protein IDs (.txt)' },
+  { value: 'tsv', label: 'Table (.tsv)' },
   { value: 'parquet', label: 'Data bundle (.parquetbundle)' },
 ];
 
@@ -38,7 +39,7 @@ const FIGURE_EDITOR = 'figure';
 const INCLUDE_SETTINGS = 'include-settings';
 
 /**
- * The Export menu (design decisions 1 and 15): the figure editor, the four quick exports and
+ * The Export menu (design decisions 1 and 15): the figure editor, the five quick exports and
  * whether a data bundle carries the legend settings, as one ps-menu. It only asks: `export` and
  * `open-publish-editor` are the host's to act on, and the host confirms every export.
  */
