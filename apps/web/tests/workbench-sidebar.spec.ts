@@ -130,7 +130,7 @@ function offsetOf(page: Page, id: string) {
   }, id);
 }
 
-test('the rail keeps Legend, Structure and Collapse sidebar, named for assistive tech, when collapsed', async ({
+test('the rail keeps Legend, Structure, Filter and Collapse sidebar, named for assistive tech, when collapsed', async ({
   page,
 }) => {
   await openExplore(page);
@@ -150,6 +150,10 @@ test('the rail keeps Legend, Structure and Collapse sidebar, named for assistive
   await expect(panels).toBeVisible();
   expectNear((await panels.boundingBox())!.width, 44);
   await expect(legend).toHaveAttribute('aria-pressed', 'false');
+  await expect(panels.getByRole('button', { name: 'Filter', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
   await expect(
     panels.getByRole('button', { name: 'Structure: click a protein to view it' }),
   ).toBeVisible();
