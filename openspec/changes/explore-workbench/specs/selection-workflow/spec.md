@@ -6,7 +6,7 @@ The plot's top-left corner SHALL hold a tool strip with Move and zoom, Box selec
 and Fit to view, each named for assistive technology, the current tool pressed. The strip SHALL be
 one Tab stop (the current tool) whose arrow keys move between the tools, Fit to view included.
 Box select and Lasso select SHALL be disabled while selection is unavailable. Under a coarse
-pointer the tool buttons SHALL be 40 px.
+pointer the tool buttons take the touch size explore-mobile-layout sets.
 
 #### Scenario: Box select
 
@@ -58,7 +58,9 @@ filter and hidden-categories chips SHALL open where they are changed (the Filter
 legend); every chip SHALL have its own ✕ with its own accessible name that undoes what it shows:
 the filter chip's ✕ removes the filter, the isolation chip's ✕ returns the full view, and the
 hidden chip's ✕ shows the hidden categories. Removing a focused chip SHALL move focus to the next
-chip, else to the count. The plot SHALL draw no count of its own.
+chip, else to the count. The explore page SHALL hide the scatterplot's own point-count indicator
+(scatterplot-zoom-indicator; `hide-status` on `#myPlot`), so this count, " · Zoomed in" included, is
+the only one on the plot.
 
 #### Scenario: Applying a filter
 
