@@ -303,6 +303,11 @@ export interface ScatterplotConfig {
    * Default: false.
    */
   fillPlot?: boolean;
+  /**
+   * With `fillPlot`, the widest the filled area spreads: a wider plot fills this width, centred
+   * horizontally; the height still fills. Exports scale it with their width. Unset: no cap.
+   */
+  fillMaxWidth?: number;
 }
 
 /** Every density-layer mode, in the order the control bar lists them. */

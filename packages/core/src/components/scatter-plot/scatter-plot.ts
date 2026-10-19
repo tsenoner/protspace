@@ -114,6 +114,7 @@ const CONFIG_INDEX_KEYS: readonly (keyof ScatterplotConfig)[] = [
   'fadedOpacity',
   'enableDuplicateStackUI',
   'fillPlot',
+  'fillMaxWidth',
 ];
 
 // Reactive keys whose changes need no catch-all WebGL redraw in updated(): they
@@ -427,16 +428,23 @@ export class ProtspaceScatterplot extends LitElement {
     if (cached && cached.plotDataLength === plotDataLength && cached.key === key) {
       return cached.scales;
     }
-    const { width, height, margin, fillPlot } = this._mergedConfig;
-    const scales = DataProcessor.createScales(this._plotData, width, height, margin, fillPlot);
+    const { width, height, margin, fillPlot, fillMaxWidth } = this._mergedConfig;
+    const scales = DataProcessor.createScales(
+      this._plotData,
+      width,
+      height,
+      margin,
+      fillPlot,
+      fillMaxWidth,
+    );
     this._scalesCache = scales && { scales, plotDataLength, key };
     return scales;
   }
 
   /** The inputs the scales take besides the plot data, which the point grid is built at. */
   private _scalesKey(): string {
-    const { width, height, margin, fillPlot } = this._mergedConfig;
-    return `${width}|${height}|${margin.top}|${margin.right}|${margin.bottom}|${margin.left}|${fillPlot}`;
+    const { width, height, margin, fillPlot, fillMaxWidth } = this._mergedConfig;
+    return `${width}|${height}|${margin.top}|${margin.right}|${margin.bottom}|${margin.left}|${fillPlot}|${fillMaxWidth}`;
   }
 
   private _invalidateScalesCache() {
@@ -894,7 +902,9 @@ export class ProtspaceScatterplot extends LitElement {
     if (changedProperties.has('config')) {
       const prev = this._mergedConfig;
       const merged = { ...DEFAULT_CONFIG, ...prev, ...this.config };
-      const fillChanged = merged.fillPlot !== prev.fillPlot;
+      const fillChanged =
+        merged.fillPlot !== prev.fillPlot ||
+        (merged.fillPlot && merged.fillMaxWidth !== prev.fillMaxWidth);
       // Read with the old scales, before the merge: the data at the centre of the view.
       const centre = fillChanged ? this._viewCentre() : null;
       this._mergedConfig = merged;

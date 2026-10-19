@@ -132,6 +132,7 @@ export class DataProcessor {
     height: number,
     margin: PlotMargin,
     fill = false,
+    fillMaxWidth = Infinity,
   ): ScalePair | null {
     if (plotData.length === 0) return null;
 
@@ -160,14 +161,15 @@ export class DataProcessor {
     const yExtent = extents.y;
 
     // One pixels-per-unit for both axes, centred (design decision 3), or each axis filling the
-    // plot with `fill`. The domain stays the padded extent at every size, so a resize or a Fill
-    // toggle is a rescale on the GPU, not a re-stage.
+    // plot with `fill` (at most `fillMaxWidth` wide). The domain stays the padded extent at every
+    // size, so a resize or a Fill toggle is a rescale on the GPU, not a re-stage.
     return fitScales(
       padDomain({ xMin: xExtent[0], xMax: xExtent[1], yMin: yExtent[0], yMax: yExtent[1] }),
       width,
       height,
       margin,
       fill,
+      fillMaxWidth,
     );
   }
 }

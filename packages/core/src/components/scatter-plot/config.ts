@@ -13,6 +13,7 @@ export const DEFAULT_CONFIG: Required<ScatterplotConfig> = {
   enableDuplicateStackUI: false,
   densityLayer: DENSITY_DEFAULT,
   fillPlot: false,
+  fillMaxWidth: Infinity,
 };
 
 export const NEUTRAL_VALUE_COLOR = '#888888';

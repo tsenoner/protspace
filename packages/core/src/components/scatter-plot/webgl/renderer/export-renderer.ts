@@ -92,6 +92,16 @@ function scaledExportMargin(
   };
 }
 
+/**
+ * `config.fillMaxWidth` at an export size: the same share of the width as on screen, so an export
+ * of a filled plot keeps the screen's cap. No cap when unset or before the plot is measured.
+ */
+function scaledFillMaxWidth(config: ScatterplotConfig, exportWidth: number): number {
+  const { fillMaxWidth, width } = config;
+  if (!fillMaxWidth || !Number.isFinite(fillMaxWidth) || !width) return Infinity;
+  return (fillMaxWidth / width) * exportWidth;
+}
+
 /** Options for a single off-screen export render. */
 interface ExportRenderOptions {
   width: number;
@@ -128,9 +138,10 @@ export class ExportRenderer {
    * The scales an export of `exportWidth` × `exportHeight` maps points with. By default the live
    * plot's fit (design decision 3): the 5%-padded extent with one pixels-per-unit, centred inside
    * margins scaled from a fixed reference, so a figure has the screen's shape; with
-   * `config.fillPlot` each axis fills the area inside those margins, as on screen. A `dataDomain`
-   * (inset / geometric-zoom render) fills the canvas edge to edge instead, each axis on its own:
-   * the caller picks a domain that already matches its source rect.
+   * `config.fillPlot` each axis fills the area inside those margins, as on screen (capped as
+   * `config.fillMaxWidth` caps it there). A `dataDomain` (inset / geometric-zoom render) fills the
+   * canvas edge to edge instead, each axis on its own: the caller picks a domain that already
+   * matches its source rect.
    */
   static createExportScales(
     config: ScatterplotConfig,
@@ -152,6 +163,7 @@ export class ExportRenderer {
       exportHeight,
       scaledExportMargin(config, exportWidth, exportHeight),
       config.fillPlot,
+      scaledFillMaxWidth(config, exportWidth),
     );
   }
 
@@ -183,6 +195,7 @@ export class ExportRenderer {
       exportHeight,
       margin,
       config.fillPlot,
+      scaledFillMaxWidth(config, exportWidth),
     );
     return {
       marginLeft: rect.left,
