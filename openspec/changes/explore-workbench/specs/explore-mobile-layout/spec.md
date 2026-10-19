@@ -267,7 +267,7 @@ keeping at least 110 px for the name, and the legend header SHALL fit with its s
 ### Requirement: A touch screen gets finger-sized targets and touch gestures
 
 Under a coarse pointer every control the explore page draws SHALL be at least 40 × 40 px: the
-legend's row controls and header buttons, the bars, the structure viewer's resource links, colour
+legend's rows (40 px tall), row controls and header buttons, the bars, the structure viewer's resource links, colour
 options, close button and protein pick, a filter value's remove button and every segmented option; a
 fine pointer keeps the compact sizes. On the plot, a pinch SHALL zoom the plot and never the page, a
 one-finger drag SHALL pan it, and a tap on a point SHALL select it and pin a compact card inside the
@@ -321,8 +321,8 @@ rather than the plot's usual 15%, so the plot around a tapped protein stays read
 On a phone every dialog, menu and popover the explore page opens SHALL lie within the window or
 scroll inside itself, with its close or cancel control on screen without scrolling the page: the
 More sheet, the Import panel, the Export menu, the Color by picker and its info bubble, the
-projection details card, the legend's settings popover, the colour picker and the Other popover
-opened from a full-width legend row, the Filter builder with its actions, the confirmation dialogs
+projection details card, the legend's settings popover, the colour picker and the Other categories
+dialog opened from a full-width legend row, the Filter builder with its actions, the confirmation dialogs
 and the Figure editor. The Figure editor SHALL stack its preview above its settings upright and
 place them side by side on a phone on its side, with 40 px targets.
 
@@ -347,7 +347,8 @@ place them side by side on a phone on its side, with 40 px targets.
 
 #### Scenario: Popovers from a legend row
 
-- **WHEN** the colour picker or the Other popover opens from a full-width legend row on a phone
+- **WHEN** the colour picker or the Other categories dialog opens from a full-width legend row on
+  a phone
 - **THEN** it stays inside the window
 
 #### Scenario: The Export menu on a phone on its side

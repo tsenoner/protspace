@@ -71,7 +71,8 @@ a cold load never flashes the other theme.
 
 Everything the explore page draws SHALL follow the theme: the plot's background and its neutral
 colours (Other, N/A, connectors), the structure viewer's frame and Mol\*'s background,
-notifications, the product tour's popover and overlay, the legend's swatches and the wordmark. A
+notifications, the product tour's popover and overlay, the legend's swatches, the wordmark, and
+the browser's own scrollbars and form controls (the root's `color-scheme`). A
 theme change SHALL restyle the plot's colours with one render and SHALL NOT change the plot's size
 or the view.
 
@@ -89,6 +90,11 @@ or the view.
 
 - **WHEN** the theme is Dark
 - **THEN** a notification, the tour's popover and the structure viewer's background are dark
+
+#### Scenario: The browser's own controls
+
+- **WHEN** the theme is Dark, and then Light
+- **THEN** the root's `color-scheme` is dark, and then light
 
 ### Requirement: Exports stay light
 
@@ -112,8 +118,8 @@ least 4.5 to 1 on every surface they sit on, as SHALL tooltip text and danger te
 boundaries, the selected-segment ring and the focus ring SHALL reach at least 3 to 1; the plot's
 Other colour, connectors and EAT endpoints SHALL reach at least 3 to 1 on the plot background.
 On the dark plot background the colours of Kelly's palette SHALL reach at least 2 to 1, and those
-of Okabe-Ito, Tol Bright, Set2, Dark2 and Tableau 10 at least 3 to 1, except for an explicit
-allow-list.
+of Okabe-Ito, Tol Bright, Set2, Dark2 and Tableau 10 at least 3 to 1, except Kelly's #2B3D26 and
+#222222 and Okabe-Ito's #000000.
 
 #### Scenario: Text on surfaces
 
@@ -123,4 +129,4 @@ allow-list.
 #### Scenario: Palette on the dark plot
 
 - **WHEN** Kelly's palette is drawn on the dark plot background
-- **THEN** every colour outside the allow-list reaches 2 to 1
+- **THEN** every colour but #2B3D26 and #222222 reaches 2 to 1

@@ -2,11 +2,12 @@
 
 ### Requirement: Legend rows are compact and keep their full names
 
-Each legend row SHALL be 28 px tall (40 px under a coarse pointer) and show its symbol, its name
+Each legend row SHALL be 28 px tall under a fine pointer (touch sizes are explore-mobile-layout's)
+and show its symbol, its name
 on one line and its count, which stays fully visible. A name too long for the row SHALL end in an
 ellipsis; the row's accessible name SHALL hold the full name, and the full name SHALL show after
-500 ms of mouse hover or a 500 ms touch hold on the truncated name (a hold that moves 12 px first
-is a tap). The legend SHALL fill the sidebar's column flush, without a card border.
+500 ms of mouse hover or a 500 ms touch hold on the truncated name (a finger that moves more than
+10 px first shows nothing, and its tap acts as a tap). The legend SHALL fill the sidebar's column flush, without a card border.
 
 #### Scenario: A long name at 240 px
 
@@ -22,7 +23,7 @@ is a tap). The legend SHALL fill the sidebar's column flush, without a card bord
 #### Scenario: Coarse pointer
 
 - **WHEN** the primary pointer is coarse
-- **THEN** rows are 40 px tall and their actions always show
+- **THEN** the rows' actions always show
 
 ### Requirement: Each row has its own actions
 
@@ -47,6 +48,27 @@ the list, dimmed, with ", hidden" at the end of its accessible name.
 
 - **WHEN** the user drags a row by its handle above another row
 - **THEN** the rows reorder
+
+### Requirement: A row is hidden, shown or shown alone by click and by key
+
+A click on a legend row SHALL hide or show its category, and a double-click SHALL show only that
+category (Show all when it is already the only one shown). With focus on a row, Enter or Space
+SHALL hide or show it and I SHALL show only it.
+
+#### Scenario: Click and double-click
+
+- **WHEN** the user clicks a row, then double-clicks another
+- **THEN** the first category is hidden, then only the second category's proteins are shown
+
+#### Scenario: Double-clicking the only category shown
+
+- **WHEN** only one category is shown and the user double-clicks its row
+- **THEN** every category is shown again
+
+#### Scenario: Keys
+
+- **WHEN** a row has focus and the user presses Enter, then Space, then I on another row
+- **THEN** the first category is hidden and shown again, then only the other category is shown
 
 ### Requirement: Rows reorder from the keyboard
 

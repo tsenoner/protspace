@@ -25,10 +25,11 @@ to the control that opened it when it closes.
 
 ### Requirement: Escape takes one step per press
 
-Each Escape press SHALL do exactly one thing: close the topmost open layer (menu, popover, dialog,
-pinned panel); with no layer open, hide the EAT connectors; then clear the selection; then return
-the selection tool to Move and zoom. A handler of the page's own that handles Escape first SHALL
-keep it from these steps.
+Each Escape press SHALL do exactly one thing: close the topmost open layer (a menu, popover or dialog,
+or an overlay such as a pinned tooltip or the projection details card); with no layer open, hide
+the EAT connectors; then clear the selection; then return the selection tool to Move and zoom. A
+control that uses the press itself, such as a tooltip hiding or the phone's open search closing,
+SHALL keep it from these steps.
 
 #### Scenario: Escape after an EAT click
 

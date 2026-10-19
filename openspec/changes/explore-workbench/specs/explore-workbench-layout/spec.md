@@ -5,7 +5,8 @@
 The /explore page SHALL replace the site header with a 48 px app bar (`role="banner"`) that has no
 site navigation: no Home or Docs link and no Resources menu; the ProtSpace mark SHALL link to `/`.
 The app bar SHALL name the loaded dataset and its protein count, formatted in the browser's
-locale, as "{name} · {count} proteins". Below it a view bar, the plot area and a right-hand
+locale, as "{name} · {count} proteins". The app bar SHALL hold the protein search in its centre,
+and ⌘K or Ctrl+K SHALL move focus to it from anywhere on the page. Below it a view bar, the plot area and a right-hand
 sidebar (`role="complementary"`, named "Sidebar", 300 px wide by default) SHALL share the screen.
 The landing and privacy pages SHALL keep the site header.
 
@@ -20,6 +21,11 @@ The landing and privacy pages SHALL keep the site header.
 - **WHEN** a dataset is loaded
 - **THEN** the app bar shows the dataset's name followed by "· N proteins", N being its protein
   count in the browser's number format
+
+#### Scenario: Ctrl+K
+
+- **WHEN** focus is on the page and the user presses Ctrl+K
+- **THEN** the search field in the centre of the app bar has focus
 
 #### Scenario: Other pages keep the site header
 
@@ -53,8 +59,9 @@ returns. A window resized back and forth by a few pixels around a threshold SHAL
 ### Requirement: The sidebar folds to a rail and resizes
 
 The sidebar SHALL keep a 44 px rail with Legend, Structure and Filter items and a Collapse sidebar
-/ Expand sidebar toggle that stays visible, named and stateful (`aria-pressed`, `aria-expanded`)
-while the sidebar is collapsed; what the Filter item opens is query-builder-filtering's. A
+/ Expand sidebar toggle, all named and visible while the sidebar is collapsed. The toggle SHALL
+report the sidebar's state through `aria-expanded`, and the Legend and Filter items SHALL report
+the open panel through `aria-pressed`; what the Filter item opens is query-builder-filtering's. A
 collapsed sidebar SHALL be inert. Its left edge SHALL be a separator the user drags
 or moves with the arrow keys (Shift for larger steps, Home and End for the ends): a drag SHALL
 preview over the plot and commit on release. The width SHALL stay within 240–480 px and SHALL be
@@ -63,7 +70,7 @@ clamped further so the plot keeps at least 480 px of the window.
 #### Scenario: Collapse and expand from the rail
 
 - **WHEN** the user collapses the sidebar
-- **THEN** the rail stays visible at 44 px with Legend, Structure and Expand sidebar
+- **THEN** the rail stays visible at 44 px with Legend, Structure, Filter and Expand sidebar
 - **AND** Legend opens the sidebar again
 
 #### Scenario: Dragging the edge
@@ -82,6 +89,7 @@ clamped further so the plot keeps at least 480 px of the window.
 - **WHEN** the sidebar is collapsed and the user clicks a protein
 - **THEN** the rail's Structure button shows a dot, and Structure opens the sidebar with that
   protein's structure
+- **AND** the protein's pinned tooltip offers View structure, which does the same
 
 ### Requirement: The legend and the structure share the sidebar under a divider
 
@@ -140,8 +148,8 @@ docked.
 ### Requirement: The layout is stored per browser, never in the URL
 
 The layout SHALL be stored under the localStorage key `protspace:layout:v1` and SHALL NOT appear
-in the URL: the sidebar's open state and width, the legend/structure split, the structure's
-placement and the floating card. A stored value of the wrong type, out of range, non-finite or
+in the URL: the sidebar's open state and width, which panel is open (Legend or Filter), the
+phone panel's fold, the legend/structure split, the structure's placement and the floating card. A stored value of the wrong type, out of range, non-finite or
 unparsable, or a storage that throws, SHALL load the defaults for the fields it affects, and the
 page SHALL still load.
 
