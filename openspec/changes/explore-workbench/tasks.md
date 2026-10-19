@@ -155,16 +155,16 @@ previous phase left. A phase ends with the app working and every test green.
 
 - [x] Merged with `main` through `perf/improvements`; main's Table (TSV) export ported into the
       Export menu
-- [ ] 8.15 Full verification on the merged tree
-- [ ] 8.16 Fixes for what the verification found
-- [ ] 8.17 The device checklist goes to the user
+- [x] 8.15 Full verification on the merged tree
+- [x] 8.16 Fixes for what the verification found
+- [x] 8.17 The device checklist goes to the user
 - [ ] 8.18 Device fixes
-- [ ] 8.19 The header-check script and its self-test
-- [ ] 8.20 Spec files for the shell capabilities
-- [ ] 8.21 Spec files for the workflow capabilities and the table export
-- [ ] 8.22 Spec files for phones, docs media and the controls that moved
-- [ ] 8.23 Spec files for the behaviour changes; the whole change validated
-- [ ] 8.24 The proposal, design and task list match what shipped
+- [x] 8.19 The header-check script and its self-test
+- [x] 8.20 Spec files for the shell capabilities
+- [x] 8.21 Spec files for the workflow capabilities and the table export
+- [x] 8.22 Spec files for phones, docs media and the controls that moved
+- [x] 8.23 Spec files for the behaviour changes; the whole change validated
+- [x] 8.24 The proposal, design and task list match what shipped
 - [ ] 8.25 The specs rechecked against the commits after the spec block
 - [ ] 8.26 The PR description
 - [ ] 8.27 A dry-run archive

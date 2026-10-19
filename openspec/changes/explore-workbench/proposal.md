@@ -38,7 +38,9 @@ splits the largest elements and replaces copied code with one set of shared part
 - **Docs.** The docs image pipeline is restructured and every screenshot and GIF regenerated, with
   dark variants of the main screenshots.
 - **BREAKING** (for embedders only): `protspace-control-bar` is replaced by separate elements.
-  `@protspace/core` is not published; the developer docs change in the same PR.
+  `@protspace/core` is not published; the developer docs change in the same PR. The scatterplot no
+  longer handles file drops; the page's drop target sends them to the data loader (`file-dropped`
+  on `#myDataLoader`).
 
 ### Non-goals
 
@@ -54,9 +56,9 @@ capabilities the change adds and which existing specs it will update.
 
 ### New Capabilities
 
-- `explore-workbench-layout`: the app bar, the view bar that never wraps, tools and status on the
-  plot, the sidebar with its icon rail, divider, resizing and persistence, the docked or floating
-  structure viewer, the shared Import/dataset menu, the drop target and the empty state.
+- `explore-workbench-layout`: the app bar, the view bar that never wraps, the sidebar with its icon
+  rail, divider, resizing and persistence, the docked or floating structure viewer, the drop
+  target, the empty state and where notifications appear.
 - `explore-theming`: the `--ps-*` token file and its rules, the type scale and font, the light, dark
   and system themes, first-paint theme application, what follows the theme (plot, structure viewer,
   overlays) and what does not (exports).
@@ -69,8 +71,8 @@ capabilities the change adds and which existing specs it will update.
   popover, live settings and their persistence.
 - `selection-workflow`: the selection bar, status chips, undo and redo, the Undo or confirmation on
   destructive actions, and choosing which selected protein the structure viewer shows.
-- `explore-import-export`: the Import menu and dataset switcher, the Export menu and its
-  confirmations, and the figure editor's dialog behaviour.
+- `explore-import-export`: the Import panel that Import and the dataset name open, the Export menu
+  and its confirmations, and the figure editor's dialog behaviour.
 - `explore-help`: the help menu, the complete keyboard shortcut list, the full tour for new visitors
   and the "What's new" tour for returning ones.
 - `explore-mobile-layout`: tablet, phone and landscape-phone layouts, the More sheet, the bottom
@@ -84,15 +86,15 @@ capabilities the change adds and which existing specs it will update.
 
 - `query-builder-filtering`: the query builder moves from a control-bar modal to the sidebar's
   Filter panel; edits are a draft until Apply, Cancel discards, a disabled Apply says why, the
-  active filter shows as a chip, Reset offers Undo, and `filterActive` gets a new owner.
+  match count updates as the draft changes, Reset offers Undo, and the plot's `filtersActive` with
+  the Filter button's count report an applied filter.
 - `query-builder-controls`: controls take the kit's tokens and focus ring; Escape inside a picker
   follows the one Escape order instead of protecting a surrounding modal; the shared-stylesheet
   requirement refers to the kit instead of the control bar.
 - `protein-search-feedback`: unknown IDs get a specific message; pasted lists report found and
   missing IDs; a single hit zooms to the protein.
-- `annotation-presentation`: the annotation picker groups by source and marks predicted annotations
-  with an icon (matching the code, which no longer has a "Predicted" group); display names are used
-  at every text site; the legend's predicted marker uses the icon set.
+- `annotation-presentation`: the legend header's predicted marker becomes the icon set's sparkles
+  mark with a tooltip; main's source-grouped annotation picker is kept.
 - `category-focus`: the Shift + Hover entry moves from the plot's Tips popover to the help menu's
   keyboard shortcut list.
 - `density-contours`: the Contours control is a view-bar element (the More sheet on phones) instead
@@ -105,8 +107,8 @@ capabilities the change adds and which existing specs it will update.
 - `eat-reliability-filter`: the reliability control writes the applied filter and mirrors into an
   open draft.
 - `eat-provenance-connectors`: connectors take their place in the one Escape order.
-- `example-datasets`: examples are chosen from the Import menu in the app bar (and the More sheet on
-  phones) and from the dataset switcher; wording that names the control bar changes.
+- `example-datasets`: examples are chosen from the Import panel, opened by the app bar's Import or
+  dataset name (and the More sheet on phones); wording that names the control bar changes.
 - `support-contact`: Feedback moves to the app bar and the More sheet; every notification has a close
   button.
 - `prep-failure-routing`: notification actions can be callbacks, up to two per notification, next
@@ -118,6 +120,9 @@ capabilities the change adds and which existing specs it will update.
   pixel-reset check pins the colour scheme.
 - `protein-resource-links`: the structure header's link row stays usable in the narrow sidebar, the
   floating card and the folded phone sheet.
+- `table-export`: the Table (.tsv) export is an item of the app bar's Export menu (the More sheet on
+  phones); isolation is Show only these.
+- `structure-coloring`: a disabled colour option says why it is disabled.
 
 ## Impact
 
@@ -139,5 +144,6 @@ capabilities the change adds and which existing specs it will update.
   accessibility checks; a panel-toggle perf scenario.
 - **Dependencies**: `@floating-ui/dom`, `lucide`, `@fontsource-variable/inter`; dev:
   `@axe-core/playwright`.
-- **Branches**: built on `perf/improvements` (PR #526); `feat/mobile-responsive` is retired once its
-  tests pass on the new layout.
+- **Branches**: built on `perf/improvements` (PR #526) and merged with `main` through it
+  (`6b203667`, `dfc6def4`); the PR targets `perf/improvements` until #526 merges, then `main`.
+  `feat/mobile-responsive` is retired: its phone tests pass on the new layout.

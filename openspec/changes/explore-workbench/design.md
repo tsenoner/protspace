@@ -251,7 +251,7 @@ plot can each hold their own: the projection picker, the annotation picker (`ann
 already exists), the contours menu, the filter panel (the query builder), search (exists), the
 export menu, the import menu, and the plot's selection tools. The behaviour the control bar
 coordinated today (auto-sync with the scatterplot, the Escape handling, the selection mode) moves
-into controllers in `apps/web/src/explore/`, next to `control-bar-events.ts`. **BREAKING** for
+into controllers in `apps/web/src/explore/`. **BREAKING** for
 anyone embedding `protspace-control-bar`; `@protspace/core` is not published, and the developer docs
 change in the same PR.
 
@@ -306,7 +306,7 @@ the Escape handling in `control-bar.ts` and the legend's own focus trap.
 - With a selection, a bar appears at the bottom of the plot: "12 selected · Show only these · Zoom
   to them · Copy IDs · Clear". Clear and Isolate leave the toolbar, where they sat greyed out.
 - When the view is narrowed, chips in the plot's bottom-left corner say so: "Filtered · 2
-  conditions", "Showing only 3 categories · 2 steps", "4 categories hidden". Each opens the place to
+  conditions", "Showing only 12 proteins · 2 steps", "4 categories hidden". Each opens the place to
   change it and has an ✕ to remove it.
 - ⌘Z / Ctrl+Z undoes, and ⇧⌘Z / Ctrl+Shift+Z redoes, selection changes, "show only" steps and
   filter apply/reset, when focus is not in a text field. The history lives in the interaction
@@ -347,8 +347,8 @@ condition in the draft moves the slider only when the draft is applied.
   handles drops and sets an attribute that nothing styles. Drop handling moves to the shell.
 - **Import menu.** The Import button and the dataset name open the same menu: the examples, the last
   imported file, and "Open a file…", with the accepted formats listed.
-- **Export menu.** Figure editor, quick PNG, quick PDF, protein IDs, table (TSV), data bundle. The note that
-  contours are not part of quick exports moves from a hover title into the menu.
+- **Export menu.** Figure editor, quick PNG, quick PDF, protein IDs, Table (.tsv), data bundle. The
+  note that contours are not part of quick exports moves from a hover title into the menu.
 - **Figure editor.** Becomes a full-screen `ps-dialog`: Escape closes it, focus is contained, and
   its "Cancel", which already keeps the editor state, is renamed "Close". `publish-modal.ts` is
   split along its sections.
@@ -403,9 +403,10 @@ The breakpoints of the mobile branch are kept (mockups: [`mockups/phone.png`](mo
 - Touch affordances key on the pointer type (`pointer: coarse`), not the width: targets of at least
   40 px, legend row actions always visible, tap and double-tap on legend rows.
 
-The mobile branch's 38 phone tests (Playwright project `mobile`, Pixel 7) are ported to the new
-layout first and used as acceptance tests. The branch is then retired, not merged. Its spec's
-requirement that the desktop layout stays unchanged is superseded.
+The mobile branch's phone tests (Playwright project `mobile`, Pixel 7; 34 of its 38, without the
+four landing-page tests) are ported to the new layout first and used as acceptance tests. The
+branch is then retired, not merged. Its spec's requirement that the desktop layout stays unchanged
+is superseded.
 
 ### 18. Code structure targets
 
@@ -436,12 +437,12 @@ requirement that the desktop layout stays unchanged is superseded.
   instead of the about 100 fixed `waitForTimeout` pauses.
 - Each image is one entry (name, viewport, theme, steps, PNG or GIF); one runner handles file names,
   light and dark variants and the GIF conversion, with a size budget per GIF.
-- All 17 screenshots, 9 GIFs and the 5 example thumbnails are regenerated. The thumbnails move here
-  from the `examples-live` e2e suite, so every docs image comes from one pipeline. New captures cover the
-  sidebar fold and resize, the floating structure, the selection bar, the filter panel, search
-  messages, the theme switch and the phone layout. Images named after the old layout
-  (`control-bar-*.png`) are replaced and deleted. The main screenshots get dark variants, shown when
-  the docs are in dark mode.
+- Every screenshot and GIF (51 PNG and 10 GIF files, dark twins included) and the 5 example
+  thumbnails are regenerated. The thumbnails move here from the `examples-live` e2e suite, so every
+  docs image comes from one pipeline. New captures cover the sidebar fold and resize, the floating
+  structure, the selection bar, the filter panel, search messages, the theme switch and the phone
+  layout. Images named after the old layout (`control-bar-*.png`) are replaced and deleted. The main
+  screenshots get dark variants, shown when the docs are in dark mode.
 
 ### 20. Testing
 
@@ -464,8 +465,9 @@ requirement that the desktop layout stays unchanged is superseded.
 
 ### 21. Delivery
 
-- Branch `feat/explore-workbench`, created from `perf/improvements` at 7e94b858, rebased onto
-  `main` when PR #526 merges.
+- Branch `feat/explore-workbench`, created from `perf/improvements` at 7e94b858 and merged with
+  `main` through it (`6b203667` merged `main` into `perf/improvements`, `dfc6def4` merged that
+  here). The PR targets `perf/improvements` until #526 merges, then `main`.
 - One PR, many small commits, merged without squashing (the repository disallows squash merges).
 - Built in phases, each leaving the app working and the tests green: (1) foundation: tokens, type,
   kit, icons, layer stack; (2) shell and layout, plot proportions, resize policy; (3) legend;
@@ -477,7 +479,7 @@ requirement that the desktop layout stays unchanged is superseded.
 
 - **[Large PR]** → Phases with green checkpoints, small commits, and this design as the review map.
 - **[PR #526 changes before merging]** → This branch touches the renderer only in the scale function
-  and the resize path; rebase as #526 moves.
+  and the resize path; it merges `perf/improvements` as #526 moves, and `main` once #526 merges.
 - **[Performance regressions from the shell]** → The plot never animates; one resize per panel change;
   `pnpm perf` runs at the end of each phase that touches the plot or the legend.
 - **[Keep-proportions surprises users with existing figures]** → Release note in the PR and the
@@ -508,4 +510,5 @@ requirement that the desktop layout stays unchanged is superseded.
 
 ## Open Questions
 
-- Who runs the real-device check on iOS Safari and Android Chrome, and when.
+- Who runs the real-device check on iOS Safari and Android Chrome, and when. Answered: the user,
+  in phase 8B, on iOS Safari, Android Chrome, a tablet and desktop Chrome, Safari and Firefox.
