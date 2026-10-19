@@ -338,22 +338,8 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect.poll(plotFiltersActive).toBe(false);
   await expect(filterButton(page)).toHaveAccessibleName('Filter');
   await expect.poll(predictedVisibleCount).toBe(213);
-
-  // Raising the threshold drives the shared `EAT_confidence >= x or N/A` filter, which
-  // HIDES sub-threshold predictions (fewer visible points) rather than dimming them.
-  await thresholdPercent.fill('99');
-  await expect(threshold).toHaveValue('0.99');
-  await expect.poll(plotFiltersActive).toBe(true);
-  await expect(filterButton(page)).toHaveAccessibleName('Filter, 1 condition applied');
-  await expect.poll(predictedVisibleCount).toBeLessThan(213);
-
-  // Dragging back to 0 removes the condition and restores every prediction.
-  await threshold.press('Home');
-  await expect(threshold).toHaveValue('0');
-  await expect(thresholdPercent).toHaveValue('0');
-  await expect.poll(plotFiltersActive).toBe(false);
-  await expect(filterButton(page)).toHaveAccessibleName('Filter');
-  await expect.poll(predictedVisibleCount).toBe(213);
+  // Raising the threshold (hiding, the filter-active button, exact survivor counts)
+  // is checked by "keeps curated points visible while the reliability filter…".
 
   // The info popover explains predictions are filtered out while curated stays.
   await eatGroup.getByRole('button', { name: 'Information about EAT reliability filter' }).click();
@@ -910,6 +896,8 @@ test('keeps curated points visible while the reliability filter hides low-confid
   // 60%: 94 of the 213 transfers fall below the threshold and are hidden; all
   // 619 curated points stay, so 619 + 119 = 738 points remain rendered.
   await thresholdPercent.fill('60');
+  // The threshold drives the shared filter, so the Filter button counts it.
+  await expect(filterButton(page)).toHaveAccessibleName('Filter, 1 condition applied');
   await expect
     .poll(() => visibility(0.6), { timeout: 15_000 })
     .toEqual({
@@ -932,8 +920,10 @@ test('keeps curated points visible while the reliability filter hides low-confid
       predictedExpectedVisible: 4,
     });
 
-  // Back to 0: every prediction returns, so the filter hid rather than dropped them.
+  // Back to 0: the condition is removed and every prediction returns, so the
+  // filter hid rather than dropped them.
   await thresholdPercent.fill('0');
+  await expect(filterButton(page)).toHaveAccessibleName('Filter');
   await expect
     .poll(() => visibility(0), { timeout: 15_000 })
     .toEqual({
@@ -942,4 +932,75 @@ test('keeps curated points visible while the reliability filter hides low-confid
       predictedVisible: 213,
       predictedExpectedVisible: 213,
     });
+});
+
+/**
+ * The Table (TSV) export holds exactly the proteins the Protein IDs export holds — here after
+ * the reliability filter — with the projection's coordinates, the curated column and its EAT
+ * companions. Driven through the real Export menu, as a user would.
+ */
+test('exports the visible proteins as a table, the same set as the ID export', async ({ page }) => {
+  await loadEatFixture(page);
+  await selectAnnotation(page, 'ec');
+
+  const legend = page.locator('protspace-legend');
+  await legend
+    .getByRole('region', { name: 'Embedding Annotation Transfer' })
+    .getByRole('spinbutton', { name: 'EAT reliability filter percentage' })
+    .fill('60');
+  // 619 curated + the 119 transfers at or above 0.6 (see the reliability filter test).
+  await expect.poll(async () => (await readRenderedProteinIds(page)).length).toBe(738);
+
+  const controlBar = page.locator('protspace-control-bar');
+  const download = async (format: 'IDs' | 'Table', action: string) => {
+    if (!(await controlBar.locator('.export-menu').isVisible())) {
+      await controlBar.getByRole('button', { name: 'Export', exact: true }).click();
+    }
+    await controlBar.getByRole('button', { name: format, exact: true }).click();
+    const downloadPromise = page.waitForEvent('download');
+    await controlBar.getByRole('button', { name: action, exact: true }).click();
+    const file = await downloadPromise;
+    return { name: file.suggestedFilename(), text: fs.readFileSync((await file.path())!, 'utf8') };
+  };
+
+  const ids = (await download('IDs', 'Export IDS')).text.split('\n');
+  const table = await download('Table', 'Export TSV');
+  expect(table.name).toMatch(/\.tsv$/);
+
+  const [header, ...rows] = table.text
+    .trimEnd()
+    .split('\n')
+    .map((line) => line.split('\t'));
+  expect(header[0]).toBe('protein_id');
+  expect(header[1]).toMatch(/_x$/);
+  expect(header[2]).toMatch(/_y$/);
+  const column = (name: string) => {
+    expect(header).toContain(name);
+    return header.indexOf(name);
+  };
+  const [ec, value, confidence, source] = [
+    'ec',
+    'ec__pred_value',
+    'ec__pred_confidence',
+    'ec__pred_source',
+  ].map(column);
+  // The synthetic confidence views are filter-only: no column but the stored companions.
+  for (const name of header.filter((candidate) => /confidence/i.test(candidate))) {
+    expect(name).toMatch(/__pred_confidence$/);
+  }
+
+  expect(rows.map((row) => row[0])).toEqual(ids);
+  expect(rows).toHaveLength(738);
+  // A missing cell is empty, never the loader's internal N/A token.
+  expect(rows.flat()).not.toContain('__NA__');
+  expect(rows.some((row) => row.includes(''))).toBe(true);
+
+  const predicted = rows.filter((row) => row[value] !== '');
+  expect(predicted).toHaveLength(119);
+  for (const row of predicted) {
+    expect(row[ec]).toBe('');
+    expect(Number(row[confidence])).toBeGreaterThanOrEqual(0.6);
+    expect(row[source]).not.toBe('');
+  }
+  expect(rows.filter((row) => row[ec] !== '').length).toBeGreaterThan(0);
 });

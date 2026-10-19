@@ -6,8 +6,8 @@ Covers three things:
   per-value colors/shapes set via the CLI are silently dropped;
 - the `selectedPaletteId` validation warning (gradient/unknown id → resets to
   kellys in the frontend);
-- a pinned contract keeping the Python palette-id catalog reconciled with the
-  frontend source of truth (see the section at the bottom of this file).
+- the palette catalog, generated from contracts/shared-constants.json like the
+  web's (see the section below).
 """
 
 import logging
@@ -15,6 +15,7 @@ import logging
 import pyarrow as pa
 import pytest
 
+from protspace._generated.shared_constants import DEFAULT_CATEGORICAL_PALETTE_ID
 from protspace.data.annotations.encoding import stamp_format_version
 from protspace.data.io.bundle import extract_bundle_to_dir, write_bundle
 from protspace.utils.add_annotation_style import (
@@ -43,7 +44,7 @@ def _make_bundle(tmp_path, ids, annotation_columns):
     data = pa.table(
         {
             "projection_name": ["pca2"] * n,
-            "identifier": list(ids),
+            "protein_id": list(ids),
             "x": [0.0] * n,
             "y": [0.0] * n,
             "z": [None] * n,
@@ -107,6 +108,23 @@ def test_generate_template_warns_only_on_numeric_column(tmp_path, caplog):
     assert not any("family" in m for m in warned)
     # the template is still produced for both columns
     assert {"length", "family"} <= set(template)
+
+
+def test_template_gives_only_a_categorical_column_the_categorical_palette(tmp_path):
+    """A numeric column reads ``selectedPaletteId`` as its gradient, so the
+    categorical default would reset a gradient chosen in the web app."""
+    bundle = _make_bundle(
+        tmp_path,
+        ["P1", "P2", "P3"],
+        {
+            "length": ["100", "200", "300"],
+            "family": ["kinase", "phosphatase", "kinase"],
+        },
+    )
+    template = generate_template(str(bundle))
+
+    assert template["family"]["selectedPaletteId"] == DEFAULT_CATEGORICAL_PALETTE_ID
+    assert "selectedPaletteId" not in template["length"]
 
 
 def test_apply_styles_warns_on_numeric_column(tmp_path, caplog):
@@ -186,45 +204,16 @@ def test_apply_styles_skips_palette_warning_for_numeric_gradient(tmp_path, caplo
     assert not any("kellys" in m for m in messages)
 
 
-# --- pinned contract: keep the Python palette catalog in sync with the frontend ---
+# --- palette catalog --------------------------------------------------------
 #
-# The authoritative source is the web frontend:
-#   packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES)
-#   packages/utils/src/visualization/numeric-binning.ts
-#                                                   (GRADIENT_COLOR_SCHEME_IDS)
-# These pins make the Python copy a deliberate, reviewed value: changing a palette
-# id trips a test, prompting a matching update to docs/guide/styling.md (Color palettes)
-# and a re-check against the frontend. The test compares the catalog to a literal
-# copy here, so it guards accidental in-repo edits — it cannot read the frontend
-# and does not detect drift from the source of truth.
-
-_EXPECTED_CATEGORICAL_PALETTE_IDS = {
-    "kellys",
-    "okabeIto",
-    "tolBright",
-    "set2",
-    "dark2",
-    "tableau10",
-}
-_EXPECTED_GRADIENT_PALETTE_IDS = {"batlow", "viridis", "cividis", "inferno", "plasma"}
+# The ids come from contracts/shared-constants.json, which also generates the web's;
+# the generator checks the sets are disjoint and that the numeric default is a
+# gradient. This pins the one id the CLI writes and the web falls back to.
 
 
-def test_categorical_palette_ids_pinned():
-    assert set(_CATEGORICAL_PALETTE_IDS) == _EXPECTED_CATEGORICAL_PALETTE_IDS
-
-
-def test_gradient_palette_ids_pinned():
-    assert set(_GRADIENT_PALETTE_IDS) == _EXPECTED_GRADIENT_PALETTE_IDS
-
-
-def test_palette_id_sets_are_disjoint():
-    assert _CATEGORICAL_PALETTE_IDS.isdisjoint(_GRADIENT_PALETTE_IDS)
-
-
-def test_palette_defaults_belong_to_their_sets():
-    # Frontend defaults: categorical → 'kellys', numeric gradient → 'batlow'.
+def test_kellys_is_a_categorical_palette():
     assert "kellys" in _CATEGORICAL_PALETTE_IDS
-    assert "batlow" in _GRADIENT_PALETTE_IDS
+    assert "kellys" not in _GRADIENT_PALETTE_IDS
 
 
 # ---------------------------------------------------------------------------
@@ -260,8 +249,15 @@ def test_resolve_style_key_answers_what_style_would_accept():
     assert resolve_style_key("__NA__", {"None", "Human"}) == "None"
     assert resolve_style_key("100.0", {"100"}) == "100"
     assert resolve_style_key("Alien", {"Human", "Mouse"}) is None
-    # Only the NA spellings `style` folds: "none" (TMbed) is a value of its own.
-    assert resolve_style_key("__NA__", {"none", "Human"}) is None
+    # Every spelling the web shows as N/A is N/A to `style` too. "none" was kept
+    # apart while TMbed wrote its negative that way, but the web always drew it
+    # as N/A, so a style on it never applied.
+    assert resolve_style_key("__NA__", {"none", "Human"}) == "none"
+    assert resolve_style_key("N/A", {"null", "Human"}) == "null"
+    assert resolve_style_key("NULL", {"none", "Human"}) == "none"
+    assert resolve_style_key("__NA__", {"Human"}) is None  # no missing cell
+    # With several N/A spellings in the data, always the same one.
+    assert resolve_style_key("N/A", {"None", "", "n/a", "Human"}) == ""
 
 
 def test_style_keys_are_the_display_values_of_every_cell():

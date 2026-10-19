@@ -3,13 +3,21 @@
  */
 
 import { SHAPE_PATH_GENERATORS, renderPathOnCanvas, toDisplayValue } from './shapes';
-import { NA_VALUE } from './missing-values';
-import type { Annotation, AnnotationData } from '../types.js';
+import { isNAValue, NA_VALUE } from './missing-values';
+import type { Annotation, AnnotationData, AnnotationPredictedData, Projection } from '../types.js';
 import { annotationLabel } from './annotation-metadata.js';
 import {
   getProteinAnnotationCount,
   getProteinAnnotationIndexAt,
 } from './annotation-data-access.js';
+import {
+  getEatCompanionColumn,
+  getPredictedCellValues,
+  isEatConfidenceAnnotation,
+} from './eat-overlay.js';
+import { isNumericAnnotation } from './numeric-binning.js';
+import { readNumericValue } from './plot-data-accessors.js';
+import { PROTEIN_ID_COLUMN } from '../generated/shared-constants';
 
 // PDF generation libraries are imported dynamically for better browser compatibility
 declare const window: Window & typeof globalThis;
@@ -26,10 +34,14 @@ export interface ExportableData {
       numericMetadata?: {
         bins?: Array<{ id: string; label: string }>;
       };
+      kind?: Annotation['kind'];
+      sourceKind?: Annotation['sourceKind'];
     }
   >;
   annotation_data: Record<string, AnnotationData>;
-  projections?: Array<{ name: string }>;
+  projections?: Array<{ name: string } & Partial<Pick<Projection, 'data' | 'dimension'>>>;
+  numeric_annotation_data?: Record<string, Float64Array>;
+  annotation_predicted?: AnnotationPredictedData;
 }
 
 export interface ExportableElement extends Element {
@@ -439,6 +451,43 @@ export class ProtSpaceExporter {
   }
 
   /**
+   * Indices into `data.protein_ids` of the proteins the plot shows. `getCurrentData()` has
+   * already applied the filter query and isolation; this drops the proteins whose values of the
+   * coloured annotation are all hidden in the legend. Shared by the ID and table exports, so the
+   * two always hold the same proteins.
+   */
+  private visibleProteinIndices(data: ExportableData): number[] {
+    const all = data.protein_ids.map((_id, i) => i);
+    const selectedAnnotation = this.element.selectedAnnotation;
+    const annotationIndices = data.annotation_data?.[selectedAnnotation];
+    const annotationInfo = data.annotations?.[selectedAnnotation];
+    const hiddenValues: string[] = Array.isArray(this.element.hiddenAnnotationValues)
+      ? (this.element.hiddenAnnotationValues as string[])
+      : [];
+
+    if (!annotationIndices || !annotationInfo || !Array.isArray(annotationInfo.values)) {
+      // Fallback: if we cannot determine annotation visibility, export all proteins
+      return all;
+    }
+    const hiddenSet = new Set(hiddenValues);
+    return all.filter((i) => {
+      const count = getProteinAnnotationCount(annotationIndices, i);
+      // A protein is visible if at least one of its annotation values is not hidden
+      if (count === 0) {
+        return !hiddenSet.has(NA_VALUE);
+      }
+      for (let k = 0; k < count; k++) {
+        const vi = getProteinAnnotationIndexAt(annotationIndices, i, k);
+        const value: string | null =
+          vi >= 0 && vi < annotationInfo.values.length ? (annotationInfo.values[vi] ?? null) : null;
+        const key = value === null ? NA_VALUE : String(value);
+        if (!hiddenSet.has(key)) return true;
+      }
+      return false;
+    });
+  }
+
+  /**
    * Export protein IDs as text file
    */
   exportProteinIds(_options: ExportOptions = {}): string | null {
@@ -448,39 +497,7 @@ export class ProtSpaceExporter {
       return null;
     }
 
-    // Compute visibility based on the scatterplot's current hidden annotation values
-    const selectedAnnotation = this.element.selectedAnnotation;
-    const annotationIndices = data.annotation_data?.[selectedAnnotation];
-    const annotationInfo = data.annotations?.[selectedAnnotation];
-    const hiddenValues: string[] = Array.isArray(this.element.hiddenAnnotationValues)
-      ? (this.element.hiddenAnnotationValues as string[])
-      : [];
-
-    let visibleIds: string[] = [];
-    if (annotationIndices && annotationInfo && Array.isArray(annotationInfo.values)) {
-      const hiddenSet = new Set(hiddenValues);
-      visibleIds = data.protein_ids.filter((_id, i) => {
-        const count = getProteinAnnotationCount(annotationIndices, i);
-        // A protein is visible if at least one of its annotation values is not hidden
-        if (count === 0) {
-          return !hiddenSet.has(NA_VALUE);
-        }
-        for (let k = 0; k < count; k++) {
-          const vi = getProteinAnnotationIndexAt(annotationIndices, i, k);
-          const value: string | null =
-            vi >= 0 && vi < annotationInfo.values.length
-              ? (annotationInfo.values[vi] ?? null)
-              : null;
-          const key = value === null ? NA_VALUE : String(value);
-          if (!hiddenSet.has(key)) return true;
-        }
-        return false;
-      });
-    } else {
-      // Fallback: if we cannot determine annotation visibility, export all ids
-      visibleIds = data.protein_ids || [];
-    }
-
+    const visibleIds = this.visibleProteinIndices(data).map((i) => data.protein_ids[i]);
     // A Blob, not a data: URI: hundreds of thousands of IDs URI-encoded into one string cost
     // several megabytes of string building before the download even starts.
     const fileName = 'protein_ids.txt';
@@ -494,6 +511,33 @@ export class ProtSpaceExporter {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
     return fileName;
+  }
+
+  /**
+   * Export the visible proteins (the ID export's set) as a tab-separated table: `protein_id`,
+   * the selected projection's coordinates, then one column per annotation. Column names and cell
+   * values match `protspace export`, so a script reads either file.
+   */
+  exportTable(_options: ExportOptions = {}): void {
+    const data = this.element.getCurrentData();
+    if (!data) {
+      console.error('No data available for export');
+      return;
+    }
+
+    const tsv = buildProteinTable(
+      data,
+      this.visibleProteinIndices(data),
+      this.element.selectedProjectionIndex,
+    );
+    // A Blob, not a data: URI as for the IDs: a table can be megabytes, past some browsers'
+    // URI length limit.
+    const url = URL.createObjectURL(new Blob([tsv], { type: 'text/tab-separated-values' }));
+    try {
+      this.downloadFile(url, this.generateExportFileName('tsv'));
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   }
 
   /**
@@ -955,6 +999,120 @@ export class ProtSpaceExporter {
     link.download = filename;
     link.click();
   }
+}
+
+const FLOAT32_MIN_NORMAL = 2 ** -126;
+
+/** Shortest decimal that reads back as the same float32, as Python prints a float32 column. */
+function formatFloat32(value: number): string {
+  if (!Number.isFinite(value)) return '';
+  // Start at 6: a normal float32 within 2^-24 of a shorter decimal rounds to that same decimal
+  // at 6 digits, so fewer digits never give a different string, and most coordinates need 7-9.
+  // A subnormal has less precision, so it still tries every length.
+  const first = Math.abs(value) < FLOAT32_MIN_NORMAL ? 1 : 6;
+  for (let digits = first; digits < 9; digits++) {
+    const text = String(Number(value.toPrecision(digits)));
+    if (Math.fround(Number(text)) === value) return text;
+  }
+  return String(Number(value.toPrecision(9)));
+}
+
+/** A TSV field, quoted as pandas quotes one when it holds a tab, line break or quote. */
+function tsvField(value: string): string {
+  return /[\t\n\r"]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/**
+ * The table `exportTable` writes, for the proteins at `rows`. A categorical cell holds its labels
+ * joined with `;`, a numeric one its raw value (not its bin), a missing one nothing. An annotation
+ * with EAT predictions keeps its curated values only and is followed by the `__pred_*` columns
+ * `protspace transfer` writes; the synthetic confidence view is not a column of its own.
+ */
+function buildProteinTable(
+  data: ExportableData,
+  rows: readonly number[],
+  projectionIndex: number,
+): string {
+  // Each `cell` returns its field already escaped, so a label is escaped once per category
+  // rather than once per protein.
+  const columns: Array<{ name: string; cell: (row: number) => string }> = [];
+
+  const projection = data.projections?.[projectionIndex];
+  if (projection?.data && projection.dimension) {
+    const { data: coords, dimension } = projection;
+    ['x', 'y'].forEach((axis, offset) => {
+      columns.push({
+        name: `${projection.name}_${axis}`,
+        cell: (row) => formatFloat32(coords[row * dimension + offset]),
+      });
+    });
+  }
+
+  for (const [name, annotation] of Object.entries(data.annotations)) {
+    if (isEatConfidenceAnnotation(annotation)) continue;
+
+    const numeric = data.numeric_annotation_data?.[name];
+    if (isNumericAnnotation(annotation) && numeric) {
+      columns.push({
+        name,
+        cell: (row) => {
+          const value = readNumericValue(numeric, row);
+          return value === null ? '' : String(value);
+        },
+      });
+      continue;
+    }
+
+    const storage = data.annotation_data[name];
+    if (!storage) continue;
+    const predicted = data.annotation_predicted?.[name];
+    // A value index's label as the table shows it, or null for N/A.
+    const labels = annotation.values.map((label) =>
+      label != null && !isNAValue(label) ? label : null,
+    );
+    const escaped = labels.map((label) => (label === null ? '' : tsvField(label)));
+    columns.push({
+      name,
+      cell: (row) => {
+        if (predicted?.[row]) return '';
+        const count = getProteinAnnotationCount(storage, row);
+        if (count === 1) return escaped[getProteinAnnotationIndexAt(storage, row, 0)] ?? '';
+        const hits: string[] = [];
+        for (let k = 0; k < count; k++) {
+          const label = labels[getProteinAnnotationIndexAt(storage, row, k)];
+          if (label != null) hits.push(label);
+        }
+        return tsvField(hits.join(';'));
+      },
+    });
+
+    if (predicted?.some(Boolean)) {
+      columns.push(
+        {
+          name: getEatCompanionColumn(name, 'value'),
+          cell: (row) =>
+            predicted[row] ? tsvField(getPredictedCellValues(predicted[row]!).join(';')) : '',
+        },
+        {
+          name: getEatCompanionColumn(name, 'confidence'),
+          cell: (row) => (predicted[row] ? formatFloat32(predicted[row]!.confidence) : ''),
+        },
+        {
+          name: getEatCompanionColumn(name, 'source'),
+          cell: (row) => tsvField(predicted[row]?.source ?? ''),
+        },
+      );
+    }
+  }
+
+  const header = [PROTEIN_ID_COLUMN, ...columns.map(({ name }) => name)];
+  const lines = [header.map(tsvField).join('\t')];
+  for (const row of rows) {
+    let line = tsvField(data.protein_ids[row]);
+    for (const { cell } of columns) line += '\t' + cell(row);
+    lines.push(line);
+  }
+  return lines.join('\n') + '\n';
 }
 
 /**

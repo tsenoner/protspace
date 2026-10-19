@@ -1,3 +1,4 @@
+import { DEFAULT_NUMERIC_PALETTE_ID, GRADIENT_PALETTE_IDS } from '../generated/shared-constants';
 import { sampleColorSchemeColor } from './color-scheme';
 import { NA_VALUE, NA_DEFAULT_COLOR } from './missing-values';
 import type {
@@ -11,15 +12,9 @@ import type {
 } from '../types';
 import { djb2Hash } from '../storage/data-hash';
 
-export const DEFAULT_NUMERIC_PALETTE_ID = 'batlow';
+export { DEFAULT_NUMERIC_PALETTE_ID };
 export const DEFAULT_NUMERIC_STRATEGY: NumericBinningStrategy = 'quantile';
-export const GRADIENT_COLOR_SCHEME_IDS = new Set([
-  'viridis',
-  'cividis',
-  'inferno',
-  'batlow',
-  'plasma',
-]);
+export const GRADIENT_COLOR_SCHEME_IDS: ReadonlySet<string> = new Set(GRADIENT_PALETTE_IDS);
 const NUMERIC_COLOR_ALGORITHM_VERSION = 'numeric-gradient-v2';
 
 export interface NumericAnnotationDisplaySettings {

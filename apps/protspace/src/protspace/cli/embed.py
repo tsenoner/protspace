@@ -78,13 +78,17 @@ def embed(
 
         def resolve(name: str) -> str:
             return name  # local backend takes the short key directly
+
+        server_errors: tuple[type[Exception], ...] = ()
     else:
+        from protspace.data.biocentral_connection import BiocentralUnavailableError
         from protspace.data.embedding.biocentral import (
             embed_sequences,
             resolve_embedder,
         )
 
         resolve = resolve_embedder
+        server_errors = (BiocentralUnavailableError,)
 
     failed_models: list[str] = []
 
@@ -99,6 +103,11 @@ def embed(
                 h5_path,
                 embed_config=embed_config,
             )
+        except server_errors as e:
+            # Every model goes to the same server, so the rest would only wait out the
+            # same failure: 30 s each, six minutes for the 12 models.
+            logger.error(str(e))
+            raise typer.Exit(1) from e
         except (FileNotFoundError, ValueError) as e:
             # Same stage-failure shape as cli/prepare.py. The models are independent
             # (one .h5 each), so carry on and report every failure at the end rather

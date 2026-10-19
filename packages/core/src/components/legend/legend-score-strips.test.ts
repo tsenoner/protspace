@@ -73,7 +73,7 @@ describe('renderScoreStrips', () => {
       filtered: false,
       points: deriveStripPoints([item('A', '#ff0000')], [score('A', 0.2, null)]),
       highlighted: null,
-      clusterCaveat: false,
+      clusterCaveat: null,
     };
     const handlers = { onHover: () => {}, onToggle: () => {} };
     const host = document.createElement('div');

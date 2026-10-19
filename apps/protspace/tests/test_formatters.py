@@ -10,14 +10,14 @@ class TestDataFormatterToDataframe:
             ProteinAnnotations("P2", {"family": "phosphatase", "organism": "mouse"}),
         ]
         df = DataFormatter.to_dataframe(proteins)
-        assert list(df.columns) == ["identifier", "family", "organism"]
+        assert list(df.columns) == ["protein_id", "family", "organism"]
         assert len(df) == 2
-        assert df.iloc[0]["identifier"] == "P1"
+        assert df.iloc[0]["protein_id"] == "P1"
         assert df.iloc[1]["family"] == "phosphatase"
 
     def test_empty_list(self):
         df = DataFormatter.to_dataframe([])
-        assert list(df.columns) == ["identifier"]
+        assert list(df.columns) == ["protein_id"]
         assert len(df) == 0
 
     def test_missing_annotation_key(self):
@@ -40,7 +40,7 @@ class TestDataFormatterToDataframe:
             ProteinAnnotations("P01308", {"organism_id": "9606", "genus": "Homo"}),
         ]
         df = DataFormatter.to_dataframe(proteins)
-        assert list(df.columns) == ["identifier", "organism_id", "genus"]
+        assert list(df.columns) == ["protein_id", "organism_id", "genus"]
         assert df["genus"].tolist() == ["", "Homo"]
 
 
@@ -50,7 +50,7 @@ class TestDataFormatterToDictList:
             ProteinAnnotations("P1", {"family": "kinase"}),
         ]
         result = DataFormatter.to_dict_list(proteins)
-        assert result == [{"identifier": "P1", "family": "kinase"}]
+        assert result == [{"protein_id": "P1", "family": "kinase"}]
 
     def test_empty(self):
         assert DataFormatter.to_dict_list([]) == []

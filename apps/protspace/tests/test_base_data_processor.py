@@ -15,11 +15,13 @@ SAMPLE_HEADERS = ["P1", "P2", "P3"]
 SAMPLE_DATA = np.array([[1.0, 0.5], [0.5, 1.0], [0.2, 0.8]])
 SAMPLE_METADATA = pd.DataFrame(
     {
-        "identifier": SAMPLE_HEADERS,
+        "protein_id": SAMPLE_HEADERS,
         "length": ["100", "200", "300"],
         "organism": ["A", "B", "C"],
     }
 )
+# Similarity scores on a unit diagonal, but peaking above it (max 2.0)
+SAMPLE_UNNORMALISED_SIM = np.array([[1.0, 2.0, 0.5], [2.0, 1.0, 0.5], [0.5, 0.5, 1.0]])
 SAMPLE_REDUCED = np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]])
 SAMPLE_REDUCTIONS = [
     {
@@ -62,6 +64,8 @@ class TestProcessReduction:
         [
             # Diagonal is all 1: a similarity matrix, so d = sqrt(max(s) - s)
             (np.eye(3), np.sqrt(1 - np.eye(3))),
+            # Unnormalised scores above 1: the shift is max(s), not a fixed 1
+            (SAMPLE_UNNORMALISED_SIM, np.sqrt(2.0 - SAMPLE_UNNORMALISED_SIM)),
             # Diagonal is not 1: already a distance matrix, passed through as is
             (1 - np.eye(3), 1 - np.eye(3)),
         ],
@@ -104,7 +108,7 @@ class TestCreateOutput:
         # Create metadata with internal columns
         metadata_with_internal = pd.DataFrame(
             {
-                "identifier": SAMPLE_HEADERS,
+                "protein_id": SAMPLE_HEADERS,
                 "reviewed": ["Swiss-Prot", "Swiss-Prot", "TrEMBL"],
                 "organism_id": ["9606", "9606", "10090"],
                 "length": ["100", "200", "300"],

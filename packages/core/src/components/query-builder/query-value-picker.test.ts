@@ -132,6 +132,7 @@ describe('query-value-picker', () => {
 
     it('lists every declared value once, in declaration order, N/A included, led by Any value', async () => {
       const el = await mount();
+      // Exact equality also pins that the `__NA__` sentinel is shown as its N/A label.
       expect(labels(el)).toEqual(['Any value', 'Human', 'Mouse', 'Yeast', 'N/A']);
       expect(footer(el)).toBe('5 of 5 values shown');
     });
@@ -269,12 +270,6 @@ describe('query-value-picker', () => {
   });
 
   describe('the N/A entry', () => {
-    it('renders the __NA__ sentinel as the N/A display label', async () => {
-      const el = await mount();
-      expect(labels(el)).toContain('N/A');
-      expect(labels(el)).not.toContain('__NA__');
-    });
-
     it('counts both label-less proteins and proteins pointing at a null value', async () => {
       const el = await mount({ logicalOp: 'AND', matchedIndices: new Set([0, 1, 2, 3, 4, 5]) });
       expect(counts(el)['N/A']).toBe(2); // P4 (no labels) + P5 (null value)
@@ -329,11 +324,6 @@ describe('query-value-picker', () => {
       )!;
     }
 
-    it('leads the list, ahead of the declared values', async () => {
-      const el = await mount();
-      expect(labels(el)[0]).toBe('Any value');
-    });
-
     it('emits the ANY_VALUE sentinel, not the display label', async () => {
       const el = await mount();
       let emitted: string | undefined;
@@ -360,6 +350,7 @@ describe('query-value-picker', () => {
 
     it('locks out every other entry while it is selected', async () => {
       const el = await mount({ selectedValues: [ANY_VALUE] });
+      expect(items(el).length).toBeGreaterThan(0);
       for (const item of items(el)) {
         expect(item.classList.contains('is-disabled')).toBe(true);
         expect(item.getAttribute('aria-disabled')).toBe('true');
@@ -378,6 +369,7 @@ describe('query-value-picker', () => {
 
     it('leaves the other entries selectable when it is not selected', async () => {
       const el = await mount({ selectedValues: ['Human'] });
+      expect(items(el).length).toBeGreaterThan(0);
       for (const item of items(el)) {
         expect(item.classList.contains('is-disabled')).toBe(false);
         expect(item.getAttribute('aria-disabled')).toBe('false');
@@ -446,16 +438,14 @@ describe('query-value-picker', () => {
       }
     });
 
-    it('shows zero counts under AND when nothing is matched yet', async () => {
-      const el = await mount({ logicalOp: 'AND', matchedIndices: new Set() });
-      expect(counts(el)).toEqual({ 'Any value': 0, Human: 0, Mouse: 0, Yeast: 0, 'N/A': 0 });
-    });
-
-    it('shows zero counts under NOT when nothing is matched yet', async () => {
-      // NOT can only ever narrow the matched set, so an empty one stays empty.
-      const el = await mount({ logicalOp: 'NOT', matchedIndices: new Set() });
-      expect(counts(el)).toEqual({ 'Any value': 0, Human: 0, Mouse: 0, Yeast: 0, 'N/A': 0 });
-    });
+    // NOT can only ever narrow the matched set, so an empty one stays empty.
+    it.each(['AND', 'NOT'] as LogicalOp[])(
+      'shows zero counts under %s when nothing is matched yet',
+      async (logicalOp) => {
+        const el = await mount({ logicalOp, matchedIndices: new Set() });
+        expect(counts(el)).toEqual({ 'Any value': 0, Human: 0, Mouse: 0, Yeast: 0, 'N/A': 0 });
+      },
+    );
 
     it('falls back to the full-dataset counts under OR when nothing is matched yet', async () => {
       const el = await mount({ logicalOp: 'OR', matchedIndices: new Set() });

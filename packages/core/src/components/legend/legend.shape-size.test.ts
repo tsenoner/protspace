@@ -15,11 +15,11 @@ import { createDefaultSettings } from './legend-helpers';
 import {
   mountLegendWithScatterplot,
   settleLegend,
+  stubLocalStorage,
 } from './test-support/legend-scatterplot-harness';
-import { createLocalStorageMock } from './test-support/local-storage-mock';
 
 // These tests seed and read the persisted settings through `localStorage` directly.
-vi.stubGlobal('localStorage', createLocalStorageMock());
+stubLocalStorage();
 
 type ShapeSizeLegend = HTMLElement & {
   shapeSize: number;

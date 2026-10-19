@@ -277,6 +277,9 @@ or pen hover only.
 | `showAllCategories()`                | `void`                | Show every hidden category, sync the plot and store the settings                     |
 
 Pass `datasetHash` to `applyShapeSize` when the legend has not computed the new dataset's hash yet.
+Compute it, as for `clearForNewDataset` and `setFileSettings`, with `generateDatasetHash(data)` from
+`@protspace/utils` on the same `data` given to the scatter plot: the legend keys its storage by that
+hash, EAT predictions included.
 A size above 64 is applied and stored as 64. Write `pickedShapeSize`, not `shapeSize`, into a bundle's top-level `shapeSize`: the live
 `shapeSize` may only be seeded from the current annotation, or be the default computed from the
 dataset's protein count, `clamp(round(10 · (10000 / N)^⅔), 1, 10)`, which is never stored or

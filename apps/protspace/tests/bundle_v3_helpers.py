@@ -23,7 +23,7 @@ labels_of = bundle_v3._read_labels
 def annotations_table(**columns: list[str]) -> pa.Table:
     """An annotations table exactly as the pipeline builds it (all-string, v2)."""
     n = len(next(iter(columns.values())))
-    frame = pd.DataFrame({"identifier": [f"p{i}" for i in range(n)], **columns})
+    frame = pd.DataFrame({"protein_id": [f"p{i}" for i in range(n)], **columns})
     return BaseProcessor({}, {})._create_protein_annotations_table(frame)
 
 

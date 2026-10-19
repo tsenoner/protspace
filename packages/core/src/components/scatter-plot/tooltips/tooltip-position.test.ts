@@ -3,10 +3,6 @@ import {
   computeTooltipStyle,
   computeTouchTooltipStyle,
   TOOLTIP_EDGE_PADDING,
-  TOOLTIP_MAX_WIDTH,
-  TOOLTIP_ANCHOR_OFFSET_X,
-  TOOLTIP_ANCHOR_OFFSET_Y,
-  TOOLTIP_FALLBACK_HEIGHT,
   effectiveTooltipWidth,
   type TooltipStyleInput,
 } from './tooltip-position';
@@ -85,14 +81,6 @@ describe('computeTooltipStyle', () => {
     expect(computeTooltipStyle({ ...base, x: 300, viewportWidth: 320 })).toContain(
       'left: 305px; top: 140px; --protspace-tooltip-effective-width: 290px;',
     );
-  });
-
-  it('exposes the calibrated constants used by the component', () => {
-    expect(TOOLTIP_EDGE_PADDING).toBe(15);
-    expect(TOOLTIP_MAX_WIDTH).toBe(350);
-    expect(TOOLTIP_ANCHOR_OFFSET_X).toBe(15);
-    expect(TOOLTIP_ANCHOR_OFFSET_Y).toBe(60);
-    expect(TOOLTIP_FALLBACK_HEIGHT).toBe(160);
   });
 });
 

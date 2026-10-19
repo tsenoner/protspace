@@ -177,6 +177,25 @@ function unplacedProteins(count: number): string {
 }
 
 /**
+ * A user imported a bundle holding 3-D projections: they load, shown as their X/Y view,
+ * but reading them ends in protspace 5.0.0. Only for PCA is that view the 2-D projection;
+ * for a non-linear method it is the 3-D layout seen from one side, so recomputing with the
+ * 2-D method beats `protspace convert --flatten-3d`, which keeps the view as it is.
+ */
+export function getThreeDProjectionNotification(projectionNames: readonly string[]): NotifyOptions {
+  const shown = projectionNames.slice(0, 3).join(', ');
+  const rest = projectionNames.length - 3;
+  const listed = rest > 0 ? `${shown} and ${rest} more` : shown;
+  const verb = projectionNames.length === 1 ? 'is' : 'are';
+  return {
+    title: 'This file has 3-D projections.',
+    description: `${listed} ${verb} shown as their X/Y view. For PCA the X/Y view is the same as pca2; for UMAP, t-SNE, PaCMAP and other non-linear methods it is the 3-D layout seen from one side, which can overlap points that are far apart. Reading 3-D projections ends in ProtSpace 5.0.0. Recompute them with the 2-D method (e.g. umap2) when you have the embeddings. Or run "protspace convert --flatten-3d" on the file to keep this view as 2-D.`,
+    durationMs: 12_000,
+    dedupeKey: 'three-d-projections',
+  };
+}
+
+/**
  * A user imported a v1/v2 bundle: it loads, but reading that format ends in 5.0.0.
  *
  * An export from the app holds only the proteins it shows, so a file that also holds

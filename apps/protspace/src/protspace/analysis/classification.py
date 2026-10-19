@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 
 import pyarrow as pa
 
+from protspace.data.io.ids import PROTEIN_ID_COLUMN
+
 
 @dataclass
 class Rule:
@@ -111,7 +113,9 @@ def classify(
         # where-columns) instead of the whole table — the latter is ~GB-scale at
         # Swiss-Prot row counts.
         if identifiers is None:
-            identifiers = [str(v) for v in annotations.column("identifier").to_pylist()]
+            identifiers = [
+                str(v) for v in annotations.column(PROTEIN_ID_COLUMN).to_pylist()
+            ]
         where_columns = {
             column for rule in (query_rule, reference_rule) for column, _ in rule.where
         }

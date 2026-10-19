@@ -130,13 +130,13 @@ def _values(frame: pd.DataFrame, column: str) -> list:
     return frame[column].tolist() if column in frame.columns else []
 
 
-def _forbid_ted(monkeypatch):
+def _forbid(monkeypatch, retriever_cls, name):
     def fetch(_retriever):
         # pytest.fail, not AssertionError: the manager wraps every retriever call
         # in `except Exception`, which would turn this into an incomplete source.
-        pytest.fail("cached TED values are current and must be reused")
+        pytest.fail(f"{name} values are current and must be reused")
 
-    monkeypatch.setattr(TedRetriever, "fetch_annotations", fetch)
+    monkeypatch.setattr(retriever_cls, "fetch_annotations", fetch)
 
 
 def _holds_stale_value_as_current(cache: pd.DataFrame, column: str) -> bool:
@@ -159,7 +159,7 @@ class TestRequestedColumnsAreRefreshed:
         _write_v1_cache(tmp_path)
         calls: list = []
         _serve_uniprot(monkeypatch, calls)
-        _forbid_ted(monkeypatch)
+        _forbid(monkeypatch, TedRetriever, "TED")
         annotations = ["protein_families", "ted_domains"]
 
         result = _pipeline(tmp_path, annotations)._fetch_annotations(["P01308"])
@@ -226,6 +226,32 @@ class TestRequestedColumnsAreRefreshed:
         assert calls[1] == ("interpro", {"P01308": "MALWMRLLPL"})
         assert result["pfam"].tolist() == [CURRENT_PFAM]
 
+    def test_the_uniprot_pass_for_sequences_refreshes_its_stale_family_too(
+        self, tmp_path, monkeypatch
+    ):
+        """UniProt is refetched whole for the sequences, so the cached legacy
+        ``protein_families`` comes back current rather than being dropped and
+        costing the next run that asks for it a second UniProt pass.
+        """
+        _write_v1_cache(tmp_path)
+        cache = _read_cache(tmp_path).drop(columns=["sequence"])
+        cache.attrs = {ANNOTATION_CACHE_VERSION_ATTR: 1}
+        cache.to_parquet(tmp_path / CACHE_NAME, index=False)
+        calls: list = []
+        _serve_uniprot(monkeypatch, calls)
+        _serve_interpro(monkeypatch, calls)
+
+        result = _pipeline(tmp_path, ["pfam"])._fetch_annotations(["P01308"])
+
+        assert "protein_families" not in result.columns
+        assert _read_cache(tmp_path)["protein_families"].tolist() == [CURRENT_FAMILY]
+
+        calls.clear()
+        again = _pipeline(tmp_path, ["protein_families"])._fetch_annotations(["P01308"])
+
+        assert calls == []
+        assert again["protein_families"].tolist() == [CURRENT_FAMILY]
+
 
 class TestUnrequestedColumnsAreDropped:
     def test_a_run_served_from_the_cache_fetches_nothing(self, tmp_path, monkeypatch):
@@ -233,7 +259,7 @@ class TestUnrequestedColumnsAreDropped:
         calls: list = []
         _serve_uniprot(monkeypatch, calls)
         _serve_interpro(monkeypatch, calls)
-        _forbid_ted(monkeypatch)
+        _forbid(monkeypatch, TedRetriever, "TED")
 
         result = _pipeline(tmp_path, ["gene_name", "ted_domains"])._fetch_annotations(
             ["P01308"]
@@ -251,7 +277,7 @@ class TestUnrequestedColumnsAreDropped:
         calls: list = []
         _serve_uniprot(monkeypatch, calls)
         _serve_interpro(monkeypatch, calls)
-        _forbid_ted(monkeypatch)
+        _forbid(monkeypatch, TedRetriever, "TED")
 
         def biocentral(retriever):
             calls.append("biocentral")
@@ -378,7 +404,7 @@ class TestFailedRefresh:
         # The next run refreshes UniProt and reuses TED.
         calls.clear()
         _serve_uniprot(monkeypatch, calls)
-        _forbid_ted(monkeypatch)
+        _forbid(monkeypatch, TedRetriever, "TED")
         again = _pipeline(tmp_path, annotations)._fetch_annotations(["P01308"])
 
         assert calls == ["uniprot"]
@@ -420,9 +446,9 @@ BIOCENTRAL = {
     "predicted_signal_peptide": "False",
     "predicted_transmembrane": "non-transmembrane",
 }
+# No InterPro column: a v2 cache's are stale under v4 as well (TestVersion4).
 V3_ANNOTATIONS = [
     "gene_name",
-    "pfam",
     "ted_domains",
     "root",
     "species",
@@ -527,15 +553,6 @@ def _serve_biocentral(
     monkeypatch.setattr(BiocentralPredictionRetriever, "fetch_annotations", fetch)
 
 
-def _forbid(monkeypatch, retriever_cls, name):
-    def fetch(_retriever):
-        # pytest.fail (a BaseException), so the manager's `except Exception` around
-        # each retriever cannot swallow a forbidden fetch (see _forbid_ted).
-        pytest.fail(f"{name} values are current and must be reused")
-
-    monkeypatch.setattr(retriever_cls, "fetch_annotations", fetch)
-
-
 def _forbid_all_but_taxonomy_and_biocentral(monkeypatch):
     _forbid(monkeypatch, UniProtRetriever, "UniProt")
     _forbid(monkeypatch, InterProRetriever, "InterPro")
@@ -573,7 +590,6 @@ class TestVersion3:
         assert result["predicted_transmembrane"].tolist() == ["non-transmembrane"]
         # Every other source's value is the cached one.
         assert result["gene_name"].tolist() == ["CACHED_GENE"]
-        assert result["pfam"].tolist() == [CURRENT_PFAM]
         assert result["ted_domains"].tolist() == ["3.40.50.2000|94.2"]
         cache = _read_cache(tmp_path)
         assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
@@ -831,6 +847,94 @@ class TestVersion3:
         cache = _read_cache(tmp_path)
         assert not _holds_stale_value_as_current(cache, "root")
         assert not _holds_stale_value_as_current(cache, "predicted_transmembrane")
+
+
+# --- Cache version 4: empty or malformed TMbed payloads ----------------------
+#
+# Version 3 still wrote signal peptide "False" for a TMbed prediction with an
+# empty topology, a confident negative where nothing was predicted, and read a
+# malformed payload as a topology. Biocentral owns both TMbed columns, so it is
+# the only source the refresh refetches.
+
+
+class TestVersion4:
+    def test_version_4_covers_both_tmbed_columns_and_every_interpro_column(self):
+        assert CACHE_SEMANTICS_CHANGES[4] == frozenset(
+            {"predicted_signal_peptide", "predicted_transmembrane"}
+        ) | frozenset(INTERPRO_ANNOTATIONS)
+
+    def test_a_v3_cache_refetches_interpro_once_and_reuses_uniprot(
+        self, tmp_path, monkeypatch
+    ):
+        """v3 looked InterPro up by the FASTA's sequence when one was given; v4
+        looks up UniProt's canonical one, so a cached match may be the wrong one."""
+        _write_v1_cache(tmp_path)
+        cache = _read_cache(tmp_path)
+        cache.attrs = {ANNOTATION_CACHE_VERSION_ATTR: 3}
+        cache.to_parquet(tmp_path / CACHE_NAME, index=False)
+        calls: list = []
+        _forbid(monkeypatch, UniProtRetriever, "UniProt")
+        _serve_interpro(monkeypatch, calls)
+        annotations = ["gene_name", "pfam"]
+
+        result = _pipeline(tmp_path, annotations)._fetch_annotations(["P01308"])
+
+        assert calls == [("interpro", {"P01308": "MALWMRLLPL"})]
+        assert result["pfam"].tolist() == [CURRENT_PFAM]
+        assert result["gene_name"].tolist() == ["CACHED_GENE"]
+        cache = _read_cache(tmp_path)
+        assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
+
+        calls.clear()
+        _pipeline(tmp_path, annotations)._fetch_annotations(["P01308"])
+
+        assert calls == []
+
+    def test_a_v3_cache_refetches_biocentral_once_and_nothing_else(
+        self, tmp_path, monkeypatch
+    ):
+        # "True" stands in for whatever v3 derived; the refetch answers "False".
+        _write_v2_cache(tmp_path, version=3, predicted_signal_peptide="True")
+        calls: list = []
+        _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
+        _serve_taxonomy(monkeypatch, calls)
+        _serve_biocentral(monkeypatch, calls)
+        annotations = ["gene_name", "root", "predicted_signal_peptide"]
+
+        result = _pipeline(tmp_path, annotations)._fetch_annotations(["P02299"])
+
+        assert calls == [("biocentral", {"P02299": "MARTKQTARK"})]
+        assert result["predicted_signal_peptide"].tolist() == ["False"]
+        assert result["gene_name"].tolist() == ["CACHED_GENE"]
+        cache = _read_cache(tmp_path)
+        assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
+
+        # Stamped current, so the next run reuses it without a request.
+        calls.clear()
+        _pipeline(tmp_path, annotations)._fetch_annotations(["P02299"])
+
+        assert calls == []
+
+    def test_the_other_tmbed_column_is_refreshed_with_it_not_dropped(
+        self, tmp_path, monkeypatch
+    ):
+        """Biocentral is refetched for one stale column, so the other comes along."""
+        _write_v2_cache(tmp_path, version=3, predicted_signal_peptide="True")
+        calls: list = []
+        requested: list = []
+        _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
+        _serve_biocentral(monkeypatch, calls, requested=requested)
+
+        result = _pipeline(
+            tmp_path, ["gene_name", "predicted_transmembrane"]
+        )._fetch_annotations(["P02299"])
+
+        assert _sources(calls) == ["biocentral"]
+        assert "predicted_signal_peptide" in requested[0]
+        assert "predicted_signal_peptide" not in result.columns
+        cache = _read_cache(tmp_path)
+        assert cache["predicted_signal_peptide"].tolist() == ["False"]
+        assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
 
 
 class TestBiocentralNeedsASequence:

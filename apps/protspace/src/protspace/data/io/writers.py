@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from protspace.data.io.formatters import DataFormatter
+from protspace.data.io.ids import PROTEIN_ID_COLUMN
 
 ProteinAnnotations = namedtuple("ProteinAnnotations", ["identifier", "annotations"])
 
@@ -62,7 +63,7 @@ class AnnotationWriter:
             # Write empty file with just header
             with open(path, "w", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow(["identifier"])
+                writer.writerow([PROTEIN_ID_COLUMN])
             return
 
         headers, rows = self._build_table(proteins, apply_transforms)
@@ -89,7 +90,7 @@ class AnnotationWriter:
         """
         if not proteins:
             # Write empty DataFrame
-            df = pd.DataFrame(columns=["identifier"])
+            df = pd.DataFrame(columns=[PROTEIN_ID_COLUMN])
             df.attrs.update(dataframe_attrs or {})
             df.to_parquet(path, index=False)
             return

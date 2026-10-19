@@ -136,8 +136,12 @@ test.describe('Product Tour', () => {
     await expect(popover(page).locator('.driver-tour-full-btn')).toHaveCount(0);
   });
 
-  test('walks forward through every desktop step, each on its control', async ({ page }) => {
+  // One walk covers every step and the Finish that ends it.
+  test('walks every desktop step, each on its control, and Finish ends it', async ({ page }) => {
     await walk(page, FULL);
+    await expect(nextButton(page)).toHaveText('Finish');
+    await nextButton(page).click();
+    await expect(popover(page)).toHaveCount(0);
   });
 
   test('goes back a step', async ({ page }) => {
@@ -154,13 +158,6 @@ test.describe('Product Tour', () => {
   test('the close button ends it', async ({ page }) => {
     await next(page, FULL[1].title);
     await popover(page).locator('.driver-popover-close-btn').click();
-    await expect(popover(page)).toHaveCount(0);
-  });
-
-  test('Finish on the last step ends it', async ({ page }) => {
-    await walk(page, FULL);
-    await expect(nextButton(page)).toHaveText('Finish');
-    await nextButton(page).click();
     await expect(popover(page)).toHaveCount(0);
   });
 

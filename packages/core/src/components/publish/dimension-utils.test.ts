@@ -3,7 +3,6 @@ import {
   pxToMm,
   mmToPx,
   adjustDpiForWidthMm,
-  adjustWidthPxForDpi,
   clampHeight,
   inToMm,
   mmToIn,
@@ -11,6 +10,7 @@ import {
   mmToCm,
   SIZE_MODE_WIDTH_MM,
 } from './dimension-utils';
+import { getPreset } from './journal-presets';
 
 describe('dimension-utils', () => {
   describe('pxToMm', () => {
@@ -49,16 +49,6 @@ describe('dimension-utils', () => {
     });
   });
 
-  describe('adjustWidthPxForDpi', () => {
-    it('calculates width px for 89mm at 300 DPI', () => {
-      expect(adjustWidthPxForDpi(89, 300)).toBe(1051);
-    });
-
-    it('calculates width px for 89mm at 150 DPI', () => {
-      expect(adjustWidthPxForDpi(89, 150)).toBe(526);
-    });
-  });
-
   describe('clampHeight', () => {
     it('clamps to max 170mm equivalent at given DPI', () => {
       const maxPx = clampHeight(3000, 300, 170);
@@ -75,16 +65,13 @@ describe('dimension-utils', () => {
   });
 
   describe('SIZE_MODE_WIDTH_MM', () => {
-    it('1-column mode is 89mm', () => {
-      expect(SIZE_MODE_WIDTH_MM['1-column']).toBe(89);
-    });
-
-    it('2-column mode is 183mm', () => {
-      expect(SIZE_MODE_WIDTH_MM['2-column']).toBe(183);
-    });
-
-    it('flexible mode is undefined', () => {
-      expect(SIZE_MODE_WIDTH_MM['flexible']).toBeUndefined();
+    // The modal maps a preset to a size mode by width, so the modes must match the presets.
+    it('matches the Nature column widths, and flexible has none', () => {
+      expect(SIZE_MODE_WIDTH_MM).toEqual({
+        '1-column': getPreset('nature-1col')!.widthMm,
+        '2-column': getPreset('nature-2col')!.widthMm,
+        flexible: undefined,
+      });
     });
   });
 

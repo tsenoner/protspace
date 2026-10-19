@@ -3,7 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import type { PlotData } from '@protspace/utils';
 import type { ScalePair } from '../types';
-import { makeRenderer as makeBaseRenderer } from './test-support/renderer-fixture';
+import {
+  makeRenderer as makeBaseRenderer,
+  plotDataFrom as pd,
+} from './test-support/renderer-fixture';
 import { internalsOf } from './test-support/renderer-internals';
 import { createPerfCounters, perfCounters } from '../../../../utils/perf-counters';
 import type * as PerfCounters from '../../../../utils/perf-counters';
@@ -16,16 +19,7 @@ vi.mock('../../../../utils/perf-counters', async (importOriginal) => {
 // A re-stage is the buffer rebuild render() runs iff a signature changed.
 const counters = perfCounters!;
 
-function pd(xs: number[], ys: number[]): PlotData {
-  return {
-    length: xs.length,
-    xs: new Float32Array(xs),
-    ys: new Float32Array(ys),
-    zs: null,
-    originalIndices: null,
-    proteinIds: xs.map((_, i) => `p${i}`),
-  };
-}
+// This suite keeps its own [0, 10] data domain instead of the fixture's unit square.
 const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 10]).range([0, 800]),
   y: d3.scaleLinear().domain([0, 10]).range([0, 600]),
@@ -70,33 +64,6 @@ describe('WebGLRenderer sampled-slot signatures (characterization lock)', () => 
     renderer.invalidatePositionCache(); // the explicit path that backstops the lossy signature
     renderer.render(pd([0, 99, 2, 3, 4], [0, 1, 2, 3, 4]));
     expect(counters.restage).toBe(1);
-  });
-});
-
-// ── Removal guards on a live WebGLRenderer instance ─────────────
-// - The unused public getGamma/setGamma accessors are removed; the gamma
-//   field and its effective-gamma resolver (getEffectiveGamma) stay.
-// - The @deprecated no-op setSelectedAnnotation is removed; the live
-//   invalidation methods survive.
-describe('WebGLRenderer dead-accessor removal guards', () => {
-  let renderer: ReturnType<typeof makeRenderer>;
-  beforeEach(() => {
-    renderer = makeRenderer();
-  });
-  afterEach(() => vi.restoreAllMocks());
-
-  it('getGamma / setGamma are gone; getEffectiveGamma survives', () => {
-    const surface = renderer as unknown as Record<string, unknown>;
-    expect(surface.getGamma).toBeUndefined();
-    expect(surface.setGamma).toBeUndefined();
-    // getEffectiveGamma is private, which the indexed view reaches all the same.
-    expect(typeof surface.getEffectiveGamma).toBe('function');
-  });
-
-  it('setSelectedAnnotation is gone; invalidateStyleCache survives', () => {
-    const surface = renderer as unknown as Record<string, unknown>;
-    expect(surface.setSelectedAnnotation).toBeUndefined();
-    expect(typeof surface.invalidateStyleCache).toBe('function');
   });
 });
 

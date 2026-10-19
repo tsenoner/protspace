@@ -197,14 +197,14 @@ def test_merge_annotation_columns_joins_by_identifier():
             ),
         ]
     )
-    frame = pd.DataFrame({"identifier": ["a", "b", "c"]})
+    frame = pd.DataFrame({"protein_id": ["a", "b", "c"]})
     added = merge_annotation_columns(report, frame)
 
     assert added == ["cluster_P", "silhouette_P"]
-    assert frame.loc[frame.identifier == "a", "cluster_P"].item() == "cluster 0"
-    assert frame.loc[frame.identifier == "b", "silhouette_P"].item() == 0.2
+    assert frame.loc[frame.protein_id == "a", "cluster_P"].item() == "cluster 0"
+    assert frame.loc[frame.protein_id == "b", "silhouette_P"].item() == 0.2
     # a protein absent from the column gets no value (not a fabricated one)
-    assert pd.isna(frame.loc[frame.identifier == "c", "cluster_P"].item())
+    assert pd.isna(frame.loc[frame.protein_id == "c", "cluster_P"].item())
 
 
 def test_merge_skips_and_warns_on_zero_id_matches(caplog):
@@ -230,7 +230,7 @@ def test_merge_skips_and_warns_on_zero_id_matches(caplog):
             )
         ]
     )
-    frame = pd.DataFrame({"identifier": ["P1", "P2", "P3"]})
+    frame = pd.DataFrame({"protein_id": ["P1", "P2", "P3"]})
     with caplog.at_level(logging.WARNING):
         added = merge_annotation_columns(report, frame)
 
@@ -263,7 +263,7 @@ def test_annotation_columns_are_typed_in_protein_annotations_table():
         }
     ]
     report = compute_statistics([emb], reductions, rng_seed=42)
-    metadata = pd.DataFrame({"identifier": headers})
+    metadata = pd.DataFrame({"protein_id": headers})
     merge_annotation_columns(report, metadata)
 
     table = BaseProcessor({}, {})._create_protein_annotations_table(metadata)
@@ -302,9 +302,10 @@ def test_router_multi_embedding_routes_each_projection_to_its_own_scores():
     assert qa != qb  # each projection scored against its own embedding
 
 
-def test_legend_settings_strip_attached_silhouette_score():
-    """Membership values carry a `|silhouette` confidence; the auto legend must key
-    categories by the bare `cluster N` label (stripping the attached score)."""
+def test_legend_settings_key_a_score_suffixed_value_by_its_bare_label():
+    """Membership values are plain `cluster N` labels, but a `value|score` cell (the
+    ECO / InterPro convention) must still key its legend category by the bare label,
+    not as a category of its own."""
     from protspace.stats.base import AnnotationColumn, StatsReport
     from protspace.stats.carriage import build_cluster_legend_settings
 

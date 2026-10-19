@@ -89,7 +89,7 @@ def _pipeline(cache_dir, annotations=("gene_name",), **overrides):
 
 
 def _cache_frame(identifiers, release=None) -> pd.DataFrame:
-    df = pd.DataFrame([{"identifier": i, **_row(i)} for i in identifiers])
+    df = pd.DataFrame([{"protein_id": i, **_row(i)} for i in identifiers])
     df.attrs = dict(annotation_cache_version_attrs())
     if release is not None:
         df.attrs[UNIPROT_RELEASE_ATTR] = release
@@ -149,7 +149,7 @@ class TestCacheStamp:
         ).to_pd()
 
         cached = pd.read_parquet(cache_path)
-        assert set(cached["identifier"]) == {"P1", "P2"}
+        assert set(cached["protein_id"]) == {"P1", "P2"}
         assert cached.attrs[UNIPROT_RELEASE_ATTR] == "2026_02,2026_03"
 
     def test_an_unstamped_cache_contributes_unknown(self, tmp_path, monkeypatch):
@@ -206,7 +206,7 @@ class TestRunReleases:
     def test_csv_only_annotations_use_no_uniprot_release(self, tmp_path, monkeypatch):
         _forbid_uniprot(monkeypatch)
         csv = tmp_path / "labels.csv"
-        pd.DataFrame({"identifier": ["P1"], "group": ["a"]}).to_csv(csv, index=False)
+        pd.DataFrame({"protein_id": ["P1"], "group": ["a"]}).to_csv(csv, index=False)
         pipeline = _pipeline(tmp_path, annotations=[str(csv)])
 
         pipeline._fetch_annotations(["P1"])

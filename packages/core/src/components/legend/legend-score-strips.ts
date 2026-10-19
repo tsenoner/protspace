@@ -1,5 +1,5 @@
 import { html, nothing, type TemplateResult } from 'lit';
-import { AUTO_CLUSTER_SCORE_CAVEAT, metricDisplay, type CategoryScore } from '@protspace/utils';
+import { metricDisplay, type CategoryScore } from '@protspace/utils';
 import './category-score-strip';
 import type { ScoreStripPoint } from './category-score-strip';
 import type { LegendItem } from './types';
@@ -35,8 +35,8 @@ export interface ScoreStripsView {
   points: StripPoints;
   /** The category under the pointer, from a row or a strip. */
   highlighted: string | null;
-  /** The annotation is an auto-clustering column, whose scores are optimistic. */
-  clusterCaveat: boolean;
+  /** The caveat when the annotation is an auto-clustering column, whose scores are optimistic. */
+  clusterCaveat: string | null;
 }
 
 /** What a strip's pointer events do. */
@@ -169,7 +169,7 @@ export function renderScoreStrips(
         ? renderScoreStrip('davies_bouldin', daviesBouldin, daviesBouldinDomain, view.highlighted)
         : nothing}
       ${view.clusterCaveat
-        ? html`<p class="score-strips-caveat">${AUTO_CLUSTER_SCORE_CAVEAT}</p>`
+        ? html`<p class="score-strips-caveat">${view.clusterCaveat}</p>`
         : nothing}
     </section>
   `;

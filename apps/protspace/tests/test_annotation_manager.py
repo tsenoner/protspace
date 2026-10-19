@@ -5,30 +5,30 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
-from src.protspace.data.annotations.configuration import (
+from protspace.data.annotations.configuration import (
     ALL_ANNOTATIONS,
     ANNOTATION_GROUPS,
     AnnotationConfiguration,
     expand_annotation_groups,
 )
-from src.protspace.data.annotations.manager import ProteinAnnotationManager
-from src.protspace.data.annotations.merging import AnnotationMerger
-from src.protspace.data.annotations.retrievers.interpro_retriever import (
+from protspace.data.annotations.manager import ProteinAnnotationManager
+from protspace.data.annotations.merging import AnnotationMerger
+from protspace.data.annotations.retrievers.interpro_retriever import (
     INTERPRO_ANNOTATIONS,
 )
-from src.protspace.data.annotations.retrievers.taxonomy_retriever import (
+from protspace.data.annotations.retrievers.taxonomy_retriever import (
     TAXONOMY_ANNOTATIONS,
 )
-from src.protspace.data.annotations.retrievers.uniprot_retriever import (
+from protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
     ProteinAnnotations,
 )
-from src.protspace.data.annotations.transformers.uniprot_transforms import (
+from protspace.data.annotations.transformers.uniprot_transforms import (
     UniProtTransformer,
 )
-from src.protspace.data.io.formatters import DataFormatter
-from src.protspace.data.io.writers import AnnotationWriter
-from src.protspace.data.parsers.uniprot_parser import ECO_TO_SHORT, UniProtEntry
+from protspace.data.io.formatters import DataFormatter
+from protspace.data.io.writers import AnnotationWriter
+from protspace.data.parsers.uniprot_parser import ECO_TO_SHORT, UniProtEntry
 
 # Use new name throughout tests
 ProteinAnnotationExtractor = ProteinAnnotationManager  # For test compatibility
@@ -85,89 +85,68 @@ SAMPLE_TAXONOMY_ANNOTATIONS = {
 class TestProteinAnnotationExtractorInit:
     """Test ProteinAnnotationExtractor initialization."""
 
-    def test_init_with_basic_parameters(self):
-        """Test initialization with basic parameters."""
-        headers = SAMPLE_HEADERS
-        annotations = ["length", "genus"]
-
-        extractor = ProteinAnnotationExtractor(headers=headers, annotations=annotations)
-
-        assert extractor.headers == headers
-        # Always-included annotations are added automatically
-        expected_annotations = [
-            "length",
-            "genus",
-            "gene_name",
-            "protein_name",
-            "uniprot_kb_id",
-        ]
-        assert extractor.user_annotations == expected_annotations
-        assert extractor.output_path is None
-
-    def test_init_with_output_path(self):
-        """Test initialization with output path."""
-        headers = SAMPLE_HEADERS
+    def test_init_wires_arguments_and_configuration(self):
+        """The manager stores its arguments and takes the validated annotations
+        from its configuration (AnnotationConfiguration's tests pin the list)."""
         output_path = Path("test_output.parquet")
 
-        extractor = ProteinAnnotationExtractor(headers=headers, output_path=output_path)
+        default = ProteinAnnotationExtractor(
+            headers=SAMPLE_HEADERS, annotations=["length", "genus"]
+        )
+        with_path = ProteinAnnotationExtractor(
+            headers=SAMPLE_HEADERS, output_path=output_path
+        )
 
-        assert extractor.output_path == output_path
-
-    def test_init_with_invalid_annotations(self):
-        """Test initialization with invalid annotations raises ValueError."""
-        headers = SAMPLE_HEADERS
-        invalid_annotations = ["length", "invalid_annotation", "genus"]
-
-        with pytest.raises(ValueError, match="Unknown annotation 'invalid_annotation'"):
-            ProteinAnnotationExtractor(headers=headers, annotations=invalid_annotations)
-
-    def test_init_with_no_annotations(self):
-        """Test initialization without specifying annotations uses default group."""
-        headers = SAMPLE_HEADERS
-
-        extractor = ProteinAnnotationExtractor(headers=headers)
-
-        # When no annotations specified, should use the 'default' group
-        assert extractor.user_annotations is not None
-        for ann in ANNOTATION_GROUPS["default"]:
-            assert ann in extractor.user_annotations
-
-        # Configuration should be initialized with default group annotations
-        assert extractor.config is not None
-        assert extractor.config.uniprot_annotations is not None
-        assert len(extractor.config.uniprot_annotations) > 0
-        # Default group is UniProt-only, so no taxonomy/interpro
-        assert extractor.config.taxonomy_annotations is None
-        assert extractor.config.interpro_annotations is None
+        assert default.headers == SAMPLE_HEADERS
+        assert default.output_path is None
+        assert with_path.output_path == output_path
+        assert default.config.user_annotations[:2] == ["length", "genus"]
+        assert default.user_annotations == default.config.user_annotations
 
 
 class TestAnnotationConfiguration:
     """Test the AnnotationConfiguration module."""
 
-    def test_validate_valid_annotations(self):
-        """Test validation with valid annotations."""
-        valid_annotations = ["length", "genus", "species", "protein_families"]
-        config = AnnotationConfiguration(user_annotations=valid_annotations)
+    @pytest.mark.parametrize(
+        "requested,expected",
+        [
+            (
+                ["length", "genus"],
+                ["length", "genus", "gene_name", "protein_name", "uniprot_kb_id"],
+            ),
+            (
+                ["length", "genus", "species", "protein_families"],
+                [
+                    "length",
+                    "genus",
+                    "species",
+                    "protein_families",
+                    "gene_name",
+                    "protein_name",
+                    "uniprot_kb_id",
+                ],
+            ),
+        ],
+    )
+    def test_validate_appends_always_included_annotations_last(
+        self, requested, expected
+    ):
+        config = AnnotationConfiguration(user_annotations=requested)
 
-        # Always-included annotations are added automatically
-        expected_annotations = [
-            "length",
-            "genus",
-            "species",
-            "protein_families",
+        assert config.user_annotations == expected
+
+    def test_validate_with_none_uses_default_group(self):
+        """No annotations means the UniProt-only 'default' group."""
+        config = AnnotationConfiguration(user_annotations=None)
+
+        assert config.user_annotations == ANNOTATION_GROUPS["default"] + [
             "gene_name",
             "protein_name",
             "uniprot_kb_id",
         ]
-        assert config.user_annotations == expected_annotations
-
-    def test_validate_with_none(self):
-        """Test validation with None uses default group."""
-        config = AnnotationConfiguration(user_annotations=None)
-
-        assert config.user_annotations is not None
-        for ann in ANNOTATION_GROUPS["default"]:
-            assert ann in config.user_annotations
+        assert config.uniprot_annotations
+        assert config.taxonomy_annotations is None
+        assert config.interpro_annotations is None
 
     def test_validate_invalid_annotation(self):
         """Test validation with invalid annotation raises ValueError."""
@@ -178,21 +157,6 @@ class TestAnnotationConfiguration:
             match="Unknown annotation 'nonexistent_annotation'",
         ):
             AnnotationConfiguration(user_annotations=invalid_annotations)
-
-    def test_validate_with_length(self):
-        """Test validation includes length annotation."""
-        annotations = ["length", "genus"]
-        config = AnnotationConfiguration(user_annotations=annotations)
-
-        # Always-included annotations are added automatically
-        expected_annotations = [
-            "length",
-            "genus",
-            "gene_name",
-            "protein_name",
-            "uniprot_kb_id",
-        ]
-        assert config.user_annotations == expected_annotations
 
     def test_split_by_source_with_user_annotations(self):
         """Test annotation splitting by source with user-specified annotations."""
@@ -220,18 +184,6 @@ class TestAnnotationConfiguration:
 
         # Should NOT include unrequested InterPro annotations
         assert "cath" not in config.interpro_annotations
-
-    def test_split_by_source_default_annotations(self):
-        """Test splitting with default annotations (None) uses default group."""
-        config = AnnotationConfiguration(user_annotations=None)
-
-        # Default group is UniProt-only
-        assert config.uniprot_annotations is not None
-        assert len(config.uniprot_annotations) > 0
-
-        # Default group has no taxonomy or interpro annotations
-        assert config.taxonomy_annotations is None
-        assert config.interpro_annotations is None
 
 
 class TestAnnotationMerger:
@@ -316,7 +268,7 @@ class TestAnnotationWriter:
             assert output_path.exists()
             df = pd.read_csv(output_path)
             assert len(df) == 2
-            assert list(df["identifier"]) == ["P1", "P2"]
+            assert list(df["protein_id"]) == ["P1", "P2"]
 
     def test_write_parquet(self):
         """Test saving annotations to Parquet file."""
@@ -341,7 +293,7 @@ class TestAnnotationWriter:
             assert output_path.exists()
             df = pd.read_parquet(output_path)
             assert len(df) == 2
-            assert list(df["identifier"]) == ["P1", "P2"]
+            assert list(df["protein_id"]) == ["P1", "P2"]
 
 
 class TestDataFormatter:
@@ -363,8 +315,8 @@ class TestDataFormatter:
         # Verify DataFrame structure
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 2
-        assert "identifier" in result.columns
-        assert list(result["identifier"]) == ["P1", "P2"]
+        assert "protein_id" in result.columns
+        assert list(result["protein_id"]) == ["P1", "P2"]
 
     def test_to_dataframe_empty_annotations(self):
         """Test creating DataFrame with empty annotations list."""
@@ -373,7 +325,7 @@ class TestDataFormatter:
         # Should create DataFrame with just identifier column
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 0
-        assert list(result.columns) == ["identifier"]
+        assert list(result.columns) == ["protein_id"]
 
 
 class TestUniProtTransformer:
@@ -412,6 +364,41 @@ class TestUniProtTransformer:
 class TestIntegration:
     """Integration tests for complete workflows."""
 
+    @patch("protspace.data.annotations.manager.BiocentralPredictionRetriever")
+    @patch("protspace.data.annotations.manager.InterProRetriever")
+    def test_sequence_precedence_is_source_specific(
+        self, mock_interpro_retriever, mock_biocentral_retriever
+    ):
+        """InterPro hashes canonical sequences; Biocentral predicts submitted ones."""
+        manager = ProteinAnnotationManager(
+            headers=["P12345", "custom-protein"],
+            annotations=["pfam", "predicted_transmembrane"],
+            sequences={"P12345": "LOCAL", "custom-protein": "CUSTOM"},
+        )
+        uniprot_annotations = [
+            ProteinAnnotations(
+                identifier="P12345", annotations={"sequence": "CANONICAL"}
+            ),
+            ProteinAnnotations(identifier="custom-protein", annotations={}),
+        ]
+        mock_interpro_retriever.return_value.fetch_annotations.return_value = []
+        mock_interpro_retriever.return_value.failed_batch_count = 0
+        mock_biocentral_retriever.return_value.fetch_annotations.return_value = []
+        mock_biocentral_retriever.return_value.prediction_failed = False
+
+        manager._fetch_interpro(uniprot_annotations, [])
+        manager._fetch_biocentral(uniprot_annotations, [])
+
+        assert manager.incomplete_sources == set()
+        assert mock_interpro_retriever.call_args.kwargs["sequences"] == {
+            "P12345": "CANONICAL",
+            "custom-protein": "CUSTOM",
+        }
+        assert mock_biocentral_retriever.call_args.kwargs["sequences"] == {
+            "P12345": "LOCAL",
+            "custom-protein": "CUSTOM",
+        }
+
     @pytest.mark.parametrize(
         "uniprot_length,sequence,expected",
         [
@@ -421,7 +408,7 @@ class TestIntegration:
             ("", "---***", ""),  # a marker-only sequence has no residues to use
         ],
     )
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_fasta_sequence_length_fallback(
         self, mock_uniprot_retriever, uniprot_length, sequence, expected
     ):
@@ -442,7 +429,7 @@ class TestIntegration:
 
         assert result.loc[0, "length"] == expected
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_retains_length_column_when_uniprot_request_fails(
         self, mock_uniprot_retriever
     ):
@@ -459,7 +446,7 @@ class TestIntegration:
 
         assert result["length"].tolist() == ["", "8"]
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_does_not_cache_annotations_when_uniprot_request_fails(
         self, mock_uniprot_retriever, tmp_path
     ):
@@ -481,9 +468,9 @@ class TestIntegration:
         ).to_pd()
 
         assert not cache_path.exists()
-        assert result["identifier"].tolist() == ["custom_protein"]
+        assert result["protein_id"].tolist() == ["custom_protein"]
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_cached_signal_peptide_states_survive_uniprot_refetch(
         self, mock_uniprot_retriever
     ):
@@ -498,7 +485,7 @@ class TestIntegration:
         ]
         cached_data = pd.DataFrame(
             {
-                "identifier": ["with_signal", "without_signal"],
+                "protein_id": ["with_signal", "without_signal"],
                 "signal_peptide": ["True", "False"],
             }
         )
@@ -523,7 +510,7 @@ class TestIntegration:
         cache_path = tmp_path / "all_annotations.parquet"
         pd.DataFrame(
             {
-                "identifier": [
+                "protein_id": [
                     "unresolved",
                     "resolved_without_pdb",
                     "resolved_with_pdb",
@@ -554,182 +541,80 @@ class TestIntegration:
 
         assert result["xref_pdb"].tolist() == ["", "False", "True"]
 
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_to_pd_complete_workflow(
-        self, mock_uniprot_retriever, mock_taxonomy_retriever
-    ):
-        """Test complete workflow from initialization to DataFrame creation."""
-        # Setup mocks
-        mock_uniprot_instance = Mock()
-        mock_uniprot_instance.failed_batch_count = 0
-        mock_uniprot_instance.fetch_annotations.return_value = (
-            SAMPLE_PROTEIN_ANNOTATIONS
-        )
-        mock_uniprot_retriever.return_value = mock_uniprot_instance
-
-        mock_taxonomy_instance = Mock()
-        mock_taxonomy_instance.fetch_annotations.return_value = (
-            SAMPLE_TAXONOMY_ANNOTATIONS
-        )
-        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
-
-        # Test
-        headers = SAMPLE_HEADERS
-        annotations = ["length", "genus", "species"]
-        extractor = ProteinAnnotationExtractor(headers=headers, annotations=annotations)
-
-        result = extractor.to_pd()
-
-        # Verify result
-        assert isinstance(result, pd.DataFrame)
-        assert len(result) == 3
-        assert "identifier" in result.columns
-        assert "genus" in result.columns
-        assert "species" in result.columns
-
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_to_pd_with_file_output(
-        self, mock_uniprot_retriever, mock_taxonomy_retriever
-    ):
-        """Test workflow with file output."""
-        # Setup mocks
-        mock_uniprot_instance = Mock()
-        mock_uniprot_instance.failed_batch_count = 0
-        mock_uniprot_instance.fetch_annotations.return_value = (
-            SAMPLE_PROTEIN_ANNOTATIONS
-        )
-        mock_uniprot_retriever.return_value = mock_uniprot_instance
-
-        mock_taxonomy_instance = Mock()
-        mock_taxonomy_instance.fetch_annotations.return_value = {}
-        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
-
-        # Test with file output
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_path = Path(temp_dir) / "output.csv"
-            headers = SAMPLE_HEADERS
-
-            extractor = ProteinAnnotationExtractor(
-                headers=headers,
-                annotations=["length"],
-                output_path=output_path,
+    @pytest.fixture
+    def sample_retrievers(self):
+        """Patch UniProt and Taxonomy to serve the module's sample proteins."""
+        with (
+            patch("protspace.data.annotations.manager.UniProtRetriever") as uniprot,
+            patch("protspace.data.annotations.manager.TaxonomyRetriever") as taxonomy,
+        ):
+            uniprot.return_value.failed_batch_count = 0
+            uniprot.return_value.fetch_annotations.return_value = (
+                SAMPLE_PROTEIN_ANNOTATIONS
             )
+            taxonomy.return_value.fetch_annotations.return_value = (
+                SAMPLE_TAXONOMY_ANNOTATIONS
+            )
+            yield uniprot, taxonomy
 
-            result = extractor.to_pd()
-
-            # Verify file was created and DataFrame loaded from it
-            assert output_path.exists()
-            assert isinstance(result, pd.DataFrame)
-            assert len(result) == 3
-
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_to_pd_annotation_filtering(
-        self, mock_uniprot_retriever, mock_taxonomy_retriever
+    def test_to_pd_returns_requested_annotations_with_merged_values(
+        self, sample_retrievers
     ):
-        """Test that only requested annotations are returned."""
-        # Setup mocks
-        mock_uniprot_instance = Mock()
-        mock_uniprot_instance.failed_batch_count = 0
-        mock_uniprot_instance.fetch_annotations.return_value = (
-            SAMPLE_PROTEIN_ANNOTATIONS
-        )
-        mock_uniprot_retriever.return_value = mock_uniprot_instance
+        """Only the requested columns come back, with taxonomy merged by organism."""
+        result = ProteinAnnotationExtractor(
+            headers=SAMPLE_HEADERS, annotations=["length", "genus", "species"]
+        ).to_pd()
 
-        mock_taxonomy_instance = Mock()
-        mock_taxonomy_instance.fetch_annotations.return_value = (
-            SAMPLE_TAXONOMY_ANNOTATIONS
-        )
-        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
+        assert list(result.columns) == ["protein_id", "length", "genus", "species"]
+        assert result["protein_id"].tolist() == SAMPLE_HEADERS
+        assert result["length"].tolist() == ["110", "142", "85"]
+        assert result["genus"].tolist() == ["Homo", "Homo", "Mus"]
+        assert result["species"].tolist() == [
+            "Homo sapiens",
+            "Homo sapiens",
+            "Mus musculus",
+        ]
 
-        # Test with specific annotations including length
-        headers = SAMPLE_HEADERS
-        requested_annotations = ["length", "genus"]
-        extractor = ProteinAnnotationExtractor(
-            headers=headers, annotations=requested_annotations
-        )
+    def test_to_pd_with_file_output(self, sample_retrievers, tmp_path):
+        """A requested subset is still filtered after the cache is written."""
+        output_path = tmp_path / "output.csv"
 
-        result = extractor.to_pd()
+        result = ProteinAnnotationExtractor(
+            headers=SAMPLE_HEADERS,
+            annotations=["length"],
+            output_path=output_path,
+        ).to_pd()
 
-        # Should only have identifier + requested annotations
-        expected_columns = {"identifier", "length", "genus"}
-        assert set(result.columns) == expected_columns
+        assert output_path.exists()
+        assert list(result.columns) == ["protein_id", "length"]
+        assert len(result) == 3
 
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_internal_columns_removed_from_output(
-        self, mock_uniprot_retriever, mock_taxonomy_retriever
+    @pytest.mark.parametrize("with_cache", [False, True])
+    def test_internal_columns_dropped_from_output_but_kept_in_cache(
+        self, sample_retrievers, tmp_path, with_cache
     ):
-        """Test that internal columns (organism_id) are removed from final output."""
-        # Setup mocks
-        mock_uniprot_instance = Mock()
-        mock_uniprot_instance.failed_batch_count = 0
-        mock_uniprot_instance.fetch_annotations.return_value = (
-            SAMPLE_PROTEIN_ANNOTATIONS
-        )
-        mock_uniprot_retriever.return_value = mock_uniprot_instance
+        """organism_id and sequence never reach the output; the cache keeps them.
 
-        mock_taxonomy_instance = Mock()
-        mock_taxonomy_instance.fetch_annotations.return_value = (
-            SAMPLE_TAXONOMY_ANNOTATIONS
-        )
-        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
+        The cache needs organism_id for future cache hits. Without an
+        ``output_path`` no cache is written and the output is dropped the same way.
+        """
+        cache_path = tmp_path / "cache.parquet"
 
-        # Test with default annotations (no specific annotations requested)
-        headers = SAMPLE_HEADERS
-        extractor = ProteinAnnotationExtractor(headers=headers)
+        result = ProteinAnnotationExtractor(
+            headers=SAMPLE_HEADERS, output_path=cache_path if with_cache else None
+        ).to_pd()
 
-        result = extractor.to_pd()
-
-        # Internal columns should never appear in final output
         assert "organism_id" not in result.columns
         assert "sequence" not in result.columns
-
-        # Default group annotations should be present (length is now user-facing)
+        # Default group annotations are present (length is user-facing)
         assert "length" in result.columns
         assert "protein_families" in result.columns
-
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_internal_columns_kept_in_cache_file(
-        self, mock_uniprot_retriever, mock_taxonomy_retriever
-    ):
-        """Test that internal columns are kept in cache file but removed from returned DataFrame."""
-        # Setup mocks
-        mock_uniprot_instance = Mock()
-        mock_uniprot_instance.failed_batch_count = 0
-        mock_uniprot_instance.fetch_annotations.return_value = (
-            SAMPLE_PROTEIN_ANNOTATIONS
-        )
-        mock_uniprot_retriever.return_value = mock_uniprot_instance
-
-        mock_taxonomy_instance = Mock()
-        mock_taxonomy_instance.fetch_annotations.return_value = (
-            SAMPLE_TAXONOMY_ANNOTATIONS
-        )
-        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            cache_path = Path(temp_dir) / "cache.parquet"
-            headers = SAMPLE_HEADERS
-            extractor = ProteinAnnotationExtractor(
-                headers=headers, output_path=cache_path
-            )
-
-            result = extractor.to_pd()
-
-            # Cache file should contain internal columns for future cache hits
+        if with_cache:
             cached_df = pd.read_parquet(cache_path)
             assert "organism_id" in cached_df.columns
             assert "length" in cached_df.columns
-
-            # But returned DataFrame should not have organism_id
-            assert "organism_id" not in result.columns
-            assert "sequence" not in result.columns
-            # length is now a user-facing annotation in the default group
-            assert "length" in result.columns
+        else:
+            assert not cache_path.exists()
 
 
 class TestExpandAnnotationGroups:
@@ -1196,11 +1081,11 @@ class TestStripScores:
 
     def test_strips_uniprot_evidence_codes(self):
         """UniProt evidence codes like 'Cytoplasm|EXP;Nucleus|IEA' → 'Cytoplasm;Nucleus'."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "cc_subcellular_location": ["Cytoplasm|EXP;Nucleus|IEA"],
             }
         )
@@ -1209,11 +1094,11 @@ class TestStripScores:
 
     def test_strips_interpro_bit_scores(self):
         """InterPro bit scores like 'PF00001 (7tm_1)|50.2' → 'PF00001 (7tm_1)'."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "pfam": ["PF00001 (7tm_1)|50.2;PF00002 (7tm_2)|60.5"],
             }
         )
@@ -1222,11 +1107,11 @@ class TestStripScores:
 
     def test_leaves_non_score_columns_untouched(self):
         """Columns not in SCORE_BEARING_COLUMNS remain unchanged."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "reviewed": ["Swiss-Prot"],
                 "gene_name": ["INS"],
             }
@@ -1237,11 +1122,11 @@ class TestStripScores:
 
     def test_handles_empty_and_nan_values(self):
         """Empty strings and NaN values are preserved."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1", "P2"],
+                "protein_id": ["P1", "P2"],
                 "ec": ["", float("nan")],
             }
         )
@@ -1251,11 +1136,11 @@ class TestStripScores:
 
     def test_df_without_score_columns_unchanged(self):
         """A DataFrame with no score-bearing columns is returned unchanged."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "reviewed": ["Swiss-Prot"],
             }
         )
@@ -1264,12 +1149,12 @@ class TestStripScores:
 
     def test_strips_all_score_bearing_columns(self):
         """All SCORE_BEARING_COLUMNS are stripped when present."""
-        from src.protspace.data.annotations.scores import (
+        from protspace.data.annotations.scores import (
             SCORE_BEARING_COLUMNS,
             strip_scores_from_df,
         )
 
-        data = {"identifier": ["P1"]}
+        data = {"protein_id": ["P1"]}
         for col in SCORE_BEARING_COLUMNS:
             data[col] = ["value|score"]
         df = pd.DataFrame(data)
@@ -1280,11 +1165,11 @@ class TestStripScores:
 
     def test_strips_ec_evidence(self):
         """EC numbers 2.7.11.1|EXP → 2.7.11.1."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "ec": ["2.7.11.1|EXP;3.4.21.1|IEA"],
             }
         )
@@ -1293,11 +1178,11 @@ class TestStripScores:
 
     def test_strips_protein_families_evidence(self):
         """Protein families 'Insulin family|ISS' → 'Insulin family'."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "protein_families": ["Insulin family|ISS"],
             }
         )
@@ -1306,11 +1191,11 @@ class TestStripScores:
 
     def test_strips_go_terms_evidence(self):
         """GO terms 'apoptotic process|TAS;signal transduction|IEA' stripped."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
-                "identifier": ["P1"],
+                "protein_id": ["P1"],
                 "go_bp": ["apoptotic process|TAS;signal transduction|IEA"],
                 "go_mf": ["kinase activity|IDA;ATP binding"],
                 "go_cc": ["cytoplasm|IDA;nucleus"],
@@ -1337,8 +1222,8 @@ class TestUniProtFailureCacheWrite:
         ]
         return retriever
 
-    @patch("src.protspace.data.annotations.manager.TedRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.TedRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_a_failed_source_is_dropped_without_discarding_the_others(
         self, mock_uniprot, mock_ted, tmp_path
     ):
@@ -1374,9 +1259,9 @@ class TestUniProtFailureCacheWrite:
         # The run itself still reports everything it fetched.
         assert result["length"].tolist() == ["110"]
 
-    @patch("src.protspace.data.annotations.manager.TedRetriever")
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.TedRetriever")
+    @patch("protspace.data.annotations.manager.TaxonomyRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_dropping_uniprot_also_drops_the_taxonomy_it_keys(
         self, mock_uniprot, mock_taxonomy, mock_ted, tmp_path
     ):
@@ -1424,7 +1309,7 @@ class TestUniProtFailureCacheWrite:
         )
 
     @pytest.mark.parametrize("failed_batches,cache_written", [(1, False), (0, True)])
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_cache_write_follows_batch_success(
         self, mock_retriever, tmp_path, failed_batches, cache_written
     ):
@@ -1436,15 +1321,15 @@ class TestUniProtFailureCacheWrite:
         ).to_pd()
 
         assert cache_path.exists() is cache_written
-        assert result["identifier"].tolist() == ["P01308"]
+        assert result["protein_id"].tolist() == ["P01308"]
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_lost_batch_leaves_an_existing_cache_untouched(
         self, mock_retriever, tmp_path
     ):
         mock_retriever.return_value = self._retriever(failed_batches=1)
         cache_path = tmp_path / "all_annotations.parquet"
-        pd.DataFrame({"identifier": ["P01308"], "length": ["110"]}).to_parquet(
+        pd.DataFrame({"protein_id": ["P01308"], "length": ["110"]}).to_parquet(
             cache_path, index=False
         )
 
@@ -1475,7 +1360,7 @@ class TestPerIdentifierReuse:
     def _cached(identifiers, organism="9606"):
         return pd.DataFrame(
             {
-                "identifier": identifiers,
+                "protein_id": identifiers,
                 "organism_id": [organism] * len(identifiers),
                 "length": [f"{10 * (i + 1)}" for i in range(len(identifiers))],
             }
@@ -1486,7 +1371,7 @@ class TestPerIdentifierReuse:
         mock_retriever.return_value.failed_batch_count = 0
         mock_retriever.return_value.fetch_annotations.return_value = annotations
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_only_the_missing_identifiers_are_fetched(self, mock_uniprot):
         self._fetched(
             mock_uniprot,
@@ -1501,13 +1386,13 @@ class TestPerIdentifierReuse:
         ).to_pd()
 
         assert mock_uniprot.call_args.kwargs["headers"] == ["P3"]
-        assert dict(zip(result["identifier"], result["length"], strict=True)) == {
+        assert dict(zip(result["protein_id"], result["length"], strict=True)) == {
             "P1": "10",
             "P2": "20",
             "P3": "30",
         }
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_a_cache_covering_the_run_fetches_nothing(self, mock_uniprot):
         result = ProteinAnnotationExtractor(
             headers=["P1", "P2"],
@@ -1517,10 +1402,10 @@ class TestPerIdentifierReuse:
         ).to_pd()
 
         mock_uniprot.assert_not_called()
-        assert set(result["identifier"]) >= {"P1", "P2"}
+        assert set(result["protein_id"]) >= {"P1", "P2"}
 
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.TaxonomyRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_taxonomy_is_looked_up_only_for_organisms_the_cache_lacks(
         self, mock_uniprot, mock_taxonomy
     ):
@@ -1551,13 +1436,13 @@ class TestPerIdentifierReuse:
 
         # 9606 is already in the cache; only the unseen organism is looked up.
         assert mock_taxonomy.call_args.kwargs["taxon_ids"] == [10090]
-        assert dict(zip(result["identifier"], result["genus"], strict=True)) == {
+        assert dict(zip(result["protein_id"], result["genus"], strict=True)) == {
             "P1": "Homo",
             "P2": "Homo",
             "P3": "Mus",
         }
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_rows_outside_the_run_survive_a_fetch(self, mock_uniprot, tmp_path):
         self._fetched(
             mock_uniprot,
@@ -1576,9 +1461,9 @@ class TestPerIdentifierReuse:
             cached_data=self._cached(["P1", "P2", "P3"]),
         ).to_pd()
 
-        assert set(pd.read_parquet(cache_path)["identifier"]) == {"P1", "P2", "P3"}
+        assert set(pd.read_parquet(cache_path)["protein_id"]) == {"P1", "P2", "P3"}
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_a_failed_fill_in_does_not_cache_empty_values(self, mock_uniprot, tmp_path):
         mock_uniprot.return_value.fetch_annotations.side_effect = RuntimeError(
             "offline"
@@ -1597,9 +1482,9 @@ class TestPerIdentifierReuse:
 
         # The run still returns what it had, but P3's empty length must not be
         # cached: the next run would read it as "this protein has no length".
-        assert dict(zip(result["identifier"], result["length"], strict=True)) == {
+        assert dict(zip(result["protein_id"], result["length"], strict=True)) == {
             "P1": "10",
             "P2": "20",
             "P3": "",
         }
-        assert set(pd.read_parquet(cache_path)["identifier"]) == {"P1", "P2"}
+        assert set(pd.read_parquet(cache_path)["protein_id"]) == {"P1", "P2"}

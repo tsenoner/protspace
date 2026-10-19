@@ -4,11 +4,14 @@ import type { ProjectionStatisticRow, VisualizationData } from '@protspace/utils
 import './legend';
 import type { ProtspaceLegend } from './legend';
 import type { ScoreStripPoint } from './category-score-strip';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
-import { createLocalStorageMock } from './test-support/local-storage-mock';
+import {
+  mountLegendWithScatterplot,
+  stubLocalStorage,
+} from './test-support/legend-scatterplot-harness';
 
-// Saved sort modes and z-orders would otherwise leak between tests whose fixtures hash the same.
-vi.stubGlobal('localStorage', createLocalStorageMock());
+// Saved sort modes and z-orders leak between tests whose fixtures hash the same; the store is
+// cleared before each test below.
+stubLocalStorage();
 
 const STAT_BASE = {
   space_kind: 'projection' as const,

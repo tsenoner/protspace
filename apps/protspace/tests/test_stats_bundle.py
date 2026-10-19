@@ -23,7 +23,7 @@ def _core() -> list[pa.Table]:
         pa.table(
             {
                 "projection_name": ["PCA_2", "PCA_2"],
-                "identifier": ["a", "b"],
+                "protein_id": ["a", "b"],
                 "x": [0.0, 1.0],
                 "y": [0.0, 1.0],
             }

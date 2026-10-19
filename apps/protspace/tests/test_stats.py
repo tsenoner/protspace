@@ -288,12 +288,15 @@ def test_cluster_self_validity_matches_direct_annotation_scoring():
     assert pipeline_rows  # the guard is worthless if it compares two empty lists
 
     # Rebuild the labels the way an out-of-band re-score must: from the membership
-    # column already in the bundle, with the `|silhouette` confidence stripped.
+    # column already in the bundle, read as it is.
     column = next(o for o in outs if isinstance(o, AnnotationColumn))
-    labels = {pid: str(v).split("|", 1)[0] for pid, v in column.values.items()}
     direct = AnnotationValidityStatistic(label_kind="kmeans_elbow").compute(
         StatContext(
-            "projection", "PCA_2", coords=X, ids=ids, annotations={column.name: labels}
+            "projection",
+            "PCA_2",
+            coords=X,
+            ids=ids,
+            annotations={column.name: column.values},
         )
     )
 
@@ -545,7 +548,9 @@ def test_driver_full_matrix_shape():
     reductions = [
         {"name": "ProtT5 — PCA 2", "data": coords, "ids": headers, "source": "prot_t5"}
     ]
-    report = compute_statistics([emb], reductions, rng_seed=42)
+    report = compute_statistics(
+        [emb], reductions, rng_seed=42, params={"cluster_space": "projection"}
+    )
     metrics = {r.metric for r in report.rows}
     # Without annotations the only scored labels are the auto-clusters' own, so
     # the validity metrics here all belong to the membership column.
@@ -747,6 +752,7 @@ def test_driver_emits_embedding_and_projection_annotation_validity():
         r
         for r in av
         if r.space_kind == "embedding"
+        and r.annotation == "grp"
         and r.metric == "silhouette"
         and r.category is None
     ]
@@ -1277,3 +1283,276 @@ def test_silhouette_selection_falls_back_to_elbow_on_degenerate_coords():
     rows = [o for o in outs if isinstance(o, StatRow)]
     assert rows, "silhouette selection on degenerate coords dropped the projection"
     assert all(r.label_kind == "kmeans_elbow" for r in rows if r.metric == "n_clusters")
+
+
+# --------------------------------------------------------------------------- #
+# 8. cluster space: projection / embedding / both (cluster-in-embedding-space)
+# --------------------------------------------------------------------------- #
+
+
+def _two_projections(n=160, centers=4, dim=6, seed=81):
+    """One embedding with two 2-D projections of it: a PCA and a rotated PCA
+    standing in for a second layout (a UMAP), so the two disagree on positions."""
+    X, y = _blobs(n=n, centers=centers, dim=dim, seed=seed)
+    ids = [f"p{i}" for i in range(n)]
+    pca = PCA(n_components=2, random_state=0).fit_transform(X)
+    theta = 0.7
+    rot = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+    reductions = [
+        {"name": "E — PCA 2", "data": pca, "ids": ids, "source": "E"},
+        {"name": "E — UMAP 2", "data": pca @ rot * 3.0, "ids": ids, "source": "E"},
+    ]
+    return _EmbSet("E", X, ids), reductions, ids, y
+
+
+def _cluster_columns(report):
+    return {c.name: c for c in report.annotation_columns}
+
+
+@pytest.mark.parametrize(
+    ("cluster_space", "expected"),
+    [
+        (
+            None,
+            {"cluster_elbow_E — PCA 2", "cluster_elbow_E — UMAP 2", "cluster_elbow_E"},
+        ),
+        (
+            "both",
+            {"cluster_elbow_E — PCA 2", "cluster_elbow_E — UMAP 2", "cluster_elbow_E"},
+        ),
+        ("projection", {"cluster_elbow_E — PCA 2", "cluster_elbow_E — UMAP 2"}),
+        ("embedding", {"cluster_elbow_E"}),
+        # An unknown value falls back to the default, like cluster_selection.
+        (
+            "nowhere",
+            {"cluster_elbow_E — PCA 2", "cluster_elbow_E — UMAP 2", "cluster_elbow_E"},
+        ),
+    ],
+)
+def test_cluster_space_selects_which_columns_are_written(cluster_space, expected):
+    emb, reductions, _, _ = _two_projections()
+    params = {} if cluster_space is None else {"cluster_space": cluster_space}
+    report = compute_statistics([emb], reductions, params=params)
+    assert set(_cluster_columns(report)) == expected
+
+
+def test_embedding_cluster_column_is_one_labelling_of_every_protein():
+    emb, reductions, ids, y = _two_projections()
+    report = compute_statistics(
+        [emb], reductions, params={"cluster_space": "embedding"}
+    )
+    col = _cluster_columns(report)["cluster_elbow_E"]
+    assert set(col.values) == set(ids)
+    assert col.extra["embedding"] == "E"
+    # Clustered in the embedding, the four blobs come back whole.
+    from sklearn.metrics import adjusted_rand_score
+
+    assert adjusted_rand_score(y, [col.values[pid] for pid in ids]) == pytest.approx(
+        1.0
+    )
+    meta = [r for r in report.rows if r.metric == "n_clusters"]
+    assert [(r.space_kind, r.space_name, r.value) for r in meta] == [
+        ("embedding", "E", 4.0)
+    ]
+
+
+def test_embedding_cluster_is_scored_in_the_embedding_and_each_projection():
+    emb, reductions, _, _ = _two_projections()
+    report = compute_statistics(
+        [emb], reductions, params={"cluster_space": "embedding"}
+    )
+    scored = {
+        (r.space_kind, r.space_name)
+        for r in report.rows
+        if r.annotation == "cluster_elbow_E"
+        and r.stat_family == "annotation_validity"
+        and r.metric == "silhouette"
+        and r.category is None
+    }
+    # The embedding is the panel's reference column; each projection gets the
+    # strips. Exactly one aggregate row per space.
+    assert scored == {
+        ("embedding", "E"),
+        ("projection", "E — PCA 2"),
+        ("projection", "E — UMAP 2"),
+    }
+    assert {r.label_kind for r in report.rows if r.annotation == "cluster_elbow_E"} == {
+        "kmeans_elbow"
+    }
+
+
+def test_embedding_cluster_projection_scores_equal_scoring_it_as_an_annotation():
+    """The per-projection rows are the clustering scored on that projection's
+    coordinates, exactly as a curated annotation with the same labels would be."""
+    from protspace.stats.metrics.annotation_validity import (
+        AnnotationValidityStatistic,
+    )
+
+    emb, reductions, ids, _ = _two_projections()
+    report = compute_statistics(
+        [emb], reductions, params={"cluster_space": "embedding"}
+    )
+    labels = _cluster_columns(report)["cluster_elbow_E"].values
+    umap = reductions[1]
+    direct = AnnotationValidityStatistic().compute(
+        StatContext(
+            "projection",
+            umap["name"],
+            coords=umap["data"],
+            ids=ids,
+            annotations={"cluster_elbow_E": labels},
+        )
+    )
+    want = {(r.metric, r.category): r.value for r in direct}
+    got = {
+        (r.metric, r.category): r.value
+        for r in report.rows
+        if r.annotation == "cluster_elbow_E" and r.space_name == umap["name"]
+    }
+    assert got == pytest.approx(want)
+
+
+def test_embedding_cluster_agreement_is_filed_once_under_the_embedding():
+    emb, reductions, ids, y = _two_projections()
+    ann = {"grp": {pid: f"g{int(c)}" for pid, c in zip(ids, y, strict=True)}}
+    report = compute_statistics(
+        [emb], reductions, params={"cluster_space": "embedding"}, annotations=ann
+    )
+    agreement = [r for r in report.rows if r.stat_family == "cluster_agreement"]
+    assert {(r.space_kind, r.space_name, r.label_kind) for r in agreement} == {
+        ("embedding", "E", "kmeans_elbow")
+    }
+    assert sorted(r.metric for r in agreement) == [
+        "adjusted_rand",
+        "normalized_mutual_info",
+    ]
+    ari = next(r for r in agreement if r.metric == "adjusted_rand")
+    assert ari.value == pytest.approx(1.0)
+
+
+def test_embedding_cluster_honours_cluster_selection():
+    emb, reductions, _, _ = _two_projections()
+    report = compute_statistics(
+        [emb],
+        reductions,
+        params={"cluster_space": "embedding", "cluster_selection": "both"},
+    )
+    assert set(_cluster_columns(report)) == {
+        "cluster_elbow_E",
+        "cluster_silhouette_E",
+    }
+    assert {
+        r.label_kind
+        for r in report.rows
+        if r.annotation == "cluster_silhouette_E" and r.space_kind == "projection"
+    } == {"kmeans_silhouette"}
+
+
+def test_each_embedding_clusters_and_scores_only_its_own_projections():
+    Xa, _ = _blobs(n=100, centers=3, dim=5, seed=82)
+    Xb, _ = _blobs(n=100, centers=3, dim=7, seed=83)
+    ids = [f"p{i}" for i in range(100)]
+    ea, eb = _EmbSet("A", Xa, ids), _EmbSet("B", Xb, ids)
+    reductions = [
+        {
+            "name": f"{name} — PCA 2",
+            "data": PCA(n_components=2, random_state=0).fit_transform(X),
+            "ids": ids,
+            "source": name,
+        }
+        for name, X in (("A", Xa), ("B", Xb))
+    ]
+    report = compute_statistics(
+        [ea, eb], reductions, params={"cluster_space": "embedding"}
+    )
+    assert set(_cluster_columns(report)) == {"cluster_elbow_A", "cluster_elbow_B"}
+    in_projection = {
+        (r.annotation, r.space_name)
+        for r in report.rows
+        if r.space_kind == "projection" and r.stat_family == "annotation_validity"
+    }
+    assert in_projection == {
+        ("cluster_elbow_A", "A — PCA 2"),
+        ("cluster_elbow_B", "B — PCA 2"),
+    }
+
+
+def test_embedding_cluster_labels_are_row_order_invariant():
+    X, _ = _blobs(n=150, centers=4, dim=60, seed=84)  # > 50 dims: PCA path
+    ids = [f"p{i}" for i in range(150)]
+    perm = np.random.default_rng(5).permutation(150)
+
+    def _labels(rows):
+        emb = _EmbSet("E", X[rows], [ids[i] for i in rows])
+        report = compute_statistics([emb], [], params={"cluster_space": "embedding"})
+        return _cluster_columns(report)["cluster_elbow_E"].values
+
+    assert _labels(np.arange(150)) == _labels(perm)
+
+
+def test_pca_reduce_keeps_low_dim_input_and_reduces_high_dim():
+    from protspace.stats.cluster.kmeans_elbow import pca_reduce
+
+    low = np.random.default_rng(0).normal(size=(40, 8)).astype(np.float32)
+    assert pca_reduce(low) is low
+    high, _ = _blobs(n=120, centers=4, dim=80, seed=85)
+    reduced = pca_reduce(high, ids=[f"p{i}" for i in range(120)], chunk_size=50)
+    assert reduced.shape == (120, 50)
+    # Chunked transform equals one full transform.
+    assert np.allclose(reduced, pca_reduce(high, ids=[f"p{i}" for i in range(120)]))
+
+
+def test_high_dim_embedding_clusters_on_its_principal_components():
+    X, y = _blobs(n=200, centers=4, dim=80, seed=86)
+    ids = [f"p{i}" for i in range(200)]
+    outs = ClusterValidityStatistic().compute(
+        StatContext("embedding", "E", coords=X, ids=ids)
+    )
+    meta = next(o for o in outs if getattr(o, "metric", None) == "n_clusters")
+    assert meta.value == 4.0
+    assert meta.extra["clustered_dims"] == 50
+    col = next(o for o in outs if not isinstance(o, StatRow))
+    from sklearn.metrics import adjusted_rand_score
+
+    assert adjusted_rand_score(y, [col.values[pid] for pid in ids]) == pytest.approx(
+        1.0
+    )
+    # Its own separation is scored on the raw embedding, as an annotation's
+    # embedding reference is, not on the 50 components it was swept on.
+    from protspace.stats.metrics.annotation_validity import (
+        AnnotationValidityStatistic,
+    )
+
+    direct = AnnotationValidityStatistic(label_kind="kmeans_elbow").compute(
+        StatContext(
+            "embedding", "E", coords=X, ids=ids, annotations={col.name: col.values}
+        )
+    )
+    got = [o for o in outs if isinstance(o, StatRow) and o.annotation == col.name]
+    assert [(r.metric, r.category, r.value) for r in got] == pytest.approx(
+        [(r.metric, r.category, r.value) for r in direct]
+    )
+
+
+def test_precomputed_embedding_gets_no_embedding_cluster_column():
+    headers = [f"p{i}" for i in range(40)]
+    sim = _EmbSet("sim", np.eye(40), headers, precomputed=True)
+    X, _ = _blobs(n=40, centers=3, dim=2, seed=87)
+    report = compute_statistics(
+        [sim], [{"name": "MDS", "data": X, "ids": headers, "source": "sim"}]
+    )
+    assert set(_cluster_columns(report)) == {"cluster_elbow_MDS"}
+
+
+def test_embedding_cluster_without_membership_keeps_only_its_k():
+    emb, reductions, _, _ = _two_projections()
+    report = compute_statistics(
+        [emb],
+        reductions,
+        params={"cluster_space": "embedding", "cluster_annotations": False},
+    )
+    assert report.annotation_columns == []
+    assert [(r.space_kind, r.metric) for r in report.rows if r.space_name == "E"] == [
+        ("embedding", "n_clusters")
+    ]
+    assert not any(r.stat_family == "annotation_validity" for r in report.rows)

@@ -85,3 +85,23 @@ def test_upgrade_cell_grammar_takes_the_version_from_the_caller():
 
     with pytest.raises(ValueError, match="unknown annotation cell grammar v3"):
         upgrade_cell_grammar(table, 3)
+
+
+def test_migration_leaves_only_the_id_column_alone():
+    """The id column is a key and is never escaped; beside `protein_id`, an
+    `identifier` column is an annotation and is migrated like one."""
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import migrate_legacy_annotation_table
+
+    both = migrate_legacy_annotation_table(
+        pa.table({"protein_id": ["sp|P1|A"], "identifier": ["50% id"]})
+    ).to_pydict()
+    assert both["protein_id"] == ["sp|P1|A"]
+    assert both["identifier"] == ["50%25 id"]
+
+    older = migrate_legacy_annotation_table(
+        pa.table({"identifier": ["50%"], "family": ["50%"]})
+    ).to_pydict()
+    assert older["identifier"] == ["50%"]
+    assert older["family"] == ["50%25"]

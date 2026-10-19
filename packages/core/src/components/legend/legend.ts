@@ -2,6 +2,7 @@ import { LitElement, html, type TemplateResult } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import {
+  DEFAULT_CATEGORICAL_PALETTE_ID,
   isNumericAnnotation,
   annotationLabel,
   DEFAULT_EAT_RELIABILITY,
@@ -174,7 +175,7 @@ export class ProtspaceLegend extends LitElement {
    * stored record reads it, so an unrelated save never writes false over a stored true.
    */
   @state() _enableDuplicateStackUI = false;
-  @state() _selectedPaletteId = 'kellys';
+  @state() _selectedPaletteId: string = DEFAULT_CATEGORICAL_PALETTE_ID;
   @state() _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
   @state() _eatCounts: EatPopulationCounts | null = null;
@@ -184,7 +185,7 @@ export class ProtspaceLegend extends LitElement {
    * columns, whose separation scores are optimistic by construction. Derived alongside
    * `_categoryScores` because both need `statisticsRows`, which render time does not see.
    */
-  @state() _isClusterAnnotation = false;
+  @state() _clusterCaveat: string | null = null;
   /**
    * The annotation storage the legend counts from, captured on every scatterplot
    * data change. Counting straight out of it (`countFromStorage`) replaces the
@@ -483,20 +484,11 @@ export class ProtspaceLegend extends LitElement {
       const sourceDataMatchesCurrentLegend =
         sourceData?.protein_ids !== undefined &&
         this._hasSameProteinIds(sourceData.protein_ids, this.proteinIds);
-      // Predictions included, as the app and the decode worker hash it.
+      // Hashed whole, EAT predictions included, as a host hashes the dataset for
+      // `clearForNewDataset`, `setFileSettings` and `applyShapeSize`, so both use one key set.
       const unfilteredData = sourceDataMatchesCurrentLegend
-        ? {
-            protein_ids: sourceData.protein_ids,
-            annotations: sourceData.annotations,
-            numeric_annotation_data: sourceData.numeric_annotation_data,
-            annotation_predicted: sourceData.annotation_predicted,
-          }
-        : {
-            protein_ids: this.proteinIds,
-            annotations: this.data?.annotations,
-            numeric_annotation_data: this.data?.numeric_annotation_data,
-            annotation_predicted: this.data?.annotation_predicted,
-          };
+        ? sourceData
+        : { ...this.data, protein_ids: this.proteinIds };
 
       this._datasetProteinCount = unfilteredData.protein_ids.length;
       this._persistenceController.updateDatasetHash(unfilteredData);
@@ -658,7 +650,7 @@ export class ProtspaceLegend extends LitElement {
     this._enableDuplicateStackUI = false;
     this._sortMenu = null;
     this._otherPopover.close();
-    this._selectedPaletteId = 'kellys';
+    this._selectedPaletteId = DEFAULT_CATEGORICAL_PALETTE_ID;
     this._numericSettingsByAnnotation = {};
     this._numericManualOrderIdsByAnnotation = {};
     this._eatCounts = null;
@@ -922,7 +914,7 @@ export class ProtspaceLegend extends LitElement {
         this.isolationMode || Boolean(this._scatterplotController.scatterplot?.filtersActive),
       points: this._stripPoints,
       highlighted: this._hoveredCategory,
-      clusterCaveat: this._isClusterAnnotation,
+      clusterCaveat: this._clusterCaveat,
     };
     return renderScoreStrips(view, this._scoreStripHandlers);
   }

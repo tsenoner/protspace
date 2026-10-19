@@ -31,6 +31,22 @@ export function plotData(length: number): PlotData {
   };
 }
 
+/**
+ * A PlotData with the given coordinates and ids `p0..pN-1`, for suites whose
+ * assertions depend on the positions (signatures, export extents).
+ */
+export function plotDataFrom(xs: number[], ys: number[]): PlotData {
+  return {
+    length: xs.length,
+    xs: new Float32Array(xs),
+    ys: new Float32Array(ys),
+    zs: null,
+    originalIndices: null,
+    proteinIds: xs.map((_, i) => `p${i}`),
+  };
+}
+
+/** The default scales: the unit data square onto the 800×600 canvas. */
 const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
   y: d3.scaleLinear().domain([0, 1]).range([0, 600]),

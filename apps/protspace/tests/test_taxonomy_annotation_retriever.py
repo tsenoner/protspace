@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.protspace.data.annotations.retrievers.taxonomy_retriever import (
+from protspace.data.annotations.retrievers.taxonomy_retriever import (
     TAXONOMY_ANNOTATIONS,
     TaxonomyRetriever,
 )

@@ -157,9 +157,15 @@ load; ProtSpace writes projection and annotation params after you change the vie
 to normalize an invalid URL value.
 :::
 
-::: tip 3D Projections
-3D projections load normally and are shown as their X/Y view; the third (Z) dimension is not
-rendered in the web viewer.
+::: warning 3D Projections are deprecated
+3D projections load and are shown as their X/Y view; the third (Z) dimension is not rendered in
+the web viewer. Reading them is deprecated and ends in ProtSpace 5.0.0, and opening a file of your
+own with 3D projections shows a notice saying so. For PCA the X/Y view is the same as the 2D
+projection (`pca2`); for UMAP, t-SNE, PaCMAP and other non-linear methods it is the 3D layout seen
+from one side, so points that are far apart along Z can overlap. If you have the embeddings,
+recompute the projection with the 2D method (e.g. `umap2`). Otherwise `protspace convert
+--flatten-3d` rewrites each 3D projection as a 2D one with its X/Y coordinates, named
+`<name> (X/Y)`. See [`protspace convert`](/guide/python-cli#protspace-convert).
 :::
 
 ### Color by

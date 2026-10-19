@@ -321,14 +321,10 @@ describe('loading-overlay note rendering', () => {
     const noteEl = getNoteEl();
     expect(noteEl).not.toBeNull();
     const span = noteEl!.children.find((c) => c._tag === 'span');
-    // textContent assignment — no script element is created
+    // Set as textContent: an innerHTML assignment would leave the fake span's text empty.
     expect(span?.textContent).toBe('<script>alert(1)</script>');
     expect(hasTag(doc._body, 'script')).toBe(false);
     ctrl.dispose();
-  });
-
-  it.skip('javascript: href — URL validation out of scope; current behavior is unvalidated', () => {
-    // Intentionally skipped per spec §2.5: URL sanitization is out of scope.
   });
 
   it('does not render a note after hide+show when no note arg is passed on re-show', () => {

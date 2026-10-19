@@ -252,6 +252,16 @@ describe('selection controller: the search box', () => {
     expect(m.plot.selectedProteinIds).toEqual(['P1']);
   });
 
+  it('add-selection-multiple appends only the IDs not yet selected, in their order', async () => {
+    const m = setup();
+    fire(m.search, 'selection-change', { proteinIds: ['P1', 'P3'] });
+
+    fire(m.search, 'add-selection-multiple', { proteinIds: ['P2', 'P3'] });
+    await afterPaint();
+
+    expect(m.plot.selectedProteinIds).toEqual(['P1', 'P3', 'P2']);
+  });
+
   it('add-selection-multiple does not zoom', async () => {
     const m = setup();
 

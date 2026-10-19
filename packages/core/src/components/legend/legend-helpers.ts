@@ -1,3 +1,4 @@
+import { DEFAULT_CATEGORICAL_PALETTE_ID } from '@protspace/utils';
 import type {
   LegendItem,
   OtherItem,
@@ -147,7 +148,7 @@ export function createDefaultSettings(selectedAnnotation: string): LegendPersist
     hiddenValues: [],
     categories: {},
     enableDuplicateStackUI: LEGEND_DEFAULTS.enableDuplicateStackUI,
-    selectedPaletteId: 'kellys',
+    selectedPaletteId: DEFAULT_CATEGORICAL_PALETTE_ID,
   };
 }
 

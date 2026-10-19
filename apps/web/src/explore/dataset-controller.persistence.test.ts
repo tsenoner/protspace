@@ -3,6 +3,7 @@ import {
   buildControllerOptions,
   dataErrorEvent,
   dataLoadedEvent,
+  TEST_DATA,
 } from './dataset-controller.fixtures';
 import { EXAMPLE_DATASETS } from './example-datasets';
 import { FastaPrepError } from './fasta-prep-client';
@@ -109,10 +110,10 @@ beforeEach(() => {
   mocks.isCurrentRequest.mockReturnValue(true);
 });
 
-describe('dataset controller OPFS persistence', () => {
-  /** Drain the microtask queue so every already-resolved await has run. */
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Drain the microtask queue so every already-resolved await has run. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+describe('dataset controller OPFS persistence', () => {
   it('stores the imported bytes before the render starts', async () => {
     let finishSave = () => {};
     mocks.commitSave.mockImplementation(
@@ -305,17 +306,23 @@ describe('dataset controller legacy bundle notice', () => {
       unplacedProteinCount,
     });
 
-  it('points a user who imported a v2 bundle to re-export and protspace convert', async () => {
-    const { controller } = buildController();
-    await controller.handleDataLoaded(eventFor(2));
+  // The parquetbundle-v3 spec names both legacy formats; each must reach the notice.
+  it.each([1, 2])(
+    'points a user who imported a v%i bundle to re-export and protspace convert',
+    async (version) => {
+      const { controller } = buildController();
+      await controller.handleDataLoaded(eventFor(version));
 
-    expect(mocks.loadData).toHaveBeenCalledOnce();
-    expect(mocks.info).toHaveBeenCalledOnce();
-    const [notice] = mocks.info.mock.calls[0];
-    expect(notice.description).toMatch(/5\.0\.0/);
-    expect(notice.description).toMatch(/export it again/);
-    expect(notice.description).toMatch(/protspace convert/);
-  });
+      expect(mocks.loadData).toHaveBeenCalledOnce();
+      expect(mocks.info).toHaveBeenCalledOnce();
+      const [notice] = mocks.info.mock.calls[0];
+      expect(notice.description).toMatch(
+        new RegExp(`^Format v${version} bundles will stop opening in ProtSpace 5\\.0\\.0\\.`),
+      );
+      expect(notice.description).toMatch(/export it again/);
+      expect(notice.description).toMatch(/protspace convert/);
+    },
+  );
 
   it('sends a v2 bundle holding proteins without coordinates to protspace convert only', async () => {
     // An export from the app holds the proteins it shows, so it would drop these three.
@@ -373,6 +380,60 @@ describe('dataset controller legacy bundle notice', () => {
   });
 });
 
+describe('dataset controller 3-D projection notice', () => {
+  const projection = (name: string, dimension: 2 | 3) => ({
+    name,
+    dimension,
+    data: new Float32Array(dimension),
+  });
+  const eventWith = (projections: ReturnType<typeof projection>[], bundleFormatVersion = 3) =>
+    dataLoadedEvent({
+      data: { ...TEST_DATA, projections },
+      settings: null,
+      source: 'user',
+      file,
+      bundleFormatVersion,
+    });
+
+  it('tells a user who imported 3-D projections that they are read until 5.0.0', async () => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventWith([projection('PCA 2', 2), projection('UMAP 3', 3)]));
+
+    expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(mocks.info).toHaveBeenCalledOnce();
+    const [notice] = mocks.info.mock.calls[0];
+    expect(notice.dedupeKey).toBe('three-d-projections');
+    expect(notice.description).toMatch(/^UMAP 3 is shown as their X\/Y view\./);
+    expect(notice.description).toMatch(/ends in ProtSpace 5\.0\.0/);
+    expect(notice.description).toMatch(/protspace convert --flatten-3d/);
+  });
+
+  it('shows both notices for a legacy bundle with 3-D projections', async () => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventWith([projection('UMAP 3', 3)], 2));
+
+    expect(mocks.info.mock.calls.map(([notice]) => notice.dedupeKey)).toEqual([
+      'legacy-bundle-format',
+      'three-d-projections',
+    ]);
+  });
+
+  it('stays quiet for a 2-D import', async () => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventWith([projection('PCA 2', 2)]));
+
+    expect(mocks.info).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet for a dataset the app serves itself, even a 3-D one', async () => {
+    const { controller } = buildController({ sequence: 3, kind: 'default' });
+    await controller.handleDataLoaded(eventWith([projection('UMAP 3', 3)]));
+
+    expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(mocks.info).not.toHaveBeenCalled();
+  });
+});
+
 describe('dataset controller load errors', () => {
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -408,8 +469,6 @@ describe('dataset controller loading overlay', () => {
     vi.restoreAllMocks();
   });
 
-  /** Drain the microtask queue so every already-resolved await has run. */
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
   const opfsRestore: LoadMeta = { sequence: 3, kind: 'opfs', epoch: 1 };
   const lastCall = (fn: { mock: { invocationCallOrder: number[] } }) =>
     fn.mock.invocationCallOrder[fn.mock.invocationCallOrder.length - 1];
@@ -516,6 +575,20 @@ describe('dataset controller loading overlay', () => {
     await controller.handleDataLoaded(loadedEvent);
 
     // The dataset is on screen all the same, but the overlay is the newer request's.
+    expect(overlayUpdate).not.toHaveBeenCalledWith(false);
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
+  });
+
+  it('is left to the newer request when the load is superseded during its post-load work', async () => {
+    // A menu choice made while the import's load status is written shows its own
+    // "Downloading…" on the overlay by the time this load settles.
+    mocks.markLastLoadStatus.mockImplementation(async () => {
+      mocks.isCurrentRequest.mockReturnValue(false);
+    });
+    const { controller, overlayUpdate } = buildController({ sequence: 3, kind: 'user', epoch: 1 });
+    await controller.handleDataLoaded(loadedEvent);
+
+    expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
     expect(overlayUpdate).not.toHaveBeenCalledWith(false);
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
   });

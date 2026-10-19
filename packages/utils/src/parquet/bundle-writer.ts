@@ -5,9 +5,9 @@
  * (`apps/protspace/src/protspace/data/io/bundle_v3.py`) and the browser reader
  * (`packages/core/src/components/data-loader/utils/bundle-v3.ts`):
  *
- * - Part 1: annotations. The identifier, then one INT32 code column per categorical
- *   annotation, one INT32 `<col>__count` column per multi-valued one and one DOUBLE column
- *   per numeric one. Its footer carries the format stamp and the manifest.
+ * - Part 1: annotations. The protein IDs, in `protein_id`, then one INT32 code column per
+ *   categorical annotation, one INT32 `<col>__count` column per multi-valued one and one
+ *   DOUBLE column per numeric one. Its footer carries the format stamp and the manifest.
  * - Part 2: projections metadata (projection_name, dimensions, info_json)
  * - Part 3: projections. One FLOAT column per axis (`<name>__x`, ...), one row per protein,
  *   NaN where the projection does not place the protein.
@@ -54,17 +54,12 @@ import { rankByFrequency, remapCsr } from '../visualization/csr.js';
 import { getProteinEvidence, getProteinScores } from '../visualization/plot-data-accessors.js';
 import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/eat-overlay.js';
 import { isNAValue } from '../visualization/missing-values.js';
-
-/**
- * The names Python's encoder takes the id column from, in its order of preference
- * (`protein_id`, else `identifier`). The writer uses the default unless an annotation
- * occupies it: a Python bundle of a table holding both has `protein_id` as its id column
- * and `identifier` as an ordinary annotation.
- */
-const ID_COLUMN = 'identifier';
-const FALLBACK_ID_COLUMN = 'protein_id';
+import { ARROW_BOOLEAN_LABELS, PROTEIN_ID_COLUMN } from '../generated/shared-constants';
 
 const ENCODER = new TextEncoder();
+
+/** The labels a `bool` column is stored under, shared with Python's decoder. */
+const BOOLEAN_LABELS: ReadonlySet<string> = new Set(ARROW_BOOLEAN_LABELS);
 
 /**
  * One manifest column. `sourceType` is Python-private and the browser ignores it: it is the
@@ -467,9 +462,7 @@ function fitsSourceType(
   if (sourceType === 'bool') {
     return (
       entry.kind === 'categorical' &&
-      labels.every(
-        (label) => label == null || isNAValue(label) || label === 'true' || label === 'false',
-      )
+      labels.every((label) => label == null || isNAValue(label) || BOOLEAN_LABELS.has(label))
     );
   }
   return true;
@@ -503,17 +496,19 @@ function echoSourceType(
 }
 
 /**
- * The id column's name: {@link ID_COLUMN}, or {@link FALLBACK_ID_COLUMN} when an annotation
- * is named, or stored in a part 1 column named, `identifier`. The reader refuses an id column
- * that shares either with an annotation.
+ * Refuse an annotation named, or stored in a part 1 column named, {@link PROTEIN_ID_COLUMN}:
+ * every bundle names its id column that, and the reader refuses an id column that shares its
+ * name with an annotation. No dataset the app loads holds one, since every reader hides a
+ * column of that name (`NON_ANNOTATION_COLUMNS`); an annotation called `identifier` is fine.
  */
-function pickIdColumn(parts: AnnotationParts): string {
+function assertIdColumnFree(parts: AnnotationParts): void {
   const taken = new Set([...Object.keys(parts.manifest), ...parts.columns.map(({ name }) => name)]);
-  for (const name of [ID_COLUMN, FALLBACK_ID_COLUMN]) if (!taken.has(name)) return name;
-  throw new Error(
-    `Annotations named "${ID_COLUMN}" and "${FALLBACK_ID_COLUMN}" leave no name for the ` +
-      'protein id column; rename one of them',
-  );
+  if (taken.has(PROTEIN_ID_COLUMN)) {
+    throw new Error(
+      `An annotation named "${PROTEIN_ID_COLUMN}" leaves no name for the protein id column; ` +
+        'rename it',
+    );
+  }
 }
 
 /** Parts 1 and 6: the annotations, with the manifest in part 1's footer, and the payloads. */
@@ -550,10 +545,10 @@ function createAnnotationParts(data: VisualizationData): [ArrayBuffer, ArrayBuff
     addDictionary(parts, V3_EVIDENCE_DICT_NAME, [...parts.evidence.keys()]);
   }
 
-  const idColumn = pickIdColumn(parts);
-  parts.columns.unshift({ name: idColumn, data: data.protein_ids, type: 'STRING' });
+  assertIdColumnFree(parts);
+  parts.columns.unshift({ name: PROTEIN_ID_COLUMN, data: data.protein_ids, type: 'STRING' });
   const manifest = {
-    idColumn,
+    idColumn: PROTEIN_ID_COLUMN,
     columns: parts.manifest,
     projections: data.projections.map(({ name, dimension }) => ({ name, dimension })),
   };

@@ -47,49 +47,18 @@ describe('filterAnnotationValues', () => {
   });
 });
 
-describe('getGeneName', () => {
-  it('resolves gene-name values', () => {
-    expect(getGeneName(['BRCA1'])).toBe('BRCA1');
-  });
-
-  it('returns null when gene annotation is all __NA__', () => {
-    expect(getGeneName([NA_VALUE])).toBeNull();
-  });
-
-  it('returns null for empty array', () => {
-    expect(getGeneName([])).toBeNull();
-  });
-});
-
-describe('getProteinName', () => {
-  it('resolves protein-name values', () => {
-    expect(getProteinName(['Tumor protein p53'])).toBe('Tumor protein p53');
-  });
-
-  it('returns null when all values are __NA__', () => {
-    expect(getProteinName([NA_VALUE])).toBeNull();
-  });
-
-  it('returns null for empty array', () => {
-    expect(getProteinName([])).toBeNull();
-  });
-});
-
-describe('getUniprotKbId', () => {
-  it('resolves uniprot-kb-id values', () => {
-    expect(getUniprotKbId(['P04637'])).toBe('P04637');
-  });
-
-  it('returns null when all values are __NA__', () => {
-    expect(getUniprotKbId([NA_VALUE])).toBeNull();
-  });
-
-  it('returns null for empty array', () => {
-    expect(getUniprotKbId([])).toBeNull();
-  });
-
-  it('joins multiple IDs', () => {
-    expect(getUniprotKbId(['P04637', 'Q9NZC2'])).toBe('P04637, Q9NZC2');
+// The three header resolvers are filterAnnotationValues under a field name; pin
+// the delegation once each, with the cases that matter to a header line.
+describe.each([
+  ['getGeneName', getGeneName],
+  ['getProteinName', getProteinName],
+  ['getUniprotKbId', getUniprotKbId],
+])('%s', (_name, resolve) => {
+  it('resolves values the way filterAnnotationValues does', () => {
+    expect(resolve(['P04637'])).toBe('P04637');
+    expect(resolve(['P04637', 'Q9NZC2'])).toBe('P04637, Q9NZC2');
+    expect(resolve([NA_VALUE])).toBeNull();
+    expect(resolve([])).toBeNull();
   });
 });
 

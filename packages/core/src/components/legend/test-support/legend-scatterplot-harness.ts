@@ -1,5 +1,7 @@
+import { vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 import '../legend';
+import { createLocalStorageMock } from './local-storage-mock';
 import type { ProtspaceLegend } from '../legend';
 
 /**
@@ -80,4 +82,22 @@ export async function mountLegendWithScatterplot(
 /** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
 export async function settleLegend(legend: ProtspaceLegend): Promise<void> {
   for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
+}
+
+/** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
+export async function settle(legend: ProtspaceLegend): Promise<void> {
+  for (let i = 0; i < 10; i++) if (await legend.updateComplete) return;
+  throw new Error('legend did not settle within 10 update cycles');
+}
+
+/**
+ * Replace `localStorage` with an in-memory store for the calling spec file.
+ *
+ * The persistence controller keys `localStorage` by a hash of the dataset, so mounted legends
+ * whose fixtures hash the same leak saved settings into each other; specs clear the store in a
+ * `beforeEach`. Node does not hand jsdom a usable `localStorage` without `--localstorage-file`,
+ * so without this stub persistence silently no-ops locally but runs in CI, and `clear()` throws.
+ */
+export function stubLocalStorage(): void {
+  vi.stubGlobal('localStorage', createLocalStorageMock());
 }

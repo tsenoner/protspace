@@ -45,17 +45,6 @@ SETTINGS = {
 }
 
 
-@pytest.fixture(autouse=True)
-def _restore_root_logging():
-    """``setup_logging`` in the CLI swaps the root handlers for one bound to the
-    runner's stderr, which is closed once ``invoke`` returns."""
-    root = logging.getLogger()
-    handlers, level = root.handlers[:], root.level
-    yield
-    root.handlers[:] = handlers
-    root.setLevel(level)
-
-
 def _serialized(table: pa.Table) -> bytes:
     buf = io.BytesIO()
     pq.write_table(table, buf)
@@ -128,8 +117,13 @@ def _v3_bundle(path: Path) -> None:
     write_bundle([annotations, metadata, data], path, settings=SETTINGS)
 
 
+# Wide enough that Rich does not wrap a message inside a long temporary path,
+# which `plain` would rejoin with a space; turbo runs tests without COLUMNS.
+_WIDE = {"COLUMNS": "1000"}
+
+
 def _convert(*args: str):
-    return CliRunner().invoke(app, ["convert", *args])
+    return CliRunner().invoke(app, ["convert", *args], env=_WIDE)
 
 
 def _parts(path: Path) -> list[bytes]:
@@ -287,7 +281,7 @@ def test_failed_in_place_conversion_leaves_the_input(tmp_path):
     result = _convert(str(src), "--in-place")
 
     assert result.exit_code != 0
-    assert "disagree on the projection" in result.output
+    assert "disagree on the projection" in plain(result.output)
     assert src.read_bytes() == before
     assert [p.name for p in tmp_path.iterdir()] == ["old.parquetbundle"]
 
@@ -298,7 +292,7 @@ def test_failed_in_place_conversion_leaves_the_input(tmp_path):
 
 
 def _style(*args: str):
-    return CliRunner().invoke(app, ["style", *args])
+    return CliRunner().invoke(app, ["style", *args], env=_WIDE)
 
 
 STYLES = '{"cat": {"colors": {"a": "#ff0000"}}}'
@@ -358,7 +352,7 @@ def test_a_v1_id_column_is_not_migrated_as_a_label(tmp_path, id_column, command)
         ["50% identity"],
         ["x"],
     ]
-    assert projections.column("identifier").to_pylist() == ids
+    assert projections.column("protein_id").to_pylist() == ids
 
 
 @pytest.mark.parametrize("command", ["convert", "style"])
@@ -421,8 +415,9 @@ def test_style_reports_a_legacy_input_v3_cannot_hold_as_a_usage_error(tmp_path):
 
     assert result.exit_code == 2, result.output
     assert "cannot style" in result.output
-    assert "disagree on the projection" in result.output
+    assert "disagree on the projection" in plain(result.output)
     assert isinstance(result.exception, SystemExit)
+    assert "Traceback" not in result.output
     assert not out.exists()
 
 

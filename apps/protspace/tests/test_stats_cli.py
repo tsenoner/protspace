@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 import h5py
@@ -44,7 +45,7 @@ def _project_dir(tmp_path, n=150, dim=6, centers=4, seed=0):
         pa.table(
             {
                 "projection_name": ["E — PCA 2"] * n,
-                "identifier": headers,
+                "protein_id": headers,
                 "x": coords[:, 0],
                 "y": coords[:, 1],
                 "z": [None] * n,
@@ -86,7 +87,8 @@ def test_discrete_path_produces_full_matrix(tmp_path):
         "cluster_validity",
         "annotation_validity",
     }
-    # The only thing scored here is the auto-clustering itself.
+    # The only things scored here are the auto-clusterings themselves: the
+    # projection's and, under the default cluster space, the embedding's.
     scored = {
         annotation
         for annotation, family in zip(
@@ -96,7 +98,7 @@ def test_discrete_path_produces_full_matrix(tmp_path):
         )
         if family == "annotation_validity"
     }
-    assert scored == {"cluster_elbow_E — PCA 2"}
+    assert scored == {"cluster_elbow_E — PCA 2", "cluster_elbow_E"}
     assert table.num_rows == len(report.partition()["statistics_part"])
 
 
@@ -203,8 +205,8 @@ def test_stats_command_writes_faithfulness_into_metadata(tmp_path):
 
 
 def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
-    """`protspace stats -a annotations.parquet` merges per-protein cluster
-    membership + silhouette columns into the annotations file in place
+    """`protspace stats -a annotations.parquet` merges the per-protein
+    cluster_* membership columns into the annotations file in place
     (route-projection-statistics Phase 2A), so the prep `bundle -a` carries them."""
     from typer.testing import CliRunner
 
@@ -213,7 +215,7 @@ def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
     h5_path, proj, headers = _project_dir(tmp_path)
     ann_path = tmp_path / "annotations.parquet"
     pq.write_table(
-        pa.table({"identifier": headers, "organism": ["x"] * len(headers)}),
+        pa.table({"protein_id": headers, "organism": ["x"] * len(headers)}),
         str(ann_path),
     )
 
@@ -239,7 +241,7 @@ def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
     assert cluster_cols
     assert not [c for c in df.columns if c.startswith("silhouette_")]  # no 2nd column
     assert "organism" in df.columns  # pre-existing annotation preserved
-    assert "identifier" in df.columns
+    assert "protein_id" in df.columns
     # membership value = a bare "cluster N" category, like any curated annotation
     value = str(df[cluster_cols[0]].iloc[0])
     assert value.startswith("cluster ") and "|" not in value
@@ -247,7 +249,7 @@ def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
 
 def test_stats_a_then_bundle_carries_computed_columns_into_bundle(tmp_path):
     """End-to-end prep path: `stats -a` then `bundle -a` ships a bundle whose
-    protein_annotations part carries the computed cluster_/silhouette_ columns."""
+    protein_annotations part carries the computed cluster_* membership columns."""
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
@@ -257,7 +259,7 @@ def test_stats_a_then_bundle_carries_computed_columns_into_bundle(tmp_path):
     runner = CliRunner()
     ann_path = tmp_path / "annotations.parquet"
     pq.write_table(
-        pa.table({"identifier": headers, "organism": ["x"] * len(headers)}),
+        pa.table({"protein_id": headers, "organism": ["x"] * len(headers)}),
         str(ann_path),
     )
 
@@ -319,7 +321,7 @@ def test_stats_settings_out_then_bundle_settings_styles_clusters(tmp_path):
     h5_path, proj, headers = _project_dir(tmp_path)
     runner = CliRunner()
     ann_path = tmp_path / "annotations.parquet"
-    pq.write_table(pa.table({"identifier": headers}), str(ann_path))
+    pq.write_table(pa.table({"protein_id": headers}), str(ann_path))
 
     stats_out = tmp_path / "statistics.parquet"
     styles_out = tmp_path / "cluster_styles.json"
@@ -392,7 +394,7 @@ def test_stats_then_bundle_carries_faithfulness_into_bundle(tmp_path):
     assert r1.exit_code == 0, r1.output
 
     ann_path = tmp_path / "annotations.parquet"
-    pq.write_table(pa.table({"identifier": headers}), str(ann_path))
+    pq.write_table(pa.table({"protein_id": headers}), str(ann_path))
 
     bundle_out = tmp_path / "data.parquetbundle"
     r2 = runner.invoke(
@@ -483,7 +485,7 @@ def test_prepare_stats_annotation_validity_in_bundle(tmp_path):
 
     ann_path = tmp_path / "grp.csv"
     groups = ["a" if i % 2 == 0 else "b" for i in range(len(headers))]
-    pd.DataFrame({"identifier": headers, "grp": groups}).to_csv(ann_path, index=False)
+    pd.DataFrame({"protein_id": headers, "grp": groups}).to_csv(ann_path, index=False)
 
     output_dir = tmp_path / "out"
     result = CliRunner().invoke(
@@ -514,8 +516,13 @@ def test_prepare_stats_annotation_validity_in_bundle(tmp_path):
     assert (st.stat_family == "annotation_validity").any()
     assert "annotation" in st.columns
     av = st[st.stat_family == "annotation_validity"]
-    # The curated annotation, plus the auto-clustering scored on its own labels.
-    assert set(av["annotation"]) == {"grp", "cluster_elbow_E — PCA 2"}
+    # The curated annotation, plus the projection's and the embedding's
+    # auto-clusterings scored on their own labels.
+    assert set(av["annotation"]) == {
+        "grp",
+        "cluster_elbow_E — PCA 2",
+        "cluster_elbow_E",
+    }
 
 
 def test_stats_rejects_bad_cluster_selection(tmp_path):
@@ -555,7 +562,7 @@ def test_stats_command_computes_annotation_validity(tmp_path):
     ann_path = tmp_path / "annotations.parquet"
     # A separable categorical annotation over the same ids.
     groups = ["a" if i % 2 else "b" for i in range(len(ids))]
-    pq.write_table(pa.table({"identifier": ids, "major_group": groups}), str(ann_path))
+    pq.write_table(pa.table({"protein_id": ids, "major_group": groups}), str(ann_path))
     out = tmp_path / "statistics.parquet"
     result = CliRunner().invoke(
         app,
@@ -597,7 +604,7 @@ def test_stats_command_scores_explicit_annotation_list(tmp_path):
     pq.write_table(
         pa.table(
             {
-                "identifier": ids,
+                "protein_id": ids,
                 "major_group": ["a" if i % 2 else "b" for i in range(n)],
                 "clade": ["x" if i % 3 else "y" for i in range(n)],
                 "unnamed_grp": ["p" if i % 2 else "q" for i in range(n)],  # suitable
@@ -703,7 +710,7 @@ def test_stats_annotations_rewrite_preserves_untouched_dtypes(tmp_path):
     pq.write_table(
         pa.table(
             {
-                "identifier": headers,
+                "protein_id": headers,
                 "taxon_id": pa.array(taxon, type=pa.int64()),
                 "grp": ["a" if i % 2 == 0 else "b" for i in range(len(headers))],
             }
@@ -757,3 +764,161 @@ def test_prepare_rejects_stats_annotation_without_stats(tmp_path):
     # is enabled, as it is on CI — strip escape sequences before the substring match.
     plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     assert "--stats-annotation requires --stats" in plain
+
+
+def _run_stats_with_annotations(tmp_path, *extra):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, headers = _project_dir(tmp_path)
+    ann_path = tmp_path / "annotations.parquet"
+    pq.write_table(
+        pa.table({"protein_id": headers, "organism": ["x"] * len(headers)}),
+        str(ann_path),
+    )
+    settings_path = tmp_path / "styles.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-a",
+            str(ann_path),
+            "--settings-out",
+            str(settings_path),
+            "-o",
+            str(tmp_path / "statistics.parquet"),
+            *extra,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    df = pq.read_table(str(ann_path)).to_pandas()
+    cluster_cols = {c for c in df.columns if c.startswith("cluster_")}
+    return df, cluster_cols, json.loads(settings_path.read_text())
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ((), {"cluster_elbow_E — PCA 2", "cluster_elbow_E"}),
+        (("--cluster-space", "projection"), {"cluster_elbow_E — PCA 2"}),
+        (("--cluster-space", "embedding"), {"cluster_elbow_E"}),
+    ],
+)
+def test_stats_cluster_space_picks_columns_and_styles_them(tmp_path, extra, expected):
+    """`--cluster-space` decides which cluster columns land in the annotations
+    parquet, and `--settings-out` styles exactly those."""
+    df, cluster_cols, settings = _run_stats_with_annotations(tmp_path, *extra)
+    assert cluster_cols == expected
+    assert set(settings) == expected
+    for col in expected:
+        assert df[col].str.startswith("cluster ").all()
+
+
+def test_stats_rejects_bad_cluster_space(tmp_path):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, _ = _project_dir(tmp_path)
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-o",
+            str(tmp_path / "statistics.parquet"),
+            "--cluster-space",
+            "bogus",
+        ],
+    )
+    assert result.exit_code != 0
+
+
+def test_prepare_rejects_cluster_space_without_stats(tmp_path):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "prepare",
+            "-i",
+            str(tmp_path / "missing.h5"),  # never loaded; guard fires first
+            "-m",
+            "pca2",
+            "--cluster-space",
+            "embedding",  # non-default, but no --stats
+        ],
+    )
+    assert result.exit_code != 0
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "--cluster-space requires --stats" in plain
+
+
+def test_cluster_space_default_is_the_same_everywhere():
+    """The default lives in four places: both CLI options, PipelineConfig and the
+    statistic's fallback for a params dict that names none."""
+    import inspect
+    from dataclasses import fields
+
+    from protspace.cli.prepare import prepare
+    from protspace.cli.stats import stats
+    from protspace.data.processors.pipeline import PipelineConfig
+    from protspace.stats.metrics.validity import DEFAULT_CLUSTER_SPACE
+
+    defaults = {
+        "prepare": inspect.signature(prepare).parameters["cluster_space"].default,
+        "stats": inspect.signature(stats).parameters["cluster_space"].default,
+        "PipelineConfig": next(
+            f.default for f in fields(PipelineConfig) if f.name == "cluster_space"
+        ),
+    }
+    assert defaults == dict.fromkeys(defaults, DEFAULT_CLUSTER_SPACE)
+
+
+def test_prepare_cluster_space_reaches_the_bundle(tmp_path):
+    """`prepare --stats --cluster-space embedding` threads through PipelineConfig:
+    the bundle carries the embedding's cluster column and no projection one."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_tables
+
+    X, _ = make_blobs(n_samples=120, centers=3, n_features=5, random_state=1)
+    headers = [f"p{i}" for i in range(120)]
+    h5_path = tmp_path / "emb.h5"
+    with h5py.File(h5_path, "w") as f:
+        for i, h in enumerate(headers):
+            f.create_dataset(h, data=X[i].astype(np.float32))
+
+    output_dir = tmp_path / "out"
+    result = CliRunner().invoke(
+        app,
+        [
+            "prepare",
+            "-i",
+            f"{h5_path}:E",
+            "-m",
+            "pca2",
+            "--stats",
+            "--cluster-space",
+            "embedding",
+            "--no-log",
+            "-o",
+            str(output_dir),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    annotations = read_tables(output_dir / "data.parquetbundle")[0]
+    assert {c for c in annotations.column_names if c.startswith("cluster_")} == {
+        "cluster_elbow_E"
+    }

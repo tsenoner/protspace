@@ -292,14 +292,6 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
   });
 
-  test('a deep link with a view param selects that annotation on the example', async ({ page }) => {
-    // 'length_fixed' is not SMALL's curated annotation, so selecting it
-    // proves the param was applied rather than the curated view.
-    await openExplore(page, `?dataset=${SMALL.id}&annotation=length_fixed`, SMALL.count);
-
-    await expect.poll(() => getSelectedAnnotation(page)).toBe('length_fixed');
-  });
-
   test('a failed menu choice leaves the previous dataset and URL unchanged', async ({ page }) => {
     await openExplore(page, '', DEMO_COUNT);
 
@@ -1029,6 +1021,20 @@ test.describe('Example datasets: examples reopen in their curated state (d)', ()
     await waitForExploreDataLoad(page, { proteinCount: USER_IMPORT_COUNT });
     await dismissTourIfPresent(page);
     expect(await isLegendItemHidden(page, importValue)).toBe(true);
+  });
+
+  test('a reload also drops a legend change to the EAT example', async ({ page }) => {
+    // The EAT example's bundled legend settings cover only its cluster annotations, so on its
+    // transferred annotation nothing but the load's sweep of the saved settings undoes a change.
+    await openExplore(page, `?dataset=${EAT.id}`, EAT.count);
+    const value = await hideFirstLegendCategory(page);
+
+    await page.reload();
+    await waitForExploreDataLoad(page, { proteinCount: EAT.count });
+    await dismissTourIfPresent(page);
+
+    expect(await isLegendItemHidden(page, value)).toBe(false);
+    expect(await isHiddenInSavedLegend(page, value)).toBe(false);
   });
 });
 

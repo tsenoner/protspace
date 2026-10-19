@@ -23,15 +23,38 @@ interface Inset {
   pointSizeScale?: number;
 }
 
+/**
+ * Wait until the preview shows the modal's current state. The state change has
+ * already queued a redraw (`_redrawHandle`). A redraw that lands within 80 ms of
+ * the previous fresh inset render stretches that stale render and arms
+ * the inset cache's settle timer for a fresh one, so wait for both to clear.
+ */
+async function waitForPreviewRedraw(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const m = document.querySelector('protspace-publish-modal') as unknown as
+        | (HTMLElement & {
+            _redrawHandle: number | null;
+            _insetRenders: { settleTimer: unknown };
+          })
+        | null;
+      return !!m && m._redrawHandle === null && m._insetRenders.settleTimer === null;
+    },
+    undefined,
+    { timeout: 5_000, polling: 100 },
+  );
+}
+
 /** Inject an inset via state mutation — far more reliable than mouse drags
  *  through the shadow-DOM overlay canvas. */
 async function setInsets(page: Page, insets: Inset[]): Promise<void> {
-  await page.evaluate((nextInsets) => {
+  await page.evaluate(async (nextInsets) => {
     const m = document.querySelector('protspace-publish-modal') as unknown as
       | (HTMLElement & {
           _state: unknown;
           _plotCacheKey: string;
           requestUpdate: () => void;
+          updateComplete: Promise<boolean>;
         })
       | null;
     if (!m) throw new Error('publish modal not mounted');
@@ -39,9 +62,10 @@ async function setInsets(page: Page, insets: Inset[]): Promise<void> {
     m._state = { ...state, insets: nextInsets };
     m._plotCacheKey = ''; // force fresh plot capture
     m.requestUpdate();
+    // updated() queues the redraw, so the wait below cannot pass before it.
+    await m.updateComplete;
   }, insets);
-  // Wait for at least one rAF tick + settle timer (modal redraws on rAF).
-  await page.waitForTimeout(300);
+  await waitForPreviewRedraw(page);
 }
 
 interface PixelStats {
@@ -267,8 +291,9 @@ test.describe('figure editor — geometric inset zoom', () => {
       m._plotCacheKey = '';
       m.requestUpdate();
     });
-    await page.waitForTimeout(300);
 
+    // Export reads `_state` and renders at full resolution itself, so it needs
+    // no preview redraw first.
     const downloadPromise = page.waitForEvent('download', { timeout: 15_000 });
 
     // Export is the footer's primary ps-button inside the editor's dialog.

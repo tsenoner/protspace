@@ -11,6 +11,7 @@ import {
   isCsrAnnotationData,
   isSparseMultiValueAnnotationData,
 } from './annotation-data-access.js';
+import { EAT_NEIGHBOR_SUFFIX } from '../generated/shared-constants';
 import { gatherCsr, syntheticHit } from './csr.js';
 import { isNAValue } from './missing-values.js';
 import { clamp01 } from './numeric-binning.js';
@@ -24,6 +25,16 @@ export const EAT_COMPANION_SUFFIXES = {
 export type EatCompanionKind = keyof typeof EAT_COMPANION_SUFFIXES;
 
 export const EAT_CONFIDENCE_SUFFIX = '__eat_confidence';
+
+/**
+ * The annotation a `<col>__neighbor` column (`protspace transfer --max-distance`: `near` or
+ * `distant` per query) describes, or null for any other column.
+ */
+export function getEatNeighborBaseKey(key: string): string | null {
+  return key.length > EAT_NEIGHBOR_SUFFIX.length && key.endsWith(EAT_NEIGHBOR_SUFFIX)
+    ? key.slice(0, -EAT_NEIGHBOR_SUFFIX.length)
+    : null;
+}
 
 /**
  * Which side(s) of the reliability scale the EAT filter constrains (#380).

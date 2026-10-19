@@ -1,6 +1,6 @@
 """Tests for CATH names file parsing."""
 
-from src.protspace.data.annotations.retrievers.cath_names import _parse_cath_names
+from protspace.data.annotations.retrievers.cath_names import _parse_cath_names
 
 
 class TestParseCathNames:

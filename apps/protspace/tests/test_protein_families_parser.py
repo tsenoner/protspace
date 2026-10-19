@@ -16,6 +16,7 @@ tests pin the text shapes the parser really meets:
 """
 
 import pandas as pd
+import pytest
 
 from protspace.data.annotations.encoding import decode_field, encode_field
 from protspace.data.annotations.scores import strip_scores_from_df
@@ -242,20 +243,21 @@ class TestMultiSection:
 class TestDownstreamKeepsEveryFamily:
     MULTI = "CarA family|IC;metallo-dependent hydrolases superfamily|ISS"
 
-    def test_transformer_passes_a_multi_family_value_through(self):
-        assert UniProtTransformer.transform_protein_families(self.MULTI) == self.MULTI
-
-    def test_transformer_is_idempotent_on_its_own_output(self):
-        once = UniProtTransformer.transform_protein_families(self.MULTI)
-        assert UniProtTransformer.transform_protein_families(once) == self.MULTI
-
-    def test_transformer_keeps_commas_inside_a_name(self):
-        value = "inositol 1,4,5-trisphosphate 5-phosphatase family|IC"
+    @pytest.mark.parametrize(
+        "value",
+        [
+            MULTI,
+            # The old transform cut at the first "," or ";": a comma is part of
+            # the name, and nothing else guards that.
+            "inositol 1,4,5-trisphosphate 5-phosphatase family|IC",
+            _families(*P27708),
+            "",
+            None,
+        ],
+        ids=["multi_family", "comma_in_name", "parsed_p27708", "blank", "none"],
+    )
+    def test_transformer_passes_the_value_through_unchanged(self, value):
         assert UniProtTransformer.transform_protein_families(value) == value
-
-    def test_transformer_leaves_blank_cells_alone(self):
-        assert UniProtTransformer.transform_protein_families("") == ""
-        assert UniProtTransformer.transform_protein_families(None) is None
 
     def test_annotation_transformer_keeps_every_family(self):
         proteins = [
@@ -272,7 +274,3 @@ class TestDownstreamKeepsEveryFamily:
         assert result["protein_families"].iloc[0] == (
             "CarA family;metallo-dependent hydrolases superfamily"
         )
-
-    def test_parsed_entry_survives_the_transformer_unchanged(self):
-        parsed = _families(*P27708)
-        assert UniProtTransformer.transform_protein_families(parsed) == parsed

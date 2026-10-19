@@ -20,6 +20,7 @@ import {
   getRendererDegradedNotification,
   getSelectionCopiedNotification,
   getSelectionCopyFailedNotification,
+  getThreeDProjectionNotification,
   getSelectionDisabledNotification,
 } from './notifications';
 import { TEST_EXAMPLE } from './example-catalog.fixtures';
@@ -351,5 +352,27 @@ describe('undo and confirmation copy', () => {
       confirmLabel: 'Load default',
       danger: true,
     });
+  });
+});
+
+describe('getThreeDProjectionNotification', () => {
+  it('names the 3-D projections, the X/Y view, PCA, 5.0.0, recomputing and --flatten-3d', () => {
+    const n = getThreeDProjectionNotification(['UMAP 3']);
+
+    expect(n.title).toBe('This file has 3-D projections.');
+    expect(n.description).toMatch(/^UMAP 3 is shown as their X\/Y view\./);
+    expect(n.description).toContain('For PCA the X/Y view is the same as pca2;');
+    expect(n.description).toContain('the 3-D layout seen from one side');
+    expect(n.description).toContain('Reading 3-D projections ends in ProtSpace 5.0.0.');
+    expect(n.description).toContain('Recompute them with the 2-D method (e.g. umap2)');
+    expect(n.description).toContain('"protspace convert --flatten-3d"');
+    expect(n.description).not.toContain('To keep this view');
+    expect(n.dedupeKey).toBe('three-d-projections');
+  });
+
+  it('lists up to three names and counts the rest', () => {
+    const n = getThreeDProjectionNotification(['A 3', 'B 3', 'C 3', 'D 3', 'E 3']);
+
+    expect(n.description).toMatch(/^A 3, B 3, C 3 and 2 more are shown as their X\/Y view\./);
   });
 });

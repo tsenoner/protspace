@@ -71,7 +71,6 @@ const EXPORT_MARGIN_REFERENCE_WIDTH = 800;
 const EXPORT_MARGIN_REFERENCE_HEIGHT = 600;
 
 const MAX_DIMENSION = 8192;
-const MAX_AREA = 268435456; // ~268M pixels
 
 /**
  * The plot margins at an export size: `config.margin` (20 px when unset) scaled from the fixed
@@ -238,11 +237,6 @@ export class ExportRenderer {
     if (physicalWidth > effectiveMaxDimension || physicalHeight > effectiveMaxDimension) {
       throw new Error(
         `Export dimensions ${physicalWidth}×${physicalHeight} exceed this device's limit of ${effectiveMaxDimension}px`,
-      );
-    }
-    if (physicalWidth * physicalHeight > MAX_AREA) {
-      throw new Error(
-        `Export area ${formatCount(physicalWidth * physicalHeight)} exceeds limit of ${formatCount(MAX_AREA)} pixels`,
       );
     }
 

@@ -29,10 +29,11 @@ def bundle(
             "-a",
             "--annotations",
             help=(
-                "Annotations parquet file. Output of `protspace annotate` and "
-                "the prepare cache (tmp/all_annotations.parquet) is used as is; "
-                "any other table without a protspace_format_version stamp is "
-                "read as plain text (legacy v1 cells) and encoded."
+                "Annotations parquet file, or a custom .csv/.tsv/.txt file. Output "
+                "of `protspace annotate` and the prepare cache "
+                "(tmp/all_annotations.parquet) is used as is; any other table "
+                "without a protspace_format_version stamp is read as plain text "
+                "(legacy v1 cells) and encoded."
             ),
             exists=True,
         ),
@@ -77,6 +78,7 @@ def bundle(
 
     import json
 
+    import pyarrow.compute as pc
     import pyarrow.parquet as pq
 
     from protspace.data.annotations.encoding import (
@@ -86,28 +88,48 @@ def bundle(
         read_format_version,
         upgrade_cell_grammar,
     )
-    from protspace.data.io.bundle import write_bundle
+    from protspace.data.io.bundle import (
+        PROJECTIONS_DATA_FILENAME,
+        PROJECTIONS_METADATA_FILENAME,
+        write_bundle,
+    )
+    from protspace.data.io.ids import PROTEIN_ID_COLUMN, with_protein_id
+    from protspace.data.processors.custom_annotations import (
+        is_custom_annotation_file,
+        read_annotation_table,
+    )
 
     settings_obj = json.loads(settings.read_text()) if settings is not None else None
 
-    metadata_path = projections / "projections_metadata.parquet"
-    data_path = projections / "projections_data.parquet"
+    metadata_path = projections / PROJECTIONS_METADATA_FILENAME
+    data_path = projections / PROJECTIONS_DATA_FILENAME
 
     if not metadata_path.exists():
         raise typer.BadParameter(f"Missing: {metadata_path}")
     if not data_path.exists():
         raise typer.BadParameter(f"Missing: {data_path}")
 
-    annotations_table = pq.read_table(str(annotations))
     metadata_table = pq.read_table(str(metadata_path))
-    data_table = pq.read_table(str(data_path))
+    data_table = with_protein_id(pq.read_table(str(data_path)), source=str(data_path))
+    custom = is_custom_annotation_file(annotations)
+    try:
+        # Keyed on protein_id, its metadata (the grammar stamp) kept.
+        annotations_table = read_annotation_table(
+            annotations,
+            pc.unique(data_table.column(PROTEIN_ID_COLUMN)).to_pylist(),
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="'-a/--annotations'") from exc
 
-    # Trust boundary: the grammar is decided here, from the input's own stamp, and
-    # before the rename below drops it. `annotate` and the pipeline's annotation
+    # Trust boundary: the grammar is decided here, from the input's own stamp.
+    # `annotate` and the pipeline's annotation
     # cache stamp v2, and a cache written before it carried the stamp is still
     # recognised as the pipeline's own v2 output; any other unstamped table is
-    # user input in plain text, i.e. legacy v1, and is migrated explicitly.
-    if has_format_version(annotations_table):
+    # user input in plain text, i.e. legacy v1, and is migrated explicitly. The
+    # custom-file loader encodes its plain text itself, so its cells are v2.
+    if custom:
+        grammar = BUNDLE_FORMAT_VERSION
+    elif has_format_version(annotations_table):
         grammar = read_format_version(annotations_table)
     elif is_annotation_cache(annotations_table):
         grammar = BUNDLE_FORMAT_VERSION
@@ -122,13 +144,6 @@ def bundle(
             "%s has no protspace_format_version stamp; reading its cells as plain "
             "(v1) text",
             annotations,
-        )
-
-    # Rename identifier column to protein_id if needed (bundle format).
-    col_names = annotations_table.column_names
-    if "identifier" in col_names and "protein_id" not in col_names:
-        annotations_table = annotations_table.rename_columns(
-            [("protein_id" if c == "identifier" else c) for c in col_names]
         )
 
     try:

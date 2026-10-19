@@ -1,6 +1,10 @@
 import { LitElement, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
-import { DEFAULT_NUMERIC_STRATEGY, type NumericBinningStrategy } from '@protspace/utils';
+import {
+  DEFAULT_CATEGORICAL_PALETTE_ID,
+  DEFAULT_NUMERIC_STRATEGY,
+  type NumericBinningStrategy,
+} from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/button';
 import type { PsButton } from '../kit/button';
@@ -39,7 +43,7 @@ const DEFAULT_SETTINGS: LegendDisplaySettings = {
   maxVisibleValues: LEGEND_DEFAULTS.maxVisibleValues,
   shapeSize: null,
   enableDuplicateStackUI: LEGEND_DEFAULTS.enableDuplicateStackUI,
-  paletteId: 'kellys',
+  paletteId: DEFAULT_CATEGORICAL_PALETTE_ID,
   numericStrategy: DEFAULT_NUMERIC_STRATEGY,
   reverseGradient: false,
 };

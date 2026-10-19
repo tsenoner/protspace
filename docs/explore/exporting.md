@@ -1,6 +1,6 @@
 # Exporting Results
 
-ProtSpace allows you to export publication-ready figures, raw data, and protein IDs.
+ProtSpace allows you to export publication-ready figures, raw data, protein IDs and tables.
 
 ## Export Button
 
@@ -85,14 +85,45 @@ so it cannot appear inside one.
 
 ## Protein IDs Export
 
-Exports a plain text file with one protein ID per line. Useful for downstream analysis.
+Exports a plain text file, `protein_ids.txt`, with one protein ID per line: the proteins visible
+in the plot (see [What Gets Exported](#what-gets-exported)). Useful for downstream analysis, or to
+paste back into the search box later.
+
+## Table Export
+
+Exports the same proteins as a tab-separated `.tsv` table that opens in a spreadsheet, R or pandas,
+one row per protein:
+
+- `protein_id`
+- the coordinates of the projection on screen, as `<projection>_x` and `<projection>_y` (for a
+  [deprecated 3D projection](/explore/controls#projection), the X/Y view you see,
+  which matches the 2D projection only for PCA; no `z`)
+- one column per annotation, `cluster_*` columns included. A cell holds the labels you see in the
+  legend, joined with `;` when a protein has several; a numeric annotation holds its value, not its
+  bin. Missing values are empty.
+- for an annotation with [transferred values](/explore/eat), the curated column holds only the
+  curated values, followed by `<annotation>__pred_value`, `__pred_confidence` and `__pred_source`
+  with the transfers.
+
+[`protspace export`](/guide/python-cli#protspace-export) writes the same columns from the command
+line, for every protein of a bundle instead of the visible ones. Read them by name, not position:
+the command line keeps the bundle's column order, so its `__pred_*` columns need not follow their
+annotation.
+
+To list the members of one cluster, colour by its `cluster_*` annotation, double-click the cluster
+in the legend to show it alone, and export.
 
 ## What Gets Exported
 
-| State                                                       | Exported Data                    |
-| ----------------------------------------------------------- | -------------------------------- |
-| A [filter](/explore/filter) applied, or **Show only these** | Only the proteins the plot shows |
-| Neither                                                     | All proteins                     |
+The **Protein IDs** export holds exactly the proteins visible in the plot. A protein is left out
+when:
+
+- the [filter](/explore/filter) excludes it, the EAT reliability filter included;
+- **Show only these** is on and it is not among the proteins shown;
+- every value it has in the annotation you colour by is hidden in the legend.
+
+The **data bundle** holds the proteins left by the filter and **Show only these**, whatever the
+legend hides. Images show what is drawn.
 
 To export a subset, filter the plot, or select its proteins and press **Show only these** in the
 selection bar. To export everything, clear both with the ✕ on their chips in the plot's

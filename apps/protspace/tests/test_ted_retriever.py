@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.protspace.data.annotations.retrievers.ted_retriever import (
+from protspace.data.annotations.retrievers.ted_retriever import (
     MAX_CONCURRENT_REQUESTS,
     TED_ANNOTATIONS,
     TedRetriever,
@@ -31,12 +31,8 @@ def _make_domain(cath_label="2.60.40.720", plddt=95.1, start=109, end=287):
 
 
 # TED fetches through the shared retry helper, so that is the seam to patch.
-_REQUESTS_PATCH = (
-    "src.protspace.data.annotations.retrievers.ted_retriever.get_with_retry"
-)
-_CATH_NAMES_PATCH = (
-    "src.protspace.data.annotations.retrievers.ted_retriever.get_cath_names"
-)
+_REQUESTS_PATCH = "protspace.data.annotations.retrievers.ted_retriever.get_with_retry"
+_CATH_NAMES_PATCH = "protspace.data.annotations.retrievers.ted_retriever.get_cath_names"
 
 
 class TestTedRetriever:

@@ -30,6 +30,7 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
     UniProtRetriever,
 )
 from protspace.data.processors.pipeline import PipelineConfig, ReductionPipeline
+from tests.prep_source import biocentral_down_patterns
 
 CACHE_NAME = "all_annotations.parquet"
 CACHED_PFAM = "PF00049 (Insulin)|1.0"
@@ -59,7 +60,7 @@ def _uniprot_row(gene_name: str, sequence: str = "MALWMRLLPL") -> dict:
 
 def _write_cache(cache_dir, rows: dict[str, dict], version=None, release=None):
     cached = pd.DataFrame(
-        [{"identifier": identifier, **values} for identifier, values in rows.items()]
+        [{"protein_id": identifier, **values} for identifier, values in rows.items()]
     )
     cached.attrs = (
         annotation_cache_version_attrs()
@@ -185,7 +186,7 @@ class TestAFailedSourceKeepsItsCachedValues:
 
         _pipeline(tmp_path, annotations)._fetch_annotations(["P01308", "P01315"])
 
-        cache = _read_cache(tmp_path).set_index("identifier")
+        cache = _read_cache(tmp_path).set_index("protein_id")
         assert cache.index.tolist() == ["P01308"]
         assert cache.loc["P01308", "pfam"] == CACHED_PFAM
         assert cache.loc["P01308", "ted_domains"] == "-|90.0"
@@ -201,7 +202,7 @@ class TestAFailedSourceKeepsItsCachedValues:
             ("interpro", ["P01315"]),
             ("ted", ["P01315"]),
         ]
-        assert result.set_index("identifier").loc["P01315", "pfam"] == CACHED_PFAM
+        assert result.set_index("protein_id").loc["P01315", "pfam"] == CACHED_PFAM
 
     def test_kept_uniprot_values_keep_the_release_they_came_from(
         self, tmp_path, monkeypatch
@@ -348,7 +349,7 @@ class TestSequencesLostWithAUniProtBatch:
         result = _pipeline(tmp_path, ["gene_name", "pfam"])._fetch_annotations(headers)
 
         assert calls == [("interpro", headers)]
-        assert result.set_index("identifier").loc["P01315", "pfam"] == CACHED_PFAM
+        assert result.set_index("protein_id").loc["P01315", "pfam"] == CACHED_PFAM
 
     def test_biocentral_is_not_cached_for_proteins_it_had_no_sequence_for(
         self, tmp_path, monkeypatch, caplog
@@ -383,18 +384,8 @@ class TestSequencesLostWithAUniProtBatch:
 
         assert manager.incomplete_sources == {"uniprot", "biocentral"}
         # The prep service reads these substrings as a Biocentral outage; a
-        # coverage gap must not read as one. Copied from
-        # apps/prep/src/protspace_prep/pipeline.py.
-        down_patterns = (
-            "connection refused",
-            "cannot connect to host",
-            "connectionerror",
-            "temporary failure in name resolution",
-            "name or service not known",
-            "503 service unavailable",
-            "503 server error",
-            "no healthy biocentral",
-        )
+        # coverage gap must not read as one.
+        down_patterns = biocentral_down_patterns()
         report = [
             r.getMessage() for r in caplog.records if "no sequence" in r.getMessage()
         ]
@@ -418,7 +409,7 @@ class TestSequencesLostWithAUniProtBatch:
         manager.to_pd()
 
         assert manager.incomplete_sources == {"uniprot"}
-        cache = _read_cache(tmp_path).set_index("identifier")
+        cache = _read_cache(tmp_path).set_index("protein_id")
         assert cache.loc["P01315", "pfam"] == CACHED_PFAM
 
     def test_a_protein_uniprot_has_no_sequence_for_is_a_real_absence(
@@ -437,4 +428,4 @@ class TestSequencesLostWithAUniProtBatch:
         manager.to_pd()
 
         assert manager.incomplete_sources == set()
-        assert _read_cache(tmp_path).set_index("identifier").loc["P01315", "pfam"] == ""
+        assert _read_cache(tmp_path).set_index("protein_id").loc["P01315", "pfam"] == ""

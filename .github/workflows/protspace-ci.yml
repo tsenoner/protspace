@@ -17,6 +17,21 @@ name: protspace CI (Python)
 # the optional-extras section identical between it and apps/protspace/README.md.
 # Without it, an edit to only the docs-site copy runs ci.yml instead — which never
 # invokes pytest — so the pin would miss the half of the pair most likely to drift.
+#
+# The same holds for every other file outside apps/protspace that the tests read
+# (protspace cannot import TypeScript or protspace_prep, so its copies are checked
+# against their source): prep's Biocentral outage patterns, the data-format guide's
+# "Read a Bundle in Python" snippet (run as written), the web-side v3 fixtures the
+# decoder is checked against, the served demo bundle, the web catalog whose
+# defaultView each showcase example opens on, the perf manifest stage_perf.py writes,
+# the web's copies of the v1/v2 removal version (pinned to the deprecation registry),
+# and the release workflow whose deprecation gate a test pins. A change to only one
+# of them would otherwise never run the test that reads it. A checkout holding only
+# apps/protspace, the uv workspace files and the files listed below passes the fast
+# suite with no skips; a new test reading outside it belongs in the list. Constants
+# shared with the web (missing-value tokens, palette ids, ...) are not here: both
+# sides are generated from contracts/shared-constants.json, and bundle-contract.yml,
+# which runs on every pull request, checks the generated modules and the contract.
 
 on:
   push:
@@ -24,12 +39,40 @@ on:
     paths:
       - 'apps/protspace/**'
       - 'docs/guide/python-cli.md'
+      - 'docs/guide/data-format.md'
+      - 'apps/prep/src/protspace_prep/pipeline.py'
+      - 'packages/core/src/components/data-loader/utils/__fixtures__/v3-sample.parquetbundle'
+      - 'apps/web/tests/fixtures/venom_eat_stats_811_v3.parquetbundle'
+      - 'apps/web/public/data.parquetbundle'
+      - 'apps/web/src/explore/example-datasets.ts'
+      - 'perf/datasets.manifest.json'
+      - 'apps/web/src/explore/notifications.ts'
+      - 'packages/core/src/components/data-loader/utils/bundle.ts'
+      - 'packages/core/src/components/data-loader/data-loader.ts'
+      - 'packages/core/src/components/data-loader/legacy/index.ts'
+      - 'packages/core/src/components/data-loader/legacy/bundle.ts'
+      - 'packages/core/src/components/data-loader/legacy/conversion.ts'
+      - '.github/workflows/protspace-release.yml'
       - 'uv.lock'
       - '.github/workflows/protspace-ci.yml'
   pull_request:
     paths:
       - 'apps/protspace/**'
       - 'docs/guide/python-cli.md'
+      - 'docs/guide/data-format.md'
+      - 'apps/prep/src/protspace_prep/pipeline.py'
+      - 'packages/core/src/components/data-loader/utils/__fixtures__/v3-sample.parquetbundle'
+      - 'apps/web/tests/fixtures/venom_eat_stats_811_v3.parquetbundle'
+      - 'apps/web/public/data.parquetbundle'
+      - 'apps/web/src/explore/example-datasets.ts'
+      - 'perf/datasets.manifest.json'
+      - 'apps/web/src/explore/notifications.ts'
+      - 'packages/core/src/components/data-loader/utils/bundle.ts'
+      - 'packages/core/src/components/data-loader/data-loader.ts'
+      - 'packages/core/src/components/data-loader/legacy/index.ts'
+      - 'packages/core/src/components/data-loader/legacy/bundle.ts'
+      - 'packages/core/src/components/data-loader/legacy/conversion.ts'
+      - '.github/workflows/protspace-release.yml'
       - 'uv.lock'
       - '.github/workflows/protspace-ci.yml'
 
@@ -39,7 +82,7 @@ defaults:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v6
 
@@ -61,7 +104,7 @@ jobs:
         run: uv run ruff format --check src/ packages/ tests/
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       # Don't cancel the other legs when one Python version fails — we want to
       # see which versions break, not just the first.

@@ -244,8 +244,12 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     expect(changes).toEqual([[null, 'user']]);
   });
 
+  // beginUserRequest is left out: the example-dataset-load tests drive the real
+  // epoch logic and fail if it is swapped with currentRequestEpoch. Nothing else
+  // checks that currentRequestEpoch reaches the persisted controller (auto and
+  // startup loads tag their epoch with it) or that the cancel keeps its
+  // { source } filter.
   it.each([
-    ['beginUserRequest', [], 7],
     ['currentRequestEpoch', [], 7],
     ['cancelPendingExampleLoad', [{ source: 'menu' }], 'cancelled'],
   ] as const)('%s delegates to the persisted controller', (method, args, returned) => {
@@ -402,7 +406,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     const renderOverlay = mocks.rendererOverlay!;
 
     // A newer request (say a Back to another example, now downloading) owns
-    // the overlay: neither a render step nor the render's final hide reaches it.
+    // the overlay: neither a render step nor the load's final hide reaches it.
     mocks.persisted.isCurrentRequest.mockReturnValue(false);
     renderOverlay.update(true, 60, '', LOADING_COPY.drawing(1));
     renderOverlay.update(false);
@@ -410,13 +414,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
 
     mocks.persisted.isCurrentRequest.mockReturnValue(true);
     renderOverlay.update(false);
-    expect(overlayController.update).toHaveBeenCalledWith(
-      false,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-    );
+    expect(overlayController.update).toHaveBeenCalledWith(false);
   });
 
   it("a superseded user import's parse failure is reported but leaves the overlay to the newer request", async () => {
@@ -529,14 +527,19 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     const loaded = dataLoadedEvent({ file: new File(['x'], '40K.parquetbundle') });
     mocks.persisted.isCurrentRequest
       .mockReturnValueOnce(true) // check before loadData: still current
-      .mockReturnValueOnce(false); // check after loadData: superseded meanwhile
-    const { controller, viewController, setCurrentExampleId, setCurrentDatasetName } =
-      createController(runningLoad(exampleMeta('url')));
+      .mockReturnValue(false); // checks after loadData and as it settles: superseded meanwhile
+    const {
+      controller,
+      viewController,
+      overlayController,
+      setCurrentExampleId,
+      setCurrentDatasetName,
+    } = createController(runningLoad(exampleMeta('url')));
     const changes = recordDatasetChanges(controller);
 
     await controller.handleDataLoaded(loaded);
 
-    expect(mocks.persisted.isCurrentRequest).toHaveBeenCalledTimes(2);
+    expect(mocks.persisted.isCurrentRequest).toHaveBeenCalledTimes(3);
     expect(mocks.loadData).toHaveBeenCalledTimes(1);
     expect(setCurrentDatasetName).toHaveBeenCalledWith(OTHER.label);
     expect(setCurrentExampleId).toHaveBeenCalledWith(OTHER.id);
@@ -544,6 +547,8 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     expect(changes).toEqual([[OTHER.id, 'superseded']]);
     expect(viewController.applyLatestViewForDatasetLoad).not.toHaveBeenCalled();
     expect(viewController.setRequestedView).not.toHaveBeenCalled();
+    // The overlay is the newer request's too.
+    expect(overlayController.update).not.toHaveBeenCalledWith(false);
   });
 
   // Guards the exact regression the review flagged: the perf suite also

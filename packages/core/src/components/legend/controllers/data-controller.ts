@@ -1,11 +1,12 @@
 import {
+  DEFAULT_CATEGORICAL_PALETTE_ID,
   DEFAULT_NUMERIC_STRATEGY,
   annotationCategoryScores,
   getNumericBinLabelMap,
   getNumericBinLowerBoundMap,
   getOrderedNumericBinIds,
   hasEatPredictionsForAnnotation,
-  isAutoClusterColumn,
+  autoClusterScoreCaveat,
   isNumericAnnotation,
   materializeNumericAnnotation,
   normalizeNumericPaletteId,
@@ -147,7 +148,7 @@ export class LegendDataController {
       selectedAnnotation,
       selectedProjectionName,
     );
-    this.host._isClusterAnnotation = isAutoClusterColumn(statisticsRows, selectedAnnotation);
+    this.host._clusterCaveat = autoClusterScoreCaveat(statisticsRows, selectedAnnotation);
     this.host.proteinIds = data.protein_ids;
 
     // Sync isolation state
@@ -400,7 +401,7 @@ export class LegendDataController {
             this.host.annotationData,
           );
         }
-      } else if (this.host._selectedPaletteId !== 'kellys') {
+      } else if (this.host._selectedPaletteId !== DEFAULT_CATEGORICAL_PALETTE_ID) {
         this.host._legendItems = applyPaletteColors(
           this.host._legendItems,
           this.host._selectedPaletteId,

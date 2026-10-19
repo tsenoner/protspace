@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import './publish-modal';
 import type { ProtspacePublishModal } from './publish-modal';
 import { topLayer } from '../kit/layers';
@@ -30,6 +30,24 @@ interface PublishInternals {
   };
   _legendItems: Array<{ value: string }>;
   _legendTitle: string;
+}
+
+/**
+ * jsdom doesn't implement canvas getContext; stub it so composeFigure (called downstream
+ * of _redraw) doesn't throw inside a requestAnimationFrame callback. Returns the restore.
+ */
+function stubCanvasGetContext(): () => void {
+  const stubCtx = new Proxy(
+    {},
+    { get: () => () => undefined },
+  ) as unknown as CanvasRenderingContext2D;
+  const origGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function () {
+    return stubCtx;
+  } as typeof HTMLCanvasElement.prototype.getContext;
+  return () => {
+    HTMLCanvasElement.prototype.getContext = origGetContext;
+  };
 }
 
 function makeModal(): ProtspacePublishModal {
@@ -406,6 +424,7 @@ interface InsetInternals {
     renders: Map<string, HTMLCanvasElement>;
     settleTimer: ReturnType<typeof setTimeout> | null;
   };
+  _scheduleRedraw: () => void;
 }
 
 /**
@@ -553,6 +572,11 @@ describe('<protspace-publish-modal> inset renders', () => {
     document.body.innerHTML = '';
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it('returns [] without touching plotEl when state has no insets', async () => {
     const modal = makeModal();
     await modal.updateComplete;
@@ -615,6 +639,7 @@ describe('<protspace-publish-modal> inset renders', () => {
     const modal = makeModal();
     await modal.updateComplete;
     const internals = modal as unknown as InsetInternals;
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
     const plot = makeStubPlot();
     const baseInset = {
       sourceRect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 },
@@ -651,15 +676,28 @@ describe('<protspace-publish-modal> inset renders', () => {
       );
     }
     expect(plot.callCount()).toBe(1); // no extra renders during the fast-path burst
+
+    // Once the 80 ms window has elapsed the next resize renders fresh again.
+    now.mockReturnValue(1080);
+    internals._insetRenders.capture(
+      plot.element,
+      { insets: [{ ...baseInset, targetRect: { x: 0.5, y: 0.5, w: 0.3, h: 0.3 } }] },
+      { w: 1000, h: 800 },
+      '#ffffff',
+    );
+    expect(plot.callCount()).toBe(2);
   });
 
   it('settle timer schedules a fresh render once activity stops', async () => {
     const modal = makeModal();
     await modal.updateComplete;
     const internals = modal as unknown as InsetInternals;
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    // _redraw itself bails out here (no plotElement), so watch the request instead.
+    const scheduleRedraw = vi.spyOn(internals, '_scheduleRedraw').mockImplementation(() => {});
 
-    // Inject a far-past lastRenderAt so the next call is NOT fastPath
-    // (we want a real first render to seed lastCanvases).
+    // The first call renders fresh (lastRenderAt starts at 0), seeding the canvases.
     const plot = makeStubPlot();
     const baseInset = {
       sourceRect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 },
@@ -687,6 +725,12 @@ describe('<protspace-publish-modal> inset renders', () => {
       '#ffffff',
     );
     expect(internals._insetRenders.settleTimer).not.toBeNull();
+    vi.advanceTimersByTime(119);
+    expect(scheduleRedraw).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(scheduleRedraw).toHaveBeenCalledTimes(1);
+    expect(internals._insetRenders.settleTimer).toBeNull();
   });
 
   it('returns null per inset when plotEl lacks captureAtResolution / getDataExtent', async () => {
@@ -960,17 +1004,7 @@ describe('<protspace-publish-modal> plot cache key', () => {
       },
     } as unknown as HTMLElement;
 
-    // jsdom doesn't implement canvas getContext; stub it so composeFigure
-    // (called downstream of _redraw) doesn't throw an unhandled exception
-    // inside a requestAnimationFrame callback.
-    const stubCtx = new Proxy(
-      {},
-      { get: () => () => undefined },
-    ) as unknown as CanvasRenderingContext2D;
-    const origGetContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function () {
-      return stubCtx;
-    } as typeof HTMLCanvasElement.prototype.getContext;
+    const restoreGetContext = stubCanvasGetContext();
 
     try {
       const modal = document.createElement('protspace-publish-modal') as HTMLElement & {
@@ -1000,7 +1034,7 @@ describe('<protspace-publish-modal> plot cache key', () => {
       expect(captures.every((c) => c.resetView === true)).toBe(true);
       modal.remove();
     } finally {
-      HTMLCanvasElement.prototype.getContext = origGetContext;
+      restoreGetContext();
     }
   });
 
@@ -1071,14 +1105,7 @@ describe('<protspace-publish-modal> preset sizeMode sync', () => {
   });
 
   it('switches sizeMode to 1-column when applying a 1-column preset', async () => {
-    const stubCtx = new Proxy(
-      {},
-      { get: () => () => undefined },
-    ) as unknown as CanvasRenderingContext2D;
-    const origGetContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function () {
-      return stubCtx;
-    } as typeof HTMLCanvasElement.prototype.getContext;
+    const restoreGetContext = stubCanvasGetContext();
 
     try {
       const modal = document.createElement('protspace-publish-modal') as HTMLElement & {
@@ -1091,7 +1118,7 @@ describe('<protspace-publish-modal> preset sizeMode sync', () => {
       expect(modal._state.sizeMode).toBe('1-column');
       modal.remove();
     } finally {
-      HTMLCanvasElement.prototype.getContext = origGetContext;
+      restoreGetContext();
     }
   });
 });
@@ -1102,17 +1129,8 @@ describe('<protspace-publish-modal> disconnect guard', () => {
   });
 
   it('does not call _setupOverlay after disconnect during _applyStateAndRebuild', async () => {
-    // jsdom doesn't implement canvas getContext; stub it so the redraw
-    // path triggered by _applyStateAndRebuild doesn't throw inside a rAF
-    // callback.
-    const stubCtx = new Proxy(
-      {},
-      { get: () => () => undefined },
-    ) as unknown as CanvasRenderingContext2D;
-    const origGetContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function () {
-      return stubCtx;
-    } as typeof HTMLCanvasElement.prototype.getContext;
+    // The redraw _applyStateAndRebuild triggers needs a canvas context.
+    const restoreGetContext = stubCanvasGetContext();
 
     try {
       const modal = document.createElement('protspace-publish-modal') as HTMLElement & {
@@ -1144,7 +1162,7 @@ describe('<protspace-publish-modal> disconnect guard', () => {
 
       expect(setupCalls).toBe(0);
     } finally {
-      HTMLCanvasElement.prototype.getContext = origGetContext;
+      restoreGetContext();
     }
   });
 
@@ -1177,14 +1195,7 @@ describe('<protspace-publish-modal> fingerprint warning', () => {
   });
 
   it('renders the fingerprint warning when saved fingerprint mismatches current', async () => {
-    const stubCtx = new Proxy(
-      {},
-      { get: () => () => undefined },
-    ) as unknown as CanvasRenderingContext2D;
-    const origGetContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function () {
-      return stubCtx;
-    } as typeof HTMLCanvasElement.prototype.getContext;
+    const restoreGetContext = stubCanvasGetContext();
 
     try {
       const modal = document.createElement('protspace-publish-modal') as HTMLElement & {
@@ -1205,19 +1216,12 @@ describe('<protspace-publish-modal> fingerprint warning', () => {
       expect(warn).not.toBeNull();
       modal.remove();
     } finally {
-      HTMLCanvasElement.prototype.getContext = origGetContext;
+      restoreGetContext();
     }
   });
 
   it('does not render the fingerprint warning when fingerprints match', async () => {
-    const stubCtx = new Proxy(
-      {},
-      { get: () => () => undefined },
-    ) as unknown as CanvasRenderingContext2D;
-    const origGetContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function () {
-      return stubCtx;
-    } as typeof HTMLCanvasElement.prototype.getContext;
+    const restoreGetContext = stubCanvasGetContext();
 
     try {
       const modal = document.createElement('protspace-publish-modal') as HTMLElement & {
@@ -1238,7 +1242,7 @@ describe('<protspace-publish-modal> fingerprint warning', () => {
       expect(warn).toBeNull();
       modal.remove();
     } finally {
-      HTMLCanvasElement.prototype.getContext = origGetContext;
+      restoreGetContext();
     }
   });
 

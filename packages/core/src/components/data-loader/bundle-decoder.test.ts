@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
   /** How the fake worker answers a posted bundle; set per test. */
   reply: vi.fn(),
+  /** Counts terminations, so a test can check the worker never leaks. */
+  terminate: vi.fn(),
 }));
 
 // vitest (node env) cannot resolve '?worker&inline', so the worker is a fake that hands
@@ -27,7 +29,7 @@ vi.mock('./decode.worker?worker&inline', () => ({
       setTimeout(() => mocks.reply(this, message, transfer), 0);
     }
     terminate(): void {
-      // no-op
+      mocks.terminate();
     }
   },
 }));
@@ -96,6 +98,7 @@ describe('decodeBundle', () => {
     const result = await decodeBundle(bytes, reread);
 
     expect(result.data).toBe(fromWorker.data);
+    expect(mocks.terminate).toHaveBeenCalledOnce();
     // The worker's hashes are remembered, so hashing the received data is a lookup.
     expect(generateDatasetHash(result.data)).toBe('worker-hash');
     expect(generateLegacyDatasetHash(result.data)).toBe('worker-legacy-hash');
@@ -163,6 +166,10 @@ describe('decodeBundle', () => {
       );
       // The worker may have taken `bytes`, so the fallback decodes the re-read copy.
       expect(reread).toHaveBeenCalledOnce();
+      // A worker that started is terminated once, whatever it answered.
+      expect(mocks.terminate).toHaveBeenCalledTimes(
+        mocks.spawn.mock.results[0]?.type === 'throw' ? 0 : 1,
+      );
       const [fallbackBytes] = mocks.decodeParquetBundle.mock.calls[0] as [ArrayBuffer];
       expect([...new Uint8Array(fallbackBytes)]).toEqual([4, 5, 6]);
     },

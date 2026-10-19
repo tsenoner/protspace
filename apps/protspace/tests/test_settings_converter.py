@@ -19,23 +19,22 @@ from protspace.data.io.settings_converter import (
 
 
 class TestHexToRgba:
-    def test_basic(self):
-        assert _hex_to_rgba("#FF0000") == "rgba(255, 0, 0, 0.8)"
-
-    def test_black(self):
-        assert _hex_to_rgba("#000000") == "rgba(0, 0, 0, 0.8)"
-
-    def test_white(self):
-        assert _hex_to_rgba("#FFFFFF") == "rgba(255, 255, 255, 0.8)"
+    @pytest.mark.parametrize(
+        "hex_color,expected",
+        [
+            ("#FF0000", "rgba(255, 0, 0, 0.8)"),
+            ("#000000", "rgba(0, 0, 0, 0.8)"),
+            ("#FFFFFF", "rgba(255, 255, 255, 0.8)"),
+            ("#ff8800", "rgba(255, 136, 0, 0.8)"),
+            ("FF0000", "rgba(255, 0, 0, 0.8)"),
+        ],
+        ids=["red", "black", "white", "lowercase", "no_hash_prefix"],
+    )
+    def test_default_alpha(self, hex_color, expected):
+        assert _hex_to_rgba(hex_color) == expected
 
     def test_custom_alpha(self):
         assert _hex_to_rgba("#00FF00", alpha=1.0) == "rgba(0, 255, 0, 1.0)"
-
-    def test_lowercase_hex(self):
-        assert _hex_to_rgba("#ff8800") == "rgba(255, 136, 0, 0.8)"
-
-    def test_no_hash_prefix(self):
-        assert _hex_to_rgba("FF0000") == "rgba(255, 0, 0, 0.8)"
 
 
 # ---------------------------------------------------------------------------
@@ -44,20 +43,19 @@ class TestHexToRgba:
 
 
 class TestRgbaToHex:
-    def test_basic(self):
-        assert _rgba_to_hex("rgba(255, 0, 0, 0.8)") == "#FF0000"
-
-    def test_black(self):
-        assert _rgba_to_hex("rgba(0, 0, 0, 1.0)") == "#000000"
-
-    def test_rgb_no_alpha(self):
-        assert _rgba_to_hex("rgb(128, 64, 32)") == "#804020"
-
-    def test_hex_passthrough(self):
-        assert _rgba_to_hex("#FF0000") == "#FF0000"
-
-    def test_unrecognized_passthrough(self):
-        assert _rgba_to_hex("not-a-color") == "not-a-color"
+    @pytest.mark.parametrize(
+        "color,expected",
+        [
+            ("rgba(255, 0, 0, 0.8)", "#FF0000"),
+            ("rgba(0, 0, 0, 1.0)", "#000000"),
+            ("rgb(128, 64, 32)", "#804020"),
+            ("#FF0000", "#FF0000"),
+            ("not-a-color", "not-a-color"),
+        ],
+        ids=["rgba", "black", "rgb_no_alpha", "hex_passthrough", "unrecognized"],
+    )
+    def test_conversion(self, color, expected):
+        assert _rgba_to_hex(color) == expected
 
     def test_roundtrip(self):
         original = "#A1CAF1"
@@ -93,6 +91,11 @@ class TestSortValuesForZorder:
     def test_size_asc(self, values, frequencies):
         result = _sort_values_for_zorder(values, "size-asc", frequencies)
         assert result == ["Charlie", "Alpha", "Bravo", "<NA>"]
+
+    def test_any_missing_spelling_sorts_last(self):
+        # The web reads every one of these as N/A, in any case.
+        result = _sort_values_for_zorder({"X", "N/A", "null", "A"}, "alpha-asc", None)
+        assert result == ["A", "X", "N/A", "null"]
 
     def test_na_always_last(self):
         values = {"X", "", "<NA>", "NaN", "A"}
@@ -136,16 +139,17 @@ class TestSettingsToVisualizationState:
         assert shapes["kinase"] == "circle"
         assert shapes["phosphatase"] == "square"
 
-    def test_empty_categories(self):
-        result = settings_to_visualization_state({"empty": {"categories": {}}})
-        assert result == {"annotation_colors": {}, "marker_shapes": {}}
-
-    def test_no_categories_key(self):
-        result = settings_to_visualization_state({"other": {"sortMode": "alpha-asc"}})
-        assert result == {"annotation_colors": {}, "marker_shapes": {}}
-
-    def test_empty_settings(self):
-        result = settings_to_visualization_state({})
+    @pytest.mark.parametrize(
+        "settings",
+        [
+            {"empty": {"categories": {}}},
+            {"other": {"sortMode": "alpha-asc"}},
+            {},
+        ],
+        ids=["empty_categories", "no_categories_key", "empty_settings"],
+    )
+    def test_nothing_to_style_gives_empty_state(self, settings):
+        result = settings_to_visualization_state(settings)
         assert result == {"annotation_colors": {}, "marker_shapes": {}}
 
     def test_color_only_no_shape(self):
@@ -181,7 +185,7 @@ class TestVisualizationStateToSettings:
         assert cat["shape"] == "circle"
         assert "zOrder" in cat
 
-    def test_na_gets_gray(self):
+    def test_na_color_is_stored_under_the_na_key(self):
         viz = {
             "annotation_colors": {
                 "ann": {"val": "rgba(255,0,0,0.8)", "<NA>": "rgba(192,192,192,0.8)"}
@@ -192,6 +196,56 @@ class TestVisualizationStateToSettings:
         cats = result["ann"]["categories"]
         # NA values are stored under __NA__ key (frontend internal format)
         assert cats["__NA__"]["color"] == "#C0C0C0"
+
+    def test_every_na_spelling_is_one_na_category(self):
+        # The web draws all of these as its one N/A entry, keyed __NA__; the
+        # stored __NA__ wins over a spelling of it.
+        viz = {
+            "annotation_colors": {
+                "ann": {
+                    "A": "#00FF00",
+                    "N/A": "#FF0000",
+                    "": "#0000FF",
+                    "__NA__": "#111111",
+                    "<NA>": "#222222",
+                }
+            },
+            "marker_shapes": {"ann": {"null": "diamond"}},
+        }
+        cats = visualization_state_to_settings(viz)["ann"]["categories"]
+        assert cats.keys() == {"A", "__NA__"}
+        assert cats["__NA__"]["color"] == "#111111"
+        assert cats["__NA__"]["shape"] == "diamond"
+        assert cats["__NA__"]["zOrder"] == 1  # last
+
+    def test_na_spellings_count_as_one_category_when_sorting_by_size(self):
+        result = visualization_state_to_settings(
+            {"annotation_colors": {}, "marker_shapes": {}},
+            value_frequencies={"ann": {"A": 3, "B": 2, "N/A": 1, "": 2}},
+            style_overrides={"ann": {"sortMode": "size-desc"}},
+        )
+        cats = result["ann"]["categories"]
+        assert {k: v["zOrder"] for k, v in cats.items()} == {
+            "A": 0,
+            "B": 1,
+            "__NA__": 2,
+        }
+
+    def test_hidden_na_is_named_as_the_web_names_it(self):
+        result = visualization_state_to_settings(
+            {"annotation_colors": {"ann": {"A": "#00FF00"}}, "marker_shapes": {}},
+            style_overrides={"ann": {"hiddenValues": ["A", "N/A", "", "__NA__"]}},
+        )
+        assert result["ann"]["hiddenValues"] == ["A", "__NA__"]
+
+    def test_stored_hidden_na_is_renamed_when_only_colours_change(self):
+        # A bundle styled before the fold stored the data's own N/A spelling.
+        existing = {"ann": {"hiddenValues": ["None", "A"], "categories": {}}}
+        result = visualization_state_to_settings(
+            {"annotation_colors": {"ann": {"A": "#00FF00"}}, "marker_shapes": {}},
+            existing_settings=existing,
+        )
+        assert result["ann"]["hiddenValues"] == ["__NA__", "A"]
 
     def test_defaults_when_no_existing(self):
         viz = {
@@ -228,6 +282,63 @@ class TestVisualizationStateToSettings:
         result = visualization_state_to_settings(viz, style_overrides=overrides)
         assert result["ann"]["sortMode"] == "alpha-desc"
         assert result["ann"]["maxVisibleValues"] == 5
+
+
+class TestMissingSpellingsAreOneCategory:
+    """The web shows every missing spelling as one N/A category, keyed ``__NA__``."""
+
+    @pytest.mark.parametrize("spelling", ["N/A", "null", "NA", " none "])
+    def test_any_missing_spelling_is_keyed_na(self, spelling):
+        viz = {
+            "annotation_colors": {"ann": {"A": "#FF0000", spelling: "#010203"}},
+            "marker_shapes": {},
+        }
+        cats = visualization_state_to_settings(viz)["ann"]["categories"]
+        assert set(cats) == {"A", "__NA__"}
+        assert cats["__NA__"]["color"] == "#010203"
+
+    def test_several_spellings_give_one_category_with_contiguous_zorder(self):
+        viz = {
+            "annotation_colors": {"ann": {"A": "#FF0000", "": "#010101"}},
+            "marker_shapes": {"ann": {"N/A": "square", "null": "diamond"}},
+        }
+        cats = visualization_state_to_settings(viz)["ann"]["categories"]
+        assert set(cats) == {"A", "__NA__"}
+        assert sorted(cat["zOrder"] for cat in cats.values()) == [0, 1]
+        assert cats["__NA__"]["color"] == "#010101"
+        # The first spelling in sorted order wins, never set-iteration order.
+        assert cats["__NA__"]["shape"] == "square"
+
+    def test_the_stored_na_category_keeps_its_fields(self):
+        existing = {"ann": {"categories": {"__NA__": {"zOrder": 3, "shape": "square"}}}}
+        viz = {"annotation_colors": {"ann": {"": "#222222"}}, "marker_shapes": {}}
+        cats = visualization_state_to_settings(viz, existing_settings=existing)["ann"][
+            "categories"
+        ]
+        assert cats["__NA__"] == {"zOrder": 0, "color": "#222222", "shape": "square"}
+
+    def test_pinning_na_by_two_spellings_pins_it_once(self):
+        result = visualization_state_to_settings(
+            {"annotation_colors": {}, "marker_shapes": {}},
+            value_frequencies={"ann": {"A": 3, "B": 2, "": 1, "N/A": 1}},
+            style_overrides={"ann": {"pinnedValues": ["A", "null", ""]}},
+        )
+        cats = result["ann"]["categories"]
+        assert set(cats) == {"A", "__NA__"}
+        assert cats["A"]["zOrder"] == 0
+        assert cats["__NA__"] == {"zOrder": 1, "color": "#DDDDDD", "shape": "circle"}
+
+    def test_rest_fill_never_counts_na_as_a_value(self):
+        result = visualization_state_to_settings(
+            {"annotation_colors": {}, "marker_shapes": {}},
+            value_frequencies={"ann": {"A": 3, "N/A": 9, "B": 2}},
+            style_overrides={
+                "ann": {"pinnedValues": ["__REST__", ""], "maxVisibleValues": 3}
+            },
+        )
+        cats = result["ann"]["categories"]
+        order = sorted(cats, key=lambda key: cats[key]["zOrder"])
+        assert order == ["A", "B", "__NA__"]
 
 
 # ---------------------------------------------------------------------------

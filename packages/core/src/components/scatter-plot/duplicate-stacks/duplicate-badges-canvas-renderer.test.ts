@@ -9,46 +9,7 @@ import {
   BADGE_EXPANDED_FILL,
   BADGE_DEFAULT_FILL,
 } from './duplicate-badges-canvas-renderer';
-import type { RenderDuplicateStack } from './duplicate-stack-types';
-
-/**
- * Fake canvas recording method calls. `fill()` is recorded with the fillStyle
- * current at the call, so a test can tell which colour each badge arc used
- * (the label's later `#ffffff` fillStyle would otherwise overwrite it).
- */
-function fakeCanvas() {
-  const calls: Array<[string, unknown[]]> = [];
-  let fillStyle: unknown;
-  const ctx = new Proxy({} as Record<string, unknown>, {
-    get: (_t, p) =>
-      typeof p === 'string' &&
-      ['setTransform', 'clearRect', 'beginPath', 'arc', 'fill', 'stroke', 'fillText'].includes(p)
-        ? (...a: unknown[]) => calls.push([p, p === 'fill' ? [fillStyle] : a])
-        : undefined,
-    set: (_t, p, v) => {
-      if (p === 'fillStyle') fillStyle = v;
-      return true;
-    },
-  });
-  const canvas = {
-    width: 1600,
-    height: 1200,
-    getContext: () => ctx,
-  } as unknown as HTMLCanvasElement;
-  return { canvas, calls };
-}
-
-const stk = (key: string, px: number, py: number, n: number): RenderDuplicateStack => ({
-  key,
-  px,
-  py,
-  points: Array.from({ length: n }, (_, i) => ({
-    id: `${key}-${i}`,
-    x: 0,
-    y: 0,
-    originalIndex: i,
-  })),
-});
+import { fakeCanvas, stk } from './test-support/badge-canvas-fake';
 
 describe('DuplicateBadgesCanvasRenderer', () => {
   it('exposes the named geometry/style constants (no magic numbers)', () => {
@@ -59,7 +20,7 @@ describe('DuplicateBadgesCanvasRenderer', () => {
   });
 
   it('clear() resets the device-pixel transform and clears the full canvas', () => {
-    const { canvas, calls } = fakeCanvas();
+    const { canvas, calls } = fakeCanvas(1600, 1200);
     const r = new DuplicateBadgesCanvasRenderer({
       getCanvas: () => canvas,
       getTransform: () => ({ x: 0, y: 0, k: 1 }),
@@ -72,7 +33,7 @@ describe('DuplicateBadgesCanvasRenderer', () => {
   });
 
   it('render() draws one arc + one count label per stack and tints the expanded one', () => {
-    const { canvas, calls } = fakeCanvas();
+    const { canvas, calls } = fakeCanvas(1600, 1200);
     const r = new DuplicateBadgesCanvasRenderer({
       getCanvas: () => canvas,
       getTransform: () => ({ x: 0, y: 0, k: 1 }),
@@ -89,7 +50,7 @@ describe('DuplicateBadgesCanvasRenderer', () => {
   });
 
   it('render() maps px/py through the live zoom transform and scales to device pixels once', () => {
-    const { canvas, calls } = fakeCanvas();
+    const { canvas, calls } = fakeCanvas(1600, 1200);
     const prevDpr = window.devicePixelRatio;
     window.devicePixelRatio = 2;
     try {
@@ -113,23 +74,12 @@ describe('DuplicateBadgesCanvasRenderer', () => {
   });
 });
 
-const stack = (key: string, px: number, py: number, n: number): RenderDuplicateStack => ({
-  key,
-  px,
-  py,
-  points: Array.from({ length: n }, (_, i) => ({
-    id: `${key}-${i}`,
-    x: px,
-    y: py,
-    originalIndex: i,
-  })),
-});
 const win = { minX: 0, maxX: 100, minY: 0, maxY: 100 };
 
 describe('cullAndCapStacks', () => {
   it('drops stacks whose px/py fall outside the window', () => {
     const out = cullAndCapStacks(
-      [stack('in', 50, 50, 2), stack('out', 200, 50, 2)],
+      [stk('in', 50, 50, 2), stk('out', 200, 50, 2)],
       win,
       null,
       new Map(),
@@ -138,13 +88,13 @@ describe('cullAndCapStacks', () => {
   });
 
   it('keeps all visible stacks when under the cap', () => {
-    const stacks = Array.from({ length: 5 }, (_, i) => stack(`s${i}`, 10 + i, 10, 2));
+    const stacks = Array.from({ length: 5 }, (_, i) => stk(`s${i}`, 10 + i, 10, 2));
     expect(cullAndCapStacks(stacks, win, null, new Map())).toHaveLength(5);
   });
 
   it('caps to the top-N by points.length when over DUPLICATE_BADGES_MAX_VISIBLE', () => {
     const stacks = Array.from({ length: DUPLICATE_BADGES_MAX_VISIBLE + 10 }, (_, i) =>
-      stack(`s${i}`, 10, 10, i + 2),
+      stk(`s${i}`, 10, 10, i + 2),
     );
     const out = cullAndCapStacks(stacks, win, null, new Map());
     expect(out).toHaveLength(DUPLICATE_BADGES_MAX_VISIBLE);
@@ -154,9 +104,9 @@ describe('cullAndCapStacks', () => {
 
   it('force-keeps the expanded stack even if it is not in the top-N (and is in-window)', () => {
     const big = Array.from({ length: DUPLICATE_BADGES_MAX_VISIBLE }, (_, i) =>
-      stack(`big${i}`, 10, 10, i + 100),
+      stk(`big${i}`, 10, 10, i + 100),
     );
-    const small = stack('expanded', 50, 50, 2); // small ⇒ would be culled by cap
+    const small = stk('expanded', 50, 50, 2); // small ⇒ would be culled by cap
     const byKey = new Map([[small.key, small]]);
     const out = cullAndCapStacks([...big, small], win, 'expanded', byKey);
     expect(out.some((s) => s.key === 'expanded')).toBe(true);
@@ -165,9 +115,9 @@ describe('cullAndCapStacks', () => {
 
   it('does NOT re-add the expanded stack when it is out of window', () => {
     const big = Array.from({ length: DUPLICATE_BADGES_MAX_VISIBLE }, (_, i) =>
-      stack(`big${i}`, 10, 10, i + 100),
+      stk(`big${i}`, 10, 10, i + 100),
     );
-    const offscreen = stack('expanded', 999, 999, 2);
+    const offscreen = stk('expanded', 999, 999, 2);
     const byKey = new Map([[offscreen.key, offscreen]]);
     const out = cullAndCapStacks([...big, offscreen], win, 'expanded', byKey);
     expect(out.some((s) => s.key === 'expanded')).toBe(false);

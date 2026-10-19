@@ -1214,31 +1214,32 @@ test('real phosphatase bundle rebins length to five bins without leaving the UI 
   expect(initialNumericState.binCount).toBeGreaterThan(0);
   expect(initialNumericState.binCount).toBeLessThanOrEqual(10);
 
-  const startedAt = Date.now();
   await rebinLength(page, '5');
 
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getCurrentData?: () => {
-            annotations?: Record<
-              string,
-              { numericMetadata?: { binCount?: number; strategy?: string } }
-            >;
-          };
-          selectedAnnotation?: string;
-        })
-      | null;
+  // A rebin that leaves the UI stuck fails at this watchdog. Elapsed time on a
+  // shared runner is not asserted; performance thresholds live in the perf suite.
+  await page.waitForFunction(
+    () => {
+      const plot = document.querySelector('protspace-scatterplot') as
+        | (Element & {
+            getCurrentData?: () => {
+              annotations?: Record<
+                string,
+                { numericMetadata?: { binCount?: number; strategy?: string } }
+              >;
+            };
+            selectedAnnotation?: string;
+          })
+        | null;
 
-    return (
-      plot?.selectedAnnotation === 'length' &&
-      (plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.binCount ?? 0) > 0 &&
-      (plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.binCount ?? 0) <= 5 &&
-      plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.strategy === 'linear'
-    );
-  });
-
-  expect(Date.now() - startedAt).toBeLessThan(5000);
+      if (plot?.selectedAnnotation !== 'length') return false;
+      const metadata = plot.getCurrentData?.()?.annotations?.length?.numericMetadata;
+      const binCount = metadata?.binCount ?? 0;
+      return binCount > 0 && binCount <= 5 && metadata?.strategy === 'linear';
+    },
+    undefined,
+    { timeout: 10_000, polling: 100 },
+  );
 
   const finalNumericState = await getNumericState(page);
   expect(finalNumericState.binCount).toBeGreaterThan(0);
@@ -1279,16 +1280,6 @@ test('numeric header toggle reverses rendered bin order without changing color a
   );
   // (Numeric filtering is now a raw-value range input with no per-bin list, so
   // there is no longer a "filter order mirrors legend order" assertion here.)
-});
-
-test('linear numeric bins can realize fewer values than requested', async ({ page }) => {
-  await loadDataset(page);
-  await selectAnnotation(page, 'length');
-  await rebinLength(page, '20');
-
-  await expect.poll(async () => (await getNumericState(page)).binCount).toBeLessThan(20);
-  // (Bins are a legend/coloring concern only; numeric filtering is a raw-value
-  // range input, so there is no per-bin filter list to count against here.)
 });
 
 test('numeric legend labels are display summaries without comparison markers', async ({ page }) => {

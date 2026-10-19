@@ -1,30 +1,31 @@
 """Tests for Biocentral prediction retriever."""
 
-import re
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+import requests
+from biocentral_api import Prediction
 
-from protspace.core.constants import BROWSER_MISSING_TOKENS, standardize_missing
-from src.protspace.data.annotations.retrievers.biocentral_retriever import (
+from protspace.core.constants import is_missing_value, standardize_missing
+from protspace.data.annotations.retrievers.biocentral_retriever import (
     BIOCENTRAL_ANNOTATIONS,
     BiocentralPredictionRetriever,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-WEB_MISSING_VALUES = (
-    REPO_ROOT / "packages" / "utils" / "src" / "visualization" / "missing-values.ts"
-)
+from tests.prep_source import biocentral_down_patterns
 
 
 def _make_prediction(model_name, value):
-    """Build a mock Prediction object."""
-    pred = MagicMock()
-    pred.model_name = model_name
-    pred.value = value
-    return pred
+    """Build the generated model returned by biocentral-api.
+
+    The adapter only reads ``model_name`` and ``value``.
+    """
+    return Prediction(
+        model_name=model_name,
+        prediction_name="test",
+        protocol="test",
+        value=value,
+    )
 
 
 class TestBiocentralConstants:
@@ -80,6 +81,11 @@ class TestTransmembraneExtraction:
         result = BiocentralPredictionRetriever._extract_transmembrane(preds)
         assert result == "non-transmembrane"
 
+    def test_dot_label_is_non_transmembrane(self):
+        preds = [_make_prediction("TMbed", "........")]
+        result = BiocentralPredictionRetriever._extract_transmembrane(preds)
+        assert result == "non-transmembrane"
+
     def test_lowercase_labels(self):
         """TMbed uses lowercase h/b for non-TM side of helix/strand."""
         preds = [_make_prediction("TMbed", "ooohhHHHHHhhoooo")]
@@ -91,41 +97,14 @@ class TestTransmembraneExtraction:
         result = BiocentralPredictionRetriever._extract_transmembrane(preds)
         assert result == ""
 
-    @pytest.mark.parametrize("value", ["", None], ids=["empty", "none"])
-    def test_an_empty_payload_is_missing_not_negative(self, value):
-        """A TMbed entry with no topology predicted nothing.
-
-        Before the negative got a name it came out as `none`, which displays as
-        N/A; `non-transmembrane` would turn it into a confident negative.
-        """
-        preds = [_make_prediction("TMbed", value)]
-        result = BiocentralPredictionRetriever._extract_transmembrane(preds)
-        assert result == ""
-
-
-def _web_missing_tokens() -> set[str]:
-    """The web app's MISSING_VALUE_TOKENS, read from its source."""
-    source = WEB_MISSING_VALUES.read_text()
-    block = re.search(
-        r"MISSING_VALUE_TOKENS[^=]*=\s*new Set\(\[(.*?)\]\)", source, re.S
-    )
-    assert block, f"MISSING_VALUE_TOKENS not found in {WEB_MISSING_VALUES}"
-    return set(re.findall(r"'([^']*)'", block.group(1)))
-
-
-def test_browser_missing_tokens_match_the_web_app():
-    """``BROWSER_MISSING_TOKENS`` is the web's list: the v3 encoder and the
-    showcase build's gates count N/A exactly as the legend does."""
-    assert _web_missing_tokens() == BROWSER_MISSING_TOKENS
-
 
 class TestNoTransmembraneIsACategory:
     """A protein without a TM segment is a prediction, not a missing value.
 
     Both readers turn a set of literal tokens into N/A: the CLI's
-    `standardize_missing` (exact match) and the web app's `normalizeMissingValue`
-    (trimmed, case-insensitive). `none` was one of them, so every negative
-    prediction displayed as N/A.
+    `standardize_missing`, through `is_missing_value`, and the web app's
+    `normalizeMissingValue`, which the bundle contract suite pins it to.
+    `none` was one of them, so every negative prediction displayed as N/A.
     """
 
     LABEL = BiocentralPredictionRetriever._extract_transmembrane(
@@ -136,10 +115,26 @@ class TestNoTransmembraneIsACategory:
         assert standardize_missing(pd.Series([self.LABEL])).tolist() == [self.LABEL]
 
     def test_the_web_app_keeps_it(self):
-        tokens = _web_missing_tokens()
+        assert is_missing_value("none")  # the old label still reads as missing
+        assert not is_missing_value(self.LABEL)
 
-        assert "none" in tokens  # the list was read, and still has the old label
-        assert self.LABEL.strip() and self.LABEL.strip().lower() not in tokens
+
+class TestTmbedPayloadValidation:
+    @pytest.mark.parametrize(
+        "value",
+        ["", None, 0, [], {}, "   ", b"abc", "garbage"],
+        ids=["empty", "none", "zero", "list", "dict", "blank", "bytes", "labels"],
+    )
+    def test_an_unusable_payload_is_missing_not_negative(self, value):
+        """A TMbed entry with no usable topology predicted nothing.
+
+        Before the negative got a name it came out as `none`, which displays as
+        N/A; `non-transmembrane`, or signal peptide `False`, would turn it into a
+        confident negative.
+        """
+        preds = [_make_prediction("TMbed", value)]
+        assert BiocentralPredictionRetriever._extract_transmembrane(preds) == ""
+        assert BiocentralPredictionRetriever._extract_signal_peptide(preds) == ""
 
 
 class TestPerSequenceExtraction:
@@ -185,21 +180,6 @@ class TestBiocentralRetrieverNoSequences:
         assert all(v == "" for v in result[0].annotations.values())
 
 
-# The substrings the prep service matches (apps/prep/.../pipeline.py) to
-# classify a failure as BIOCENTRAL_UNAVAILABLE and send the user to Colab.
-# Copied, not imported: protspace must not depend on protspace_prep.
-_BIOCENTRAL_DOWN_PATTERNS = (
-    "connection refused",
-    "cannot connect to host",
-    "connectionerror",
-    "temporary failure in name resolution",
-    "name or service not known",
-    "503 service unavailable",
-    "503 server error",
-    "no healthy biocentral",
-)
-
-
 def _seq(i: int, length: int = 30) -> str:
     """A distinct protein sequence for index *i*."""
     alphabet = "ACDEFGHIKLMNPQRSTVWY"
@@ -210,7 +190,7 @@ def _seq(i: int, length: int = 30) -> str:
 class _FakeBiocentral:
     """Stands in for ``BiocentralAPI``: records each ``predict`` request and
     answers with a membrane prediction per sequence, keyed like the live server
-    (v1.2.1) by the submitted identifier. Batches listed in *failing* raise."""
+    (v1.2.1 and v2.0.1) by the submitted identifier. Batches listed in *failing* raise."""
 
     def __init__(self, failing=(), error=None, rejects=(), failing_ids=()):
         self.failing = set(failing)
@@ -219,7 +199,7 @@ class _FakeBiocentral:
         self.failing_ids = set(failing_ids)
         self.error = error or RuntimeError("prediction task failed")
         # Identifiers the server refuses on length, failing the whole request
-        # the way biocentral.rostlab.org v1.2.1 answers with 422.
+        # the way biocentral.rostlab.org (v1.2.1 and v2.0.1) answers with 422.
         self.rejects = set(rejects)
         self.requests: list[dict[str, str]] = []
         self.health_checks = 0
@@ -351,7 +331,7 @@ class TestSequenceLengthLimits:
         assert notes[0].levelname == "WARNING"
         assert "3 of 5 proteins" in notes[0].getMessage()
         text = notes[0].getMessage().lower()
-        assert not [p for p in _BIOCENTRAL_DOWN_PATTERNS if p in text]
+        assert not [p for p in biocentral_down_patterns() if p in text]
 
     def test_a_batch_refused_for_a_named_sequence_is_resent_without_it(self):
         """Should the server's limits differ from ours, the 422 names the
@@ -504,7 +484,7 @@ class TestFailedBatch:
         summary = [r for r in caplog.records if "missing for" in r.getMessage()]
         assert len(summary) == 1
         text = summary[0].getMessage().lower()
-        assert not [p for p in _BIOCENTRAL_DOWN_PATTERNS if p in text]
+        assert not [p for p in biocentral_down_patterns() if p in text]
 
     def test_every_batch_failing_marks_the_source_failed(self):
         sequences = {f"P{i}": _seq(i) for i in range(3)}
@@ -514,3 +494,91 @@ class TestFailedBatch:
 
         assert retriever.prediction_failed
         assert set(values.values()) == {""}
+
+
+class _RefusedByTheClient(_FakeBiocentral):
+    """The wait ends the way the real client's does when it will not talk to the
+    server it finds: ``TimeoutError``, with nothing to say why. The window is a 2.x
+    client's, which the failure message reports."""
+
+    MIN_API_VERSION = "2.0.0"
+    MAX_API_VERSION = "3.0.0"
+
+    def wait_until_healthy(self, *args, **kwargs):
+        raise TimeoutError("No healthy biocentral service became available in time")
+
+
+class TestNoUsableServer:
+    def test_a_server_the_client_cannot_use_fails_the_source_and_says_why(
+        self, monkeypatch, caplog
+    ):
+        """Biocentral moved to v2 under a client that only knew v1, and this
+        warning said nothing a user could act on. Empty predictions must stay
+        out of the cache, so the source is failed, not left blank."""
+
+        health = MagicMock(status_code=200, json=lambda: {"version": "3.0.0"})
+        monkeypatch.setattr(requests, "get", lambda url, **kwargs: health)
+
+        with caplog.at_level("WARNING"):
+            retriever, values = _predict({"P1": _seq(1)}, _RefusedByTheClient())
+
+        assert retriever.prediction_failed
+        assert values == {"P1": ""}
+        warning = " ".join(r.getMessage() for r in caplog.records)
+        assert any(p in warning.lower() for p in biocentral_down_patterns())
+        assert "v3.0.0" in warning
+
+
+class TestUnknownModel:
+    """The client's enum members are generated from the server's spec, so a release can
+    rename or drop one the retriever asks for by name."""
+
+    @staticmethod
+    def _client_without(member):
+        import enum
+
+        import biocentral_api
+
+        members = {
+            m.name: m.value
+            for m in biocentral_api.BiocentralPredictionModel
+            if m.name != member
+        }
+        return enum.Enum("BiocentralPredictionModel", members, type=str)
+
+    def test_a_model_the_client_no_longer_lists_fails_the_source(self, caplog):
+        """Blank columns must stay out of the cache, as for an unreachable server."""
+        retriever = BiocentralPredictionRetriever(
+            headers=["P1"],
+            annotations=["predicted_transmembrane"],
+            sequences={"P1": _seq(1)},
+        )
+        fake = _FakeBiocentral()
+
+        with (
+            patch("biocentral_api.BiocentralAPI", fake),
+            patch(
+                "biocentral_api.BiocentralPredictionModel",
+                self._client_without("TMBED"),
+            ),
+            caplog.at_level("WARNING"),
+        ):
+            rows = retriever.fetch_annotations()
+
+        assert retriever.prediction_failed
+        assert rows[0].annotations["predicted_transmembrane"] == ""
+        assert fake.requests == [], "nothing is sent for a model that cannot be named"
+        assert "Unknown Biocentral model: TMBED" in caplog.text
+
+    def test_every_model_the_retriever_names_is_one_the_client_lists(self):
+        from biocentral_api import BiocentralPredictionModel
+
+        from protspace.data.annotations.retrievers.biocentral_retriever import (
+            _PREDICTION_MODELS,
+        )
+
+        unlisted = set(_PREDICTION_MODELS.values()) - set(
+            BiocentralPredictionModel.__members__
+        )
+
+        assert not unlisted, f"not in the client's models: {sorted(unlisted)}"

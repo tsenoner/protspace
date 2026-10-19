@@ -199,6 +199,15 @@ pnpm test:ci      # Run the CI test suite locally
 pnpm docs:build   # Verify the documentation build
 ```
 
+**Constants shared with the Python package** (missing-value tokens, the N/A key and colour,
+Kelly's colours, palette ids, point shapes, boolean labels, the column names never read as an
+annotation) live in
+`contracts/shared-constants.json`. Edit them there and run `pnpm shared-constants`, which
+regenerates `packages/utils/src/generated/shared-constants.ts` and
+`apps/protspace/src/protspace/_generated/shared_constants.py`; commit all three.
+`pnpm shared-constants:check` (in `pnpm precommit` and `bundle-contract.yml`) fails while they
+disagree. See [`contracts/README.md`](contracts/README.md) for what belongs there.
+
 ### Code Quality Standards
 
 **Automated CI checks** (all PRs must pass):
@@ -210,7 +219,8 @@ pnpm docs:build   # Verify the documentation build
 5. Test suite execution
 6. Documentation build
 7. Bundle format contract (`bundle-contract.yml`), `pnpm test:contract` against a real Python-produced
-   bundle. Deliberately **unfiltered**: it runs on every PR, including PRs that touch no code it covers.
+   bundle, plus `pnpm shared-constants:check`. Deliberately **unfiltered**: it runs on every PR,
+   including PRs that touch no code it covers.
 8. E2E, Playwright (`e2e.yml`), on PRs touching the web app, the packages it builds on, or the root
    files that decide what those resolve to — `e2e.yml` owns the exact list — plus nightly on `main`.
    Outside those paths, dispatch it: `gh workflow run e2e.yml --ref <branch>`.

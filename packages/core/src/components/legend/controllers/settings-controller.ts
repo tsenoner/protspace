@@ -1,5 +1,6 @@
 import { html } from 'lit';
 import {
+  DEFAULT_CATEGORICAL_PALETTE_ID,
   DEFAULT_NUMERIC_PALETTE_ID,
   DEFAULT_NUMERIC_STRATEGY,
   normalizeNumericPaletteId,
@@ -247,7 +248,9 @@ export class SettingsController {
     this.host._data.clearShapeSize();
     const isNumericAnnotation = this.host._isCurrentAnnotationNumeric();
 
-    this.host._selectedPaletteId = isNumericAnnotation ? DEFAULT_NUMERIC_PALETTE_ID : 'kellys';
+    this.host._selectedPaletteId = isNumericAnnotation
+      ? DEFAULT_NUMERIC_PALETTE_ID
+      : DEFAULT_CATEGORICAL_PALETTE_ID;
     if (isNumericAnnotation) {
       this.host._numericSettingsByAnnotation = {
         ...this.host._numericSettingsByAnnotation,

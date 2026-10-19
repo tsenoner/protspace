@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CATEGORICAL_PALETTE_ID,
   COLOR_SCHEMES,
   getNumericBinLabelMap,
   isGradientPalette,
@@ -42,7 +43,7 @@ export function normalizeSortModeForType(
 
 /** A categorical palette id: a gradient or a missing id falls back to Kelly's colours. */
 export function normalizeCategoricalPaletteId(id: string | null | undefined): string {
-  return !id || isGradientPalette(id) ? 'kellys' : id;
+  return !id || isGradientPalette(id) ? DEFAULT_CATEGORICAL_PALETTE_ID : id;
 }
 
 /** The same order the other way round: `manual` ↔ `manual-reverse`, `-asc` ↔ `-desc`. */
