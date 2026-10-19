@@ -397,8 +397,9 @@ describe('exporters report the file they wrote', () => {
     expect(download).toHaveBeenCalledWith('blob:protein-ids', 'protein_ids.txt');
     expect(String(download.mock.calls[0][0]).startsWith('data:')).toBe(false);
     // Revoked only after the browser has had time to start the download (Firefox, Safari).
+    vi.advanceTimersByTime(59_999);
     expect(revoked).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1);
     expect(revoked).toHaveBeenCalledWith('blob:protein-ids');
   });
 
@@ -422,8 +423,9 @@ describe('exporters report the file they wrote', () => {
     expect(exporter.exportTable()).toBe('protspace_pca_species_2024-01-15.tsv');
     expect((created.mock.calls[0][0] as Blob).type).toBe('text/tab-separated-values');
     expect(download).toHaveBeenCalledWith('blob:table', 'protspace_pca_species_2024-01-15.tsv');
+    vi.advanceTimersByTime(59_999);
     expect(revoked).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1);
     expect(revoked).toHaveBeenCalledWith('blob:table');
   });
 
@@ -565,7 +567,7 @@ async function exportTableText(
   vi.useFakeTimers();
   try {
     exporter.exportTable();
-    // The Blob URL is revoked a second after the download starts.
+    // The Blob URL is revoked a minute after the download starts.
     vi.runAllTimers();
   } finally {
     vi.useRealTimers();

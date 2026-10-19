@@ -19,6 +19,10 @@ import { isNumericAnnotation } from './numeric-binning.js';
 import { readNumericValue } from './plot-data-accessors.js';
 import { PROTEIN_ID_COLUMN } from '../generated/shared-constants';
 
+// How long a download's Blob URL outlives the click. Firefox and Safari can abort a download
+// whose URL is revoked before it starts, and the start can lag (a slow machine, a save prompt).
+const DOWNLOAD_URL_TTL_MS = 60_000;
+
 // PDF generation libraries are imported dynamically for better browser compatibility
 declare const window: Window & typeof globalThis;
 
@@ -506,9 +510,7 @@ export class ProtSpaceExporter {
     try {
       this.downloadFile(url, fileName);
     } finally {
-      // Not straight after the click: Firefox and Safari can abort a download whose URL is
-      // revoked before it starts.
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL_MS);
     }
     return fileName;
   }
@@ -537,9 +539,7 @@ export class ProtSpaceExporter {
     try {
       this.downloadFile(url, fileName);
     } finally {
-      // Not straight after the click, as for the IDs: Firefox and Safari can abort a download
-      // whose URL is revoked before it starts.
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL_MS);
     }
     return fileName;
   }
