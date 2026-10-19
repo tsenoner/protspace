@@ -1,17 +1,18 @@
 # Exporting Results
 
-ProtSpace allows you to export publication-ready figures, raw data, and protein IDs.
+ProtSpace allows you to export publication-ready figures, raw data, protein IDs and tables.
 
 ## Export Button
 
 Click **Export** in the control bar to see available formats:
 
-| Format          | Description                                               |
-| --------------- | --------------------------------------------------------- |
-| **PNG**         | Raster image of the current view with legend              |
-| **PDF**         | PDF document of the current view with legend              |
-| **Protein IDs** | Text file with newline-separated identifiers              |
-| **Parquet**     | `.parquetbundle` file with all data and optional settings |
+| Format          | Description                                                       |
+| --------------- | ----------------------------------------------------------------- |
+| **PNG**         | Raster image of the current view with legend                      |
+| **PDF**         | PDF document of the current view with legend                      |
+| **Protein IDs** | Text file with newline-separated identifiers                      |
+| **Table**       | Tab-separated table of the visible proteins and their annotations |
+| **Parquet**     | `.parquetbundle` file with all data and optional settings         |
 
 ## Image Export (PNG / PDF)
 
@@ -70,16 +71,46 @@ so it cannot appear inside one.
 
 ## Protein IDs Export
 
-Exports a plain text file with one protein ID per line. Useful for downstream analysis.
+Exports a plain text file, `protein_ids.txt`, with one protein ID per line: the proteins visible
+in the plot (see [What Gets Exported](#what-gets-exported)). Useful for downstream analysis, or to
+paste back into the search box later.
+
+## Table Export
+
+Exports the same proteins as a tab-separated `.tsv` table that opens in a spreadsheet, R or pandas,
+one row per protein:
+
+- `protein_id`
+- the coordinates of the projection on screen, as `<projection>_x` and `<projection>_y` (for a
+  [deprecated 3D projection](/explore/control-bar#_1-projection-selector), the X/Y view you see,
+  which matches the 2D projection only for PCA; no `z`)
+- one column per annotation, `cluster_*` columns included. A cell holds the labels you see in the
+  legend, joined with `;` when a protein has several; a numeric annotation holds its value, not its
+  bin. Missing values are empty.
+- for an annotation with [transferred values](/explore/eat), the curated column holds only the
+  curated values, followed by `<annotation>__pred_value`, `__pred_confidence` and `__pred_source`
+  with the transfers.
+
+[`protspace export`](/guide/python-cli#protspace-export) writes the same columns from the command
+line, for every protein of a bundle instead of the visible ones. Read them by name, not position:
+the command line keeps the bundle's column order, so its `__pred_*` columns need not follow their
+annotation.
+
+To list the members of one cluster, colour by its `cluster_*` annotation, double-click the cluster
+in the legend to show it alone, and export.
 
 ## What Gets Exported
 
-| State             | Exported Data          |
-| ----------------- | ---------------------- |
-| Proteins isolated | Only isolated proteins |
-| No isolation      | All proteins           |
+The **Protein IDs** and **Table** exports hold exactly the proteins visible in the plot. A protein
+is left out when:
 
-Use isolation to export specific subsets.
+- the [filter query](/explore/control-bar#_7-filter-button) excludes it, the EAT reliability filter
+  included;
+- [isolation](/explore/control-bar#_6-isolate-button) is on and it is not in the isolated set;
+- every value it has in the annotation you colour by is hidden in the legend.
+
+The **Parquet** export holds the proteins left by the filter query and isolation, whatever the
+legend hides. Images show what is drawn.
 
 A subset export drops the statistics: the scores were computed over the whole dataset, so keeping
 them in a slice would make them read as describing that slice.

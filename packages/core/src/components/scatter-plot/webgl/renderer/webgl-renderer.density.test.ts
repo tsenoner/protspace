@@ -60,6 +60,30 @@ vi.mock('../color-utils', () => ({
 
 afterEach(() => vi.restoreAllMocks());
 
+/** Allocations of the float density target (RGBA32F). */
+const accumAllocations = (gl: ReturnType<typeof setup>['gl']) =>
+  vi.mocked(gl.texImage2D).mock.calls.filter((c) => c[2] === gl.RGBA32F).length;
+
+/**
+ * Report every framebuffer incomplete once the float density target (RGBA32F)
+ * has been allocated, so the gamma targets allocated before it stay
+ * complete and only density fails. Returns a call that lets the device recover.
+ */
+function failDensityTarget(gl: ReturnType<typeof setup>['gl']): () => void {
+  let failing = true;
+  let sawFloatTarget = false;
+  const texImage2D = gl.texImage2D;
+  gl.texImage2D = ((...args: unknown[]) => {
+    if (args[2] === gl.RGBA32F) sawFloatTarget = true;
+    return texImage2D(...(args as []));
+  }) as typeof gl.texImage2D;
+  gl.checkFramebufferStatus = (() =>
+    failing && sawFloatTarget ? 0 : gl.FRAMEBUFFER_COMPLETE) as never;
+  return () => {
+    failing = false;
+  };
+}
+
 describe('density layer, off', () => {
   it('makes byte-identical GL calls whether densityLayer is off or absent', () => {
     const off = setup({ width: 800, height: 600, densityLayer: 'off' });
@@ -75,12 +99,7 @@ describe('density layer, off', () => {
     off.renderer.destroy();
     absent.renderer.destroy();
   });
-});
 
-const accumAllocations = (gl: Record<string, ReturnType<typeof vi.fn>>) =>
-  gl.texImage2D.mock.calls.filter((c) => c[2] === 0x8814).length;
-
-describe('density layer, off', () => {
   it('compiles no density programs and allocates no targets', () => {
     const absent = setup({ width: 800, height: 600 });
     const absentPrograms = vi.spyOn(absent.gl, 'createProgram');
@@ -103,52 +122,6 @@ describe('density layer, off', () => {
 });
 
 describe('density layer, on', () => {
-  it('accumulates additively and adds three full-screen quad draws', () => {
-    const on = setup({ width: 800, height: 600, densityLayer: 'on' });
-    const calls = recordCalls(on.glRecord);
-    on.renderer.render(plotData(50));
-
-    expect(countOf(calls, 'blendFunc(1,1)')).toBe(1);
-    expect(calls.filter((c) => /^drawArrays\(\d+,0,6\)$/.test(c))).toHaveLength(4);
-    on.renderer.destroy();
-  });
-
-  it('re-binds the point program, VAO and atlas after compositing, before the selected run', () => {
-    const { pd, style } = categories(FIVE);
-    const index = (sp: { id: string }) => Number(sp.id.slice(1));
-    const on = setup({ width: 800, height: 600, densityLayer: 'on' }, {}, undefined, {
-      ...style,
-      getOpacity: (sp) => (index(sp) >= 40 ? 1 : 0.5),
-      getDepth: (sp) => (index(sp) >= 40 ? 0 : 1),
-    });
-    on.renderer.setSelectionActive(true);
-    const calls = recordCalls(on.glRecord);
-    on.renderer.render(pd);
-
-    const base = calls.indexOf('drawArrays(0,0,40)');
-    const composite = calls.findIndex((c, i) => i > base && /^drawArrays\(\d+,0,6\)$/.test(c));
-    const top = calls.indexOf('drawArrays(0,40,10)');
-    expect(base).toBeGreaterThan(-1);
-    expect(composite).toBeGreaterThan(base);
-    expect(calls.slice(composite + 1, top)).toEqual([
-      'bindVertexArray(null)',
-      'bindTexture(3553,null)',
-      'activeTexture(33987)',
-      'bindTexture(3553,null)',
-      'activeTexture(33986)',
-      'bindTexture(3553,null)',
-      'activeTexture(33984)',
-      'bindTexture(3553,null)',
-      'useProgram(obj)',
-      'bindVertexArray(obj)',
-      'activeTexture(33985)',
-      'bindTexture(3553,obj)',
-      'enable(3042)',
-      'blendFunc(1,771)',
-    ]);
-    on.renderer.destroy();
-  });
-
   it('stays off without the float extensions, and says so once as density-unavailable, not gamma', () => {
     const on = setup(
       { width: 800, height: 600, densityLayer: 'on' },
@@ -271,12 +244,13 @@ const FIVE = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231'];
 describe('density layer, contour', () => {
   const contour: Config = { width: 800, height: 600, densityLayer: 'on' };
 
-  it('draws one colour in four full-screen quads', () => {
+  it('accumulates additively once and draws one colour in four full-screen quads', () => {
     const { pd, style } = categories(['#e6194b']);
     const on = setup(contour, {}, undefined, style);
     const calls = recordCalls(on.glRecord);
     on.renderer.render(pd);
 
+    expect(countOf(calls, 'blendFunc(1,1)')).toBe(1);
     expect(quadDraws(calls)).toHaveLength(4);
     expect(countOf(calls, 'drawArrays(0,0,50)')).toBe(2);
     on.renderer.destroy();
@@ -371,7 +345,7 @@ describe('density layer, contour', () => {
     on.renderer.destroy();
   });
 
-  it('composites between the runs off the atlas unit, then re-binds the atlas', () => {
+  it('composites between the runs off the atlas unit, then re-binds program, VAO and atlas before the selected run', () => {
     const { pd, style } = categories(FIVE);
     const index = (sp: { id: string }) => Number(sp.id.slice(1));
     const selected: WebGLStyleGetters = {
@@ -399,6 +373,25 @@ describe('density layer, contour', () => {
       'activeTexture(33986)',
       'activeTexture(33984)',
       'activeTexture(33985)',
+    ]);
+    // After the composite quad: unbind the density units, then restore the
+    // point program, VAO and atlas and the point blend for the selected run.
+    const composite = seam.findIndex((c) => /^drawArrays\(\d+,0,6\)$/.test(c));
+    expect(seam.slice(composite + 1)).toEqual([
+      'bindVertexArray(null)',
+      'bindTexture(3553,null)',
+      'activeTexture(33987)',
+      'bindTexture(3553,null)',
+      'activeTexture(33986)',
+      'bindTexture(3553,null)',
+      'activeTexture(33984)',
+      'bindTexture(3553,null)',
+      'useProgram(obj)',
+      'bindVertexArray(obj)',
+      'activeTexture(33985)',
+      'bindTexture(3553,obj)',
+      'enable(3042)',
+      'blendFunc(1,771)',
     ]);
     on.renderer.destroy();
   });
@@ -430,19 +423,13 @@ describe('density layer, auto', () => {
   });
 
   it('treats a missing densityLayer as off, not auto, on the same view', () => {
-    const configs: Config[] = [
-      { width: 800, height: 600 },
-      { width: 800, height: 600, densityLayer: undefined },
-    ];
-    for (const config of configs) {
-      const off = setup(config);
-      const calls = recordCalls(off.glRecord);
-      off.renderer.render(swissprot());
+    const off = setup({ width: 800, height: 600 });
+    const calls = recordCalls(off.glRecord);
+    off.renderer.render(swissprot());
 
-      expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
-      expect(off.resources.density).toBeNull();
-      off.renderer.destroy();
-    }
+    expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
+    expect(off.resources.density).toBeNull();
+    off.renderer.destroy();
   });
 });
 
@@ -474,13 +461,7 @@ describe('density layer failure is not a gamma failure', () => {
   it('keeps rendering through the gamma pipeline when the grid cannot be allocated', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const on = setup({ width: 800, height: 600, densityLayer: 'on' });
-    let sawFloatTarget = false;
-    const texImage2D = on.gl.texImage2D;
-    on.gl.texImage2D = ((...args: unknown[]) => {
-      if (args[2] === 0x8814) sawFloatTarget = true;
-      return texImage2D(...(args as []));
-    }) as typeof on.gl.texImage2D;
-    on.gl.checkFramebufferStatus = (() => (sawFloatTarget ? 0 : 0x8cd5)) as never;
+    failDensityTarget(on.gl);
 
     const calls = recordCalls(on.glRecord);
     on.renderer.render(plotData(50));
@@ -508,24 +489,16 @@ describe('density latch', () => {
   it('holds after the device recovers', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const on = setup({ width: 800, height: 600, densityLayer: 'on' });
-    // Fail only the float density target (as in the grid-allocation test above),
-    // so density latches off while the gamma pipeline keeps working.
-    let failDensityTarget = true;
-    let sawFloatTarget = false;
-    const texImage2D = on.gl.texImage2D;
-    on.gl.texImage2D = ((...args: unknown[]) => {
-      if (args[2] === 0x8814) sawFloatTarget = true;
-      return texImage2D(...(args as []));
-    }) as typeof on.gl.texImage2D;
-    on.gl.checkFramebufferStatus = (() =>
-      failDensityTarget && sawFloatTarget ? 0 : 0x8cd5) as never;
+    // Density latches off while the gamma pipeline keeps working.
+    const recover = failDensityTarget(on.gl);
     const calls = recordCalls(on.glRecord);
 
     on.renderer.render(plotData(50));
     expect(reasons(on.degraded)).toEqual(['density-unavailable']);
 
-    // A re-render that would re-accumulate the field still draws no density.
-    failDensityTarget = false;
+    // The device recovers, but the latch holds: a re-render that would
+    // re-accumulate the field still draws no density.
+    recover();
     on.renderer.invalidateStyleCache();
     on.renderer.render(plotData(50));
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);

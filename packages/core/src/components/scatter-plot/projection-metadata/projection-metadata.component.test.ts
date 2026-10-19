@@ -396,27 +396,6 @@ describe('metadata sections', () => {
     expect(quality.textContent).not.toContain('N Neighbors');
   });
 
-  it('labels the embedding reference instead of abbreviating it', async () => {
-    const el = await setup(
-      { n_neighbors: 15 },
-      {
-        statistics: [
-          statRow(),
-          statRow({ space_kind: 'embedding', space_name: 'prot_t5', value: 0.095 }),
-        ],
-        selectedAnnotation: 'major_group',
-      },
-    );
-
-    const text = el.shadowRoot!.querySelector('.annotation-stats')!.textContent!;
-    // One word. The two headings sit in the grid's auto-sized columns, so a longer phrase
-    // ("Source embedding") set those widths from the heading rather than the number and
-    // starved the metric-name column — measured at 36px against a 120px need. The heading's
-    // own ⓘ carries the full explanation.
-    expect(text).toContain('Embedding');
-    expect(text).not.toContain('emb 0.10');
-  });
-
   it('omits the quality section entirely when there is no faithfulness', async () => {
     const el = await setup({ n_neighbors: 15 });
 
@@ -447,7 +426,16 @@ describe('metadata sections', () => {
         selectedAnnotation: 'major_group',
       },
     );
-    expect(statsBlock(withReference)!.querySelector('.stat-columns')).not.toBeNull();
+    // One word each. The headings sit in the grid's auto-sized columns, so a longer phrase
+    // ("Source embedding") set those widths from the heading rather than the number and
+    // starved the metric-name column — measured at 36px against a 120px need. The heading's
+    // own ⓘ carries the full explanation.
+    const header = statsBlock(withReference)!.querySelector('.stat-columns')!;
+    expect(Array.from(header.children).map((cell) => cell.textContent)).toEqual([
+      '',
+      'Projection',
+      'Embedding',
+    ]);
   });
 
   it('expands a nested quality object inside a JSON field, keeping siblings as parameters', async () => {
@@ -602,6 +590,41 @@ describe('auto-cluster agreement placement', () => {
     expect(text).toContain('Separation, scored on');
     expect(text).toContain('Recovers');
     expect(text).toContain('optimistic');
+  });
+
+  it('caveats an embedding clustering as found in the embedding, not this projection', async () => {
+    // `--cluster-space embedding`: K-means ran on the source embedding, so the optimistic
+    // numbers are the Embedding reference and this projection's are not.
+    const el = await setup(
+      { n_neighbors: 15 },
+      {
+        statistics: [
+          statRow({ annotation: 'cluster_elbow_prot_t5', label_kind: 'kmeans_elbow' }),
+          statRow({
+            space_kind: 'embedding',
+            space_name: 'prot_t5',
+            annotation: 'cluster_elbow_prot_t5',
+            label_kind: 'kmeans_elbow',
+            value: 0.41,
+          }),
+          statRow({
+            space_kind: 'embedding',
+            space_name: 'prot_t5',
+            annotation: '',
+            stat_family: 'cluster_validity',
+            label_kind: 'kmeans_elbow',
+            metric: 'n_clusters',
+            metric_kind: 'meta',
+            value: 7,
+          }),
+        ],
+        selectedAnnotation: 'cluster_elbow_prot_t5',
+      },
+    );
+
+    const text = statsBlock(el)!.textContent!;
+    expect(text).toContain('found these clusters in the embedding');
+    expect(text).not.toContain('in this projection, so these scores are optimistic');
   });
 
   it('does not caveat an ordinary annotation', async () => {

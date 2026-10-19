@@ -46,29 +46,31 @@ const MULTI_VALUE_ANNOTATION = 'keyword';
 const NO_ATLAS_FITS_LIMIT = 2047;
 
 test.describe('label atlas on a device that cannot hold it', () => {
-  test('never issues an allocation the device would refuse', async ({ page }) => {
+  // One load serves the three outcomes. The toast goes first: it auto-dismisses
+  // after 10 s, and the GL and canvas reads below must not eat into that window.
+  // The later checks are soft, so one failure still reports the others.
+  test('never issues a refused allocation, still draws in colour, and tells the user', async ({
+    page,
+  }) => {
     await simulateTextureLimit(page, NO_ATLAS_FITS_LIMIT);
 
     await page.goto(`/explore?annotation=${MULTI_VALUE_ANNOTATION}`);
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
+
+    // The user is told that marker fidelity was reduced.
+    await expect(page.getByText('Rendering quality reduced.')).toBeVisible({ timeout: 15_000 });
 
     const stats = await simulatedGlStats(page);
-    expect(
-      stats.refusedAllocations,
-      `renderer issued texture allocations the device refuses: ${JSON.stringify(stats.refusedAllocations)}`,
-    ).toEqual([]);
+    expect
+      .soft(
+        stats.refusedAllocations,
+        `renderer issued texture allocations the device refuses: ${JSON.stringify(stats.refusedAllocations)}`,
+      )
+      .toEqual([]);
     // The permanent half: once an allocation is refused, every later update
     // targets storage that does not exist.
-    expect(stats.refusedUpdates).toBe(0);
-  });
-
-  test('still draws every point, in colour rather than black', async ({ page }) => {
-    await simulateTextureLimit(page, NO_ATLAS_FITS_LIMIT);
-
-    await page.goto(`/explore?annotation=${MULTI_VALUE_ANNOTATION}`);
-    await dismissTourIfPresent(page);
-    await waitForExploreDataLoad(page);
+    expect.soft(stats.refusedUpdates).toBe(0);
 
     const proteinCount = await page.evaluate(() => {
       const plot = document.querySelector('#myPlot') as
@@ -76,24 +78,14 @@ test.describe('label atlas on a device that cannot hold it', () => {
         | null;
       return plot?.data?.protein_ids?.length ?? 0;
     });
-    expect(proteinCount).toBeGreaterThan(0);
+    expect.soft(proteinCount).toBeGreaterThan(0);
 
     // Fidelity degrades; coverage does not. Markers fall back to their dominant
     // colour, which is what the legend shows — never the solid black an
     // unallocated atlas produced.
     const colors = await distinctCanvasColors(page);
-    expect(colors.length).toBeGreaterThan(1);
-    expect(colors.every((c) => c === '0,0,0')).toBe(false);
-  });
-
-  test('tells the user that marker fidelity was reduced', async ({ page }) => {
-    await simulateTextureLimit(page, NO_ATLAS_FITS_LIMIT);
-
-    await page.goto(`/explore?annotation=${MULTI_VALUE_ANNOTATION}`);
-    await dismissTourIfPresent(page);
-    await waitForExploreDataLoad(page);
-
-    await expect(page.getByText('Rendering quality reduced.')).toBeVisible({ timeout: 15_000 });
+    expect.soft(colors.length).toBeGreaterThan(1);
+    expect.soft(colors.every((c) => c === '0,0,0')).toBe(false);
   });
 
   test('is inert on a device with ample limits', async ({ page }) => {

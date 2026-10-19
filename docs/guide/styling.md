@@ -30,7 +30,9 @@ workflow above is meant for categorical columns (e.g. `major_group`, `ec`, `supe
 it to a **numeric** column (`length`, pLDDT, a score) does not do what you expect:
 
 - `--generate-template` lists **every distinct number as its own category**, hundreds to thousands
-  of rows to hand-color.
+  of rows to hand-color. It leaves `selectedPaletteId` out of a numeric column's entry: the column
+  reads it as its gradient, so the categorical default would reset a gradient chosen in the web
+  app to `batlow`.
 - `colors` / `shapes` / `pinnedValues` match one existing value at a time, so a range like
   `"200-300"` or an interpolated `"3.5"` raises `Value '…' does not exist`. A key that is a number
   is resolved numerically rather than textually, so `"100.0"` still finds the value `100` in a
@@ -118,11 +120,16 @@ settings, so editing the per-annotation `shapeSize` of such a bundle has no visi
 
 ### N/A values
 
-Missing values (`""`, `"<NA>"`, `"NaN"`, `"__NA__"`, `"None"`) are normalized automatically, use any
-form in the styles file. A missing cell of a v3 bundle, from the web app or from Python, reads back
-as `""`. `"None"` is how one reads back from a v2 bundle exported by a web build before v3, which
-wrote the cell as a Parquet NULL. In the output bundle N/A is stored with the key `__NA__` (the
-frontend's internal format).
+Every value the web app shows as N/A is one legend entry, so it is one entry in the styles file
+too. Name it by any spelling the web reads as missing (see
+[Missing Values](./data-format.md#missing-values): `""`, `"N/A"`, `"None"`, `"null"`, `"NaN"`,
+`"__NA__"`, in any case), or `"<NA>"`, whichever the data uses. This holds for `colors`, `shapes`,
+`pinnedValues` and `hiddenValues`. A missing cell of a v3 bundle, from the web app or from Python,
+reads back as `""`; `"None"` is how one reads back from a v2 bundle exported by a web build before
+v3, which wrote the cell as a Parquet NULL. In the output bundle N/A is stored once, with the key
+`__NA__` (the frontend's internal format), and a new N/A style replaces the one already stored.
+`--generate-template` lists it as `__NA__`, pre-filled with the web app's default N/A gray
+(`#DDDDDD`).
 
 ### Example: custom colors and shapes
 
@@ -133,7 +140,7 @@ frontend's internal format).
     "colors": {
       "Short-chain": "#63CBE5",
       "Long-chain": "#24638F",
-      "<NA>": "#C0C0C0"
+      "<NA>": "#DDDDDD"
     },
     "shapes": {
       "Short-chain": "circle",
@@ -207,7 +214,7 @@ with `sortMode: "manual"`.
   requires `maxVisibleValues: 13`.
 - Colors are auto-assigned from Kelly's 21 Colors of Maximum Contrast when no explicit `colors` are
   provided. N/A gets a lighter gray (`#DDDDDD`).
-- Use `""` for N/A in `pinnedValues`.
+- Name N/A in `pinnedValues` by any of its spellings (`""` or `"__NA__"` work for any data).
 
 ### `__REST__` auto-fill marker
 

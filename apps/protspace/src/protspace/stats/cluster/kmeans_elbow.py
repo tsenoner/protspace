@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from protspace.stats._sampling import id_seed, sorted_subsample
+from protspace.stats._sampling import canonical_order, sorted_subsample
 
 
 @dataclass
@@ -50,6 +50,48 @@ def chord_deviation(y: np.ndarray) -> np.ndarray:
     x2, y2 = 1.0, float(yn[-1])
     denom = max(float(np.hypot(x2 - x1, y2 - y1)), 1e-12)
     return np.abs((y2 - y1) * x - (x2 - x1) * yn + (x2 * y1 - y2 * x1)) / denom
+
+
+def pca_reduce(
+    X: np.ndarray,
+    *,
+    ids: list | None = None,
+    rng_seed: int = 42,
+    n_components: int = 50,
+    max_fit_sample: int = 50_000,
+    chunk_size: int = 65_536,
+) -> np.ndarray:
+    """Project ``X`` onto its top ``n_components`` principal components.
+
+    Embedding-space clustering sweeps KMeans on these instead of the raw pLM
+    dimensions: the sweep is O(n*K*d) per iteration, and the leading components
+    carry the cluster structure. An input of ``n_components`` or fewer dimensions
+    is returned as is.
+
+    The PCA is fitted on at most ``max_fit_sample`` rows, drawn in canonical id
+    order when ``ids`` is given (the ``_sampling.py`` contract ``kmeans_elbow``
+    honours), then applied to every row in chunks, so a 570k-row embedding is
+    never centred or upcast as one full copy.
+    """
+    from sklearn.decomposition import PCA
+
+    X = np.asarray(X)
+    n, d = X.shape
+    if d <= n_components:
+        return X
+
+    order, fit_rng = canonical_order(ids, n, rng_seed)
+    if order is None:
+        order = np.arange(n)
+    sub = sorted_subsample(n, max_fit_sample, fit_rng)
+    fit_rows = order if sub is None else order[sub]
+
+    pca = PCA(n_components=min(n_components, len(fit_rows)), random_state=rng_seed).fit(
+        X[fit_rows]
+    )
+    return np.vstack(
+        [pca.transform(X[i : i + chunk_size]) for i in range(0, n, chunk_size)]
+    )
 
 
 def kmeans_elbow(
@@ -100,16 +142,14 @@ def kmeans_elbow(
     # depend only on the id-SET, not the input order (the _sampling.py contract the
     # other heavy metrics honour). Everything below runs on Xc (canonical order);
     # labels are mapped back to the caller's order at the end.
-    if ids is not None and len(ids) == n:
-        canonical = np.argsort(np.asarray(ids), kind="stable")
+    canonical, fit_rng = canonical_order(ids, n, rng_seed)
+    if canonical is not None:
         inverse = np.empty(n, dtype=int)
         inverse[canonical] = np.arange(n)
         Xc = X[canonical]
-        fit_rng = np.random.default_rng(id_seed(rng_seed, list(ids)))
     else:
-        canonical = inverse = None
+        inverse = None
         Xc = X
-        fit_rng = np.random.default_rng(rng_seed)
 
     # Bound the fit cost: sweep a subsample at large n; keep full-batch below. The
     # draw is id-canonical (sorted positions over Xc, which is in canonical order).

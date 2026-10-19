@@ -6,15 +6,20 @@ Extracted from LocalProcessor._load_h5_files and _collect_datasets.
 import logging
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 import h5py
 import numpy as np
 
-from protspace.data.loaders.embedding_set import EmbeddingSet
+from protspace.data.loaders.embedding_set import MODEL_DISPLAY_NAMES, EmbeddingSet
 
 logger = logging.getLogger(__name__)
 
 EMBEDDING_EXTENSIONS = {".hdf", ".hdf5", ".h5"}
+
+# Model keys a file name may end in, lowercased -> registry spelling. MMseqs2 is
+# a sequence-similarity matrix, never an HDF5 file.
+_KNOWN_MODELS = {key.lower(): key for key in MODEL_DISPLAY_NAMES if key != "MMseqs2"}
 
 # UniProt FASTA header pattern: >sp|ACCESSION|NAME or >tr|ACCESSION|NAME
 _UNIPROT_HEADER_RE = re.compile(
@@ -99,6 +104,150 @@ def _resolve_model_name(h5_files: list[Path]) -> str | None:
     return None
 
 
+def _model_from_file_name(stem: str) -> str | None:
+    """The known model key a file stem ends in, or None.
+
+    Tries the whole stem, then its trailing ``_``-delimited tokens, longest
+    first, so ``seqs_esm2_650m`` and ``esm2_650m`` both give ``esm2_650m``.
+    Keys contain underscores themselves, which is why whole token runs are
+    compared rather than the last token alone.
+    """
+    tokens = stem.lower().split("_")
+    for start in range(len(tokens)):
+        key = _KNOWN_MODELS.get("_".join(tokens[start:]))
+        if key:
+            return key
+    return None
+
+
+def _model_from_file_names(h5_files: list[Path]) -> str | None:
+    """The one known model key every file's name ends in, or None.
+
+    Raises:
+        ValueError: If the file names point to two or more different models.
+            Read as one input, their vectors would be merged into one space and
+            every protein the second model shares with the first dropped as a
+            duplicate.
+    """
+    by_file = {f: _model_from_file_name(f.stem) for f in h5_files}
+    keys = set(by_file.values())
+    if len(keys - {None}) > 1:
+        listing = ", ".join(f"{f.name} ({key})" for f, key in by_file.items() if key)
+        raise ValueError(
+            f"Files from different models in one input: {listing}.\n"
+            f"  Load each model's files as a separate input."
+        )
+    return keys.pop() if len(keys) == 1 else None
+
+
+def embedding_files(path: Path) -> list[Path]:
+    """The HDF5 files an input names: the file itself, or a directory's files."""
+    if path.is_dir():
+        return sorted(f for ext in EMBEDDING_EXTENSIONS for f in path.glob(f"*{ext}"))
+    return [path]
+
+
+class NamedInput(NamedTuple):
+    """An input path and the embedding name resolved for it.
+
+    ``name`` is None for an input that is not HDF5 (a FASTA, named by its
+    embedder). ``from_file_name`` marks a name read off the file name or stem
+    rather than stated by ``:name`` or the ``model_name`` attribute.
+    """
+
+    path: Path
+    name: str | None
+    from_file_name: bool = False
+
+
+def resolve_input_names(
+    specs: list[tuple[Path, str | None]], *, command: str
+) -> list[NamedInput]:
+    """Name every HDF5 input of a command before any matrix is loaded.
+
+    Order: ``file.h5:name`` > the ``model_name`` attribute > a known model key
+    the file name ends in > the file stem, the last only when this is the
+    command's only input. The name decides how several inputs combine -- the
+    same name merges them, different names intersect them -- so with more than
+    one input an unnamed one is an error rather than a guess.
+
+    Args:
+        specs: ``(path, explicit name)`` per input, as ``split_h5_spec`` parses
+            them. Inputs that are not HDF5 pass through with ``name=None`` but
+            still count as inputs.
+        command: The CLI command, for the corrected command line in the error.
+
+    Raises:
+        ValueError: If several inputs are given and an HDF5 one has no name.
+    """
+    resolved: list[NamedInput] = []
+    unnamed: list[Path] = []
+    for path, explicit in specs:
+        if not (path.is_dir() or path.suffix.lower() in EMBEDDING_EXTENSIONS):
+            resolved.append(NamedInput(path, None))
+            continue
+        if explicit:
+            resolved.append(NamedInput(path, explicit))
+            continue
+        files = embedding_files(path)
+        name = _resolve_model_name(files) if files else None
+        if name:
+            resolved.append(NamedInput(path, name))
+            continue
+        name = _model_from_file_names(files) or _model_from_file_name(path.stem)
+        if name:
+            logger.info(f"Embedding name '{name}' taken from the file name {path}")
+            resolved.append(NamedInput(path, name, from_file_name=True))
+            continue
+        unnamed.append(path)
+        resolved.append(NamedInput(path, None, from_file_name=True))
+
+    if unnamed and len(specs) == 1:
+        path = unnamed[0]
+        where = "its file names" if path.is_dir() else "the file name"
+        logger.info(
+            f"No embedding name for {path} (no 'model_name' attribute, no known "
+            f"model in {where}); using '{path.stem}'. "
+            f"To name it, append the model: {path}:<model>, e.g. {path}:esm2_650m."
+        )
+        return [NamedInput(path, path.stem, from_file_name=True)]
+    if unnamed:
+        raise ValueError(_unnamed_inputs_message(specs, unnamed, command))
+    return resolved
+
+
+def _unnamed_inputs_message(
+    specs: list[tuple[Path, str | None]], unnamed: list[Path], command: str
+) -> str:
+    if command == "project":
+        why = "project labels each input's projections with its embedding name."
+        hint = "; each input needs a different name"
+    else:
+        why = (
+            "The name decides how inputs combine: inputs with the same name are "
+            "merged (union of their proteins), inputs with different names are "
+            "intersected (only proteins present in all of them)."
+        )
+        hint = "; give files from the same model the same name to merge them"
+    args = " ".join(
+        f"-i {path}:<model>"
+        if path in unnamed
+        else f"-i {path}:{name}"
+        if name
+        else f"-i {path}"
+        for path, name in specs
+    )
+    return (
+        f"No embedding name for {', '.join(str(p) for p in unnamed)}: no "
+        f"'model_name' attribute and no known model at the end of the file name.\n"
+        f"  {why}\n"
+        f"  Fix: name each HDF5 input, e.g.\n"
+        f"       protspace {command} {args} ...\n"
+        f"  where <model> is the embedder that produced the file (esm2_650m, "
+        f"prot_t5, ...){hint}."
+    )
+
+
 def load_h5(
     h5_files: list[Path],
     *,
@@ -108,13 +257,17 @@ def load_h5(
 
     Args:
         h5_files: Paths to HDF5 files to load and merge.
-        name_override: CLI-provided name (takes precedence over H5 attr).
+        name_override: Explicit name (takes precedence over everything else).
+            Without one the name comes from the ``model_name`` attribute, then
+            from a known model key the file names end in; a CLI command
+            resolves it with ``resolve_input_names`` first and passes it here.
 
     Returns:
         EmbeddingSet with merged embeddings.
 
     Raises:
-        ValueError: If no valid embeddings found or per-residue embeddings detected.
+        ValueError: If no valid embeddings found, per-residue embeddings
+            detected, or no name can be resolved.
     """
     data, headers = [], []
     seen_ids: set[str] = set()
@@ -206,18 +359,20 @@ def load_h5(
                 "All embeddings contain NaN values. Please check your input file."
             )
 
-    # Resolve name: CLI override > H5 attr > error
-    if name_override:
-        name = name_override
-    else:
-        name = _resolve_model_name(h5_files)
-        if name is None:
-            file_list = ", ".join(str(f) for f in h5_files)
-            example = f"-i {h5_files[0]}:prot_t5" if h5_files else "-i file.h5:prot_t5"
-            raise ValueError(
-                f"HDF5 file has no 'model_name' attribute: {file_list}\n"
-                f"  Fix: specify the model name with the colon syntax, e.g.\n"
-                f"       protspace prepare {example} -o output"
-            )
+    # Resolve name: explicit > H5 attr > model key in the file names > error
+    name = (
+        name_override
+        or _resolve_model_name(h5_files)
+        or _model_from_file_names(h5_files)
+    )
+    if name is None:
+        file_list = ", ".join(str(f) for f in h5_files)
+        raise ValueError(
+            f"HDF5 file has no 'model_name' attribute and its name ends in no known "
+            f"model: {file_list}\n"
+            f"  Fix: name the embedding after the model that produced it: "
+            f"'<file>.h5:<model>' on the command line (e.g. :esm2_650m), or "
+            f"load_h5(..., name_override='<model>') in Python."
+        )
 
     return EmbeddingSet(name=name, data=arr, headers=headers)

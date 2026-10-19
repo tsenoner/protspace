@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -46,7 +47,7 @@ def summarize(path: Path) -> dict:
     projections: dict[str, dict[str, list[float]]] = {}
     for row in data.to_pylist():
         axes = [row["x"], row["y"]] + ([row["z"]] if row.get("z") is not None else [])
-        projections.setdefault(row["projection_name"], {})[row["identifier"]] = axes
+        projections.setdefault(row["projection_name"], {})[row["protein_id"]] = axes
 
     statistics = read_statistics_from_bundle(path)
     return {
@@ -64,3 +65,9 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         raise SystemExit("usage: read_bundles.py <bundle>...")
     print(json.dumps({path: summarize(Path(path)) for path in sys.argv[1:]}))
+    # Skip interpreter finalization once the summary is out. A native thread pool
+    # torn down during shutdown occasionally aborted the process after a correct
+    # summary ("terminate called without an active exception", exit 134), which
+    # failed the contract test without any contract difference.
+    sys.stdout.flush()
+    os._exit(0)

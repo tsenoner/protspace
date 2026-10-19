@@ -108,115 +108,53 @@ describe('interaction controller EAT provenance', () => {
     expect(plotElement.isProteinLegendEligible).toHaveBeenCalledWith('source', 0);
   });
 
-  it.each(['filtering', 'isolation'])(
-    're-resolves an active source click to keep 20 visible targets across %s expansion',
-    () => {
-      const { controller, currentView, plotElement } = setup(makeFanoutData());
-      currentView.delete(3);
+  // The resolver's ordering and cap are pinned in eat-provenance.test.ts. These pin the
+  // controller's part: it passes the plot's live view predicate to the resolver and
+  // re-resolves an active click from it when filtering or isolation changes the view.
+  it('re-resolves an active source click from the live view when filtering or isolation changes it', () => {
+    const { controller, currentView, plotElement } = setup(makeFanoutData());
+    controller.handleProteinClick({
+      detail: { proteinId: 'source', point: { originalIndex: 0 } },
+    } as unknown as Event);
+    const unconstrained = plotElement.setProvenanceConnectors.mock.lastCall?.[0];
+    expect(unconstrained).toMatchObject({ totalCandidates: 24, unavailableCandidates: 0 });
 
-      controller.handleProteinClick({
-        detail: { proteinId: 'source', point: { originalIndex: 0 } },
-      } as unknown as Event);
+    currentView.delete(3);
+    controller.handlePlotDataChange();
 
-      const constrained = plotElement.setProvenanceConnectors.mock.lastCall?.[0];
-      expect(constrained).toMatchObject({
-        totalCandidates: 24,
-        unavailableCandidates: 1,
-      });
-      expect(constrained.pairs).toHaveLength(20);
-      expect(
-        constrained.pairs.map((pair: { targetProteinId: string }) => pair.targetProteinId),
-      ).not.toContain('query-2');
-      expect(
-        constrained.pairs.map((pair: { targetProteinId: string }) => pair.targetProteinId),
-      ).toContain('query-20');
+    const constrained = plotElement.setProvenanceConnectors.mock.lastCall?.[0];
+    expect(constrained).toMatchObject({ totalCandidates: 24, unavailableCandidates: 1 });
+    expect(
+      constrained.pairs.map((pair: { targetProteinId: string }) => pair.targetProteinId),
+    ).not.toContain('query-2');
 
-      currentView.add(3);
-      controller.handlePlotDataChange();
+    currentView.add(3);
+    controller.handlePlotDataChange();
 
-      const expanded = plotElement.setProvenanceConnectors.mock.lastCall?.[0];
-      expect(expanded).toMatchObject({
-        totalCandidates: 24,
-        unavailableCandidates: 0,
-      });
-      expect(expanded.pairs).toHaveLength(20);
-      expect(
-        expanded.pairs.map((pair: { targetProteinId: string }) => pair.targetProteinId),
-      ).toContain('query-2');
-      expect(
-        expanded.pairs.map((pair: { targetProteinId: string }) => pair.targetProteinId),
-      ).not.toContain('query-20');
-    },
-  );
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toEqual(unconstrained);
+  });
 
-  it.each(['filtering', 'isolation'])(
-    'reports every semantic source connection unavailable when the source leaves during %s',
-    () => {
-      const { controller, currentView, plotElement } = setup(makeFanoutData());
-      controller.handleProteinClick({
-        detail: { proteinId: 'source', point: { originalIndex: 0 } },
-      } as unknown as Event);
+  it('reports every semantic source connection unavailable when the source leaves during filtering or isolation', () => {
+    const { controller, currentView, plotElement } = setup(makeFanoutData());
+    controller.handleProteinClick({
+      detail: { proteinId: 'source', point: { originalIndex: 0 } },
+    } as unknown as Event);
+    const unconstrained = plotElement.setProvenanceConnectors.mock.lastCall?.[0];
 
-      currentView.delete(0);
-      controller.handlePlotDataChange();
+    currentView.delete(0);
+    controller.handlePlotDataChange();
 
-      expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toEqual({
-        pairs: [],
-        totalCandidates: 24,
-        unavailableCandidates: 24,
-      });
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toEqual({
+      pairs: [],
+      totalCandidates: 24,
+      unavailableCandidates: 24,
+    });
 
-      currentView.add(0);
-      controller.handlePlotDataChange();
+    currentView.add(0);
+    controller.handlePlotDataChange();
 
-      const restored = plotElement.setProvenanceConnectors.mock.lastCall?.[0];
-      expect(restored).toMatchObject({
-        totalCandidates: 24,
-        unavailableCandidates: 0,
-      });
-      expect(restored.pairs).toHaveLength(20);
-      expect(restored.pairs[0]).toMatchObject({
-        sourceProteinId: 'source',
-        targetProteinId: 'query-0',
-      });
-    },
-  );
-
-  it.each(['filtering', 'isolation'])(
-    'reports one unavailable predicted-query connection when either endpoint leaves during %s',
-    () => {
-      for (const removedIndex of [0, 1]) {
-        const { controller, currentView, plotElement } = setup();
-        controller.handleProteinClick({
-          detail: { proteinId: 'query', point: { originalIndex: 1 } },
-        } as unknown as Event);
-
-        currentView.delete(removedIndex);
-        controller.handlePlotDataChange();
-
-        expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toEqual({
-          pairs: [],
-          totalCandidates: 1,
-          unavailableCandidates: 1,
-        });
-
-        currentView.add(removedIndex);
-        controller.handlePlotDataChange();
-
-        expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toEqual({
-          pairs: [
-            {
-              sourceProteinId: 'source',
-              targetProteinId: 'query',
-              confidence: 0.83,
-            },
-          ],
-          totalCandidates: 1,
-          unavailableCandidates: 0,
-        });
-      }
-    },
-  );
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toEqual(unconstrained);
+  });
 
   it('does not resurrect a dismissed semantic click on a later data change', () => {
     const { controller, plotElement } = setup();

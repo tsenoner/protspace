@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { ProjectionStatisticRow } from '../types';
 import {
+  AUTO_CLUSTER_SCORE_CAVEAT,
+  EMBEDDING_CLUSTER_SCORE_CAVEAT,
   annotationStatSummary,
   annotationCategoryScores,
+  autoClusterScoreCaveat,
   clusterAgreement,
   formatStatValue,
   isAutoClusterColumn,
@@ -438,6 +441,45 @@ describe('isAutoClusterColumn', () => {
     expect(isAutoClusterColumn(undefined, 'cluster_elbow_UMAP 2')).toBe(false);
     expect(isAutoClusterColumn([], 'cluster_elbow_UMAP 2')).toBe(false);
     expect(isAutoClusterColumn(ROWS, '')).toBe(false);
+  });
+});
+
+describe('autoClusterScoreCaveat', () => {
+  // An embedding clustering as the backend writes it: one n_clusters row in the embedding, and
+  // its scores in each projection as annotation_validity rows only.
+  const withEmbeddingClustering: ProjectionStatisticRow[] = [
+    ...ROWS,
+    row({ annotation: 'cluster_elbow_prot_t5', label_kind: 'kmeans_elbow' }),
+    row({
+      space_kind: 'embedding',
+      space_name: 'prot_t5',
+      annotation: '',
+      stat_family: 'cluster_validity',
+      label_kind: 'kmeans_elbow',
+      metric: 'n_clusters',
+      metric_kind: 'meta',
+      value: 5,
+    }),
+  ];
+
+  it('says a projection clustering was found in the projection', () => {
+    expect(autoClusterScoreCaveat(ROWS, 'cluster_elbow_UMAP 2')).toBe(AUTO_CLUSTER_SCORE_CAVEAT);
+  });
+
+  it('says an embedding clustering was found in the embedding, not this projection', () => {
+    expect(autoClusterScoreCaveat(withEmbeddingClustering, 'cluster_elbow_prot_t5')).toBe(
+      EMBEDDING_CLUSTER_SCORE_CAVEAT,
+    );
+    expect(autoClusterScoreCaveat(withEmbeddingClustering, 'cluster_elbow_UMAP 2')).toBe(
+      AUTO_CLUSTER_SCORE_CAVEAT,
+    );
+  });
+
+  it('is null wherever isAutoClusterColumn is false', () => {
+    expect(autoClusterScoreCaveat(ROWS, 'major_group')).toBeNull();
+    expect(autoClusterScoreCaveat(ROWS, 'cluster_elbow_PCA 2')).toBeNull();
+    expect(autoClusterScoreCaveat(undefined, 'cluster_elbow_UMAP 2')).toBeNull();
+    expect(autoClusterScoreCaveat(ROWS, '')).toBeNull();
   });
 });
 

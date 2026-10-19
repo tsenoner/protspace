@@ -1,25 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as d3 from 'd3';
-import type { PlotData } from '@protspace/utils';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import { GAMMA_FRAGMENT_SHADER } from './point-shaders';
 import type { WebGLRenderer } from './webgl-renderer';
-import { makeRenderer, plotData } from './test-support/renderer-fixture';
+import { makeRenderer, plotData, plotDataFrom } from './test-support/renderer-fixture';
 import { internalsOf } from './test-support/renderer-internals';
 
 // The shared mock-webgl2 harness provides the full gl.* surface the render path needs
 // (incl. uniform3f / disableVertexAttribArray), so render()-driven tests below can
 // exercise the real path through makeRenderer.
-const pd: PlotData = {
-  length: 2,
-  xs: new Float32Array([0, 1]),
-  ys: new Float32Array([0, 1]),
-  zs: null,
-  originalIndices: null,
-  proteinIds: ['p0', 'p1'],
-};
-describe('WebGLRenderer context loss + restore (characterization lock)', () => {
+const pd = plotDataFrom([0, 1], [0, 1]);
+describe('WebGLRenderer context loss (characterization lock)', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
     rafQueue = [];
@@ -38,16 +30,18 @@ describe('WebGLRenderer context loss + restore (characterization lock)', () => {
     q.forEach((cb) => cb(0));
   };
 
-  it('webglcontextlost fires onContextLost and preventDefaults', () => {
+  it('webglcontextlost on a rendering renderer preventDefaults and fires onContextLost once', () => {
     const onLost = vi.fn();
-    const { canvas } = makeRenderer({ onContextLost: onLost });
+    const { renderer: r, canvas } = makeRenderer({ onContextLost: onLost });
+    r.render(pd); // live GL resources, so the loss resets real renderer state
     const ev = new Event('webglcontextlost', { cancelable: true });
     const prevented = !canvas.dispatchEvent(ev);
     expect(onLost).toHaveBeenCalledTimes(1);
     expect(prevented).toBe(true); // preventDefault() was called
+    r.destroy();
   });
 
-  it('destroy() removes both listeners (post-destroy loss does not fire onContextLost)', () => {
+  it('destroy() removes the loss listener (a later loss does not fire onContextLost)', () => {
     const onLost = vi.fn();
     const { renderer: r, canvas } = makeRenderer({ onContextLost: onLost });
     r.destroy();
@@ -59,25 +53,21 @@ describe('WebGLRenderer context loss + restore (characterization lock)', () => {
   // unreachable in production (real loss → onContextLost → scatter-plot destroy()s
   // the renderer, which removes the webglcontextlost listener and disposes; the
   // restore listener never survived to fire). Recovery now flows solely through the
-  // scatter-plot rebuild-on-loss path. These two cases used to characterize the dead
-  // internal handler (they only "passed" because they synthesized the restore event
-  // directly); they now pin its absence.
+  // scatter-plot rebuild-on-loss path. This pins that the renderer registers no
+  // restore listener (the controller test only counts its own listeners) and
+  // that a restore event does not re-render.
   it('no webglcontextrestored listener — dispatching restore does NOT re-render', () => {
+    const addSpy = vi.spyOn(HTMLCanvasElement.prototype, 'addEventListener');
     const { renderer: r, canvas } = makeRenderer();
+    const types = addSpy.mock.calls.map((c) => c[0]);
+    expect(types).toContain('webglcontextlost');
+    expect(types).not.toContain('webglcontextrestored');
     r.render(pd); // sets lastRenderedData
     const renderSpy = vi.spyOn(r, 'render');
     canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
     canvas.dispatchEvent(new Event('webglcontextrestored'));
     drain(); // no RAF was ever queued by the (now-deleted) restore handler
     expect(renderSpy).not.toHaveBeenCalled();
-  });
-
-  it('constructor registers no webglcontextrestored listener', () => {
-    const addSpy = vi.spyOn(HTMLCanvasElement.prototype, 'addEventListener');
-    const { renderer: r } = makeRenderer();
-    const types = addSpy.mock.calls.map((c) => c[0]);
-    expect(types).toContain('webglcontextlost');
-    expect(types).not.toContain('webglcontextrestored');
     r.destroy();
   });
 });

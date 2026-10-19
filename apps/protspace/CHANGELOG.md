@@ -1,6 +1,674 @@
 # CHANGELOG
 
 
+## v4.17.0 (2026-10-16)
+
+### Bug Fixes
+
+- Name the sample in the auto-cutoff log; format TSV floats from 6 digits
+  ([`529cbe8`](https://github.com/tsenoner/protspace/commit/529cbe818c5731bd0aef1bff1cfc2eb4506d4db2))
+
+- Say the X/Y view of a 3-D projection is its 2-D fit only for PCA
+  ([`43d40ee`](https://github.com/tsenoner/protspace/commit/43d40eef703bd1fd9543b398e765861caade79de))
+
+### Performance Improvements
+
+- **transfer**: Estimate the auto cutoff from a sample of large reference sets
+  ([`814d954`](https://github.com/tsenoner/protspace/commit/814d954ff44e0926e013f0b74d3f1544ffa0e0a9))
+
+### Refactoring
+
+- Share the 3-D advice text and the __neighbor column suffix
+  ([`eaa7eda`](https://github.com/tsenoner/protspace/commit/eaa7eda76fffe2bf4146d1185f853b6335f26c32))
+
+
+## v4.16.8 (2026-10-16)
+
+### Bug Fixes
+
+- Address the PR review's export and notebook findings
+  ([`5bab48b`](https://github.com/tsenoner/protspace/commit/5bab48b8a76d5a7310352b6954ed85cd59a86166))
+
+- **annotations**: Key a parquet holding protein_id and identifier on protein_id
+  ([`e5e8dd6`](https://github.com/tsenoner/protspace/commit/e5e8dd63e40a7705a5b13fbc8851619d3fddadc8))
+
+- **export**: Write a value the app reads as missing as an empty cell
+  ([`619f8ea`](https://github.com/tsenoner/protspace/commit/619f8ea97445c9504969ef910da19be1ef543320))
+
+- **notebook**: Keep empty CSV cells empty in the Preparation panel
+  ([`af18b40`](https://github.com/tsenoner/protspace/commit/af18b407841debb53291fae9aa27a7f0bf86d0f1))
+
+- **prepare**: Name the reused stages in the --refetch hint
+  ([`1c42f04`](https://github.com/tsenoner/protspace/commit/1c42f042bf21e9ff370c6b9702c3a1ac25396be4))
+
+- **prepare**: Show the --refetch hint only after reusing cached work
+  ([`b0d4cb2`](https://github.com/tsenoner/protspace/commit/b0d4cb2692cf1f8387a715ee40c925fc0cfd0b9a))
+
+- **transfer**: Key a bundle with an identifier annotation on protein_id
+  ([`696ff8d`](https://github.com/tsenoner/protspace/commit/696ff8d990349124b7f4bb2a08ee8e7074291be1))
+
+### Features
+
+- **io**: Write protein_id as the protein ID column everywhere
+  ([`5120c9b`](https://github.com/tsenoner/protspace/commit/5120c9bdf9f0a279ae9251454d903c4dec8450b2))
+
+### Refactoring
+
+- Share id, annotation and sampling helpers across the PR
+  ([`ded6813`](https://github.com/tsenoner/protspace/commit/ded681326d37fe0d2a3dac01f2462f1a59fab5b6))
+
+- Share the column names the viewer never shows as annotations
+  ([`d14b817`](https://github.com/tsenoner/protspace/commit/d14b81717e6b4fd6e38713b20e36938a30dde9ab))
+
+- **prepare**: Record cache hits where each stage decides to reuse
+  ([`7a55d27`](https://github.com/tsenoner/protspace/commit/7a55d27b8d4065709ca1ef3e2693fd927c3dd114))
+
+### Testing
+
+- Keep CLI messages on one line when turbo runs the suite
+  ([`6edcbc6`](https://github.com/tsenoner/protspace/commit/6edcbc63d50288cfff33cb3b5d435341e330b7f2))
+
+- **h5**: Keep the two-unnamed-files message on one line
+  ([`f5cfef0`](https://github.com/tsenoner/protspace/commit/f5cfef08774e33a018a3d1ae185e2b2b2f0d5205))
+
+
+## v4.16.7 (2026-10-15)
+
+### Bug Fixes
+
+- **annotations**: Preserve fasta and tmbed missing data
+  ([`b7f798b`](https://github.com/tsenoner/protspace/commit/b7f798b370efacf0ace0cd597c4351807a231505))
+
+- **annotations**: Preserve missing tmbed payloads
+  ([`5ec9fe2`](https://github.com/tsenoner/protspace/commit/5ec9fe2da94e8626583670cc8f16cbd37680a029))
+
+- **annotations**: Preserve negative transmembrane predictions
+  ([`9cee2b6`](https://github.com/tsenoner/protspace/commit/9cee2b6827e6e411148a38a22e138cce86a4b791))
+
+- **annotations**: Preserve source-specific sequences
+  ([`f6cea0a`](https://github.com/tsenoner/protspace/commit/f6cea0a74299a4bd1677da99f07282be9c6b970a))
+
+- **annotations**: Refresh every stale column of a source refetched whole
+  ([`82271a2`](https://github.com/tsenoner/protspace/commit/82271a2fc36ee3e3ebb4dcfa5702e08c08c4e582))
+
+- **annotations**: Refresh InterPro columns cached before the canonical lookup
+  ([`786a0e3`](https://github.com/tsenoner/protspace/commit/786a0e30aa45e76f330e233b7e7530c3a52d4704))
+
+- **annotations**: Refresh TMbed columns cached before payload validation
+  ([`13b236d`](https://github.com/tsenoner/protspace/commit/13b236d74e9d266850895ae40ccd7569ad5dc368))
+
+- **annotations**: Reject malformed tmbed payloads
+  ([`a30032a`](https://github.com/tsenoner/protspace/commit/a30032a2ac858d92062b17aa17481dc4958cf78b))
+
+- **style**: Fold N/A spellings in stored hiddenValues too
+  ([`fe2dbab`](https://github.com/tsenoner/protspace/commit/fe2dbab9b4e1eb8a114188a29acd36457361b259))
+
+- **style**: Keep the categorical palette out of a numeric template column
+  ([`5dae4d7`](https://github.com/tsenoner/protspace/commit/5dae4d7a9ccfb643a751427b62688a8a7da541c8))
+
+- **style**: Pre-fill the template's N/A with the web's default colour
+  ([`d5e059c`](https://github.com/tsenoner/protspace/commit/d5e059c9c8a05e5fa291292336bade326626bbaf))
+
+- **style**: Store every N/A style under the web's __NA__ key
+  ([`bc5f0cc`](https://github.com/tsenoner/protspace/commit/bc5f0cc81f974d5c43efe479f00de6d81cd1b930))
+
+### Chores
+
+- Generate the constants Python and the web share from one file
+  ([`599143a`](https://github.com/tsenoner/protspace/commit/599143a8ec72eed7e3676f2ae4e9437e49c8a1d6))
+
+### Documentation
+
+- Explain where constants shared with Python live
+  ([`518808f`](https://github.com/tsenoner/protspace/commit/518808f19fca8e46d60e05dbb4cc01b36f7de32d))
+
+### Refactoring
+
+- Share the default categorical palette with the web
+  ([`0cfcd3f`](https://github.com/tsenoner/protspace/commit/0cfcd3f11d015f74f12b5041b940a3f67b4617cd))
+
+- Tidy the missing-values batch after review
+  ([`427eceb`](https://github.com/tsenoner/protspace/commit/427ecebfb6f2a133741bc869d0cd0a32deb633a6))
+
+- **annotations**: Drop regex label scan and re-pad docs table
+  ([`1c09429`](https://github.com/tsenoner/protspace/commit/1c0942948abbe1b06637fa47d108141c5d4f2603))
+
+- **annotations**: Simplify PR 406 sequence and TMbed plumbing
+  ([`5e13588`](https://github.com/tsenoner/protspace/commit/5e1358812e1f2460115ab0e7d0571ca1b743d43f))
+
+- **protspace**: Read the web-shared constants from the generated module
+  ([`e574ba2`](https://github.com/tsenoner/protspace/commit/e574ba2b75903f794372d73a08ddb0dc224d031c))
+
+### Testing
+
+- **style**: Port the N/A cases #546's version covered and this lacked
+  ([`8949d5e`](https://github.com/tsenoner/protspace/commit/8949d5eb614d373814fb6dbd32aee8ba667617ea))
+
+
+## v4.16.6 (2026-10-15)
+
+### Bug Fixes
+
+- **annotations**: Key custom annotation files on their first column
+  ([`3e69865`](https://github.com/tsenoner/protspace/commit/3e698650a0da87ec5aec48a48fa5c61b0a0d7984))
+
+- **cli**: Refuse mixed-model folders and same-name project inputs
+  ([`ebd6b5e`](https://github.com/tsenoner/protspace/commit/ebd6b5e62dc379d7f39a14c4a6e4815c5bee2242))
+
+- **export**: Write only x and y coordinates in table exports
+  ([`1c0a54c`](https://github.com/tsenoner/protspace/commit/1c0a54c8d85fe52944cc3f13315b38be7d058912))
+
+- **notebook**: Load the panel's files by path and name every H5
+  ([`dd3b281`](https://github.com/tsenoner/protspace/commit/dd3b281740a4d54f7dee1171b6249f88d4c6d6b9))
+
+- **notebook**: Stamp model_name on the embeddings notebook's HDF5
+  ([`0ded0c6`](https://github.com/tsenoner/protspace/commit/0ded0c6cf166d6975ba2e4f49a7140f40e3e12d2))
+
+- **notebook**: State the custom CSV id rule and accept .txt
+  ([`4a34afa`](https://github.com/tsenoner/protspace/commit/4a34afa02383f138d426247494334baf8cd425bf))
+
+- **notebook**: Upload into a fresh folder and name H5s like the CLI
+  ([`70734f2`](https://github.com/tsenoner/protspace/commit/70734f259190acc0b27692b9250f79289c5b37c8))
+
+- **prepare**: Keep comma-named -a files whole, check them early
+  ([`686bb8b`](https://github.com/tsenoner/protspace/commit/686bb8b29f9112259c23a58438e390c8eb6d2c78))
+
+- **prepare**: Merge custom annotation files instead of keeping one
+  ([`3d7df47`](https://github.com/tsenoner/protspace/commit/3d7df47f5a86c7b211024cc12e2c342a948712cf))
+
+- **prepare**: Parse -m before embedding a FASTA or query input
+  ([`7fbd63f`](https://github.com/tsenoner/protspace/commit/7fbd63f9315cd2b92c38d72ef6deb810b8997465))
+
+- **prepare**: Skip the embedding backends when nothing is embedded
+  ([`95fcf73`](https://github.com/tsenoner/protspace/commit/95fcf7398909a201cb067a2f3d29ab84b6ffeedf))
+
+- **project**: Point -a and --stats to the commands that take them
+  ([`60ea778`](https://github.com/tsenoner/protspace/commit/60ea7784283c8678e1030c1b49807d551f4a3d21))
+
+- **protspace**: Read missing annotation values as the web app does
+  ([`e8495fc`](https://github.com/tsenoner/protspace/commit/e8495fcf0af0521ab1c8fe779b4a5f7afa4552bc))
+
+- **protspace**: Read pandas nulls as missing; tidy after review
+  ([`cd48efb`](https://github.com/tsenoner/protspace/commit/cd48efbfaf4f5cccb3ae14cebe03cb0d55aabd6d))
+
+- **stats**: Write a CSV's scored table under its own name
+  ([`231bf96`](https://github.com/tsenoner/protspace/commit/231bf96b6723247da2fea8d832dd1dafc79940fe))
+
+- **transfer**: Refuse an unwritable --report path before writing
+  ([`05eef4a`](https://github.com/tsenoner/protspace/commit/05eef4ae321d86a67cb40383ff6cf8904c674478))
+
+- **transfer**: Warn when --skip-distant leaves a column unpredicted
+  ([`89dab8d`](https://github.com/tsenoner/protspace/commit/89dab8d8116d6b9fd0ea47bab8895c53e54a8ffd))
+
+### Continuous Integration
+
+- **release**: Block a release that reaches a scheduled removal
+  ([`23dcdd4`](https://github.com/tsenoner/protspace/commit/23dcdd4ae7075f3afefbc0830f9ef5bd6b251e79))
+
+### Documentation
+
+- Describe projection and embedding cluster columns
+  ([`96ac148`](https://github.com/tsenoner/protspace/commit/96ac1485c7295eca83dc778f2fc2d516890278fc))
+
+- Describe the deprecation registry and release gate
+  ([`308cf7f`](https://github.com/tsenoner/protspace/commit/308cf7f4a26ebc217f7ae1e29e2939f3edb42cdc))
+
+- Describe the neighbour report and table export in READMEs
+  ([`899f764`](https://github.com/tsenoner/protspace/commit/899f76464b8555d8f5df7fded1ead566ed851e54))
+
+- Document 3-D reading deprecation and convert --flatten-3d
+  ([`7564b47`](https://github.com/tsenoner/protspace/commit/7564b473f95a2901703dafb579504364bb3a561b))
+
+- Document custom annotation files and the step commands
+  ([`4268bcf`](https://github.com/tsenoner/protspace/commit/4268bcf77299024e7fd811de7c073ed8431e30ec))
+
+- Mark 3-D projections and protspace serve deprecated
+  ([`566edec`](https://github.com/tsenoner/protspace/commit/566edec78583c8b42bf084bc9cab2bb3a0204918))
+
+- Name stats' CSV output, note the id-column change on upgrade
+  ([`4cd27a4`](https://github.com/tsenoner/protspace/commit/4cd27a410995674d8239296ce47120df201a7da4))
+
+- State the 3-D and serve deprecation across the merged guide
+  ([`a30591b`](https://github.com/tsenoner/protspace/commit/a30591b6455e538b49ac4df2faa92d0bea4e0645))
+
+- **openspec**: Reconcile deprecate-3d-and-serve with the merged branch
+  ([`a22d12c`](https://github.com/tsenoner/protspace/commit/a22d12cf27284fcf8ec96cc486900fcaaa49cda0))
+
+### Features
+
+- **cli**: Accept custom annotation files in annotate, stats, bundle
+  ([`fee8637`](https://github.com/tsenoner/protspace/commit/fee86376c0a706ef04d0c75ab59c5da75b392867))
+
+- **cli**: Add --cluster-space to stats and prepare
+  ([`566154b`](https://github.com/tsenoner/protspace/commit/566154bf3e5976163b3a02f777bd276ee53cfb8d))
+
+- **cli**: Add convert --flatten-3d
+  ([`13d9794`](https://github.com/tsenoner/protspace/commit/13d9794a2bb02ac633d751545faaaba0f93f4922))
+
+- **cli**: Deprecate 3-D projections and protspace serve
+  ([`6fbd87b`](https://github.com/tsenoner/protspace/commit/6fbd87b8bc694ebf61180c3b37db9d01cd789dcb))
+
+- **cli**: Infer the HDF5 embedding name when it is unambiguous
+  ([`af0babc`](https://github.com/tsenoner/protspace/commit/af0babc8fe15dacce20e895eba569a72019baf62))
+
+- **cli**: Warn when reading 3-D projections
+  ([`543ac97`](https://github.com/tsenoner/protspace/commit/543ac977c7de66f57762eee1290c1fe4a4908b2b))
+
+- **export**: Write a bundle as a TSV table
+  ([`2fd50d4`](https://github.com/tsenoner/protspace/commit/2fd50d49bf99f02d38ed8d7625fca36e861631bf))
+
+- **protlabel**: Keep each prediction's neighbours on request
+  ([`c44ea99`](https://github.com/tsenoner/protspace/commit/c44ea99c0b42e71070b75c1e8f811b12e442efa6))
+
+- **stats**: Cluster each embedding once in embedding space
+  ([`b9a8371`](https://github.com/tsenoner/protspace/commit/b9a83717e29f51110cc813614dee0e3ab6e0eef1))
+
+- **transfer**: Mark queries near or distant with --max-distance
+  ([`ed84414`](https://github.com/tsenoner/protspace/commit/ed84414085c04e749b87c5c01d762b1c06a52df0))
+
+- **transfer**: Write each query's neighbours with --report
+  ([`6a3285c`](https://github.com/tsenoner/protspace/commit/6a3285c140849a9ddae6f3776bce829661a78100))
+
+### Refactoring
+
+- **stats**: Drop aligned embedding from kept projection contexts
+  ([`b08b677`](https://github.com/tsenoner/protspace/commit/b08b6770b6f6b5beea8c9ed05ff1dfe0cd5054fc))
+
+- **transfer**: Name the CLI's report list apart from report_rows
+  ([`b66e2e1`](https://github.com/tsenoner/protspace/commit/b66e2e1cdd567a84e6444ef579697bbdf0358817))
+
+### Testing
+
+- Cover the 3-D reading warning and convert --flatten-3d
+  ([`05103cb`](https://github.com/tsenoner/protspace/commit/05103cbe3c080c95858ea7169b321723de5156e8))
+
+- Cover the deprecation registry and its warnings
+  ([`489a10f`](https://github.com/tsenoner/protspace/commit/489a10fe776770beb357b2fdba1b2c4ffea574c7))
+
+- Cover the release deprecation gate
+  ([`d92d809`](https://github.com/tsenoner/protspace/commit/d92d8097be39dee1249318a8ee507a6b8d3c50c6))
+
+- **notebook**: Run the Preparation panel with real ipywidgets
+  ([`0b69e1a`](https://github.com/tsenoner/protspace/commit/0b69e1a55b4afacc3ffe3221fd6a0a0de58de367))
+
+- **protspace**: Pin the guide's custom annotation suffixes
+  ([`26523f9`](https://github.com/tsenoner/protspace/commit/26523f9916ffeb244a0c2e437d1f1d4f107deb13))
+
+
+## v4.16.5 (2026-10-15)
+
+### Bug Fixes
+
+- **io**: Style a directory by its stored bytes, and write it atomically
+  ([`383003b`](https://github.com/tsenoner/protspace/commit/383003b34b10d7e596cab43de653f4304256f376))
+
+- **style**: Keep unstyled annotations' settings and a directory's other files
+  ([`e36265e`](https://github.com/tsenoner/protspace/commit/e36265e6cdaa8aa9c443602823f244aaec896fb4))
+
+- **style**: Write a styled directory the way every other writer does
+  ([`b72b90a`](https://github.com/tsenoner/protspace/commit/b72b90a275785b4e102d66fb8ec1f26e90e5deb6))
+
+### Refactoring
+
+- **cli**: Name projection files by the shared bundle constants
+  ([`f996a78`](https://github.com/tsenoner/protspace/commit/f996a78ece3faccf839bf1d695dd58c9a8eed2b8))
+
+
+## v4.16.4 (2026-10-15)
+
+### Bug Fixes
+
+- **reader**: Refuse only a bundle file as save_data's default target
+  ([`d91ff68`](https://github.com/tsenoner/protspace/commit/d91ff68fa4b82dc02e006e7633a140728e60ce7b))
+
+- **reader**: Refuse save_data without a directory to write into
+  ([`b8c8b8c`](https://github.com/tsenoner/protspace/commit/b8c8b8c6a242baef45b577ef7ef5283a79d8b448))
+
+- **reader**: Save annotations where ArrowReader reloads them
+  ([`6b5baa8`](https://github.com/tsenoner/protspace/commit/6b5baa84b4c450d6c0547bfc5a99f294bbb12494))
+
+### Refactoring
+
+- **reader**: Write save_data's tables in one loop, test via the shared fixture
+  ([`2e3ed84`](https://github.com/tsenoner/protspace/commit/2e3ed8478b0b7cdec3a461c530403626c1fbe729))
+
+
+## v4.16.3 (2026-10-13)
+
+### Bug Fixes
+
+- **reader**: Read a .parquetbundle directly instead of refusing it
+  ([`ed1d127`](https://github.com/tsenoner/protspace/commit/ed1d12737089df465b896b4ac3c85c405a1c73cf))
+
+### Chores
+
+- **protspace**: Ban src.* imports with ruff TID251
+  ([`cca83a1`](https://github.com/tsenoner/protspace/commit/cca83a173c127462c4d019cae3879290837861be))
+
+### Refactoring
+
+- **reader**: Fold the path check into _load_data and test it
+  ([`d662690`](https://github.com/tsenoner/protspace/commit/d662690b5869f0361bd23342b2c61264beb194d9))
+
+### Testing
+
+- **protspace**: Import protspace, not src.protspace, in the tests
+  ([`238d432`](https://github.com/tsenoner/protspace/commit/238d432afda2adc43d23c2a9c44722cd751d4a51))
+
+- **protspace**: Match the remaining transfer CLI errors through plain()
+  ([`aa15d57`](https://github.com/tsenoner/protspace/commit/aa15d57a6bf0979d35616a6ce6a0bad08f0e14b8))
+
+- **protspace**: Pin the embed usage errors and the MDS max(s) shift
+  ([`07a8403`](https://github.com/tsenoner/protspace/commit/07a8403fc4b3dde50475a0ffc473a4c80dec9639))
+
+- **protspace**: Reuse plain() and one _forbid helper in the audit tests
+  ([`7aa03f1`](https://github.com/tsenoner/protspace/commit/7aa03f1da2d0749035fabc96673ae7437040b01e))
+
+
+## v4.16.2 (2026-10-07)
+
+### Bug Fixes
+
+- **annotate**: Fail the Biocentral source when the client no longer lists a model
+  ([`030e5a7`](https://github.com/tsenoner/protspace/commit/030e5a76a53680723001acabb4fcfce9bafa4a06))
+
+### Continuous Integration
+
+- **biocentral**: Check the live server against the shipped client once a day
+  ([`f4b6c90`](https://github.com/tsenoner/protspace/commit/f4b6c903e1e3fe754c7995b753eb8ba8a3b4a26f))
+
+
+## v4.16.1 (2026-10-07)
+
+### Bug Fixes
+
+- **embed**: Hold the embedder shortcut ids instead of the client's member names
+  ([`7d9d696`](https://github.com/tsenoner/protspace/commit/7d9d696b229f0899d0681a430be44bf24ed34dca))
+
+- **embed**: Say why no Biocentral server was usable
+  ([`3d6682a`](https://github.com/tsenoner/protspace/commit/3d6682a0ba9d2952cf444e8bae54a78fd207110b))
+
+- **embed**: Stop a multi-model embed at the first connection failure
+  ([`d29c348`](https://github.com/tsenoner/protspace/commit/d29c348fc03fc0c2d5559e15d74570ea3a7673b9))
+
+- **embed**: Support the Biocentral v2 server
+  ([`0741e08`](https://github.com/tsenoner/protspace/commit/0741e08fe95f1142af83a71953ce1253c8430259))
+
+### Chores
+
+- Default showcase build output to <suite>/protspace-showcase
+  ([`996537b`](https://github.com/tsenoner/protspace/commit/996537b8e54b0e10078409215f5162f2d99cadc2))
+
+- **examples**: Accept every top-level taxonomy node as a root
+  ([`6516fed`](https://github.com/tsenoner/protspace/commit/6516fedb98525440066da1f43459e2cc75785588))
+
+- **examples**: Accept the 2026_03 class-C and kinase counts
+  ([`19cf76f`](https://github.com/tsenoner/protspace/commit/19cf76fc78f27ff4d28e0fb61ac6fac54713ad51))
+
+- **examples**: Add the showcase bundle build script
+  ([`33319c4`](https://github.com/tsenoner/protspace/commit/33319c43a184ff2acda9f1a97a56c46d448de629))
+
+- **examples**: Build the showcase bundles as parquetbundle v3
+  ([`53c9067`](https://github.com/tsenoner/protspace/commit/53c90671f283582e3669d6f12f13eea0166fd92f))
+
+- **examples**: Check stage-release against the published release
+  ([`31e7395`](https://github.com/tsenoner/protspace/commit/31e73953ada5ae5b14f83faf4426ba3b877a1645))
+
+- **examples**: Commit the paper datasets' recipe fixes
+  ([`13bffd8`](https://github.com/tsenoner/protspace/commit/13bffd811ed980f88bf0d733aaf9b657cb28fdf7))
+
+- **examples**: Cut 3FTx references and queries by one rule
+  ([`5388e2c`](https://github.com/tsenoner/protspace/commit/5388e2c3b3bfa3ff0d8ee159c5ecccbc8dd4e46d))
+
+- **examples**: Draw the smaller groups on top, as Figs. 2A and 2B do
+  ([`434210a`](https://github.com/tsenoner/protspace/commit/434210ae28409cc2bf189094b91fe0081556afc8))
+
+- **examples**: Drop the unused long-chain rule; fix the kinase note
+  ([`0a18af6`](https://github.com/tsenoner/protspace/commit/0a18af6cbb482b9ae5ea6a8d4e977ddfb7d6876a))
+
+- **examples**: Follow the Monodnaviria to Floreoviria realm rename
+  ([`f605fdd`](https://github.com/tsenoner/protspace/commit/f605fdde361c009a241f4537c2941e4450a034b8))
+
+- **examples**: Keep machine paths out of the build provenance
+  ([`afd4326`](https://github.com/tsenoner/protspace/commit/afd4326e3a96a69303481dcd850540a0dc26c85a))
+
+- **examples**: Keep the EAT transfer count exact
+  ([`c37f890`](https://github.com/tsenoner/protspace/commit/c37f89024cfbf3fd0d578d9a94bd2789a552b989))
+
+- **examples**: Pin which rows the 3FTx hold-out withholds
+  ([`137da1b`](https://github.com/tsenoner/protspace/commit/137da1bd6adb4f11de49494ba4ef0e02377954d7))
+
+- **examples**: Read parquetbundle v3 in the manifest writer
+  ([`15398db`](https://github.com/tsenoner/protspace/commit/15398db8a4b5135192b87278b6fdafe4fe441a28))
+
+- **examples**: Record the D4 reason for Swiss-Prot's skipped Biocentral stage
+  ([`8c23241`](https://github.com/tsenoner/protspace/commit/8c232416b382ce36e0710d86ae338e62ed86ee39))
+
+- **examples**: Record the UniProt releases derived from the data
+  ([`67b42cb`](https://github.com/tsenoner/protspace/commit/67b42cb50046dfecff0cc5af95b2b22d4dd4c78a))
+
+- **examples**: Redact every spelling of a path in the build command
+  ([`a9d6bfa`](https://github.com/tsenoner/protspace/commit/a9d6bfa8ff85b6535af52054b08cfba27f10f413))
+
+- **examples**: Replace the EAT recipes with three-finger-toxins
+  ([`da5dab9`](https://github.com/tsenoner/protspace/commit/da5dab97b6718dfbf522cfd08392ffc903a42e96))
+
+- **examples**: Test N/A hits as the web does, suffix included
+  ([`4b03b3c`](https://github.com/tsenoner/protspace/commit/4b03b3c48297a14df4ab835c0f66b9e4edfb6a66))
+
+- **protspace**: Harden the example manifest writer
+  ([`d227853`](https://github.com/tsenoner/protspace/commit/d227853c8172514f5b17481248cdd45bf246a8a0))
+
+- **protspace**: Record whether an example bundle has statistics
+  ([`d78f341`](https://github.com/tsenoner/protspace/commit/d78f34157d8eec0008ad111d893426ef046724a5))
+
+- **protspace**: Stage the perf-datasets release assets
+  ([`7f3081c`](https://github.com/tsenoner/protspace/commit/7f3081c9b5145e7be340d22101707309011f5916))
+
+- **protspace**: Take the demo's legend styling from its fixture
+  ([`1d621a9`](https://github.com/tsenoner/protspace/commit/1d621a9f8f5c7a6889029e789ff03e64c85e22ae))
+
+- **protspace**: Write the example manifest from the bundle files
+  ([`04529e0`](https://github.com/tsenoner/protspace/commit/04529e002b30026c27e63d14966bd3dc888962f4))
+
+### Continuous Integration
+
+- Run the protspace slow tests weekly with the local extra
+  ([`2f0ec6c`](https://github.com/tsenoner/protspace/commit/2f0ec6c93a6506e5d552996194307f685da7d687))
+
+### Documentation
+
+- **examples**: Record the 2026_03 build on the released CLI
+  ([`2593768`](https://github.com/tsenoner/protspace/commit/2593768d9eb59d5a54f52dadf75228203480fe5a))
+
+- **examples**: Record the move of the showcase bundles to parquetbundle v3
+  ([`6de616d`](https://github.com/tsenoner/protspace/commit/6de616d6b368a231af50d306966f87b806f70ca0))
+
+- **examples**: Record the v4.16.0 rebuild of the showcase bundles
+  ([`a876d1f`](https://github.com/tsenoner/protspace/commit/a876d1fb73cf69c985c89bb269bdee3848517066))
+
+- **examples**: Say why the step keys still name two retired options
+  ([`3b19884`](https://github.com/tsenoner/protspace/commit/3b198841e830ff6349de8bd353c9f5e34c2bd831))
+
+- **explore**: State how the beta-lactamase set was selected
+  ([`dcf351c`](https://github.com/tsenoner/protspace/commit/dcf351c3f3911627b5f8520f491696a81ff0bc9b))
+
+- **guide**: Explain the Biocentral version error and 3.14 with pip
+  ([`d82e95c`](https://github.com/tsenoner/protspace/commit/d82e95ccfe63144470b6903c314a169b4b821af2))
+
+- **openspec**: Bring the archived change and CLAUDE.md up to date with review
+  ([`5954438`](https://github.com/tsenoner/protspace/commit/59544381fef1b8673280f98b8d3599010d15497c))
+
+- **protspace**: Drop stale silhouette wording from stats carriage
+  ([`99af6ff`](https://github.com/tsenoner/protspace/commit/99af6ff6853b86855bde50be60d173918b32eed2))
+
+- **protspace**: List the example build's test files in CLAUDE.md
+  ([`c7e9ef5`](https://github.com/tsenoner/protspace/commit/c7e9ef57de7a8e72e6834485a1838db2ad60c0ca))
+
+### Refactoring
+
+- **data**: Name the settings-envelope check and the digest attribute publicly
+  ([`7268793`](https://github.com/tsenoner/protspace/commit/72687937c04c04b3afb7f8e621ac22c0979652fa))
+
+- **data**: Read every part of a bundle in one call
+  ([`a70d003`](https://github.com/tsenoner/protspace/commit/a70d00334295057f2012f787f6597e11173b9b0d))
+
+- **embed**: Read the client's window off the client, not at import
+  ([`f96a1f4`](https://github.com/tsenoner/protspace/commit/f96a1f4756b644a325d05bfd48fedf18062a94b2))
+
+- **examples**: Check embedded chains with protspace's digest and FASTA reader
+  ([`d99ce0d`](https://github.com/tsenoner/protspace/commit/d99ce0d44170a2a66b3dc625ab64d96c23efb2d6))
+
+- **examples**: Drop recipe options no recipe uses
+  ([`04807b1`](https://github.com/tsenoner/protspace/commit/04807b1896f54d7e794b39154823383b03a1b8ca))
+
+- **examples**: Fetch from UniProt through protspace's retrying GET
+  ([`f201f61`](https://github.com/tsenoner/protspace/commit/f201f61c48079a7c8ce6b7ad1274ff02a24c12da))
+
+- **examples**: Fill the missing taxonomy of the rows that need it only
+  ([`7b8e80a`](https://github.com/tsenoner/protspace/commit/7b8e80aca681a62b65fe6cb43d3ac6f31b42c377))
+
+- **examples**: Filter styles and wrap settings with protspace's own rules
+  ([`598cccb`](https://github.com/tsenoner/protspace/commit/598cccb6ea2617277fcb4c7654195030382e6b65))
+
+- **examples**: Move stage-perf into a script of its own
+  ([`75cd23f`](https://github.com/tsenoner/protspace/commit/75cd23f0cb37e514a06f9c3963987157d5ff362b))
+
+- **examples**: Read bundles with protspace's one-call reader
+  ([`765c76e`](https://github.com/tsenoner/protspace/commit/765c76ebca17fa63bea4c41bfa69a9c296ed2cf6))
+
+- **examples**: Read only the build's release groups in the manifest writer
+  ([`da80ba2`](https://github.com/tsenoner/protspace/commit/da80ba2a24a47a37d89da6451e5b5c7cc803f67b))
+
+- **examples**: Redact the build command with the manifest writer's rules
+  ([`88dfaec`](https://github.com/tsenoner/protspace/commit/88dfaec2d82a3383ff84c096341543e6bd853eba))
+
+- **examples**: Require protspace 4.16.0 of the CLI instead of probing its source
+  ([`c802f6d`](https://github.com/tsenoner/protspace/commit/c802f6d8e37aea1813560eb5de9224a65afe7c79))
+
+- **examples**: Search each candidate view's neighbours once in the report
+  ([`9b190f9`](https://github.com/tsenoner/protspace/commit/9b190f9ddf40a922797e598718a181f350098472))
+
+- **examples**: Share the TSV reader, the full-length evidence and the gate table
+  ([`3c53277`](https://github.com/tsenoner/protspace/commit/3c5327728d311856af556ace4880b72eb9dd8e5a))
+
+- **examples**: Summarise each column once per verify
+  ([`19d9911`](https://github.com/tsenoner/protspace/commit/19d99115fee901ff57b60de2b5966c051de85fcf))
+
+- **examples**: Take every default view from the web catalog
+  ([`c8e38ba`](https://github.com/tsenoner/protspace/commit/c8e38baa979d7e9bd1d2e4709502ede87e74de3e))
+
+- **examples**: Take the showcase build's constants and helpers from protspace
+  ([`051a0ef`](https://github.com/tsenoner/protspace/commit/051a0ef3deeb3d21f10ac1bc259c9d4bc578a6a5))
+
+- **examples**: Take the toxprot demo's palette from protspace
+  ([`8c268b4`](https://github.com/tsenoner/protspace/commit/8c268b4af2bd493e3a3ce932f8b71c247473a307))
+
+- **examples**: Write the toxprot demo's full-length FASTA with write_mature_fasta
+  ([`0266241`](https://github.com/tsenoner/protspace/commit/0266241bb68b9fe1764da4e597b581b4ee647594))
+
+- **style**: Expose the style-key resolver and a column's style keys
+  ([`3dab46d`](https://github.com/tsenoner/protspace/commit/3dab46dc3e58a75506b75b1078d28e34e973a5a6))
+
+### Testing
+
+- **examples**: Default the one-protein bundle in the manifest tests
+  ([`bf46e4e`](https://github.com/tsenoner/protspace/commit/bf46e4ea1762a55fe87ed810e4b26caf9ac57918))
+
+- **protspace**: Assert v3 score bytes are little-endian float64
+  ([`751a866`](https://github.com/tsenoner/protspace/commit/751a866e65577aa6d2153651a09b5a40c9c1d2a8))
+
+- **protspace**: Check Biocentral dedup on what reaches the API
+  ([`dfba7b8`](https://github.com/tsenoner/protspace/commit/dfba7b8eacfeece85dab39caf7933f12d8150ea4))
+
+- **protspace**: Check the palette ids against the frontend source
+  ([`fd562f3`](https://github.com/tsenoner/protspace/commit/fd562f360d3bab4437d5cdebca00df2ce3c1bc1d))
+
+- **protspace**: Collapse protein_families identity tests into a table
+  ([`291005a`](https://github.com/tsenoner/protspace/commit/291005a2900899d99bcc6cf6346fc73aed0d3f8d))
+
+- **protspace**: Cover resume with a new protein offline, drop the slow copy
+  ([`78ef81f`](https://github.com/tsenoner/protspace/commit/78ef81fe9b8c72bd1f322277f5ea64199d4e0f96))
+
+- **protspace**: Drop constant re-assertions
+  ([`0ae0fc6`](https://github.com/tsenoner/protspace/commit/0ae0fc65ed583637669574614706e01386482bd5))
+
+- **protspace**: Drop dead test_config fixtures and existence-only output tests
+  ([`61cac55`](https://github.com/tsenoner/protspace/commit/61cac55c5d051993d133b5caa9e99677cbb2b31f))
+
+- **protspace**: Fit each reducer once, test float16 upcast for real
+  ([`4d0af3f`](https://github.com/tsenoner/protspace/commit/4d0af3f9b3accb7ed25d371408564c9ad815cdb4))
+
+- **protspace**: Fold the overlay reruns into one parametrized test
+  ([`81f2997`](https://github.com/tsenoner/protspace/commit/81f299769cfbff3d412a52e2e0b6a2acb4f9314f))
+
+- **protspace**: Keep the --max-length rejection test offline
+  ([`0fd4b90`](https://github.com/tsenoner/protspace/commit/0fd4b90d53c855c3226487f2ba11a62b6deb3eaf))
+
+- **protspace**: Make skip warnings name their own identifiers
+  ([`d1f33aa`](https://github.com/tsenoner/protspace/commit/d1f33aa822ed392aaa0a5e7e35dbe6959c042c29))
+
+- **protspace**: Merge the duplicate transfer helper, make the help test bite
+  ([`b3fc4be`](https://github.com/tsenoner/protspace/commit/b3fc4bee53f641fbc74a289134560f6a771f493a))
+
+- **protspace**: Merge UniProt fetch tests, make batching test bite
+  ([`1bf7978`](https://github.com/tsenoner/protspace/commit/1bf7978f9c2b10114c10ea83ddec02790c85beb5))
+
+- **protspace**: Parametrize GO encoding tests, cite emitters by name
+  ([`2ff555f`](https://github.com/tsenoner/protspace/commit/2ff555fb6d7c5f95e3e6192ddf4a7a2627dc722a))
+
+- **protspace**: Parametrize method-spec and colour conversion cases
+  ([`9a170b9`](https://github.com/tsenoner/protspace/commit/9a170b97f06dc8ff969ccb19a1f89e0d358b24ff))
+
+- **protspace**: Parametrize the FASTA parser cases on tmp_path
+  ([`443d4b9`](https://github.com/tsenoner/protspace/commit/443d4b9526d7a032251214730c28e9b531668f92))
+
+- **protspace**: Pin MDS similarity conversion and unbundled files
+  ([`9f61280`](https://github.com/tsenoner/protspace/commit/9f612804a12d17e4afe3ae434f564e7ff17d630f))
+
+- **protspace**: Pin the build's release groups in the manifest
+  ([`d668a46`](https://github.com/tsenoner/protspace/commit/d668a46c15c6efee15ddff08362bb1b9e9885bb6))
+
+- **protspace**: Pin transfer k and clean CLI usage errors
+  ([`1b338b7`](https://github.com/tsenoner/protspace/commit/1b338b78d575f3a04fe997192c529e17fd3c531a))
+
+- **protspace**: Pin whole InterPro annotation dicts, drop a dead patch
+  ([`55a0898`](https://github.com/tsenoner/protspace/commit/55a089898c9b115a5fd220a30e0be406ede0de4d))
+
+- **protspace**: Read the outage patterns from the prep source
+  ([`21dd83a`](https://github.com/tsenoner/protspace/commit/21dd83add2c7ab89ef8e50c1d72d71b23c968421))
+
+- **protspace**: Remove obsolete and subsumed single tests
+  ([`c7c5e45`](https://github.com/tsenoner/protspace/commit/c7c5e4548d453bfa5cb2af6a955376a4a2cbcde8))
+
+- **protspace**: Remove small duplicate tests
+  ([`d2cd7aa`](https://github.com/tsenoner/protspace/commit/d2cd7aa29cf57c1e22fd742cb6b652222c59f19d))
+
+- **protspace**: Run the offline showcase build in CI
+  ([`7b0393f`](https://github.com/tsenoner/protspace/commit/7b0393fb4ccdee42d2d6a83cba9cfaf2696cc8d1))
+
+- **protspace**: Share manager integration mocks, assert merged values
+  ([`7f74c3e`](https://github.com/tsenoner/protspace/commit/7f74c3e1919b74e89b32e2a2304052502b01badd))
+
+- **protspace**: Stop asserting the stamp read_bundle adds itself
+  ([`5dc94c6`](https://github.com/tsenoner/protspace/commit/5dc94c6cd46fa129211157c052ce99c110ef4ba5))
+
+- **protspace**: Stop claiming cluster membership carries a silhouette
+  ([`07be5b3`](https://github.com/tsenoner/protspace/commit/07be5b3a0c43755e0d3019600ba6c8db695be9d4))
+
+- **protspace**: Stop the manager swallowing forbidden refetches
+  ([`f51ff9e`](https://github.com/tsenoner/protspace/commit/f51ff9e18f4e0fcc90ed1be7ff5026754264d7dc))
+
+- **protspace**: Table annotation config cases, keep one wiring test
+  ([`9b39acf`](https://github.com/tsenoner/protspace/commit/9b39acf393c6a886eb9f7f1a196bb1b1648032c1))
+
+- **protspace**: Table embedder shortcuts, stop leaking .h5 temp files
+  ([`492758e`](https://github.com/tsenoner/protspace/commit/492758e2b5a6ce9a074dac29ba105f20b1d033ff))
+
+- **protspace**: Table transformer field mappings through transform()
+  ([`dc24e14`](https://github.com/tsenoner/protspace/commit/dc24e14701abc8f0321fbd7f984dffa481d35b16))
+
+
 ## v4.16.0 (2026-10-02)
 
 ### Bug Fixes
@@ -311,10 +979,57 @@
 
 ## v4.14.0 (2026-09-30)
 
+### Bug Fixes
+
+- **bundle**: Guard the v3 write path's unstamped-table and corrupt-part hazards
+  ([`597afbb`](https://github.com/tsenoner/protspace/commit/597afbbf487bfded62b199eb99de750a7dabf243))
+
+- **bundle**: Make the legacy annotation migration idempotent and stamped
+  ([`2ac5bf7`](https://github.com/tsenoner/protspace/commit/2ac5bf724896cc7dc094f97e45937fe794c79fef))
+
+- **bundle**: Reject corrupt v3 label lengths and CSR counts
+  ([`9d816ad`](https://github.com/tsenoner/protspace/commit/9d816ad7a6bfdab0b51c464e8505b880c9e553ed))
+
+- **bundle**: Store v3 CSR lengths as per-row counts, not cumulative offsets
+  ([`b298c57`](https://github.com/tsenoner/protspace/commit/b298c57c91cfb858e5d0307585a4d45037bc7abd))
+
+- **bundle**: Store v3 scores as float64 and keep missing-token spellings
+  ([`7119f8b`](https://github.com/tsenoner/protspace/commit/7119f8b76e7c0aa9e19c51e033f2b334937ebda7))
+
+### Documentation
+
+- **bundle**: Correct the v3 zero-copy, sourceType and score-spelling claims
+  ([`bc01fb3`](https://github.com/tsenoner/protspace/commit/bc01fb36d53453f1f0662061521381735ce60d85))
+
+- **bundle**: Document the six-part v3 container and its physical schema
+  ([`6db1ec7`](https://github.com/tsenoner/protspace/commit/6db1ec70e0eaecbc2e9e81ece9cee645306e2563))
+
 ### Features
+
+- **bundle**: Add parquetbundle v3 encoder
+  ([`847c55f`](https://github.com/tsenoner/protspace/commit/847c55f47f5cd1d817be8b7f299a63c03116380c))
+
+- **bundle**: Add the parquetbundle v3 decoder
+  ([`d665f33`](https://github.com/tsenoner/protspace/commit/d665f33a49fc711523d758e79eef2afad9b5ce8d))
+
+- **bundle**: Emit v3 containers and decode them back at every read
+  ([`4569a69`](https://github.com/tsenoner/protspace/commit/4569a691659d13f5dee0821a85b2d2a64b83ae54))
 
 - **protspace**: Write shape size 10 as the per-annotation filler
   ([`298bb53`](https://github.com/tsenoner/protspace/commit/298bb538fb6a8d1b812356249c607e9bac9773e4))
+
+### Performance Improvements
+
+- **bundle**: Stop paying a v3 core decode for a settings read
+  ([`0546d49`](https://github.com/tsenoner/protspace/commit/0546d4936fab1e683c1fba773a8d80feeebe4c4f))
+
+### Testing
+
+- **bundle**: Add the golden v3 fixture both languages read
+  ([`b9c691f`](https://github.com/tsenoner/protspace/commit/b9c691fb3679fffb04b79a396e25c4dd0be65f80))
+
+- **bundle**: Make the v3 golden fixture able to fail
+  ([`eb237b1`](https://github.com/tsenoner/protspace/commit/eb237b14ce4dbce779a954f0c9c519616a413e13))
 
 
 ## v4.13.1 (2026-09-30)
@@ -399,21 +1114,6 @@
 - **annotations**: Harden fasta length fallback and cut per-protein cost
   ([`eb66f22`](https://github.com/tsenoner/protspace/commit/eb66f22f6d341a8c0a378e5f162b757a9382f220))
 
-- **bundle**: Guard the v3 write path's unstamped-table and corrupt-part hazards
-  ([`597afbb`](https://github.com/tsenoner/protspace/commit/597afbbf487bfded62b199eb99de750a7dabf243))
-
-- **bundle**: Make the legacy annotation migration idempotent and stamped
-  ([`2ac5bf7`](https://github.com/tsenoner/protspace/commit/2ac5bf724896cc7dc094f97e45937fe794c79fef))
-
-- **bundle**: Reject corrupt v3 label lengths and CSR counts
-  ([`9d816ad`](https://github.com/tsenoner/protspace/commit/9d816ad7a6bfdab0b51c464e8505b880c9e553ed))
-
-- **bundle**: Store v3 CSR lengths as per-row counts, not cumulative offsets
-  ([`b298c57`](https://github.com/tsenoner/protspace/commit/b298c57c91cfb858e5d0307585a4d45037bc7abd))
-
-- **bundle**: Store v3 scores as float64 and keep missing-token spellings
-  ([`7119f8b`](https://github.com/tsenoner/protspace/commit/7119f8b76e7c0aa9e19c51e033f2b334937ebda7))
-
 - **notebook**: Isolate backends and publish fasta atomically
   ([`82b6dbb`](https://github.com/tsenoner/protspace/commit/82b6dbb25c93cf3eff1ed1234491ff4331985c92))
 
@@ -429,30 +1129,6 @@
 - **protspace**: Preserve cache compatibility
   ([`5583733`](https://github.com/tsenoner/protspace/commit/55837338ca191db09bd497c3c69f8eff193503dd))
 
-### Documentation
-
-- **bundle**: Correct the v3 zero-copy, sourceType and score-spelling claims
-  ([`bc01fb3`](https://github.com/tsenoner/protspace/commit/bc01fb36d53453f1f0662061521381735ce60d85))
-
-- **bundle**: Document the six-part v3 container and its physical schema
-  ([`6db1ec7`](https://github.com/tsenoner/protspace/commit/6db1ec70e0eaecbc2e9e81ece9cee645306e2563))
-
-### Features
-
-- **bundle**: Add parquetbundle v3 encoder
-  ([`847c55f`](https://github.com/tsenoner/protspace/commit/847c55f47f5cd1d817be8b7f299a63c03116380c))
-
-- **bundle**: Add the parquetbundle v3 decoder
-  ([`d665f33`](https://github.com/tsenoner/protspace/commit/d665f33a49fc711523d758e79eef2afad9b5ce8d))
-
-- **bundle**: Emit v3 containers and decode them back at every read
-  ([`4569a69`](https://github.com/tsenoner/protspace/commit/4569a691659d13f5dee0821a85b2d2a64b83ae54))
-
-### Performance Improvements
-
-- **bundle**: Stop paying a v3 core decode for a settings read
-  ([`0546d49`](https://github.com/tsenoner/protspace/commit/0546d4936fab1e683c1fba773a8d80feeebe4c4f))
-
 ### Refactoring
 
 - **query**: Drop dead short-write guard, narrow test patch
@@ -462,12 +1138,6 @@
 
 - **annotate**: Hoist UniProtRetriever import to module level
   ([`b584582`](https://github.com/tsenoner/protspace/commit/b5845824d737ad627a0d3cf87e93be16feb7df7e))
-
-- **bundle**: Add the golden v3 fixture both languages read
-  ([`b9c691f`](https://github.com/tsenoner/protspace/commit/b9c691fb3679fffb04b79a396e25c4dd0be65f80))
-
-- **bundle**: Make the v3 golden fixture able to fail
-  ([`eb237b1`](https://github.com/tsenoner/protspace/commit/eb237b14ce4dbce779a954f0c9c519616a413e13))
 
 
 ## v4.12.0 (2026-08-19)
@@ -579,6 +1249,9 @@
 
 - **prepare**: Make -f reach every HDF5 input and reject a path that is not there
   ([`0591944`](https://github.com/tsenoner/protspace/commit/0591944008d7a79786a36ccab125f8970a004d57))
+
+- **reader**: Raise instead of returning an empty dataset for a bad path
+  ([`a6b00ec`](https://github.com/tsenoner/protspace/commit/a6b00ec52d7d2fbe586ba8a963ceca2a6b30c5da))
 
 ### Build System
 

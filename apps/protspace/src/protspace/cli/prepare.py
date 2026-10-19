@@ -24,6 +24,7 @@ from protspace.cli.common_options import (
     EMBEDDER_MODELS,
     Backend,
     ClusterSelection,
+    ClusterSpace,
     Metric,
     Opt_Backend,
     Opt_BatchSize,
@@ -46,6 +47,7 @@ from protspace.cli.common_options import (
     build_embed_config,
     parse_refetch,
     require_similarity_extra,
+    warn_unused_embed_options,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,7 +99,7 @@ Opt_Annotations = Annotated[
     typer.Option(
         "-a",
         "--annotations",
-        help=f"Annotation groups (default,all,uniprot,interpro,taxonomy,ted,biocentral), individual names, or a CSV/TSV file path. Repeatable. See {ANNOTATIONS_URL}",
+        help=f"Annotation groups (default,all,uniprot,interpro,taxonomy,ted,biocentral), individual names, or custom .csv/.tsv/.txt files (ids in the first column; several are merged on it). Repeatable. See {ANNOTATIONS_URL}",
         rich_help_panel="Annotations",
     ),
 ]
@@ -125,6 +127,16 @@ Opt_ClusterSelection = Annotated[
         "--cluster-selection",
         help="With --stats, how to choose the cluster count K: 'elbow' (default), "
         "'silhouette' (max-silhouette K), or 'both' (emit both clusterings).",
+        rich_help_panel="Output",
+    ),
+]
+Opt_ClusterSpace = Annotated[
+    ClusterSpace,
+    typer.Option(
+        "--cluster-space",
+        help="With --stats, where to cluster: 'both' (default), 'projection' (one "
+        "clustering per projection), or 'embedding' (one per embedding, shared by "
+        "its projections, so cluster ids compare across them).",
         rich_help_panel="Output",
     ),
 ]
@@ -190,6 +202,14 @@ Opt_NoLog = Annotated[
 # ---------------------------------------------------------------------------
 
 
+def _file_stamp(path: Path | None) -> tuple[int, int] | None:
+    """*path*'s modification time and size, or ``None`` if there is no file."""
+    if path is None or not path.exists():
+        return None
+    stat = path.stat()
+    return stat.st_mtime_ns, stat.st_size
+
+
 def _embed_all(
     embedders: list[str],
     fasta_path: Path,
@@ -201,6 +221,7 @@ def _embed_all(
     force_reembed: bool = False,
 ) -> list[str]:
     """Embed all models, return list of cache-hit model names."""
+    from protspace.data.cache_hits import note_cache_hit
     from protspace.data.loaders.fasta import embed_fasta
 
     cached_names: list[str] = []
@@ -209,9 +230,7 @@ def _embed_all(
         # Delete cache to force re-embedding
         if force_reembed and emb_cache and emb_cache.exists():
             emb_cache.unlink()
-        old_mtime = (
-            emb_cache.stat().st_mtime if emb_cache and emb_cache.exists() else None
-        )
+        old_stamp = _file_stamp(emb_cache)
         emb_set = embed_fasta(
             fasta_path,
             emb_name,
@@ -221,11 +240,14 @@ def _embed_all(
         )
         emb_set.fasta_path = fasta_path
         embedding_sets.append(emb_set)
-        # Cache hit if file existed before and was not modified
-        if old_mtime is not None and emb_cache.stat().st_mtime == old_mtime:
+        # Cache hit if file existed before and was not modified. The size too:
+        # a coarse-timestamp filesystem can leave the mtime of a quick resume
+        # unchanged.
+        if old_stamp is not None and _file_stamp(emb_cache) == old_stamp:
             cached_names.append(emb_name)
 
     if cached_names:
+        note_cache_hit("embed")
         logger.warning(
             "Using %d cached embedding%s (%s)",
             len(cached_names),
@@ -242,6 +264,7 @@ def _embed_all(
 
 @app.command(rich_help_panel=PANEL_START)
 def prepare(
+    ctx: typer.Context,
     # Input
     input: Opt_Input = None,
     query: Opt_Query = None,
@@ -270,6 +293,7 @@ def prepare(
     scores: Opt_Scores = True,
     stats: Opt_Stats = False,
     cluster_selection: Opt_ClusterSelection = ClusterSelection.elbow,
+    cluster_space: Opt_ClusterSpace = ClusterSpace.both,
     stats_annotation: Opt_StatsAnnotation = "auto",
     refetch: Opt_Refetch = None,
     # Output
@@ -296,13 +320,16 @@ def prepare(
             "At least one of -i/--input or -q/--query is required."
         )
 
-    # --stats-annotation / --cluster-selection only do anything under --stats;
-    # a non-default value without --stats would be silently ignored, so reject it.
+    # --stats-annotation / --cluster-selection / --cluster-space only do anything
+    # under --stats; a non-default value without --stats would be silently ignored,
+    # so reject it.
     if not stats:
         if stats_annotation.strip().lower() != "auto":
             raise typer.BadParameter("--stats-annotation requires --stats.")
         if cluster_selection != ClusterSelection.elbow:
             raise typer.BadParameter("--cluster-selection requires --stats.")
+        if cluster_space != ClusterSpace.both:
+            raise typer.BadParameter("--cluster-space requires --stats.")
 
     setup_logging(verbose)
 
@@ -370,13 +397,50 @@ def prepare(
             logger.error(f"No cache at {cache_path}.")
         return
 
-    # --- Build embedding sets ---
-    from protspace.data.loaders import EmbeddingSet, load_h5
-    from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
+    # --- Parse annotations (repeatable option → flat list) ---
+    # Before embedding, so a mistyped file name fails now, not after the embeddings.
+    from protspace.data.processors.custom_annotations import (
+        flatten_annotation_args,
+        split_annotation_args,
+    )
 
-    embed_config = build_embed_config(backend, batch_size, max_length)
+    annotation_list = flatten_annotation_args(annotations or ["default"])
+    try:
+        _, annotation_files = split_annotation_args(annotation_list)
+    except ValueError as e:
+        raise typer.BadParameter(str(e), param_hint="'-a/--annotations'") from e
+    missing = [str(p) for p in annotation_files if not p.is_file()]
+    if missing:
+        raise typer.BadParameter(
+            f"No such file: {', '.join(missing)}", param_hint="'-a/--annotations'"
+        )
+
+    # --- Parse methods ---
+    # Before embedding too: a FASTA or -q input is embedded first, so a malformed
+    # -m spec, and the 3-D deprecation warning, would otherwise come only after it.
+    from protspace.data.processors.pipeline import parse_methods_arg
+
+    try:
+        method_specs = parse_methods_arg(methods or ["pca2"])
+    except ValueError as e:
+        raise typer.BadParameter(str(e), param_hint="'-m/--methods'") from e
+
+    # --- Build embedding sets ---
+    from protspace.data.cache_hits import record_cache_hits
+    from protspace.data.loaders import EmbeddingSet, load_h5, resolve_input_names
+    from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS, embedding_files
+
+    # Only a run that embeds needs the config, and building one imports the
+    # embedding backends (biocentral_api, and torch where installed).
+    embed_config = None
+    if has_fasta or query:
+        embed_config = build_embed_config(backend, batch_size, max_length)
+    else:
+        warn_unused_embed_options(ctx)
     embedding_sets: list[EmbeddingSet] = []
     fasta_for_similarity: Path | None = fasta
+    # Stages reusing a result an earlier run cached in `cache_dir`.
+    cache_hits = record_cache_hits()
 
     try:
         if query:
@@ -403,11 +467,10 @@ def prepare(
             fasta_for_similarity = fasta_path
 
         elif input_specs:
-            for path, name_override in input_specs:
+            named_inputs = resolve_input_names(input_specs, command="prepare")
+            for path, name_override, _ in named_inputs:
                 if path.is_dir():
-                    h5s = sorted(
-                        f for ext in EMBEDDING_EXTENSIONS for f in path.glob(f"*{ext}")
-                    )
+                    h5s = embedding_files(path)
                     if not h5s:
                         logger.warning(f"No embedding files in: {path}")
                         continue
@@ -465,24 +528,12 @@ def prepare(
                 )
             )
 
-        # --- Parse annotations (repeatable option → flat list) ---
-        raw = annotations if annotations else ["default"]
-        annotation_list = []
-        for item in raw:
-            for part in item.split(","):
-                part = part.strip()
-                if part:
-                    annotation_list.append(part)
-
         # --- Run pipeline ---
         from protspace.data.processors.pipeline import (
             PipelineConfig,
             ReducerParams,
             ReductionPipeline,
-            parse_methods_arg,
         )
-
-        method_specs = parse_methods_arg(methods or ["pca2"])
 
         reducer_params = ReducerParams(
             metric=metric.value,
@@ -505,6 +556,7 @@ def prepare(
             no_scores=not scores,
             stats=stats,
             cluster_selection=cluster_selection.value,
+            cluster_space=cluster_space.value,
             stats_annotation=stats_annotation,
             refetch_stages=refetch_stages,
             annotations=annotation_list,
@@ -515,10 +567,13 @@ def prepare(
         pipeline = ReductionPipeline(config)
         pipeline.run(embedding_sets)
 
-        if keep_tmp and not refetch_stages:
+        # Only after a run that reused something: a fresh run has nothing to
+        # recompute. A warning, so a default-verbosity rerun shows it.
+        if cache_hits and not refetch_stages:
+            reused = ",".join(dict.fromkeys(cache_hits))
             logger.warning(
-                "Hint: use --refetch all to recompute everything, "
-                "or --refetch <stages> selectively"
+                f"Hint: reused cached results from {cache_dir}; use "
+                f"--refetch {reused} to recompute them, or --refetch all"
             )
 
     except (FileNotFoundError, ValueError) as e:
@@ -589,7 +644,7 @@ def _write_run_log(
     query: str | None,
     input_specs: list[tuple[Path, str | None]],
     embedders: list[str],
-    embed_config: EmbedConfig | LocalEmbedConfig,
+    embed_config: EmbedConfig | LocalEmbedConfig | None,
     pipeline_config: PipelineConfig,
     similarity: bool,
     scores: bool,
@@ -609,7 +664,7 @@ def _write_run_log(
     ts_end = datetime.now(UTC)
     n_projections = len(pipeline_config.methods) * n_embedding_sets
     rp = asdict(pipeline_config.reducer_params)
-    ec = asdict(embed_config)
+    ec = asdict(embed_config) if embed_config is not None else {}
 
     lines = [
         "# protspace run log",

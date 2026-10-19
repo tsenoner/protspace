@@ -14,6 +14,7 @@ import {
   getDataLoadFailureNotification,
   getDatasetPersistenceFailureNotification,
   getLegacyBundleFormatNotification,
+  getThreeDProjectionNotification,
 } from './notifications';
 import {
   beginSaveImportedFile,
@@ -175,19 +176,24 @@ export function createDatasetController({
   viewController,
   onExampleLoadCancelled,
 }: DatasetControllerOptions): DatasetController {
-  // An example's download fills the first part of the loading bar
+  // Every overlay write the running load makes goes through here. An
+  // example's download fills the first part of the loading bar
   // (persisted-dataset.ts). Its decode and render phases report 0–100 of
   // their own, mapped onto the rest, so the bar never runs backwards. A load
   // a newer request has superseded leaves the overlay alone: that request
-  // owns it, and a render step or the render's final hide would otherwise
+  // owns it, and a render step or the load's final hide would otherwise
   // cover or dismiss its "Downloading…".
   const phaseOverlayController: Pick<LoadingOverlayController, 'update'> = {
     update(show, progress, message, subMessage, note) {
       if (isRunningLoadSuperseded()) {
         return;
       }
+      if (!show) {
+        overlayController.update(false);
+        return;
+      }
       const afterDownload =
-        show && progress !== undefined && loadQueue.getRunningLoadMeta()?.example != null;
+        progress !== undefined && loadQueue.getRunningLoadMeta()?.example != null;
       overlayController.update(
         show,
         afterDownload ? progressAfterExampleDownload(progress) : progress,
@@ -302,9 +308,6 @@ export function createDatasetController({
     // result, or one a newer user request superseded, must leave that request's overlay
     // alone.
     let ownsOverlay = false;
-    // Set once a newer user request is known to have superseded this load (checked
-    // after the render, or on a failure): that request owns the overlay by then.
-    let superseded = false;
 
     try {
       const customEvent = event as CustomEvent<DataLoadedEventDetail>;
@@ -379,7 +382,7 @@ export function createDatasetController({
         (loadMeta.kind === 'user' && file ? beginSaveImportedFile(file) : undefined);
       loadMeta.pendingSave = undefined;
       if (pendingSave) {
-        overlayController.update(
+        phaseOverlayController.update(
           true,
           20,
           'Saving imported dataset...',
@@ -437,7 +440,7 @@ export function createDatasetController({
       // while it runs. This dataset is on screen all the same, so it is
       // labelled and recorded as the one displayed; only the URL and the view
       // request, which that request owns, are left alone.
-      superseded = isSuperseded();
+      const superseded = isSuperseded();
 
       if (settings && loadMeta.kind !== 'opfs') {
         legendElement.setFileSettings(settings.legendSettings, datasetHash, true);
@@ -569,6 +572,14 @@ export function createDatasetController({
         notify.info(getLegacyBundleFormatNotification(bundleFormatVersion, unplacedProteinCount));
       }
 
+      // Same rule for 3-D projections: shown as their X/Y view, read until 5.0.0.
+      const threeDProjections = data.projections
+        .filter((projection) => projection.dimension === 3)
+        .map((projection) => projection.name);
+      if (loadMeta.kind === 'user' && threeDProjections.length > 0) {
+        notify.info(getThreeDProjectionNotification(threeDProjections));
+      }
+
       try {
         if (loadMeta.kind === 'user' || loadMeta.kind === 'opfs') {
           await markLastLoadStatus('success');
@@ -583,15 +594,16 @@ export function createDatasetController({
       // Nothing later would take the overlay down after a failure here, even one
       // thrown before the stale check could establish ownership.
       ownsOverlay = true;
-      superseded = isRunningLoadSuperseded();
     } finally {
       // The load has settled — rendered, settings and view restored, status recorded,
       // or failed along the way — so take the overlay down now, and before the next
-      // queued load may start and show its own. Not when a newer user request has
-      // superseded this load meanwhile: that request owns the overlay (an example
-      // still downloading shows its progress there) and takes it down itself.
-      if (ownsOverlay && !superseded) {
-        overlayController.update(false);
+      // queued load may start and show its own. Past the stale check this load is
+      // still the running one, so the guarded controller leaves the overlay alone when
+      // a newer user request has superseded it by now, even during the post-load work:
+      // that request owns the overlay (an example still downloading shows its progress
+      // there) and takes it down itself.
+      if (ownsOverlay) {
+        phaseOverlayController.update(false);
       }
       if (loadSequence !== null) {
         loadQueue.resolvePendingLoadFinalization(loadSequence, success);
@@ -652,9 +664,7 @@ export function createDatasetController({
         // starts, or it already ran, and then nothing else would take this load's
         // overlay down. Dismiss it before releasing the queue, unless a newer user
         // request superseded the restore: the overlay is that request's.
-        if (!isLoadSuperseded(runningLoadMeta)) {
-          overlayController.update(false);
-        }
+        phaseOverlayController.update(false);
         settleFailed();
         await persistedDatasetController.clearCorruptedPersistedDataset('could not be loaded');
         return;
@@ -682,9 +692,7 @@ export function createDatasetController({
     // without this, the UI stays behind it, unusable, until reload. A user
     // import a newer request has superseded still reports its failure, but
     // the overlay is that request's (an example still downloading, say).
-    if (!isLoadSuperseded(runningLoadMeta)) {
-      overlayController.update(false);
-    }
+    phaseOverlayController.update(false);
     notify.error(getDataLoadFailureNotification(customEvent.detail));
     settleFailed();
   };
@@ -721,9 +729,6 @@ export function createDatasetController({
       phaseOverlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');
     },
     handleLoadingProgress(event: Event) {
-      if (isRunningLoadSuperseded()) {
-        return;
-      }
       const customEvent = event as CustomEvent<{ percentage?: number }>;
       const percentage = Number(customEvent.detail.percentage ?? 0);
       const visualProgress = Math.min(20, Math.max(5, percentage * 0.2));

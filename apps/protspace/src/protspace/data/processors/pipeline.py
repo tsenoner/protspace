@@ -15,13 +15,20 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from protspace.data.cache_hits import note_cache_hit
 from protspace.data.io.atomic import staged_write
+from protspace.data.io.ids import PROTEIN_ID_COLUMN
 from protspace.data.loaders import EmbeddingSet
 from protspace.data.loaders.embedding_set import (
     format_param_suffix,
     format_projection_name,
 )
 from protspace.data.processors.base_processor import BaseProcessor
+from protspace.data.processors.custom_annotations import (
+    merge_custom_annotations,
+    resolve_annotation_request,
+)
+from protspace.deprecations import THREE_D_PROJECTIONS, warn
 from protspace.utils import get_reducers
 from protspace.utils.constants import MDS_NAME
 
@@ -76,6 +83,7 @@ class PipelineConfig:
     no_scores: bool = False
     stats: bool = False
     cluster_selection: str = "elbow"  # elbow | silhouette | both (for --stats)
+    cluster_space: str = "both"  # projection | embedding | both (for --stats)
     stats_annotation: str = "auto"  # which annotation(s) to score (for --stats)
     refetch_stages: frozenset[str] = field(default_factory=frozenset)
     annotations: list[str] | None = None
@@ -131,7 +139,12 @@ def parse_method_spec(method_spec: str) -> MethodSpec:
         base, params_str = method_spec, ""
 
     method = "".join(filter(str.isalpha, base))
-    dims = int("".join(filter(str.isdigit, base)))
+    digits = "".join(filter(str.isdigit, base))
+    if not digits:
+        raise ValueError(
+            f"Method '{method_spec}' needs a dimension suffix, e.g. '{method}2'."
+        )
+    dims = int(digits)
 
     overrides = {}
     if params_str:
@@ -177,7 +190,25 @@ def parse_methods_arg(raw: list[str]) -> list[MethodSpec]:
             if spec not in seen:
                 seen.add(spec)
                 specs.append(spec)
+    _warn_3d_methods(specs)
     return specs
+
+
+def _warn_3d_methods(specs: list[MethodSpec]) -> None:
+    """One deprecation warning per parse for every 3-D method requested.
+
+    Here rather than in each command: `prepare`, `project` and the Colab notebook
+    all turn method strings into specs through `parse_methods_arg`.
+    """
+    names = list(dict.fromkeys(f"{s.method}{s.dims}" for s in specs if s.dims == 3))
+    if names:
+        method = names[0][:-1]
+        warn(
+            THREE_D_PROJECTIONS,
+            logger,
+            example=f"{method}2 instead of {method}3",
+            methods=", ".join(names),
+        )
 
 
 def disambiguation_suffix(spec: MethodSpec, method_counts: Counter) -> str:
@@ -215,6 +246,26 @@ def _run_with_overridden_config(
         return base.process_reduction(data, method, dims)
     finally:
         base.config = saved
+
+
+def align_annotations(metadata: pd.DataFrame, headers: list[str]) -> pd.DataFrame:
+    """The fetched annotations as the bundle's table: one row per header, in order.
+
+    *metadata*'s first column holds the ids, whatever its name; it comes back as
+    ``protein_id``. Every cell is text, and a missing one (null, or a protein the
+    annotations do not cover) is empty, never the label ``nan``. ``prepare`` and
+    the Preparation notebook both build their annotations table with this.
+    """
+    full = pd.DataFrame({PROTEIN_ID_COLUMN: list(headers)})
+    if len(metadata.columns) <= 1:
+        return full
+    # fillna first: astype(str) would spell a null "nan".
+    metadata = metadata.fillna("").astype(str)
+    metadata = metadata.rename(columns={metadata.columns[0]: PROTEIN_ID_COLUMN})
+    full = full.merge(
+        metadata.drop_duplicates(PROTEIN_ID_COLUMN), on=PROTEIN_ID_COLUMN, how="left"
+    )
+    return full.fillna("")
 
 
 class ReductionPipeline:
@@ -262,19 +313,7 @@ class ReductionPipeline:
 
             metadata = strip_scores_from_df(metadata)
 
-        # Build full metadata with all headers
-        full_metadata = pd.DataFrame({"identifier": all_headers})
-        if len(metadata.columns) > 1:
-            metadata = metadata.astype(str)
-            id_col = metadata.columns[0]
-            if id_col != "identifier":
-                metadata = metadata.rename(columns={id_col: "identifier"})
-            full_metadata = full_metadata.merge(
-                metadata.drop_duplicates("identifier"),
-                on="identifier",
-                how="left",
-            )
-        metadata = full_metadata
+        metadata = align_annotations(metadata, all_headers)
 
         # DR: each embedding set × each method
         all_reductions = self._run_reductions(embedding_sets)
@@ -375,31 +414,13 @@ class ReductionPipeline:
     ) -> pd.DataFrame:
         """Fetch annotations from APIs with incremental caching support."""
         from protspace.data.annotations.cache import CACHE_FILENAME, fetch_annotations
-        from protspace.data.annotations.configuration import AnnotationConfiguration
 
         # Extract sequences from FASTA files (if available) to avoid re-fetching
         sequences = self._extract_sequences(embedding_sets) if embedding_sets else {}
 
-        annotation_names, csv_path = self._resolve_annotation_names()
-
-        # Load user CSV if provided
-        csv_df = None
-        if csv_path:
-            logger.info(f"Loading custom annotations from: {csv_path}")
-            csv_df = pd.read_csv(
-                csv_path,
-                sep="\t" if csv_path.endswith(".tsv") else ",",
-            )
-            id_col = csv_df.columns[0]
-            if id_col != "identifier":
-                csv_df = csv_df.rename(columns={id_col: "identifier"})
-
-        if annotation_names:
-            annotations_list = AnnotationConfiguration(
-                annotation_names
-            ).user_annotations
-        else:
-            annotations_list = None
+        annotations_list, csv_df = resolve_annotation_request(
+            self.config.annotations, headers
+        )
 
         # CSV-only: no API annotations requested
         self.uniprot_releases = set()
@@ -420,53 +441,7 @@ class ReductionPipeline:
             refetch=self.config.refetch_stages,
         )
         self.uniprot_releases = set(fetched.uniprot_releases)
-        return self._merge_csv(fetched.frame, csv_df)
-
-    def _resolve_annotation_names(self) -> tuple[list[str], str | None]:
-        """Parse annotation arguments into annotation names and optional CSV path.
-
-        Returns:
-            Tuple of (annotation_names, csv_path_or_None)
-        """
-        if not self.config.annotations:
-            return [], None
-
-        names = []
-        csv_path = None
-        for item in self.config.annotations:
-            item = item.strip()
-            if not item:
-                continue
-            if item.endswith((".csv", ".tsv")):
-                csv_path = item
-            else:
-                for part in item.split(","):
-                    part = part.strip()
-                    if part:
-                        names.append(part)
-        return names, csv_path
-
-    @staticmethod
-    def _merge_csv(api_df: pd.DataFrame, csv_df: pd.DataFrame | None) -> pd.DataFrame:
-        """Merge user CSV annotations onto API annotations. CSV wins on collision."""
-        if csv_df is None:
-            return api_df
-
-        merged = api_df.merge(
-            csv_df.drop_duplicates("identifier"),
-            on="identifier",
-            how="left",
-            suffixes=("_api", ""),
-        )
-        # Drop API-suffixed duplicates so CSV values win
-        for col in list(merged.columns):
-            if col.endswith("_api"):
-                base = col.removesuffix("_api")
-                if base in merged.columns:
-                    merged = merged.drop(columns=[col])
-                else:
-                    merged = merged.rename(columns={col: base})
-        return merged
+        return merge_custom_annotations(fetched.frame, csv_df)
 
     # --- Projection caching helpers ---
 
@@ -661,6 +636,7 @@ class ReductionPipeline:
                 computed_count += 1
 
         if cached_projections:
+            note_cache_hit("projections")
             logger.warning(
                 "Using %d cached projection%s",
                 len(cached_projections),
@@ -702,14 +678,17 @@ class ReductionPipeline:
             annotation_labels = None
             if metadata is not None:
                 annotation_labels = build_annotation_labels(
-                    metadata, self.config.stats_annotation, id_col="identifier"
+                    metadata, self.config.stats_annotation, id_col=PROTEIN_ID_COLUMN
                 )
 
             report = compute_statistics(
                 embedding_sets,
                 all_reductions,
                 rng_seed=self.config.reducer_params.random_state,
-                params={"cluster_selection": self.config.cluster_selection},
+                params={
+                    "cluster_selection": self.config.cluster_selection,
+                    "cluster_space": self.config.cluster_space,
+                },
                 # Faithfulness high-dim metric: reducers like PCA/MDS/PaCMAP omit
                 # 'metric' from their params, so fall back to the run's metric
                 # rather than silently assuming euclidean.

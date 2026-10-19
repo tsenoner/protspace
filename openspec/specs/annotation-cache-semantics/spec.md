@@ -389,3 +389,40 @@ the old `none` reads as a missing value.
 - **THEN** no `none` value is written back under a current stamp, and the cached values of the
   other Biocentral columns are kept
 - **AND** a later run fetches Biocentral again
+
+### Requirement: Caches written before the TMbed payload validation are refreshed
+
+ProtSpace SHALL NOT reuse cached `predicted_signal_peptide` or `predicted_transmembrane`
+values stamped version 3 or earlier. Those versions wrote signal peptide `False` for a
+TMbed prediction with an empty topology and read a malformed payload as a topology. A run
+that requests such a column SHALL refetch Biocentral once and stamp the rewritten cache as
+current. A stale column of a source the refresh refetches anyway SHALL be refreshed with it
+rather than dropped.
+
+#### Scenario: A version-3 cache is asked for the signal peptide
+
+- **WHEN** a run requests `predicted_signal_peptide` and columns from other sources from a
+  cache stamped version 3
+- **THEN** ProtSpace refetches Biocentral once and fetches no other source
+- **AND** the rewritten cache is stamped current, so the next run fetches nothing
+
+#### Scenario: Only one TMbed column is requested
+
+- **WHEN** a run requests `predicted_transmembrane` but not `predicted_signal_peptide` from
+  a cache that holds both under superseded semantics
+- **THEN** the one Biocentral refetch also refreshes `predicted_signal_peptide`, which stays
+  in the cache and out of the run's result
+
+### Requirement: Caches written before InterPro's canonical-sequence lookup are refreshed
+
+ProtSpace SHALL NOT reuse cached InterPro columns stamped version 3 or earlier. Those versions
+looked InterPro up by the FASTA's sequence whenever one was given, where InterPro now takes
+UniProt's canonical sequence first, so a cached match, or a cached absence of one, may belong to
+a different sequence. A run that requests such a column SHALL refetch InterPro once and stamp the
+rewritten cache as current.
+
+#### Scenario: A version-3 cache is asked for pfam
+
+- **WHEN** a run requests `pfam` and a UniProt column from a cache stamped version 3
+- **THEN** ProtSpace refetches InterPro once, reuses the cached UniProt values, and stamps the
+  cache current, so the next run fetches nothing

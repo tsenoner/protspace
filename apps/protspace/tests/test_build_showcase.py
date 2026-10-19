@@ -1,8 +1,9 @@
 """Tests for scripts/generate_examples/build_showcase.py (the showcase bundle build).
 
-Offline: the pure helpers run on synthetic tables, and the two ``slow`` end-to-end
-tests replace the network (UniProt, annotate) with fakes while running the real
-``protspace bundle`` / ``style`` / ``stats``.
+Offline: the pure helpers run on synthetic tables, and the end-to-end EAT build
+(three-finger toxins) replaces the network (UniProt, embed, prepare) with fakes
+while running the real ``protspace bundle`` / ``transfer`` / ``stats`` / ``style``.
+It takes a few seconds and runs in CI with the rest.
 """
 
 from __future__ import annotations
@@ -69,7 +70,7 @@ def _projections(names=("PCA_2", "UMAP_2"), ids=("P1", "P2", "P3")):
     data = pa.table(
         {
             "projection_name": [r[0] for r in rows],
-            "identifier": [r[1] for r in rows],
+            "protein_id": [r[1] for r in rows],
             "x": [r[2] for r in rows],
             "y": [r[3] for r in rows],
             "z": pa.nulls(len(rows), pa.float64()),
@@ -295,7 +296,7 @@ def test_coordinates_compare_at_the_float32_a_v3_file_stores():
     long = pa.table(
         {
             "projection_name": ["U", "U"],
-            "identifier": ["P2", "P1"],
+            "protein_id": ["P2", "P1"],
             "x": pa.array([0.1, 2.0], pa.float64()),
             "y": pa.array([1 / 3, 4.0], pa.float64()),
         }
@@ -303,7 +304,7 @@ def test_coordinates_compare_at_the_float32_a_v3_file_stores():
     wide = pa.table(
         {
             "projection_name": ["U", "U"],
-            "identifier": ["P1", "P2"],  # another row order
+            "protein_id": ["P1", "P2"],  # another row order
             "x": pa.array([2.0, 0.1], pa.float32()),
             "y": pa.array([4.0, 1 / 3], pa.float32()),
             "z": pa.nulls(2, pa.float32()),
@@ -1024,7 +1025,6 @@ def test_the_embeddings_pin_gate(config, tmp_path):
     ],
 )
 def test_missing_labels_follow_the_web(text, missing):
-    assert bs.is_missing_label(text) is missing
     assert bs.cell_labels(text) == ([] if missing else [text.strip()])
 
 
@@ -1531,7 +1531,7 @@ def test_clustering_report_writes_rows_markdown_and_thumbnails(tmp_path):
         {"projection_name": ["U"], "dimensions": [2], "info_json": ["{}"]}
     )
     data = pa.table(
-        {"projection_name": ["U"] * 60, "identifier": ids, "x": xy[:, 0], "y": xy[:, 1]}
+        {"projection_name": ["U"] * 60, "protein_id": ids, "x": xy[:, 0], "y": xy[:, 1]}
     )
     bundle = bs.Bundle(annotations, metadata, data)
     annotations = annotations.append_column(
@@ -1568,7 +1568,7 @@ def test_neighbourhood_gate():
     ids = [f"P{i}" for i in range(90)]
     annotations = pa.table({"protein_id": ids, "fam": labels})
     data = pa.table(
-        {"projection_name": ["U"] * 90, "identifier": ids, "x": xy[:, 0], "y": xy[:, 1]}
+        {"projection_name": ["U"] * 90, "protein_id": ids, "x": xy[:, 0], "y": xy[:, 1]}
     )
     bundle = bs.Bundle(annotations, pa.table({"projection_name": ["U"]}), data)
     own = bs.gate_neighbourhood(
@@ -2871,7 +2871,7 @@ class EmbedBuildCli(bs.Cli):
                 {
                     "projection_name": ["ProtT5 — UMAP 2"] * 40
                     + ["ProtT5 — PCA 2"] * 40,
-                    "identifier": ids * 2,
+                    "protein_id": ids * 2,
                     "x": list(xy[:, 0]) + list(-xy[:, 0]),
                     "y": list(xy[:, 1]) + list(xy[:, 1] * 2),
                     "z": pa.nulls(80, pa.float64()),
@@ -2892,7 +2892,6 @@ class EmbedBuildCli(bs.Cli):
         return bs.MIN_CLI_VERSION
 
 
-@pytest.mark.slow
 def test_the_eat_example_builds_offline_and_passes_its_gates(
     config, tmp_path, monkeypatch
 ):

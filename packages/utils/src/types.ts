@@ -1,3 +1,5 @@
+import type { POINT_SHAPES } from './generated/shared-constants';
+
 export type AnnotationKind = 'categorical' | 'numeric';
 
 export type NumericAnnotationType = 'int' | 'float';
@@ -307,7 +309,8 @@ export function isValidDensityLayerMode(value: unknown): value is DensityLayerMo
   return typeof value === 'string' && DENSITY_LAYER_MODES.includes(value as DensityLayerMode);
 }
 
-export type PointShape = 'circle' | 'square' | 'diamond' | 'triangle-up' | 'triangle-down' | 'plus';
+/** A point's shape; contracts/shared-constants.json lists them for both languages. */
+export type PointShape = (typeof POINT_SHAPES)[number];
 
 // ─────────────────────────────────────────────────────────────────
 // Legend Persistence Types

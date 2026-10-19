@@ -1,17 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { ExportRenderer } from './export-renderer';
-import type { PlotData } from '@protspace/utils';
-import { makeRenderer } from './test-support/renderer-fixture';
+import { makeRenderer, plotDataFrom } from './test-support/renderer-fixture';
 
-const pd: PlotData = {
-  length: 2,
-  xs: new Float32Array([0, 1]),
-  ys: new Float32Array([0, 1]),
-  zs: null,
-  originalIndices: null,
-  proteinIds: ['p0', 'p1'],
-};
+const pd = plotDataFrom([0, 1], [0, 1]);
 const config = { width: 800, height: 600 };
 
 describe('WebGLRenderer.createExportScales (facade pass-through, #301/#302)', () => {

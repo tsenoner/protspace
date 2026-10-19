@@ -19,6 +19,7 @@ MODEL_DISPLAY_NAMES: dict[str, str] = {
     "esm2_150m": "ESM2-150M",
     "esm2_650m": "ESM2-650M",
     "esm2_3b": "ESM2-3B",
+    "esm3_open": "ESM3-Open",
     "ankh_base": "Ankh-Base",
     "ankh_large": "Ankh-Large",
     "ankh3_large": "Ankh3-Large",

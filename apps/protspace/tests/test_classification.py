@@ -9,7 +9,7 @@ from protspace.analysis.classification import Rule, classify
 def _table():
     return pa.table(
         {
-            "identifier": ["TRINITY_1", "TRINITY_2", "P00001", "P00002"],
+            "protein_id": ["TRINITY_1", "TRINITY_2", "P00001", "P00002"],
             "protein_category": ["mSCR", "mSCR", "neurotoxin", "enzyme"],
         }
     )
@@ -115,7 +115,7 @@ def test_open_rule_does_not_consume_proteins_from_the_other_set():
 def test_open_query_rule_on_empty_table_raises_a_rule_free_message():
     # An open rule cannot "match nothing" — it is the whole table — so the empty
     # table must blame neither side's filters.
-    empty = pa.table({"identifier": [], "protein_category": []})
+    empty = pa.table({"protein_id": [], "protein_category": []})
     with pytest.raises(ValueError, match="no proteins to use as queries"):
         classify(empty, Rule(), Rule())
 

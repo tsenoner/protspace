@@ -46,6 +46,7 @@ import {
   type CsrEvidence,
   type CsrScores,
   type Projection,
+  DEFAULT_CATEGORICAL_PALETTE_ID,
   rankByFrequency,
   remapCsr,
   V3_EVIDENCE_DICT_NAME,
@@ -1100,7 +1101,10 @@ export async function readV3Bundle(
     const drop = missingLabels(labels, keep);
     const remap =
       rowsDropped || keep ? rankByHits(storage, labels, drop) : compactLabels(labels, drop);
-    const { colors, shapes } = generateColorsAndShapes('kellys', labels.length);
+    const { colors, shapes } = generateColorsAndShapes(
+      DEFAULT_CATEGORICAL_PALETTE_ID,
+      labels.length,
+    );
 
     if (storage instanceof Int32Array) {
       if (remap) {

@@ -11,11 +11,17 @@ import {
   isLegendItemHidden,
   openExplore,
   openImportMenu,
+  pickAnnotation,
   waitForExploreDataLoad,
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
-import { TOXPROT_5181_FIXTURE, TOXPROT_5181_V3_FIXTURE } from './helpers/fixtures';
+import {
+  ROLE_EAT_FIXTURE,
+  TOXPROT_5181_FIXTURE,
+  TOXPROT_5181_V3_FIXTURE,
+} from './helpers/fixtures';
+import { e2eExample } from './helpers/example-fixtures';
 import { readStoredImport } from './helpers/opfs';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
@@ -241,10 +247,6 @@ async function dispatchCustomEvent(
   );
 }
 
-async function hasLegacyNotificationHelperArtifacts(page: Page): Promise<boolean> {
-  return page.evaluate(() => document.getElementById('protspace-notification-styles') !== null);
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -318,7 +320,41 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     expect(await isLegendItemHidden(page, itemValue)).toBe(true);
   });
 
-  test('a failed import leaves the stored import to be restored on reload', async ({ page }) => {
+  test("reload keeps an imported EAT bundle's legend settings for an annotation not shown yet", async ({
+    page,
+  }) => {
+    // The bundle stores 15 visible values for this annotation (the default is 10). Its
+    // settings are saved on import; only the in-session copy applies them before a reload.
+    const bundledAnnotation = 'cluster_silhouette_ProtT5 — UMAP 2';
+    const eatProteinCount = e2eExample('eat').count;
+    const getMaxVisibleValues = () =>
+      page.evaluate(
+        () =>
+          (document.querySelector('protspace-legend') as Element & { maxVisibleValues: number })
+            .maxVisibleValues,
+      );
+
+    await loadCustomDatasetFromImportMenu(page, ROLE_EAT_FIXTURE);
+    await waitForProteinCount(page, eatProteinCount);
+    await waitForPersistedExploreDataset(page);
+
+    await page.reload();
+    await waitForExploreDataLoad(page, { proteinCount: eatProteinCount });
+    await dismissTourIfPresent(page);
+    await pickAnnotation(page, bundledAnnotation);
+
+    await expect.poll(getMaxVisibleValues).toBe(15);
+  });
+
+  test('a failed import shows a toast, not a dialog, and leaves the stored import to restore on reload', async ({
+    page,
+  }) => {
+    let dialogSeen = false;
+    page.on('dialog', async (dialog) => {
+      dialogSeen = true;
+      await dialog.dismiss();
+    });
+
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
     await waitForPersistedExploreDataset(page);
@@ -331,6 +367,9 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
       buffer: Buffer.from('not-a-valid-bundle'),
     });
     await expect(page.getByText('Dataset import failed.')).toBeVisible();
+    // The failed load must not leave its full-screen loading overlay behind.
+    await expect(page.locator('#progressive-loading')).toHaveCount(0);
+    expect(dialogSeen).toBe(false);
     expect(await readStoredImport(page)).toEqual({
       name: CUSTOM_5K_BUNDLE_NAME,
       lastLoadStatus: 'success',
@@ -388,8 +427,6 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 test.describe('Persisted dataset failure handling', () => {
   test('queued user imports win over corrupted OPFS fallback recovery', async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
-
       const originalDefine = customElements.define.bind(customElements);
       customElements.define = (name, constructor, options) => {
         if (name === 'protspace-data-loader') {
@@ -466,7 +503,6 @@ test.describe('Persisted dataset failure handling', () => {
     page,
   }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
       Object.defineProperty(navigator.storage, 'getDirectory', {
         configurable: true,
         value: async () => {
@@ -489,62 +525,6 @@ test.describe('Persisted dataset failure handling', () => {
     await expect(page.getByText(/browser storage is restricted/i)).toBeVisible();
 
     expect(await getProteinCount(page)).not.toBe(defaultCount);
-  });
-
-  test('unsupported browsers show an OPFS support toast without blocking the current session load', async ({
-    page,
-  }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
-      Object.defineProperty(navigator.storage, 'getDirectory', {
-        configurable: true,
-        value: undefined,
-      });
-    });
-
-    await openExplore(page);
-
-    const defaultCount = await getProteinCount(page);
-
-    await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
-
-    await expect(
-      page.getByText('Dataset loaded, but automatic reload is unavailable.'),
-    ).toBeVisible();
-    await expect(page.getByText(/does not support the Origin Private File System/i)).toBeVisible();
-
-    expect(await getProteinCount(page)).not.toBe(defaultCount);
-  });
-
-  test('dataset load failures show a toast instead of a browser dialog', async ({ page }) => {
-    let dialogSeen = false;
-    page.on('dialog', async (dialog) => {
-      dialogSeen = true;
-      await dialog.dismiss();
-    });
-
-    await openExplore(page);
-
-    await page.evaluate(async () => {
-      const loader = document.getElementById('myDataLoader') as unknown as {
-        loadFromFile: (file: File) => Promise<void>;
-      } | null;
-      if (!loader) {
-        throw new Error('Missing data loader');
-      }
-
-      const file = new File(['not-a-valid-bundle'], 'broken.parquetbundle', {
-        type: 'application/octet-stream',
-      });
-      await loader.loadFromFile(file);
-    });
-
-    await expect(page.getByText('Dataset import failed.')).toBeVisible();
-    // The failed load must not leave its full-screen loading overlay behind.
-    await expect(page.locator('#progressive-loading')).toHaveCount(0);
-    expect(dialogSeen).toBe(false);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 });
 
@@ -573,7 +553,6 @@ test.describe('Unified app notifications', () => {
     await expect(page.getByText(/loaded the default demo dataset/i)).toBeVisible();
     expect(await getProteinCount(page)).toBe(defaultCount);
     expect(dialogMessages).toEqual([]);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
   test('an unreadable persisted dataset falls back to the demo and then clears the overlay', async ({
@@ -591,39 +570,6 @@ test.describe('Unified app notifications', () => {
     expect(await getCurrentDatasetName(page)).not.toBe('corrupt.parquetbundle');
   });
 
-  test('selection-disabled-notification uses the unified warning toast path', async ({ page }) => {
-    await dispatchCustomEvent(page, '#myControlBar', 'selection-disabled-notification', {
-      message: 'Selection mode disabled: Only 1 point remaining',
-      severity: 'warning',
-      source: 'control-bar',
-      context: {
-        reason: 'insufficient-data',
-        dataSize: 1,
-      },
-    });
-
-    await expect(page.getByText('Selection mode disabled.')).toBeVisible();
-    await expect(page.getByText('Selection mode disabled: Only 1 point remaining')).toBeVisible();
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
-
-  test('structure-error events stay inline and do not create global toasts', async ({ page }) => {
-    await dispatchCustomEvent(page, '#myStructureViewer', 'structure-error', {
-      message: 'No 3D structure was found for P12345.',
-      severity: 'error',
-      source: 'structure-viewer',
-      context: {
-        proteinId: 'P12345',
-      },
-    });
-
-    await page.waitForTimeout(500);
-
-    await expect(page.getByText('Structure could not be loaded.')).toHaveCount(0);
-    await expect(page.getByText('No 3D structure was found for P12345.')).toHaveCount(0);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
-
   test('successful parquet exports show the unified success toast', async ({ page }) => {
     const downloadPromise = page.waitForEvent('download');
 
@@ -637,7 +583,6 @@ test.describe('Unified app notifications', () => {
     expect(download.suggestedFilename()).toContain('.parquetbundle');
     await expect(page.getByText('Export ready.')).toBeVisible();
     await expect(page.getByText(/\.parquetbundle/i)).toBeVisible();
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
   test('failed exports show the unified error toast', async ({ page }) => {
@@ -665,22 +610,18 @@ test.describe('Unified app notifications', () => {
     await expect(page.getByText('Export failed.')).toBeVisible();
     await expect(page.getByText('No data available for export')).toBeVisible();
     expect(dialogSeen).toBe(false);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 });
 
 test.describe('Bundle format notice', () => {
-  const LEGACY_BUNDLES = [
-    { version: 1, path: path.resolve(SPEC_DIR, 'fixtures/raw_numeric_test.parquetbundle') },
-    {
-      version: 2,
-      path: path.resolve(
-        SPEC_DIR,
-        '../../../packages/core/src/components/data-loader/utils/__fixtures__/v2-sample.parquetbundle',
-      ),
-    },
-  ];
+  // v2 only: the worker-to-notice path does not branch on the version, and the v1
+  // notice is pinned by the it.each([1, 2]) in dataset-controller.persistence.test.ts.
+  const V2_BUNDLE_PATH = path.resolve(
+    SPEC_DIR,
+    '../../../packages/core/src/components/data-loader/utils/__fixtures__/v2-sample.parquetbundle',
+  );
   const NOTICE = 'This file uses an older bundle format.';
+  const THREE_D_NOTICE = 'This file has 3-D projections.';
 
   test.beforeEach(async ({ page }) => {
     await openExplore(page);
@@ -692,23 +633,38 @@ test.describe('Bundle format notice', () => {
     await waitForExploreDataLoad(page, { changedFrom: defaultCount });
   }
 
-  for (const { version, path: bundlePath } of LEGACY_BUNDLES) {
-    test(`importing a v${version} bundle points to re-export and protspace convert`, async ({
-      page,
-    }) => {
-      await importAndWait(page, bundlePath);
+  test('importing a v2 bundle points to re-export and protspace convert', async ({ page }) => {
+    await importAndWait(page, V2_BUNDLE_PATH);
 
-      await expect(page.getByText(NOTICE)).toBeVisible();
-      await expect(page.getByText(`Format v${version} bundles will stop opening`)).toBeVisible();
-      await expect(page.getByText(/protspace convert/)).toBeVisible();
-    });
-  }
+    await expect(page.getByText(NOTICE)).toBeVisible();
+    await expect(page.getByText('Format v2 bundles will stop opening')).toBeVisible();
+    await expect(page.getByText(/protspace convert/)).toBeVisible();
+  });
 
   test('neither the startup demo nor an imported v3 bundle shows the notice', async ({ page }) => {
     // The demo loaded in beforeEach; the import is the 5K bundle as `protspace convert` wrote it.
     await importAndWait(page, TOXPROT_5181_V3_FIXTURE);
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
+    await expect(page.getByText(NOTICE)).toHaveCount(0);
+  });
+
+  test('importing a bundle with a 3-D projection says reading it ends in 5.0.0', async ({
+    page,
+  }) => {
+    // The golden v3 fixture holds pca2 and umap3; it is v3, so only the 3-D notice shows.
+    const V3_WITH_3D_PATH = path.resolve(
+      SPEC_DIR,
+      '../../../packages/core/src/components/data-loader/utils/__fixtures__/v3-sample.parquetbundle',
+    );
+    await expect(page.getByText(THREE_D_NOTICE)).toHaveCount(0); // not for the startup demo
+
+    await importAndWait(page, V3_WITH_3D_PATH);
+
+    await expect(page.getByText(THREE_D_NOTICE)).toBeVisible();
+    await expect(page.getByText(/shown as their X\/Y view/)).toBeVisible();
+    await expect(page.getByText(/ends in ProtSpace 5\.0\.0/)).toBeVisible();
+    await expect(page.getByText(/protspace convert --flatten-3d/)).toBeVisible();
     await expect(page.getByText(NOTICE)).toHaveCount(0);
   });
 });

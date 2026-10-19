@@ -66,7 +66,7 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import requests
 
-from protspace.core.constants import BROWSER_MISSING_TOKENS
+from protspace.core.constants import is_missing_value
 from protspace.data.annotations.configuration import (
     INTERNAL_ANNOTATIONS,
     SOURCE_ANNOTATIONS,
@@ -89,13 +89,17 @@ from protspace.data.annotations.retrievers.taxonomy_retriever import (
 from protspace.data.annotations.retrievers.uniprot_retriever import RELEASE_HEADER
 from protspace.data.io.atomic import atomic_write_bytes
 from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER as DELIMITER
-from protspace.data.io.bundle import BundleContents as Bundle
 from protspace.data.io.bundle import (
+    PROJECTIONS_DATA_FILENAME,
+    PROJECTIONS_METADATA_FILENAME,
     read_bundle_contents,
     replace_annotations_in_bundle,
     replace_settings_in_bundle,
 )
+from protspace.data.io.bundle import BundleContents as Bundle
 from protspace.data.io.bundle_v3 import CONTAINER_VERSION
+from protspace.data.io.ids import PROTEIN_ID_COLUMN as ID_COLUMN
+from protspace.data.io.ids import keyed_on_protein_id
 from protspace.data.io.settings_converter import (
     KELLYS_COLORS,
     LEGEND_SETTINGS_KEY,
@@ -122,22 +126,10 @@ GITHUB_REPO = "tsenoner/protspace"
 #: carries different bytes.
 DEFAULT_FILE_PATTERN = "{id}_{release}_v3.parquetbundle"
 
-ID_COLUMN = "protein_id"
 LEGACY_COLUMNS = ("length_fixed", "length_quantile")
 TOOLTIP_ONLY_COLUMNS = frozenset({"gene_name", "protein_name", "uniprot_kb_id"})
 PRED_MARKER = "__pred_"
 KINDS = ("paper-refresh", "demo-refresh", "embed-build")
-
-
-def is_missing_label(text: str) -> bool:
-    """Whether the web app shows this display value as N/A (W10).
-
-    The web's missing tokens (protspace's ``BROWSER_MISSING_TOKENS``), compared
-    trimmed and case-insensitively, plus the empty string: a gate here counts
-    N/A exactly as the legend does.
-    """
-    stripped = text.strip()
-    return not stripped or stripped.lower() in BROWSER_MISSING_TOKENS
 
 
 # Kelly's colours in the web app's order, without the two greys at its end.
@@ -206,7 +198,7 @@ def cell_labels(cell: Any) -> list[str]:
         return [str(cell)]
     labels = []
     for hit in cell.split(";"):
-        if is_missing_label(hit):
+        if is_missing_value(hit):
             continue
         label = decode_field(hit.split("|", 1)[0]).strip()
         if label:
@@ -374,12 +366,9 @@ def rebuild_bundle(
 
 
 def normalize_id(table: pa.Table) -> pa.Table:
-    """Name the identifier column ``protein_id`` (annotate writes ``identifier``)."""
-    names = table.column_names
-    if ID_COLUMN in names:
-        return table
-    source = "identifier" if "identifier" in names else names[0]
-    return table.rename_columns([ID_COLUMN if n == source else n for n in names])
+    """Name the identifier column ``protein_id`` (``annotate`` before protspace
+    4.17.0 wrote ``identifier``; a table without either is keyed on its first)."""
+    return keyed_on_protein_id(table)
 
 
 def extract_ann(bundle_path: Path) -> pa.Table:
@@ -472,8 +461,8 @@ def read_projection_source(source: Path) -> tuple[pa.Table, pa.Table]:
     """Projection metadata and data from a bundle or a projections directory."""
     if source.is_dir():
         return (
-            pq.read_table(source / "projections_metadata.parquet"),
-            pq.read_table(source / "projections_data.parquet"),
+            pq.read_table(source / PROJECTIONS_METADATA_FILENAME),
+            pq.read_table(source / PROJECTIONS_DATA_FILENAME),
         )
     bundle = read_bundle(source)
     return bundle.metadata, bundle.projections
@@ -483,12 +472,12 @@ def projection_ids(data: pa.Table) -> list[str]:
     """Identifiers of the first projection, in file order."""
     first = data.column("projection_name")[0].as_py()
     rows = data.filter(pc.equal(data.column("projection_name"), first))
-    return [str(v) for v in rows.column("identifier").to_pylist()]
+    return [str(v) for v in rows.column(ID_COLUMN).to_pylist()]
 
 
 def coordinates(data: pa.Table) -> pa.Table:
     """Long-format projections as one comparable table: ``projection_name``,
-    ``identifier`` (as text), ``x``, ``y`` and ``z`` at float32 (the precision a
+    ``protein_id`` (as text), ``x``, ``y`` and ``z`` at float32 (the precision a
     v3 file stores and the browser draws; a missing axis is null), sorted by
     projection and identifier."""
 
@@ -500,15 +489,13 @@ def coordinates(data: pa.Table) -> pa.Table:
     table = pa.table(
         {
             "projection_name": pc.cast(data.column("projection_name"), pa.string()),
-            "identifier": pc.cast(data.column("identifier"), pa.string()),
+            ID_COLUMN: pc.cast(data.column(ID_COLUMN), pa.string()),
             "x": axis("x"),
             "y": axis("y"),
             "z": axis("z"),
         }
     )
-    return table.sort_by(
-        [("projection_name", "ascending"), ("identifier", "ascending")]
-    )
+    return table.sort_by([("projection_name", "ascending"), (ID_COLUMN, "ascending")])
 
 
 def same_coordinates(a: pa.Table, b: pa.Table) -> bool:
@@ -885,7 +872,7 @@ def filter_legend(entry: dict, table: pa.Table, column: str) -> tuple[dict, list
     dropped = [
         key
         for key in categories
-        if not is_missing_label(key) and resolve_style_key(key, values) is None
+        if not is_missing_value(key) and resolve_style_key(key, values) is None
     ]
     for key in dropped:
         del categories[key]
@@ -1018,7 +1005,7 @@ def _coords(bundle: Bundle, projection: str):
     )
     if rows.num_rows == 0:
         raise BuildError(f"projection {projection!r} not in the bundle")
-    ids = [str(v) for v in rows.column("identifier").to_pylist()]
+    ids = [str(v) for v in rows.column(ID_COLUMN).to_pylist()]
     xy = np.column_stack(
         [
             np.asarray(rows.column("x").to_pylist(), dtype=float),
@@ -1340,7 +1327,7 @@ TAXONOMY_ROOTS = frozenset(
 def uninformative_columns(table: pa.Table) -> dict[str, str]:
     """Annotation columns the legend could only show as N/A or as one value.
 
-    Counted with the web's N/A rules (:func:`is_missing_label`); the id and the
+    Counted with the web's N/A rules (``is_missing_value``); the id and the
     ``__pred_`` overlay columns are not annotations. A presence flag
     (:data:`PRESENCE_FLAG_COLUMNS`) with one value and some empty rows counts
     as informative.
@@ -3375,8 +3362,8 @@ def projections_step(ctx: Context, *, drop_quality: bool) -> Step:
         meta, data = select_projections(metadata, data, spec, drop_quality=drop_quality)
         out = ctx.work / "proj"
         out.mkdir(parents=True, exist_ok=True)
-        atomic_write_bytes(out / "projections_metadata.parquet", parquet_bytes(meta))
-        atomic_write_bytes(out / "projections_data.parquet", parquet_bytes(data))
+        atomic_write_bytes(out / PROJECTIONS_METADATA_FILENAME, parquet_bytes(meta))
+        atomic_write_bytes(out / PROJECTIONS_DATA_FILENAME, parquet_bytes(data))
 
     summary = "select " + ", ".join(f"{a}→{b}" if a != b else a for a, b in spec)
     return Step(

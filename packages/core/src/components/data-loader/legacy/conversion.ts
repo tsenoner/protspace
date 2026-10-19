@@ -1,5 +1,12 @@
 import type { Annotation, AnnotationData, VisualizationData } from '@protspace/utils';
-import { isNAValue, normalizeMissingValue, NA_VALUE, NA_DEFAULT_COLOR } from '@protspace/utils';
+import {
+  DEFAULT_CATEGORICAL_PALETTE_ID,
+  isNAValue,
+  normalizeMissingValue,
+  NA_VALUE,
+  NA_DEFAULT_COLOR,
+  NON_ANNOTATION_COLUMNS,
+} from '@protspace/utils';
 import { validateRowsBasic } from './validation';
 import { findColumn, materializeMergedRows, type BundleExtractionResult } from './bundle';
 import type { Rows, GenericRow } from '../utils/types';
@@ -15,22 +22,13 @@ import {
   normalizeEatCompanionColumns,
 } from '../utils/dataset-build';
 
-/** Column names that should be excluded when identifying annotation columns */
-const ID_COLUMNS = [
-  'projection_name',
-  'x',
-  'y',
-  'z',
-  'identifier',
-  'protein_id',
-  'id',
-  'uniprot',
-  'entry',
-] as const;
-
-/** Creates a set of ID columns including the detected protein ID column */
+/**
+ * Column names excluded when identifying annotation columns: the shared
+ * NON_ANNOTATION_COLUMNS (the Python loader renames a custom file's column so
+ * named) plus the detected protein ID column.
+ */
 function getIdColumnsSet(proteinIdCol: string): Set<string> {
-  return new Set([...ID_COLUMNS, proteinIdCol]);
+  return new Set([...NON_ANNOTATION_COLUMNS, proteinIdCol]);
 }
 
 /** Match GO/ECO evidence codes: 2–5 uppercase letters OR ECO:NNNNNNN */
@@ -685,7 +683,10 @@ function convertBundleFormatData(
     const valueToIndex = new Map<string | null, number>();
     uniqueValues.forEach((value, idx) => valueToIndex.set(value, idx));
 
-    const { colors, shapes } = generateColorsAndShapes('kellys', uniqueValues.length);
+    const { colors, shapes } = generateColorsAndShapes(
+      DEFAULT_CATEGORICAL_PALETTE_ID,
+      uniqueValues.length,
+    );
 
     const annotationDataArray = uniqueProteinIds.map((proteinId) => {
       const value = annotationMap.get(proteinId);
@@ -958,7 +959,10 @@ function convertLegacyFormatData(
     const valueToIndex = new Map<string, number>();
     uniqueValues.forEach((value, idx) => valueToIndex.set(value, idx));
 
-    const { colors, shapes } = generateColorsAndShapes('kellys', uniqueValues.length);
+    const { colors, shapes } = generateColorsAndShapes(
+      DEFAULT_CATEGORICAL_PALETTE_ID,
+      uniqueValues.length,
+    );
 
     const annotationDataArray = labelsByRow.map((valueArray) =>
       valueArray.map((v) => valueToIndex.get(v) ?? -1),
@@ -1208,7 +1212,10 @@ async function extractAnnotationsByProtein(
     const valueToIndex = new Map<string | null, number>();
     uniqueValues.forEach((val, idx) => valueToIndex.set(val, idx));
 
-    const { colors, shapes } = generateColorsAndShapes('kellys', uniqueValues.length);
+    const { colors, shapes } = generateColorsAndShapes(
+      DEFAULT_CATEGORICAL_PALETTE_ID,
+      uniqueValues.length,
+    );
 
     // === Pass 2: map cached labels → dictionary indices. Use Int32Array for
     //     strict single-valued columns to avoid the per-protein number[] cliff. ===

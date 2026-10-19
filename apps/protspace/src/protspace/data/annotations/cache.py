@@ -14,7 +14,9 @@ from pathlib import Path
 import pandas as pd
 
 from protspace.data.annotations.configuration import SOURCE_ANNOTATIONS
+from protspace.data.cache_hits import note_cache_hit
 from protspace.data.io.atomic import staged_write
+from protspace.data.io.ids import PROTEIN_ID_COLUMN, with_protein_id
 
 logger = logging.getLogger(__name__)
 
@@ -81,19 +83,23 @@ def _migrate_legacy_ted_labels(df: pd.DataFrame) -> bool:
 
 
 def _restore_cached_columns(api_df: pd.DataFrame, cached: pd.DataFrame) -> pd.DataFrame:
-    """Refill blank cells in ``api_df`` from ``cached``, matched on identifier.
+    """Refill blank cells in ``api_df`` from ``cached``, matched on protein id.
 
     Only blanks are refilled, so anything the current run did retrieve wins
     and a protein absent from the cache simply stays blank.
     """
-    columns = [c for c in cached.columns if c != "identifier" and c in api_df.columns]
-    if not columns or "identifier" not in api_df.columns:
+    columns = [
+        c for c in cached.columns if c != PROTEIN_ID_COLUMN and c in api_df.columns
+    ]
+    if not columns or PROTEIN_ID_COLUMN not in api_df.columns:
         return api_df
 
-    lookup = cached.drop_duplicates(subset="identifier").set_index("identifier")
+    lookup = cached.drop_duplicates(subset=PROTEIN_ID_COLUMN).set_index(
+        PROTEIN_ID_COLUMN
+    )
     restored = api_df.copy()
     for column in columns:
-        fallback = restored["identifier"].map(lookup[column]).fillna("")
+        fallback = restored[PROTEIN_ID_COLUMN].map(lookup[column]).fillna("")
         blank = restored[column].isna() | (restored[column].astype(str) == "")
         restored.loc[blank, column] = fallback[blank]
     return restored
@@ -174,7 +180,9 @@ def fetch_annotations(
         )
         return _from_manager(manager, manager.to_pd())
 
-    cached_df = pd.read_parquet(cache_path)
+    # A cache written before 4.17.0 is keyed on `identifier`; the next write
+    # keys it on protein_id. It is the pipeline's own file, so no warning.
+    cached_df = with_protein_id(pd.read_parquet(cache_path))
     missing_identifiers = uncached_headers(headers, cached_df)
     if missing_identifiers:
         # Rows the cache has no entry for. The manager fetches each source
@@ -197,7 +205,7 @@ def fetch_annotations(
         )
         with staged_write(cache_path) as staged:
             cached_df.to_parquet(staged, index=False)
-    cached_annotations = set(cached_df.columns) - {"identifier"}
+    cached_annotations = set(cached_df.columns) - {PROTEIN_ID_COLUMN}
 
     if annotations is None:
         required = set(ANNOTATION_GROUPS["default"])
@@ -212,7 +220,40 @@ def fetch_annotations(
     # explicit -a the whole cached frame is emitted, so treat that as
     # consuming all of them.
     refresh_columns = stale_columns if annotations is None else stale_columns & required
-    discard_columns = stale_columns - refresh_columns
+    sequences_supplied = all(sequences.get(h) for h in headers)
+    migration_sources: set[str] = set()
+    widened: set[str] = set()
+    if refresh_columns:
+        # Fetched as though the cache lacked them, so a source looked up by a
+        # key the cache has no column for (InterPro and Biocentral by
+        # `sequence`, taxonomy by `organism_id`) also fetches that key from
+        # UniProt. Without it the refresh would find nothing and stamp that as
+        # current. The keys are never stale, so this can run before the
+        # discard below.
+        needed = AnnotationConfiguration.determine_sources_to_fetch(
+            cached_annotations - refresh_columns,
+            refresh_columns,
+            sequences_supplied=sequences_supplied,
+        )
+        migration_sources = {source for source, fetch in needed.items() if fetch}
+        # A refresh refetches these sources whole: every column of theirs the
+        # cache holds, not only the ones this run asks for. Otherwise the cache
+        # is written back without the others and the next run that asks for one
+        # pays the source again. Only a source the run queries anyway is
+        # widened: a run without -a asks for no taxonomy or Biocentral column,
+        # so their stale columns are dropped rather than paid for. An explicit
+        # --refetch keeps to the columns the run asks for.
+        widened = {
+            s
+            for s in migration_sources - refetch
+            if s == "uniprot" or required & SOURCE_ANNOTATIONS[s]
+        }
+    # A stale column of a widened source is refreshed with it, not dropped.
+    discard_columns = (
+        stale_columns
+        - refresh_columns
+        - set().union(*(SOURCE_ANNOTATIONS[s] for s in widened))
+    )
     if discard_columns:
         # Unused this run, so drop rather than refetch: they must not ride
         # along into a cache this run stamps as current. A later run that
@@ -235,8 +276,11 @@ def fetch_annotations(
         and not refresh_columns
     ):
         logger.warning("Using cached annotations")
+        note_cache_hit("annotations")
         if annotations:
-            cols = ["identifier"] + [f for f in annotations if f in cached_df.columns]
+            cols = [PROTEIN_ID_COLUMN] + [
+                f for f in annotations if f in cached_df.columns
+            ]
             api_df = cached_df[cols]
         else:
             api_df = cached_df
@@ -244,7 +288,7 @@ def fetch_annotations(
         # Warn if cached annotations are all empty. Checked *before* the FASTA
         # length fallback below, otherwise a derived length makes a wholly
         # useless cache look populated and silently suppresses this warning.
-        data_cols = [c for c in api_df.columns if c != "identifier"]
+        data_cols = [c for c in api_df.columns if c != PROTEIN_ID_COLUMN]
         if data_cols:
             non_empty = api_df[data_cols].apply(lambda col: (col != "").any())
             if not non_empty.any():
@@ -262,7 +306,7 @@ def fetch_annotations(
                 api_df.loc[missing_lengths, "length"] = [
                     resolve_fasta_sequence_length(identifier, length, sequences)
                     for identifier, length in zip(
-                        api_df.loc[missing_lengths, "identifier"],
+                        api_df.loc[missing_lengths, PROTEIN_ID_COLUMN],
                         api_df.loc[missing_lengths, "length"],
                         strict=True,
                     )
@@ -270,7 +314,6 @@ def fetch_annotations(
 
         return AnnotationFetch(api_df, uniprot_releases=read_release_stamp(cached_df))
 
-    sequences_supplied = all(sequences.get(h) for h in headers)
     sources = AnnotationConfiguration.determine_sources_to_fetch(
         cached_annotations, required, sequences_supplied=sequences_supplied
     )
@@ -281,19 +324,7 @@ def fetch_annotations(
         logger.info(
             f"--refetch: re-fetching {', '.join(s for s in _ANN_SOURCES if sources[s])}"
         )
-    migration_sources = set()
     if refresh_columns:
-        # Fetched as though the cache lacked them, so a source looked up by a
-        # key the cache has no column for (InterPro and Biocentral by
-        # `sequence`, taxonomy by `organism_id`) also fetches that key from
-        # UniProt. Without it the refresh would find nothing and stamp that as
-        # current.
-        needed = AnnotationConfiguration.determine_sources_to_fetch(
-            cached_annotations - refresh_columns,
-            refresh_columns,
-            sequences_supplied=sequences_supplied,
-        )
-        migration_sources = {source for source, fetch in needed.items() if fetch}
         for source in migration_sources:
             sources[source] = True
         logger.warning(
@@ -313,19 +344,6 @@ def fetch_annotations(
         cols_to_drop = set().union(
             *(cached_by_source[s] for s in _ANN_SOURCES if sources[s])
         )
-        # A refresh refetches its sources whole: every column of theirs the
-        # cache holds, not only the ones this run asks for. Otherwise the cache
-        # is written back without the others, which were still current, and
-        # the next run that asks for one pays the source again. Only a source
-        # the run queries anyway is widened: a run without -a asks for no
-        # taxonomy or Biocentral column, so their stale columns are dropped
-        # rather than paid for. An explicit --refetch keeps to the columns the
-        # run asks for.
-        widened = {
-            s
-            for s in migration_sources - refetch
-            if s == "uniprot" or required & SOURCE_ANNOTATIONS[s]
-        }
         refreshed_along = (
             set().union(*(cached_by_source[s] for s in widened)) - required
         )
@@ -343,15 +361,15 @@ def fetch_annotations(
         if "uniprot" in migration_sources and "uniprot" not in refetch:
             # Keep what the migration is about to discard. If its refresh
             # fails, these cached values beat the empty annotations a failed
-            # fetch produces — except the stale columns themselves, whose
-            # ambiguity is the whole reason for the migration.
+            # fetch produces — except the stale columns, requested or refreshed
+            # along, whose ambiguity is the whole reason for the migration.
             preserved = [
                 c
                 for c in cached_by_source["uniprot"]
-                if c not in refresh_columns and c in cached_df.columns
+                if c not in stale_columns and c in cached_df.columns
             ]
             if preserved:
-                legacy_uniprot = cached_df[["identifier", *preserved]].copy()
+                legacy_uniprot = cached_df[[PROTEIN_ID_COLUMN, *preserved]].copy()
         cached_df = cached_df.drop(
             columns=[c for c in cols_to_drop if c in cached_df.columns]
         )

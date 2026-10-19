@@ -378,9 +378,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     const { calls, requestUpdate } = instrument(el);
     // Capture _plotDataBuild at the moment _processData is (re)invoked.
     let buildAtProcess: unknown = 'unset';
-    (
-      el._processData as unknown as { mockImplementation: (f: () => void) => void }
-    ).mockImplementation(() => {
+    vi.mocked(el._processData).mockImplementation(() => {
       buildAtProcess = el._plotDataBuild;
       calls.push('processData');
     });

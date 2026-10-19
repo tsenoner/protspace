@@ -8,7 +8,7 @@ no protspace imports.
 from importlib.metadata import PackageNotFoundError, version
 
 from protlabel.lookup import Lookup
-from protlabel.transfer import Prediction, eat
+from protlabel.transfer import Neighbor, Prediction, eat
 
 try:
     # Report the installed distribution version rather than a hard-coded literal
@@ -17,4 +17,4 @@ try:
 except PackageNotFoundError:  # pragma: no cover - source/uninstalled fallback
     __version__ = "0.0.0"
 
-__all__ = ["Lookup", "Prediction", "eat", "__version__"]
+__all__ = ["Lookup", "Neighbor", "Prediction", "eat", "__version__"]

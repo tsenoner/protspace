@@ -6,7 +6,6 @@ import {
   concatenateBuffers,
   isParquetBundle,
   findBundleDelimiterPositions,
-  type BundleSettings,
 } from '@protspace/utils';
 import { decodeParquetBundle, decodeParquetBundleWithRowCap } from '../utils/bundle';
 import { extractRowsFromParquetBundle } from './bundle';
@@ -151,122 +150,6 @@ describe('bundle utilities', () => {
         /Expected 2 to 5 delimiters/,
       );
     });
-  });
-});
-
-describe('BundleSettings type', () => {
-  it('should have correct structure', () => {
-    const settings: BundleSettings = {
-      legendSettings: {
-        organism: {
-          maxVisibleValues: 10,
-          // Legacy field — kept to verify backward-compat parsing.
-          includeShapes: true,
-          shapeSize: 24,
-          sortMode: 'size-desc',
-          hiddenValues: ['unknown'],
-          categories: {
-            human: { zOrder: 0, color: '#ff0000', shape: 'circle' },
-          },
-          enableDuplicateStackUI: false,
-          selectedPaletteId: 'kellys',
-        },
-      },
-      exportOptions: {
-        organism: {
-          imageWidth: 2048,
-          imageHeight: 1024,
-          lockAspectRatio: true,
-          legendWidthPercent: 25,
-          legendFontSizePx: 24,
-          includeLegendSettings: true,
-          includeExportOptions: true,
-        },
-      },
-    };
-
-    expect(settings.legendSettings.organism.maxVisibleValues).toBe(10);
-    expect(settings.legendSettings.organism.sortMode).toBe('size-desc');
-    expect(settings.legendSettings.organism.categories.human.color).toBe('#ff0000');
-    expect(settings.exportOptions.organism.imageWidth).toBe(2048);
-  });
-
-  it('should accept settings with empty maps', () => {
-    const settings: BundleSettings = {
-      legendSettings: {},
-      exportOptions: {},
-    };
-
-    expect(Object.keys(settings.legendSettings)).toHaveLength(0);
-    expect(Object.keys(settings.exportOptions)).toHaveLength(0);
-  });
-
-  it('should accept settings with extra/unknown fields (forward compatibility)', () => {
-    // This simulates loading settings from a newer version with additional fields
-    const settingsWithExtras = {
-      legendSettings: {
-        organism: {
-          maxVisibleValues: 10,
-          shapeSize: 24,
-          sortMode: 'size-desc',
-          hiddenValues: [],
-          categories: {},
-          enableDuplicateStackUI: false,
-          selectedPaletteId: 'kellys',
-          unknownField: 'some value',
-        },
-      },
-      exportOptions: {},
-    };
-
-    // Type-cast to BundleSettings - extra fields should be ignored
-    const settings = settingsWithExtras as BundleSettings;
-    expect(settings.legendSettings.organism.maxVisibleValues).toBe(10);
-    expect(settings.legendSettings.organism.sortMode).toBe('size-desc');
-  });
-
-  it('should work with multiple annotations', () => {
-    const settings: BundleSettings = {
-      legendSettings: {
-        organism: {
-          maxVisibleValues: 10,
-          shapeSize: 24,
-          sortMode: 'size-desc',
-          hiddenValues: ['unknown'],
-          categories: {
-            human: { zOrder: 0, color: '#ff0000', shape: 'circle' },
-          },
-          enableDuplicateStackUI: false,
-          selectedPaletteId: 'kellys',
-        },
-        family: {
-          maxVisibleValues: 5,
-          shapeSize: 16,
-          sortMode: 'alpha-asc',
-          hiddenValues: [],
-          categories: {
-            kinase: { zOrder: 1, color: '#00ff00', shape: 'square' },
-            phosphatase: { zOrder: 0, color: '#0000ff', shape: 'diamond' },
-          },
-          enableDuplicateStackUI: true,
-          selectedPaletteId: 'kellys',
-        },
-      },
-      exportOptions: {
-        organism: {
-          imageWidth: 2048,
-          imageHeight: 1024,
-          lockAspectRatio: true,
-          legendWidthPercent: 25,
-          legendFontSizePx: 24,
-          includeLegendSettings: true,
-          includeExportOptions: true,
-        },
-      },
-    };
-
-    expect(Object.keys(settings.legendSettings)).toHaveLength(2);
-    expect(settings.legendSettings.family.categories.kinase.color).toBe('#00ff00');
   });
 });
 

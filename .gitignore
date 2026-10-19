@@ -62,12 +62,16 @@ docs/superpowers/
 **/playwright-report
 .playwright-mcp
 
+# Anchored on purpose: Claude Code and Codex put worktrees inside these dirs, and
+# knip matches ignores against absolute paths, so a bare `.claude` would ignore
+# every file of such a worktree. Anchor any ignore that only lives at the root.
+
 # Claude (config + CLI-generated OpenSpec skills/commands; run `openspec init` locally)
 CLAUDE.md
-.claude
+/.claude
 
 # Codex (CLI-generated OpenSpec skills; run `openspec init` locally)
-.codex
+/.codex
 
 # Former local-only fixture of load-large-bundle.spec.ts, which now reads the
 # perf-datasets copy in perf/datasets/; ignored so a leftover copy is never committed.

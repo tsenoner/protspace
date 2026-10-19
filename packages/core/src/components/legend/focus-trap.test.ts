@@ -25,6 +25,18 @@ describe('focus-trap', () => {
     });
   }
 
+  /** Two visible buttons, `#first` and `#last`. */
+  function mountFirstAndLast() {
+    container.innerHTML = `
+      <button id="first">First</button>
+      <button id="last">Last</button>
+    `;
+    const firstBtn = container.querySelector('#first') as HTMLElement;
+    const lastBtn = container.querySelector('#last') as HTMLElement;
+    makeElementsVisible([firstBtn, lastBtn]);
+    return { firstBtn, lastBtn };
+  }
+
   describe('getFocusableElements', () => {
     it('finds buttons', () => {
       container.innerHTML = '<button>Click me</button>';
@@ -152,13 +164,7 @@ describe('focus-trap', () => {
     });
 
     it('stops wrapping focus after cleanup', () => {
-      container.innerHTML = `
-        <button id="first">First</button>
-        <button id="last">Last</button>
-      `;
-      const firstBtn = container.querySelector('#first') as HTMLElement;
-      const lastBtn = container.querySelector('#last') as HTMLElement;
-      makeElementsVisible([firstBtn, lastBtn]);
+      const { lastBtn } = mountFirstAndLast();
 
       const cleanup = createFocusTrap(container);
       cleanup();
@@ -172,13 +178,7 @@ describe('focus-trap', () => {
     });
 
     it('focuses the first focusable element on the next frame', () => {
-      container.innerHTML = `
-        <button id="first">First</button>
-        <button id="last">Last</button>
-      `;
-      const firstBtn = container.querySelector('#first') as HTMLElement;
-      const lastBtn = container.querySelector('#last') as HTMLElement;
-      makeElementsVisible([firstBtn, lastBtn]);
+      const { firstBtn } = mountFirstAndLast();
       let frame: FrameRequestCallback | undefined;
       vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
         frame = cb;
@@ -190,6 +190,23 @@ describe('focus-trap', () => {
 
       frame!(0);
       expect(document.activeElement).toBe(firstBtn);
+    });
+
+    it('does not move focus once cleaned up before the next frame', () => {
+      const { firstBtn } = mountFirstAndLast();
+      let frame: FrameRequestCallback | undefined;
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        frame = cb;
+        return 1;
+      });
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {
+        frame = undefined;
+      });
+
+      createFocusTrap(container)();
+      frame?.(0);
+
+      expect(document.activeElement).not.toBe(firstBtn);
     });
 
     it('does nothing on non-Tab keys', () => {
@@ -204,13 +221,7 @@ describe('focus-trap', () => {
     });
 
     it('wraps focus from last to first on Tab', () => {
-      container.innerHTML = `
-        <button id="first">First</button>
-        <button id="last">Last</button>
-      `;
-      const firstBtn = container.querySelector('#first') as HTMLElement;
-      const lastBtn = container.querySelector('#last') as HTMLElement;
-      makeElementsVisible([firstBtn, lastBtn]);
+      const { firstBtn, lastBtn } = mountFirstAndLast();
 
       createFocusTrap(container);
 
@@ -224,13 +235,7 @@ describe('focus-trap', () => {
     });
 
     it('wraps focus from first to last on Shift+Tab', () => {
-      container.innerHTML = `
-        <button id="first">First</button>
-        <button id="last">Last</button>
-      `;
-      const firstBtn = container.querySelector('#first') as HTMLElement;
-      const lastBtn = container.querySelector('#last') as HTMLElement;
-      makeElementsVisible([firstBtn, lastBtn]);
+      const { firstBtn, lastBtn } = mountFirstAndLast();
 
       createFocusTrap(container);
 

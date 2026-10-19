@@ -69,7 +69,7 @@ describe('SHAPE_PATH_GENERATORS', () => {
   });
 
   // Every coordinate of a polygon is linear in size, so doubling the size doubles each one.
-  it.each(['square', 'diamond', 'plus', 'triangle-up', 'triangle-down'])(
+  it.each(Object.keys(SHAPE_PATH_GENERATORS).filter((shape) => shape !== 'circle'))(
     '%s coordinates scale linearly with size',
     (shape) => {
       const coords = (size: number) =>

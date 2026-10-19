@@ -167,8 +167,8 @@ def test_style_template_roundtrips_for_encoded_name_parquet(tmp_path):
     add_annotation_styles_parquet(
         str(src), {"cath": {"colors": {display_name: "#ff0000"}}}, str(out)
     )
-    viz = json.loads((out / "visualization_state.json").read_text())
-    assert viz["annotation_colors"]["cath"][display_name] == "#ff0000"
+    colors = ArrowReader(out).get_annotation_colors("cath")
+    assert colors[display_name] == "rgba(255, 0, 0, 0.8)"
 
     # the raw percent-encoded wire cell is no longer a valid style key
     with pytest.raises(ValueError):

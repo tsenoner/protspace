@@ -1,9 +1,11 @@
 """Tests for protlabel.transfer."""
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
-from protlabel.transfer import Prediction, eat
+from protlabel.transfer import Neighbor, Prediction, eat
 
 
 def _setup():
@@ -113,3 +115,52 @@ def test_source_id_for_equal_distance_same_label_is_order_independent():
     reversed_ = eat(query_emb, ["Q"], ref_emb, ["R_b", "R_a"], ["x", "x"], k=2)
     assert forward[0].source_id == "R_a"
     assert reversed_[0].source_id == "R_a"
+
+
+def test_neighbors_are_not_kept_by_default():
+    ref_emb, ref_ids, ref_labels, query_emb, query_ids = _setup()
+    preds = eat(query_emb, query_ids, ref_emb, ref_ids, ref_labels, k=2)
+    assert all(p.neighbors == () for p in preds)
+
+
+def test_kept_neighbors_are_ranked_by_distance():
+    ref_emb, ref_ids, ref_labels, query_emb, query_ids = _setup()
+    preds = eat(
+        query_emb, query_ids, ref_emb, ref_ids, ref_labels, k=2, keep_neighbors=True
+    )
+    # Q1 at 19.7: R2 (toxin) at 0.3, then R1 (enzyme) at 9.7.
+    assert [n.reference_id for n in preds[1].neighbors] == ["R2", "R1"]
+    assert [n.label for n in preds[1].neighbors] == ["toxin", "enzyme"]
+    assert [n.distance for n in preds[1].neighbors] == pytest.approx(
+        [0.3, 9.7], abs=1e-4
+    )
+    # The rank-1 neighbour is the source when k=1 would pick the same label.
+    assert preds[1].neighbors[0].distance == preds[1].distance
+
+
+def test_kept_neighbors_cap_at_the_reference_count():
+    ref_emb, ref_ids, ref_labels, query_emb, query_ids = _setup()
+    preds = eat(
+        query_emb, query_ids, ref_emb, ref_ids, ref_labels, k=10, keep_neighbors=True
+    )
+    assert all(len(p.neighbors) == 3 for p in preds)
+
+
+def test_kept_neighbors_order_equidistant_references_by_id():
+    ref_emb = np.array([[1.0, 0.0], [-1.0, 0.0]], dtype=np.float32)  # both dist 1.0
+    query_emb = np.array([[0.0, 0.0]], dtype=np.float32)
+    for ids in (["R_a", "R_b"], ["R_b", "R_a"]):
+        (pred,) = eat(
+            query_emb, ["Q"], ref_emb, ids, ["x", "y"], k=2, keep_neighbors=True
+        )
+        assert [n.reference_id for n in pred.neighbors] == ["R_a", "R_b"]
+        assert all(isinstance(n, Neighbor) for n in pred.neighbors)
+
+
+def test_keeping_neighbors_changes_no_prediction():
+    ref_emb, ref_ids, ref_labels, query_emb, query_ids = _setup()
+    plain = eat(query_emb, query_ids, ref_emb, ref_ids, ref_labels, k=2)
+    kept = eat(
+        query_emb, query_ids, ref_emb, ref_ids, ref_labels, k=2, keep_neighbors=True
+    )
+    assert [replace(p, neighbors=()) for p in kept] == plain

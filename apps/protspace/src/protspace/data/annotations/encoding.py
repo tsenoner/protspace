@@ -20,6 +20,15 @@ import re
 import pandas as pd
 import pyarrow as pa
 
+# Re-exported: the labels an Arrow ``BOOLEAN`` annotation column is stored as in a
+# v3 bundle, lower case as the browser shows one, shared with the web through
+# contracts/shared-constants.json. Not CANONICAL_BOOLEANS below, which are string
+# cells the pipeline writes itself.
+from protspace._generated.shared_constants import (
+    ARROW_BOOLEAN_LABELS as ARROW_BOOLEAN_LABELS,
+)
+from protspace._generated.shared_constants import PROTEIN_ID_COLUMN
+
 #: The annotation **cell grammar** version: ``1`` is the legacy raw-text grammar,
 #: ``2`` the percent-encoded one this module writes.  It is stamped under
 #: :data:`FORMAT_VERSION_KEY` on every v2-shaped annotations table (a legacy
@@ -48,6 +57,11 @@ FORMAT_VERSION_KEY = b"protspace_format_version"
 #       where v2 kept its deepest unranked clade ("melanogaster subgroup");
 #       predicted_transmembrane calls a TMbed negative "non-transmembrane",
 #       where v2 wrote "none", a token the CLI and the web app read as missing
+#   v4: an empty or malformed TMbed payload leaves predicted_signal_peptide and
+#       predicted_transmembrane empty, where v3 wrote signal peptide "False"
+#       for an empty one and read a malformed one as a topology; the InterPro
+#       columns look up UniProt's canonical sequence, where v3 looked up the
+#       FASTA's whenever one was given
 #
 # To record a new semantics change, add an entry — the version is derived from
 # this table, so the two cannot drift apart. The pipeline reads nothing else to
@@ -73,6 +87,8 @@ CACHE_SEMANTICS_CHANGES: dict[int, frozenset[str]] = {
     1: frozenset({"xref_pdb"}),
     2: frozenset({"protein_families"}) | _INTERPRO_COLUMNS,
     3: frozenset({"root", "predicted_transmembrane"}),
+    4: frozenset({"predicted_signal_peptide", "predicted_transmembrane"})
+    | _INTERPRO_COLUMNS,
 }
 ANNOTATION_CACHE_VERSION = max(CACHE_SEMANTICS_CHANGES)
 ANNOTATION_CACHE_VERSION_ATTR = "protspace_annotation_cache_version"
@@ -82,12 +98,6 @@ ANNOTATION_CACHE_VERSION_ATTR = "protspace_annotation_cache_version"
 # so every transform that emits one must also accept one unchanged — otherwise a
 # second pass reinterprets its own output as raw source data.
 CANONICAL_BOOLEANS = ("False", "True")
-
-# The labels an Arrow ``BOOLEAN`` annotation column is stored as in a v3 bundle:
-# lower case, as the browser has always displayed one (``String(true)``), so
-# legend colours saved against a v2 bundle keep matching. Not CANONICAL_BOOLEANS,
-# which are string cells the pipeline writes itself.
-ARROW_BOOLEAN_LABELS = ("false", "true")
 
 # Chars that must be percent-encoded inside any free-text token.
 _RESERVED = {";", "|", "%"} | {chr(c) for c in range(0x20)} | {chr(0x7F)}
@@ -231,10 +241,14 @@ def _migrate_cells(table: pa.Table) -> pa.Table:
 
     A dictionary-of-strings column comes back as its plain string type.
     """
+    # The id column is a key, never a cell: `protein_id`, else (an older table)
+    # `identifier`, which beside `protein_id` is an annotation like any other.
+    names = table.column_names
+    id_column = PROTEIN_ID_COLUMN if PROTEIN_ID_COLUMN in names else "identifier"
     columns = []
-    for name, column in zip(table.column_names, table.columns, strict=True):
+    for name, column in zip(names, table.columns, strict=True):
         text_type = _text_type(column.type)
-        if name in {"identifier", "protein_id"} or text_type is None:
+        if name == id_column or text_type is None:
             columns.append(column)
             continue
         opaque_source = name.endswith("__pred_source")

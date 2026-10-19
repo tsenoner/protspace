@@ -36,7 +36,7 @@ function getDeepActiveElement(): Element | null {
 
 /**
  * Creates a keydown handler that traps focus within the container.
- * Returns a cleanup function to remove the event listener.
+ * Returns a cleanup function that removes the listener and the pending first focus.
  */
 export function createFocusTrap(container: HTMLElement): () => void {
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -67,15 +67,17 @@ export function createFocusTrap(container: HTMLElement): () => void {
   container.addEventListener('keydown', handleKeyDown);
 
   // Focus the first focusable element when trap is set up
-  requestAnimationFrame(() => {
+  const focusFrame = requestAnimationFrame(() => {
     const focusable = getFocusableElements(container);
     if (focusable.length > 0) {
       focusable[0].focus();
     }
   });
 
-  // Return cleanup function
+  // Return cleanup function. It also drops the pending first-focus frame, so a trap
+  // torn down within a frame of its setup can't pull focus back into its container.
   return () => {
     container.removeEventListener('keydown', handleKeyDown);
+    cancelAnimationFrame(focusFrame);
   };
 }

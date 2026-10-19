@@ -20,6 +20,7 @@ from protspace.cli.app import app
 from protspace.data.embedding import local, store
 from protspace.data.embedding.biocentral import resolve_embedder
 from protspace.data.loaders.fasta import embed_fasta
+from tests.cli_output import plain
 
 
 def _fake_embed(captured, fill_value=1.0, backend="biocentral"):
@@ -257,6 +258,7 @@ def test_embed_cli_rejects_nonpositive_batch_size(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 2, result.output
+    assert "Invalid value for '--batch-size'" in plain(result.output)
 
 
 def test_embed_cli_rejects_unknown_backend(tmp_path):
@@ -279,6 +281,7 @@ def test_embed_cli_rejects_unknown_backend(tmp_path):
     )
 
     assert result.exit_code == 2, result.output
+    assert "'bogus' is not one of" in plain(result.output)
 
 
 def test_prepare_directory_h5_attaches_fasta_to_embedding_set(tmp_path, monkeypatch):
@@ -446,11 +449,11 @@ def test_embed_cli_rejects_max_length_for_biocentral(tmp_path, monkeypatch):
         ],
     )
 
-    # Only the exit code is asserted here: the message is rendered inside a Rich
-    # panel, which rewraps with the terminal width, so matching on it is brittle.
-    # The message itself is pinned by the unit test below. Exit 2 is a usage
-    # error; a runtime failure past the guard exits 1.
+    # Exit 2 is a usage error; a runtime failure past the guard exits 1. The
+    # message tells this guard apart from any other usage error (an unknown
+    # option also exits 2); plain() undoes Rich's rewrapping of the panel.
     assert result.exit_code == 2, result.output
+    assert "has no length cap" in plain(result.output)
 
 
 def test_build_embed_config_rejects_max_length_for_biocentral():

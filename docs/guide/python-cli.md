@@ -16,7 +16,7 @@ pip install protspace
 | ------------ | ------------------------------------- | --------------------------------------------------------------------- |
 | `local`      | `pip install "protspace[local]"`      | on-device embedding (`--backend local`) instead of the Biocentral API |
 | `similarity` | `pip install "protspace[similarity]"` | MMseqs2 sequence-similarity projections (`-s/--similarity`)           |
-| `frontend`   | `pip install "protspace[frontend]"`   | the local Dash viewer (`protspace serve`)                             |
+| `frontend`   | `pip install "protspace[frontend]"`   | the local Dash viewer (`protspace serve`, deprecated)                 |
 
 > **Upgrading an existing install:** `-s/--similarity` used to work out of the box because
 > MMseqs2 shipped in the base install. It now lives in the `similarity` extra, so add
@@ -30,18 +30,35 @@ pip install protspace
 | -------------------- | ------------------------------------------------------------ |
 | `protspace prepare`  | Full pipeline: embed → project → annotate → (stats) → bundle |
 | `protspace embed`    | FASTA → per-model HDF5 embeddings                            |
-| `protspace project`  | Embeddings → 2D/3D projections                               |
+| `protspace project`  | Embeddings → 2D projections (3D deprecated)                  |
 | `protspace annotate` | Fetch UniProt / InterPro / taxonomy annotations              |
 | `protspace stats`    | Score projection quality (cluster validity + faithfulness)   |
 | `protspace bundle`   | Merge projections + annotations → `.parquetbundle`           |
 | `protspace transfer` | Fill missing annotations from nearest neighbours (EAT)       |
 | `protspace style`    | Set colors, shapes and legend order on a bundle              |
 | `protspace convert`  | Upgrade a v1/v2 bundle to the current v3 format              |
-| `protspace serve`    | Run a local viewer                                           |
+| `protspace export`   | Write a bundle as a TSV table, one row per protein           |
+| `protspace serve`    | Run a local viewer (deprecated, removed in 5.0.0)            |
 
 Run `protspace <command> -h` for the built-in help of any command.
 
-Most users only need `prepare`.
+### Which command do I need?
+
+Most users only need `prepare`. The other commands are its stages, for running, rerunning or
+inspecting one of them on its own.
+
+| You have                                    | You want                                         | Run                                       |
+| ------------------------------------------- | ------------------------------------------------ | ----------------------------------------- |
+| A FASTA, an `.h5` or a UniProt query        | A bundle, with annotations and statistics        | `prepare` (`-a` annotations, `--stats`)   |
+| Embeddings (`.h5`)                          | Projections only                                 | `project`                                 |
+| An `.h5` or a FASTA                         | An annotations table: fetched, your own, or both | `annotate`                                |
+| Embeddings and projections                  | Quality statistics and cluster columns           | `stats`                                   |
+| Projections and an annotations table or CSV | A bundle                                         | `bundle`                                  |
+| A bundle                                    | Its gaps filled from nearest neighbours          | `transfer` (`--report` for the distances) |
+| A bundle                                    | One table of every protein, for pandas or Excel  | `export`                                  |
+
+`project` only computes projections: it takes no `-a` and no `--stats`. For annotations and
+statistics in the same bundle, use `prepare`, or the [step-by-step route](#step-by-step).
 
 ## Quick Start
 
@@ -72,13 +89,16 @@ Comma-separated arguments (`-e`, `-m`, `-a`) must not contain spaces.
 # From HDF5 embeddings
 protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
 
+# From HDF5 embeddings, with your own annotations and projection statistics
+protspace prepare -i emb.h5 -a annotations.csv -m umap2,tsne2 --stats -o out
+
 # From FASTA, auto-embed with two models
 protspace prepare -i sequences.fasta -e prot_t5,esm2_650m -m pca2,umap2 -o output
 
 # With sequence similarity (MMseqs2)
 protspace prepare -i emb.h5 -f seq.fasta -s -m pca2,mds2 -o output
 
-# External HDF5 without a model_name attribute, use colon syntax
+# Name the embedding yourself (otherwise it comes from the file, see below)
 protspace prepare -i external.h5:prot_t5 -m pca2 -o output
 
 # Compare UMAP parameters in a single run
@@ -87,23 +107,27 @@ protspace prepare -i emb.h5 -m "umap2:n_neighbors=15" -m "umap2:n_neighbors=50" 
 
 ### Input
 
-| Flag          | Description                                                                    | Default |
-| ------------- | ------------------------------------------------------------------------------ | ------- |
-| `-i, --input` | HDF5/FASTA file(s). Repeat for multi-embedding. Name override: `-i f.h5:name`. | -       |
-| `-q, --query` | UniProt query (alternative to `-i`).                                           | -       |
-| `-f, --fasta` | FASTA for `-s/--similarity` when the input is HDF5.                            | -       |
+| Flag          | Description                                                                     | Default |
+| ------------- | ------------------------------------------------------------------------------- | ------- |
+| `-i, --input` | HDF5/FASTA file(s). Repeat for multi-embedding. Embedding name: `-i f.h5:name`. | -       |
+| `-q, --query` | UniProt query (alternative to `-i`).                                            | -       |
+| `-f, --fasta` | FASTA for `-s/--similarity` when the input is HDF5.                             | -       |
 
 ### Embedding
 
 | Flag             | Description                                                                                               | Default      |
 | ---------------- | --------------------------------------------------------------------------------------------------------- | ------------ |
 | `-e, --embedder` | pLM model(s), comma-separated. See [Embedder models](#embedder-models).                                   | `prot_t5`    |
-| `-b, --backend`  | Embedding engine: `biocentral` (remote API) or `local` (on-device GPU/CPU).                               | `biocentral` |
+| `-b, --backend`  | Embedding engine: `biocentral` (remote API) or `local` (GPU/CPU). Ignored for `.h5` input.                | `biocentral` |
 | `--batch-size`   | Sequences per batch. Backend default when unset: 1000 (Biocentral call) or 8 (local GPU).                 | -            |
 | `--max-length`   | Skip sequences longer than this (`--backend local` only). Skipped sequences are named in the run summary. | `2000`       |
 
 `-e` requires FASTA input or `-q/--query`; it is rejected with HDF5-only input. When a FASTA is
 given without `-e`, `prot_t5` is used.
+
+`-b`, `--batch-size` and `--max-length` apply only when ProtSpace embeds sequences, from FASTA input
+or `-q`. With `.h5` input nothing is embedded and nothing is sent to Biocentral, so `-b local` is
+never needed there; given anyway, these flags make `prepare` warn that they have no effect.
 
 ### Projection
 
@@ -125,10 +149,10 @@ given without `-e`, `prot_t5` is used.
 
 ### Annotations
 
-| Flag                     | Description                                                         | Default   |
-| ------------------------ | ------------------------------------------------------------------- | --------- |
-| `-a, --annotations`      | Annotation groups, individual names, or a CSV/TSV path. Repeatable. | `default` |
-| `--scores / --no-scores` | Include annotation confidence scores.                               | on        |
+| Flag                     | Description                                                        | Default   |
+| ------------------------ | ------------------------------------------------------------------ | --------- |
+| `-a, --annotations`      | Annotation groups, individual names, or CSV/TSV paths. Repeatable. | `default` |
+| `--scores / --no-scores` | Include annotation confidence scores.                              | on        |
 
 ### Output
 
@@ -138,6 +162,7 @@ given without `-e`, `prot_t5` is used.
 | `--bundled / --no-bundled`   | Bundle into a single `.parquetbundle`.                                                                                                                                       | bundled |
 | `--stats / --no-stats`       | Compute projection quality statistics. See [Projection statistics](#projection-statistics).                                                                                  | off     |
 | `--cluster-selection`        | With `--stats`, how to choose the cluster count K: `elbow`, `silhouette`, or `both`.                                                                                         | `elbow` |
+| `--cluster-space`            | With `--stats`, where to cluster: `projection`, `embedding` (one column per embedding, shared by its projections), or `both`.                                                | `both`  |
 | `--stats-annotation`         | With `--stats`, which annotation column(s) to score: `auto` or a comma-separated list.                                                                                       | `auto`  |
 | `--refetch`                  | Recompute stages (comma-separated): `query`, `embed`, `similarity`, `projections`, `uniprot`, `taxonomy`, `interpro`, `ted`, `biocentral`. Shorthands: `all`, `annotations`. | off     |
 | `--keep-tmp / --no-keep-tmp` | Cache intermediates in `{output}/tmp/` for resumability.                                                                                                                     | on      |
@@ -154,24 +179,27 @@ the annotations came only from a CSV file, or no identifier is a UniProt accessi
 
 ## Projection Methods
 
-Methods require a dimension suffix: `2` for 2D, `3` for 3D.
+Methods require a dimension suffix: `2` for 2D (`3` for 3D is deprecated, see below).
 
 ::: warning Dimension Suffix Required
-Specify `pca2` or `pca3`, not `pca` alone.
+Specify `pca2`, not `pca` alone.
 :::
 
-| Method   | 2D          | 3D          | Description                            |
-| -------- | ----------- | ----------- | -------------------------------------- |
-| PCA      | `pca2`      | `pca3`      | Principal Component Analysis           |
-| UMAP     | `umap2`     | `umap3`     | Uniform Manifold Approximation         |
-| t-SNE    | `tsne2`     | `tsne3`     | t-distributed Stochastic Neighbor Emb. |
-| PaCMAP   | `pacmap2`   | `pacmap3`   | Pairwise Controlled Manifold Approx.   |
-| MDS      | `mds2`      | `mds3`      | Multidimensional Scaling               |
-| LocalMAP | `localmap2` | `localmap3` | Local-first alternative to PaCMAP      |
+| Method   | 2D          | 3D (deprecated) | Description                            |
+| -------- | ----------- | --------------- | -------------------------------------- |
+| PCA      | `pca2`      | `pca3`          | Principal Component Analysis           |
+| UMAP     | `umap2`     | `umap3`         | Uniform Manifold Approximation         |
+| t-SNE    | `tsne2`     | `tsne3`         | t-distributed Stochastic Neighbor Emb. |
+| PaCMAP   | `pacmap2`   | `pacmap3`       | Pairwise Controlled Manifold Approx.   |
+| MDS      | `mds2`      | `mds3`          | Multidimensional Scaling               |
+| LocalMAP | `localmap2` | `localmap3`     | Local-first alternative to PaCMAP      |
 
-::: tip
-The web app renders 2D projections, prefer `*2` methods. 3D projections are viewable with
-`protspace serve`.
+::: warning 3D projections are deprecated
+3D projections (any `*3` method) are deprecated and will be removed in protspace 5.0.0. They
+still run, with a warning; use the `*2` variant instead. The web app shows a 3D projection only
+as its X/Y view, which is the same as the 2D projection only for PCA. Reading them is deprecated too: every command that reads a bundle's projections
+warns when it holds a 3D one, and from 5.0.0 only `protspace convert` reads them, to turn them
+into 2D (see [`--flatten-3d`](#protspace-convert)).
 :::
 
 ### Inline parameter overrides
@@ -247,7 +275,8 @@ protspace prepare -i sequences.fasta -e prot_t5 --backend local -m pca2 -o outpu
 ## Annotations
 
 Specify annotation sources with `-a`. The flag is repeatable and each value may be a group name, an
-individual annotation name, or a path to a CSV/TSV file.
+individual annotation name, or a path to one of your own tables (see
+[Custom annotation files](#custom-annotation-files)).
 
 ```bash
 # Use a predefined group
@@ -260,8 +289,8 @@ individual annotation name, or a path to a CSV/TSV file.
 # Or pick individual annotation names
 -a protein_families,reviewed,pfam,genus,species
 
-# Or provide a CSV/TSV file
--a annotations.csv
+# Or provide your own tables; several files are merged
+-a annotations.csv -a neighbors.tsv
 ```
 
 | Group        | Source annotations                                                      |
@@ -293,19 +322,73 @@ accession-dependent annotations come back empty. Sequence-dependent annotations 
 pass the original FASTA with `-f`. A UniProt batch that fails outright leaves its proteins'
 UniProt annotations empty too, and the run warns how many batches and proteins are affected.
 
-### Custom CSV annotations
+### Custom annotation files
+
+Bring your own columns as a table with one row per protein:
 
 ```csv
-identifier,taxonomy,family,function
+protein_id,taxonomy,family,function
 P12345,Bacteria,Kinase,ATP binding
 P67890,Archaea,Phosphatase,Hydrolase
 Q54321,Eukaryota,Kinase,Transferase
 ```
 
-The `identifier` column must match the protein IDs in your embeddings file.
+`prepare`, `annotate`, `stats` and `bundle` read such a file through `-a`, all by the same rules:
 
-On column name collisions, CSV values take precedence over the fetched ones. With `--keep-tmp`,
-only API-fetched annotations are cached, the CSV is always re-read fresh.
+- **File type.** A value ending in `.csv`, `.tsv` or `.txt`, in any case, is a file; any other
+  value is a source name. Other formats, such as `.xlsx`, are refused: export them to CSV first.
+- **Delimiter.** Comma, tab or semicolon, read from the header line whatever the extension. A file
+  whose header holds none of them parses to a single column, and ProtSpace warns about it.
+- **Id column.** The first column holds the protein ids, whatever its header. No column name takes
+  precedence over it, so put the ids first.
+- **Reserved names.** A later column named `identifier`, `protein_id`, `id`, `uniprot`, `entry`,
+  `projection_name`, `x`, `y` or `z` (exactly, in lower case) is kept as an annotation but renamed
+  `<name>_annotation`, for example `protein_id_annotation`, and ProtSpace warns about the rename.
+  ProtSpace uses those names for its own id and projection columns, and the web app would hide them.
+- **Ids match exactly.** They are compared verbatim with your input's identifiers (the `.h5` keys,
+  or the FASTA identifiers). When some of a file's ids match no input protein, ProtSpace warns and
+  shows examples of both, so `P12345` against `sp|P12345|KIN_HUMAN` is reported instead of leaving
+  empty columns. A file may cover only some proteins; the others get empty values.
+- **Cells are text.** Every cell is kept as written, and an empty cell stays empty. A cell spelled
+  like a missing value, such as `NA`, `N/A` or `None` in any case, is missing to the web app (which
+  shows it as N/A), `stats` and `transfer`, as in any bundle (see
+  [Missing Values](./data-format.md#missing-values)). Separate several values in one cell with `;`
+  outside parentheses: `Membrane (single-pass; type I)` stays one value.
+- **Several files are merged** on the id column, so `-a metadata.csv -a neighbors.csv` keeps both
+  files' columns. A column that two files both define is an error; rename it in one of them.
+- **Encoding and line endings.** UTF-8, with or without the byte-order mark Excel writes, and
+  Windows (CRLF), classic Mac (CR) or mixed line endings.
+
+A column from your file overrides a fetched annotation of the same name. With `--keep-tmp`, only
+fetched annotations are cached and your files are read fresh on every run, so rerunning `prepare`
+after editing a CSV reuses the cached projections and takes seconds.
+
+| Command    | What it does with `-a annotations.csv`                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| `prepare`  | Merges it with any sources named beside it into the bundle. A file alone fetches nothing.                          |
+| `annotate` | Writes it to the output parquet, merged with any sources named beside it. A file alone fetches nothing.            |
+| `stats`    | Scores it, leaving the file as is; its columns and the cluster columns go to `<name>.annotations.parquet` in `-p`. |
+| `bundle`   | Bundles it in place of an annotations parquet.                                                                     |
+| `project`  | Refuses it, naming these commands: `project` only computes projections.                                            |
+
+### Step by step
+
+`prepare` runs the whole route in one command. The same bundle, one stage at a time, so you can
+rerun only the step you changed:
+
+```bash
+protspace project  -i emb.h5 -m umap2,tsne2 -o proj/
+protspace annotate -i emb.h5 -a annotations.csv -o proj/annotations.parquet  # add -a default to fetch too
+protspace stats    -i emb.h5 -p proj/ -a proj/annotations.parquet -o proj/statistics.parquet \
+  --settings-out proj/cluster_styles.json
+protspace bundle   -p proj/ -a proj/annotations.parquet -s proj/statistics.parquet \
+  --settings proj/cluster_styles.json -o out.parquetbundle
+```
+
+`stats` adds the `cluster_*` columns to `proj/annotations.parquet` in place. Given the CSV itself,
+it leaves the CSV alone and writes `proj/annotations.annotations.parquet` instead (named after the
+CSV), which is then the file for `bundle -a`. Without statistics,
+`protspace bundle -p proj/ -a annotations.csv -o out.parquetbundle` bundles the CSV directly.
 
 ## Combining Multiple Inputs
 
@@ -324,28 +407,47 @@ protspace prepare -i human.h5:prot_t5 -i drosophila.h5:prot_t5 -m umap2 -o outpu
 protspace prepare -i prot_t5.h5 -i esm2_650m.h5 -m pca2 -o output
 ```
 
+The second example needs no `:name` because each file name ends in a model key. With several
+inputs, a file whose name cannot be resolved is an error rather than a guess, since the name
+decides between union and intersection.
+
 Duplicate proteins across same-name inputs are deduplicated when their embeddings match within
 tolerance; conflicting embeddings for the same protein ID raise an error.
 
 ## Model Name Resolution (`-i file.h5:name`)
 
-HDF5 files need a model name for projection labels. It is resolved in this order:
+Every HDF5 input has an embedding name. It labels the projections (`esm2_650m` shows as
+`ESM2-650M — UMAP 2`) and decides how several `-i` inputs combine (see above). It is resolved in
+this order:
 
-1. **Colon syntax**, `-i file.h5:prot_t5` (highest priority)
+1. **Colon syntax**, `-i file.h5:esm2_650m` (highest priority)
 2. **HDF5 attribute**, `model_name` in the root attributes, set automatically by
-   `protspace embed`/`prepare`
-3. **Error**, the command exits with a copy-pasteable fix
+   `protspace embed`/`prepare` and by the
+   [Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
+3. **File name**, a model key the file name ends in: `seqs_esm2_650m.h5`, `Ss_mSCR_esm2_650m.h5`
+   and `esm2_650m.h5` are all `esm2_650m`. The keys are the [embedder models](#embedder-models)
+   (plus `esm3_open`); the longest match wins, and only the end of the name counts. A directory
+   input takes the key its files share; files from different models in one directory are an
+   error, so give each model's files their own `-i`
+4. **File stem**, only when the file is the command's only input: `results.h5` is named `results`
+5. **Error**, when several inputs are given and one of them is still unnamed. The message says
+   what the name decides for that command and shows the corrected command line with your paths
 
-Use the colon syntax for HDF5 files created outside ProtSpace (bio_embeddings, custom scripts,
-Colab). Files produced by `protspace embed`/`prepare` already carry the attribute.
+Rules 3 and 4 log the name they picked at `-v`. Use the colon syntax whenever the file name does
+not say which model made it and you combine files, or when you want a different label.
 
 ```bash
-# External files, need colon syntax
-protspace prepare -i my_embeddings.h5:prot_t5 -m pca2 -o output
+# One file: no name needed (named by its file name, or by its stem)
+protspace prepare -i seqs_esm2_650m.h5 -m pca2 -o output
 
-# ProtSpace-generated files, just work
-protspace prepare -i embeddings/prot_t5.h5 -m pca2 -o output
+# Several files without a usable name: name each one
+protspace prepare -i human.h5:esm2_650m -i fly.h5:esm2_650m -m umap2 -o output
 ```
+
+`protspace stats` matches each projection to its embedding by this name. When you pass one file
+whose name came from rule 3 or 4 and the projections were all built from one embedding, it takes
+that embedding's name; when they come from several and none matches, it stops and asks you to
+name the input. `protspace transfer -e` reads only the vectors, so it never needs a name.
 
 Check whether a file has the attribute:
 
@@ -413,7 +515,9 @@ the cache keeps them all; the run still returns only what it asked for.
 
 Projection caches are keyed by embedding name, method, dimensions and every parameter, so changing
 any parameter creates a new entry. Use `--refetch all` to bypass all caches, or `--refetch <stages>`
-selectively (for example `--refetch ted,biocentral`).
+selectively (for example `--refetch ted,biocentral`). A run that reused any cached result ends with
+a hint naming the `--refetch` stages that would recompute it; a first run into a new output
+directory reuses nothing and prints none.
 
 ### Annotation name caches
 
@@ -477,6 +581,37 @@ separator, so such an identifier can never become the dataset you asked for.
 > directory of them as much as a single file. A `-f` path that does not exist is rejected outright
 > rather than ignored.
 
+### No healthy Biocentral service became available
+
+With the default `biocentral` backend, ProtSpace waits 30 seconds for the Biocentral server and then
+stops with `ERROR: No healthy Biocentral service became available in time`, followed by the reason:
+
+- **The server did not answer** (a connection error or a `503`). Biocentral is down or unreachable.
+  Retry later, or embed on your own hardware with `--backend local`.
+- **The server runs a version this release does not support.** The message names both versions and
+  the range your installed client accepts, for example
+  `runs Biocentral v3.0.0, but the installed biocentral-api 2.0.0 only supports servers v2.0.0 up to (not including) v3.0.0`.
+  The Biocentral client and server change major version together, and a ProtSpace release works with
+  one of them. Upgrade with `pip install -U protspace`, which needs Python 3.12 or newer.
+
+Annotation fails softly: with `-a biocentral`, the Biocentral columns are left empty with the same
+message as a warning, and are not cached, so a later run asks again.
+
+::: warning Python 3.14 and `pip`
+The Biocentral client declares `Python <3.14`, and `pip` honours that: on 3.14 it cannot install the
+current client, so `pip install protspace` settles on an older ProtSpace release without failing. The
+client itself runs on 3.14. Install with `uv pip install protspace`, which ignores that upper bound, or
+use Python 3.12 or 3.13. Check what you got with `pip show protspace`.
+:::
+
+### `KeyError: 'ESM_8M'`
+
+`protspace prepare` (and `embed`) stopping at startup with `KeyError: 'ESM_8M'`, whatever the input
+or `--backend`, is a bug in protspace 4.16.0 and older, fixed in 4.16.1: version 2.0 of the
+Biocentral client, released on 2026-10-01, renamed that model, and those releases looked it up on
+import. Upgrade with `pip install -U protspace` (see the Python 3.14 note above) and drop any local
+edit to `biocentral.py`. `-b local` does not avoid the error, and `.h5` input does not need it.
+
 ## `protspace project`
 
 Run dimensionality reduction on existing HDF5 embeddings. Writes
@@ -487,6 +622,12 @@ protspace project -i embeddings/prot_t5.h5 -i embeddings/esm2_3b.h5 -m pca2,umap
 ```
 
 Accepts the same projection flags as `prepare`, plus `-f/--fasta` for `-s/--similarity`.
+Unlike `prepare`, `project` does not merge inputs that share an embedding name, so it refuses two
+inputs of the same name; combine files from one model with `prepare` instead.
+
+`project` writes projections only. It takes no `-a` and no `--stats`, and says so when given them:
+add annotations with `annotate` or `bundle -a`, and statistics with `stats`, as in the
+[step-by-step route](#step-by-step), or use `prepare` for everything at once.
 
 ## `protspace annotate`
 
@@ -499,7 +640,7 @@ protspace annotate -i embeddings/prot_t5.h5 -a default -o annotations.parquet
 | Flag                     | Description                                                                                                                                        | Default               |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
 | `-i, --input`            | HDF5 or FASTA file (required).                                                                                                                     | -                     |
-| `-a, --annotations`      | Annotation sources (repeatable).                                                                                                                   | `default`             |
+| `-a, --annotations`      | Annotation sources (repeatable), or [custom annotation files](#custom-annotation-files). Files alone fetch nothing.                                | `default`             |
 | `-o, --output`           | Output parquet path.                                                                                                                               | `annotations.parquet` |
 | `--scores / --no-scores` | Include annotation confidence scores.                                                                                                              | on                    |
 | `--cache-dir`            | Keep the annotation cache in this directory (created if missing), so a rerun resumes.                                                              | off                   |
@@ -542,16 +683,21 @@ protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
 # Score only specific annotations
 protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
   -a annotations.parquet --stats-annotation major_group,ec_number
+
+# Cluster only in the embedding: one cluster column shared by every projection
+protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
+  -a annotations.parquet --cluster-space embedding
 ```
 
 | Flag                  | Description                                                                                                                                                     | Default     |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `-i, --input`         | HDF5 embedding file(s), required. Repeatable; `-i file.h5:name` to override the name.                                                                           | -           |
+| `-i, --input`         | HDF5 embedding file(s), required. Repeatable; `-i file.h5:name` names the embedding (see [Model Name Resolution](#model-name-resolution-i-file-h5-name)).       | -           |
 | `-p, --projections`   | Directory with `projections_metadata.parquet` and `projections_data.parquet`, required.                                                                         | -           |
 | `-o, --output`        | Output `statistics.parquet` path, required.                                                                                                                     | -           |
-| `-a, --annotations`   | Annotations parquet, enriched in place with per-protein `cluster_*` membership columns and scored for annotation-based validity plus ARI/NMI agreement.         | -           |
+| `-a, --annotations`   | Annotations parquet, enriched in place with `cluster_*` columns, or a [CSV/TSV](#custom-annotation-files); scored for validity plus ARI/NMI agreement.          | -           |
 | `--settings-out`      | Write auto-generated cluster legend styles here (JSON) for `bundle --settings`. Requires `-a`.                                                                  | -           |
 | `--cluster-selection` | How to choose the cluster count K: `elbow`, `silhouette`, or `both`.                                                                                            | `elbow`     |
+| `--cluster-space`     | Where to cluster: `projection` (each projection's coordinates), `embedding` (once per embedding, shared by its projections), or `both`.                         | `both`      |
 | `--stats-annotation`  | Which curated annotation column(s) to score: `auto` or a comma-separated list. Requires `-a`. The `cluster_*` membership columns are scored regardless of this. | `auto`      |
 | `--metric`            | High-dimensional distance metric for faithfulness when the projection metadata omits one (PCA/MDS).                                                             | `euclidean` |
 | `--seed`              | Random seed.                                                                                                                                                    | `42`        |
@@ -568,16 +714,24 @@ protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
   it null); Calinski–Harabasz stays aggregate-only. A one-member category gets no per-category row
   and is excluded from the Davies–Bouldin and Calinski–Harabasz input, so an annotation with a few
   singleton categories still scores on the rest. Requires `-a`.
-- **Auto-clustering and its agreement with annotations**, KMeans labels the projection, with K
-  chosen by the inertia elbow and/or maximum silhouette. Each selection becomes a per-protein
-  membership column (`cluster_elbow_<projection>`, `cluster_silhouette_<projection>`) holding a
-  bare `cluster N` label, the same shape as a curated categorical annotation. Each clustering is
+- **Auto-clustering and its agreement with annotations**, KMeans labels each projection on its own
+  coordinates, each embedding once in the embedding space, or both (`--cluster-space`, default
+  `both`), with K chosen by the inertia elbow and/or maximum silhouette. Each selection becomes a
+  per-protein membership column holding a bare `cluster N` label, the same shape as a curated
+  categorical annotation: `cluster_elbow_<projection>` / `cluster_silhouette_<projection>` for a
+  projection, whose cluster numbers are independent of every other projection's, and
+  `cluster_elbow_<embedding>` / `cluster_silhouette_<embedding>` for an embedding, one column that
+  every projection of that embedding shares, so a protein's cluster number is the same in its UMAP
+  and its t-SNE. An embedding is clustered on its top 50 principal components with three KMeans
+  restarts per K, which keeps a 5,000 × 1,280 embedding to about 20 seconds. Each clustering is
   then scored on its own categories exactly as an annotation is, aggregate and per-category, filed
   under the membership column's name and tagged `label_kind=kmeans_elbow|kmeans_silhouette`,
-  whether or not `--stats-annotation` named anything. Read those scores as descriptive rather than
-  as a verdict: KMeans drew the boundaries being graded, and a `silhouette`-selected K was chosen by
-  maximising the very number reported. Separately, each clustering's ARI/NMI agreement with every
-  scored annotation is recorded as `stat_family=cluster_agreement`. `--no-scores` does not touch
+  whether or not `--stats-annotation` named anything: a projection clustering in its projection,
+  an embedding clustering on the embedding and again in each of its projections. Read those
+  scores as descriptive rather than as a verdict: KMeans drew the boundaries being graded, and a
+  `silhouette`-selected K was chosen by maximising the very number reported. Separately, each
+  clustering's ARI/NMI agreement with every scored annotation is recorded as
+  `stat_family=cluster_agreement`. `--no-scores` does not touch
   these columns, they carry no score to strip; bundles written by older versions, whose values were
   `cluster N|0.41`, still load because the app drops the suffix by column name.
 - **Faithfulness**, how well the projection preserves the embedding's structure: kNN-overlap,
@@ -608,7 +762,7 @@ protspace bundle -p projections/ -a annotations.parquet \
 | Flag                | Description                                                      | Default |
 | ------------------- | ---------------------------------------------------------------- | ------- |
 | `-p, --projections` | Directory with the projection parquet files, required.           | -       |
-| `-a, --annotations` | Annotations parquet file, required.                              | -       |
+| `-a, --annotations` | Annotations parquet or CSV/TSV file, required.                   | -       |
 | `-o, --output`      | Output `.parquetbundle` path, required.                          | -       |
 | `-s, --statistics`  | Projection-statistics parquet → fifth bundle part.               | -       |
 | `--settings`        | Settings JSON (for example cluster legend styles) → fourth part. | -       |
@@ -618,7 +772,13 @@ the web app renders that table, see
 [Separation Scores](/explore/separation-scores).
 
 The annotations parquet can be the output of `protspace annotate`, the annotation cache `prepare`
-keeps (`tmp/all_annotations.parquet`), or a table of your own. `annotate` and the cache hold
+keeps (`tmp/all_annotations.parquet`), or a table of your own. Its id column is the column named
+`protein_id`, the name every table ProtSpace writes uses, else `identifier`, the name releases
+before 4.17 wrote, or else its first column; beside `protein_id`, an `identifier` column is an
+annotation. Reading `identifier` as the id column warns that it is deprecated: it ends in protspace
+5.0.0, so rename such a column to `protein_id`. A projections directory keyed on `identifier`
+warns the same way. `stats -a` follows the same rule, so a table `stats` enriched is one `bundle`
+accepts. `annotate` and the cache hold
 percent-encoded v2 cells, stamped `protspace_format_version` = `2`, and those pass through
 unchanged; a cache written before the cache carried that stamp is recognised as one and read the
 same way. Any other table without the stamp, for example one you built with pandas, is read as
@@ -641,11 +801,15 @@ projection, and copies that label along with a reliability index in [0, 1].
 
 The curated source column (`COL`) is left untouched; three new columns are written:
 `COL__pred_value` (string), `COL__pred_confidence` (float) and `COL__pred_source` (string, the
-reference protein the label came from, for provenance).
+reference protein the label came from, for provenance). With `--max-distance`, a fourth,
+`COL__neighbor`, says whether the query sits [near or distant](#near-or-distant) from the
+references.
 
 **The filters are optional.** With no `--query-*` and no `--reference-*` filter, transfer runs
 within the bundle: every protein missing a value in a `--transfer` column is a query, and every
-protein holding one is a reference. Those two sets are complements of the same missing-value test, so
+protein holding one is a reference. A value is missing exactly when the web app shows it as N/A
+(see [Missing Values](./data-format.md#missing-values)), so a cell spelled `N/A` or `None` is filled,
+never copied. Those two sets are complements of the same missing-value test, so
 a protein can never be its own source, and no marker column is needed to describe "the rows that are
 empty". Reach for the filters only to narrow that down, for example to label one species from
 another or to hold out a labelled subset as a benchmark. Passing only one side is fine too: the other
@@ -674,18 +838,21 @@ protspace transfer \
   --reference-where 'protein_category~neurotoxin'
 ```
 
-| Flag                    | Description                                                            | Default                      |
-| ----------------------- | ---------------------------------------------------------------------- | ---------------------------- |
-| `-b, --bundle`          | Input `.parquetbundle`, required.                                      | -                            |
-| `-e, --embeddings`      | HDF5 embeddings; `:name` suffix for external files. Required.          | -                            |
-| `-t, --transfer`        | Annotation column to transfer (repeatable), required.                  | -                            |
-| `-o, --output`          | Output `.parquetbundle` (may overwrite the input), required.           | -                            |
-| `--k`                   | Number of nearest neighbours considered.                               | `1`                          |
-| `--metric`              | Distance metric: `cosine` or `euclidean`.                              | `cosine`                     |
-| `--query-id-prefix`     | Only transfer to query IDs with this prefix (repeatable).              | any protein missing a value  |
-| `--query-where`         | Restrict queries to rows where `col` contains `substr` (`col~substr`). | any protein missing a value  |
-| `--reference-id-prefix` | Only use references whose ID has this prefix (repeatable).             | any protein that has a value |
-| `--reference-where`     | Restrict references the same way (`col~substr`).                       | any protein that has a value |
+| Flag                    | Description                                                             | Default                      |
+| ----------------------- | ----------------------------------------------------------------------- | ---------------------------- |
+| `-b, --bundle`          | Input `.parquetbundle`, required.                                       | -                            |
+| `-e, --embeddings`      | HDF5 embeddings, required. A `:name` suffix is accepted but not needed. | -                            |
+| `-t, --transfer`        | Annotation column to transfer (repeatable), required.                   | -                            |
+| `-o, --output`          | Output `.parquetbundle` (may overwrite the input), required.            | -                            |
+| `--k`                   | Number of nearest neighbours considered.                                | `1`                          |
+| `--metric`              | Distance metric: `cosine` or `euclidean`.                               | `cosine`                     |
+| `--query-id-prefix`     | Only transfer to query IDs with this prefix (repeatable).               | any protein missing a value  |
+| `--query-where`         | Restrict queries to rows where `col` contains `substr` (`col~substr`).  | any protein missing a value  |
+| `--reference-id-prefix` | Only use references whose ID has this prefix (repeatable).              | any protein that has a value |
+| `--reference-where`     | Restrict references the same way (`col~substr`).                        | any protein that has a value |
+| `--max-distance`        | Mark each query near or distant: a distance, or `auto`. See below.      | -                            |
+| `--skip-distant`        | Leave distant queries unpredicted (needs `--max-distance`).             | label every query            |
+| `--report`              | Also write a TSV of each query's neighbours, see below.                 | -                            |
 
 A bundle carrying these columns renders the transferred proteins as ringed markers with their own
 legend section, see [Transferred Annotations (EAT)](/explore/eat).
@@ -695,6 +862,69 @@ The output is always a format v3 bundle. A v1 or v2 input is read the way
 over the proteins the web app showed: a row with no ID, or an earlier row whose ID a later row
 repeats, is neither a query nor a reference. A legacy input that `convert` refuses is refused
 here too, with the same reason, and nothing is written.
+
+### Neighbour report
+
+The bundle keeps one label, one reliability index and one source per query. `--report
+predictions.tsv` also writes the neighbours they came from, as a tab-separated table with one row
+per query and neighbour (with `--k 1`, one row per query). The bundle is the same with or without
+it.
+
+| Column               | Holds                                                                          |
+| -------------------- | ------------------------------------------------------------------------------ |
+| `column`             | The `--transfer` column the row belongs to.                                    |
+| `query_id`           | The query protein.                                                             |
+| `label`              | The transferred label (`COL__pred_value`).                                     |
+| `source_id`          | The reference it came from (`COL__pred_source`).                               |
+| `distance`           | The raw embedding distance from the query to `source_id`, in `--metric` units. |
+| `reliability`        | The reliability index (`COL__pred_confidence`).                                |
+| `rank`               | 1 for the nearest reference, up to `--k`.                                      |
+| `reference_id`       | The reference at that rank; equidistant references are ordered by ID.          |
+| `reference_label`    | Its value in the transferred column.                                           |
+| `reference_distance` | Its distance from the query.                                                   |
+
+Labels are written as the web app shows them, without score suffixes. With `--k > 1` the
+prediction's source is the nearest reference carrying the winning label, so it need not be the
+rank-1 row. To list the unknowns closest to a reference, sort the report by `distance`:
+
+```python
+import pandas as pd
+
+report = pd.read_csv("predictions.tsv", sep="\t")
+report[report["rank"] == 1].sort_values("distance")
+```
+
+### Near or distant
+
+Transfer labels every query, however far its nearest reference is. `--max-distance` adds the
+split a reference database is usually first asked for: which queries sit near a reference at all.
+A query is `near` when the embedding distance to its nearest reference (of any label) is at most the
+cutoff, and `distant` otherwise. The class is written to a fourth column, `COL__neighbor`, which is
+empty for every protein that was not a query. It is an ordinary annotation: colour, filter and
+export by it in the web app like any other.
+
+```bash
+protspace transfer -b space.parquetbundle -e emb.h5:esm2_650m -t toxin_family \
+  --max-distance auto --report predictions.tsv -o space_eat.parquetbundle
+```
+
+- **`--max-distance auto`** picks the cutoff for each column from the references themselves: the
+  95th percentile of every reference's distance to its nearest other reference. A query farther
+  from every reference than that sits outside the reference set's own spacing. Above 10,000
+  references the percentile is estimated from a fixed sample of 10,000 of them, so the same
+  references always give the same cutoff. The column needs at least two references. `-v` logs the
+  value chosen, and the report's `max_distance` column records it.
+- **`--max-distance D`** uses a fixed distance, in `--metric` units. Distances are model-specific
+  (ESM2 cosine distances are small even between unrelated proteins), so a number from one model or
+  paper does not carry over to another.
+- **`--skip-distant`** leaves the distant queries unpredicted: they get `COL__neighbor = distant`
+  and no `__pred_*` values. Without it they keep the nearest label, as without a cutoff. When the
+  cutoff leaves every query of a column distant, transfer warns: try `auto` or a larger `D`.
+
+With `--report`, every row also carries `neighbor` (the query's class) and `max_distance` (the
+cutoff used). With `--skip-distant`, a `distant` row still shows the `label` and `source_id` the
+query would have been given; the bundle holds no prediction for it. Transferring a column again replaces its `COL__neighbor`, and a run without
+`--max-distance` removes it, so the class never describes predictions that are gone.
 
 ### Reliability index
 
@@ -746,22 +976,36 @@ refuses is refused here too, with the same reason, and nothing is written.
 ## `protspace convert`
 
 Rewrite a bundle written in format v1 or v2 as format v3. Reading v1/v2 bundles is deprecated:
-they still open, with a warning, until protspace 5.0.0 removes support for them.
+they still open everywhere, with a warning, until protspace 5.0.0. `convert` itself keeps
+reading them after that, so an old file can always be upgraded.
 
 ```bash
 protspace convert old.parquetbundle new.parquetbundle
 protspace convert old.parquetbundle --in-place
+protspace convert data.parquetbundle --in-place --flatten-3d
 ```
 
-| Flag            | Description                                 |
-| --------------- | ------------------------------------------- |
-| `--in-place`    | Overwrite the input with its v3 conversion. |
-| `-v, --verbose` | Verbosity: `-v` = INFO, `-vv` = DEBUG.      |
+| Flag            | Description                                                                    |
+| --------------- | ------------------------------------------------------------------------------ |
+| `--in-place`    | Overwrite the input with its v3 conversion.                                    |
+| `--flatten-3d`  | Write each 3D projection as 2D, keeping its X/Y view; works on v3 bundles too. |
+| `-v, --verbose` | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                         |
+
+**3D projections.** Reading them is deprecated and ends in protspace 5.0.0. `--flatten-3d` rewrites
+each one as a 2D projection holding its X and Y coordinates, the view the web app shows today. For
+PCA that view is the same as the 2D projection (`pca2`, up to the sign of each axis). For UMAP,
+t-SNE, PaCMAP, LocalMAP and MDS it is not: each optimises the layout for the number of dimensions it
+is given, so the X/Y view is the 3D layout seen from one side, where points that are far apart along
+`z` can overlap. If you have the embeddings, recompute those projections with the 2D method (e.g.
+`umap2`) instead. A flattened projection is renamed `<name> (X/Y)` and marked `flattened_from_3d` in
+its metadata so it is not mistaken for a 2D fit, and the quality figures computed on the 3D layout
+(its faithfulness and its statistics rows) are dropped. Without the flag, `convert` keeps 3D
+projections and warns; from 5.0.0 it flattens them automatically.
 
 Give either an output path or `--in-place`; the input is never overwritten otherwise. Settings
 (legend colors, shapes, order) and projection statistics are kept as they are, and the file is
 written atomically, so a failed run leaves the destination unchanged. A bundle that is already v3
-is reported as current and nothing is written. The internal `organism_id` and `sequence`
+is reported as current and nothing is written, unless `--flatten-3d` finds 3D projections in it. The internal `organism_id` and `sequence`
 columns an older bundle may carry are dropped, as from every bundle ProtSpace writes.
 
 The converted bundle holds the proteins the web app showed for the old file. Older web builds
@@ -777,11 +1021,51 @@ and export it again: the web app always exports v3. That export leaves out any p
 projection places (an annotations row without coordinates), which `convert` keeps. See
 [Legacy formats](/guide/data-format#legacy-formats-v1-and-v2).
 
+## `protspace export`
+
+Write a bundle as one tab-separated table, one row per protein, for a spreadsheet, R or pandas.
+
+```bash
+protspace export data.parquetbundle data.tsv
+protspace export data.parquetbundle data.tsv -p "ProtT5 — UMAP 2"
+```
+
+| Flag               | Description                                                           |
+| ------------------ | --------------------------------------------------------------------- |
+| `-p, --projection` | Also write this projection's coordinates (repeatable). Default: none. |
+| `-v, --verbose`    | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                |
+
+The columns are `protein_id`, then `<projection>_x` and `<projection>_y` for each `--projection`
+(a 3D projection writes only this X/Y view, the one the web app shows, which is the same as the 2D
+projection only for PCA; its `z` is not exported, and
+reading it prints the [3D deprecation warning](#projection-methods)), then every annotation in the
+order the bundle stores them. That includes the `cluster_*` membership columns
+[`stats`](#protspace-stats) writes
+and the `__pred_*` and `__neighbor` columns of [`transfer`](#protspace-transfer). A cell holds what
+the web app shows: score and evidence suffixes are dropped, encoded characters are decoded, and the
+values of a multi-valued cell are joined with `;`. Numbers and booleans are written as the web
+app's Table export writes them: `true`/`false`, and `2` rather than `2.0`. Missing values, including a value spelled
+`N/A`, `None` and the like (see [Missing Values](./data-format.md#missing-values)), and the
+coordinates of a protein a projection does not place, are empty. Projection names are the ones the
+[web app lists](#projection-naming); a name the bundle does not hold is an error that lists the
+ones it does.
+
+To export only some proteins, filter the table in pandas, or use the web app's
+[Table export](/explore/exporting#table-export), which writes the proteins currently visible. The
+same table is available in Python, see
+[Read a bundle in Python](/guide/data-format#read-a-bundle-in-python).
+
 ## `protspace serve`
 
-Run a local Dash viewer. Most users should explore bundles in the hosted viewer at
-[protspace.app/explore](https://protspace.app/explore): nothing to install, and drag & drop works.
-Use `serve` for offline viewing; it also renders 3D projections.
+::: warning Deprecated
+`protspace serve` and the `frontend` extra are deprecated and will be removed in protspace 5.0.0.
+Running it prints a warning. Explore bundles at
+[protspace.app/explore](https://protspace.app/explore) instead: nothing to install, drag & drop
+works, and the file is read in your browser, never uploaded.
+:::
+
+Run a local Dash viewer, for offline viewing. It still renders 3D projections in 3D, the one
+viewer that does; both are deprecated and go in protspace 5.0.0, so do not build on either.
 
 ```bash
 protspace serve output.parquetbundle --port 8050 --pdb-zip structures.zip
@@ -791,6 +1075,37 @@ protspace serve output.parquetbundle --port 8050 --pdb-zip structures.zip
 | ----------- | ----------------------------------- | ------- |
 | `--port`    | Port to run the server on.          | `8050`  |
 | `--pdb-zip` | ZIP file containing PDB structures. | -       |
+
+## Upgrading from v4.4
+
+Coming from ProtSpace 4.4, or from the v3 `protspace-local` command:
+
+- **Custom annotations go through `prepare -a`, not `project`.** No 4.x `project` or `annotate`
+  took a CSV; the route was always `prepare -a annotations.csv`. `annotate`, `stats` and `bundle`
+  now take one too (see [Custom annotation files](#custom-annotation-files)), and `project -a` says
+  where to go.
+- **`--delimiter` is gone.** The delimiter is read from the file's header line.
+- **Statistics arrived in 4.5**, as `prepare --stats` (off by default) and the `stats` step. They
+  were never part of `project`.
+- **`transfer` arrived in 4.6.** [Embedding Annotation Transfer](#protspace-transfer) fills an
+  annotation for unlabelled proteins from their nearest labelled neighbour in embedding space.
+- **The id column is still the first column**, as in 4.4 and `protspace-local`, whatever its
+  header. A later column named `identifier` or `protein_id`, which used to fail the run with a
+  duplicate-column error, is now kept as `identifier_annotation` or `protein_id_annotation`.
+- **Every table names its id column `protein_id`.** Since 4.17, `annotate` output, the
+  `.annotations.parquet` `stats -a` writes, both files of a `project` or `prepare --no-bundled`
+  directory and the tables `read_tables` returns hold the protein ids in `protein_id`, where
+  older releases wrote `identifier`. Files written before are still read, with a deprecation
+  warning, until protspace 5.0.0. A script that reads `identifier` from such a table should read
+  `protein_id`.
+- **3D projections and `protspace serve` are deprecated.** Both still work, with a warning, and
+  are removed in protspace 5.0.0 (tracked in
+  [#544](https://github.com/tsenoner/protspace/issues/544)). If you used `umap3`, `tsne3` or any
+  other `*3` method, switch to its `*2` variant; recompute the 3D projections of existing bundles
+  with it when you have the embeddings, or keep their X/Y view as 2D with
+  [`protspace convert --flatten-3d`](#protspace-convert) (the same as the 2D projection only for
+  PCA); and explore bundles at
+  [protspace.app/explore](https://protspace.app/explore) instead of with `serve`.
 
 ## See Also
 

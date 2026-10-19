@@ -36,8 +36,13 @@ import {
   getProteinAnnotationValues,
   getProteinScores,
 } from '../../packages/utils/src/visualization/plot-data-accessors';
-import { NA_VALUE } from '../../packages/utils/src/visualization/missing-values';
+import {
+  MISSING_VALUE_TOKENS,
+  NA_VALUE,
+  normalizeMissingValue,
+} from '../../packages/utils/src/visualization/missing-values';
 import { generateDatasetHash } from '../../packages/utils/src/storage/data-hash';
+import { PROTEIN_ID_COLUMN } from '../../packages/utils/src/generated/shared-constants';
 import type { VisualizationData } from '../../packages/utils/src/types';
 
 const REPO_ROOT = resolve(__dirname, '../..');
@@ -59,6 +64,9 @@ interface Manifest {
   };
   projectionCount: number;
   labelWithReservedChar: string;
+  negativeTransmembraneCategory: string;
+  missingTmbedIndex: number;
+  malformedTmbedIndex: number;
   nullLengthIndex: number;
   statisticsColumns: string[];
   statisticsCategory: string;
@@ -67,6 +75,10 @@ interface Manifest {
   annotationOnlyFamily: string;
   projectionOnlyId: string;
   booleanById: Record<string, boolean | null>;
+  /** Python's missing-value spellings (`MISSING_VALUE_TOKENS`), sorted. */
+  missingValueTokens: string[];
+  /** `[spelling, is_missing_value(spelling)]` for each probe spelling. */
+  missingValueVerdicts: [string, boolean][];
 }
 
 /** The format the producer writes today: six slots, payloads last. */
@@ -78,6 +90,8 @@ const PRODUCER_CONTAINER = {
   containerVersion: PRODUCER_CONTAINER_VERSION,
   // The cell-grammar key belongs to legacy parts and v2-shaped tables, never to a v3 part 1.
   cellGrammar: null,
+  // Both writers name the id column this, whatever the annotations are called (#552).
+  idColumn: PROTEIN_ID_COLUMN,
 };
 
 let outDir: string;
@@ -89,22 +103,26 @@ function loadBundle(variant: string): ArrayBuffer {
 }
 
 /**
- * The container's physical layout: its part count and the two version keys of part 1's
- * footer, the container version (v3 only) and the legacy cell grammar (v1/v2 only).
+ * The container's physical layout: its part count, the two version keys of part 1's footer,
+ * the container version (v3 only) and the legacy cell grammar (v1/v2 only), and the id column
+ * the v3 manifest names.
  */
 function inspectContainer(bundle: ArrayBuffer): {
   partCount: number;
   containerVersion: number | null;
   cellGrammar: string | null;
+  idColumn: string | null;
 } {
   const positions = findBundleDelimiterPositions(new Uint8Array(bundle));
   const kv = parquetMetadata(bundle.slice(0, positions[0])).key_value_metadata ?? [];
   const value = (key: string) => kv.find((entry) => entry.key === key)?.value ?? null;
   const container = value('protspace_container_version');
+  const manifest = value('protspace_v3_manifest');
   return {
     partCount: positions.length + 1,
     containerVersion: container === null ? null : Number(container),
     cellGrammar: value('protspace_format_version'),
+    idColumn: manifest === null ? null : (JSON.parse(manifest) as { idColumn: string }).idColumn,
   };
 }
 
@@ -271,6 +289,19 @@ function expectAnnotationContract(
   expect(data.annotations.domains.values).toContain('DomA');
   expect(data.annotations.domains.values).toContain('DomB');
 
+  // A TMbed prediction with no membrane segment is a category, while a missing or
+  // malformed payload is N/A in both TMbed-derived annotations, not a negative.
+  expect(data.annotations.predicted_transmembrane.values).toContain(
+    manifest.negativeTransmembraneCategory,
+  );
+  for (const row of [manifest.missingTmbedIndex, manifest.malformedTmbedIndex]) {
+    for (const annotation of ['predicted_transmembrane', 'predicted_signal_peptide']) {
+      expect(getProteinAnnotationValues(data, row, annotation), `${annotation}[${row}]`).toEqual([
+        NA_VALUE,
+      ]);
+    }
+  }
+
   const lengths = data.numeric_annotation_data?.length;
   // Assert the length first: an out-of-range index yields `undefined`, which
   // would satisfy the null check below even if the reader dropped a protein.
@@ -418,8 +449,9 @@ describe('proteins the annotations and projections disagree on', () => {
   it('shows an Arrow BOOLEAN column as true / false', async () => {
     const { data } = await decodeParquetBundle(loadBundle('coverage'));
     for (const [id, value] of Object.entries(manifest.booleanById)) {
+      if (id === manifest.annotationOnlyId) continue; // asserted absent above
       const row = data.protein_ids.indexOf(id);
-      if (row < 0) continue; // the annotation-only protein, asserted absent above
+      expect(row, id).toBeGreaterThanOrEqual(0);
       expect(getProteinAnnotationValues(data, row, 'reviewed')).toEqual([
         value == null ? NA_VALUE : String(value),
       ]);
@@ -466,6 +498,7 @@ describe('protspace convert', () => {
       partCount: 5,
       containerVersion: null,
       cellGrammar: '2',
+      idColumn: null,
     });
     expect(inspectContainer(loadBundle('converted'))).toEqual(PRODUCER_CONTAINER);
     expect(converted.formatVersion).toBe(PRODUCER_CONTAINER_VERSION);
@@ -538,4 +571,28 @@ describe('bundles the web app exports, read by the Python tooling', () => {
       expect(reexported.hasSettings).toBe(written.hasSettings);
     },
   );
+});
+
+// Python's readers (the Dash plot, `protspace stats`, `protspace transfer`) and the
+// web reader each decide which cells are missing. When they disagree, a value one
+// side shows as a category the other shows as N/A, which is how TMbed's negative
+// prediction, `none`, came to be displayed as N/A (#339).
+describe('what counts as a missing annotation value', () => {
+  it('names the same missing-value spellings as the producer', () => {
+    // Both sets are generated from contracts/shared-constants.json, whose own check covers
+    // the generated modules. This compares the sets each side actually uses, so a re-export
+    // replaced by a local literal still fails here.
+    expect([...MISSING_VALUE_TOKENS].sort()).toEqual(manifest.missingValueTokens);
+  });
+
+  it('reads each probe spelling as missing exactly when the producer does', () => {
+    const verdicts = manifest.missingValueVerdicts;
+    // Both answers occur, so neither side can pass by calling everything one thing.
+    expect(new Set(verdicts.map(([, missing]) => missing))).toEqual(new Set([true, false]));
+
+    const disagreements = verdicts.filter(
+      ([probe, missing]) => (normalizeMissingValue(probe) === null) !== missing,
+    );
+    expect(disagreements).toEqual([]);
+  });
 });

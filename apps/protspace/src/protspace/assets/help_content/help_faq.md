@@ -4,7 +4,7 @@
 
 **How do I prepare my data?**
 
-- Ensure your CSV has an 'identifier' column and other columns for features.
+- Put the protein ids in your CSV's first column and the features in the other columns.
 
 **Can I share my visualizations?**
 

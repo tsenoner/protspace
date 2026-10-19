@@ -59,7 +59,7 @@ def _projections():
     data = pa.table(
         {
             "projection_name": ["PCA_2", "PCA_2"],
-            "identifier": IDS,
+            "protein_id": IDS,
             "x": [0.0, 1.0],
             "y": [0.0, 1.0],
         }
@@ -110,7 +110,7 @@ def test_write_bundle_leaves_the_projection_parts_alone(tmp_path):
 
     parts, _ = read_bundle(out)
     decoded = pq.read_table(io.BytesIO(parts[2]))
-    assert decoded.select(["projection_name", "identifier", "x", "y"]).to_pylist() == (
+    assert decoded.select(["projection_name", "protein_id", "x", "y"]).to_pylist() == (
         data.to_pylist()
     )
 
@@ -133,7 +133,7 @@ def test_bundle_cli_drops_internal_columns_from_a_cache_parquet(tmp_path):
     pq.write_table(meta, projections / "projections_metadata.parquet")
     pq.write_table(data, projections / "projections_data.parquet")
     cache = tmp_path / "all_annotations.parquet"
-    pq.write_table(_cache_shaped_annotations(id_col="identifier"), cache)
+    pq.write_table(_cache_shaped_annotations(id_col="protein_id"), cache)
 
     out = tmp_path / "out.parquetbundle"
     result = CliRunner().invoke(

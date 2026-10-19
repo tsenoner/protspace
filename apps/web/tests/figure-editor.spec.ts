@@ -47,15 +47,35 @@ async function openFigureEditor(page: Page): Promise<void> {
   );
 }
 
+/**
+ * Wait until the preview shows the modal's current state. The state change has
+ * already queued a redraw (`_redrawHandle`). A redraw that lands within 80 ms of
+ * the previous fresh inset render stretches that stale render and arms
+ * `_settleTimer` for a fresh one, so wait for both to clear.
+ */
+async function waitForPreviewRedraw(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const m = document.querySelector('protspace-publish-modal') as unknown as
+        | (HTMLElement & { _redrawHandle: number | null; _settleTimer: unknown })
+        | null;
+      return !!m && m._redrawHandle === null && m._settleTimer === null;
+    },
+    undefined,
+    { timeout: 5_000, polling: 100 },
+  );
+}
+
 /** Inject an inset via state mutation — far more reliable than mouse drags
  *  through the shadow-DOM overlay canvas. */
 async function setInsets(page: Page, insets: Inset[]): Promise<void> {
-  await page.evaluate((nextInsets) => {
+  await page.evaluate(async (nextInsets) => {
     const m = document.querySelector('protspace-publish-modal') as unknown as
       | (HTMLElement & {
           _state: unknown;
           _plotCacheKey: string;
           requestUpdate: () => void;
+          updateComplete: Promise<boolean>;
         })
       | null;
     if (!m) throw new Error('publish modal not mounted');
@@ -63,9 +83,10 @@ async function setInsets(page: Page, insets: Inset[]): Promise<void> {
     m._state = { ...state, insets: nextInsets };
     m._plotCacheKey = ''; // force fresh plot capture
     m.requestUpdate();
+    // updated() queues the redraw, so the wait below cannot pass before it.
+    await m.updateComplete;
   }, insets);
-  // Wait for at least one rAF tick + settle timer (modal redraws on rAF).
-  await page.waitForTimeout(300);
+  await waitForPreviewRedraw(page);
 }
 
 interface PixelStats {
@@ -291,42 +312,15 @@ test.describe('figure editor — geometric inset zoom', () => {
       m._plotCacheKey = '';
       m.requestUpdate();
     });
-    await page.waitForTimeout(300);
 
+    // Export reads `_state` and renders at full resolution itself, so it needs
+    // no preview redraw first.
     const downloadPromise = page.waitForEvent('download', { timeout: 15_000 });
 
-    // Click the Export button. The modal renders it as
-    //   <button class="btn-primary" @click=${this._handleExport}>Export</button>
-    // so the text-based fallback is the reliable identifier; we still try
-    // a few data attributes first in case future commits add one.
-    await page.evaluate(() => {
-      const m = document.querySelector('protspace-publish-modal') as
-        | (HTMLElement & { shadowRoot: ShadowRoot })
-        | null;
-      const root = m?.shadowRoot;
-      if (!root) throw new Error('modal shadow root missing');
-      const candidates = [
-        'button[data-action="export"]',
-        'button.publish-export-btn',
-        'button.publish-action-export',
-        '[data-testid="export-btn"]',
-      ];
-      for (const sel of candidates) {
-        const btn = root.querySelector(sel) as HTMLButtonElement | null;
-        if (btn) {
-          btn.click();
-          return;
-        }
-      }
-      // Match the actual primary button by text — current implementation.
-      const buttons = Array.from(root.querySelectorAll('button')) as HTMLButtonElement[];
-      const exportBtn = buttons.find((b) => b.textContent?.trim() === 'Export');
-      if (exportBtn) {
-        exportBtn.click();
-        return;
-      }
-      throw new Error('Export button not found in publish-modal shadow DOM');
-    });
+    await page
+      .locator('protspace-publish-modal')
+      .getByRole('button', { name: 'Export', exact: true })
+      .click();
 
     const download = await downloadPromise;
     const path = await download.path();

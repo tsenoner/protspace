@@ -14,24 +14,23 @@
  * the private lifecycle methods directly.
  *
  * Covered:
- *   - firstUpdated constructs EXACTLY ONE WebGLRenderer and never
- *     orphans one (currently RED — firstUpdated double-constructs via
- *     _updateSizeAndRender then again inline).
+ *   - firstUpdated constructs EXACTLY ONE WebGLRenderer and never orphans one
+ *     (_updateSizeAndRender already constructs it lazily, so firstUpdated only
+ *     constructs when none exists).
  *   - a numeric recompute does not complete after disconnect — the busy
- *     state is cleared and a superseded RAF body bails (ALREADY SATISFIED by
- *     NumericRecomputeRunner.cancel(); this is a characterization lock).
+ *     state is cleared and a superseded RAF body bails (via
+ *     NumericRecomputeRunner.cancel()).
  *     (The old `numeric-recompute-end` event was removed; re-characterized via
  *     the kept `_numericRecomputeRunning` mirror.)
  *   - the 750ms resetZoom transition is interrupted on disconnect
- *     (ALREADY SATISFIED by PlotInteractionController.teardown(); this is a
- *     characterization lock asserted via the controller teardown path).
+ *     (via PlotInteractionController.teardown()).
  *   - a selection committed then disconnected before its deferred RAF
  *     fires dispatches nothing — disconnectedCallback cancels the tracked
- *     _commitSelectionRafId (currently RED — the RAF id is not cancelled). The
- *     suppression is via cancellation, NOT an isConnected body-guard, so the
- *     connected dispatch (scatter-plot.test.ts selection locks) stays byte-identical.
+ *     _commitSelectionRafId. The suppression is via cancellation, NOT an
+ *     isConnected body-guard, so the connected dispatch (scatter-plot.test.ts
+ *     selection locks) stays byte-identical.
  *   - `_renderWebGL` is a no-op (does not throw) when `_webglRenderer` is
- *     null (currently RED — uses a non-null assertion).
+ *     null (it returns early instead of dereferencing the renderer).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
@@ -196,11 +195,9 @@ describe('_commitSelection RAF cancelled on disconnect', () => {
 describe('_renderWebGL is a no-op when the renderer is null', () => {
   it('does not throw when _webglRenderer is null', () => {
     const sp = makeHost();
-    // No firstUpdated ran, so the renderer was never constructed (null). The
-    // current code dereferences `this._webglRenderer!` unconditionally and
-    // throws a TypeError; a hardened _renderWebGL bails when the renderer is
-    // null. `_scales` is a getter (null with no processed data), so
-    // _getPointsForRendering returns EMPTY_PLOT_DATA before the null deref.
+    // No firstUpdated ran, so the renderer was never constructed (null).
+    // _renderWebGL must bail on the null renderer rather than dereference it
+    // (a `this._webglRenderer!` there threw a TypeError).
     sp._webglRenderer = null;
 
     expect(() => sp._renderWebGL('plot')).not.toThrow();

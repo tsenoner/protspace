@@ -47,6 +47,7 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
     UniProtRetriever,
 )
 from protspace.data.annotations.transformers.transformer import AnnotationTransformer
+from protspace.data.cache_hits import note_cache_hit
 from protspace.data.io.atomic import staged_write
 from protspace.data.io.fasta import count_residues
 from protspace.data.io.formatters import DataFormatter
@@ -245,6 +246,13 @@ class ProteinAnnotationManager:
         self._fetched_sources = set()
         plan = self._fetch_plan(fill_in)
         self._uniprot_mode = plan["uniprot"]
+        if len(fill_in) < len(self.headers) and any(
+            plan[s] != "all" and self._requests(s) and self._cached_values(s)
+            for s in SOURCE_ORDER
+        ):
+            # A source this run asks for keeps cached values for some of its
+            # proteins (`fill_in` is the request less the cached rows).
+            note_cache_hit("annotations")
         # Sources that go over the network this run, in fetch order.
         pending = [s for s in SOURCE_ORDER if plan[s] and self._requests(s)]
 
@@ -513,7 +521,7 @@ class ProteinAnnotationManager:
             return
 
         incomplete = ", ".join(sorted(self.incomplete_sources))
-        remaining = set(df.columns) - drop - {"identifier"}
+        remaining = set(df.columns) - drop - {df.columns[0]}
         without = df.drop(columns=[c for c in df.columns if c in drop])
         # An explicit refetch skips both guards: keeping the cached values there
         # would strand exactly the values the user asked to replace, and writing
@@ -858,19 +866,16 @@ class ProteinAnnotationManager:
             # run over a lookup that only concerned the new ones.
             return dict(cached)
 
-    def _build_sequence_map(
-        self, uniprot_annotations: list[ProteinAnnotations]
+    @staticmethod
+    def _uniprot_sequences(
+        uniprot_annotations: list[ProteinAnnotations],
     ) -> dict[str, str]:
-        """Build a mapping from headers to sequences.
-
-        Merges local sequences (from FASTA, priority) with UniProt results (fallback).
-        """
-        sequences = dict(self.sequences) if self.sequences else {}
-        for protein in uniprot_annotations:
-            seq = protein.annotations.get("sequence", "")
-            if seq and protein.identifier not in sequences:
-                sequences[protein.identifier] = seq
-        return sequences
+        """Map identifiers to the non-empty sequences UniProt returned."""
+        return {
+            protein.identifier: seq
+            for protein in uniprot_annotations
+            if (seq := protein.annotations.get("sequence"))
+        }
 
     def _starved_by_uniprot(
         self, source: str, label: str, headers: list[str], sequences: dict[str, str]
@@ -909,7 +914,12 @@ class ProteinAnnotationManager:
 
         headers = self.headers if headers is None else headers
         try:
-            sequences = self._build_sequence_map(uniprot_annotations)
+            # UniProt's sequence wins: InterPro's precomputed matches are keyed by
+            # the canonical sequence hash.
+            sequences = {
+                **(self.sequences or {}),
+                **self._uniprot_sequences(uniprot_annotations),
+            }
             self._starved_by_uniprot("interpro", "InterPro", headers, sequences)
 
             retriever = InterProRetriever(
@@ -939,7 +949,11 @@ class ProteinAnnotationManager:
 
         headers = self.headers if headers is None else headers
         try:
-            sequences = self._build_sequence_map(uniprot_annotations)
+            # The local FASTA sequence wins: Biocentral predicts what was submitted.
+            sequences = {
+                **self._uniprot_sequences(uniprot_annotations),
+                **(self.sequences or {}),
+            }
             self._starved_by_uniprot("biocentral", "Biocentral", headers, sequences)
 
             retriever = BiocentralPredictionRetriever(

@@ -182,7 +182,7 @@ def source_tables() -> list[pa.Table]:
     from protlabel import Prediction
 
     processor = BaseProcessor({}, {})
-    frame = pd.DataFrame({"identifier": PROTEIN_IDS, **ANNOTATION_CELLS})
+    frame = pd.DataFrame({"protein_id": PROTEIN_IDS, **ANNOTATION_CELLS})
     annotations = processor._create_protein_annotations_table(frame)
 
     annotations = add_overlay_columns(
@@ -212,7 +212,7 @@ def source_tables() -> list[pa.Table]:
         pc.invert(
             pc.and_(
                 pc.equal(coordinates.column("projection_name"), "umap3"),
-                pc.equal(coordinates.column("identifier"), "P6"),
+                pc.equal(coordinates.column("protein_id"), "P6"),
             )
         )
     )

@@ -1,6 +1,12 @@
-"""Auto-clustering (KMeans) on projection coordinates + agreement with annotations.
+"""Auto-clustering (KMeans) on projection or embedding coordinates + agreement
+with annotations.
 
-KMeans labels the projection. The K can be chosen by the inertia **elbow**
+KMeans labels each projection on its own coordinates, each source embedding once
+in the embedding space, or both (``ctx.params["cluster_space"]`` = ``projection``
+| ``embedding`` | ``both``). An embedding clustering is one column shared by every
+projection of that embedding, so its cluster ids compare across layouts; the
+driver scores it again on each of those projections. The K can be chosen by the
+inertia **elbow**
 and/or by **max silhouette** (``ctx.params["cluster_selection"]`` = ``elbow`` |
 ``silhouette`` | ``both``); each selection is emitted with its own
 ``label_kind`` (``kmeans_elbow`` / ``kmeans_silhouette``). The chosen K is
@@ -46,19 +52,30 @@ from protspace.stats.base import (
     StatContext,
     StatRow,
 )
-from protspace.stats.cluster.kmeans_elbow import kmeans_elbow
+from protspace.stats.cluster.kmeans_elbow import kmeans_elbow, pca_reduce
 from protspace.stats.metrics.annotation_validity import AnnotationValidityStatistic
 
 # Above this many points the KMeans elbow sweep fits on a random subsample (+predict)
 # rather than the full projection, bounding cost at 570k+ scale.
 DEFAULT_MAX_FIT_SAMPLE = 50_000
 
+# Where to cluster when ``params`` names no (or an unknown) ``cluster_space``. The
+# CLI options and ``PipelineConfig`` default to the same value; a test pins them.
+DEFAULT_CLUSTER_SPACE = "both"
+CLUSTER_SPACES = ("projection", "embedding", "both")
+
+# An embedding is clustered on its top principal components with fewer KMeans
+# restarts per K than a projection: at 5k x 1280 that cuts the sweep from ~130 s to
+# ~20 s with the same K (benchmark in the cluster-in-embedding-space design).
+EMBEDDING_PCA_COMPONENTS = 50
+EMBEDDING_N_INIT = 3
+
 
 class _Labeling(NamedTuple):
     """One K-selection's clustering: how it was chosen + its column and labels."""
 
     label_kind: str  # "kmeans_elbow" | "kmeans_silhouette" (statistics.parquet tag)
-    col_name: str  # "cluster_elbow_<proj>" | "cluster_silhouette_<proj>"
+    col_name: str  # "cluster_elbow_<space>" | "cluster_silhouette_<space>"
     selection_name: str  # "elbow" | "silhouette"
     requested_k: int
     labels: np.ndarray
@@ -69,12 +86,31 @@ class ClusterValidityStatistic:
 
     family = "cluster_validity"
     requires_embedding = False
-    embedding_space = False  # projection-only (auto-clustering + agreement)
+    embedding_space = True  # also run by the driver's once-per-embedding pass
 
     def compute(self, ctx: StatContext) -> list:
-        X = np.asarray(ctx.coords, dtype=float)
-        n = X.shape[0]
         params = ctx.params
+        space = str(params.get("cluster_space", DEFAULT_CLUSTER_SPACE)).lower()
+        if space not in CLUSTER_SPACES:  # same guard as cluster_selection below
+            space = DEFAULT_CLUSTER_SPACE
+        if space not in ("both", ctx.space_kind):
+            return []
+
+        X = np.asarray(ctx.coords)
+        n = X.shape[0]
+        ids = ctx.ids if len(ctx.ids) == n else None
+        max_fit_sample = int(params.get("max_fit_sample", DEFAULT_MAX_FIT_SAMPLE))
+        sweep_kw = {}
+        if ctx.space_kind == "embedding":
+            X = pca_reduce(
+                X,
+                ids=ids,
+                rng_seed=ctx.rng_seed,
+                n_components=EMBEDDING_PCA_COMPONENTS,
+                max_fit_sample=max_fit_sample,
+            )
+            sweep_kw["n_init"] = EMBEDDING_N_INIT
+        X = np.asarray(X, dtype=float)
         sample_threshold = int(params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD))
         selection = str(params.get("cluster_selection", "elbow")).lower()
         # The CLI validates this via a Typer enum; guard the raw stats API too so an
@@ -85,19 +121,21 @@ class ClusterValidityStatistic:
 
         res = kmeans_elbow(
             X,
-            ids=ctx.ids if len(ctx.ids) == n else None,
+            ids=ids,
             rng_seed=ctx.rng_seed,
             k_max=params.get("k_max"),
-            max_fit_sample=int(params.get("max_fit_sample", DEFAULT_MAX_FIT_SAMPLE)),
+            max_fit_sample=max_fit_sample,
             silhouette_selection=selection in ("silhouette", "both"),
             silhouette_sample=sample_threshold,
+            **sweep_kw,
         )
         if res is None:  # n < 3
             return []
 
         # Which labelling(s) to emit. Each K-selection method is named explicitly
-        # (cluster_elbow_<proj> / cluster_silhouette_<proj>) so the column name — the
-        # only signal that survives to the frontend — carries the provenance.
+        # (cluster_elbow_<space> / cluster_silhouette_<space>, the space being the
+        # projection or the embedding) so the column name — the only signal that
+        # survives to the frontend — carries the provenance.
         def _elbow_labeling() -> _Labeling:
             return _Labeling(
                 "kmeans_elbow",
@@ -164,6 +202,8 @@ class ClusterValidityStatistic:
         }
         if selection_name == "elbow":
             meta_extra["knee_confidence"] = res.knee_confidence
+        if ctx.space_kind == "embedding":
+            meta_extra["clustered_dims"] = int(X.shape[1])  # after pca_reduce
 
         rows: list = [
             StatRow(
@@ -197,7 +237,10 @@ class ClusterValidityStatistic:
                     kind="categorical",
                     values=dict(labels_by_id),
                     extra={
-                        "projection": ctx.space_name,
+                        # "projection" or "embedding": the driver scores an
+                        # embedding column again on that embedding's projections.
+                        ctx.space_kind: ctx.space_name,
+                        "label_kind": label_kind,
                         "selection": selection_name,
                         "k": k,
                         "seed": rng_seed,
@@ -206,8 +249,10 @@ class ClusterValidityStatistic:
                 )
             )
 
-            # How well this clustering separates in the projection it was found in,
-            # scored by the very statistic that scores curated annotations, so the
+            # How well this clustering separates in the space it was found in (for
+            # an embedding, the raw embedding rather than the PCs it was swept on,
+            # matching the curated annotations' embedding reference), scored by the
+            # very statistic that scores curated annotations, so the
             # frontend reads a cluster column through the same rows as any other
             # annotation (strips, per-row scores, the metadata panel) with no
             # special case. Gated on `want_per_point`: without a membership column

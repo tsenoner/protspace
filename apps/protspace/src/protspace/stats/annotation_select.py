@@ -10,31 +10,25 @@ from __future__ import annotations
 
 import logging
 
-from protspace.core.constants import MISSING_VALUE_TOKENS
+from protspace.core.constants import is_missing_value
 from protspace.data.annotations.scores import _strip_scores_from_cell
+from protspace.data.io.ids import PROTEIN_ID_COLUMN
 from protspace.stats.base import CLUSTER_COLUMN_PREFIX
 
 logger = logging.getLogger(__name__)
 
-# Values treated as "missing" (dropped, never a category). The raw input sentinels
-# come from the shared ``core.constants.MISSING_VALUE_TOKENS`` (so they can't drift
-# from what ``standardize_missing`` normalises); on top we add the *display* forms
-# produced downstream — ``"<N/A>"`` (standardize_missing), pandas nullable dtypes'
-# ``"<NA>"`` / ``"NaT"``, ``"<NaN>"``, and ``None``'s str form. Missing any of these
-# would score a phantom missing-value cluster and inflate a column's cardinality.
-_MISSING = {
-    *MISSING_VALUE_TOKENS,
-    "<N/A>",
-    "<NA>",
-    "<NaN>",
-    "NaT",
-    "None",
-}
+# Missing values are dropped, never a category. What the web shows as N/A comes
+# from the shared ``core.constants.is_missing_value``; on top come the *display*
+# forms a missing cell takes once something has turned it into text:
+# ``"<N/A>"`` (``standardize_missing``), pandas' ``"<NA>"`` / ``"NaT"``, and the
+# Dash picker's ``"<NaN>"``. Missing any of these would score a phantom
+# missing-value cluster and inflate a column's cardinality.
+_MISSING_DISPLAY_FORMS = frozenset({"<N/A>", "<NA>", "<NaN>", "NaT"})
 
 
 def _is_missing(value) -> bool:
-    """Whether a raw cell value is missing (None or a sentinel string)."""
-    return value is None or str(value) in _MISSING
+    """Whether a raw cell value is missing (as the web reads it, or a display form)."""
+    return is_missing_value(value) or str(value) in _MISSING_DISPLAY_FORMS
 
 
 def _category(value) -> str:
@@ -48,9 +42,25 @@ def _category(value) -> str:
     return _strip_scores_from_cell(str(value))
 
 
+def _cell_categories(series):
+    """Each cell's bare category (:func:`_category`), or None when it is missing.
+
+    A text cell is decided once per distinct value: a column holds a few dozen
+    values across up to 570K cells, and the per-cell checks would dominate.
+    """
+    memo: dict[str, str | None] = {}
+    for v in series.tolist():
+        if not isinstance(v, str):
+            yield None if _is_missing(v) else _category(v)
+            continue
+        if v not in memo:
+            memo[v] = None if _is_missing(v) else _category(v)
+        yield memo[v]
+
+
 def _clean(series) -> list[str]:
     """Non-missing bare-category string values of a column (scores stripped)."""
-    return [_category(v) for v in series.tolist() if not _is_missing(v)]
+    return [c for c in _cell_categories(series) if c is not None]
 
 
 def _is_numeric(vals) -> bool:
@@ -74,11 +84,11 @@ def _is_suitable_column(series, cap: int) -> bool:
     """
     seen: set[str] = set()
     total = 0
-    for v in series.tolist():
-        if _is_missing(v):
+    for category in _cell_categories(series):
+        if category is None:
             continue
         total += 1
-        seen.add(_category(v))
+        seen.add(category)
         if len(seen) > cap:  # too many categories → not a low-card categorical
             return False
     distinct = len(seen)
@@ -88,7 +98,7 @@ def _is_suitable_column(series, cap: int) -> bool:
 
 
 def suitable_annotations(
-    frame, id_col: str = "identifier", max_card: int = 50
+    frame, id_col: str = PROTEIN_ID_COLUMN, max_card: int = 50
 ) -> list[str]:
     n = len(frame)
     cap = min(max_card, max(2, n // 2))
@@ -102,7 +112,7 @@ def suitable_annotations(
 
 
 def build_annotation_labels(
-    frame, selection, id_col: str = "identifier"
+    frame, selection, id_col: str = PROTEIN_ID_COLUMN
 ) -> dict[str, dict[str, str]]:
     """``{annotation name -> {protein id -> category}}`` for the selection.
 
@@ -152,9 +162,9 @@ def build_annotation_labels(
     ids = [str(i) for i in frame[id_col].tolist()]
     for name in names:
         mapping = {
-            pid: _category(v)
-            for pid, v in zip(ids, frame[name].tolist(), strict=False)
-            if not _is_missing(v)
+            pid: category
+            for pid, category in zip(ids, _cell_categories(frame[name]), strict=False)
+            if category is not None
         }
         if mapping:
             labels[name] = mapping

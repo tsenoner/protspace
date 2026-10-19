@@ -1,16 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { PlotData } from '@protspace/utils';
-import { makeRenderer } from './test-support/renderer-fixture';
+import { makeRenderer, plotDataFrom } from './test-support/renderer-fixture';
 
-const pd: PlotData = {
-  length: 2,
-  xs: new Float32Array([0, 1]),
-  ys: new Float32Array([0, 1]),
-  zs: null,
-  originalIndices: null,
-  proteinIds: ['p0', 'p1'],
-};
+const pd = plotDataFrom([0, 1], [0, 1]);
 
 describe('WebGLRenderer init failure (characterization lock)', () => {
   // Per-test cleanup: restores every vi.spyOn (console.error below + the
@@ -19,12 +11,6 @@ describe('WebGLRenderer init failure (characterization lock)', () => {
   // a console spy into the rest of the suite.
   afterEach(() => vi.restoreAllMocks());
 
-  it('getContext(webgl2) null → render() is a no-op, does not throw', () => {
-    const { renderer: r } = makeRenderer({ contextUnavailable: true });
-    expect(() => r.render(pd)).not.toThrow();
-    // No usable context, so no draw is attempted. drawArrays spy proves nothing rendered.
-  });
-
   it('program link failure → render() does not throw and draws nothing', () => {
     const { renderer: r, gl } = makeRenderer({ failProgramLink: true });
     const drawSpy = vi.spyOn(gl, 'drawArrays');
@@ -32,7 +18,7 @@ describe('WebGLRenderer init failure (characterization lock)', () => {
     expect(drawSpy).not.toHaveBeenCalled();
   });
 
-  it('console.error is emitted (not swallowed) when getContext returns null', () => {
+  it('getContext(webgl2) null → render() does not throw and reports it on console.error', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     makeRenderer({ contextUnavailable: true }).renderer.render(pd);
     expect(errSpy).toHaveBeenCalledWith('WebGL2 not available');

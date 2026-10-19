@@ -16,22 +16,9 @@ from typing import Annotated
 import typer
 
 from protspace.cli.app import PANEL_STAGES, app, setup_logging
-from protspace.cli.common_options import ClusterSelection, Opt_Verbose
+from protspace.cli.common_options import ClusterSelection, ClusterSpace, Opt_Verbose
 
 logger = logging.getLogger(__name__)
-
-
-def _resolve_id_col(frame) -> str:
-    """The identifier column: ``identifier`` if present, else the first column."""
-    return "identifier" if "identifier" in frame.columns else frame.columns[0]
-
-
-def _parse_info_json(raw) -> dict:
-    """Parse a projection's ``info_json`` cell into a dict; empty/malformed → {}."""
-    try:
-        return json.loads(raw) if raw else {}
-    except (json.JSONDecodeError, TypeError):
-        return {}
 
 
 def _atomic_write_table(table, path: Path) -> None:
@@ -54,15 +41,22 @@ def _load_reductions(
 ) -> list[dict]:
     """Reconstruct per-projection ``{name, data, ids, info, source}`` from a dir.
 
-    Reads ``projections_data.parquet`` (long table of projection_name/identifier/
+    Reads ``projections_data.parquet`` (long table of projection_name/protein_id/
     x/y/z) into per-projection coordinate arrays + id order, and the reducer
     metric + source-embedding name from ``projections_metadata.parquet``.
     """
     import numpy as np
     import pyarrow.parquet as pq
 
-    data_path = projections / "projections_data.parquet"
-    meta_path = projections / "projections_metadata.parquet"
+    from protspace.data.io.bundle import (
+        PROJECTIONS_DATA_FILENAME,
+        PROJECTIONS_METADATA_FILENAME,
+        parse_info_json,
+    )
+    from protspace.data.io.ids import PROTEIN_ID_COLUMN, with_protein_id
+
+    data_path = projections / PROJECTIONS_DATA_FILENAME
+    meta_path = projections / PROJECTIONS_METADATA_FILENAME
     if not data_path.exists():
         raise typer.BadParameter(f"Missing: {data_path}")
 
@@ -76,16 +70,18 @@ def _load_reductions(
         dims_col = mt.get("dimensions", [])
         sources = mt.get("source", [])
         for i, nm in enumerate(names):
-            info = _parse_info_json(infos[i] if i < len(infos) else None)
+            info = parse_info_json(infos[i] if i < len(infos) else None)
             metric_by_name[nm] = info.get("metric") or default_metric
             if i < len(dims_col):
                 dims_by_name[nm] = int(dims_col[i])
             if i < len(sources) and sources[i]:
                 source_by_name[nm] = sources[i]
 
-    dt = pq.read_table(str(data_path)).to_pydict()
+    dt = with_protein_id(
+        pq.read_table(str(data_path)), source=str(data_path)
+    ).to_pydict()
     pnames = dt["projection_name"]
-    idents = dt["identifier"]
+    idents = dt[PROTEIN_ID_COLUMN]
     xs, ys = dt["x"], dt["y"]
     zs = dt.get("z", [None] * len(pnames))
 
@@ -98,6 +94,7 @@ def _load_reductions(
         g["z"].append(zs[i])
 
     reductions: list[dict] = []
+    three_d: list[str] = []
     for nm, g in grouped.items():
         # Fall back to the data itself when projection metadata is absent: a 3D
         # projection is identified by present z values, not defaulted to 2D (which
@@ -106,6 +103,7 @@ def _load_reductions(
         dims = dims_by_name.get(nm) or (3 if has_z else 2)
         if dims == 3 and has_z:
             coords = np.array([g["x"], g["y"], g["z"]], dtype=float).T
+            three_d.append(nm)
         else:
             coords = np.array([g["x"], g["y"]], dtype=float).T
         red = {
@@ -117,7 +115,42 @@ def _load_reductions(
         if nm in source_by_name:
             red["source"] = source_by_name[nm]
         reductions.append(red)
+    if three_d:
+        from protspace.deprecations import THREE_D_PROJECTION_READ, warn
+
+        warn(
+            THREE_D_PROJECTION_READ,
+            logger,
+            name=str(projections),
+            projections=", ".join(three_d),
+        )
     return reductions
+
+
+def _match_projection_source(named_input, reductions: list[dict]):
+    """Name a single file-named input after the embedding its projections came from.
+
+    A name read off the file name is a guess, and the projections were labelled
+    when they were built, possibly under another name. With one embedding behind
+    them, that one is this input; with several and no match, scoring every
+    projection against this one embedding would be wrong, so refuse instead.
+    """
+    sources = {r["source"] for r in reductions if r.get("source")} - {"MMseqs2"}
+    if not sources or named_input.name in sources:
+        return named_input
+    if len(sources) == 1:
+        (source,) = sources
+        logger.info(
+            f"Naming {named_input.path} '{source}', the embedding its projections "
+            f"were built from (its file name gave '{named_input.name}')."
+        )
+        return named_input._replace(name=source)
+    raise typer.BadParameter(
+        f"The projections come from several embeddings ({', '.join(sorted(sources))}) "
+        f"and the name '{named_input.name}' taken from {named_input.path} matches none "
+        f"of them. Name the input after the one it holds, e.g. "
+        f"-i {named_input.path}:{min(sources)}"
+    )
 
 
 def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None:
@@ -132,6 +165,8 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from protspace.data.io.bundle import parse_info_json
+
     if not quality_by_name or not meta_path.exists():
         return
     table = pq.read_table(str(meta_path))
@@ -145,7 +180,7 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
     infos = table.column("info_json").to_pylist()
     new_infos: list[str] = []
     for nm, raw in zip(names, infos, strict=False):
-        info = _parse_info_json(raw)
+        info = parse_info_json(raw)
         quality = quality_by_name.get(nm)
         if quality is not None:
             info["quality"] = quality
@@ -156,11 +191,39 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
     _atomic_write_table(table, meta_path)
 
 
+def _read_annotations(path: Path, reductions: list[dict]):
+    """The ``-a`` table as a DataFrame keyed on ``protein_id``, as ``bundle -a`` reads it.
+
+    A custom file comes back with one row per projected protein, so the proteins it does not
+    annotate still get cluster columns. A parquet that cannot be read, or has no columns, is a
+    usage error rather than a traceback later.
+    """
+    from protspace.data.processors.custom_annotations import read_annotation_table
+
+    ids = dict.fromkeys(i for r in reductions for i in r["ids"])
+    try:
+        return read_annotation_table(path, list(ids)).to_pandas()
+    except (FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="'-a/--annotations'") from exc
+
+
+def _write_custom_annotations(frame, path: Path) -> None:
+    """Write a custom file's frame, cluster columns included, as a stamped parquet."""
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+
+    table = stamp_format_version(
+        pa.Table.from_pandas(frame.fillna(""), preserve_index=False)
+    )
+    _atomic_write_table(table, path)
+
+
 def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> list[str]:
     """Merge the report's per-protein ``AnnotationColumn``s into ``ann_path``.
 
     Rewrites the annotations parquet in place with the computed ``cluster_*``
-    membership columns joined by identifier (each value a bare ``cluster N``
+    membership columns joined by protein id (each value a bare ``cluster N``
     label). Added columns are stringified
     (absent → empty) so they match the prepare path's all-string annotations and the
     frontend's content-based type inference. ``frame`` reuses an already-loaded
@@ -170,13 +233,14 @@ def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> list[
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from protspace.data.io.ids import keyed_on_protein_id
     from protspace.stats.carriage import merge_annotation_columns
 
     if not report.annotation_columns or not ann_path.exists():
         return []
     table = pq.read_table(str(ann_path))
-    df = frame if frame is not None else table.to_pandas()
-    added = merge_annotation_columns(report, df, id_col=_resolve_id_col(df))
+    df = frame if frame is not None else keyed_on_protein_id(table.to_pandas())
+    added = merge_annotation_columns(report, df)
     if not added:
         return []
     # Append ONLY the new string columns onto the ORIGINAL Arrow table (row order
@@ -229,7 +293,10 @@ def stats(
             "-a",
             "--annotations",
             help="Annotations parquet to enrich in place with per-protein "
-            "cluster-membership columns. Omit to skip per-protein outputs.",
+            "cluster-membership columns, or a custom .csv/.tsv/.txt file, which is "
+            "left as is: its columns and the cluster columns go to "
+            "<file stem>.annotations.parquet in the projections directory. Omit to "
+            "skip per-protein outputs.",
             rich_help_panel="Input",
         ),
     ] = None,
@@ -265,6 +332,16 @@ def stats(
             rich_help_panel="Clustering & scoring",
         ),
     ] = ClusterSelection.elbow,
+    cluster_space: Annotated[
+        ClusterSpace,
+        typer.Option(
+            "--cluster-space",
+            help="Where to cluster: 'both' (default), 'projection' (one clustering "
+            "per projection), or 'embedding' (one per embedding, shared by its "
+            "projections, so cluster ids compare across them).",
+            rich_help_panel="Clustering & scoring",
+        ),
+    ] = ClusterSpace.both,
     stats_annotation: Annotated[
         str,
         typer.Option(
@@ -294,38 +371,49 @@ def stats(
     import pyarrow.parquet as pq
 
     from protspace.cli.prepare import _parse_input_specs
-    from protspace.data.loaders import load_h5
+    from protspace.data.io.bundle import PROJECTIONS_METADATA_FILENAME
+    from protspace.data.loaders import load_h5, resolve_input_names
     from protspace.data.loaders.embedding_set import merge_same_name_sets
+    from protspace.data.processors.custom_annotations import (
+        is_custom_annotation_file,
+    )
     from protspace.stats import compute_statistics
     from protspace.stats.annotation_select import build_annotation_labels
     from protspace.stats.carriage import (
         build_cluster_legend_settings,
+        merge_annotation_columns,
         route_faithfulness_to_metadata,
     )
+
+    try:
+        named_inputs = resolve_input_names(
+            _parse_input_specs(list(input)), command="stats"
+        )
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from e
+    reductions = _load_reductions(projections, default_metric=metric)
+    if len(named_inputs) == 1 and named_inputs[0].from_file_name:
+        named_inputs = [_match_projection_source(named_inputs[0], reductions)]
 
     # Union same-name inputs (e.g. two species sharing one embedding model), mirroring
     # the prepare pipeline — otherwise repeated same-name -i collapse to the last one.
     embedding_sets = merge_same_name_sets(
-        [
-            load_h5([path], name_override=name_override)
-            for path, name_override in _parse_input_specs(list(input))
-        ]
+        [load_h5([path], name_override=name) for path, name, _ in named_inputs]
     )
-
-    reductions = _load_reductions(projections, default_metric=metric)
     # Per-protein output (the cluster membership column, and the self-validity rows
     # gated on it) is only computed when there's an annotations file to land it in.
-    params = {"cluster_selection": cluster_selection.value}
+    params = {
+        "cluster_selection": cluster_selection.value,
+        "cluster_space": cluster_space.value,
+    }
     if annotations is None:
         params["cluster_annotations"] = False
 
     annotation_labels = None
     ann_frame = None
     if annotations is not None:
-        ann_frame = pq.read_table(str(annotations)).to_pandas()
-        annotation_labels = build_annotation_labels(
-            ann_frame, stats_annotation, id_col=_resolve_id_col(ann_frame)
-        )
+        ann_frame = _read_annotations(annotations, reductions)
+        annotation_labels = build_annotation_labels(ann_frame, stats_annotation)
 
     report = compute_statistics(
         embedding_sets,
@@ -345,22 +433,33 @@ def stats(
         if isinstance(r.get("info"), dict) and "quality" in r["info"]
     }
     _merge_quality_into_metadata(
-        projections / "projections_metadata.parquet", quality_by_name
+        projections / PROJECTIONS_METADATA_FILENAME, quality_by_name
     )
 
     added_cols: list[str] = []
-    if annotations is not None:
+    if annotations is not None and is_custom_annotation_file(annotations):
+        # The user's own file is not rewritten. The table it became is named after
+        # it, not `selected_annotations.parquet`, which in an unbundled `prepare`
+        # directory holds the fetched annotations.
+        added_cols = merge_annotation_columns(report, ann_frame)
+        enriched = projections / f"{annotations.stem}.annotations.parquet"
+        _write_custom_annotations(ann_frame, enriched)
+        typer.echo(
+            f"Wrote {annotations.name} with the cluster columns to {enriched}; "
+            "pass it to `protspace bundle -a`."
+        )
+    elif annotations is not None:
         # Reuse the frame already read for label-building — nothing has rewritten
         # the annotations parquet since (only projections_metadata was touched).
         added_cols = _merge_annotations_with_columns(
             annotations, report, frame=ann_frame
         )
-        if settings_out is not None:
-            # Style only the columns that actually landed values (id mismatches are
-            # dropped in the merge), so we never write a legend for a phantom column.
-            cluster_settings = build_cluster_legend_settings(report, columns=added_cols)
-            settings_out.parent.mkdir(parents=True, exist_ok=True)
-            settings_out.write_text(json.dumps(cluster_settings))
+    if settings_out is not None:
+        # Style only the columns that actually landed values (id mismatches are
+        # dropped in the merge), so we never write a legend for a phantom column.
+        cluster_settings = build_cluster_legend_settings(report, columns=added_cols)
+        settings_out.parent.mkdir(parents=True, exist_ok=True)
+        settings_out.write_text(json.dumps(cluster_settings))
     n_cols = len(added_cols)
 
     table = report.to_arrow()

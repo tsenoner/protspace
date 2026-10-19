@@ -4,6 +4,7 @@ import { customElement } from '../../utils/safe-custom-element';
 import { perfCounters } from '../../utils/perf-counters';
 import {
   COLOR_SCHEMES,
+  DEFAULT_CATEGORICAL_PALETTE_ID,
   DEFAULT_NUMERIC_PALETTE_ID,
   DEFAULT_NUMERIC_STRATEGY,
   getNumericBinLabelMap,
@@ -25,9 +26,8 @@ import {
   isPredictedAnnotation,
   getAnnotationMeta,
   annotationCategoryScores,
-  isAutoClusterColumn,
+  autoClusterScoreCaveat,
   metricDisplay,
-  AUTO_CLUSTER_SCORE_CAVEAT,
   type NumericBinningStrategy,
   type NumericAnnotationDisplaySettingsMap,
   type EatReliabilityMode,
@@ -262,17 +262,18 @@ export class ProtspaceLegend extends LitElement {
   @state() private _colorPickerItem: string | null = null;
   @state() private _colorPickerPosition: { x: number; y: number } | null = null;
   @state() private _showShapePicker = false;
-  @state() private _selectedPaletteId = 'kellys';
+  @state() private _selectedPaletteId: string = DEFAULT_CATEGORICAL_PALETTE_ID;
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
   @state() private _eatCounts: EatPopulationCounts | null = null;
   @state() private _categoryScores: CategoryScore[] = [];
   /**
-   * Whether the current annotation is one of the backend's auto-clustering membership
-   * columns, whose separation scores are optimistic by construction. Derived alongside
-   * `_categoryScores` because both need `statisticsRows`, which render time does not see.
+   * The caveat for the current annotation's scores when it is one of the backend's
+   * auto-clustering membership columns, whose separation scores are optimistic by
+   * construction; `null` otherwise. Derived alongside `_categoryScores` because both need
+   * `statisticsRows`, which render time does not see.
    */
-  @state() private _isClusterAnnotation = false;
+  @state() private _clusterCaveat: string | null = null;
   /**
    * Category under the pointer, from a legend row or from a score strip. Read by
    * `_renderLegendItem` (the row's `legend-item-score-hover` class) and by `_renderScoreStrip`
@@ -360,7 +361,7 @@ export class ProtspaceLegend extends LitElement {
     shapeSize: LEGEND_DEFAULTS.symbolSize,
     enableDuplicateStackUI: false,
     annotationSortModes: {},
-    selectedPaletteId: 'kellys',
+    selectedPaletteId: DEFAULT_CATEGORICAL_PALETTE_ID,
     numericStrategy: DEFAULT_NUMERIC_STRATEGY,
     reverseGradient: false,
   };
@@ -376,6 +377,8 @@ export class ProtspaceLegend extends LitElement {
 
   // Focus trap cleanup function (stored for proper cleanup)
   private _focusTrapCleanup: (() => void) | null = null;
+  // Frame that will create the focus trap once the dialog has rendered
+  private _focusTrapSetupFrame: number | null = null;
 
   // Debounce timer for color picker updates
   private _colorChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -954,6 +957,13 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private _cleanupFocusTrap(): void {
+    // A trap still waiting for its dialog to render must not be created after this
+    // cleanup: nothing would remove it (a disconnect, or a second dialog's setup
+    // overwriting `_focusTrapCleanup`).
+    if (this._focusTrapSetupFrame !== null) {
+      cancelAnimationFrame(this._focusTrapSetupFrame);
+      this._focusTrapSetupFrame = null;
+    }
     if (this._focusTrapCleanup) {
       this._focusTrapCleanup();
       this._focusTrapCleanup = null;
@@ -962,7 +972,8 @@ export class ProtspaceLegend extends LitElement {
 
   private _setupFocusTrap(dialogId: string): void {
     this._cleanupFocusTrap();
-    requestAnimationFrame(() => {
+    this._focusTrapSetupFrame = requestAnimationFrame(() => {
+      this._focusTrapSetupFrame = null;
       const dialog = this.shadowRoot?.querySelector(`#${dialogId}`) as HTMLElement | null;
       if (dialog) {
         this._focusTrapCleanup = createFocusTrap(dialog);
@@ -1034,20 +1045,11 @@ export class ProtspaceLegend extends LitElement {
       const sourceDataMatchesCurrentLegend =
         sourceData?.protein_ids !== undefined &&
         this._hasSameProteinIds(sourceData.protein_ids, this.proteinIds);
-      // Predictions included, as the app and the decode worker hash it.
+      // Hashed whole, EAT predictions included, as a host hashes the dataset for
+      // `clearForNewDataset`, `setFileSettings` and `applyShapeSize`, so both use one key set.
       const unfilteredData = sourceDataMatchesCurrentLegend
-        ? {
-            protein_ids: sourceData.protein_ids,
-            annotations: sourceData.annotations,
-            numeric_annotation_data: sourceData.numeric_annotation_data,
-            annotation_predicted: sourceData.annotation_predicted,
-          }
-        : {
-            protein_ids: this.proteinIds,
-            annotations: this.data?.annotations,
-            numeric_annotation_data: this.data?.numeric_annotation_data,
-            annotation_predicted: this.data?.annotation_predicted,
-          };
+        ? sourceData
+        : { ...this.data, protein_ids: this.proteinIds };
 
       this._datasetProteinCount = unfilteredData.protein_ids.length;
       this._persistenceController.updateDatasetHash(unfilteredData);
@@ -1208,7 +1210,7 @@ export class ProtspaceLegend extends LitElement {
     this._showSettingsDialog = false;
     this._showOtherDialog = false;
     this._colorPickerItem = null;
-    this._selectedPaletteId = 'kellys';
+    this._selectedPaletteId = DEFAULT_CATEGORICAL_PALETTE_ID;
     this._numericSettingsByAnnotation = {};
     this._numericManualOrderIdsByAnnotation = {};
     this._eatCounts = null;
@@ -1664,7 +1666,7 @@ export class ProtspaceLegend extends LitElement {
       selectedAnnotation,
       selectedProjectionName,
     );
-    this._isClusterAnnotation = isAutoClusterColumn(statisticsRows, selectedAnnotation);
+    this._clusterCaveat = autoClusterScoreCaveat(statisticsRows, selectedAnnotation);
     this.proteinIds = data.protein_ids;
 
     // Sync isolation state
@@ -1979,7 +1981,7 @@ export class ProtspaceLegend extends LitElement {
       if (isNumericAnnotation) {
         this._applyNumericDisplayLabels();
         this._applyDerivedNumericColors();
-      } else if (this._selectedPaletteId !== 'kellys') {
+      } else if (this._selectedPaletteId !== DEFAULT_CATEGORICAL_PALETTE_ID) {
         this._applyPaletteColors(this._selectedPaletteId);
       }
 
@@ -2185,7 +2187,7 @@ export class ProtspaceLegend extends LitElement {
 
   private _normalizeCategoricalPaletteId(paletteId: string | undefined | null): string {
     if (!paletteId || isGradientPalette(paletteId)) {
-      return 'kellys';
+      return DEFAULT_CATEGORICAL_PALETTE_ID;
     }
     return paletteId;
   }
@@ -2685,7 +2687,9 @@ export class ProtspaceLegend extends LitElement {
     this._clearShapeSize();
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
 
-    this._selectedPaletteId = isNumericAnnotation ? DEFAULT_NUMERIC_PALETTE_ID : 'kellys';
+    this._selectedPaletteId = isNumericAnnotation
+      ? DEFAULT_NUMERIC_PALETTE_ID
+      : DEFAULT_CATEGORICAL_PALETTE_ID;
     if (isNumericAnnotation) {
       this._numericSettingsByAnnotation = {
         ...this._numericSettingsByAnnotation,
@@ -2985,8 +2989,8 @@ export class ProtspaceLegend extends LitElement {
         <!-- Stated here rather than only in the projection-metadata panel: this is where
              the per-category numbers are actually read, and a user hovering rows may
              never open that panel. -->
-        ${this._isClusterAnnotation
-          ? html`<p class="score-strips-caveat">${AUTO_CLUSTER_SCORE_CAVEAT}</p>`
+        ${this._clusterCaveat
+          ? html`<p class="score-strips-caveat">${this._clusterCaveat}</p>`
           : ''}
       </section>
     `;
