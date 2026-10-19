@@ -313,10 +313,12 @@ describe('protspace-legend-settings-popover', () => {
     const { el } = await mount({ numeric: true, logBinningAvailable: false });
     const select = root(el).querySelector<PsSelect>('#numeric-distribution-select')!;
     const native = select.shadowRoot!.querySelector('select')!;
-    expect([...native.options].map((option) => [option.value, option.disabled])).toEqual([
-      ['linear', false],
-      ['quantile', false],
-      ['logarithmic', true],
+    expect(
+      [...native.options].map((option) => [option.value, option.text.trim(), option.disabled]),
+    ).toEqual([
+      ['linear', 'Linear', false],
+      ['quantile', 'Quantile', false],
+      ['logarithmic', 'Logarithmic', true],
     ]);
     const note = root(el).querySelector<HTMLElement>('#numeric-log-disabled-note')!;
     expect(note.textContent!.trim()).toBe(
