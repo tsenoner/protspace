@@ -249,7 +249,7 @@ Edge, Firefox and Safari, which all support the `popover` attribute and `<dialog
 `protspace-control-bar` is replaced by elements that each own one job, so the app bar, view bar and
 plot can each hold their own: the projection picker, the annotation picker (`annotation-select`
 already exists), the contours menu, the filter panel (the query builder), search (exists), the
-export menu, the import menu, and the plot's selection tools. The behaviour the control bar
+export menu, the Import panel, and the plot's selection tools. The behaviour the control bar
 coordinated today (auto-sync with the scatterplot, the Escape handling, the selection mode) moves
 into controllers in `apps/web/src/explore/`. **BREAKING** for
 anyone embedding `protspace-control-bar`; `@protspace/core` is not published, and the developer docs
@@ -283,8 +283,10 @@ the Escape handling in `control-bar.ts` and the legend's own focus trap.
   this" and "Colour and shape". The existing click (hide/show), double-click (show only this), and
   keyboard actions (arrows, Enter, `i`) stay as shortcuts; `i` is added to the shortcut list.
   Hidden categories stay in the list, dimmed, with a crossed-out eye.
-- The header shows the annotation's display name, never its raw key, then its info button, a sort
-  button that shows the active order (by count, by name, or the user's own), and settings. The demo
+- The header shows the annotation's display name, never its raw key, then its info button (when
+  the annotation has docs), a sort button that shows the active order (by count, by name, by
+  separation when cluster scores exist, or the user's own; numeric annotations offer by value or
+  the user's own; "Reverse order" flips any of them), and settings. The demo
   list today looks sorted by count but is not (282 sits above 289); showing the active order makes
   that visible.
 - "Other · N categories" opens a searchable popover listing those categories with their counts and an
@@ -338,14 +340,14 @@ condition in the draft moves the slider only when the draft is applied.
   each a link or a callback (Retry, Undo, Report a bug). Every export confirms.
 - **Loading.** The overlay takes the kit's look and tells the truth about the data: "Reading your
   file in the browser" for local files; only FASTA files go to the server, for embedding, and the
-  Import menu says so before upload. The rocket emoji and the inline styles go. The overlay keeps
+  Import panel says so before upload. The rocket emoji and the inline styles go. The overlay keeps
   its id `#progressive-loading`, still blocks the page while a load runs, and keeps the example
   download's progress and Cancel; the plot keeps `#myPlot`. The e2e helpers and the perf suite
   key on both ids.
 - **Empty state and drop target.** If nothing is loaded the plot shows "Drop a file or pick an
   example". Dragging a file anywhere over the workbench shows a drop area; today the scatterplot
   handles drops and sets an attribute that nothing styles. Drop handling moves to the shell.
-- **Import menu.** The Import button and the dataset name open the same menu: the examples, the last
+- **Import panel.** The Import button and the dataset name open the same panel: the examples, the last
   imported file, and "Open a file…", with the accepted formats listed.
 - **Export menu.** Figure editor, quick PNG, quick PDF, protein IDs, Table (.tsv), data bundle. The
   note that contours are not part of quick exports moves from a hover title into the menu.
