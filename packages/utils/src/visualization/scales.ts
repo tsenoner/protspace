@@ -6,7 +6,7 @@ import * as d3 from 'd3';
  * DataProcessor) and the WebGL export domain, so on-screen and exported framing
  * stay in lockstep.
  */
-export const DATA_EXTENT_PADDING = 0.05;
+export const DATA_EXTENT_PADDING = 0.02;
 
 /** A data-coordinate rectangle: what a plot shows, or the padded extent of its points. */
 export interface DataDomain {

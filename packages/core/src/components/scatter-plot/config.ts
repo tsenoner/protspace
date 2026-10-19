@@ -4,7 +4,7 @@ import { DENSITY_DEFAULT, type ScatterplotConfig } from '@protspace/utils';
 export const DEFAULT_CONFIG: Required<ScatterplotConfig> = {
   width: 800,
   height: 600,
-  margin: { top: 40, right: 40, bottom: 40, left: 40 },
+  margin: { top: 12, right: 12, bottom: 12, left: 12 },
   pointSize: 80,
   zoomExtent: [0.1, 1000],
   baseOpacity: 0.9,
