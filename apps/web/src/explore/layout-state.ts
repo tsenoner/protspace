@@ -72,6 +72,7 @@ export function parseLayout(raw: unknown): LayoutState {
       typeof value.structureHidden === 'boolean'
         ? value.structureHidden
         : DEFAULT_LAYOUT.structureHidden,
+    plotFill: typeof value.plotFill === 'boolean' ? value.plotFill : DEFAULT_LAYOUT.plotFill,
   };
 }
 
@@ -89,7 +90,8 @@ function sameLayout(a: LayoutState, b: LayoutState): boolean {
     sameRect(a.floatingRect, b.floatingRect) &&
     a.panel === b.panel &&
     a.panelFolded === b.panelFolded &&
-    a.structureHidden === b.structureHidden
+    a.structureHidden === b.structureHidden &&
+    a.plotFill === b.plotFill
   );
 }
 

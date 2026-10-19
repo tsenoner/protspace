@@ -1677,6 +1677,13 @@
   display: none;
 }
 
+/* Fill is a row in the More sheet on a phone, on its side too. */
+.workbench:is([data-layout='phone'], [data-layout='landscape'])
+  [data-workbench='view-bar']
+  .wb-fill {
+  display: none;
+}
+
 /* Projection and Color by shrink, ending in an ellipsis, so the bar never overflows. */
 .workbench:is([data-layout='phone'], [data-layout='landscape'])
   [data-workbench='view-bar']
