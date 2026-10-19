@@ -130,7 +130,7 @@ previous phase left. A phase ends with the app working and every test green.
 - [x] 7.15 Importing, exporting, phones and tablets, FAQ
 - [x] 7.16 Developer docs, the images README, allowlists retired
 
-## 8. Wrap-up (plan for part A: `plans/phase-8a-cleanup.md`; part B is planned after #526 merges)
+## 8. Wrap-up (plan for part A: `plans/phase-8a-cleanup.md`; part B: `plans/phase-8b-verify-specs-archive.md`)
 
 8A. Cleanup:
 
@@ -151,12 +151,23 @@ previous phase left. A phase ends with the app working and every test green.
 - [x] 8.13 The e2e specs reach the figure editor through the shared helpers
 - [x] 8.14 `feat/mobile-responsive` archived as `archive/mobile-landing` and deleted (local only)
 
-8B. After #526 merges (planned then, numbered from 8.15):
+8B. Verification, specs and archive:
 
-- [ ] Rebase onto `main`; main's Table (TSV) export ported into the export menu
-- [ ] Full verification: unit, browser, e2e (desktop and mobile), accessibility, perf at 573K,
-      a real-device pass by the user
-- [ ] Spec files written from the final code (the capabilities in `proposal.md`);
-      `openspec validate explore-workbench --strict` passes
-- [ ] PR description
-- [ ] OpenSpec archive as the last commit
+- [x] Merged with `main` through `perf/improvements`; main's Table (TSV) export ported into the
+      Export menu
+- [ ] 8.15 Full verification on the merged tree
+- [ ] 8.16 Fixes for what the verification found
+- [ ] 8.17 The device checklist goes to the user
+- [ ] 8.18 Device fixes
+- [ ] 8.19 The header-check script and its self-test
+- [ ] 8.20 Spec files for the shell capabilities
+- [ ] 8.21 Spec files for the workflow capabilities and the table export
+- [ ] 8.22 Spec files for phones, docs media and the controls that moved
+- [ ] 8.23 Spec files for the behaviour changes; the whole change validated
+- [ ] 8.24 The proposal, design and task list match what shipped
+- [ ] 8.25 The specs rechecked against the commits after the spec block
+- [ ] 8.26 The PR description
+- [ ] 8.27 A dry-run archive
+- [ ] 8.28 After #526 merges: merge `main` again if it moved; the PR retargeted
+- [ ] 8.29 The final full run, the spec checks once more, CI green
+- [ ] 8.30 The archive, as the last commit
