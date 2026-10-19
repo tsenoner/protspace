@@ -535,8 +535,8 @@ Each fires inside the user's click, after the panel has closed: call the data lo
 
 ### Export Menu
 
-A menu named "Export": **Figure editor…**, **Quick PNG**, **Quick PDF**, **Protein IDs (.txt)** and
-**Data bundle (.parquetbundle)**, then an **Include legend settings** checkbox (checked by default;
+A menu named "Export": **Figure editor…**, **Quick PNG**, **Quick PDF**, **Protein IDs (.txt)**,
+**Table (.tsv)** and **Data bundle (.parquetbundle)**, then an **Include legend settings** checkbox (checked by default;
 toggling it keeps the menu open) and the note "Quick exports leave out contours."
 
 | Property          | Type      | Description                                                                     |
@@ -554,7 +554,7 @@ menu from your own control, as the app's phone layout does from More.
 | `export`              | `ExportEventDetail` | A quick export was chosen   |
 | `open-publish-editor` | `{}`                | "Figure editor…" was chosen |
 
-`ExportEventDetail` is `{ type: 'png' | 'pdf' | 'ids' | 'parquet', imageWidth, imageHeight,
+`ExportEventDetail` is `{ type: 'png' | 'pdf' | 'ids' | 'tsv' | 'parquet', imageWidth, imageHeight,
 legendWidthPercent, legendFontSizePx, includeLegend, includeLegendSettings }`; `EXPORT_DEFAULTS`
 holds the default sizes. The quick exports always send `EXPORT_DEFAULTS`' sizes; `includeLegendSettings` is the checkbox.
 

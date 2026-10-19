@@ -347,7 +347,7 @@ condition in the draft moves the slider only when the draft is applied.
   handles drops and sets an attribute that nothing styles. Drop handling moves to the shell.
 - **Import menu.** The Import button and the dataset name open the same menu: the examples, the last
   imported file, and "Open a file…", with the accepted formats listed.
-- **Export menu.** Figure editor, quick PNG, quick PDF, protein IDs, data bundle. The note that
+- **Export menu.** Figure editor, quick PNG, quick PDF, protein IDs, table (TSV), data bundle. The note that
   contours are not part of quick exports moves from a hover title into the menu.
 - **Figure editor.** Becomes a full-screen `ps-dialog`: Escape closes it, focus is contained, and
   its "Cancel", which already keeps the editor state, is renamed "Close". `publish-modal.ts` is

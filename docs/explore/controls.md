@@ -94,7 +94,7 @@ the startup load.
 
 Click **Export** to save your visualization or its data:
 
-![The Export menu open under its button: Figure editor…, Quick PNG, Quick PDF, Protein IDs (.txt) and Data bundle (.parquetbundle)](./images/export-menu.png)
+![The Export menu open under its button: Figure editor…, Quick PNG, Quick PDF, Protein IDs (.txt), Table (.tsv) and Data bundle (.parquetbundle)](./images/export-menu.png)
 
 | Item                             | Saves                                                         |
 | -------------------------------- | ------------------------------------------------------------- |
@@ -102,6 +102,7 @@ Click **Export** to save your visualization or its data:
 | **Quick PNG**                    | A raster image of the current view with legend                |
 | **Quick PDF**                    | A PDF of the current view with legend                         |
 | **Protein IDs (.txt)**           | The visible proteins' identifiers, one per line               |
+| **Table (.tsv)**                 | The visible proteins with their coordinates and annotations   |
 | **Data bundle (.parquetbundle)** | All data and, with **Include legend settings**, your settings |
 
 See [Exporting Results](/explore/exporting) for image options (dimensions, legend size, font) and

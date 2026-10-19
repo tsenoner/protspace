@@ -14,6 +14,7 @@ Click **Export** in the app bar to open its menu (on a phone: **More**, then **E
 | **Quick PNG**                    | Downloads a raster image of the current view with legend         |
 | **Quick PDF**                    | Downloads a PDF of the current view with legend                  |
 | **Protein IDs (.txt)**           | Downloads the visible proteins' identifiers, one per line        |
+| **Table (.tsv)**                 | Downloads the visible proteins as a [table](#table-export)       |
 | **Data bundle (.parquetbundle)** | Downloads a `.parquetbundle` with all data and optional settings |
 
 **Include legend settings**, below them, decides whether a data bundle carries your legend
@@ -115,8 +116,8 @@ in the legend to show it alone, and export.
 
 ## What Gets Exported
 
-The **Protein IDs** export holds exactly the proteins visible in the plot. A protein is left out
-when:
+The **Protein IDs** and **Table** exports hold exactly the proteins visible in the plot. A protein
+is left out when:
 
 - the [filter](/explore/filter) excludes it, the EAT reliability filter included;
 - **Show only these** is on and it is not among the proteins shown;
