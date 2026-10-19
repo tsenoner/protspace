@@ -12,6 +12,7 @@ export const DEFAULT_CONFIG: Required<ScatterplotConfig> = {
   fadedOpacity: 0.15,
   enableDuplicateStackUI: false,
   densityLayer: DENSITY_DEFAULT,
+  fillPlot: false,
 };
 
 export const NEUTRAL_VALUE_COLOR = '#888888';

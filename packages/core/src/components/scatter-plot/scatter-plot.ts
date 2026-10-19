@@ -113,6 +113,7 @@ const CONFIG_INDEX_KEYS: readonly (keyof ScatterplotConfig)[] = [
   'selectedOpacity',
   'fadedOpacity',
   'enableDuplicateStackUI',
+  'fillPlot',
 ];
 
 // Reactive keys whose changes need no catch-all WebGL redraw in updated(): they
@@ -426,16 +427,16 @@ export class ProtspaceScatterplot extends LitElement {
     if (cached && cached.plotDataLength === plotDataLength && cached.key === key) {
       return cached.scales;
     }
-    const { width, height, margin } = this._mergedConfig;
-    const scales = DataProcessor.createScales(this._plotData, width, height, margin);
+    const { width, height, margin, fillPlot } = this._mergedConfig;
+    const scales = DataProcessor.createScales(this._plotData, width, height, margin, fillPlot);
     this._scalesCache = scales && { scales, plotDataLength, key };
     return scales;
   }
 
   /** The inputs the scales take besides the plot data, which the point grid is built at. */
   private _scalesKey(): string {
-    const { width, height, margin } = this._mergedConfig;
-    return `${width}|${height}|${margin.top}|${margin.right}|${margin.bottom}|${margin.left}`;
+    const { width, height, margin, fillPlot } = this._mergedConfig;
+    return `${width}|${height}|${margin.top}|${margin.right}|${margin.bottom}|${margin.left}|${fillPlot}`;
   }
 
   private _invalidateScalesCache() {
@@ -892,7 +893,12 @@ export class ProtspaceScatterplot extends LitElement {
   private _reconcileConfigMerge(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('config')) {
       const prev = this._mergedConfig;
-      this._mergedConfig = { ...DEFAULT_CONFIG, ...prev, ...this.config };
+      const merged = { ...DEFAULT_CONFIG, ...prev, ...this.config };
+      const fillChanged = merged.fillPlot !== prev.fillPlot;
+      // Read with the old scales, before the merge: the data at the centre of the view.
+      const centre = fillChanged ? this._viewCentre() : null;
+      this._mergedConfig = merged;
+      if (fillChanged) this._applyFillChange(centre);
       const prevDupUI = !!prev.enableDuplicateStackUI;
       const nextDupUI = !!this._mergedConfig.enableDuplicateStackUI;
       if (prevDupUI !== nextDupUI) {
@@ -1371,17 +1377,41 @@ export class ProtspaceScatterplot extends LitElement {
    * `_isZoomedIn` false and the perf pixel round trip exact), or a reset gliding to the identity.
    */
   private _viewCentreDatum(width: number, height: number): { x: number; y: number } | null {
+    const { width: oldWidth, height: oldHeight } = this._mergedConfig;
+    if (oldWidth === width && oldHeight === height) return null;
+    return this._viewCentre();
+  }
+
+  /**
+   * The data point at the centre of the current view, or null when the view need not move: no
+   * data or no measured size yet, the identity view, or a reset gliding to it.
+   */
+  private _viewCentre(): { x: number; y: number } | null {
     const scales = this._scales;
     const t = this._transform;
     if (!this._sizeMeasured || !scales) return null;
-    const { width: oldWidth, height: oldHeight } = this._mergedConfig;
-    if (oldWidth === width && oldHeight === height) return null;
     if (t.k === 1 && t.x === 0 && t.y === 0) return null;
     if (this._interaction?.isResetting) return null;
+    const { width, height } = this._mergedConfig;
     return {
-      x: scales.x.invert((oldWidth / 2 - t.x) / t.k),
-      y: scales.y.invert((oldHeight / 2 - t.y) / t.k),
+      x: scales.x.invert((width / 2 - t.x) / t.k),
+      y: scales.y.invert((height / 2 - t.y) / t.k),
     };
+  }
+
+  /**
+   * The Fill switch changed the scales' ranges (not their domains), so the renderer carries the
+   * staged points over with a rescale, as on a resize. The zoom stays, with `centre` kept at the
+   * centre of the view; the overlays drawn in base pixels (duplicate stacks, the point index, the
+   * provenance connectors) are laid out again with the new scales.
+   */
+  private _applyFillChange(centre: { x: number; y: number } | null): void {
+    const { width, height } = this._mergedConfig;
+    if (centre) this._recentreView(centre, width, height);
+    this._dupOverlay.cancelDebounce();
+    this._dupOverlay.cancelCompute();
+    this._dupOverlay.resetCacheKey();
+    this._connectorOverlay.render();
   }
 
   /** Keeps the zoom factor and translates so `datum` sits at the centre of the resized view. */

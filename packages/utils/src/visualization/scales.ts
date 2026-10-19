@@ -58,19 +58,21 @@ const hasSpan = (span: number) => Number.isFinite(span) && span > 0;
  * (design decision 3): the largest that fits inside the margins, centred there. An axis without a
  * span (one point, or equal values) cannot set the scale, so the other axis does and the zero-span
  * axis keeps its whole inner extent; with neither, the rectangle is the whole inner area. The inner
- * size never drops below 1 px, so no range collapses.
+ * size never drops below 1 px, so no range collapses. With `fill` (the view bar's Fill switch)
+ * the rectangle is always the whole inner area: each axis stretches on its own.
  */
 export function fitRect(
   domain: DataDomain,
   width: number,
   height: number,
   margin: PlotMargin,
+  fill = false,
 ): FitRect {
   const innerWidth = Math.max(1, width - margin.left - margin.right);
   const innerHeight = Math.max(1, height - margin.top - margin.bottom);
   const dx = Math.abs(domain.xMax - domain.xMin);
   const dy = Math.abs(domain.yMax - domain.yMin);
-  if (!hasSpan(dx) || !hasSpan(dy)) {
+  if (fill || !hasSpan(dx) || !hasSpan(dy)) {
     return { left: margin.left, top: margin.top, width: innerWidth, height: innerHeight };
   }
   // innerWidth / dx against innerHeight / dy, compared without dividing; the one division comes
@@ -89,15 +91,16 @@ export function fitRect(
 /**
  * x and y scales with one pixels-per-unit (see {@link fitRect}). The domains are exactly `domain`
  * at every size: the fit lives in the ranges, so a resize changes only the ranges and the renderer
- * carries its staged points over with a rescale instead of a re-stage.
+ * carries its staged points over with a rescale instead of a re-stage. `fill` as in {@link fitRect}.
  */
 export function fitScales(
   domain: DataDomain,
   width: number,
   height: number,
   margin: PlotMargin,
+  fill = false,
 ): ScalePair {
-  const rect = fitRect(domain, width, height, margin);
+  const rect = fitRect(domain, width, height, margin, fill);
   return {
     x: d3
       .scaleLinear()

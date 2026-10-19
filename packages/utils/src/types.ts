@@ -296,6 +296,13 @@ export interface ScatterplotConfig {
    * Default: 'off'.
    */
   densityLayer?: DensityLayerMode;
+  /**
+   * Stretch each axis on its own so the points fill the plot area, live and in exports. Off keeps
+   * one pixels-per-unit for both axes, the data's true shape (design decision 3).
+   *
+   * Default: false.
+   */
+  fillPlot?: boolean;
 }
 
 /** Every density-layer mode, in the order the control bar lists them. */
