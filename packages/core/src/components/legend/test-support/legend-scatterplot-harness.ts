@@ -79,13 +79,11 @@ export async function mountLegendWithScatterplot(
   return { legend, plot: scatterplot, picker };
 }
 
-/** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
+/**
+ * Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass.
+ * Throws if it has not settled within 10 passes, so a test never asserts on a half-rendered legend.
+ */
 export async function settleLegend(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
-/** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
-export async function settle(legend: ProtspaceLegend): Promise<void> {
   for (let i = 0; i < 10; i++) if (await legend.updateComplete) return;
   throw new Error('legend did not settle within 10 update cycles');
 }

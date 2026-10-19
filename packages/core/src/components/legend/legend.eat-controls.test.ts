@@ -10,7 +10,7 @@ import './legend';
 import type { ProtspaceLegend } from './legend';
 import {
   mountLegendWithScatterplot,
-  settle,
+  settleLegend,
   stubLocalStorage,
 } from './test-support/legend-scatterplot-harness';
 import { EAT_THRESHOLD_COMMIT_DELAY_MS, EatReliabilityController } from './legend-eat-controls';
@@ -692,20 +692,20 @@ describe('legend dataset hash for an EAT dataset', () => {
     setStorageItem(buildStorageKey('legend', datasetHash, 'ec'), { shapeSize: 42 });
 
     const { legend } = await setup();
-    await settle(legend);
+    await settleLegend(legend);
 
     expect(legend.shapeSize).toBe(42);
   });
 
   it('forgets its saved settings when the dataset controller clears the dataset', async () => {
     const { data, legend, plot } = await setup();
-    await settle(legend);
+    await settleLegend(legend);
     legend.applyShapeSize(42);
     expect(legend.pickedShapeSize).toBe(42);
 
     legend.clearForNewDataset(generateDatasetHash(data));
     plot.dispatchEvent(new CustomEvent('data-change', { detail: { data } }));
-    await settle(legend);
+    await settleLegend(legend);
 
     expect(legend.pickedShapeSize).toBeUndefined();
     expect(legend.shapeSize).toBe(10);
@@ -724,7 +724,7 @@ describe('legend dataset hash without a scatter plot', () => {
     legend.selectedAnnotation = 'ec';
     legend.annotationData = { name: 'ec', values: data.annotations.ec.values, kind: 'categorical' };
     document.body.append(legend);
-    await settle(legend);
+    await settleLegend(legend);
 
     expect(legend.shapeSize).toBe(42);
   });
