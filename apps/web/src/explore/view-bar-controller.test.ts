@@ -284,6 +284,15 @@ describe('createViewBarController', () => {
     expect(m.contoursMenu.cancelPending).toHaveBeenCalledOnce();
   });
 
+  it('data-change reads the EAT badges from the plot’s whole data, not the visible subset', () => {
+    const m = setup();
+    const visible = asData({ ...m.data, annotation_predicted: undefined });
+
+    m.plot.dispatchEvent(new CustomEvent('data-change', { detail: { data: visible } }));
+
+    expect(m.annotationSelect.eatAnnotations).toEqual(['family']);
+  });
+
   it('data-change refreshes the options and the projection details', () => {
     const m = setup();
 
