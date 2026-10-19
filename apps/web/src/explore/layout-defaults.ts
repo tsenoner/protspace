@@ -94,7 +94,7 @@ export interface LayoutState {
   structureHidden: boolean;
   /**
    * The view bar's Fill switch: each axis stretches to fill the plot area, live and in exports.
-   * Off (the default) keeps one scale for both axes, the data's true shape (design decision 3).
+   * On by default; off keeps one scale for both axes, the data's true shape (design decision 3).
    */
   plotFill: boolean;
 }
@@ -108,7 +108,7 @@ export const DEFAULT_LAYOUT: LayoutState = {
   panel: 'legend',
   panelFolded: false,
   structureHidden: false,
-  plotFill: false,
+  plotFill: true,
 };
 
 /** The icon rail at the sidebar's right edge, shown at desktop widths. */

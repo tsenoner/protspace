@@ -20,6 +20,7 @@ import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
 import { focusFilterTitle, getLayout, openPanel, subscribeLayout } from './layout-state';
 import { getLayoutMode, subscribeLayoutMode } from './layout-mode';
+import { bindPlotFill } from './plot-fill';
 import { createLifecycle } from './lifecycle';
 import {
   countFastaSequences,
@@ -429,15 +430,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       touchDarkSource(),
     ),
   );
-  // The view bar's Fill switch lives in the layout (design decision 10); the plot and its exports
-  // read it from the config.
-  const syncPlotFill = () => {
-    const fillPlot = getLayout().plotFill;
-    if ((plotElement.config?.fillPlot ?? false) === fillPlot) return;
-    plotElement.config = { ...(plotElement.config ?? {}), fillPlot };
-  };
-  syncPlotFill();
-  lifecycle.addCleanup(subscribeLayout(syncPlotFill));
+  // The view bar's Fill switch lives in the layout (design decision 10).
+  lifecycle.addCleanup(bindPlotFill(plotElement));
 
   // The Filter panel counts only while it is on screen: open on the desktop sidebar's Filter
   // panel; below 951 px whenever Filter is the chosen panel, except in a folded phone panel,
