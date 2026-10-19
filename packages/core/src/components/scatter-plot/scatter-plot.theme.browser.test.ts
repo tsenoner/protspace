@@ -22,9 +22,6 @@ interface PlotPrivates {
 }
 
 const root = document.documentElement;
-// Pure red: its blends with its ×0.5 rim and with white keep R ≥ 127, so no edge pixel can come
-// near the slate #64748b the capture case counts.
-const FAMILY_A = [0xff, 0x00, 0x00];
 const DARK_OTHER = [0x64, 0x74, 0x8b];
 const LIGHT_OTHER = [0x88, 0x88, 0x88];
 
@@ -49,6 +46,8 @@ function makeData(): VisualizationData {
       fam: {
         kind: 'categorical',
         values: ['A', 'B'],
+        // Pure red: its blends with its ×0.5 rim and with white keep R ≥ 127, so no edge pixel
+        // can come near the slate #64748b the capture case counts.
         colors: ['#ff0000', '#cc3311'],
         shapes: ['circle', 'circle'],
       },

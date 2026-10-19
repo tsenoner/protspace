@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getProteinAnnotationIndices, type VisualizationData } from '@protspace/utils';
-import type { ProtspaceLegend } from './legend';
 import type { OtherItem } from './types';
 import { getVisualEncoding } from './visual-encoding';
 import {
