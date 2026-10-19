@@ -49,10 +49,10 @@ new analysis features, a native app or PWA, and translations.
 
 ## Capabilities
 
-The implementation plan is written from `design.md`. The spec files below are written at the end of
-the PR, from the final code, as the step before the archive commit, so `openspec/specs/` matches the
-shipped behaviour (AGENTS.md: archive before the merge). Until then this list records which
-capabilities the change adds and which existing specs it will update.
+The implementation plan is written from `design.md`. The spec files below were written at the end
+of the PR, from the final code, as the step before the archive commit, so `openspec/specs/` matches
+the shipped behaviour (AGENTS.md: archive before the merge). This list names the capabilities the
+change adds and the existing specs it updates.
 
 ### New Capabilities
 

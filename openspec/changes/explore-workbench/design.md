@@ -6,7 +6,7 @@ elements from `@protspace/core` and hands them to a plain TypeScript runtime
 of the behaviour: the legend (about 3,300 lines in `legend.ts`), the scatterplot (2,300), the control
 bar (2,100) and the figure editor (`publish-modal.ts`, 1,600).
 
-PR #526 (`perf/improvements`, draft) made the page 20–80× faster at 573K proteins and cleaned up the
+PR #526 (`perf/improvements`) made the page 20–80× faster at 573K proteins and cleaned up the
 renderer. This change builds on that branch and leaves its performance intact.
 
 Three audits of the page, at `perf/improvements` 7e94b858, found:
@@ -73,8 +73,8 @@ The look was chosen with mockups during brainstorming. The chosen screens are ke
 
 The page becomes a workbench (mockup: [`mockups/workbench-light.png`](mockups/workbench-light.png)):
 
-- **App bar** (48 px): the wordmark (links home); the dataset name and protein count, which opens a
-  menu to switch to an example or import a file; search in the centre (⌘K / Ctrl+K); Import and
+- **App bar** (48 px): the wordmark (links home); the dataset name and protein count, which open the
+  Import panel (decision 15); search in the centre (⌘K / Ctrl+K); Import and
   Export; the theme switch; a help menu (docs, keyboard shortcuts, tour); Feedback; GitHub. The
   site's Home / Docs / Explore / Resources navigation leaves this page; Docs moves into the help
   menu. The plot's Tips & Shortcuts popover and its tour button move into the help menu as
@@ -291,7 +291,7 @@ the Escape handling in `control-bar.ts` and the legend's own focus trap.
   that visible.
 - "Other · N categories" opens a searchable popover listing those categories with their counts and an
   "Add to legend" button each, replacing the "Extract from Other" modal.
-- Settings become a popover under the gear. Changes apply as they are made (debounced), as the colour
+- Settings become a popover under the settings button. Changes apply as they are made (debounced), as the colour
   picker already does, and "Reset" restores the defaults; the Save/Cancel pair goes. The palette is
   picked from swatches instead of a native `<select>`. Category order moves out of settings into the
   list itself (drag, or the sort button). Persistence keeps today's per-dataset, per-annotation key,
@@ -403,7 +403,8 @@ The breakpoints of the mobile branch are kept (mockups: [`mockups/phone.png`](mo
 - **Phone on its side** (landscape, 500 px tall or less): the page scrolls once past the bars to a
   plot-and-legend view exactly one screen tall; the structure opens on the right half.
 - Touch affordances key on the pointer type (`pointer: coarse`), not the width: targets of at least
-  40 px, legend row actions always visible, tap and double-tap on legend rows.
+  40 px, legend row actions always visible (on a phone on its side only the eye, to keep room for
+  the name), tap and double-tap on legend rows.
 
 The mobile branch's phone tests (Playwright project `mobile`, Pixel 7; 34 of its 38, without the
 four landing-page tests) are ported to the new layout first and used as acceptance tests. The
@@ -412,10 +413,10 @@ is superseded.
 
 ### 18. Code structure targets
 
-- No element file over about 800 lines; `legend.ts`, `control-bar.ts` and `publish-modal.ts` are
-  split as described above. `legend.ts` is split into the element (about 980 lines: state,
-  lifecycle, render, public API) and controllers for its data pipeline, item actions, keyboard
-  reorder and settings.
+- Target: no element file over about 800 lines; `legend.ts`, `control-bar.ts` and
+  `publish-modal.ts` are split as described above. `legend.ts` ended above it, at about 970 lines
+  (state, lifecycle, render, public API), with its data pipeline, item actions, keyboard reorder and
+  settings moved into controllers.
 - `scatter-plot.ts` (about 2,600 lines) is a recorded exception: its isolation, tooltip and pin
   code and the `updated()` reconcilers share private state on the plot's hottest path, so this
   change moves out only the export compositing. Follow-up: split it in a change of its own after
@@ -445,6 +446,8 @@ is superseded.
   structure, the selection bar, the filter panel, search messages, the theme switch and the phone
   layout. Images named after the old layout (`control-bar-*.png`) are replaced and deleted. The main
   screenshots get dark variants, shown when the docs are in dark mode.
+- `pnpm docs:images:check` runs in `pnpm precommit` (local only, no browser): every image comes from
+  an entry, dark twins come in pairs and GIFs stay within budget.
 
 ### 20. Testing
 
@@ -512,5 +515,7 @@ is superseded.
 
 ## Open Questions
 
-- Who runs the real-device check on iOS Safari and Android Chrome, and when. Answered: the user,
-  in phase 8B, on iOS Safari, Android Chrome, a tablet and desktop Chrome, Safari and Firefox.
+None open at the archive. The questions settled during the work are recorded as decisions (System
+as the default theme in decision 16, the Cool palette in decision 6). The real-device check (iOS
+Safari, Android Chrome, a tablet, and desktop Chrome, Safari and Firefox) is done by the user before
+merge and recorded in the PR, not here.
