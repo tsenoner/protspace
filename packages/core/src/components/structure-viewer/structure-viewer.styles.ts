@@ -232,6 +232,13 @@ const structureViewerStylesCore = css`
     position: relative;
   }
 
+  /* Mol*'s stylesheet stays outside this shadow root, so its viewport buttons render unstyled
+     under the canvas and show through while a resize clears it. Mol* 3.44 has no option for the
+     camera and screenshot buttons, so the whole block goes. */
+  .molstar-mount .msp-viewport-controls {
+    display: none;
+  }
+
   .color-toolbar,
   .tips {
     display: flex;

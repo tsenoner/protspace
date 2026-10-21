@@ -154,6 +154,9 @@ declare global {
             viewportShowExpand?: boolean;
             viewportShowSelectionMode?: boolean;
             viewportShowAnimation?: boolean;
+            viewportShowControls?: boolean;
+            viewportShowSettings?: boolean;
+            viewportShowTrajectoryControls?: boolean;
             pdbProvider?: string;
             emdbProvider?: string;
             validationProvider?: string;
@@ -338,6 +341,9 @@ export async function createMolstarViewer(
     viewportShowExpand: false,
     viewportShowSelectionMode: false,
     viewportShowAnimation: false,
+    viewportShowControls: false,
+    viewportShowSettings: false,
+    viewportShowTrajectoryControls: false,
   });
 
   if (!viewer) {
