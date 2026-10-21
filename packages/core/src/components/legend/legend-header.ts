@@ -1,10 +1,11 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { live } from 'lit/directives/live.js';
-import { formatCount, normalizeReliability, type EatReliabilityState } from '@protspace/utils';
+import { formatCount, type EatReliabilityState } from '@protspace/utils';
 import '../kit/button';
 import '../kit/menu';
 import '../kit/tooltip';
 import { icon, type IconName } from '../kit/icon';
+import { reliabilityLabel } from '../query-builder/eat-reliability';
 import type { LegendSortMode } from './types';
 
 /** What the legend header shows (design decision 12). */
@@ -68,24 +69,12 @@ const SORT_ICONS: Record<LegendSortMode, IconName> = {
 
 const PREDICTED_NOTE = 'Predicted: computational, not experimentally curated';
 
-/** `50 %`, with the thin no-break space the EAT copy uses. */
-const percent = (value: number) => `${Math.round(value * 100)}\u202f%`;
-
-/** What the reliability filter keeps, `≥ 50 %`, `≤ 40 %` or `40–60 %`; null when it keeps all. */
-function reliabilityFilterLabel(state: EatReliabilityState | null): string | null {
-  if (!state) return null;
-  const { mode, min, max } = normalizeReliability(state);
-  if (mode === 'atLeast') return min > 0 ? `≥ ${percent(min)}` : null;
-  if (mode === 'atMost') return max < 1 ? `≤ ${percent(max)}` : null;
-  return min > 0 || max < 1 ? `${Math.round(min * 100)}–${percent(max)}` : null;
-}
-
 /** `Includes 659 predicted · Filtered ≥ 50 %   EAT ›`: a note and a link, no controls. */
 function renderEatNote(
   eat: NonNullable<LegendHeaderModel['eat']>,
   onOpen: () => void,
 ): TemplateResult {
-  const filter = reliabilityFilterLabel(eat.reliability);
+  const filter = eat.reliability ? reliabilityLabel(eat.reliability) : null;
   const text = `Includes ${formatCount(eat.predicted)} predicted${filter ? ` · Filtered ${filter}` : ''}`;
   return html`<p class="legend-eat-note" part="eat-note">
     <span class="legend-eat-text">${text}</span

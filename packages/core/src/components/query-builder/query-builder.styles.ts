@@ -376,6 +376,44 @@ export const queryBuilderStyles = [
       align-items: center;
     }
 
+    /* The EAT reliability condition, locked: one line, the EAT panel edits it. */
+    .condition-row.is-locked .condition-head {
+      align-items: baseline;
+      flex-wrap: wrap;
+      column-gap: var(--ps-space-1-5);
+      row-gap: 0;
+      padding-block: var(--ps-space-1);
+      font-size: var(--ps-text-sm);
+      line-height: var(--ps-leading-tight);
+    }
+
+    .locked-text {
+      min-width: 0;
+      color: var(--ps-text);
+      overflow-wrap: anywhere;
+    }
+
+    .locked-edit {
+      flex: none;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: var(--ps-accent-text);
+      font: inherit;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .locked-edit:hover {
+      text-decoration: underline;
+    }
+
+    .locked-edit:focus-visible {
+      outline: var(--ps-focus-width) solid var(--ps-focus);
+      outline-offset: var(--ps-focus-offset);
+      border-radius: var(--ps-radius-sm);
+    }
+
     .condition-badge {
       flex: none;
       padding: var(--ps-space-0-5) var(--ps-space-1-5);

@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { openExplore, selectAnnotation, statusChip } from './helpers/explore';
+import {
+  filterButton,
+  filterPanel,
+  openExplore,
+  queryBuilder,
+  selectAnnotation,
+  statusChip,
+} from './helpers/explore';
 import {
   eatPanel,
   eatRailItem,
@@ -97,5 +104,36 @@ test('moving the EAT threshold filters the plot and the legend says so', async (
   // The header's Reset takes the filter back off.
   await page.locator('#wb-eat-panel').getByRole('button', { name: 'Reset' }).click();
   await expect(statusChip(page, 'filter')).toBeHidden();
+  await expect(eatThresholdBox(page)).toHaveValue('0');
+});
+
+test('the Filter panel shows the reliability as a locked row that opens the EAT panel', async ({
+  page,
+}) => {
+  await loadPhosphataseEat(page);
+  await selectAnnotation(page, 'ec');
+  await openEatPanel(page);
+  await eatThresholdBox(page).fill('50');
+  await expect(statusChip(page, 'filter')).toContainText('Filtered');
+
+  await filterButton(page).click();
+  await expect(filterPanel(page)).toBeVisible();
+  const row = queryBuilder(page).getByRole('group', {
+    name: 'Condition 1: EC number reliability at least 50\u202f%, set in the EAT panel',
+  });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('EC number — reliability ≥ 50\u202f%');
+  await expect(row.getByRole('button', { name: /Choose annotation|EC number/ })).toHaveCount(0);
+
+  await row.getByRole('button', { name: 'Edit in EAT ›' }).click();
+  await expect(eatPanel(page)).toBeVisible();
+  await expect(eatThresholdBox(page)).toHaveValue('50');
+
+  // The row's ✕ resets the reliability at once: the filter goes, the panel is back at 0.
+  await filterButton(page).click();
+  await row.getByRole('button', { name: 'Reset EAT reliability' }).click();
+  await expect(statusChip(page, 'filter')).toBeHidden();
+  await expect(row).toBeHidden();
+  await openEatPanel(page);
   await expect(eatThresholdBox(page)).toHaveValue('0');
 });

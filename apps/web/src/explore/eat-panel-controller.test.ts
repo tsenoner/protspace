@@ -61,6 +61,7 @@ function setup(shown: { value: boolean }) {
     resetForNewDataset() {
       panel.resets += 1;
     },
+    reset: vi.fn(),
   });
   const legend = { eatReliability: null as EatReliabilityState | null };
   const filter = {
@@ -92,7 +93,17 @@ function setup(shown: { value: boolean }) {
       }),
     );
   };
-  return { plot, root, panel, legend, filter, controller, layoutChanged, panelListeners, emit };
+  return {
+    plot,
+    root,
+    panel: eatPanel,
+    legend,
+    filter,
+    controller,
+    layoutChanged,
+    panelListeners,
+    emit,
+  };
 }
 
 describe('createEatPanelController', () => {
@@ -170,6 +181,25 @@ describe('createEatPanelController', () => {
 
     expect(panel.context).toBe(filter.mask);
     expect(legend.eatReliability).toEqual({ mode: 'atMost', min: 0, max: 0.4 });
+  });
+
+  it('a locked Filter row’s ✕ resets the panel for the coloured base, or that base’s condition', () => {
+    const { root, panel, filter, controller } = setup({ value: false });
+    const reset = (annotation: string) =>
+      root.dispatchEvent(new CustomEvent('eat-reliability-reset', { detail: { annotation } }));
+
+    reset('ec');
+    expect(panel.reset).toHaveBeenCalledTimes(1);
+    expect(filter.setEatReliability).not.toHaveBeenCalled();
+
+    // A condition left from an earlier Color by: the panel shows another annotation.
+    reset('family');
+    expect(panel.reset).toHaveBeenCalledTimes(1);
+    expect(filter.setEatReliability).toHaveBeenCalledWith('family', DEFAULT_EAT_RELIABILITY);
+
+    controller.dispose();
+    reset('ec');
+    expect(panel.reset).toHaveBeenCalledTimes(1);
   });
 
   it('removes its eat-overlay-change listener on dispose', () => {

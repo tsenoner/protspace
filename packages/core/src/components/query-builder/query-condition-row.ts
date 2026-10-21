@@ -24,6 +24,7 @@ import {
   annotationSource,
   countNoun,
   formatCount,
+  isEatConfidenceAnnotation,
   isNAValue,
   isNumericAnnotation,
 } from '@protspace/utils';
@@ -31,6 +32,7 @@ import { icon } from '../kit/icon';
 import { queryBuilderStyles } from './query-builder.styles';
 import { displayFilterValue, renderValueChip } from './query-presence';
 import { readRange } from './query-numeric-helpers';
+import { reliabilityFromConditions, reliabilityLabel, reliabilityWords } from './eat-reliability';
 import '../kit/button';
 import '../kit/menu';
 import '../kit/popover';
@@ -47,6 +49,9 @@ import './query-numeric-input';
  * - `condition-duplicated` — Duplicate in the card's menu, detail: `{ id: string }`
  * - `operator-changed` — an operator picked in the operator menu, detail:
  *   `{ id: string, operator: ConditionOperator }`; the builder stores it (`setOperator`)
+ * - `eat-reliability-reset` — a locked EAT reliability card's ✕, detail: `{ annotation }` (the
+ *   base annotation whose reliability resets)
+ * - `eat-panel-open` — a locked EAT reliability card's "Edit in EAT ›", no detail
  */
 /** Proteins with a value, per dataset and annotation, for the operator menu's counts. */
 const presenceCounts = new WeakMap<ProtspaceData, Map<string, number>>();
@@ -665,9 +670,60 @@ class ProtspaceQueryConditionRow extends LitElement {
     return `${name}: ${label} ${operatorText(c)}${what}${tail}`;
   }
 
+  /** The EAT base annotation when this card is a reliability condition, which the EAT panel owns. */
+  private _eatBase(): string | null {
+    const c = this.condition;
+    if (c.kind !== 'numeric') return null;
+    const definition = this.data?.annotations?.[c.annotation];
+    return isEatConfidenceAnnotation(definition)
+      ? (definition?.runtime?.baseAnnotation ?? null)
+      : null;
+  }
+
+  /**
+   * A reliability condition as one locked line, `EC number — reliability ≥ 50 %`, a link to the EAT
+   * panel and a ✕ that resets the reliability there. The condition itself is untouched, so it
+   * evaluates as before; a shape the panel reads as its default (a negated band) says `any`.
+   */
+  private _renderLocked(name: string, base: string) {
+    const c = this.condition as NumericCondition;
+    const label = annotationLabel(base, this.data?.annotations?.[base]);
+    const state = reliabilityFromConditions([c]);
+    const tail = this.edited ? ', not applied' : '';
+    const send = (type: 'eat-reliability-reset' | 'eat-panel-open', detail?: object) =>
+      this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
+    return html`
+      <div
+        class="condition-row is-locked"
+        role="group"
+        aria-label=${`${name}: ${label} reliability ${reliabilityWords(state)}, set in the EAT panel${tail}`}
+      >
+        <div class="condition-head">
+          <span class="locked-text"
+            >${label} — reliability ${reliabilityLabel(state) ?? 'any'}</span
+          >
+          <button type="button" class="locked-edit" @click=${() => send('eat-panel-open')}>
+            Edit in EAT ›
+          </button>
+        </div>
+        <div class="condition-actions">
+          <ps-icon-button
+            class="condition-remove"
+            icon="x"
+            size="sm"
+            label="Reset EAT reliability"
+            @click=${() => send('eat-reliability-reset', { annotation: base })}
+          ></ps-icon-button>
+        </div>
+      </div>
+    `;
+  }
+
   render() {
     const n = this.number;
     const name = n > 0 ? `Condition ${n}` : 'Condition';
+    const base = this._eatBase();
+    if (base !== null) return this._renderLocked(name, base);
     const annotation = this.condition.annotation;
     return html`
       <div

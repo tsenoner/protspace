@@ -4,7 +4,7 @@ import type { PsButton, PsIconButton } from '../kit/button';
 import { topLayer } from '../kit/layers';
 import type { ProtspaceQueryBuilder } from './query-builder';
 import './query-builder';
-import { createCondition, createGroup } from './query-types';
+import { createCondition, createGroup, createNumericCondition } from './query-types';
 import type { FilterQuery } from './query-types';
 import type { ProtspaceData } from './types';
 import { cdp, page } from 'vitest/browser';
@@ -20,12 +20,16 @@ const data: ProtspaceData = {
 
 type Row = HTMLElement & { updateComplete: Promise<unknown> };
 
-async function mount(query: FilterQuery, width = 360): Promise<ProtspaceQueryBuilder> {
+async function mount(
+  query: FilterQuery,
+  width = 360,
+  withData: ProtspaceData = data,
+): Promise<ProtspaceQueryBuilder> {
   const builder = document.createElement('protspace-query-builder');
   builder.embedded = true;
   builder.dirty = true;
   builder.annotations = ['organism'];
-  builder.data = data;
+  builder.data = withData;
   builder.query = query;
   builder.style.cssText = `display: block; width: ${width}px; height: 600px`;
   document.body.append(builder);
@@ -201,6 +205,57 @@ describe('protspace-query-builder in a narrow panel', () => {
       await expect.poll(placed).toEqual({ onScreen: true, clear: true });
     } finally {
       await page.viewport(414, 896);
+    }
+  });
+});
+
+describe('protspace-query-builder: the locked EAT reliability row', () => {
+  const EAT_KEY = 'organism__eat_confidence__runtime_2';
+  const eatData: ProtspaceData = {
+    ...data,
+    annotations: {
+      ...data.annotations,
+      [EAT_KEY]: {
+        kind: 'numeric',
+        values: [],
+        runtime: { role: 'eat-confidence', baseAnnotation: 'organism' },
+      },
+    },
+    numeric_annotation_data: { [EAT_KEY]: new Float64Array([NaN, 0.2, 0.5, 0.7, 0.9]) },
+  };
+  const locked = (logicalOp?: 'OR') =>
+    createNumericCondition({ annotation: EAT_KEY, min: 0.5, presence: ['N/A'], logicalOp });
+
+  it('inside an "or" group it keeps the group’s joiner', async () => {
+    const builder = await mount(
+      [
+        createGroup({
+          conditions: [
+            createCondition({ annotation: 'organism', values: ['Human'] }),
+            locked('OR'),
+          ],
+        }),
+      ],
+      360,
+      eatData,
+    );
+    const group = builder.shadowRoot!.querySelector('.group-container')!;
+    expect(group.getAttribute('aria-label')).toBe('Group, joined with or');
+    const joiner = group.querySelector<PsButton>('.joiner-pill')!;
+    expect(joiner.textContent!.replace(/\s+/g, ' ').trim()).toBe('Joiner for condition 2: or');
+    const row = rows(builder)[1].shadowRoot!;
+    expect(row.querySelector('.locked-text')).not.toBeNull();
+    expect(row.querySelector('.annotation-select-trigger')).toBeNull();
+  });
+
+  it('at 260 px wide it fits, the link and the ✕ on screen', async () => {
+    const builder = await mount([locked()], 260, eatData);
+    const row = rows(builder)[0];
+    const box = row.shadowRoot!.querySelector<HTMLElement>('.condition-row')!;
+    expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth);
+    for (const selector of ['.locked-edit', '.condition-remove']) {
+      const target = row.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+      expect(target.right, selector).toBeLessThanOrEqual(box.getBoundingClientRect().right);
     }
   });
 });

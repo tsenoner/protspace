@@ -129,8 +129,14 @@ export function createFilterController({
   const readSnapshot = (): VisualizationData | undefined =>
     plotElement.getMaterializedData() ?? plotElement.getCurrentData() ?? snapshot;
 
+  /** The picker's annotations: no tooltip-only ones, and no EAT confidence, which the EAT panel edits. */
   const filterableAnnotations = (data: VisualizationData | undefined): string[] =>
-    Object.keys(data?.annotations ?? {}).filter((key) => !TOOLTIP_ONLY_ANNOTATIONS.has(key));
+    Object.entries(data?.annotations ?? {})
+      .filter(
+        ([key, annotation]) =>
+          !TOOLTIP_ONLY_ANNOTATIONS.has(key) && !isEatConfidenceAnnotation(annotation),
+      )
+      .map(([key]) => key);
 
   /** What a clean draft equals: the applied query, or the seed while none is applied. */
   const baseline = (): FilterQuery => (applied.query.length > 0 ? applied.query : seed);

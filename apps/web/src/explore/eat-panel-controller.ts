@@ -6,6 +6,7 @@ import type {
 } from '@protspace/core';
 import {
   annotationLabel,
+  DEFAULT_EAT_RELIABILITY,
   hasEatPredictions,
   hasEatPredictionsForAnnotation,
   isSameReliability,
@@ -43,7 +44,9 @@ interface EatPanelController {
  * the rail, the phone tab and the restore, and whether it is off its defaults (the rail dot).
  *
  * The panel's `eat-overlay-change` reaches the plot (Show) and the filter (the one reliability
- * condition); the legend's EAT note follows the panel's reliability filter.
+ * condition); the legend's EAT note follows the panel's reliability filter. A locked Filter row's ✕
+ * (`eat-reliability-reset`) resets the panel, or, for a base the panel does not show, that base's
+ * condition alone.
  */
 export function createEatPanelController({
   eatPanel,
@@ -63,6 +66,7 @@ export function createEatPanelController({
     | 'reliability'
     | 'isAtDefaults'
     | 'resetForNewDataset'
+    | 'reset'
     | 'addEventListener'
     | 'removeEventListener'
   >;
@@ -120,8 +124,15 @@ export function createEatPanelController({
     syncReliability();
   };
 
+  const onReliabilityReset = (event: Event) => {
+    const base = (event as CustomEvent<{ annotation?: string }>).detail?.annotation;
+    if (!base || base === plotElement.selectedAnnotation) eatPanel.reset();
+    else filterController.setEatReliability(base, DEFAULT_EAT_RELIABILITY);
+  };
+
   plotElement.addEventListener('data-change', syncData);
   root.addEventListener('annotation-change', syncData);
+  root.addEventListener('eat-reliability-reset', onReliabilityReset);
   eatPanel.addEventListener('eat-overlay-change', onOverlayChange);
   const unsubscribePanel = subscribePanel(syncActive);
   syncData();
@@ -134,6 +145,7 @@ export function createEatPanelController({
     dispose() {
       plotElement.removeEventListener('data-change', syncData);
       root.removeEventListener('annotation-change', syncData);
+      root.removeEventListener('eat-reliability-reset', onReliabilityReset);
       eatPanel.removeEventListener('eat-overlay-change', onOverlayChange);
       unsubscribePanel();
     },

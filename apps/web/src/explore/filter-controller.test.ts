@@ -218,9 +218,9 @@ describe('filter controller: the Filter panel and its draft', () => {
     expect(m.plot.getMaterializedData).toHaveBeenCalled();
   });
 
-  it('the builder lists every annotation except the tooltip-only ones', () => {
+  it('the builder lists every annotation except the tooltip-only and EAT confidence ones', () => {
     const eat = mount(makeEatData);
-    expect(eat.queryBuilder.annotations).toEqual(['family', EAT_KEY]);
+    expect(eat.queryBuilder.annotations).toEqual(['family']);
   });
 
   it('a draft edit does not touch the plot until Apply', () => {

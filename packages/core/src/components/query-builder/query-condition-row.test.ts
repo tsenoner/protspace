@@ -10,7 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pushLayer, topLayer } from '../kit/layers';
 import { stubPopoverApi } from '../legend/test-support/popover-stub';
 import './query-condition-row';
-import type { FilterCondition } from './query-types';
+import type { FilterCondition, NumericCondition } from './query-types';
+import { evaluateQuery } from './query-evaluate';
+import { NA_VALUE } from '@protspace/utils';
 import { ANY_VALUE } from './query-types';
 import type { ProtspaceData } from './types';
 
@@ -552,5 +554,125 @@ describe('query-condition-row first operator', () => {
     const el = await mount();
     await el.updateComplete;
     expect(el.shadowRoot!.querySelector('.logical-op-select, .joiner-pill')).toBeNull();
+  });
+});
+
+/**
+ * A condition on an EAT confidence column is the EAT panel's reliability filter (Task 9.5): the
+ * row shows it locked, one line with a link to the panel and a ✕ that resets the reliability.
+ */
+describe('query-condition-row locked EAT reliability', () => {
+  const EAT_KEY = 'ec__eat_confidence__runtime_2';
+  const eatData: ProtspaceData = {
+    protein_ids: ['P1', 'P2', 'P3', 'P4'],
+    annotations: {
+      ec: { kind: 'categorical', values: ['1.1.1.1'] },
+      [EAT_KEY]: {
+        kind: 'numeric',
+        values: [],
+        runtime: { role: 'eat-confidence', baseAnnotation: 'ec' },
+      },
+    },
+    annotation_data: { ec: [[0], [0], [0], [0]] },
+    numeric_annotation_data: { [EAT_KEY]: new Float64Array([NaN, 0.3, 0.55, 0.9]) },
+  };
+
+  const reliabilityCondition = (overrides: Partial<NumericCondition>): NumericCondition => ({
+    id: 'r1',
+    kind: 'numeric',
+    annotation: EAT_KEY,
+    min: null,
+    max: null,
+    presence: [NA_VALUE],
+    ...overrides,
+  });
+
+  async function mountLocked(condition: NumericCondition, number = 2): Promise<ConditionRowEl> {
+    document.body.innerHTML = '';
+    const el = document.createElement('protspace-query-condition-row') as ConditionRowEl;
+    el.condition = condition;
+    el.annotations = ['ec'];
+    el.data = eatData;
+    el.number = number;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    return el;
+  }
+
+  const lockedText = (el: ConditionRowEl) =>
+    el
+      .shadowRoot!.querySelector('.locked-text')!
+      .textContent!.replace(/[ \n\t]+/g, ' ')
+      .trim();
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('renders one locked line: the base label, the reliability, Edit in EAT and a reset ✕', async () => {
+    const el = await mountLocked(reliabilityCondition({ min: 0.5 }));
+    const root = el.shadowRoot!;
+    expect(lockedText(el)).toBe('EC number — reliability ≥ 50 %');
+    expect(root.querySelector('.locked-edit')!.textContent!.trim()).toBe('Edit in EAT ›');
+    const reset = root.querySelector('ps-icon-button.condition-remove') as HTMLElement & {
+      label: string;
+    };
+    expect(reset.label).toBe('Reset EAT reliability');
+    expect(root.querySelector('.annotation-select-trigger')).toBeNull();
+    expect(root.querySelector('.condition-menu-trigger')).toBeNull();
+    expect(root.querySelector('protspace-query-numeric-input')).toBeNull();
+    expect(root.querySelector('.condition-row')!.getAttribute('aria-label')).toBe(
+      'Condition 2: EC number reliability at least 50 %, set in the EAT panel',
+    );
+  });
+
+  it('words an upper bound and a band', async () => {
+    expect(lockedText(await mountLocked(reliabilityCondition({ max: 0.4 })))).toBe(
+      'EC number — reliability ≤ 40 %',
+    );
+    expect(lockedText(await mountLocked(reliabilityCondition({ min: 0.4, max: 0.6 })))).toBe(
+      'EC number — reliability 40–60 %',
+    );
+  });
+
+  it('the ✕ dispatches eat-reliability-reset for its base, not condition-removed', async () => {
+    const el = await mountLocked(reliabilityCondition({ min: 0.5 }));
+    const reset = vi.fn();
+    const removed = vi.fn();
+    document.addEventListener('eat-reliability-reset', reset);
+    el.addEventListener('condition-removed', removed);
+    (el.shadowRoot!.querySelector('ps-icon-button.condition-remove') as HTMLElement).click();
+    document.removeEventListener('eat-reliability-reset', reset);
+    expect(removed).not.toHaveBeenCalled();
+    expect(reset).toHaveBeenCalledTimes(1);
+    expect((reset.mock.calls[0][0] as CustomEvent).detail).toEqual({ annotation: 'ec' });
+  });
+
+  it('Edit in EAT dispatches eat-panel-open', async () => {
+    const el = await mountLocked(reliabilityCondition({ min: 0.5 }));
+    const open = vi.fn();
+    document.addEventListener('eat-panel-open', open);
+    (el.shadowRoot!.querySelector('.locked-edit') as HTMLElement).click();
+    document.removeEventListener('eat-panel-open', open);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('a negated band reads "any" and evaluates as before', async () => {
+    const condition = reliabilityCondition({ min: 0.4, max: 0.6, logicalOp: 'NOT' });
+    const before = [...evaluateQuery([condition], eatData)];
+    const changed = vi.fn();
+    document.addEventListener('condition-changed', changed);
+    const el = await mountLocked(condition);
+    document.removeEventListener('condition-changed', changed);
+    expect(lockedText(el)).toBe('EC number — reliability any');
+    expect(el.condition).toBe(condition);
+    expect(changed).not.toHaveBeenCalled();
+    expect([...evaluateQuery([el.condition], eatData)]).toEqual(before);
+  });
+
+  it('a numeric condition on an ordinary column keeps its editor', async () => {
+    const el = await mountLocked({ ...reliabilityCondition({ min: 0.5 }), annotation: 'length' });
+    expect(el.shadowRoot!.querySelector('.locked-text')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.annotation-select-trigger')).not.toBeNull();
   });
 });
