@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
-import { NA_VALUE, countNoun } from '@protspace/utils';
+import { NA_VALUE, annotationLabel, formatCount } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
 import type { NumericCondition } from './query-types';
@@ -11,21 +11,43 @@ import {
   numericFieldsFor,
   presenceOf,
 } from './query-numeric-helpers';
-import { displayFilterValue, renderValueChip } from './query-presence';
+import { renderValueChip } from './query-presence';
+import {
+  BIN_COUNT,
+  fractionOf,
+  histogramOf,
+  positionOf,
+  valueAt,
+  type NumericHistogram,
+} from './query-histogram';
+import type { RangePositions } from './query-range-slider';
 import { queryBuilderStyles } from './query-builder.styles';
+import './query-range-slider';
+import type { PsCheckbox } from '../kit/checkbox';
+import '../kit/checkbox';
+
+/** Units shown after the typed bounds, by annotation column. */
+const UNITS: Record<string, string> = { length: 'aa' };
+
+/** "length" for "Sequence length": the last word of the label, lowercased unless an acronym. */
+function nounOf(label: string): string {
+  const word = label.trim().split(/\s+/).pop() ?? label;
+  return word.slice(1) === word.slice(1).toLowerCase() ? word.toLowerCase() : word;
+}
 
 /**
- * Numeric value input for a query condition: the one or two number fields its
- * comparison reads (the card's operator menu picks it), an "N/A" chip, and a
- * debounced live match count. The chip is unioned with the comparison, so
- * `>= 0.5` plus N/A reads "at least 0.5, or no value at all".
+ * Numeric value input for a query condition: a histogram of the annotation with the chosen
+ * range shaded, a slider whose thumbs are the bounds the operator reads, the typed bounds with
+ * their unit and the card's count, and an "or has no … (N/A)" checkbox. The checkbox is unioned
+ * with the comparison, so "at least 0.5" plus N/A reads "at least 0.5, or no value at all".
  *
- * The condition object is owned by the control bar; this component is
- * controlled. It keeps the in-progress field text locally so a half-typed
- * value (e.g. "-" or "1.") survives the round-trip of the condition prop.
+ * The condition object is owned by the control bar; this component is controlled. It keeps the
+ * in-progress field text locally so a half-typed value (e.g. "-" or "1.") survives the
+ * round-trip of the condition prop. A slider drag writes the typed bounds as it moves and the
+ * condition on release (each keyboard step is a release).
  *
  * Events:
- * - `numeric-changed` — a bound or the N/A chip changed, detail: `{ condition: NumericCondition }`
+ * - `numeric-changed` — a bound or the N/A checkbox changed, detail: `{ condition: NumericCondition }`
  */
 @customElement('protspace-query-numeric-input')
 class ProtspaceQueryNumericInput extends LitElement {
@@ -35,8 +57,12 @@ class ProtspaceQueryNumericInput extends LitElement {
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;
 
   @state() private _matchCount: number | null = null;
+  /** The shown count no longer matches the inputs; it reads "…" until the recount. */
+  @state() private _countStale = false;
   @state() private _minText: string = '';
   @state() private _maxText: string = '';
+  /** The thumbs while a drag is under way, so rounding the shown value cannot nudge them. */
+  @state() private _dragging: RangePositions | null = null;
 
   private _countTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -51,7 +77,9 @@ class ProtspaceQueryNumericInput extends LitElement {
   }
 
   willUpdate(changed: Map<string, unknown>) {
+    if (changed.has('condition') || changed.has('data')) this._countStale = true;
     if (!changed.has('condition')) return;
+    this._dragging = null;
 
     // Adopt prop values into local text unless they already parse to the same
     // number — this preserves an in-progress entry while still picking up
@@ -75,6 +103,7 @@ class ProtspaceQueryNumericInput extends LitElement {
   private _scheduleCount() {
     if (this._countTimer) clearTimeout(this._countTimer);
     this._countTimer = setTimeout(() => {
+      this._countStale = false;
       if (!this.data || !isNumericConditionReady(this.condition)) {
         this._matchCount = null;
         return;
@@ -89,6 +118,12 @@ class ProtspaceQueryNumericInput extends LitElement {
     if (raw.trim() === '') return null;
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  /** The annotation's bins, computed on this card's first render and cached per column. */
+  private _histogram(): NumericHistogram | null {
+    const values = this.data?.numeric_annotation_data?.[this.condition.annotation];
+    return values ? histogramOf(values) : null;
   }
 
   private _emitChanged(updated: NumericCondition) {
@@ -113,10 +148,47 @@ class ProtspaceQueryNumericInput extends LitElement {
     this._emitChanged({ ...this.condition, max: this._parseFieldValue(this._maxText) });
   }
 
-  private _addPresence(value: string) {
-    const presence = presenceOf(this.condition);
-    if (presence.includes(value)) return;
-    this._emitChanged({ ...this.condition, presence: [...presence, value] });
+  /** The thumbs' values as typed bounds; `null` for a thumb the operator does not use. */
+  private _boundsAt(h: NumericHistogram, positions: RangePositions) {
+    return {
+      min: positions.low === null ? null : valueAt(h, positions.low),
+      max: positions.high === null ? null : valueAt(h, positions.high),
+    };
+  }
+
+  private _handleRangeInput(h: NumericHistogram, e: CustomEvent<RangePositions>) {
+    e.stopPropagation();
+    this._dragging = e.detail;
+    const { min, max } = this._boundsAt(h, e.detail);
+    if (min !== null) this._minText = String(min);
+    if (max !== null) this._maxText = String(max);
+    this._countStale = true;
+  }
+
+  private _handleRangeChange(h: NumericHistogram, e: CustomEvent<RangePositions>) {
+    e.stopPropagation();
+    const { min, max } = this._boundsAt(h, e.detail);
+    const updated = {
+      ...this.condition,
+      min: min ?? this.condition.min,
+      max: max ?? this.condition.max,
+    };
+    if (min !== null) this._minText = String(min);
+    if (max !== null) this._maxText = String(max);
+    if (updated.min === this.condition.min && updated.max === this.condition.max) {
+      this._dragging = null;
+      return;
+    }
+    this._emitChanged(updated);
+  }
+
+  private _handleNaToggle(e: Event) {
+    const checked = (e.target as PsCheckbox).checked;
+    const presence = presenceOf(this.condition).filter((p) => p !== NA_VALUE);
+    this._emitChanged({
+      ...this.condition,
+      presence: checked ? [...presence, NA_VALUE] : presence,
+    });
   }
 
   private _removePresence(value: string) {
@@ -128,70 +200,115 @@ class ProtspaceQueryNumericInput extends LitElement {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
-  /**
-   * The N/A chip, styled as the categorical value chips it mirrors. "Any value" is the operator
-   * menu's "has any value"; a chip for it left over from an older query still shows, to remove.
-   */
-  private _renderPresence(presence: readonly string[]) {
-    const addable = presence.includes(NA_VALUE) ? [] : [NA_VALUE];
+  private _renderHistogram(h: NumericHistogram, from: number | null, to: number | null) {
+    const lo = from === null ? 0 : fractionOf(h, from);
+    const hi = to === null ? 1 : fractionOf(h, to);
+    const shaded = from !== null || to !== null;
+    const bars = Array.from(h.counts, (count, i) => {
+      const inRange = shaded && (i + 1) / BIN_COUNT > lo && i / BIN_COUNT <= hi;
+      // Square-root heights keep the thin tail visible next to the peak.
+      const height = count === 0 ? 0 : Math.max(6, Math.sqrt(count / h.peak) * 100);
+      return html`<i class=${inRange ? 'in' : ''} style="height:${height}%"></i>`;
+    });
+    return html`<div class="numeric-histogram" aria-hidden="true">${bars}</div>`;
+  }
 
+  private _renderSlider(h: NumericHistogram, label: string, unit: string) {
+    const fields = numericFieldsFor(this.condition.operator);
+    const min = this._parseFieldValue(this._minText);
+    const max = this._parseFieldValue(this._maxText);
+    const positions = this._dragging ?? {
+      low: fields.min ? positionOf(h, min ?? h.min) : null,
+      high: fields.max ? positionOf(h, max ?? h.max) : null,
+    };
+    const withUnit = (v: number) => (unit ? `${formatValue(v)} ${unit}` : formatValue(v));
     return html`
-      ${presence.map((value) => renderValueChip(value, () => this._removePresence(value), value))}
-      ${addable.map(
-        (value) => html`
-          <button
-            class="value-chip-add"
-            data-presence=${value}
-            @click=${() => this._addPresence(value)}
-          >
-            + ${displayFilterValue(value)}
-          </button>
-        `,
-      )}
+      ${this._renderHistogram(h, fields.min ? min : null, fields.max ? max : null)}
+      <protspace-query-range-slider
+        .steps=${h.steps}
+        .low=${positions.low}
+        .high=${positions.high}
+        .valueText=${(p: number) => withUnit(valueAt(h, p))}
+        label=${label}
+        @range-input=${(e: CustomEvent<RangePositions>) => this._handleRangeInput(h, e)}
+        @range-change=${(e: CustomEvent<RangePositions>) => this._handleRangeChange(h, e)}
+      ></protspace-query-range-slider>
+      <div class="numeric-extent" aria-hidden="true">
+        <span>${formatValue(h.min)}</span><span>${withUnit(h.max)}</span>
+      </div>
     `;
+  }
+
+  private _renderCount() {
+    if (this._countStale && this._matchCount !== null)
+      return html`<span class="numeric-match-count" aria-busy="true">…</span>`;
+    if (this._matchCount === null) return nothing;
+    return html`<span class="numeric-match-count" title="Proteins this condition keeps"
+      >${formatCount(this._matchCount)}<span class="sr-only">
+        ${this._matchCount === 1 ? 'protein matches' : 'proteins match'}</span
+      ></span
+    >`;
   }
 
   render() {
     const fields = numericFieldsFor(this.condition.operator);
     const presence = presenceOf(this.condition);
-    // "Any value" already matches everything with a value, so the comparison
-    // it subsumes is disabled while the chip is on.
+    const annotation = this.condition.annotation;
+    const label = annotationLabel(annotation, this.data?.annotations?.[annotation]);
+    const unit = UNITS[annotation] ?? '';
+    const h = this._histogram();
+    // "Any value" is the operator menu's "has any value"; a chip for it left over from an older
+    // query still shows, to remove, and the comparison it subsumes is off while it is there.
     const anyValue = presence.includes(ANY_VALUE);
 
     return html`
       <div class="numeric-input">
-        ${fields.min
-          ? html`<input
-              class="numeric-field input-base"
-              type="number"
-              aria-label="Minimum value"
-              placeholder="min"
-              ?disabled=${anyValue}
-              .value=${this._minText}
-              @input=${this._handleMinInput}
-            />`
+        ${h && !anyValue ? this._renderSlider(h, label, unit) : nothing}
+        <div class="numeric-bounds">
+          ${fields.min
+            ? html`<input
+                class="numeric-field input-base"
+                type="number"
+                inputmode="decimal"
+                aria-label="Minimum value"
+                placeholder="min"
+                ?disabled=${anyValue}
+                .value=${this._minText}
+                @input=${this._handleMinInput}
+              />`
+            : nothing}
+          ${fields.min && fields.max ? html`<span class="numeric-dash">to</span>` : nothing}
+          ${fields.max
+            ? html`<input
+                class="numeric-field input-base"
+                type="number"
+                inputmode="decimal"
+                aria-label="Maximum value"
+                placeholder="max"
+                ?disabled=${anyValue}
+                .value=${this._maxText}
+                @input=${this._handleMaxInput}
+              />`
+            : nothing}
+          ${unit ? html`<span class="numeric-unit">${unit}</span>` : nothing} ${this._renderCount()}
+        </div>
+        ${anyValue
+          ? renderValueChip(ANY_VALUE, () => this._removePresence(ANY_VALUE), ANY_VALUE)
           : nothing}
-        ${fields.min && fields.max ? html`<span class="numeric-dash">–</span>` : nothing}
-        ${fields.max
-          ? html`<input
-              class="numeric-field input-base"
-              type="number"
-              aria-label="Maximum value"
-              placeholder="max"
-              ?disabled=${anyValue}
-              .value=${this._maxText}
-              @input=${this._handleMaxInput}
-            />`
-          : nothing}
-        ${this._renderPresence(presence)}
-        ${this._matchCount !== null
-          ? html`<span class="numeric-match-count"
-              >${countNoun(this._matchCount, 'protein matches', 'proteins match')}</span
-            >`
-          : nothing}
+        <ps-checkbox
+          class="numeric-na"
+          .checked=${presence.includes(NA_VALUE)}
+          @change=${this._handleNaToggle}
+          >or has no ${nounOf(label)} (N/A)</ps-checkbox
+        >
       </div>
     `;
   }
+}
+
+/** A bound as the extent labels show it: grouped digits, at most 3 decimals. */
+function formatValue(v: number): string {
+  return v.toLocaleString('en-US', { maximumFractionDigits: 3 });
 }
 
 declare global {

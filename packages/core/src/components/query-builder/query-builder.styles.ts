@@ -271,8 +271,9 @@ export const queryBuilderStyles = [
       min-width: 0;
     }
 
+    /* Under its operator pill, the numeric input takes the card's full width. */
     .condition-values > protspace-query-numeric-input {
-      flex: 1 1 auto;
+      flex: 1 1 100%;
       min-width: 0;
     }
 
@@ -432,25 +433,6 @@ export const queryBuilderStyles = [
         margin-block: calc((var(--ps-touch-target) - 18px) / -2);
         margin-inline: -12px calc(-12px - var(--ps-space-0-5));
       }
-    }
-
-    /* The numeric row's "+ N/A" toggle. */
-    button.value-chip-add {
-      display: inline-flex;
-      align-items: center;
-      box-sizing: border-box;
-      height: 22px;
-      padding: 0 var(--ps-space-2);
-      border: 1px dashed var(--ps-accent);
-      border-radius: var(--ps-radius-full);
-      background: none;
-      color: var(--ps-accent-text);
-      font-size: var(--ps-text-sm);
-      cursor: pointer;
-    }
-
-    button.value-chip-add:hover {
-      background: var(--ps-accent-tint);
     }
 
     /* ── The annotation and value pickers ────────────────────────────────── */
@@ -797,13 +779,53 @@ export const queryBuilderStyles = [
 
     .numeric-input {
       display: flex;
-      flex-wrap: wrap;
+      flex-direction: column;
+      gap: var(--ps-space-1);
+      padding-top: var(--ps-space-1);
+    }
+
+    /* ~40 bins of the annotation; bars inside the chosen range take the accent. */
+    .numeric-histogram {
+      display: flex;
+      align-items: flex-end;
+      gap: 1px;
+      height: 36px;
+      margin-inline: var(--ps-space-2);
+    }
+
+    .numeric-histogram i {
+      flex: 1;
+      border-radius: 1px 1px 0 0;
+      background: var(--ps-border-strong);
+    }
+
+    .numeric-histogram i.in {
+      background: var(--ps-accent);
+    }
+
+    .numeric-extent {
+      display: flex;
+      justify-content: space-between;
+      margin-top: calc(var(--ps-space-1) * -1);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* "60 to 120 aa   2,525" stays on one line however narrow the card: the fields shrink. */
+    .numeric-bounds {
+      display: flex;
+      flex-wrap: nowrap;
       align-items: center;
       gap: var(--ps-space-1);
+      min-width: 0;
     }
 
     .numeric-field {
-      width: 84px;
+      flex: 1 1 0;
+      width: 0;
+      min-width: 3.5em;
+      max-width: 96px;
     }
 
     .numeric-field:disabled {
@@ -812,15 +834,28 @@ export const queryBuilderStyles = [
       cursor: not-allowed;
     }
 
-    .numeric-dash {
+    .numeric-dash,
+    .numeric-unit {
+      flex: none;
       color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
     }
 
     .numeric-match-count {
+      flex: none;
+      margin-left: auto;
+      padding-left: var(--ps-space-1);
       color: var(--ps-text-muted);
       font-size: var(--ps-text-sm);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
+    }
+
+    /* Only the box and its words take the click, not the empty width beside them. */
+    .numeric-na {
+      align-self: flex-start;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
     }
   `,
 ];

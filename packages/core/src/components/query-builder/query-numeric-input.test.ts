@@ -42,15 +42,11 @@ function fields(el: NumericInputEl) {
   const root = el.shadowRoot!;
   return {
     inputs: Array.from(root.querySelectorAll('input.numeric-field')) as HTMLInputElement[],
-    chips: Array.from(root.querySelectorAll('.value-chip')) as HTMLElement[],
   };
 }
 
-/** Click a presence add/remove button and return the condition emitted by numeric-changed. */
-async function clickPresence(
-  el: NumericInputEl,
-  selector: string,
-): Promise<NumericCondition | undefined> {
+/** Toggle the N/A checkbox and return the condition emitted by numeric-changed. */
+async function toggleNa(el: NumericInputEl): Promise<NumericCondition | undefined> {
   let emitted: NumericCondition | undefined;
   el.addEventListener(
     'numeric-changed',
@@ -59,7 +55,11 @@ async function clickPresence(
     },
     { once: true },
   );
-  (el.shadowRoot!.querySelector(selector) as HTMLButtonElement).click();
+  const box = el.shadowRoot!.querySelector('ps-checkbox.numeric-na') as HTMLElement & {
+    checked: boolean;
+  };
+  box.checked = !box.checked;
+  box.dispatchEvent(new Event('change', { bubbles: true }));
   // Feed the emitted condition back in, mirroring the controlled parent.
   if (emitted) el.condition = emitted;
   await el.updateComplete;
@@ -92,7 +92,11 @@ describe('query-numeric-input', () => {
       await el.updateComplete;
       vi.advanceTimersByTime(750);
       await el.updateComplete;
-      const count = () => el.shadowRoot!.querySelector('.numeric-match-count')!.textContent!.trim();
+      const count = () =>
+        el
+          .shadowRoot!.querySelector('.numeric-match-count')!
+          .textContent!.trim()
+          .replace(/\s+/g, ' ');
       expect(count()).toBe('2 proteins match');
 
       el.condition = makeCondition({ operator: 'gt', min: 250 });
@@ -137,20 +141,16 @@ describe('query-numeric-input', () => {
     expect(fields(el).inputs[0].value).toBe('');
   });
 
-  it('adds and removes an N/A chip alongside the comparison', async () => {
+  it('ticks and unticks N/A alongside the comparison', async () => {
     const el = await mount(makeCondition({ operator: 'gte', min: 0.5 }));
 
-    const added = await clickPresence(el, `.value-chip-add[data-presence="${NA_VALUE}"]`);
+    const added = await toggleNa(el);
     expect(added?.presence).toEqual([NA_VALUE]);
     // The comparison survives — "at least 0.5, or no value at all".
     expect(added?.min).toBe(0.5);
-    expect(fields(el).chips.map((c) => c.textContent?.trim().replace(/\s*×$/, ''))).toEqual([
-      'N/A',
-    ]);
     expect(fields(el).inputs[0].disabled).toBe(false);
 
-    const removed = await clickPresence(el, `.value-chip-remove[data-presence="${NA_VALUE}"]`);
+    const removed = await toggleNa(el);
     expect(removed?.presence).toEqual([]);
-    expect(fields(el).chips).toHaveLength(0);
   });
 });

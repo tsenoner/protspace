@@ -462,6 +462,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   }
 
   private _handleNumericChanged(e: CustomEvent<{ condition: NumericCondition }>) {
+    // Ticking N/A before any bound stores what "has no value" stores; the card keeps its comparison.
+    this._picked = { id: this.condition.id, operator: this._operator() };
     this._dispatchChanged(e.detail.condition);
   }
 
