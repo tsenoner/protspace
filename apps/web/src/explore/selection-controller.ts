@@ -77,6 +77,11 @@ interface SelectionController {
   resetForNewDataset(): void;
   /** Leaves isolation: the status corner's ✕ on the isolation chip. */
   resetIsolation(): void;
+  /**
+   * Selects exactly `ids` (the EAT panel's drill-down lists), one undo step. With `zoom`, fits
+   * them once they land; a protein out of view stays selected and nothing reports it.
+   */
+  selectProteins(ids: readonly string[], options?: { zoom?: boolean }): void;
   /** Undoes or redoes a selection or isolation step this controller recorded. */
   applyHistory(entry: Exclude<UndoEntry, { kind: 'filter' }>, direction: 'undo' | 'redo'): void;
   dispose(): void;
@@ -381,6 +386,10 @@ export function createSelectionController({
     },
     resetIsolation() {
       resetIsolation();
+    },
+    selectProteins(ids, { zoom = false } = {}) {
+      const next = [...ids];
+      commitSelection(next, zoom ? { afterLand: () => plotElement.zoomToProteins(next) } : {});
     },
     applyHistory,
     dispose() {

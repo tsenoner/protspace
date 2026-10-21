@@ -352,6 +352,31 @@ describe('selection controller: the selection bar and the plot tools', () => {
     expect(m.bar.selectedCount).toBe(2);
   });
 
+  it('selectProteins selects exactly those ids in one undo step and zooms only when asked', () => {
+    const m = setup();
+    fire(m.plot, 'protein-click', click('P1', {}));
+    m.controller.selectProteins(['P2'], { zoom: true });
+    expect(m.plot.selectedProteinIds).toEqual(['P2']);
+    expect(m.interaction.handleSelectionChange).toHaveBeenLastCalledWith(['P2']);
+    expect(m.plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P2']);
+    expect(m.history.peekUndo()).toMatchObject({ before: ['P1'], after: ['P2'] });
+
+    m.controller.selectProteins(['P3', 'P4']);
+    expect(m.plot.selectedProteinIds).toEqual(['P3', 'P4']);
+    expect(m.bar.selectedCount).toBe(2);
+    expect(m.plot.zoomToProteins).toHaveBeenCalledTimes(1);
+    m.history.undo();
+    expect(m.history.peekUndo()).toMatchObject({ before: ['P1'], after: ['P2'] });
+  });
+
+  it('selectProteins reports nothing when the protein is out of view', () => {
+    const m = setup();
+    m.plot.zoomToProteins.mockReturnValue(false);
+    m.controller.selectProteins(['P9'], { zoom: true });
+    expect(m.plot.selectedProteinIds).toEqual(['P9']);
+    expect(m.search.reportNotInView).not.toHaveBeenCalled();
+  });
+
   it('resetIsolation resets the plot', () => {
     const m = setup();
     m.controller.resetIsolation();

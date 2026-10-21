@@ -175,6 +175,15 @@ export const eatPanelStyles = [
       opacity: 1;
     }
 
+    .eat-bar[data-empty] {
+      cursor: default;
+    }
+
+    /* The bar whose list is open. */
+    .eat-bar[aria-expanded='true'] {
+      box-shadow: 0 0 0 1px var(--ps-text);
+    }
+
     .eat-bar.is-skeleton {
       height: 40%;
       background: var(--ps-border);
@@ -390,6 +399,109 @@ export const eatPanelStyles = [
     .eat-chevron {
       margin-left: auto;
       color: var(--ps-text-muted);
+    }
+
+    /* A drill-down list (a bar's or a label's): heading, up to 5 rows, footer. */
+    .eat-drill {
+      display: grid;
+      gap: var(--ps-space-1);
+      margin-top: var(--ps-space-1);
+      padding: var(--ps-space-1-5);
+      border: 1px solid var(--ps-border);
+      border-radius: var(--ps-radius-sm);
+      background: var(--ps-surface-muted);
+    }
+
+    .eat-drill-heading {
+      margin: 0;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      font-weight: var(--ps-weight-semibold);
+    }
+
+    .eat-drill-list {
+      display: grid;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    /* ring · id · reliability · label, then "Hidden by the threshold" on its own line */
+    .eat-drill-row {
+      display: grid;
+      grid-template-columns: 10px auto 2.6rem minmax(0, 1fr);
+      align-items: center;
+      column-gap: var(--ps-space-1-5);
+      width: 100%;
+      padding: var(--ps-space-1);
+      border: none;
+      border-radius: var(--ps-radius-sm);
+      background: none;
+      color: var(--ps-text);
+      font: inherit;
+      font-size: var(--ps-text-xs);
+      font-variant-numeric: tabular-nums;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .eat-drill-row:hover,
+    .eat-drill-select:hover:not(:disabled) {
+      background: var(--ps-surface-hover);
+    }
+
+    .eat-ring {
+      width: 10px;
+      height: 10px;
+      box-sizing: border-box;
+      border: 2px solid var(--ps-text-muted);
+      border-radius: 50%;
+    }
+
+    .eat-drill-reliability {
+      text-align: right;
+    }
+
+    .eat-drill-label {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--ps-text-muted);
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .eat-drill-hidden {
+      grid-column: 2 / -1;
+      color: var(--ps-text-muted);
+    }
+
+    .eat-drill-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--ps-space-2);
+    }
+
+    .eat-drill-select {
+      padding: var(--ps-space-1);
+      border: none;
+      border-radius: var(--ps-radius-sm);
+      background: none;
+      color: var(--ps-accent-text);
+      font: inherit;
+      font-size: var(--ps-text-xs);
+      cursor: pointer;
+    }
+
+    .eat-drill-select:disabled {
+      color: var(--ps-text-faint);
+      cursor: default;
+    }
+
+    .eat-drill-count {
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      font-variant-numeric: tabular-nums;
     }
   `,
 ];

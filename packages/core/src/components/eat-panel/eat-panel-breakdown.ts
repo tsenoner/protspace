@@ -48,8 +48,13 @@ interface EatBreakdownView {
   labelColors: ReadonlyMap<string, string>;
   /** Show off: the section reads as disabled. */
   off: boolean;
+  /** The label whose drill-down list is open, and that list, rendered under its row. */
+  openLabel: string | null;
+  list: TemplateResult | typeof nothing;
   onSort(sort: EatLabelSort): void;
   onShowAll(): void;
+  /** A row was clicked: open its list, or close it when it is the open one. */
+  onRow(label: string): void;
 }
 
 function labelBar(row: EatLabelRow, widest: number): TemplateResult {
@@ -70,7 +75,7 @@ function labelBar(row: EatLabelRow, widest: number): TemplateResult {
 /**
  * `By label` (proposal B §4.6): one row per label in the view, with its swatch, a bar of curated,
  * kept and below-threshold members relative to the largest label, the total and the predicted
- * share. Rows are buttons with a `data-label`; Task 9.7 gives them the drill-down.
+ * share. A row click opens the label's drill-down list under it.
  */
 export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof nothing {
   if (view.rows.length === 0) return nothing;
@@ -98,12 +103,15 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
         const share = formatPercent(row.predictedShare);
         // A label folded into the legend's Other bucket is drawn in Other's colour.
         const color = view.labelColors.get(row.label) ?? view.labelColors.get(LEGEND_VALUES.OTHER);
+        const open = view.openLabel === row.label;
         return html`<li>
           <button
             type="button"
             class="eat-label-row"
             data-label=${row.label}
-            aria-expanded="false"
+            aria-expanded=${String(open)}
+            aria-controls=${open ? 'eat-drill' : nothing}
+            @click=${() => view.onRow(row.label)}
             aria-label=${`${row.label}: ${formatCount(row.total)}, ${share} predicted`}
           >
             <span
@@ -121,6 +129,7 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
               >${share}</span
             >
           </button>
+          ${open ? view.list : nothing}
         </li>`;
       })}
     </ul>

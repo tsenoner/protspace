@@ -22,17 +22,47 @@ const MODE_OPTIONS_OFF = MODE_OPTIONS.map((option) => ({ ...option, disabled: tr
 const BIN_WIDTH = 100 / EAT_BIN_COUNT;
 const SKELETON_BARS = Array.from({ length: EAT_BIN_COUNT }, (_, bin) => bin);
 
-/** `55–60 %: 41 predictions`, the bar's accessible name and tooltip. */
-function barLabel(bin: number, count: number): string {
+/** `55–60 %`, a bar's range. */
+export function binRange(bin: number): string {
   const from = bin * BIN_WIDTH;
-  return `${from}–${formatPercent((from + BIN_WIDTH) / 100)}: ${countNoun(count, 'prediction', 'predictions')}`;
+  return `${from}–${formatPercent((from + BIN_WIDTH) / 100)}`;
 }
 
+/** `55–60 %: 41 predictions`, the bar's accessible name and tooltip. */
+function barLabel(bin: number, count: number): string {
+  return `${binRange(bin)}: ${countNoun(count, 'prediction', 'predictions')}`;
+}
+
+/** The bars' drill-down: which bar's list is open, and the one tab stop of the bar group. */
+interface EatBarsView {
+  openBin: number | null;
+  /** The bar that holds the group's tab stop. */
+  focusBin: number;
+  /** The open bar's list, rendered under the axis. */
+  list: TemplateResult | typeof nothing;
+  onBar(bin: number): void;
+  /** Arrow keys, Home or End moved the tab stop to `bin`. */
+  onFocusBin(bin: number): void;
+}
+
+const STEP_KEYS: Record<string, (bin: number) => number> = {
+  ArrowRight: (bin) => Math.min(EAT_BIN_COUNT - 1, bin + 1),
+  ArrowLeft: (bin) => Math.max(0, bin - 1),
+  Home: () => 0,
+  End: () => EAT_BIN_COUNT - 1,
+};
+
 /**
- * The 20 bars. A bar is shaded kept when its midpoint passes the filter, so the shading follows the
- * handles live while the emit waits out the debounce.
+ * The 20 bars, one tab stop with the arrow keys between them (a roving tabindex). A click, Enter
+ * or Space opens the bar's drill-down list; an empty bar has none. A bar is shaded kept when its
+ * midpoint passes the filter, so the shading follows the handles live while the emit waits out
+ * the debounce.
  */
-function renderHistogram(state: EatReliabilityState, summary: EatSummary | null): TemplateResult {
+function renderHistogram(
+  state: EatReliabilityState,
+  summary: EatSummary | null,
+  bars: EatBarsView,
+): TemplateResult {
   if (!summary) {
     return html`<div class="eat-histogram" aria-hidden="true">
       ${SKELETON_BARS.map(
@@ -44,18 +74,35 @@ function renderHistogram(state: EatReliabilityState, summary: EatSummary | null)
     return html`<p class="eat-empty-view">No predictions in the current view</p>`;
   }
   const tallest = Math.max(...summary.bins);
-  return html`<div class="eat-histogram">
+  const onKeydown = (event: KeyboardEvent) => {
+    const step = STEP_KEYS[event.key];
+    if (!step) return;
+    event.preventDefault();
+    bars.onFocusBin(step(bars.focusBin));
+  };
+  return html`<div
+    class="eat-histogram"
+    role="group"
+    aria-label="Predictions by reliability"
+    @keydown=${onKeydown}
+  >
     ${Array.from(summary.bins, (count, bin) => {
       const label = barLabel(bin, count);
-      // Out of the tab order until a bar has an action.
       return html`<button
         type="button"
         class="eat-bar"
-        tabindex="-1"
+        data-bin=${bin}
+        tabindex=${bin === bars.focusBin ? '0' : '-1'}
+        ?data-empty=${count === 0}
+        aria-expanded=${count === 0 ? nothing : String(bars.openBin === bin)}
+        aria-controls=${bars.openBin === bin ? 'eat-drill' : nothing}
         data-kept=${String(isKept(state, (bin + 0.5) / EAT_BIN_COUNT))}
         aria-label=${label}
         title=${label}
         style=${`height:${Number(((count / tallest) * 100).toFixed(2))}%`}
+        @click=${() => {
+          if (count > 0) bars.onBar(bin);
+        }}
       ></button>`;
     })}
   </div>`;
@@ -69,6 +116,7 @@ function renderHistogram(state: EatReliabilityState, summary: EatSummary | null)
 export function renderReliability(
   ctrl: EatReliabilityController,
   summary: EatSummary | null,
+  bars: EatBarsView,
 ): TemplateResult {
   const off = !ctrl.overlayEnabled;
   const disabled = off || !summary;
@@ -97,11 +145,12 @@ export function renderReliability(
         <span aria-hidden="true">%</span>
       </span>
     </div>
-    ${renderHistogram(ctrl.reliability, summary)}
+    ${renderHistogram(ctrl.reliability, summary, bars)}
     <div class="eat-handles">
       ${bounds.map((bound) => renderReliabilityRange(ctrl, bound, disabled))}
     </div>
     <div class="eat-axis" aria-hidden="true"><span>0</span><span>50</span><span>100</span></div>
+    ${bars.openBin !== null && summary && summary.predicted > 0 ? bars.list : nothing}
     ${predicted > 0
       ? html`<p class="eat-readout">
           Keeps ${formatCount(kept)} of ${formatCount(predicted)} predictions

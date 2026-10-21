@@ -53,7 +53,8 @@ interface EatPanelController {
  * condition); the legend's EAT note follows the panel's reliability filter. A locked Filter row's ✕
  * (`eat-reliability-reset`) resets the panel, or, for a base the panel does not show, that base's
  * condition alone. The breakdown's swatches follow the legend's colours, and the panel's
- * `eat-color-by` switches Color by through `pickAnnotation`.
+ * `eat-color-by` switches Color by through `pickAnnotation`. A drill-down list's
+ * `eat-select-proteins` selects through `selectProteins`.
  */
 export function createEatPanelController({
   eatPanel,
@@ -64,6 +65,8 @@ export function createEatPanelController({
   isPanelShown,
   subscribePanel,
   pickAnnotation,
+  selectProteins,
+  requestStructure,
 }: {
   eatPanel: Pick<
     ProtspaceEatPanel,
@@ -90,6 +93,10 @@ export function createEatPanelController({
   subscribePanel(listener: () => void): () => void;
   /** Make `annotation` the Color by annotation, as a pick in the view bar does. */
   pickAnnotation(annotation: string): void;
+  /** Select exactly `ids`, one undo step; `zoom` fits them once they land. */
+  selectProteins(ids: readonly string[], options: { zoom: boolean }): void;
+  /** Show `proteinId` in the structure viewer. */
+  requestStructure(proteinId: string): void;
 }): EatPanelController {
   /**
    * The context follows the applied filter while the panel is on screen; a hidden panel asks for
@@ -151,6 +158,14 @@ export function createEatPanelController({
     pickAnnotation((event as CustomEvent<{ annotation: string }>).detail.annotation);
   };
 
+  /** A drill-down row selects its protein and shows its structure; Select all selects only. */
+  const onSelectProteins = (event: Event) => {
+    const { proteinIds, zoom } = (event as CustomEvent<{ proteinIds: string[]; zoom: boolean }>)
+      .detail;
+    selectProteins(proteinIds, { zoom });
+    if (proteinIds.length === 1) requestStructure(proteinIds[0]);
+  };
+
   const onOverlayChange = (event: Event) => {
     const { enabled, reliability } = (event as CustomEvent<EatOverlayChangeDetail>).detail;
     if (plotElement.eatOverlayEnabled !== enabled) plotElement.eatOverlayEnabled = enabled;
@@ -171,6 +186,7 @@ export function createEatPanelController({
   root.addEventListener('eat-reliability-reset', onReliabilityReset);
   eatPanel.addEventListener('eat-overlay-change', onOverlayChange);
   eatPanel.addEventListener('eat-color-by', onColorBy);
+  eatPanel.addEventListener('eat-select-proteins', onSelectProteins);
   const unsubscribePanel = subscribePanel(syncActive);
   syncData();
 
@@ -186,6 +202,7 @@ export function createEatPanelController({
       root.removeEventListener('eat-reliability-reset', onReliabilityReset);
       eatPanel.removeEventListener('eat-overlay-change', onOverlayChange);
       eatPanel.removeEventListener('eat-color-by', onColorBy);
+      eatPanel.removeEventListener('eat-select-proteins', onSelectProteins);
       unsubscribePanel();
     },
   };

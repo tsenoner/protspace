@@ -66,6 +66,8 @@ function setup(shown: { value: boolean }) {
   });
   const legend = { eatReliability: null as EatReliabilityState | null };
   const pickAnnotation = vi.fn();
+  const selectProteins = vi.fn();
+  const requestStructure = vi.fn();
   const filter = {
     mask: null as Uint8Array | null,
     setEatReliability: vi.fn(),
@@ -84,6 +86,8 @@ function setup(shown: { value: boolean }) {
       return () => panelListeners.delete(listener);
     },
     pickAnnotation,
+    selectProteins,
+    requestStructure,
   });
   const layoutChanged = () => panelListeners.forEach((listener) => listener());
   /** The panel's own controls moved: its state changes, then it emits. */
@@ -107,6 +111,8 @@ function setup(shown: { value: boolean }) {
     panelListeners,
     emit,
     pickAnnotation,
+    selectProteins,
+    requestStructure,
   };
 }
 
@@ -254,5 +260,20 @@ describe('createEatPanelController', () => {
     controller.dispose();
     colorBy('ec');
     expect(pickAnnotation).toHaveBeenCalledTimes(1);
+  });
+
+  it('selects the proteins of eat-select-proteins and shows a single one’s structure', () => {
+    const { panel, controller, selectProteins, requestStructure } = setup({ value: true });
+    const select = (proteinIds: string[], zoom: boolean) =>
+      panel.dispatchEvent(new CustomEvent('eat-select-proteins', { detail: { proteinIds, zoom } }));
+    select(['P2'], true);
+    expect(selectProteins).toHaveBeenCalledWith(['P2'], { zoom: true });
+    expect(requestStructure).toHaveBeenCalledExactlyOnceWith('P2');
+    select(['P1', 'P2'], false);
+    expect(selectProteins).toHaveBeenLastCalledWith(['P1', 'P2'], { zoom: false });
+    expect(requestStructure).toHaveBeenCalledTimes(1);
+    controller.dispose();
+    select(['P1'], true);
+    expect(selectProteins).toHaveBeenCalledTimes(2);
   });
 });

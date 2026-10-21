@@ -260,10 +260,25 @@ describe('protspace-eat-panel', () => {
     expect(el.isAtDefaults).toBe(false);
   });
 
-  it('keeps the bars out of the tab order', async () => {
+  it('makes the bars one tab stop, with the arrow keys between them', async () => {
     const el = await mount();
-    expect(bars(el).length).toBeGreaterThan(0);
-    for (const bar of bars(el)) expect(bar.tabIndex).toBe(-1);
+    const tabStops = () => bars(el).filter((bar) => bar.tabIndex === 0);
+    expect(tabStops()).toEqual([bars(el)[0]]);
+    bars(el)[0].focus();
+    await userEvent.keyboard('{ArrowRight}');
+    await el.updateComplete;
+    expect(tabStops()).toEqual([bars(el)[1]]);
+    expect(root(el).activeElement).toBe(bars(el)[1]);
+    await userEvent.keyboard('{End}');
+    await el.updateComplete;
+    expect(root(el).activeElement).toBe(bars(el)[19]);
+    // Enter opens the focused bar's list (1 prediction at 100 %).
+    await userEvent.keyboard('{Enter}');
+    await el.updateComplete;
+    expect(text(el, '.eat-drill-heading')).toBe(`Weakest in 95–100${PCT}`);
+    await userEvent.keyboard('{Home}');
+    await el.updateComplete;
+    expect(tabStops()).toEqual([bars(el)[0]]);
   });
 
   it('says the annotation has no predicted values', async () => {
@@ -417,5 +432,93 @@ describe('protspace-eat-panel', () => {
     ]);
     buttons[1].click();
     expect(picked).toEqual(['kind']);
+  });
+
+  describe('drill-down lists', () => {
+    // A: 6 predictions in 50–55 % (Q1–Q6); B: 0.9 (Q7) and 0.2 (Q8).
+    const SPEC = [
+      { label: 'A', curated: 1, predicted: [0.54, 0.51, 0.53, 0.52, 0.506, 0.545] },
+      { label: 'B', curated: 0, predicted: [0.9, 0.2] },
+    ];
+    const drills = (el: ProtspaceEatPanel) => root(el).querySelectorAll('.eat-drill');
+    const drillIds = (el: ProtspaceEatPanel) =>
+      [...root(el).querySelectorAll<HTMLElement>('.eat-drill-row')].map(
+        (row) => row.dataset.protein,
+      );
+    const labelRow = (el: ProtspaceEatPanel, label: string) =>
+      root(el).querySelector<HTMLButtonElement>(`.eat-label-row[data-label="${label}"]`)!;
+    function listenSelect(el: ProtspaceEatPanel) {
+      const details: { proteinIds: string[]; zoom: boolean }[] = [];
+      el.addEventListener('eat-select-proteins', (event) =>
+        details.push((event as CustomEvent<{ proteinIds: string[]; zoom: boolean }>).detail),
+      );
+      return details;
+    }
+
+    it('a bar lists its bin’s weakest 5 in reliability order', async () => {
+      const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
+      bars(el)[10].click();
+      await el.updateComplete;
+      expect(bars(el)[10].getAttribute('aria-expanded')).toBe('true');
+      expect(text(el, '.eat-drill-heading')).toBe(`Weakest in 50–55${PCT}`);
+      expect(drillIds(el)).toEqual(['Q5', 'Q2', 'Q4', 'Q3', 'Q1']);
+      expect(text(el, '.eat-drill-row')).toBe(`Q5 51${PCT} A`);
+      expect(text(el, '.eat-drill-count')).toBe('5 of 6');
+      expect(text(el, '.eat-drill-select')).toBe('Select all 6 kept');
+      // An empty bar opens nothing.
+      bars(el)[0].click();
+      await el.updateComplete;
+      expect(text(el, '.eat-drill-heading')).toBe(`Weakest in 50–55${PCT}`);
+    });
+
+    it('a label row lists the label’s weakest; Select all emits its kept ids', async () => {
+      const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
+      const selected = listenSelect(el);
+      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      labelRow(el, 'B').click();
+      await el.updateComplete;
+      expect(labelRow(el, 'B').getAttribute('aria-expanded')).toBe('true');
+      expect(labelRow(el, 'B').parentElement!.querySelector('.eat-drill')).not.toBeNull();
+      expect(text(el, '.eat-drill-heading')).toBe('Weakest B');
+      expect(drillIds(el)).toEqual(['Q8', 'Q7']);
+      // In Hide mode a row below the threshold says so, and stays clickable.
+      expect(text(el, '.eat-drill-row')).toBe(`Q8 20${PCT} B Hidden by the threshold`);
+      expect(text(el, '.eat-drill-count')).toBe('2 of 2');
+      root(el).querySelector<HTMLButtonElement>('.eat-drill-select')!.click();
+      expect(selected).toEqual([{ proteinIds: ['Q7'], zoom: false }]);
+      root(el).querySelector<HTMLButtonElement>('.eat-drill-row')!.click();
+      expect(selected[1]).toEqual({ proteinIds: ['Q8'], zoom: true });
+    });
+
+    it('a row emits eat-select-proteins for its protein, with zoom', async () => {
+      const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
+      const selected = listenSelect(el);
+      bars(el)[10].click();
+      await el.updateComplete;
+      root(el).querySelector<HTMLButtonElement>('.eat-drill-row[data-protein="Q4"]')!.click();
+      expect(selected).toEqual([{ proteinIds: ['Q4'], zoom: true }]);
+    });
+
+    it('keeps one list open; a second click or Escape closes it', async () => {
+      const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
+      bars(el)[10].click();
+      await el.updateComplete;
+      labelRow(el, 'A').click();
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(1);
+      expect(bars(el)[10].getAttribute('aria-expanded')).toBe('false');
+      expect(text(el, '.eat-drill-heading')).toBe('Weakest A');
+      labelRow(el, 'A').click();
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(0);
+
+      bars(el)[10].click();
+      await el.updateComplete;
+      root(el).querySelector<HTMLButtonElement>('.eat-drill-row')!.focus();
+      await userEvent.keyboard('{Escape}');
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(0);
+      expect(root(el).activeElement).toBe(bars(el)[10]);
+    });
   });
 });

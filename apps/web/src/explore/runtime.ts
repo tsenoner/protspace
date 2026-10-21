@@ -522,6 +522,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       getWorkbenchStatus().eatAvailability.kind !== 'dataset' && isPanelShown('eat'),
     subscribePanel,
     pickAnnotation: (annotation) => viewBarController.applyAnnotationSelection(annotation),
+    selectProteins: (ids, options) => selectionController.selectProteins(ids, options),
+    requestStructure: (proteinId) => structureController.request(proteinId),
   });
   lifecycle.addCleanup(() => eatPanelController.dispose());
   const statusController = createStatusController({

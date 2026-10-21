@@ -5,6 +5,7 @@ import {
   DEFAULT_EAT_RELIABILITY,
   formatCount,
   isSameReliability,
+  LEGEND_VALUES,
   normalizeReliability,
   type EatReliabilityState,
   type VisualizationData,
@@ -18,15 +19,28 @@ import {
   renderOtherAnnotations,
   type EatLabelSort,
 } from './eat-panel-breakdown';
-import { renderReliability } from './eat-panel-histogram';
+import { binRange, renderReliability } from './eat-panel-histogram';
 import { eatPanelStyles } from './eat-panel.styles';
 import {
   EatReliabilityController,
   type EatOverlayChangeDetail,
 } from './eat-reliability-controller';
-import { getEatIndex, summarizeEat, type EatIndex, type EatSummary } from './eat-summary';
+import {
+  countIn,
+  getEatIndex,
+  isKept,
+  predictionIds,
+  summarizeEat,
+  weakestIn,
+  type EatDrill,
+  type EatIndex,
+  type EatSummary,
+} from './eat-summary';
 
 const DEFAULTS = normalizeReliability(DEFAULT_EAT_RELIABILITY);
+
+/** The open drill-down list: a histogram bar's, or a label's (by name, as rows re-sort). */
+type OpenDrill = { bin: number } | { label: string };
 
 /** `40 %` of `total`, for a segment's tooltip. */
 const share = (count: number, total: number) => formatPercent(total > 0 ? count / total : 0);
@@ -43,6 +57,8 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  *   changed (a handle drag commits after `EAT_THRESHOLD_COMMIT_DELAY_MS`).
  * @fires eat-color-by - `{ annotation }`: switch Color by to another annotation with predictions,
  *   or to this one's EAT neighbourhood column.
+ * @fires eat-select-proteins - `{ proteinIds, zoom }`: a drill-down row selects its protein (and
+ *   asks to fit it); `Select all N kept` selects the kept predictions behind the bar or label.
  */
 @customElement('protspace-eat-panel')
 export class ProtspaceEatPanel extends LitElement {
@@ -62,6 +78,9 @@ export class ProtspaceEatPanel extends LitElement {
   @state() private _labelSort: EatLabelSort = 'most-predicted';
   @state() private _showAllLabels = false;
   @state() private _othersOpen = false;
+  @state() private _drill: OpenDrill | null = null;
+  /** The histogram bar holding the bar group's one tab stop. */
+  @state() private _focusBin = 0;
 
   private readonly _eat = new EatReliabilityController(this, {
     emit: (detail) =>
@@ -130,6 +149,7 @@ export class ProtspaceEatPanel extends LitElement {
       this._index = this.data ? getEatIndex(this.data, this.annotation) : null;
       this._summary = null;
       this._showAllLabels = false;
+      this._drill = null;
     }
     if (!this._index) {
       this._summary = null;
@@ -157,6 +177,7 @@ export class ProtspaceEatPanel extends LitElement {
         ${renderEmptyColorBy(this.data, this.annotation, this._colorBy)}`;
     }
     const summary = this._summary;
+    const drill = this._drill;
     return html`<ps-switch
         class="eat-show"
         .checked=${this._eat.overlayEnabled}
@@ -164,7 +185,20 @@ export class ProtspaceEatPanel extends LitElement {
         @change=${this._eat.onToggle}
         >Show predictions</ps-switch
       >
-      ${this._renderOverview(summary)} ${renderReliability(this._eat, summary)}
+      ${this._renderOverview(summary)}
+      ${renderReliability(this._eat, summary, {
+        openBin: drill && 'bin' in drill ? drill.bin : null,
+        focusBin: this._focusBin,
+        list: drill && 'bin' in drill ? this._renderDrill() : nothing,
+        onBar: (bin) => {
+          this._focusBin = bin;
+          this._toggleDrill({ bin });
+        },
+        onFocusBin: (bin) => {
+          this._focusBin = bin;
+          void this.updateComplete.then(() => this._bar(bin)?.focus());
+        },
+      })}
       ${summary
         ? renderBreakdown({
             rows: summary.rows,
@@ -172,8 +206,11 @@ export class ProtspaceEatPanel extends LitElement {
             showAll: this._showAllLabels,
             labelColors: this.labelColors,
             off: !this._eat.overlayEnabled,
+            openLabel: drill && 'label' in drill ? drill.label : null,
+            list: drill && 'label' in drill ? this._renderDrill() : nothing,
             onSort: (sort) => (this._labelSort = sort),
             onShowAll: () => (this._showAllLabels = true),
+            onRow: (label) => this._toggleDrill({ label }),
           })
         : nothing}
       ${this.data
@@ -185,6 +222,130 @@ export class ProtspaceEatPanel extends LitElement {
             onColorBy: this._colorBy,
           })
         : nothing}`;
+  }
+
+  constructor() {
+    super();
+    // Escape inside the panel closes the open list first, and focus goes back to its opener.
+    this.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || !this._drill) return;
+      event.preventDefault();
+      const opener = this._opener(this._drill);
+      this._drill = null;
+      void this.updateComplete.then(() => opener?.focus());
+    });
+  }
+
+  /** Opens `next`, or closes it when it is the open list; one list is open at a time. */
+  private _toggleDrill(next: OpenDrill): void {
+    const open = this._drill;
+    const same =
+      open !== null &&
+      ('bin' in next
+        ? 'bin' in open && open.bin === next.bin
+        : 'label' in open && open.label === next.label);
+    this._drill = same ? null : next;
+  }
+
+  private _bar(bin: number): HTMLElement | null {
+    return this.renderRoot.querySelector<HTMLElement>(`.eat-bar[data-bin="${bin}"]`);
+  }
+
+  private _opener(drill: OpenDrill): HTMLElement | null {
+    if ('bin' in drill) return this._bar(drill.bin);
+    const rows = this.renderRoot.querySelectorAll<HTMLElement>('.eat-label-row');
+    return Array.from(rows).find((row) => row.dataset.label === drill.label) ?? null;
+  }
+
+  private _selectProteins(proteinIds: string[], zoom: boolean): void {
+    this.dispatchEvent(
+      new CustomEvent('eat-select-proteins', {
+        detail: { proteinIds, zoom },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /**
+   * The open list: its weakest 5 predictions in the context, weakest first, each a button that
+   * selects the protein; then `Select all N kept` and `5 of 41`. In Hide mode, a row below the
+   * threshold says so, and stays clickable.
+   */
+  private _renderDrill(): TemplateResult | typeof nothing {
+    const index = this._index;
+    const data = this.data;
+    const open = this._drill;
+    if (!index || !data || !open) return nothing;
+    let drill: EatDrill;
+    let heading: string;
+    if ('bin' in open) {
+      drill = { bin: open.bin };
+      heading = `Weakest in ${binRange(open.bin)}`;
+    } else {
+      const label = index.labels.indexOf(open.label);
+      if (label < 0) return nothing;
+      drill = { label };
+      heading = `Weakest ${open.label}`;
+    }
+    const state = this._eat.reliability;
+    const weakest = weakestIn(index, drill, this.context);
+    const { total, kept } = countIn(index, drill, this.context, state);
+    const hides = this._eat.overlayEnabled;
+    const rows = Array.from(weakest, (protein) => {
+      const k = index.order.indexOf(protein);
+      const confidence = index.confidence[k];
+      const labels: string[] = [];
+      for (let h = index.labelOffsets[k]; h < index.labelOffsets[k + 1]; h++) {
+        labels.push(index.labels[index.labelHits[h]]);
+      }
+      const id = data.protein_ids[protein];
+      const reliability = formatPercent(confidence);
+      const hidden = hides && !isKept(state, confidence);
+      const labelText = labels.join(', ');
+      const color =
+        this.labelColors.get(labels[0] ?? '') ?? this.labelColors.get(LEGEND_VALUES.OTHER);
+      return html`<li>
+        <button
+          type="button"
+          class="eat-drill-row"
+          data-protein=${id}
+          aria-label=${`${id}, ${reliability}, ${labelText}${hidden ? ', hidden by the threshold' : ''}`}
+          @click=${() => this._selectProteins([id], true)}
+        >
+          <span
+            class="eat-ring"
+            style=${color ? `border-color:${color}` : nothing}
+            aria-hidden="true"
+          ></span>
+          <span class="eat-drill-id">${id}</span>
+          <span class="eat-drill-reliability">${reliability}</span>
+          <span class="eat-drill-label" title=${labelText}>${labelText}</span>
+          ${hidden ? html`<span class="eat-drill-hidden">Hidden by the threshold</span>` : nothing}
+        </button>
+      </li>`;
+    });
+    return html`<div id="eat-drill" class="eat-drill" role="region" aria-label=${heading}>
+      <p class="eat-drill-heading">${heading}</p>
+      <ul class="eat-drill-list">
+        ${rows}
+      </ul>
+      <div class="eat-drill-foot">
+        <button
+          type="button"
+          class="eat-drill-select"
+          ?disabled=${kept === 0}
+          @click=${() =>
+            this._selectProteins(
+              predictionIds(index, data, state, 'kept', this.context, drill),
+              false,
+            )}
+        >
+          Select all ${formatCount(kept)} kept
+        </button>
+        <span class="eat-drill-count">${weakest.length} of ${formatCount(total)}</span>
+      </div>
+    </div>`;
   }
 
   private readonly _colorBy = (annotation: string) => {

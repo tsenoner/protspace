@@ -2,9 +2,11 @@ import { expect, test } from '@playwright/test';
 import {
   filterButton,
   filterPanel,
+  getSelectedProteinIds,
   openExplore,
   queryBuilder,
   selectAnnotation,
+  selectionBar,
   statusChip,
 } from './helpers/explore';
 import {
@@ -165,4 +167,34 @@ test('the Filter panel shows the reliability as a locked row that opens the EAT 
   await expect(row).toBeHidden();
   await openEatPanel(page);
   await expect(eatThresholdBox(page)).toHaveValue('0');
+});
+
+test('a histogram bar lists its weakest predictions and a row selects the protein', async ({
+  page,
+}) => {
+  await loadPhosphataseEat(page);
+  await selectAnnotation(page, 'ec');
+  await openEatPanel(page);
+
+  const histogram = eatPanel(page).getByRole('group', { name: 'Predictions by reliability' });
+  // The bars are one tab stop.
+  await expect(histogram.locator('button[tabindex="0"]')).toHaveCount(1);
+  const bar = histogram.getByRole('button', { name: /: [1-9][\d,]* predictions?$/ }).first();
+  await bar.click();
+  await expect(bar).toHaveAttribute('aria-expanded', 'true');
+  const list = eatPanel(page).getByRole('region', { name: /^Weakest in / });
+  await expect(list).toBeVisible();
+  await expect(list.getByRole('button', { name: /^Select all [\d,]+ kept$/ })).toBeVisible();
+
+  const row = list.getByRole('listitem').first().getByRole('button');
+  const proteinId = (await row.getAttribute('aria-label'))!.split(',')[0];
+  await row.click();
+  await expect(selectionBar(page)).toContainText('1 selected');
+  expect(await getSelectedProteinIds(page)).toEqual([proteinId]);
+
+  // Escape inside the panel closes the list before it reaches the selection.
+  await bar.focus();
+  await page.keyboard.press('Escape');
+  await expect(list).toBeHidden();
+  expect(await getSelectedProteinIds(page)).toEqual([proteinId]);
 });
