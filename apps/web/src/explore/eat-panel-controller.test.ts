@@ -72,6 +72,8 @@ function setup(shown: { value: boolean }) {
   const requestStructure = vi.fn();
   const traceProtein = vi.fn(() => true);
   const setTracing = vi.fn();
+  const downloadIds = vi.fn();
+  const notify = { success: vi.fn(), error: vi.fn() };
   const filter = {
     mask: null as Uint8Array | null,
     setEatReliability: vi.fn(),
@@ -94,6 +96,8 @@ function setup(shown: { value: boolean }) {
     requestStructure,
     traceProtein,
     setTracing,
+    downloadIds,
+    notify,
   });
   const layoutChanged = () => panelListeners.forEach((listener) => listener());
   /** The panel's own controls moved: its state changes, then it emits. */
@@ -121,6 +125,8 @@ function setup(shown: { value: boolean }) {
     requestStructure,
     traceProtein,
     setTracing,
+    downloadIds,
+    notify,
   };
 }
 
@@ -356,5 +362,34 @@ describe('createEatPanelController', () => {
     controller.dispose();
     drawing(false, 10);
     expect(setTracing).toHaveBeenCalledTimes(2);
+  });
+
+  it('downloads Export IDs and confirms with the export toast, until disposed', () => {
+    const { panel, controller, downloadIds, notify } = setup({ value: true });
+    const exportIds = () =>
+      panel.dispatchEvent(
+        new CustomEvent('eat-export-ids', {
+          detail: { proteinIds: ['P2', 'P1'], fileName: 'ec-eat-kept-ids.txt' },
+        }),
+      );
+
+    exportIds();
+    expect(downloadIds).toHaveBeenCalledExactlyOnceWith(['P2', 'P1'], 'ec-eat-kept-ids.txt');
+    expect(notify.success).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ title: 'Export ready.', description: 'ec-eat-kept-ids.txt' }),
+    );
+
+    downloadIds.mockImplementationOnce(() => {
+      throw new Error('blocked');
+    });
+    exportIds();
+    expect(notify.error).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ title: 'Export failed.', description: 'blocked' }),
+    );
+    expect(notify.success).toHaveBeenCalledTimes(1);
+
+    controller.dispose();
+    exportIds();
+    expect(downloadIds).toHaveBeenCalledTimes(2);
   });
 });

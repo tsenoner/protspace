@@ -1,7 +1,7 @@
 import '@protspace/core'; // Registers all web components
 import type { RendererDegradedDetail } from '@protspace/core';
 import { onEscapeFallback } from '@protspace/core';
-import { isMacOrIos } from '@protspace/utils';
+import { downloadProteinIds, isMacOrIos } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import {
   getClearStoredDataConfirm,
@@ -533,6 +533,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     traceProtein: (proteinId, originalIndex, mode) =>
       interactionController.traceProtein(proteinId, originalIndex, mode),
     setTracing: (options) => interactionController.setTracing(options),
+    downloadIds: downloadProteinIds,
+    notify,
   });
   lifecycle.addCleanup(() => eatPanelController?.dispose());
   const statusController = createStatusController({

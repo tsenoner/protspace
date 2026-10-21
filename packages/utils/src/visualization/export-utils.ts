@@ -196,9 +196,8 @@ export class ProtSpaceExporter {
     const projection = data?.projections?.[this.element.selectedProjectionIndex]?.name || 'unknown';
     const annotation = this.element.selectedAnnotation || 'unknown';
 
-    // Sanitize names (remove spaces, special chars, convert to lowercase)
-    let cleanProjection = projection.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-    const cleanAnnotation = annotation.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+    let cleanProjection = fileNamePart(projection);
+    const cleanAnnotation = fileNamePart(annotation);
 
     // Remove dimension suffix after sanitization (e.g., "pca_2" -> "pca", "umap_3" -> "umap")
     cleanProjection = cleanProjection.replace(/_[23]$/, '');
@@ -501,17 +500,11 @@ export class ProtSpaceExporter {
       return null;
     }
 
-    const visibleIds = this.visibleProteinIndices(data).map((i) => data.protein_ids[i]);
-    // A Blob, not a data: URI: hundreds of thousands of IDs URI-encoded into one string cost
-    // several megabytes of string building before the download even starts.
     const fileName = 'protein_ids.txt';
-    const blob = new Blob([visibleIds.join('\n')], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    try {
-      this.downloadFile(url, fileName);
-    } finally {
-      setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL_MS);
-    }
+    downloadProteinIds(
+      this.visibleProteinIndices(data).map((i) => data.protein_ids[i]),
+      fileName,
+    );
     return fileName;
   }
 
@@ -998,10 +991,32 @@ export class ProtSpaceExporter {
    * Download file helper
    */
   private downloadFile(url: string, filename: string): void {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
+    clickDownload(url, filename);
+  }
+}
+
+function clickDownload(url: string, filename: string): void {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+}
+
+/** A name made safe for a file name: letters, digits, `_` and `-` only, lower case. */
+export function fileNamePart(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+}
+
+/** Downloads `ids` as `fileName`, one ID per line. */
+export function downloadProteinIds(ids: readonly string[], fileName: string): void {
+  // A Blob, not a data: URI: hundreds of thousands of IDs URI-encoded into one string cost
+  // several megabytes of string building before the download even starts.
+  const blob = new Blob([ids.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  try {
+    clickDownload(url, fileName);
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL_MS);
   }
 }
 

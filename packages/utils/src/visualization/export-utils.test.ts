@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ProtSpaceExporter, createExporter } from './export-utils';
+import {
+  ProtSpaceExporter,
+  createExporter,
+  downloadProteinIds,
+  fileNamePart,
+} from './export-utils';
 import type { ExportableElement, ExportableData } from './export-utils';
 import { NA_VALUE } from './missing-values';
 
@@ -193,6 +198,13 @@ describe('N/A handling in export', () => {
   });
 });
 
+/** Stands in for the `<a download>` the ID download clicks (node has no document). */
+function stubDownloadLink() {
+  const link = { href: '', download: '', click: vi.fn() };
+  vi.stubGlobal('document', { createElement: vi.fn(() => link) });
+  return link;
+}
+
 /**
  * Helper to call exportProteinIds via the real exporter and capture the downloaded IDs: the
  * export writes a Blob through an object URL, so the Blob is read back here.
@@ -215,8 +227,7 @@ async function callExportProteinIds(
     return 'blob:protein-ids';
   });
   vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vi.spyOn(exporter as any, 'downloadFile').mockImplementation(() => {});
+  stubDownloadLink();
 
   exporter.exportProteinIds();
 
@@ -228,6 +239,7 @@ async function callExportProteinIds(
 describe('exportProteinIds integration', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   const baseData: ExportableData = {
@@ -382,25 +394,43 @@ describe('exporters report the file they wrote', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('exportProteinIds returns its file name and downloads a Blob URL, not a data: URI', () => {
     const exporter = createExporter(createMockElement());
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:protein-ids');
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const download = vi.spyOn(exporter as any, 'downloadFile').mockImplementation(() => {});
+    const link = stubDownloadLink();
 
     expect(exporter.exportProteinIds()).toBe('protein_ids.txt');
     expect(created).toHaveBeenCalledWith(expect.any(Blob));
     expect((created.mock.calls[0][0] as Blob).type).toBe('text/plain;charset=utf-8');
-    expect(download).toHaveBeenCalledWith('blob:protein-ids', 'protein_ids.txt');
-    expect(String(download.mock.calls[0][0]).startsWith('data:')).toBe(false);
+    expect(link).toMatchObject({ href: 'blob:protein-ids', download: 'protein_ids.txt' });
+    expect(link.click).toHaveBeenCalledOnce();
     // Revoked only after the browser has had time to start the download (Firefox, Safari).
     vi.advanceTimersByTime(59_999);
     expect(revoked).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(revoked).toHaveBeenCalledWith('blob:protein-ids');
+  });
+
+  it('downloadProteinIds writes one ID per line under the given name', async () => {
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:eat-ids');
+    const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const link = stubDownloadLink();
+
+    downloadProteinIds(['P1', 'P2'], 'toxin-eat-kept-ids.txt');
+    expect(await (created.mock.calls[0][0] as Blob).text()).toBe('P1\nP2');
+    expect(link).toMatchObject({ href: 'blob:eat-ids', download: 'toxin-eat-kept-ids.txt' });
+    expect(link.click).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(60_000);
+    expect(revoked).toHaveBeenCalledWith('blob:eat-ids');
+  });
+
+  it('fileNamePart keeps letters, digits, _ and -, in lower case', () => {
+    expect(fileNamePart('EC number (v2)')).toBe('ec_number__v2_');
+    expect(fileNamePart('toxin_family-1')).toBe('toxin_family-1');
   });
 
   it('exportProteinIds returns null with no data', () => {

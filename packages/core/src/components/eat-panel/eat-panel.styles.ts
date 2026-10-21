@@ -459,7 +459,8 @@ export const eatPanelStyles = [
     }
 
     .eat-drill-row:hover,
-    .eat-drill-select:hover:not(:disabled) {
+    .eat-drill-select:hover:not(:disabled),
+    .eat-export:hover {
       background: var(--ps-surface-hover);
     }
 
@@ -488,14 +489,16 @@ export const eatPanelStyles = [
       color: var(--ps-text-muted);
     }
 
-    .eat-drill-foot {
+    .eat-drill-foot,
+    .eat-readout-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: var(--ps-space-2);
     }
 
-    .eat-drill-select {
+    .eat-drill-select,
+    .eat-export {
       padding: var(--ps-space-1);
       border: none;
       border-radius: var(--ps-radius-sm);

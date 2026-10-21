@@ -12,7 +12,9 @@ import {
   isSameReliability,
   type VisualizationData,
 } from '@protspace/utils';
+import type { notify as appNotify } from '../lib/notify';
 import type { FilterController } from './filter-controller';
+import { getExportFailureNotification, getExportSuccessNotification } from './notifications';
 import { setWorkbenchStatus, type EatAvailability } from './workbench-status';
 
 /**
@@ -77,7 +79,8 @@ interface EatPanelController {
  * `traceProtein` without touching the selection.
  *
  * The Drawing switches (`eat-drawing-change`) reach the plot click's tracing through `setTracing`
- * and count toward the rail dot.
+ * and count toward the rail dot. Export IDs (`eat-export-ids`) downloads through `downloadIds` and
+ * confirms with the export toast.
  */
 export function createEatPanelController({
   eatPanel,
@@ -92,6 +95,8 @@ export function createEatPanelController({
   requestStructure,
   traceProtein,
   setTracing,
+  downloadIds,
+  notify,
 }: {
   eatPanel: Pick<
     ProtspaceEatPanel,
@@ -132,6 +137,9 @@ export function createEatPanelController({
   traceProtein(proteinId: string, originalIndex: number, mode?: 'auto' | 'source'): boolean;
   /** Trace source on click and Lines per source, for plot clicks. */
   setTracing(options: { trace: boolean; linesPerSource: number }): void;
+  /** Download `ids` as `fileName`, one per line (`downloadProteinIds`). */
+  downloadIds(ids: readonly string[], fileName: string): void;
+  notify: Pick<typeof appNotify, 'success' | 'error'>;
 }): EatPanelController {
   let selection: readonly string[] = [];
 
@@ -237,6 +245,18 @@ export function createEatPanelController({
     setWorkbenchStatus({ eatAdjusted: !eatPanel.isAtDefaults });
   };
 
+  const onExportIds = (event: Event) => {
+    const { proteinIds, fileName } = (
+      event as CustomEvent<{ proteinIds: string[]; fileName: string }>
+    ).detail;
+    try {
+      downloadIds(proteinIds, fileName);
+      notify.success(getExportSuccessNotification(fileName));
+    } catch (error) {
+      notify.error(getExportFailureNotification(error));
+    }
+  };
+
   const onOverlayChange = (event: Event) => {
     const { enabled, reliability } = (event as CustomEvent<EatOverlayChangeDetail>).detail;
     if (plotElement.eatOverlayEnabled !== enabled) plotElement.eatOverlayEnabled = enabled;
@@ -261,6 +281,7 @@ export function createEatPanelController({
   eatPanel.addEventListener('eat-go-to-source', onGoToSource);
   eatPanel.addEventListener('eat-trace-source', onTraceSource);
   eatPanel.addEventListener('eat-drawing-change', onDrawingChange);
+  eatPanel.addEventListener('eat-export-ids', onExportIds);
   const unsubscribePanel = subscribePanel(syncActive);
   syncData();
 
@@ -287,6 +308,7 @@ export function createEatPanelController({
       eatPanel.removeEventListener('eat-go-to-source', onGoToSource);
       eatPanel.removeEventListener('eat-trace-source', onTraceSource);
       eatPanel.removeEventListener('eat-drawing-change', onDrawingChange);
+      eatPanel.removeEventListener('eat-export-ids', onExportIds);
       unsubscribePanel();
     },
   };

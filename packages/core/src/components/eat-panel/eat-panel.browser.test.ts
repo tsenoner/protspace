@@ -784,4 +784,77 @@ describe('protspace-eat-panel', () => {
       expect(card(el)).not.toBeNull();
     });
   });
+
+  describe('Export IDs', () => {
+    type ExportDetail = { proteinIds: string[]; fileName: string };
+    function listenExport(el: ProtspaceEatPanel): ExportDetail[] {
+      const details: ExportDetail[] = [];
+      el.addEventListener('eat-export-ids', (event) =>
+        details.push((event as CustomEvent<ExportDetail>).detail),
+      );
+      return details;
+    }
+    async function openExport(el: ProtspaceEatPanel, trigger: HTMLElement) {
+      trigger.click();
+      await el.updateComplete;
+      const menu = root(el).querySelector<HTMLElement & { open: boolean }>('ps-menu')!;
+      expect(menu.open).toBe(true);
+      return [...root(el).querySelectorAll<HTMLElement & { disabled: boolean }>('ps-menu-item')];
+    }
+    const itemText = (item: HTMLElement) => item.textContent!.replace(/\s+/g, ' ').trim();
+
+    it('exports the kept or below-threshold IDs in the view, in reliability order', async () => {
+      const el = await mount({ context: mask(['P8']) });
+      const exported = listenExport(el);
+      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      await el.updateComplete;
+      const trigger = root(el).querySelector<HTMLElement>('.eat-readout-row .eat-export')!;
+      let items = await openExport(el, trigger);
+      expect(items.map(itemText)).toEqual(['Kept predictions (3)', 'Below threshold (1)']);
+      items[0].click();
+      await el.updateComplete;
+      expect(exported).toEqual([
+        { proteinIds: ['P5', 'P7', 'P9'], fileName: 'toxin-eat-kept-ids.txt' },
+      ]);
+      expect(root(el).querySelector<HTMLElement & { open: boolean }>('ps-menu')!.open).toBe(false);
+      items = await openExport(el, trigger);
+      items[1].click();
+      expect(exported[1]).toEqual({ proteinIds: ['P3'], fileName: 'toxin-eat-below-ids.txt' });
+    });
+
+    it('disables an empty choice', async () => {
+      const el = await mount();
+      const exported = listenExport(el);
+      const items = await openExport(
+        el,
+        root(el).querySelector<HTMLElement>('.eat-readout-row .eat-export')!,
+      );
+      expect(items.map(itemText)).toEqual(['Kept predictions (5)', 'Below threshold (0)']);
+      expect(items.map((item) => item.disabled)).toEqual([false, true]);
+      items[1].click();
+      expect(exported).toEqual([]);
+    });
+
+    it('a drill-down list exports only its bar or label', async () => {
+      const el = await mount({
+        data: labelData([
+          { label: 'A', curated: 1, predicted: [0.54, 0.3] },
+          { label: 'B', curated: 0, predicted: [0.9, 0.2] },
+        ]),
+        annotation: 'cls',
+      });
+      const exported = listenExport(el);
+      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      await el.updateComplete;
+      root(el).querySelector<HTMLButtonElement>('.eat-label-row[data-label="B"]')!.click();
+      await el.updateComplete;
+      const items = await openExport(
+        el,
+        root(el).querySelector<HTMLElement>('.eat-drill-foot .eat-export')!,
+      );
+      expect(items.map(itemText)).toEqual(['Kept predictions (1)', 'Below threshold (1)']);
+      items[1].click();
+      expect(exported).toEqual([{ proteinIds: ['Q4'], fileName: 'cls-eat-below-ids.txt' }]);
+    });
+  });
 });

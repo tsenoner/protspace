@@ -3,6 +3,7 @@ import { property, state } from 'lit/decorators.js';
 import {
   annotationLabel,
   DEFAULT_EAT_RELIABILITY,
+  fileNamePart,
   formatCount,
   isSameReliability,
   normalizeReliability,
@@ -10,6 +11,7 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
+import '../kit/menu';
 import '../kit/select';
 import '../kit/switch';
 import type { PsSelect } from '../kit/select';
@@ -47,6 +49,9 @@ const DEFAULTS = normalizeReliability(DEFAULT_EAT_RELIABILITY);
 /** The open drill-down list: a histogram bar's, or a label's (by name, as rows re-sort). */
 type OpenDrill = { bin: number } | { label: string };
 
+/** The open Export IDs menu: its trigger, and the bar or label it is scoped to (null: all). */
+type ExportMenu = { anchor: HTMLElement; drill: EatDrill | null };
+
 /** How many of a source's lines are drawn (Decision 7). */
 type LinesPerSource = 10 | 20 | 50;
 const DEFAULT_LINES_PER_SOURCE: LinesPerSource = 20;
@@ -74,6 +79,8 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  *   draws that source's lines.
  * @fires eat-drawing-change - `{ trace, linesPerSource }`: a Drawing switch changed, or Reset
  *   moved one back to its default.
+ * @fires eat-export-ids - `{ proteinIds, fileName }`: Export IDs, the kept or the below-threshold
+ *   predictions in the context (or behind a drill-down's bar or label), in reliability order.
  */
 @customElement('protspace-eat-panel')
 export class ProtspaceEatPanel extends LitElement {
@@ -98,6 +105,9 @@ export class ProtspaceEatPanel extends LitElement {
   @state() private _showAllLabels = false;
   @state() private _othersOpen = false;
   @state() private _drill: OpenDrill | null = null;
+  @state() private _exportMenu: ExportMenu | null = null;
+  /** The last opened menu's scope; the menu closes before it reports the pick. */
+  private _exportDrill: EatDrill | null = null;
   /** The histogram bar holding the bar group's one tab stop. */
   @state() private _focusBin = 0;
 
@@ -188,6 +198,7 @@ export class ProtspaceEatPanel extends LitElement {
       this._summary = null;
       this._showAllLabels = false;
       this._drill = null;
+      this._exportMenu = null;
     }
     if (!this._index) {
       this._summary = null;
@@ -222,6 +233,11 @@ export class ProtspaceEatPanel extends LitElement {
     if (stale) this._drill = null;
   }
 
+  protected updated(): void {
+    // A drill-down's menu goes with its list (closed, or dropped as stale).
+    if (this._exportMenu && !this._exportMenu.anchor.isConnected) this._exportMenu = null;
+  }
+
   private _cardFacts(index: EatIndex, data: VisualizationData, protein: number): EatCardFacts {
     const cached = this._card;
     if (cached?.index === index && cached.protein === protein) return cached.facts;
@@ -247,7 +263,7 @@ export class ProtspaceEatPanel extends LitElement {
         >Show predictions</ps-switch
       >
       ${this._renderOverview(summary)}
-      ${renderReliability(this._eat, summary, {
+      ${renderReliability(this._eat, summary, this._renderExportButton(null), {
         openBin: drill && 'bin' in drill ? drill.bin : null,
         focusBin: this._focusBin,
         list: drill && 'bin' in drill ? this._renderDrill() : nothing,
@@ -295,7 +311,80 @@ export class ProtspaceEatPanel extends LitElement {
             onToggle: (open) => (this._othersOpen = open),
             onColorBy: this._colorBy,
           })
-        : nothing}`;
+        : nothing}
+      ${this._renderExportMenu(summary)}`;
+  }
+
+  /** `Export IDs`: opens the menu for the whole context (`drill` null) or one bar or label. */
+  private _renderExportButton(drill: EatDrill | null): TemplateResult {
+    return html`<button
+      type="button"
+      class="eat-export"
+      @click=${(event: Event) => {
+        const anchor = event.currentTarget as HTMLElement;
+        this._exportDrill = drill;
+        this._exportMenu = this._exportMenu?.anchor === anchor ? null : { anchor, drill };
+      }}
+    >
+      Export IDs
+    </button>`;
+  }
+
+  /** The one Export IDs menu, at whichever trigger opened it. */
+  private _renderExportMenu(summary: EatSummary | null): TemplateResult | typeof nothing {
+    const menu = this._exportMenu;
+    const index = this._index;
+    let kept = 0;
+    let below = 0;
+    if (menu && index && summary) {
+      if (menu.drill) {
+        const counts = countIn(index, menu.drill, this.context, this._eat.reliability);
+        kept = counts.kept;
+        below = counts.total - counts.kept;
+      } else {
+        ({ kept, below } = summary);
+      }
+    }
+    return html`<ps-menu
+      label="Export IDs"
+      .anchor=${menu?.anchor ?? null}
+      .open=${menu !== null}
+      @ps-select=${(event: Event) => {
+        event.stopPropagation();
+        this._exportIds((event as CustomEvent<{ value: 'kept' | 'below' }>).detail.value);
+      }}
+      @ps-close=${(event: Event) => {
+        event.stopPropagation();
+        this._exportMenu = null;
+      }}
+    >
+      <ps-menu-item value="kept" ?disabled=${kept === 0}
+        >Kept predictions (${formatCount(kept)})</ps-menu-item
+      >
+      <ps-menu-item value="below" ?disabled=${below === 0}
+        >Below threshold (${formatCount(below)})</ps-menu-item
+      >
+    </ps-menu>`;
+  }
+
+  /** One ID per line, named `<annotation>-eat-kept-ids.txt` or `…-below-ids.txt` (Decision 12). */
+  private _exportIds(which: 'kept' | 'below'): void {
+    const index = this._index;
+    const data = this.data;
+    this._exportMenu = null;
+    if (!index || !data) return;
+    const proteinIds = predictionIds(
+      index,
+      data,
+      this._eat.reliability,
+      which,
+      this.context,
+      this._exportDrill ?? undefined,
+    );
+    this._emit('eat-export-ids', {
+      proteinIds,
+      fileName: `${fileNamePart(this.annotation)}-eat-${which}-ids.txt`,
+    });
   }
 
   constructor() {
@@ -448,6 +537,7 @@ export class ProtspaceEatPanel extends LitElement {
         >
           Select all ${formatCount(kept)} kept
         </button>
+        ${this._renderExportButton(drill)}
         <span class="eat-drill-count">${weakest.length} of ${formatCount(total)}</span>
       </div>
     </div>`;
