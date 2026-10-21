@@ -46,6 +46,8 @@ function makeHumanData(count: number): ProtspaceData {
 }
 
 const human = () => createCondition({ annotation: 'organism', values: ['Human'] });
+const mouseOr = () =>
+  createCondition({ annotation: 'organism', values: ['Mouse'], logicalOp: 'OR' });
 
 describe('query-builder Apply gating', () => {
   let builder: QueryBuilderInternals;
@@ -126,17 +128,26 @@ describe('query-builder Apply gating', () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
-  it('keeps Apply disabled for a configured condition OR a match-all empty condition (result is all proteins)', async () => {
+  it('leaves an empty condition joined with "or" out of the count', async () => {
     builder.query = [human(), createCondition({ logicalOp: 'OR' })];
     await settle();
 
-    // Human{2} OR empty{all} = all 5 → filters nothing → Apply disabled.
+    // The empty row waits for an annotation and matches nothing yet: Human alone, 2 of 5.
+    expect(countLine().textContent!.trim()).toBe('2 of 5 proteins match');
+    expect(applyButton().disabled).toBe(false);
+  });
+
+  it('keeps Apply disabled when the conditions together keep every protein', async () => {
+    builder.query = [human(), mouseOr()];
+    await settle();
+
+    // Human{2} OR Mouse{3} = all 5 → filters nothing → Apply disabled.
     expect(applyButton().disabled).toBe(true);
     expect(reason()).toBe('Every protein matches; nothing to filter');
   });
 
   it('does not dispatch query-apply when the result matches every protein (defense for non-click paths)', async () => {
-    builder.query = [human(), createCondition({ logicalOp: 'OR' })];
+    builder.query = [human(), mouseOr()];
     await settle();
 
     const onApply = vi.fn();

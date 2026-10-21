@@ -100,10 +100,6 @@ function evaluateCondition(
     return evaluateNumericCondition(condition, data, numProteins);
   }
 
-  if (condition.values.length === 0) {
-    return allIndices(numProteins);
-  }
-
   if (!data.annotation_data?.[condition.annotation] || !data.annotations?.[condition.annotation]) {
     return new Set();
   }
@@ -202,10 +198,8 @@ function proteinsWithAnyValue(
 
 /**
  * Evaluate a numeric condition: a protein matches when its raw numeric value
- * lies in its range, both ends included. An unconfigured condition (no bound) is
- * a no-op and matches everything — mirroring an empty categorical condition. This
- * keeps the two kinds symmetric under NOT: `NOT (unconfigured)` then matches
- * nothing (and leaves Apply disabled) instead of isolating every protein.
+ * lies in its range, both ends included. With no bound it is the full range and
+ * matches everything, so `NOT (full range)` matches nothing.
  */
 function evaluateNumericCondition(
   condition: NumericCondition,
@@ -230,7 +224,7 @@ function evaluateNumericCondition(
 /**
  * True when the query constrains the result at all — i.e. at least one
  * condition (at any group depth) is configured. Unconfigured conditions are
- * match-all no-ops (see evaluateCondition), so a query without a single
+ * left out of the count (see evaluateCounted), so a query without a single
  * configured condition matches every protein; Apply gates on this so such a
  * query can't be applied as if it were a real filter.
  */
@@ -290,26 +284,40 @@ function excludeItemById(items: FilterQueryItem[], id: string): FilterQueryItem[
   return result;
 }
 
+/** A categorical row with no value yet (or no annotation): it constrains nothing. */
+const isIncomplete = (condition: FilterCondition) =>
+  condition.kind !== 'numeric' && condition.values.length === 0;
+
 function evaluateItems(
   items: FilterQueryItem[],
   data: ProtspaceData,
   numProteins: number,
 ): Set<number> {
-  // An empty item list (e.g. a group whose last condition was removed) is a
-  // match-all no-op, symmetric with an empty top-level query (evaluateQuery)
-  // and an empty/unconfigured condition (evaluateCondition). Without this an
-  // empty group would return ∅ and AND-kill the whole query (count 0, Apply
-  // disabled). Apply is still gated separately by hasConfiguredCondition.
-  if (items.length === 0) return allIndices(numProteins);
+  return evaluateCounted(items, data, numProteins) ?? allIndices(numProteins);
+}
 
+/**
+ * The items' matches, or null when none of them constrains anything. Incomplete rows and empty
+ * groups are left out rather than read as "every protein": under "or" that reading would make
+ * the whole query match everything, and under NOT match nothing, while the row still waits for
+ * a value. Apply is gated separately by hasConfiguredCondition.
+ */
+function evaluateCounted(
+  items: FilterQueryItem[],
+  data: ProtspaceData,
+  numProteins: number,
+): Set<number> | null {
   let accumulated: Set<number> | null = null;
 
   for (const item of items) {
     let itemResult: Set<number>;
 
     if (isFilterGroup(item)) {
-      itemResult = evaluateItems(item.conditions, data, numProteins);
+      const inner = evaluateCounted(item.conditions, data, numProteins);
+      if (!inner) continue;
+      itemResult = inner;
     } else {
+      if (isIncomplete(item)) continue;
       itemResult = evaluateCondition(item, data, numProteins);
     }
 
@@ -336,7 +344,7 @@ function evaluateItems(
     }
   }
 
-  return accumulated ?? new Set();
+  return accumulated;
 }
 
 function allIndices(n: number): Set<number> {
