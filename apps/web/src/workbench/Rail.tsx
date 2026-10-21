@@ -74,6 +74,7 @@ export function Rail({
       ></ps-icon-button>
       <span className="wb-rail-divider" aria-hidden="true"></span>
       <ps-icon-button
+        id="wb-rail-legend"
         icon="list"
         label="Legend"
         tooltipPlacement="left"

@@ -44,7 +44,7 @@ export function EatPanel({
       const target =
         getWorkbenchStatus().eatAvailability.kind === 'available'
           ? document.getElementById('wb-rail-eat')
-          : document.querySelector<HTMLElement>('.wb-rail ps-icon-button[icon="list"]');
+          : document.getElementById('wb-rail-legend');
       target?.focus();
     };
     button.addEventListener('click', onClick);
