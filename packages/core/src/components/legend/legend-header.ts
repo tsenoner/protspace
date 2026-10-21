@@ -78,7 +78,9 @@ function renderEatNote(
   const text = `Includes ${formatCount(eat.predicted)} predicted${filter ? ` · Filtered ${filter}` : ''}`;
   return html`<p class="legend-eat-note" part="eat-note">
     <span class="legend-eat-text">${text}</span
-    ><button type="button" class="legend-eat-link" @click=${onOpen}>EAT ›</button>
+    ><button type="button" class="legend-eat-link" aria-label="Open the EAT panel" @click=${onOpen}>
+      EAT <span aria-hidden="true">›</span>
+    </button>
   </p>`;
 }
 

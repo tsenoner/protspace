@@ -213,6 +213,9 @@ describe('legend header: the EAT note', () => {
     document.addEventListener('eat-panel-open', open);
     const link = note(legend)!.querySelector<HTMLButtonElement>('button.legend-eat-link')!;
     expect(link.textContent!.trim()).toBe('EAT ›');
+    // The glyph is not read out: the link is named for what it does.
+    expect(link.getAttribute('aria-label')).toBe('Open the EAT panel');
+    expect(link.querySelector('[aria-hidden="true"]')!.textContent).toBe('›');
     link.click();
     document.removeEventListener('eat-panel-open', open);
     expect(open).toHaveBeenCalledOnce();

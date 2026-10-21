@@ -43,4 +43,4 @@ export const legendEatNote = (page: Page): Locator =>
 
 /** The legend's `EAT ›` link, which opens the EAT panel. */
 export const legendEatLink = (page: Page): Locator =>
-  page.locator('#myLegend').getByRole('button', { name: 'EAT ›' });
+  page.locator('#myLegend').getByRole('button', { name: 'Open the EAT panel' });

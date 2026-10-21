@@ -153,7 +153,7 @@ test('the Filter panel shows the reliability as a locked row that opens the EAT 
   await expect(row).toContainText('EC number — reliability ≥ 50\u202f%');
   await expect(row.getByRole('button', { name: /Choose annotation|EC number/ })).toHaveCount(0);
 
-  await row.getByRole('button', { name: 'Edit in EAT ›' }).click();
+  await row.getByRole('button', { name: 'Edit in EAT', exact: true }).click();
   await expect(eatPanel(page)).toBeVisible();
   await expect(page.locator('#wb-eat-title')).toBeFocused();
   await expect(eatThresholdBox(page)).toHaveValue('50');

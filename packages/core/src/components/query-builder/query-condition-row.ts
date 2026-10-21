@@ -703,7 +703,7 @@ class ProtspaceQueryConditionRow extends LitElement {
             >${label} — reliability ${reliabilityLabel(state) ?? 'any'}</span
           >
           <button type="button" class="locked-edit" @click=${() => send('eat-panel-open')}>
-            Edit in EAT ›
+            Edit in EAT <span aria-hidden="true">›</span>
           </button>
         </div>
         <div class="condition-actions">
