@@ -119,7 +119,7 @@ export const menuItemStyles = [
       padding-bottom: var(--ps-space-1);
       color: var(--ps-text-muted);
       font-size: var(--ps-text-xs);
-      font-weight: var(--ps-weight-regular);
+      font-weight: normal;
       white-space: normal;
     }
     @media (pointer: coarse) {
