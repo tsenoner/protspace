@@ -54,8 +54,6 @@ export class ProtspaceEatPanel extends LitElement {
   @property({ type: Boolean }) active = false;
 
   private readonly _eat = new EatReliabilityController(this, {
-    getAnnotation: () => this.annotation,
-    getAnnotationDefinition: () => this.data?.annotations[this.annotation],
     emit: (detail) =>
       this.dispatchEvent(
         new CustomEvent<EatOverlayChangeDetail>('eat-overlay-change', {

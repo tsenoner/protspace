@@ -25,11 +25,16 @@ const METHODS: Record<string, number> = {
   clearForNewDataset: 1,
   hasFileSettingsForAnnotation: 1,
   applyShapeSize: 2,
-  applyEatSettings: 2,
-  setReliabilityState: 1,
   showAllCategories: 0,
 };
-const GETTERS = ['hasFileSettings', 'reliabilityThreshold', 'pickedShapeSize', 'reliabilityState'];
+const GETTERS = ['hasFileSettings', 'pickedShapeSize'];
+/** Moved to the EAT panel (Decision 13). */
+const REMOVED = [
+  'applyEatSettings',
+  'setReliabilityState',
+  'reliabilityState',
+  'reliabilityThreshold',
+];
 
 async function mount(): Promise<ProtspaceLegend> {
   const { legend } = await mountLegendWithScatterplot(categoricalData(TWELVE), 'family');
@@ -54,6 +59,15 @@ describe('legend public API', () => {
     expect(typeof Object.getOwnPropertyDescriptor(ProtspaceLegend.prototype, name)?.get).toBe(
       'function',
     );
+  });
+
+  it.each(REMOVED)('no longer has %s', (name) => {
+    expect(name in ProtspaceLegend.prototype).toBe(false);
+  });
+
+  it('takes the EAT panel’s reliability filter as the eatReliability property', async () => {
+    const legend = await mount();
+    expect(legend.eatReliability).toBeNull();
   });
 
   it('dispatches legend-customize from the settings button', async () => {
@@ -106,18 +120,6 @@ describe('legend public API', () => {
         message: 'Failed to process legend data',
       }),
     );
-  });
-
-  it('dispatches eat-overlay-change when EAT settings are applied', async () => {
-    const legend = await mount();
-    const onEat = vi.fn();
-    legend.addEventListener('eat-overlay-change', onEat);
-    legend.applyEatSettings(false, 0.4);
-    expect(onEat.mock.calls[0][0].detail).toEqual({
-      enabled: false,
-      confidenceThreshold: 0.4,
-      reliability: { mode: 'atLeast', min: 0.4, max: 1 },
-    });
   });
 
   it('dispatches legend-download from downloadAsImage', async () => {

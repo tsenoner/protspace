@@ -6,12 +6,16 @@
  * Matched indices are positions in the materialized snapshot the builder evaluated; translating
  * them through the isolated subset shrank the result on every re-apply (#257).
  *
- * Edits are a draft until Apply. The legend's EAT reliability control writes the applied filter at
+ * Edits are a draft until Apply. The EAT panel's reliability filter writes the applied filter at
  * once and mirrors into the draft; the applied query moves the control back (#6b, #380). The
  * column is found by its runtime role, not its `__eat_confidence` suffix, so the collision-renamed
  * `__runtime_N` variant works too.
  */
-import type { ProtspaceLegend, ProtspaceQueryBuilder, ProtspaceScatterplot } from '@protspace/core';
+import {
+  evaluateQuery,
+  type ProtspaceQueryBuilder,
+  type ProtspaceScatterplot,
+} from '@protspace/core';
 import { NA_VALUE, NEUTRAL_BOUND, type VisualizationData } from '@protspace/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findConditionsForAnnotation } from '../../../../packages/core/src/components/query-builder/query-annotation-conditions';
@@ -41,7 +45,7 @@ vi.mock('@protspace/core', async () => {
   const equal = await import('../../../../packages/core/src/components/query-builder/query-equal');
   return {
     createCondition: types.createCondition,
-    evaluateQuery: evaluate.evaluateQuery,
+    evaluateQuery: vi.fn(evaluate.evaluateQuery),
     hasConfiguredCondition: evaluate.hasConfiguredCondition,
     findConditionsForAnnotation: conditions.findConditionsForAnnotation,
     replaceConditionsForAnnotation: conditions.replaceConditionsForAnnotation,
@@ -129,7 +133,7 @@ function mount(
     getCurrentData: vi.fn(() => asData({ protein_ids: ['p0', 'p1'], annotations: {} })),
     getMaterializedData: vi.fn((): VisualizationData | null => makeData()),
   });
-  const legend = { setReliabilityState: vi.fn() };
+  const eatPanel = { setReliabilityState: vi.fn() };
   const queryBuilder = Object.assign(new EventTarget(), {
     annotations: [] as string[],
     data: undefined as VisualizationData | undefined,
@@ -154,7 +158,7 @@ function mount(
   const root = new EventTarget();
   const controller = createFilterController({
     plotElement: plot as unknown as ProtspaceScatterplot,
-    legendElement: legend as unknown as ProtspaceLegend,
+    eatPanel,
     queryBuilder: queryBuilder as unknown as ProtspaceQueryBuilder,
     root: root as unknown as Document,
     isPanelShown: () => panel.shown,
@@ -168,8 +172,8 @@ function mount(
   fire(plot, 'data-change', { data: makeData() });
   if (selectedAnnotation !== undefined) controller.setSelectedAnnotation(selectedAnnotation);
   // Mounting with an annotation mirrors once; the tests count only what they cause.
-  legend.setReliabilityState.mockClear();
-  return { controller, plot, legend, queryBuilder, panel, root, commits };
+  eatPanel.setReliabilityState.mockClear();
+  return { controller, plot, eatPanel, queryBuilder, panel, root, commits };
 }
 
 const fire = (target: EventTarget, type: string, detail?: unknown) =>
@@ -178,7 +182,7 @@ const apply = (queryBuilder: EventTarget, indices: Iterable<number>) =>
   fire(queryBuilder, 'query-apply', { matchedIndices: new Set(indices) });
 const editQuery = (queryBuilder: EventTarget, query: FilterQuery) =>
   fire(queryBuilder, 'query-changed', { query });
-/** The legend slider's scalar form: "hide below `x`". */
+/** The panel slider's scalar form: "hide below `x`". */
 const threshold = (controller: FilterController, base: string, x: number) =>
   controller.setEatReliability(base, { mode: 'atLeast', min: x, max: NEUTRAL_BOUND.max });
 /** A categorical condition with a value picked, so it constrains the query. */
@@ -610,27 +614,27 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
       },
     ];
     editQuery(m.queryBuilder, edited);
-    expect(m.legend.setReliabilityState).not.toHaveBeenCalled();
+    expect(m.eatPanel.setReliabilityState).not.toHaveBeenCalled();
 
     apply(m.queryBuilder, range(15));
-    expect(m.legend.setReliabilityState).toHaveBeenLastCalledWith(
+    expect(m.eatPanel.setReliabilityState).toHaveBeenLastCalledWith(
       expect.objectContaining({ min: 0.6 }),
     );
 
     fire(m.queryBuilder, 'query-reset');
-    expect(m.legend.setReliabilityState).toHaveBeenLastCalledWith(
+    expect(m.eatPanel.setReliabilityState).toHaveBeenLastCalledWith(
       expect.objectContaining({ min: 0 }),
     );
   });
 
-  it('guards the loop: an Apply echoing the forward value does not move the legend again', () => {
+  it('guards the loop: an Apply echoing the forward value does not move the panel again', () => {
     threshold(m.controller, 'family', 0.5);
-    m.legend.setReliabilityState.mockClear();
+    m.eatPanel.setReliabilityState.mockClear();
 
-    // The draft is the applied query; applying it again changes nothing on the legend.
+    // The draft is the applied query; applying it again changes nothing on the panel.
     apply(m.queryBuilder, range(15));
 
-    expect(m.legend.setReliabilityState).not.toHaveBeenCalled();
+    expect(m.eatPanel.setReliabilityState).not.toHaveBeenCalled();
   });
 
   it('keeps a mode that constrains nothing, across an unrelated Apply', () => {
@@ -640,16 +644,16 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
 
     // "Hide above" picked before its bound moves constrains nothing, so the forward mirror
     // emits no condition and returns early. It must still record the position, or the next
-    // unrelated Apply pushes the `atLeast` default back onto the legend's mode select.
+    // unrelated Apply pushes the `atLeast` default back onto the panel's mode control.
     m.controller.setEatReliability('family', { mode: 'atMost', min: 0, max: 1 });
-    m.legend.setReliabilityState.mockClear();
+    m.eatPanel.setReliabilityState.mockClear();
 
     editQuery(m.queryBuilder, [
       { id: 'other', kind: 'numeric', annotation: 'length', operator: 'gt', min: 10 },
     ] as FilterQuery);
     apply(m.queryBuilder, range(4));
 
-    expect(m.legend.setReliabilityState).not.toHaveBeenCalled();
+    expect(m.eatPanel.setReliabilityState).not.toHaveBeenCalled();
   });
 
   it('guards the loop for a condition that is not first in the draft', () => {
@@ -725,13 +729,13 @@ describe('filter controller: per-base EAT reliability (multi-EAT)', () => {
     threshold(m.controller, 'go', 0.8);
 
     m.controller.setSelectedAnnotation('ec');
-    expect(m.legend.setReliabilityState).toHaveBeenLastCalledWith(
+    expect(m.eatPanel.setReliabilityState).toHaveBeenLastCalledWith(
       expect.objectContaining({ min: 0.5 }),
     );
 
     // The pickers' annotation-change, heard on the root (the document in the app).
     fire(m.root, 'annotation-change', { annotation: 'go' });
-    expect(m.legend.setReliabilityState).toHaveBeenLastCalledWith(
+    expect(m.eatPanel.setReliabilityState).toHaveBeenLastCalledWith(
       expect.objectContaining({ min: 0.8 }),
     );
   });
@@ -810,5 +814,46 @@ describe('filter controller: every reliability mode (#380)', () => {
     const conditions = findConditionsForAnnotation(m.queryBuilder.query, EAT_KEY);
     expect(conditions).toHaveLength(1);
     expect(conditions[0]).toMatchObject({ id: 'x', min: 0.7, max: null });
+  });
+});
+
+describe('filter controller: the EAT panel’s context mask (Decision 9)', () => {
+  /** makeEatData plus a numeric `length` column (p_i has length i), one stable snapshot. */
+  const data = (() => {
+    const base = makeEatData();
+    return asData({
+      ...base,
+      annotations: { ...base.annotations, length: { kind: 'numeric', values: [] } },
+      numeric_annotation_data: {
+        ...base.numeric_annotation_data,
+        length: Float64Array.from(range(20)),
+      },
+    });
+  })();
+  const atLeastTen: FilterQuery = [
+    { id: 'len', kind: 'numeric', annotation: 'length', min: 10, max: null },
+  ];
+
+  it('getContextMask is null with only the reliability condition', () => {
+    const m = mount(() => data, { selectedAnnotation: 'family' });
+    expect(m.controller.getContextMask()).toBeNull();
+    threshold(m.controller, 'family', 0.5);
+    expect(m.controller.getContextMask()).toBeNull();
+  });
+
+  it('getContextMask holds the other conditions’ matches and is not recomputed by a reliability change', () => {
+    const m = mount(() => data, { selectedAnnotation: 'family' });
+    editQuery(m.queryBuilder, atLeastTen);
+    apply(m.queryBuilder, range(20).slice(10));
+    const mask = m.controller.getContextMask();
+    expect(Array.from(mask ?? [])).toEqual(range(20).map((i) => (i >= 10 ? 1 : 0)));
+
+    vi.mocked(evaluateQuery).mockClear();
+    threshold(m.controller, 'family', 0.6);
+    // The reliability condition joined the applied query; the context ignores it.
+    expect(eatCondition(applied(m.controller))).toBeDefined();
+    const calls = vi.mocked(evaluateQuery).mock.calls.length;
+    expect(m.controller.getContextMask()).toBe(mask);
+    expect(vi.mocked(evaluateQuery).mock.calls.length).toBe(calls);
   });
 });

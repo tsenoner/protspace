@@ -6,6 +6,7 @@ import type { ProtspaceLegend } from './legend';
 import { sortIcon, sortLabel } from './legend-header';
 import type { LegendSortMode } from './types';
 import { categoricalData, numericData, TWELVE } from './test-support/legend-fixtures';
+import { createEatFixture } from '../eat-panel/test-support/eat-fixture';
 import {
   mountLegendWithScatterplot,
   settleLegend,
@@ -189,5 +190,56 @@ describe('legend header', () => {
     const title = legend.shadowRoot!.querySelector('.legend-header .legend-title')!;
     expect(title.tagName).toBe('H3');
     expect(title.getAttribute('part')).toBe('title');
+  });
+});
+
+describe('legend header: the EAT note', () => {
+  const note = (legend: ProtspaceLegend) => legend.shadowRoot!.querySelector('.legend-eat-note');
+  const noteText = (legend: ProtspaceLegend) =>
+    note(legend)!
+      .querySelector('.legend-eat-text')!
+      .textContent!.replace(/[\t\r\n ]+/g, ' ')
+      .trim();
+
+  it('reads Includes 5 predicted · Filtered ≥ 60 % and its EAT › link dispatches eat-panel-open', async () => {
+    const legend = await mount(createEatFixture(), 'toxin');
+    expect(noteText(legend)).toBe('Includes 5 predicted');
+
+    legend.eatReliability = { mode: 'atLeast', min: 0.6, max: 1 };
+    await legend.updateComplete;
+    expect(noteText(legend)).toBe('Includes 5 predicted · Filtered ≥ 60\u202f%');
+
+    const open = vi.fn();
+    document.addEventListener('eat-panel-open', open);
+    const link = note(legend)!.querySelector<HTMLButtonElement>('button.legend-eat-link')!;
+    expect(link.textContent!.trim()).toBe('EAT ›');
+    link.click();
+    document.removeEventListener('eat-panel-open', open);
+    expect(open).toHaveBeenCalledOnce();
+  });
+
+  it('names an upper bound and a band, and says nothing of a filter that keeps all', async () => {
+    const legend = await mount(createEatFixture(), 'toxin');
+    for (const [state, text] of [
+      [{ mode: 'atMost', min: 0, max: 0.4 }, 'Includes 5 predicted · Filtered ≤ 40\u202f%'],
+      [{ mode: 'between', min: 0.4, max: 0.6 }, 'Includes 5 predicted · Filtered 40–60\u202f%'],
+      [{ mode: 'atLeast', min: 0, max: 1 }, 'Includes 5 predicted'],
+    ] as const) {
+      legend.eatReliability = state;
+      await legend.updateComplete;
+      expect(noteText(legend)).toBe(text);
+    }
+  });
+
+  it('is absent without predictions, and while Show is off', async () => {
+    const plain = await mount(categoricalData(TWELVE), 'family');
+    expect(note(plain)).toBeNull();
+
+    document.body.innerHTML = '';
+    const { legend, plot } = await mountLegendWithScatterplot(createEatFixture(), 'toxin');
+    plot.eatOverlayEnabled = false;
+    plot.dispatchEvent(new CustomEvent('data-change', { detail: { data: plot.data } }));
+    await settleLegend(legend);
+    expect(note(legend)).toBeNull();
   });
 });

@@ -5,7 +5,6 @@ import {
   getNumericBinLabelMap,
   getNumericBinLowerBoundMap,
   getOrderedNumericBinIds,
-  hasEatPredictionsForAnnotation,
   autoClusterScoreCaveat,
   isNumericAnnotation,
   materializeNumericAnnotation,
@@ -15,7 +14,7 @@ import {
 } from '@protspace/utils';
 import { perfCounters } from '../../../utils/perf-counters';
 import { LEGEND_DEFAULTS, LEGEND_VALUES, toInternalValue } from '../config';
-import { computeEatPopulationCounts } from '../eat-population-counts';
+import { countEatPredictions } from '../eat-population-counts';
 import { LegendDataProcessor } from '../legend-data-processor';
 import {
   SHAPE_SIZE_FILLER,
@@ -112,10 +111,6 @@ export class LegendDataController {
     if (selectedAnnotation !== this.host.selectedAnnotation) this.host._closeAnnotationOverlays();
     this.host._reorder.clear();
     const scatterplot = this.host._scatterplotController.scatterplot;
-    this.host._eatControls.mirrorOverlayEnabled(scatterplot?.eatOverlayEnabled ?? true);
-    // The reliability slider position is legend-owned now (it drives the query
-    // filter, not scatter-plot dimming), so it is preserved across data-change
-    // rather than re-read from the scatter plot.
     this.host.data = {
       annotations: data.annotations,
       protein_ids: data.protein_ids,
@@ -128,11 +123,11 @@ export class LegendDataController {
       data.annotations[selectedAnnotation],
     );
     this.updateAnnotationValues(data, selectedAnnotation);
-    this.host._eatCounts = computeEatPopulationCounts(
-      data,
-      selectedAnnotation,
-      this.host._eatControls.overlayEnabled,
-    );
+    // The EAT note counts the whole dataset's predictions, and only while Show is on.
+    this.host._eatPredicted =
+      (scatterplot?.eatOverlayEnabled ?? true)
+        ? countEatPredictions(scatterplot?.data ?? data, selectedAnnotation)
+        : null;
     // Taken from the unsliced element, not from the incoming payload.
     // `sliceWith` in utils strips `statisticsRows` from a filtered or isolated
     // view on purpose (a slice must not carry scores that describe the whole dataset), so
@@ -232,11 +227,6 @@ export class LegendDataController {
       knownValues,
       this.host._hostDriven,
     );
-  }
-
-  hasSelectedEatAnnotation(): boolean {
-    const stableData = this.host._scatterplotController.scatterplot?.data ?? this.host.data;
-    return hasEatPredictionsForAnnotation(stableData, this.host.selectedAnnotation);
   }
 
   ensureSortModeDefaults(): void {

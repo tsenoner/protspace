@@ -1,7 +1,6 @@
 import '@protspace/core'; // Registers all web components
 import type { RendererDegradedDetail } from '@protspace/core';
 import { onEscapeFallback } from '@protspace/core';
-import type { EatReliabilityState } from '@protspace/utils';
 import { isMacOrIos } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import {
@@ -492,7 +491,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   lifecycle.addCleanup(() => stopWatchingFilterUndo?.());
   const filterController = createFilterController({
     plotElement,
-    legendElement,
+    eatPanel,
     queryBuilder,
     root: document,
     isPanelShown: () => isPanelShown('filter'),
@@ -510,6 +509,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const eatPanelController = createEatPanelController({
     eatPanel,
     plotElement,
+    legendElement,
+    filterController,
     root: document,
     isPanelShown: () =>
       getWorkbenchStatus().eatAvailability.kind !== 'dataset' && isPanelShown('eat'),
@@ -596,6 +597,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     getIsDisposed: lifecycle.isDisposed,
     interactionController,
     legendElement,
+    eatPanel,
     loadQueue,
     overlayController,
     plotElement,
@@ -630,6 +632,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     getSelectedProteins: interactionController.getSelectedProteins,
     getUnplacedProteinCount: datasetController.getUnplacedProteinCount,
     legendElement,
+    eatPanel,
     plotElement,
     notify,
   });
@@ -658,20 +661,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     'legend-error',
     interactionController.handleLegendError,
   );
-  // The legend's reliability control drives the shared `EAT_confidence >= x or N/A` filter
-  // condition; the filter controller moves the control back when the query changes (#6b).
-  addTrackedEventListener(lifecycle, legendElement, 'eat-overlay-change', (event: Event) => {
-    // The full state (mode + both bounds) reaches the query: the scalar threshold alone cannot
-    // express "hide above" or "keep between".
-    const { reliability } = (
-      event as CustomEvent<{
-        enabled: boolean;
-        confidenceThreshold: number;
-        reliability: EatReliabilityState;
-      }>
-    ).detail;
-    filterController.setEatReliability(legendElement.selectedAnnotation, reliability);
-  });
+  // The legend's EAT note and the Filter panel's locked row open the EAT panel.
+  addTrackedEventListener(lifecycle, document, 'eat-panel-open', () => openPanel('eat'));
   addTrackedEventListener(
     lifecycle,
     structureViewer,

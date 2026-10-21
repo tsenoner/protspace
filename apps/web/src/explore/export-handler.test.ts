@@ -42,7 +42,6 @@ function setup(options: { unplaced?: number } = {}) {
   };
   const legendElement = {
     getAllPersistedSettings: () => ({ species: { maxVisibleValues: 10 } }),
-    reliabilityThreshold: 0.5,
     pickedShapeSize: undefined as number | undefined,
   };
   createExportHandler({
@@ -51,6 +50,7 @@ function setup(options: { unplaced?: number } = {}) {
     getSelectedProteins: () => [],
     getUnplacedProteinCount: () => options.unplaced ?? 0,
     legendElement: legendElement as never,
+    eatPanel: { reliabilityThreshold: 0.5 },
     plotElement: plotElement as never,
     notify,
   });

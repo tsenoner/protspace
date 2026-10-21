@@ -62,8 +62,8 @@ export function buildControllerOptions(
     legendElement: {
       clearForNewDataset: vi.fn(),
       setFileSettings: vi.fn(),
-      applyEatSettings: vi.fn(),
     },
+    eatPanel: { applyEatSettings: vi.fn() },
     loadQueue: {
       registerFileLoad: vi.fn(),
       awaitLoadOutcome: vi.fn(),

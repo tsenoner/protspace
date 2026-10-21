@@ -32,3 +32,15 @@ export async function openEatPanel(page: Page): Promise<void> {
   await eatRailItem(page).click();
   await expect(eatPanel(page)).toBeVisible();
 }
+
+/** The EAT panel's % box for the reliability threshold (the lower bound). */
+export const eatThresholdBox = (page: Page): Locator =>
+  eatPanel(page).getByRole('spinbutton', { name: 'EAT reliability filter percentage' });
+
+/** The legend's one-line EAT note (`Includes 659 predicted · Filtered ≥ 50 %`). */
+export const legendEatNote = (page: Page): Locator =>
+  page.locator('#myLegend').getByText(/^Includes [\d,]+ predicted/);
+
+/** The legend's `EAT ›` link, which opens the EAT panel. */
+export const legendEatLink = (page: Page): Locator =>
+  page.locator('#myLegend').getByRole('button', { name: 'EAT ›' });

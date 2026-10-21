@@ -9,7 +9,7 @@ import {
   replaceConditionsForAnnotation,
   sameConditions,
   type FilterQuery,
-  type ProtspaceLegend,
+  type ProtspaceEatPanel,
   type ProtspaceQueryBuilder,
   type ProtspaceScatterplot,
 } from '@protspace/core';
@@ -41,7 +41,8 @@ export interface FilterCommit {
 
 interface FilterControllerOptions {
   plotElement: ProtspaceScatterplot;
-  legendElement: ProtspaceLegend;
+  /** The EAT panel, which follows the applied filter's reliability condition. */
+  eatPanel: Pick<ProtspaceEatPanel, 'setReliabilityState'>;
   queryBuilder: ProtspaceQueryBuilder;
   /** Where `annotation-change` is heard; the document in the app. */
   root: Pick<Document, 'addEventListener' | 'removeEventListener'>;
@@ -56,8 +57,14 @@ interface FilterControllerOptions {
 export interface FilterController {
   /** The colouring annotation changed: move the reliability control to its column's state. */
   setSelectedAnnotation(annotation: string): void;
-  /** The legend's reliability control: replaces its base's condition and applies the filter. */
+  /** The EAT panel's reliability filter: replaces its base's condition and applies the filter. */
   setEatReliability(baseKey: string, state: EatReliabilityState): void;
+  /**
+   * Proteins that pass the applied filter without the selected base's reliability condition, as a
+   * 0/1 mask over the snapshot's protein indices; null when no other condition constrains anything.
+   * Cached: a new mask only when that reduced query or the snapshot changes.
+   */
+  getContextMask(): Uint8Array | null;
   /** The filter chip's ✕: removes the applied filter; a dirty draft keeps its edits. */
   clear(): void;
   /** Undo and redo: makes `snapshot` the applied filter as it was, without evaluating. */
@@ -89,14 +96,14 @@ function countConfigured(items: FilterQuery): number {
  * nor an isolation (#257). Matched indices are positions in the materialized snapshot the builder
  * evaluated, never in the isolated subset `getCurrentData()` returns.
  *
- * The legend's EAT reliability control writes the applied filter at once and also updates the
+ * The EAT panel's reliability filter writes the applied filter at once and also updates the
  * draft: a clean draft follows the applied filter, a dirty one gets only that column's condition.
- * The applied filter moves the control back, per eat-confidence column (#6b, #380); both
+ * The applied filter moves the panel back, per eat-confidence column (#6b, #380); both
  * directions compare against the last state recorded for that column, so they cannot ping-pong.
  */
 export function createFilterController({
   plotElement,
-  legendElement,
+  eatPanel,
   queryBuilder,
   root,
   isPanelShown,
@@ -112,6 +119,12 @@ export function createFilterController({
   let snapshot: VisualizationData | undefined;
   let shown = isPanelShown();
   const lastMirrored = new Map<string, EatReliabilityState>();
+  /** The last context mask and what it was computed from. */
+  let context: {
+    query: FilterQuery;
+    snapshot: VisualizationData | undefined;
+    mask: Uint8Array | null;
+  } | null = null;
 
   const readSnapshot = (): VisualizationData | undefined =>
     plotElement.getMaterializedData() ?? plotElement.getCurrentData() ?? snapshot;
@@ -199,28 +212,28 @@ export function createFilterController({
   };
 
   /**
-   * Reverse mirror: tells the legend what the applied filter says for the selected base. `force`
+   * Reverse mirror: tells the EAT panel what the applied filter says for the selected base. `force`
    * repositions the control after an annotation change even when this base's state is unchanged.
    */
-  const mirrorToLegend = (force = false) => {
+  const mirrorToPanel = (force = false) => {
     const key = findEatKey(selectedAnnotation);
     if (!key) return;
     const derived = reliabilityFromConditions(findConditionsForAnnotation(applied.query, key));
-    // No record yet: nothing moved this column off its resting position, which the legend shows.
+    // No record yet: nothing moved this column off its resting position, which the panel shows.
     const last = lastMirrored.get(key) ?? DEFAULT_EAT_RELIABILITY;
     if (!force && isSameReliability(last, derived)) return;
     lastMirrored.set(key, derived);
-    legendElement.setReliabilityState(derived);
+    eatPanel.setReliabilityState(derived);
   };
 
   const setSelectedAnnotation = (annotation: string) => {
     if (annotation === selectedAnnotation) return;
     selectedAnnotation = annotation;
     snapshot = readSnapshot();
-    mirrorToLegend(true);
+    mirrorToPanel(true);
   };
 
-  /** The draft edits nothing on screen: no plot, no legend, until Apply. */
+  /** The draft edits nothing on screen: no plot, no EAT panel, until Apply. */
   const onQueryChanged = (event: Event) => {
     draft = (event as CustomEvent<{ query: FilterQuery }>).detail.query;
     syncBuilder();
@@ -232,7 +245,7 @@ export function createFilterController({
     const before = applied;
     const { matchedIndices } = (event as CustomEvent<{ matchedIndices: Set<number> }>).detail;
     setApplied({ query: draft, matchedIds: idsAt(matchedIndices, proteinIds) });
-    mirrorToLegend();
+    mirrorToPanel();
     // The panel stays: the draft is now clean and Apply says there is nothing new.
     syncBuilder();
     onFilterCommitted?.({ before, after: applied, cause: 'apply' });
@@ -247,8 +260,8 @@ export function createFilterController({
     const before = applied;
     setApplied(NO_FILTER);
     draft = seed;
-    // A full reset drops any reliability condition too: pull the legend control back.
-    mirrorToLegend();
+    // A full reset drops any reliability condition too: pull the panel's control back.
+    mirrorToPanel();
     syncBuilder();
     if (before.query.length > 0) onFilterCommitted?.({ before, after: applied, cause: 'reset' });
   };
@@ -326,7 +339,7 @@ export function createFilterController({
       const draftWasClean = !isDirty();
       setApplied(NO_FILTER);
       if (draftWasClean) draft = seed;
-      mirrorToLegend();
+      mirrorToPanel();
       syncBuilder();
       onFilterCommitted?.({ before, after: applied, cause: 'clear' });
     },
@@ -334,8 +347,26 @@ export function createFilterController({
       const draftWasClean = !isDirty();
       setApplied(next);
       if (draftWasClean) draft = baseline();
-      mirrorToLegend();
+      mirrorToPanel();
       syncBuilder();
+    },
+    getContextMask() {
+      const key = findEatKey(selectedAnnotation);
+      const query = key ? replaceConditionsForAnnotation(applied.query, key, null) : applied.query;
+      if (
+        context &&
+        context.snapshot === snapshot &&
+        queryChanges(context.query, query).count === 0
+      ) {
+        return context.mask;
+      }
+      let mask: Uint8Array | null = null;
+      if (snapshot && hasConfiguredCondition(query)) {
+        mask = new Uint8Array(snapshot.protein_ids.length);
+        for (const index of evaluateQuery(query, snapshot)) mask[index] = 1;
+      }
+      context = { query, snapshot, mask };
+      return mask;
     },
     getApplied: () => applied,
     resetForNewDataset() {
@@ -344,6 +375,7 @@ export function createFilterController({
       seed = [createCondition()];
       draft = seed;
       lastMirrored.clear();
+      context = null;
       // A hidden panel's builder still holds the dataset it last showed; let it go.
       if (!isPanelShown()) queryBuilder.data = undefined;
       syncBuilder();

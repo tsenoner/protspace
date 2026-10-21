@@ -55,11 +55,12 @@ describe('dataset controller EAT settings restore', () => {
     const legendElement = {
       clearForNewDataset: vi.fn(),
       setFileSettings: vi.fn(),
-      applyEatSettings: vi.fn(),
     };
+    const eatPanel = { applyEatSettings: vi.fn() };
     const options = buildControllerOptions({
       controls,
       legendElement,
+      eatPanel,
       plotElement: { eatOverlayEnabled: true },
       loadQueue: {
         getRunningLoadMeta: () => ({ sequence: 7, kind: 'opfs' }),
@@ -80,7 +81,7 @@ describe('dataset controller EAT settings restore', () => {
     );
 
     expect(controls.resetForNewDataset).toHaveBeenCalledOnce();
-    expect(legendElement.applyEatSettings).toHaveBeenCalledWith(false, 0.75);
+    expect(eatPanel.applyEatSettings).toHaveBeenCalledWith(false, 0.75);
     expect(controls.setHasFileSettings).toHaveBeenLastCalledWith(true);
     expect(legendElement.setFileSettings).not.toHaveBeenCalled();
     expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
@@ -95,7 +96,7 @@ describe('dataset controller EAT settings restore', () => {
         },
       }),
     );
-    expect(legendElement.applyEatSettings).toHaveBeenLastCalledWith(
+    expect(eatPanel.applyEatSettings).toHaveBeenLastCalledWith(
       true,
       DEFAULT_EAT_CONFIDENCE_THRESHOLD,
     );
@@ -110,7 +111,6 @@ describe('dataset controller EAT settings restore', () => {
       applyShapeSize: vi.fn((size: number, hash: string) =>
         calls.push(`applyShapeSize:${size}:${typeof hash}`),
       ),
-      applyEatSettings: vi.fn(),
     };
     const controller = createDatasetController(
       buildControllerOptions({

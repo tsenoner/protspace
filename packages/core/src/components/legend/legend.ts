@@ -5,7 +5,6 @@ import {
   DEFAULT_CATEGORICAL_PALETTE_ID,
   isNumericAnnotation,
   annotationLabel,
-  DEFAULT_EAT_RELIABILITY,
   isPredictedAnnotation,
   getAnnotationMeta,
   type NumericAnnotationDisplaySettingsMap,
@@ -64,16 +63,9 @@ import {
   createItemActionEvent,
   computeOtherConcreteValues,
 } from './legend-helpers';
-import type { EatPopulationCounts } from './eat-population-counts';
 import { sortItemsForDisplay } from './legend-items-state';
 
 import { createLegendErrorEventDetail } from './legend.events';
-import {
-  EatReliabilityController,
-  renderEatSection,
-  type EatControlsOptions,
-  type EatOverlayChangeDetail,
-} from '../eat-panel/eat-reliability-controller';
 
 // Types
 import type {
@@ -95,6 +87,7 @@ import type {
  * @fires legend-customize - When the settings popover is opened
  * @fires legend-download - When download is requested
  * @fires legend-error - When an error occurs during data processing, persistence, or syncing
+ * @fires eat-panel-open - When the EAT note's `EAT ›` link is clicked (bubbles, composed)
  *
  * @csspart container - The main legend container
  * @csspart row-handle - A row's reorder handle
@@ -130,14 +123,19 @@ export class ProtspaceLegend extends LitElement {
   /**
    * Off while the host drives the legend, as the app does during a dataset load. The legend
    * follows the scatterplot either way: its sync controller subscribes on connect. While off,
-   * it counts in protein order, the order a host's per-protein `annotationValues` feed has, and
-   * leaves the EAT overlay switch for the host to apply to the plot.
+   * it counts in protein order, the order a host's per-protein `annotationValues` feed has.
    */
   @property({ type: Boolean, attribute: 'auto-sync' })
   autoSync: boolean = true;
 
   @property({ type: Boolean, attribute: 'auto-hide' })
   autoHide: boolean = true;
+
+  /**
+   * The EAT panel's reliability filter, for the one-line EAT note under the title
+   * (`Includes 659 predicted · Filtered ≥ 50 %`); null or unconstrained says nothing about it.
+   */
+  @property({ attribute: false }) eatReliability: EatReliabilityState | null = null;
 
   // ─────────────────────────────────────────────────────────────────
   // Internal State
@@ -178,7 +176,8 @@ export class ProtspaceLegend extends LitElement {
   @state() _selectedPaletteId: string = DEFAULT_CATEGORICAL_PALETTE_ID;
   @state() _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
-  @state() _eatCounts: EatPopulationCounts | null = null;
+  /** Predictions of the selected annotation in the whole dataset while Show is on; else null. */
+  @state() _eatPredicted: number | null = null;
   @state() _categoryScores: CategoryScore[] = [];
   /**
    * Whether the current annotation is one of the backend's auto-clustering membership
@@ -388,6 +387,8 @@ export class ProtspaceLegend extends LitElement {
       const title = e.currentTarget as HTMLElement;
       this._nameTooltip.hover(title, title);
     },
+    onEatOpen: () =>
+      this.dispatchEvent(new CustomEvent('eat-panel-open', { bubbles: true, composed: true })),
   };
 
   private _sortMenuHandlers: Parameters<typeof renderSortMenu>[1] = {
@@ -440,21 +441,6 @@ export class ProtspaceLegend extends LitElement {
     addAll: () => this._actions.extractAllFromOther(),
     focusFirstRow: () => this._keyboard.focusItem(0),
   });
-
-  _eatControls = new EatReliabilityController(this, {
-    getScatterplot: () => this._scatterplotController.scatterplot,
-    isHostDriven: () => this._hostDriven,
-    getAnnotation: () => this.selectedAnnotation,
-    getAnnotationDefinition: () => this.data?.annotations?.[this.selectedAnnotation],
-    emit: (detail: EatOverlayChangeDetail) =>
-      this.dispatchEvent(
-        new CustomEvent<EatOverlayChangeDetail>('eat-overlay-change', {
-          detail,
-          bubbles: true,
-          composed: true,
-        }),
-      ),
-  } satisfies EatControlsOptions);
 
   private _canDragLegendItem(item: LegendItem): boolean {
     return item.value !== LEGEND_VALUES.OTHER;
@@ -653,15 +639,7 @@ export class ProtspaceLegend extends LitElement {
     this._selectedPaletteId = DEFAULT_CATEGORICAL_PALETTE_ID;
     this._numericSettingsByAnnotation = {};
     this._numericManualOrderIdsByAnnotation = {};
-    this._eatCounts = null;
-    this._eatControls.mirrorOverlayEnabled(true);
-    // Reset the whole reliability position, not just the lower bound, and drop a drag left
-    // in flight (its debounced commit would emit the reset position against the NEW
-    // dataset, after the seed has already run). A bundle restores the threshold only, so a
-    // mode left over from the previous dataset would reinterpret it: "hide below 60%" saved
-    // in this bundle would load as "hide above <the previous dataset's upper bound>" — the
-    // opposite filter.
-    this._eatControls.mirror(DEFAULT_EAT_RELIABILITY);
+    this._eatPredicted = null;
     this._reorder.clear();
 
     // Reset isolation state
@@ -699,15 +677,6 @@ export class ProtspaceLegend extends LitElement {
   // ─────────────────────────────────────────────────────────────────
 
   /**
-   * Reliability slider position (0…1). The slider no longer dims points itself;
-   * it drives the shared `EAT_confidence >= x or N/A` query filter via the control
-   * bar. Exposed so bundle export can persist the saved slider position (#6b).
-   */
-  public get reliabilityThreshold(): number {
-    return this._eatControls.reliability.min;
-  }
-
-  /**
    * Apply a bundle's dataset-level shape size. `datasetHash` is for when the
    * component's own hash is not computed from the new data yet.
    */
@@ -725,27 +694,6 @@ export class ProtspaceLegend extends LitElement {
    */
   public get pickedShapeSize(): number | undefined {
     return this._persistenceController.loadShapeSize() ?? undefined;
-  }
-
-  /**
-   * Bundle restore: the saved overlay switch plus the saved reliability position, which
-   * reopens on "Hide below" at the saved value (`EatReliabilityController.applySettings`).
-   */
-  public applyEatSettings(enabled: boolean, threshold: number): void {
-    this._eatControls.applySettings(enabled, threshold);
-  }
-
-  /** The reliability filter as the filter controller models it: a mode plus bounds. */
-  public get reliabilityState(): EatReliabilityState {
-    return this._eatControls.reliability;
-  }
-
-  /**
-   * Reverse mirror: set the control's position from the query filter WITHOUT re-emitting
-   * `eat-overlay-change`, cancelling a pending drag commit first (#6b, #380).
-   */
-  public setReliabilityState(state: EatReliabilityState): void {
-    this._eatControls.mirror(state);
   }
 
   /**
@@ -804,9 +752,6 @@ export class ProtspaceLegend extends LitElement {
           ${this._statusMessage}
         </div>
         ${renderLegendHeader(this._headerModel(title, predicted, info), this._headerHandlers)}
-        ${this._data.hasSelectedEatAnnotation()
-          ? renderEatSection(this._eatControls, { counts: this._eatCounts })
-          : ''}
         ${this._renderScoreStrips()}
         ${renderLegendList(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
@@ -831,6 +776,10 @@ export class ProtspaceLegend extends LitElement {
       hasScores: this._categoryScores.length > 0,
       canSort: this._legendItems.length > 1,
       settingsOpen: this._settingsAnchor !== null,
+      eat:
+        this._eatPredicted === null
+          ? undefined
+          : { predicted: this._eatPredicted, reliability: this.eatReliability },
     };
   }
 

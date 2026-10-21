@@ -1,5 +1,6 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { live } from 'lit/directives/live.js';
+import { formatCount, normalizeReliability, type EatReliabilityState } from '@protspace/utils';
 import '../kit/button';
 import '../kit/menu';
 import '../kit/tooltip';
@@ -20,12 +21,19 @@ export interface LegendHeaderModel {
   canSort: boolean;
   /** The settings popover is open: the settings button reports it (ps-popover does not). */
   settingsOpen?: boolean;
+  /**
+   * The one-line EAT note under the title: the annotation has predictions and Show is on.
+   * `predicted` counts the whole dataset; `reliability` is the EAT panel's filter.
+   */
+  eat?: { predicted: number; reliability: EatReliabilityState | null };
 }
 
 export interface LegendHeaderHandlers {
   onSortMenu(anchor: HTMLElement): void;
   onSettings(anchor: HTMLElement): void;
   onTitlePointerEnter(e: PointerEvent): void;
+  /** The EAT note's `EAT ›` link. */
+  onEatOpen(): void;
 }
 
 export interface SortMenuModel {
@@ -59,6 +67,32 @@ const SORT_ICONS: Record<LegendSortMode, IconName> = {
 };
 
 const PREDICTED_NOTE = 'Predicted: computational, not experimentally curated';
+
+/** `50 %`, with the thin no-break space the EAT copy uses. */
+const percent = (value: number) => `${Math.round(value * 100)}\u202f%`;
+
+/** What the reliability filter keeps, `≥ 50 %`, `≤ 40 %` or `40–60 %`; null when it keeps all. */
+function reliabilityFilterLabel(state: EatReliabilityState | null): string | null {
+  if (!state) return null;
+  const { mode, min, max } = normalizeReliability(state);
+  if (mode === 'atLeast') return min > 0 ? `≥ ${percent(min)}` : null;
+  if (mode === 'atMost') return max < 1 ? `≤ ${percent(max)}` : null;
+  return min > 0 || max < 1 ? `${Math.round(min * 100)}–${percent(max)}` : null;
+}
+
+/** `Includes 659 predicted · Filtered ≥ 50 %   EAT ›`: a note and a link, no controls. */
+function renderEatNote(
+  eat: NonNullable<LegendHeaderModel['eat']>,
+  onOpen: () => void,
+): TemplateResult {
+  const filter = reliabilityFilterLabel(eat.reliability);
+  return html`<p class="legend-eat-note" part="eat-note">
+    <span class="legend-eat-text"
+      >Includes ${formatCount(eat.predicted)}
+      predicted${filter ? ` · Filtered ${filter}` : nothing}</span
+    ><button type="button" class="legend-eat-link" @click=${onOpen}>EAT ›</button>
+  </p>`;
+}
 
 /** The active order in words: the sort button's name and tooltip ("Sort: By count, largest first"). */
 export function sortLabel(mode: LegendSortMode, isNumeric: boolean): string {
@@ -97,6 +131,7 @@ function isReversed(mode: LegendSortMode): boolean {
  * sort, settings and an optional `header-end` slot. The host puts its own controls in the slots
  * (the workbench's Legend/Filter tabs and its fold chevron); an empty slot takes no room. The
  * title is one line ending in an ellipsis; the legend's shared name tooltip shows it in full.
+ * Under it, for an annotation with EAT predictions, one muted line links to the EAT panel.
  */
 export function renderLegendHeader(
   model: LegendHeaderModel,
@@ -106,38 +141,39 @@ export function renderLegendHeader(
   // aria-haspopup and aria-expanded are static: the sort menu exists only while open, and
   // ps-menu records these closed-state values when it mounts and restores them when it goes.
   return html`<div class="legend-header" part="header">
-    <slot name="header-start"></slot>
-    <h3 class="legend-title" part="title" @pointerenter=${handlers.onTitlePointerEnter}>
-      ${model.title}
-    </h3>
-    ${model.predicted
-      ? html`<span class="legend-predicted" role="img" aria-label="Predicted annotation"
-            >${icon('sparkles', 14)}</span
-          ><ps-tooltip text=${PREDICTED_NOTE}></ps-tooltip>`
-      : nothing}
-    ${model.info ?? nothing}
-    <span class="legend-header-spacer"></span>
-    <ps-icon-button
-      class="sort-button"
-      icon=${sortIcon(model.sortMode, model.isNumeric)}
-      label=${sortName}
-      size="sm"
-      aria-haspopup="menu"
-      aria-expanded="false"
-      ?hidden=${!model.canSort}
-      @click=${(e: Event) => handlers.onSortMenu(e.currentTarget as HTMLElement)}
-    ></ps-icon-button>
-    <ps-icon-button
-      class="settings-button"
-      icon="sliders-horizontal"
-      label="Legend settings"
-      size="sm"
-      aria-haspopup="dialog"
-      aria-expanded=${model.settingsOpen ? 'true' : 'false'}
-      @click=${(e: Event) => handlers.onSettings(e.currentTarget as HTMLElement)}
-    ></ps-icon-button>
-    <slot name="header-end"></slot>
-  </div>`;
+      <slot name="header-start"></slot>
+      <h3 class="legend-title" part="title" @pointerenter=${handlers.onTitlePointerEnter}>
+        ${model.title}
+      </h3>
+      ${model.predicted
+        ? html`<span class="legend-predicted" role="img" aria-label="Predicted annotation"
+              >${icon('sparkles', 14)}</span
+            ><ps-tooltip text=${PREDICTED_NOTE}></ps-tooltip>`
+        : nothing}
+      ${model.info ?? nothing}
+      <span class="legend-header-spacer"></span>
+      <ps-icon-button
+        class="sort-button"
+        icon=${sortIcon(model.sortMode, model.isNumeric)}
+        label=${sortName}
+        size="sm"
+        aria-haspopup="menu"
+        aria-expanded="false"
+        ?hidden=${!model.canSort}
+        @click=${(e: Event) => handlers.onSortMenu(e.currentTarget as HTMLElement)}
+      ></ps-icon-button>
+      <ps-icon-button
+        class="settings-button"
+        icon="sliders-horizontal"
+        label="Legend settings"
+        size="sm"
+        aria-haspopup="dialog"
+        aria-expanded=${model.settingsOpen ? 'true' : 'false'}
+        @click=${(e: Event) => handlers.onSettings(e.currentTarget as HTMLElement)}
+      ></ps-icon-button>
+      <slot name="header-end"></slot>
+    </div>
+    ${model.eat ? renderEatNote(model.eat, handlers.onEatOpen) : nothing}`;
 }
 
 /**

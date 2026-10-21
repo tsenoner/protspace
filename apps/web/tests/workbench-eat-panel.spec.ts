@@ -1,6 +1,14 @@
 import { expect, test } from '@playwright/test';
-import { openExplore, selectAnnotation } from './helpers/explore';
-import { eatPanel, eatRailItem, loadPhosphataseEat, openEatPanel } from './helpers/eat';
+import { openExplore, selectAnnotation, statusChip } from './helpers/explore';
+import {
+  eatPanel,
+  eatRailItem,
+  eatThresholdBox,
+  legendEatLink,
+  legendEatNote,
+  loadPhosphataseEat,
+  openEatPanel,
+} from './helpers/eat';
 import { panelTab } from './helpers/mobile';
 import { seedTourSeen } from './helpers/tour-storage-state';
 import { readLayout, seedLayout, workbenchRoot } from './helpers/workbench';
@@ -60,4 +68,21 @@ test('on a phone the EAT tab is the third tab', async ({ page }) => {
   await expect(page.locator('#myLegend')).toBeHidden();
   await expect(panelTab(page, 'EAT')).toHaveAttribute('aria-selected', 'true');
   await expect(eatPanel(page).getByRole('heading', { name: /^EAT · / })).toBeVisible();
+});
+
+test('moving the EAT threshold filters the plot and the legend says so', async ({ page }) => {
+  await loadPhosphataseEat(page);
+  await selectAnnotation(page, 'ec');
+  await expect(legendEatNote(page)).toBeVisible();
+  await expect(legendEatNote(page)).not.toContainText('Filtered');
+
+  await openEatPanel(page);
+  await eatThresholdBox(page).fill('50');
+  await expect(statusChip(page, 'filter')).toContainText('Filtered');
+
+  await page.locator('#wb-eat-panel').getByRole('button', { name: 'Close EAT' }).click();
+  await expect(legendEatNote(page)).toContainText('Filtered ≥ 50\u202f%');
+  await legendEatLink(page).click();
+  await expect(eatPanel(page)).toBeVisible();
+  await expect(eatThresholdBox(page)).toHaveValue('50');
 });

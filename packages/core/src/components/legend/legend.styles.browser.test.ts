@@ -125,7 +125,7 @@ describe('legend styles', () => {
     }
   });
 
-  it('draws the EAT mode select as tall as the percent box beside it', async () => {
+  it('draws the EAT note as one muted 12 px line under the title', async () => {
     const data: VisualizationData = {
       protein_ids: ['observed', 'predicted'],
       projections: [{ name: 'pca', dimension: 2, data: new Float32Array(4) }],
@@ -143,18 +143,18 @@ describe('legend styles', () => {
       },
     };
     const { legend } = await mountLegendWithScatterplot(data, 'ec');
+    legend.eatReliability = { mode: 'between', min: 0.4, max: 0.6 };
     await settle(legend);
-    const root = legend.shadowRoot!;
-    const mode = root.querySelector<HTMLElement & { updateComplete: Promise<boolean> }>(
-      'ps-select.eat-threshold-mode',
-    )!;
-    await mode.updateComplete;
     await frame();
+    const root = legend.shadowRoot!;
+    const note = root.querySelector<HTMLElement>('.legend-eat-note')!;
+    const header = root.querySelector('.legend-header')!.getBoundingClientRect();
+    const box = note.getBoundingClientRect();
 
-    const field = mode.shadowRoot!.querySelector('.field')!.getBoundingClientRect();
-    const percent = root.querySelector('.eat-threshold-percent')!.getBoundingClientRect();
-    expect(field.height).toBe(28);
-    expect(percent.height).toBe(field.height);
+    expect(getComputedStyle(note).fontSize).toBe('12px');
+    expect(box.top).toBeGreaterThanOrEqual(header.bottom - 8);
+    expect(box.height).toBeLessThan(20);
+    expect(root.querySelector('.legend-eat-link')!.textContent!.trim()).toBe('EAT ›');
   });
 });
 

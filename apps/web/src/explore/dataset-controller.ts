@@ -1,4 +1,5 @@
 import type {
+  ProtspaceEatPanel,
   ProtspaceLegend,
   ProtspaceScatterplot,
   DataLoadedEventDetail,
@@ -53,6 +54,8 @@ interface DatasetControllerOptions {
   getIsDisposed: () => boolean;
   interactionController: InteractionController;
   legendElement: ProtspaceLegend;
+  /** The EAT panel, which takes a bundle's Show and reliability threshold. */
+  eatPanel: Pick<ProtspaceEatPanel, 'applyEatSettings'>;
   loadQueue: LoadQueue;
   overlayController: Pick<LoadingOverlayController, 'update' | 'setCancelHandler'>;
   plotElement: ProtspaceScatterplot;
@@ -168,6 +171,7 @@ export function createDatasetController({
   getIsDisposed,
   interactionController,
   legendElement,
+  eatPanel,
   loadQueue,
   overlayController,
   plotElement,
@@ -447,7 +451,7 @@ export function createDatasetController({
         const eatOverlayEnabled = settings.eatOverlayEnabled ?? true;
         const eatConfidenceThreshold =
           settings.eatConfidenceThreshold ?? DEFAULT_EAT_CONFIDENCE_THRESHOLD;
-        legendElement.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);
+        eatPanel.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);
       }
 
       controls.setHasFileSettings(

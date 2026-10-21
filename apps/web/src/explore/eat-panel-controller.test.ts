@@ -1,5 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  DEFAULT_EAT_RELIABILITY,
+  type EatReliabilityState,
+  type VisualizationData,
+} from '@protspace/utils';
 import { TEST_DATA } from './dataset-controller.fixtures';
 import { createEatPanelController, eatAvailabilityFor } from './eat-panel-controller';
 import { getWorkbenchStatus, resetWorkbenchStatusForTests } from './workbench-status';
@@ -41,23 +45,35 @@ function setup(shown: { value: boolean }) {
   const plot = Object.assign(new EventTarget(), {
     data: EAT_DATA as VisualizationData | null,
     selectedAnnotation: 'ec',
+    eatOverlayEnabled: true,
   });
   const root = new EventTarget();
-  const panel = {
+  const panel = Object.assign(new EventTarget(), {
     data: null as VisualizationData | null,
     annotation: '',
+    context: null as Uint8Array | null,
     active: false,
+    reliability: DEFAULT_EAT_RELIABILITY as EatReliabilityState,
+    isAtDefaults: true,
     resets: 0,
-  };
+  });
   const eatPanel = Object.assign(panel, {
     resetForNewDataset() {
       panel.resets += 1;
     },
   });
+  const legend = { eatReliability: null as EatReliabilityState | null };
+  const filter = {
+    mask: null as Uint8Array | null,
+    setEatReliability: vi.fn(),
+    getContextMask: vi.fn((): Uint8Array | null => filter.mask),
+  };
   const panelListeners = new Set<() => void>();
   const controller = createEatPanelController({
     eatPanel,
     plotElement: plot as never,
+    legendElement: legend,
+    filterController: filter,
     root: root as unknown as Document,
     isPanelShown: () => shown.value,
     subscribePanel(listener) {
@@ -66,7 +82,17 @@ function setup(shown: { value: boolean }) {
     },
   });
   const layoutChanged = () => panelListeners.forEach((listener) => listener());
-  return { plot, root, panel, controller, layoutChanged, panelListeners };
+  /** The panel's own controls moved: its state changes, then it emits. */
+  const emit = (enabled: boolean, reliability: EatReliabilityState) => {
+    panel.reliability = reliability;
+    panel.isAtDefaults = false;
+    panel.dispatchEvent(
+      new CustomEvent('eat-overlay-change', {
+        detail: { enabled, confidenceThreshold: reliability.min, reliability },
+      }),
+    );
+  };
+  return { plot, root, panel, legend, filter, controller, layoutChanged, panelListeners, emit };
 }
 
 describe('createEatPanelController', () => {
@@ -115,5 +141,39 @@ describe('createEatPanelController', () => {
     plot.data = TEST_DATA;
     plot.dispatchEvent(new Event('data-change'));
     expect(panel.data).toBe(EAT_DATA);
+  });
+
+  it('applies the panel’s eat-overlay-change to the plot, the filter, the legend and the rail dot', () => {
+    const { plot, panel, legend, filter, emit } = setup({ value: true });
+    const reliability: EatReliabilityState = { mode: 'atLeast', min: 0.5, max: 1 };
+    filter.mask = Uint8Array.of(1, 0);
+
+    emit(false, reliability);
+
+    expect(plot.eatOverlayEnabled).toBe(false);
+    expect(filter.setEatReliability).toHaveBeenCalledWith('ec', reliability);
+    expect(legend.eatReliability).toEqual(reliability);
+    expect(panel.context).toBe(filter.mask);
+    expect(getWorkbenchStatus().eatAdjusted).toBe(true);
+  });
+
+  it('refreshes the context and the legend’s note on every data-change', () => {
+    const { plot, panel, legend, filter } = setup({ value: true });
+    expect(panel.context).toBeNull();
+
+    // An Apply in the Filter panel: the filter moved the panel (no emit) and the plot re-derived.
+    filter.mask = Uint8Array.of(0, 1);
+    panel.reliability = { mode: 'atMost', min: 0, max: 0.4 };
+    plot.dispatchEvent(new Event('data-change'));
+
+    expect(panel.context).toBe(filter.mask);
+    expect(legend.eatReliability).toEqual({ mode: 'atMost', min: 0, max: 0.4 });
+  });
+
+  it('removes its eat-overlay-change listener on dispose', () => {
+    const { filter, controller, emit } = setup({ value: true });
+    controller.dispose();
+    emit(true, { mode: 'atLeast', min: 0.3, max: 1 });
+    expect(filter.setEatReliability).not.toHaveBeenCalled();
   });
 });
