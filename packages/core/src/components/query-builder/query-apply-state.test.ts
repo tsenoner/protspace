@@ -47,7 +47,7 @@ describe('applyBlock', () => {
   });
 
   it('asks for a number on a numeric row without a bound or a presence chip', () => {
-    const numeric = createNumericCondition({ annotation: 'length', operator: 'between', min: 1 });
+    const numeric = createNumericCondition({ annotation: 'length' });
     expect(applyBlock({ query: [numeric], ...ready })).toEqual({ kind: 'bound', n: 1 });
     const presence = createNumericCondition({ annotation: 'length', presence: ['__NA__'] });
     expect(applyBlock({ query: [presence], ...ready })).toBeNull();

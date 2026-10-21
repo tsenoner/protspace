@@ -52,22 +52,24 @@ describe('protspace-query-builder in a narrow panel', () => {
     expect(inner(apply).ariaDescribedByElements?.[0]).toBe(reason);
   });
 
-  it('a group offers Remove group in its ⋯ menu; a card offers Remove in its own', async () => {
+  it('a group and a card each show a remove button beside their ⋯ menu', async () => {
     const builder = await mount([createGroup()]);
     const groupMenu = builder.shadowRoot!.querySelector<PsIconButton>('.group-menu-trigger')!;
     await groupMenu.updateComplete;
     expect(inner(groupMenu).getAttribute('aria-label')).toBe('Actions for group');
-    expect(
-      builder.shadowRoot!.querySelector('ps-menu-item[value="remove"]')!.textContent!.trim(),
-    ).toBe('Remove group');
+    const groupRemove = builder.shadowRoot!.querySelector<PsIconButton>('.group-remove')!;
+    await groupRemove.updateComplete;
+    expect(inner(groupRemove).getAttribute('aria-label')).toBe('Remove group');
+    expect(builder.shadowRoot!.querySelector('ps-menu-item[value="remove"]')).toBeNull();
 
-    const menuRow =
-      rows(builder)[0].shadowRoot!.querySelector<PsIconButton>('.condition-menu-trigger')!;
+    const root = rows(builder)[0].shadowRoot!;
+    const menuRow = root.querySelector<PsIconButton>('.condition-menu-trigger')!;
     await menuRow.updateComplete;
     expect(inner(menuRow).getAttribute('aria-label')).toBe('Actions for condition 1');
-    expect(
-      rows(builder)[0].shadowRoot!.querySelector('ps-menu-item[value="remove"]'),
-    ).not.toBeNull();
+    const remove = root.querySelector<PsIconButton>('.condition-remove')!;
+    await remove.updateComplete;
+    expect(remove.checkVisibility()).toBe(true);
+    expect(inner(remove).getAttribute('aria-label')).toBe('Remove condition');
   });
 
   it('at 260 px wide a row stacks and nothing overflows horizontally', async () => {

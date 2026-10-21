@@ -369,9 +369,11 @@ export const queryBuilderStyles = [
       min-width: 0;
     }
 
-    .condition-menu-trigger {
+    .condition-actions {
       grid-area: 1 / 2;
       align-self: start;
+      display: flex;
+      align-items: center;
     }
 
     .condition-badge {
@@ -1158,7 +1160,7 @@ export const queryBuilderStyles = [
         grid-area: 1 / 2;
       }
 
-      .condition-row.is-numeric > .condition-menu-trigger {
+      .condition-row.is-numeric > .condition-actions {
         grid-area: 1 / 3;
       }
 

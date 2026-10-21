@@ -32,15 +32,14 @@ describe('conditionsForReliability', () => {
 
   it('states each mode directly rather than negating its opposite', () => {
     expect(conditionsForReliability(KEY, MODES[0]!)[0]).toMatchObject({
-      operator: 'gte',
       min: 0.3,
+      max: null,
     });
     expect(conditionsForReliability(KEY, MODES[1]!)[0]).toMatchObject({
-      operator: 'lte',
+      min: null,
       max: 0.7,
     });
     expect(conditionsForReliability(KEY, MODES[2]!)[0]).toMatchObject({
-      operator: 'between',
       min: 0.3,
       max: 0.7,
     });
@@ -55,7 +54,7 @@ describe('conditionsForReliability', () => {
     // `normalizeReliability` itself is covered in @protspace/utils, where it lives;
     // what matters here is that the translation applies it.
     expect(conditionsForReliability(KEY, { mode: 'between', min: 0.8, max: 0.5 })[0]).toMatchObject(
-      { operator: 'between', min: 0.5, max: 0.8 },
+      { min: 0.5, max: 0.8 },
     );
   });
 
@@ -101,7 +100,6 @@ describe('reliabilityFromConditions', () => {
     // next nudge of the control would commit that inversion back into the query.
     const negatedBand = createNumericCondition({
       annotation: KEY,
-      operator: 'between',
       min: 0.3,
       max: 0.7,
       logicalOp: 'NOT',

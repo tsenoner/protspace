@@ -4,7 +4,9 @@ import type {
   FilterQueryItem,
   NumericCondition,
 } from './query-types';
-import { isFilterGroup } from './query-types';
+import { clearLeadingOpInList, isFilterGroup } from './query-types';
+import { toRange } from './query-numeric-helpers';
+import { hasConfiguredCondition } from './query-evaluate';
 
 const sameList = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((value, index) => value === b[index]);
@@ -17,12 +19,12 @@ function sameItem(a: FilterQueryItem, b: FilterQueryItem): boolean {
   if (aGroup || bGroup) return aGroup && bGroup && sameQuery(a.conditions, b.conditions);
   if (a.kind !== b.kind || a.annotation !== b.annotation) return false;
   if (a.kind === 'categorical') return sameList(a.values, (b as CategoricalCondition).values);
-  const numeric = b as NumericCondition;
+  const left = toRange(a);
+  const right = toRange(b as NumericCondition);
   return (
-    a.operator === numeric.operator &&
-    a.min === numeric.min &&
-    a.max === numeric.max &&
-    sameList(a.presence ?? [], numeric.presence ?? [])
+    left.min === right.min &&
+    left.max === right.max &&
+    sameList(left.presence ?? [], right.presence ?? [])
   );
 }
 
@@ -46,15 +48,32 @@ function leavesById(items: FilterQuery, into = new Map<string, FilterQueryItem>(
 }
 
 /**
+ * The query without its incomplete conditions (no annotation, or nothing to match yet) and the
+ * groups they leave empty. Such a row filters nothing, so adding or removing one is no change.
+ */
+function withoutIncomplete(items: FilterQuery): FilterQuery {
+  const out = items.flatMap((item): FilterQueryItem[] => {
+    if (!isFilterGroup(item))
+      return item.annotation && hasConfiguredCondition([item]) ? [item] : [];
+    const conditions = withoutIncomplete(item.conditions);
+    return conditions.length > 0 ? [{ ...item, conditions }] : [];
+  });
+  return clearLeadingOpInList(out);
+}
+
+/**
  * What the draft changes against the applied query, by condition id: `edited` holds the draft's
  * conditions that are new or differ (values, operator, joiner), and `count` adds the applied
  * conditions the draft removed. A draft that only regroups unchanged conditions still counts as
- * one change, so the count is 0 exactly when the two queries are the same.
+ * one change, so the count is 0 exactly when the two queries filter the same way. Incomplete
+ * conditions are left out on both sides: an empty row added or removed changes nothing.
  */
 export function queryChanges(
-  draft: FilterQuery,
-  applied: FilterQuery,
+  draftQuery: FilterQuery,
+  appliedQuery: FilterQuery,
 ): { edited: Set<string>; count: number } {
+  const draft = withoutIncomplete(draftQuery);
+  const applied = withoutIncomplete(appliedQuery);
   const before = leavesById(applied);
   const after = leavesById(draft);
   const edited = new Set<string>();

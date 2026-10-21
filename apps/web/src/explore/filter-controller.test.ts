@@ -492,7 +492,7 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
     expect(eatCondition(applied(m.controller))).toMatchObject({
       kind: 'numeric',
       annotation: EAT_KEY,
-      operator: 'gte',
+      max: null,
       min: 0.5,
       presence: [NA_VALUE],
     });
@@ -690,12 +690,12 @@ describe('filter controller: per-base EAT reliability (multi-EAT)', () => {
 
     expect(numericCount(applied(m.controller))).toBe(2);
     expect(eatCondition(applied(m.controller), EC_KEY)).toMatchObject({
-      operator: 'gte',
+      max: null,
       presence: [NA_VALUE],
       min: 0.5,
     });
     expect(eatCondition(applied(m.controller), GO_KEY)).toMatchObject({
-      operator: 'gte',
+      max: null,
       presence: [NA_VALUE],
       min: 0.8,
     });
@@ -809,6 +809,6 @@ describe('filter controller: every reliability mode (#380)', () => {
 
     const conditions = findConditionsForAnnotation(m.queryBuilder.query, EAT_KEY);
     expect(conditions).toHaveLength(1);
-    expect(conditions[0]).toMatchObject({ id: 'x', operator: 'gte', min: 0.7 });
+    expect(conditions[0]).toMatchObject({ id: 'x', min: 0.7, max: null });
   });
 });

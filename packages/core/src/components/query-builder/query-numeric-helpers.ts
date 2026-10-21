@@ -1,26 +1,19 @@
 import type { ProtspaceData } from './types';
-import type { NumericCondition, NumericOperator } from './query-types';
+import type { NumericCondition } from './query-types';
 import { ANY_VALUE } from './query-types';
 import { NA_VALUE, readNumericValue } from '@protspace/utils';
 
 /**
- * Which value fields a numeric operator needs:
- * `gt`/`gte` use `min`, `lt`/`lte` use `max`, `between` uses both.
+ * The condition as a range. One saved with a one-sided operator (see `LegacyNumericOperator`)
+ * keeps only the bound that operator read, inclusive; the operator goes. Returns the condition
+ * itself when it is already a range.
  */
-export function numericFieldsFor(operator: NumericOperator): {
-  min: boolean;
-  max: boolean;
-} {
-  switch (operator) {
-    case 'gt':
-    case 'gte':
-      return { min: true, max: false };
-    case 'lt':
-    case 'lte':
-      return { min: false, max: true };
-    case 'between':
-      return { min: true, max: true };
-  }
+export function toRange(condition: NumericCondition): NumericCondition {
+  if (condition.operator === undefined) return condition;
+  const { operator, ...range } = condition;
+  if (operator === 'gt' || operator === 'gte') return { ...range, max: null };
+  if (operator === 'lt' || operator === 'lte') return { ...range, min: null };
+  return range;
 }
 
 /**
@@ -35,22 +28,16 @@ export function presenceOf(condition: NumericCondition): readonly string[] {
   return condition.presence ?? NO_PRESENCE;
 }
 
-/**
- * True when the condition's comparison has every bound its operator requires.
- * Derived from `numericFieldsFor` so the operator → required-bounds table is
- * stated once; a new operator only has to be added there.
- * A condition can still be usable without bounds if it carries a presence
- * chip — see `isNumericConditionReady`.
- */
+/** True when the range has at least one end; the other may be open. */
 function hasNumericBounds(condition: NumericCondition): boolean {
-  const fields = numericFieldsFor(condition.operator);
-  return (!fields.min || condition.min !== null) && (!fields.max || condition.max !== null);
+  const { min, max } = toRange(condition);
+  return min !== null || max !== null;
 }
 
 /**
- * True when the condition constrains anything at all: it has the bounds its
- * operator requires, OR it carries a presence chip (`is N/A` / `has any
- * value`), which is meaningful on its own. This is the single readiness rule,
+ * True when the condition constrains anything at all: its range has an end, OR
+ * it carries a presence chip (`is N/A` / `has any value`), which is meaningful
+ * on its own. This is the single readiness rule,
  * matching the categorical side where any selected value counts.
  * An unready condition is a match-all no-op.
  */
@@ -59,15 +46,14 @@ export function isNumericConditionReady(condition: NumericCondition): boolean {
 }
 
 /**
- * Test a single raw numeric value against the condition.
- * `>` and `<` are exclusive; `>=`, `<=` and `between` are inclusive.
+ * Test a single raw numeric value against the condition's range, `min <= value <= max`, a null
+ * end open. Callers pass `toRange(condition)` for a query that may be an older one.
  *
  * Null (missing) values are matched ONLY by an explicit `NA_VALUE` presence
- * chip — no comparison operator ever matches a null, since a missing value
- * sits outside the numeric domain. `ANY_VALUE` conversely matches every
- * non-null value regardless of the comparison. Presence chips are unioned with
- * the comparison, so `>= 0.5` plus an N/A chip reads "at least 0.5, or no
- * value at all".
+ * chip — no range ever matches a null, since a missing value sits outside the
+ * numeric domain. `ANY_VALUE` conversely matches every non-null value regardless
+ * of the range. Presence chips are unioned with the range, so `min: 0.5` plus an
+ * N/A chip reads "at least 0.5, or no value at all".
  *
  * This is what the `__eat_confidence` reliability filter uses: curated points
  * carry no confidence score (null), so the slider synthesizes
@@ -82,21 +68,9 @@ export function matchesNumericValue(value: number | null, condition: NumericCond
   if (value === null) return presence.includes(NA_VALUE);
   if (presence.includes(ANY_VALUE)) return true;
 
-  // No explicit bounds guard: every case below already returns false when the
-  // bound its operator needs is null, which is exactly `!hasNumericBounds`.
-  const { operator, min, max } = condition;
-  switch (operator) {
-    case 'gt':
-      return min !== null && value > min;
-    case 'gte':
-      return min !== null && value >= min;
-    case 'lt':
-      return max !== null && value < max;
-    case 'lte':
-      return max !== null && value <= max;
-    case 'between':
-      return min !== null && max !== null && value >= min && value <= max;
-  }
+  const { min, max } = condition;
+  if (min === null && max === null) return false;
+  return (min === null || value >= min) && (max === null || value <= max);
 }
 
 /**
@@ -115,12 +89,13 @@ export function matchesNumericValue(value: number | null, condition: NumericCond
  */
 export function countNumericMatches(condition: NumericCondition, data: ProtspaceData): number {
   if (!isNumericConditionReady(condition)) return 0;
+  const range = toRange(condition);
   const values = data.numeric_annotation_data?.[condition.annotation];
   if (!values) return 0;
   const numProteins = data.protein_ids?.length ?? 0;
   let count = 0;
   for (let i = 0; i < numProteins; i++) {
-    if (matchesNumericValue(readNumericValue(values, i), condition)) count++;
+    if (matchesNumericValue(readNumericValue(values, i), range)) count++;
   }
   return count;
 }

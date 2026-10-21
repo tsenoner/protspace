@@ -8,7 +8,7 @@ import {
   countNumericMatches,
   isNumericConditionReady,
   matchesNumericValue,
-  numericFieldsFor,
+  toRange,
 } from './query-numeric-helpers';
 
 function numericCondition(overrides: Partial<NumericCondition>): NumericCondition {
@@ -16,26 +16,25 @@ function numericCondition(overrides: Partial<NumericCondition>): NumericConditio
     id: 'n1',
     kind: 'numeric',
     annotation: 'length',
-    operator: 'gt',
     min: null,
     max: null,
     ...overrides,
   };
 }
 
-describe('numericFieldsFor', () => {
-  it('gt needs only min', () => {
-    expect(numericFieldsFor('gt')).toEqual({ min: true, max: false });
-  });
-  it('lt needs only max', () => {
-    expect(numericFieldsFor('lt')).toEqual({ min: false, max: true });
-  });
-  it('between needs both', () => {
-    expect(numericFieldsFor('between')).toEqual({ min: true, max: true });
-  });
-  it('the inclusive operators need the same bound as their exclusive twin', () => {
-    expect(numericFieldsFor('gte')).toEqual({ min: true, max: false });
-    expect(numericFieldsFor('lte')).toEqual({ min: false, max: true });
+describe('toRange', () => {
+  it('keeps only the bound an older one-sided operator read, and drops the operator', () => {
+    expect(toRange(numericCondition({ operator: 'gt', min: 1, max: 9 }))).toMatchObject({
+      min: 1,
+      max: null,
+    });
+    expect(toRange(numericCondition({ operator: 'lte', min: 1, max: 9 }))).toMatchObject({
+      min: null,
+      max: 9,
+    });
+    expect(toRange(numericCondition({ operator: 'between', min: 1, max: 9 }))).not.toHaveProperty(
+      'operator',
+    );
   });
 });
 
@@ -49,16 +48,10 @@ describe('isNumericConditionReady', () => {
   it('lt is ready when max is set', () => {
     expect(isNumericConditionReady(numericCondition({ operator: 'lt', max: 9 }))).toBe(true);
   });
-  it('between needs both bounds', () => {
-    expect(
-      isNumericConditionReady(numericCondition({ operator: 'between', min: 1, max: null })),
-    ).toBe(false);
-    expect(
-      isNumericConditionReady(numericCondition({ operator: 'between', min: null, max: 9 })),
-    ).toBe(false);
-    expect(isNumericConditionReady(numericCondition({ operator: 'between', min: 1, max: 9 }))).toBe(
-      true,
-    );
+  it('a range needs one end; the other may stay open', () => {
+    expect(isNumericConditionReady(numericCondition({ min: 1, max: null }))).toBe(true);
+    expect(isNumericConditionReady(numericCondition({ min: null, max: 9 }))).toBe(true);
+    expect(isNumericConditionReady(numericCondition({ min: null, max: null }))).toBe(false);
   });
   it('a presence chip alone makes a bound-less condition ready', () => {
     expect(
@@ -73,16 +66,17 @@ describe('isNumericConditionReady', () => {
 });
 
 describe('matchesNumericValue', () => {
-  it('gt is exclusive', () => {
-    const c = numericCondition({ operator: 'gt', min: 50 });
+  it('an open max reads "at least min", inclusive', () => {
+    const c = numericCondition({ min: 50, max: null });
     expect(matchesNumericValue(51, c)).toBe(true);
-    expect(matchesNumericValue(50, c)).toBe(false);
+    expect(matchesNumericValue(50, c)).toBe(true);
     expect(matchesNumericValue(49, c)).toBe(false);
   });
-  it('lt is exclusive', () => {
-    const c = numericCondition({ operator: 'lt', max: 50 });
+  it('an open min reads "at most max", inclusive', () => {
+    const c = numericCondition({ min: null, max: 50 });
     expect(matchesNumericValue(49, c)).toBe(true);
-    expect(matchesNumericValue(50, c)).toBe(false);
+    expect(matchesNumericValue(50, c)).toBe(true);
+    expect(matchesNumericValue(51, c)).toBe(false);
   });
   it('between is inclusive on both ends', () => {
     const c = numericCondition({ operator: 'between', min: 10, max: 20 });

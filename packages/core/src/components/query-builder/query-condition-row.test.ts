@@ -521,7 +521,7 @@ describe('query-condition-row names', () => {
     document.body.innerHTML = '';
   });
 
-  it('labels the row and its operator by number and offers Remove in its menu', async () => {
+  it('labels the row and its operator by number and shows a remove button', async () => {
     const el = await mount();
     el.number = 2;
     await el.updateComplete;
@@ -534,7 +534,11 @@ describe('query-condition-row names', () => {
       label: string;
     };
     expect(menu.label).toBe('Actions for condition 2');
-    expect(root.querySelector('ps-menu-item[value="remove"]')!.textContent!.trim()).toBe('Remove');
+    expect(root.querySelector('ps-menu-item[value="remove"]')).toBeNull();
+    const remove = root.querySelector('ps-icon-button.condition-remove') as HTMLElement & {
+      label: string;
+    };
+    expect(remove.label).toBe('Remove condition');
     expect(root.querySelector('.value-add')!.textContent!.replace(/\s+/g, '')).toBe('Addvalue');
   });
 });

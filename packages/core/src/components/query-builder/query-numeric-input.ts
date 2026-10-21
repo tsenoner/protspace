@@ -8,8 +8,8 @@ import { ANY_VALUE } from './query-types';
 import {
   countNumericMatches,
   isNumericConditionReady,
-  numericFieldsFor,
   presenceOf,
+  toRange,
 } from './query-numeric-helpers';
 import { renderValueChip } from './query-presence';
 import {
@@ -40,9 +40,10 @@ function nounOf(label: string): string {
 
 /**
  * Numeric value input for a query condition: a histogram of the annotation with the chosen
- * range shaded, a slider whose thumbs are the bounds the operator reads, the typed bounds with
- * their unit and the card's count, and an "or has no … (N/A)" checkbox. The checkbox is unioned
- * with the comparison, so "at least 0.5" plus N/A reads "at least 0.5, or no value at all".
+ * range shaded, a two-thumb slider over the range's ends, the typed ends with their unit and the
+ * card's count, and an "or has no … (N/A)" checkbox. Both ends are included; an empty end has no
+ * limit (a thumb at its end of the track empties it). The checkbox is unioned with the range, so
+ * a min of 0.5 plus N/A reads "at least 0.5, or no value at all".
  *
  * The condition object is owned by the control bar; this component is controlled. It keeps the
  * in-progress field text locally so a half-typed value (e.g. "-" or "1.") survives the
@@ -98,15 +99,16 @@ class ProtspaceQueryNumericInput extends LitElement {
     if (changed.has('condition') || changed.has('data')) this._countStale = true;
     if (!changed.has('condition')) return;
     this._dragging = null;
+    const { min, max } = toRange(this.condition);
 
     // Adopt prop values into local text unless they already parse to the same
     // number — this preserves an in-progress entry while still picking up
     // external resets (e.g. switching annotation clears min/max to null).
-    if (this._parseFieldValue(this._minText) !== this.condition.min) {
-      this._minText = this.condition.min === null ? '' : String(this.condition.min);
+    if (this._parseFieldValue(this._minText) !== min) {
+      this._minText = min === null ? '' : String(min);
     }
-    if (this._parseFieldValue(this._maxText) !== this.condition.max) {
-      this._maxText = this.condition.max === null ? '' : String(this.condition.max);
+    if (this._parseFieldValue(this._maxText) !== max) {
+      this._maxText = max === null ? '' : String(max);
     }
   }
 
@@ -138,10 +140,11 @@ class ProtspaceQueryNumericInput extends LitElement {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
-  private _emitChanged(updated: NumericCondition) {
+  /** Emits the condition with `fields` changed; an older query's operator goes (`toRange`). */
+  private _emitChanged(fields: Partial<NumericCondition>) {
     this.dispatchEvent(
       new CustomEvent('numeric-changed', {
-        detail: { condition: updated },
+        detail: { condition: { ...toRange(this.condition), ...fields } },
         bubbles: true,
         composed: true,
       }),
@@ -152,62 +155,76 @@ class ProtspaceQueryNumericInput extends LitElement {
 
   private _handleMinInput(e: Event) {
     this._minText = (e.target as HTMLInputElement).value;
-    this._emitChanged({ ...this.condition, min: this._parseFieldValue(this._minText) });
+    this._emitChanged({ min: this._parseFieldValue(this._minText) });
   }
 
   private _handleMaxInput(e: Event) {
     this._maxText = (e.target as HTMLInputElement).value;
-    this._emitChanged({ ...this.condition, max: this._parseFieldValue(this._maxText) });
+    this._emitChanged({ max: this._parseFieldValue(this._maxText) });
   }
 
-  /** The thumbs' values as typed bounds; `null` for a thumb the operator does not use. */
-  private _boundsAt(h: NumericRange, positions: RangePositions) {
+  /** The thumbs as the typed ends show them; a thumb at its end of the track is no limit. */
+  private _positions(h: NumericRange): RangePositions {
+    const min = this._parseFieldValue(this._minText);
+    const max = this._parseFieldValue(this._maxText);
     return {
-      min: positions.low === null ? null : valueAt(h, positions.low),
-      max: positions.high === null ? null : valueAt(h, positions.high),
+      low: min === null ? 0 : positionOf(h, min),
+      high: max === null ? h.steps : positionOf(h, max),
     };
+  }
+
+  /**
+   * The ends the thumbs now give, against `before`: only a moved thumb changes its end, so a drag
+   * of one never fills the other's empty box; a thumb moved to its end of the track empties it.
+   */
+  private _endsAt(h: NumericRange, before: RangePositions, positions: RangePositions) {
+    const low = positions.low ?? 0;
+    const high = positions.high ?? h.steps;
+    return {
+      min: low === before.low ? undefined : low <= 0 ? null : valueAt(h, low),
+      max: high === before.high ? undefined : high >= h.steps ? null : valueAt(h, high),
+    };
+  }
+
+  private _setTexts(ends: { min?: number | null; max?: number | null }) {
+    if (ends.min !== undefined) this._minText = ends.min === null ? '' : String(ends.min);
+    if (ends.max !== undefined) this._maxText = ends.max === null ? '' : String(ends.max);
   }
 
   private _handleRangeInput(h: NumericRange, e: CustomEvent<RangePositions>) {
     e.stopPropagation();
+    this._setTexts(this._endsAt(h, this._dragging ?? this._positions(h), e.detail));
     this._dragging = e.detail;
-    const { min, max } = this._boundsAt(h, e.detail);
-    if (min !== null) this._minText = String(min);
-    if (max !== null) this._maxText = String(max);
     this._countStale = true;
   }
 
   private _handleRangeChange(h: NumericRange, e: CustomEvent<RangePositions>) {
     e.stopPropagation();
-    const { min, max } = this._boundsAt(h, e.detail);
-    const updated = {
-      ...this.condition,
-      min: min ?? this.condition.min,
-      max: max ?? this.condition.max,
+    // The texts follow the drag, so the ends are read against the condition, not the texts.
+    const { min: from, max: to } = toRange(this.condition);
+    const before = {
+      low: from === null ? 0 : positionOf(h, from),
+      high: to === null ? h.steps : positionOf(h, to),
     };
-    if (min !== null) this._minText = String(min);
-    if (max !== null) this._maxText = String(max);
-    if (updated.min === this.condition.min && updated.max === this.condition.max) {
+    const ends = this._endsAt(h, before, e.detail);
+    const min = ends.min === undefined ? from : ends.min;
+    const max = ends.max === undefined ? to : ends.max;
+    this._setTexts({ min, max });
+    if (min === from && max === to) {
       this._dragging = null;
       return;
     }
-    this._emitChanged(updated);
+    this._emitChanged({ min, max });
   }
 
   private _handleNaToggle(e: Event) {
     const checked = (e.target as PsCheckbox).checked;
     const presence = presenceOf(this.condition).filter((p) => p !== NA_VALUE);
-    this._emitChanged({
-      ...this.condition,
-      presence: checked ? [...presence, NA_VALUE] : presence,
-    });
+    this._emitChanged({ presence: checked ? [...presence, NA_VALUE] : presence });
   }
 
   private _removePresence(value: string) {
-    this._emitChanged({
-      ...this.condition,
-      presence: presenceOf(this.condition).filter((p) => p !== value),
-    });
+    this._emitChanged({ presence: presenceOf(this.condition).filter((p) => p !== value) });
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -225,13 +242,9 @@ class ProtspaceQueryNumericInput extends LitElement {
     return html`<div class="numeric-histogram" aria-hidden="true">${bars}</div>`;
   }
 
-  /** The two-thumb slider; a thumb the operator does not use is left out. */
+  /** The two-thumb slider over the range's ends. */
   private _renderSlider(h: NumericRange, label: string, unit: string) {
-    const fields = numericFieldsFor(this.condition.operator);
-    const positions = this._dragging ?? {
-      low: fields.min ? positionOf(h, this._parseFieldValue(this._minText) ?? h.min) : null,
-      high: fields.max ? positionOf(h, this._parseFieldValue(this._maxText) ?? h.max) : null,
-    };
+    const positions = this._dragging ?? this._positions(h);
     return html`<protspace-query-range-slider
       .steps=${h.steps}
       .low=${positions.low}
@@ -245,9 +258,8 @@ class ProtspaceQueryNumericInput extends LitElement {
 
   /** Above the typed bounds on a wider screen: the histogram, the slider and the extent. */
   private _renderDistribution(h: NumericHistogram, label: string, unit: string) {
-    const fields = numericFieldsFor(this.condition.operator);
-    const min = fields.min ? this._parseFieldValue(this._minText) : null;
-    const max = fields.max ? this._parseFieldValue(this._maxText) : null;
+    const min = this._parseFieldValue(this._minText);
+    const max = this._parseFieldValue(this._maxText);
     return html`
       ${this._renderHistogram(h, min, max)} ${this._renderSlider(h, label, unit)}
       <div class="numeric-extent" aria-hidden="true">
@@ -268,7 +280,6 @@ class ProtspaceQueryNumericInput extends LitElement {
   }
 
   render() {
-    const fields = numericFieldsFor(this.condition.operator);
     const presence = presenceOf(this.condition);
     const annotation = this.condition.annotation;
     const label = annotationLabel(annotation, this.data?.annotations?.[annotation]);
@@ -292,32 +303,28 @@ class ProtspaceQueryNumericInput extends LitElement {
       <div class="numeric-input ${compact ? 'compact' : ''}">
         ${histogram && !anyValue ? this._renderDistribution(histogram, label, unit) : nothing}
         <div class="numeric-bounds">
-          ${fields.min
-            ? html`<input
-                class="numeric-field input-base"
-                type="number"
-                inputmode="decimal"
-                aria-label="Minimum value"
-                placeholder="min"
-                ?disabled=${anyValue}
-                .value=${this._minText}
-                @input=${this._handleMinInput}
-              />`
-            : nothing}
+          <input
+            class="numeric-field input-base"
+            type="number"
+            inputmode="decimal"
+            aria-label="Minimum value"
+            placeholder="min"
+            ?disabled=${anyValue}
+            .value=${this._minText}
+            @input=${this._handleMinInput}
+          />
           ${compact && range && !anyValue ? this._renderSlider(range, label, unit) : nothing}
-          ${fields.min && fields.max ? html`<span class="numeric-dash">to</span>` : nothing}
-          ${fields.max
-            ? html`<input
-                class="numeric-field input-base"
-                type="number"
-                inputmode="decimal"
-                aria-label="Maximum value"
-                placeholder="max"
-                ?disabled=${anyValue}
-                .value=${this._maxText}
-                @input=${this._handleMaxInput}
-              />`
-            : nothing}
+          <span class="numeric-dash">to</span>
+          <input
+            class="numeric-field input-base"
+            type="number"
+            inputmode="decimal"
+            aria-label="Maximum value"
+            placeholder="max"
+            ?disabled=${anyValue}
+            .value=${this._maxText}
+            @input=${this._handleMaxInput}
+          />
           ${unit ? html`<span class="numeric-unit">${unit}</span>` : nothing}
           ${compact ? nothing : this._renderCount()}
         </div>

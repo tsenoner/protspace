@@ -1,13 +1,14 @@
 import { createNumericCondition } from './query-types';
-import type { NumericCondition, NumericOperator } from './query-types';
-import { numericFieldsFor, presenceOf } from './query-numeric-helpers';
+import type { NumericCondition } from './query-types';
+import { presenceOf, toRange } from './query-numeric-helpers';
 import {
   DEFAULT_EAT_RELIABILITY,
   NA_VALUE,
   NEUTRAL_BOUND,
   normalizeReliability,
+  RELIABILITY_BOUNDS,
 } from '@protspace/utils';
-import type { EatReliabilityMode, EatReliabilityState } from '@protspace/utils';
+import type { EatReliabilityState } from '@protspace/utils';
 
 /**
  * The EAT reliability filter's user-facing model, and its translation to and from
@@ -32,18 +33,6 @@ import type { EatReliabilityMode, EatReliabilityState } from '@protspace/utils';
  */
 
 /**
- * The operator each mode states itself with. `Record` over the mode union, so a fourth
- * mode is a compile error here rather than a silently unfiltered query — and pairing it
- * with `numericFieldsFor` means the bounds a condition carries are decided by the
- * operator that will read them, not by a second hand-written mode table.
- */
-const OPERATOR_FOR_MODE: Record<EatReliabilityMode, NumericOperator> = {
-  atLeast: 'gte',
-  atMost: 'lte',
-  between: 'between',
-};
-
-/**
  * The owned condition expressing `state`, or none when nothing is constrained.
  *
  * `id` carries the identity of the condition being replaced. The query builder keys
@@ -58,10 +47,9 @@ export function conditionsForReliability(
 ): NumericCondition[] {
   // Normalize here, so no caller can emit an inverted band or a stale unused bound.
   const { mode, min, max } = normalizeReliability(state);
-  const operator = OPERATOR_FOR_MODE[mode];
-  const uses = numericFieldsFor(operator);
+  const uses = RELIABILITY_BOUNDS[mode];
 
-  // A bound sitting at its neutral position constrains nothing, and `between` is
+  // A bound sitting at its neutral position constrains nothing, and the range is
   // inclusive on both ends — so a full-range band is no filter at all.
   const constrains = (uses.min && min > NEUTRAL_BOUND.min) || (uses.max && max < NEUTRAL_BOUND.max);
   if (!constrains) return [];
@@ -72,9 +60,7 @@ export function conditionsForReliability(
       // Curated points carry no confidence score; this chip is what retains them.
       presence: [NA_VALUE],
       ...(id === undefined ? {} : { id }),
-      operator,
-      // Only the bounds the operator reads; the rest stay null, as the query builder
-      // renders and evaluates them.
+      // Only the ends the mode reads; the other stays null, an open end.
       ...(uses.min ? { min } : {}),
       ...(uses.max ? { max } : {}),
     }),
@@ -116,11 +102,11 @@ export function sameConditions(
 ): boolean {
   return (
     a.length === b.length &&
-    a.every((left, index) => {
-      const right = b[index];
+    a.every((leftCondition, index) => {
+      const left = toRange(leftCondition);
+      const right = toRange(b[index]);
       return (
         left.annotation === right.annotation &&
-        left.operator === right.operator &&
         left.min === right.min &&
         left.max === right.max &&
         (left.logicalOp === 'NOT') === (right.logicalOp === 'NOT') &&
@@ -149,11 +135,11 @@ function boundedBy(mode: 'atLeast' | 'atMost', bound: number): EatReliabilitySta
  * A shape it does not recognise degrades to whichever bound is present rather than
  * silently resetting to 0, which is what made a hand-built condition invisible.
  *
- * Which bound an operator carries comes from `numericFieldsFor`, the same table the
- * builder and the evaluator read. Restating it here as an operator switch meant a
- * sixth `NumericOperator` would fall through to `DEFAULT_EAT_RELIABILITY` — the user's
- * own condition invisible and the control snapped back to "Hide below 0%", which is
- * the #380 symptom this file exists to fix.
+ * The mode follows from which ends the range has (an older query's operator read
+ * through `toRange`, as the builder and the evaluator read it). Falling through to
+ * `DEFAULT_EAT_RELIABILITY` for a shape with a bound would leave the user's own
+ * condition invisible and snap the control back to "Hide below 0%", which is the
+ * #380 symptom this file exists to fix.
  */
 export function reliabilityFromConditions(
   conditions: readonly NumericCondition[],
@@ -162,23 +148,21 @@ export function reliabilityFromConditions(
     // A negated condition inverts which side is kept, so it cannot be read as if
     // it were the positive form.
     const negated = condition.logicalOp === 'NOT';
-    const { min, max } = numericFieldsFor(condition.operator);
+    const { min, max } = toRange(condition);
 
-    if (min && max) {
+    if (min !== null && max !== null) {
       // A NEGATED band keeps everything OUTSIDE it, which none of the three modes can
       // express — so it is skipped rather than read as its positive form. Reading it
       // positively would show the user a band that keeps exactly what their condition
       // hides, and the next nudge of the control would silently commit that inversion
       // back into the query.
-      if (!negated && condition.min !== null && condition.max !== null) {
-        return normalizeReliability({ mode: 'between', min: condition.min, max: condition.max });
-      }
-    } else if (min) {
-      // `>`/`>=` keep everything above the bound; negated, everything below it.
-      if (condition.min !== null) return boundedBy(negated ? 'atMost' : 'atLeast', condition.min);
-    } else if (condition.max !== null) {
-      // `<`/`<=` keep everything below the bound; negated, everything above it.
-      return boundedBy(negated ? 'atLeast' : 'atMost', condition.max);
+      if (!negated) return normalizeReliability({ mode: 'between', min, max });
+    } else if (min !== null) {
+      // "at least" keeps everything above the bound; negated, everything below it.
+      return boundedBy(negated ? 'atMost' : 'atLeast', min);
+    } else if (max !== null) {
+      // "at most" keeps everything below the bound; negated, everything above it.
+      return boundedBy(negated ? 'atLeast' : 'atMost', max);
     }
   }
   return DEFAULT_EAT_RELIABILITY;

@@ -557,25 +557,19 @@ async function setFilterValues(page: Page, annotation: string, values: string[])
 }
 
 /**
- * Drive the numeric range filter for `annotation`. Numeric annotations now render
- * an operator menu ("is more than", "is between", …) + one or two number fields
- * instead of a bin value picker, and filter on raw values (not bins). This helper
- * drives only the exclusive comparisons it was written for; the inclusive ones and
- * the N/A presence chips are covered separately. Sets the operator and
- * the relevant bound(s); the live match count / Apply-enabled state update after
- * the builder's debounced re-evaluation, which the callers wait on.
+ * Drive the numeric range filter for `annotation`. Numeric annotations render one
+ * inclusive range (min and max boxes, an empty one open) instead of a bin value
+ * picker, and filter on raw values (not bins). Fills the given bound(s); the live
+ * match count / Apply-enabled state update after the builder's debounced
+ * re-evaluation, which the callers wait on.
  */
 async function setNumericFilter(
   page: Page,
   annotation: string,
-  operator: 'gt' | 'lt' | 'between',
   bounds: { min?: number; max?: number },
 ): Promise<void> {
   const rowIndex = await ensureCondition(page, annotation);
   const row = conditionRow(page, rowIndex);
-  const words = { gt: 'is more than', lt: 'is less than', between: 'is between' }[operator];
-  await row.getByRole('button', { name: /^Operator for condition/ }).click();
-  await row.getByRole('menuitemradio', { name: new RegExp(`^${words}`) }).click();
   const numeric = row.locator('protspace-query-numeric-input');
   if (bounds.min !== undefined) {
     await numeric.locator('input.numeric-field[placeholder="min"]').fill(String(bounds.min));
@@ -1391,7 +1385,7 @@ test('numeric range filters isolate to the matching subset and reset restores th
   const fullCount = await isolatedCount(page);
 
   // Range A — lower portion [lo, mid].
-  await setNumericFilter(page, 'length', 'between', { min: lo, max: mid });
+  await setNumericFilter(page, 'length', { min: lo, max: mid });
   await applyFiltersFromMenu(page);
   const firstCount = await isolatedCount(page);
 
@@ -1401,7 +1395,7 @@ test('numeric range filters isolate to the matching subset and reset restores th
   await expect.poll(async () => isolatedCount(page)).toBe(fullCount);
 
   // Range B — upper portion [mid, hi].
-  await setNumericFilter(page, 'length', 'between', { min: mid, max: hi });
+  await setNumericFilter(page, 'length', { min: mid, max: hi });
   await applyFiltersFromMenu(page);
   const secondCount = await isolatedCount(page);
 
@@ -1833,7 +1827,7 @@ test('numeric tooltip shows the raw value within the current bin range after reb
   const [binMin, binMax] = numericBin!.bounds;
 
   // Filter to the chosen bin's value range so every visible point is in it.
-  await setNumericFilter(page, 'length', 'between', { min: binMin, max: binMax });
+  await setNumericFilter(page, 'length', { min: binMin, max: binMax });
   await applyFiltersFromMenu(page);
   expect(await isolatedCount(page)).toBeGreaterThan(0);
 
@@ -1870,7 +1864,7 @@ test('zero-match query disables Apply & Isolate and leaves the view unchanged (n
   });
 
   const fullCount = await isolatedCount(page);
-  await setNumericFilter(page, 'length', 'gt', { min: maxLength + 1 });
+  await setNumericFilter(page, 'length', { min: maxLength + 1 });
 
   // A zero-match query cannot be isolated: the builder reports zero matches and
   // keeps "Apply & Isolate" disabled, so the view never collapses to empty or

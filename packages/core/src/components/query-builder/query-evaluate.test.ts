@@ -299,22 +299,30 @@ describe('evaluateQuery', () => {
   });
 
   describe('numeric conditions', () => {
-    it('matches proteins greater than a threshold (exclusive)', () => {
+    it('an empty max reads "at least min", the bound included', () => {
       const query: FilterQuery = [
-        { id: '1', kind: 'numeric', annotation: 'length', operator: 'gt', min: 250, max: null },
+        { id: '1', kind: 'numeric', annotation: 'length', min: 250, max: null },
       ];
       const result = evaluateQuery(query, createTestData());
-      // > 250 → P3(400), P4(550); P2(250) excluded (exclusive)
-      expect(result).toEqual(new Set([2, 3]));
+      // >= 250 → P2(250), P3(400), P4(550)
+      expect(result).toEqual(new Set([1, 2, 3]));
     });
 
-    it('matches proteins less than a threshold (exclusive)', () => {
+    it('an empty min reads "at most max", the bound included', () => {
       const query: FilterQuery = [
-        { id: '1', kind: 'numeric', annotation: 'length', operator: 'lt', min: null, max: 400 },
+        { id: '1', kind: 'numeric', annotation: 'length', min: null, max: 400 },
       ];
       const result = evaluateQuery(query, createTestData());
-      // < 400 → P1(100), P2(250)
-      expect(result).toEqual(new Set([0, 1]));
+      // <= 400 → P1(100), P2(250), P3(400)
+      expect(result).toEqual(new Set([0, 1, 2]));
+    });
+
+    it('loads an older strict operator as the inclusive bound it read', () => {
+      // A query saved as `> 250` with a stale max keeps only its min, now inclusive.
+      const query: FilterQuery = [
+        { id: '1', kind: 'numeric', annotation: 'length', operator: 'gt', min: 250, max: 300 },
+      ];
+      expect(evaluateQuery(query, createTestData())).toEqual(new Set([1, 2, 3]));
     });
 
     it('matches proteins within an inclusive interval', () => {
@@ -416,9 +424,9 @@ describe('evaluateQuery', () => {
         },
       ];
       const result = evaluateQuery(query, createTestData());
-      // length>250 → P3,P4 ; NOT → "has a length AND is not >250" → P1,P2.
+      // length>=250 → P2,P3,P4 ; NOT → "has a length AND is not >=250" → P1.
       // P5 (null length) is NOT re-included: NOT requires a present value.
-      expect(result).toEqual(new Set([0, 1]));
+      expect(result).toEqual(new Set([0]));
     });
 
     describe('NOT excludes N/A', () => {
@@ -731,18 +739,13 @@ describe('multi-label annotations', () => {
 
 describe('inclusive numeric operators (gte / lte)', () => {
   // length: P1=100, P2=250, P3=400, P4=550, P5=null
-  it('lte includes the boundary value, lt excludes it', () => {
+  it('an older lt loads as lte: the boundary value is included', () => {
     const data = createTestData();
-    const lte = evaluateQuery(
-      [createNumericCondition({ annotation: 'length', operator: 'lte', max: 250 })],
-      data,
-    );
     const lt = evaluateQuery(
       [createNumericCondition({ annotation: 'length', operator: 'lt', max: 250 })],
       data,
     );
-    expect(lte).toEqual(new Set([0, 1]));
-    expect(lt).toEqual(new Set([0]));
+    expect(lt).toEqual(new Set([0, 1]));
   });
 
   it('treats a null value as outside every comparison operator', () => {

@@ -26,7 +26,7 @@ describe('sameQuery', () => {
     expect(sameQuery([], [])).toBe(true);
   });
 
-  it('sees a changed value, bound, presence or operator', () => {
+  it('sees a changed value, bound or presence, and reads an older operator as its range', () => {
     expect(sameQuery([organism(['Human'])], [organism(['Mouse'])])).toBe(false);
     expect(sameQuery([length(5)], [length(6)])).toBe(false);
     expect(
@@ -40,7 +40,7 @@ describe('sameQuery', () => {
         [length(5)],
         [{ ...(length(5) as object), operator: 'gte' } as FilterQuery[number]],
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('sees a changed id or logical operator', () => {

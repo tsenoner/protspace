@@ -32,7 +32,7 @@ import {
 import { icon } from '../kit/icon';
 import { queryBuilderStyles } from './query-builder.styles';
 import { displayFilterValue, renderValueChip } from './query-presence';
-import { presenceOf } from './query-numeric-helpers';
+import { presenceOf, toRange } from './query-numeric-helpers';
 import '../kit/button';
 import '../kit/menu';
 import '../kit/popover';
@@ -45,7 +45,7 @@ import './query-numeric-input';
  *
  * Events:
  * - `condition-changed` — any field changed, detail: `{ condition: FilterCondition }`
- * - `condition-removed` — Remove in the card's menu, detail: `{ id: string }`
+ * - `condition-removed` — the card's remove button, detail: `{ id: string }`
  * - `condition-duplicated` — Duplicate in the card's menu, detail: `{ id: string }`
  * - `operator-changed` — an operator picked in the operator menu, detail:
  *   `{ id: string, operator: ConditionOperator }`; the builder stores it (`setOperator`)
@@ -339,9 +339,6 @@ class ProtspaceQueryConditionRow extends LitElement {
         return;
       case 'duplicate':
         this._dispatchById('condition-duplicated');
-        return;
-      case 'remove':
-        this._dispatchById('condition-removed');
     }
   }
 
@@ -556,16 +553,8 @@ class ProtspaceQueryConditionRow extends LitElement {
           ? 'has no value (N/A)'
           : countNoun(total - n, 'protein has none (N/A)', 'proteins have none (N/A)');
       }
-      case 'gte':
-        return 'the number or more';
-      case 'lte':
-        return 'the number or less';
-      case 'gt':
-        return 'above the number';
-      case 'lt':
-        return 'below the number';
       case 'between':
-        return 'both numbers included';
+        return 'both ends included; an empty end has no limit';
     }
   }
 
@@ -631,6 +620,24 @@ class ProtspaceQueryConditionRow extends LitElement {
     `;
   }
 
+  /** The card's ⋯ menu and, beside it, its remove button, always shown so a touch reaches it. */
+  private _renderActions(name: string) {
+    const annotation = this.condition.annotation;
+    const label = annotation
+      ? `Remove condition: ${annotationLabel(annotation, this.data?.annotations?.[annotation])}`
+      : 'Remove condition';
+    return html`<div class="condition-actions">
+      ${this._renderMenu(name)}
+      <ps-icon-button
+        class="condition-remove"
+        icon="x"
+        size="sm"
+        label=${label}
+        @click=${() => this._dispatchById('condition-removed')}
+      ></ps-icon-button>
+    </div>`;
+  }
+
   private _renderMenu(name: string) {
     const annotation = this.condition.annotation;
     return html`
@@ -658,7 +665,6 @@ class ProtspaceQueryConditionRow extends LitElement {
         >
         <ps-menu-item value="clear" ?disabled=${!this._hasValues()}>Clear values</ps-menu-item>
         <ps-menu-item value="duplicate">Duplicate</ps-menu-item>
-        <ps-menu-item value="remove">Remove</ps-menu-item>
       </ps-menu>
     `;
   }
@@ -670,8 +676,8 @@ class ProtspaceQueryConditionRow extends LitElement {
     if (!c.annotation) return `${name}: no annotation chosen${tail}`;
     const label = annotationLabel(c.annotation, this.data?.annotations?.[c.annotation]);
     const operator = this._operator();
-    const words = operator === operatorOf(c) ? operatorText(c) : operatorLabel(operator);
-    // A missing value reads after a comma: "Sequence length is more than, no number yet".
+    let words = operator === operatorOf(c) ? operatorText(c) : operatorLabel(operator);
+    // A missing value reads after a comma: "Sequence length is between, no number yet".
     let what = '';
     if (isPresenceOperator(operator)) {
       // "has any value" / "has no value" say it all.
@@ -684,13 +690,16 @@ class ProtspaceQueryConditionRow extends LitElement {
             ? ` ${displayFilterValue(c.values[0])}`
             : ` ${k} values`;
     } else {
-      const bounds =
-        operator === 'between'
-          ? [c.min, c.max]
-          : [operator === 'lt' || operator === 'lte' ? c.max : c.min];
-      what = bounds.includes(null)
-        ? ', no number yet'
-        : ` ${bounds.map((v) => formatCount(v as number)).join(' and ')}`;
+      // An open end reads as the one-sided range it is: "is at least 50".
+      const { min, max } = toRange(c);
+      const not = c.logicalOp === 'NOT' ? 'not ' : '';
+      if (min !== null && max === null) words = `${not}is at least`;
+      if (min === null && max !== null) words = `${not}is at most`;
+      const bounds = [min, max].filter((v): v is number => v !== null);
+      what =
+        bounds.length === 0
+          ? ', no number yet'
+          : ` ${bounds.map((v) => formatCount(v)).join(' and ')}`;
       if (presenceOf(c).includes(NA_VALUE)) what += ', or has no value';
     }
     return `${name}: ${label} ${words}${what}${tail}`;
@@ -737,7 +746,7 @@ class ProtspaceQueryConditionRow extends LitElement {
             : nothing}
           ${this.condition.kind === 'numeric' ? this._renderNumericInput() : this._renderValues()}
         </div>
-        ${this._renderMenu(name.toLowerCase())}
+        ${this._renderActions(name.toLowerCase())}
       </div>
     `;
   }

@@ -1,5 +1,9 @@
 export type LogicalOp = 'AND' | 'OR' | 'NOT';
-export type NumericOperator = 'gt' | 'gte' | 'lt' | 'lte' | 'between';
+/**
+ * The comparisons a numeric condition offered before it became one inclusive range. A query saved
+ * with one still loads: `toRange` keeps the bound it read, and `>` / `<` become `>=` / `<=`.
+ */
+export type LegacyNumericOperator = 'gt' | 'gte' | 'lt' | 'lte' | 'between';
 
 /**
  * Presence sentinel meaning "this annotation has a value at all".
@@ -28,13 +32,18 @@ export interface CategoricalCondition extends BaseCondition {
 
 export interface NumericCondition extends BaseCondition {
   kind: 'numeric';
-  operator: NumericOperator;
+  /**
+   * The range `min <= x <= max`, both ends included; a null end is no limit on that side, so
+   * `min` alone reads "at least min". Both null: no bound.
+   */
   min: number | null;
   max: number | null;
+  /** Read only when loading an older query (see `toRange`); never written. */
+  operator?: LegacyNumericOperator;
   /**
-   * Presence sentinels (`NA_VALUE` / `ANY_VALUE`) unioned with the comparison,
+   * Presence sentinels (`NA_VALUE` / `ANY_VALUE`) unioned with the range,
    * mirroring how a categorical condition carries them among its `values`.
-   * `>= 0.5` with `[NA_VALUE]` reads "at least 0.5, or no value at all".
+   * `min: 0.5` with `[NA_VALUE]` reads "at least 0.5, or no value at all".
    * A condition is configured when it has bounds OR a presence chip.
    */
   presence?: string[];
@@ -72,7 +81,6 @@ export function createNumericCondition(overrides?: Partial<NumericCondition>): N
     id: generateId(),
     kind: 'numeric',
     annotation: '',
-    operator: 'gt',
     min: null,
     max: null,
     presence: [],

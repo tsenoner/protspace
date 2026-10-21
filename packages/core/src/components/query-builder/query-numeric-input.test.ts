@@ -109,9 +109,9 @@ describe('query-numeric-input', () => {
     }
   });
 
-  it('shows only the fields the operator needs', async () => {
-    const gt = await mount(makeCondition({ operator: 'gt', min: 5 }));
-    expect(fields(gt).inputs).toHaveLength(1);
+  it('shows both ends of the range, an older one-sided operator too', async () => {
+    const gt = await mount(makeCondition({ operator: 'gt', min: 5, max: 9 }));
+    expect(fields(gt).inputs.map((input) => input.value)).toEqual(['5', '']);
 
     const between = await mount(makeCondition({ operator: 'between', min: 1, max: 9 }));
     expect(fields(between).inputs).toHaveLength(2);

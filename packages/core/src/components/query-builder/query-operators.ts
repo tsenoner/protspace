@@ -1,7 +1,7 @@
 import { NA_VALUE } from '@protspace/utils';
 import type { FilterCondition, FilterGroup, FilterQuery, FilterQueryItem } from './query-types';
 import { ANY_VALUE, clearLeadingOpInList, createGroup, isFilterGroup } from './query-types';
-import { presenceOf } from './query-numeric-helpers';
+import { presenceOf, toRange } from './query-numeric-helpers';
 
 /**
  * The filter's operators in words, read from and written to the query model without new fields
@@ -12,18 +12,9 @@ import { presenceOf } from './query-numeric-helpers';
  *   group `{ logicalOp: 'OR', conditions: [{ logicalOp: 'NOT', … }] }` that renders as a plain card
  * - has any value / has no value: `values: [ANY_VALUE]` / `[NA_VALUE]`; numeric: no bounds,
  *   `presence: [ANY_VALUE]` / `[NA_VALUE]`
- * - is at least / at most / more than / less than / between: `gte lte gt lt between`
+ * - is between: a numeric condition's `min` and `max`, both included, an empty end open
  */
-export type ConditionOperator =
-  | 'any-of'
-  | 'none-of'
-  | 'has-any'
-  | 'has-none'
-  | 'gte'
-  | 'lte'
-  | 'gt'
-  | 'lt'
-  | 'between';
+export type ConditionOperator = 'any-of' | 'none-of' | 'has-any' | 'has-none' | 'between';
 
 /** How a card joins the cards before it. A first card has none. */
 export type Joiner = 'AND' | 'OR';
@@ -35,25 +26,13 @@ export const CATEGORICAL_OPERATORS: readonly ConditionOperator[] = [
   'has-none',
 ];
 
-export const NUMERIC_OPERATORS: readonly ConditionOperator[] = [
-  'gte',
-  'lte',
-  'gt',
-  'lt',
-  'between',
-  'has-any',
-  'has-none',
-];
+export const NUMERIC_OPERATORS: readonly ConditionOperator[] = ['between', 'has-any', 'has-none'];
 
 const LABELS: Record<ConditionOperator, string> = {
   'any-of': 'is any of',
   'none-of': 'is none of',
   'has-any': 'has any value',
   'has-none': 'has no value',
-  gte: 'is at least',
-  lte: 'is at most',
-  gt: 'is more than',
-  lt: 'is less than',
   between: 'is between',
 };
 
@@ -69,7 +48,7 @@ const only = (list: readonly string[], value: string) => list.length === 1 && li
 
 /**
  * The operator a condition shows. A negated condition reads "is none of" whatever it holds;
- * a numeric one keeps its comparison (the card says "not" in front, see `operatorText`).
+ * a numeric one keeps its range (the card says "not" in front, see `operatorText`).
  */
 export function operatorOf(condition: FilterCondition): ConditionOperator {
   const negated = condition.logicalOp === 'NOT';
@@ -83,7 +62,7 @@ export function operatorOf(condition: FilterCondition): ConditionOperator {
   if (!negated && presence.includes(ANY_VALUE)) return 'has-any';
   if (!negated && only(presence, NA_VALUE) && condition.min === null && condition.max === null)
     return 'has-none';
-  return condition.operator;
+  return 'between';
 }
 
 /** The words on a card's operator pill: "is" for one chosen value, "not …" over a negated number. */
@@ -114,20 +93,15 @@ function withOperatorFields(
   }
   if (operator === 'has-any' || operator === 'has-none')
     return {
-      ...condition,
+      ...toRange(condition),
       min: null,
       max: null,
       presence: [operator === 'has-any' ? ANY_VALUE : NA_VALUE],
     };
   if (operator === 'any-of' || operator === 'none-of') return condition;
-  const usesMin = operator !== 'lt' && operator !== 'lte';
-  const usesMax = operator === 'lt' || operator === 'lte' || operator === 'between';
   return {
-    ...condition,
-    operator,
-    min: usesMin ? condition.min : null,
-    max: usesMax ? condition.max : null,
-    // Leaving "has any/no value" drops its sentinel; an N/A chip on a comparison stays.
+    ...toRange(condition),
+    // Leaving "has any/no value" drops its sentinel; an N/A chip on a range stays.
     presence: isPresenceOperator(from) ? [] : presenceOf(condition).filter((p) => p !== ANY_VALUE),
   };
 }

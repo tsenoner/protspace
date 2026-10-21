@@ -8,7 +8,6 @@ import {
   reliabilityFromConditions,
   replaceConditionsForAnnotation,
   sameConditions,
-  sameQuery,
   type FilterQuery,
   type ProtspaceLegend,
   type ProtspaceQueryBuilder,
@@ -122,7 +121,8 @@ export function createFilterController({
 
   /** What a clean draft equals: the applied query, or the seed while none is applied. */
   const baseline = (): FilterQuery => (applied.query.length > 0 ? applied.query : seed);
-  const isDirty = () => !sameQuery(draft, baseline());
+  /** Incomplete rows do not count: an empty condition added or removed leaves the draft clean. */
+  const isDirty = () => queryChanges(draft, baseline()).count > 0;
 
   const publish = () =>
     setWorkbenchStatus({

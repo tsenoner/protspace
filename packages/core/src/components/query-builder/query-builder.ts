@@ -321,7 +321,6 @@ export class ProtspaceQueryBuilder extends LitElement {
     const id = this._groupTarget?.id;
     if (!id) return;
     if (e.detail.value === 'ungroup') this._dispatchQueryChanged(ungroup(this.query, id));
-    if (e.detail.value === 'remove') this._dispatchQueryChanged(removeCard(this.query, id));
   }
 
   /** A copy of the condition, under a new id, right after it. */
@@ -516,6 +515,13 @@ export class ProtspaceQueryBuilder extends LitElement {
             label="Actions for group"
             @click=${(e: Event) => this._openGroupMenu(group.id, e)}
           ></ps-icon-button>
+          <ps-icon-button
+            class="group-remove"
+            icon="x"
+            size="sm"
+            label="Remove group"
+            @click=${() => this._dispatchQueryChanged(removeCard(this.query, group.id))}
+          ></ps-icon-button>
         </div>
         ${this._renderList(items, numbers)}
         <ps-button
@@ -567,7 +573,6 @@ export class ProtspaceQueryBuilder extends LitElement {
         }}
       >
         <ps-menu-item value="ungroup" ?disabled=${negated}>Ungroup</ps-menu-item>
-        <ps-menu-item value="remove">Remove group</ps-menu-item>
       </ps-menu>
     `;
   }

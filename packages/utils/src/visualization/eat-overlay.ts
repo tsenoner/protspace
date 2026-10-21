@@ -65,7 +65,7 @@ export const NEUTRAL_BOUND = { min: 0, max: 1 } as const;
 /**
  * Which bounds each mode actually filters on. Stated once: `normalizeReliability`
  * blanks the bound a mode does not use, the legend renders one thumb and one percent
- * box per bound it does, and the query translation picks its operator from the pair.
+ * box per bound it does, and the query translation leaves the other end of its range open.
  * A fourth mode is then one entry here rather than four coordinated edits.
  */
 export const RELIABILITY_BOUNDS: Record<EatReliabilityMode, { min: boolean; max: boolean }> = {

@@ -6,7 +6,7 @@ import type {
   NumericCondition,
 } from './query-types';
 import { isFilterGroup, ANY_VALUE } from './query-types';
-import { isNumericConditionReady, matchesNumericValue } from './query-numeric-helpers';
+import { isNumericConditionReady, matchesNumericValue, toRange } from './query-numeric-helpers';
 import { toInternalValue } from '../legend/config';
 import {
   getFirstAnnotationIndex,
@@ -87,7 +87,7 @@ export function resolveAnnotationInternalValues(
 /**
  * Evaluate a single condition against all proteins, returning a Set of matching indices.
  * Categorical conditions use "is" semantics (value is among the selected set);
- * numeric conditions apply a comparison operator. Both kinds additionally
+ * numeric conditions keep the values in their range. Both kinds additionally
  * honour the presence sentinels `NA_VALUE` and `ANY_VALUE`. Negation is handled
  * at the combining level via the NOT logical operator.
  */
@@ -202,7 +202,7 @@ function proteinsWithAnyValue(
 
 /**
  * Evaluate a numeric condition: a protein matches when its raw numeric value
- * satisfies the operator. An unconfigured condition (missing a required bound) is
+ * lies in its range, both ends included. An unconfigured condition (no bound) is
  * a no-op and matches everything — mirroring an empty categorical condition. This
  * keeps the two kinds symmetric under NOT: `NOT (unconfigured)` then matches
  * nothing (and leaves Apply disabled) instead of isolating every protein.
@@ -217,9 +217,10 @@ function evaluateNumericCondition(
   const values = data.numeric_annotation_data?.[condition.annotation];
   if (!values) return new Set();
 
+  const range = toRange(condition);
   const matches = new Set<number>();
   for (let i = 0; i < numProteins; i++) {
-    if (matchesNumericValue(readNumericValue(values, i), condition)) {
+    if (matchesNumericValue(readNumericValue(values, i), range)) {
       matches.add(i);
     }
   }
