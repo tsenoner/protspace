@@ -1,4 +1,5 @@
-import { css } from 'lit';
+import { css, unsafeCSS } from 'lit';
+import { COMPACT_MEDIA, PHONE_MEDIA } from '../../utils/breakpoints';
 import { focusRing, srOnly } from '../kit/kit-shared.styles';
 
 /**
@@ -173,6 +174,65 @@ export const queryBuilderStyles = [
       }
     }
 
+    /* A phone's panel leaves the cards about one card's height: each card snaps to the top as
+       the list scrolls. */
+    @media ${unsafeCSS(COMPACT_MEDIA)} {
+      .query-conditions {
+        scroll-snap-type: y proximity;
+      }
+
+      .query-conditions > :is(protspace-query-condition-row, .group-container, .query-actions) {
+        scroll-snap-align: start;
+      }
+    }
+
+    /* Upright, the panel is full width but short: the footer packs the count and the buttons
+       onto one line, so the cards keep the height and Apply stays on screen. */
+    @media ${unsafeCSS(PHONE_MEDIA)} {
+      .query-builder {
+        gap: var(--ps-space-2);
+      }
+
+      .query-footer {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--ps-space-1) var(--ps-space-2);
+      }
+
+      .match-line {
+        grid-area: 1 / 1;
+        min-width: 0;
+      }
+
+      .match-number {
+        font-size: var(--ps-text-lg);
+      }
+
+      .query-footer-buttons {
+        grid-area: 1 / 2;
+        flex-wrap: nowrap;
+      }
+
+      .match-bar,
+      .apply-reason {
+        grid-column: 1 / -1;
+      }
+
+      .apply-reason {
+        min-height: 0;
+      }
+
+      .reset-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+    }
+
     /* ── Joiners and groups ──────────────────────────────────────────────── */
 
     /* "and ⌄" / "or ⌄" centred on a rule between two cards. */
@@ -220,6 +280,12 @@ export const queryBuilderStyles = [
     .joiner-prompt p {
       margin: 0;
       font-size: var(--ps-text-sm);
+    }
+
+    .joiner-prompt-text {
+      margin: 0;
+      padding: var(--ps-space-3) var(--ps-space-5);
+      line-height: var(--ps-leading-normal);
     }
 
     .joiner-prompt-actions {
@@ -277,10 +343,12 @@ export const queryBuilderStyles = [
 
     /* ── A condition row ─────────────────────────────────────────────────── */
 
+    /* The ⋯ menu comes last in the card's markup, so Tab reads name, operator, values, then ⋯;
+       the grid still shows it at the end of the first line. */
     .condition-row {
-      display: flex;
-      flex-direction: column;
-      gap: var(--ps-space-2);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--ps-space-2) var(--ps-space-1-5);
       box-sizing: border-box;
       padding: var(--ps-space-2) var(--ps-space-2) var(--ps-space-2) var(--ps-space-3);
       border: 1px solid var(--ps-border);
@@ -294,6 +362,7 @@ export const queryBuilderStyles = [
     }
 
     .condition-head {
+      grid-area: 1 / 1;
       display: flex;
       align-items: center;
       gap: var(--ps-space-1-5);
@@ -301,8 +370,8 @@ export const queryBuilderStyles = [
     }
 
     .condition-menu-trigger {
-      flex: none;
-      margin-inline-start: auto;
+      grid-area: 1 / 2;
+      align-self: start;
     }
 
     .condition-badge {
@@ -318,6 +387,7 @@ export const queryBuilderStyles = [
     }
 
     .condition-values {
+      grid-column: 1 / -1;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
@@ -475,6 +545,10 @@ export const queryBuilderStyles = [
        and 12 px to the right. The row's gaps match those overhangs, so no target reaches into a
        neighbouring chip, where a press would remove the wrong value. */
     @media (pointer: coarse) {
+      .annotation-select-trigger {
+        min-height: var(--ps-touch-target);
+      }
+
       .value-chips {
         column-gap: var(--ps-space-3);
         row-gap: calc(var(--ps-touch-target) - 22px);
@@ -613,6 +687,30 @@ export const queryBuilderStyles = [
       box-sizing: border-box;
       width: min(320px, calc(100vw - 16px));
       max-height: min(440px, var(--available-height, 440px));
+    }
+
+    /* On a phone the list is a bottom sheet (ps-popover's docked): full width, a title, and the
+       rows take the height the sheet leaves. */
+    .value-picker-title {
+      flex: none;
+      margin: 0;
+      padding: var(--ps-space-1) var(--ps-space-3) 0;
+      color: var(--ps-text);
+      font-size: var(--ps-text-md);
+      font-weight: var(--ps-weight-semibold);
+    }
+
+    ps-popover:not([docked]) .value-picker-title {
+      display: none;
+    }
+
+    ps-popover[docked] .value-picker {
+      width: 100%;
+      max-height: calc(min(85dvh, 100dvh - 48px) - 20px - env(safe-area-inset-bottom, 0px));
+    }
+
+    ps-popover[docked] .value-picker .value-picker-list {
+      max-height: none;
     }
 
     .value-picker-search {
@@ -826,6 +924,16 @@ export const queryBuilderStyles = [
       .value-picker-tools ps-button,
       .value-picker-footer ps-button {
         min-height: var(--ps-touch-target);
+      }
+
+      /* Keep in step with lineHeight() in query-value-picker.ts. */
+      .value-picker-section,
+      .value-picker-item {
+        height: 44px;
+      }
+
+      .numeric-field {
+        height: var(--ps-touch-target);
       }
     }
 

@@ -112,6 +112,8 @@ export class PsMenu extends LitElement {
   @property() label = '';
   @property({ type: Boolean }) searchable = false;
   @property({ attribute: 'search-placeholder' }) searchPlaceholder = 'Search';
+  /** On a phone, open as a bottom sheet titled with `label` (ps-popover's `sheet`). */
+  @property({ type: Boolean }) sheet = false;
 
   @state() private query = '';
   @query('input') private searchInput?: HTMLInputElement;
@@ -187,9 +189,13 @@ export class PsMenu extends LitElement {
       placement=${this.placement}
       panel-role=${this.searchable ? 'dialog' : 'none'}
       panel-label=${this.searchable ? this.label : ''}
+      ?sheet=${this.sheet}
       @ps-open=${this.onOpen}
       @ps-close=${this.onPopoverClose}
     >
+      ${this.sheet && this.label
+        ? html`<p class="sheet-title" aria-hidden="true">${this.label}</p>`
+        : nothing}
       ${this.searchable
         ? html`<div class="search">
             ${icon('search', 14)}

@@ -21,11 +21,19 @@ import {
 import { renderAnnotationName } from '../common/annotation-name';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
 import { pushLayer } from '../kit/layers';
-import { annotationSource, countNoun, isNumericAnnotation } from '@protspace/utils';
+import {
+  annotationLabel,
+  annotationSource,
+  countNoun,
+  formatCount,
+  isNumericAnnotation,
+  NA_VALUE,
+} from '@protspace/utils';
 import { icon } from '../kit/icon';
 import { queryBuilderStyles } from './query-builder.styles';
 import { pickerStyle, placePickerAt, type PickerPlacement } from './picker-placement';
-import { renderValueChip } from './query-presence';
+import { displayFilterValue, renderValueChip } from './query-presence';
+import { presenceOf } from './query-numeric-helpers';
 import '../kit/button';
 import '../kit/menu';
 import './query-value-picker';
@@ -280,6 +288,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   private _removeValue(value: string) {
     if (this.condition.kind !== 'categorical') return;
     const values = this.condition.values.filter((v) => v !== value);
+    // The chip goes; focus stays in the card, on "+ value".
+    this._valueAddEl?.focus();
     this._dispatchChanged({ ...this.condition, values });
   }
 
@@ -572,6 +582,7 @@ class ProtspaceQueryConditionRow extends LitElement {
       >
       <ps-menu
         label=${label}
+        sheet
         .anchor=${this._operatorPillEl ?? null}
         .open=${this._operatorMenuOpen}
         @ps-select=${this._handleOperatorSelect}
@@ -601,6 +612,7 @@ class ProtspaceQueryConditionRow extends LitElement {
       <ps-menu
         label=${`Actions for ${name}`}
         placement="bottom-end"
+        sheet
         .anchor=${this._menuTriggerEl ?? null}
         .open=${this._menuOpen}
         @ps-select=${this._handleMenuSelect}
@@ -619,16 +631,45 @@ class ProtspaceQueryConditionRow extends LitElement {
     `;
   }
 
+  /** The card's name for a screen reader: "Condition 2: Protein family is any of 2 values". */
+  private _summary(name: string): string {
+    const c = this.condition;
+    const tail = this.edited ? ', not applied' : '';
+    if (!c.annotation) return `${name}: no annotation chosen${tail}`;
+    const label = annotationLabel(c.annotation, this.data?.annotations?.[c.annotation]);
+    const operator = this._operator();
+    const words = operator === operatorOf(c) ? operatorText(c) : operatorLabel(operator);
+    // A missing value reads after a comma: "Sequence length is more than, no number yet".
+    let what = '';
+    if (isPresenceOperator(operator)) {
+      // "has any value" / "has no value" say it all.
+    } else if (c.kind === 'categorical') {
+      const k = c.values.length;
+      what =
+        k === 0
+          ? ', no value chosen'
+          : k === 1
+            ? ` ${displayFilterValue(c.values[0])}`
+            : ` ${k} values`;
+    } else {
+      const bounds =
+        operator === 'between'
+          ? [c.min, c.max]
+          : [operator === 'lt' || operator === 'lte' ? c.max : c.min];
+      what = bounds.includes(null)
+        ? ', no number yet'
+        : ` ${bounds.map((v) => formatCount(v as number)).join(' and ')}`;
+      if (presenceOf(c).includes(NA_VALUE)) what += ', or has no value';
+    }
+    return `${name}: ${label} ${words}${what}${tail}`;
+  }
+
   render() {
     const n = this.number;
     const name = n > 0 ? `Condition ${n}` : 'Condition';
     const annotation = this.condition.annotation;
     return html`
-      <div
-        class="condition-row"
-        role="group"
-        aria-label=${this.edited ? `${name}, not applied` : name}
-      >
+      <div class="condition-row" role="group" aria-label=${this._summary(name)}>
         <div class="condition-head">
           <button
             type="button"
@@ -649,7 +690,7 @@ class ProtspaceQueryConditionRow extends LitElement {
                     14,
                   )}`}
           </button>
-          ${annotation ? this._sourceBadge() : nothing} ${this._renderMenu(name.toLowerCase())}
+          ${annotation ? this._sourceBadge() : nothing}
         </div>
 
         ${this._showAnnotationPicker ? this._renderAnnotationPicker() : nothing}
@@ -660,6 +701,7 @@ class ProtspaceQueryConditionRow extends LitElement {
             : nothing}
           ${this.condition.kind === 'numeric' ? this._renderNumericInput() : this._renderValues()}
         </div>
+        ${this._renderMenu(name.toLowerCase())}
       </div>
     `;
   }

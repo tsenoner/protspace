@@ -1,6 +1,7 @@
 import { LitElement, html, nothing, type PropertyValues } from 'lit';
 import { property, query } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
+import { COMPACT_MEDIA } from '../../utils/breakpoints';
 import { deepActiveElement, flatContains } from './focus';
 import { pushLayer } from './layers';
 import { popoverStyles } from './popover.styles';
@@ -14,7 +15,9 @@ const stopNestedClose = (event: Event) => event.stopPropagation();
 
 /**
  * An anchored panel in the top layer. The owner sets `open`; the popover closes itself on Escape
- * or an outside press and then dispatches `ps-close`.
+ * or an outside press and then dispatches `ps-close`. With `sheet`, a phone (either way up) gets
+ * it as a bottom sheet over a scrim instead (the `docked` attribute marks that), the way
+ * ps-dialog's `sheet` size looks.
  */
 @customElement('ps-popover')
 export class PsPopover extends LitElement {
@@ -25,6 +28,8 @@ export class PsPopover extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false;
   @property({ attribute: 'panel-role' }) panelRole = 'dialog';
   @property({ attribute: 'panel-label' }) panelLabel = '';
+  /** On a phone, open as a bottom sheet rather than beside the anchor. */
+  @property({ type: Boolean }) sheet = false;
 
   @query('.panel') private panel!: HTMLElement;
   private releaseLayer?: () => void;
@@ -40,6 +45,7 @@ export class PsPopover extends LitElement {
       role=${this.panelRole}
       aria-label=${this.panelLabel || nothing}
       @ps-close=${stopNestedClose}
+      @click=${this.onPanelClick}
     >
       <slot></slot>
     </div>`;
@@ -58,7 +64,10 @@ export class PsPopover extends LitElement {
     } else if (!this.releaseLayer) {
       // Newly opened, moved while open, or the anchor arrived after `open`.
       this.show();
-    } else if (changed.has('anchor') || changed.has('placement')) {
+    } else if (
+      !this.hasAttribute('docked') &&
+      (changed.has('anchor') || changed.has('placement'))
+    ) {
       // Re-anchored while open (a re-render replaced the trigger): follow the new anchor.
       this.stopPositioning?.();
       this.stopPositioning = this.anchor
@@ -86,8 +95,16 @@ export class PsPopover extends LitElement {
     const active = deepActiveElement();
     // Safari does not focus a clicked button; with nothing focused, return focus to the anchor.
     this.returnFocusTo = active && active !== document.body ? active : (this.anchor as HTMLElement);
+    const docked =
+      this.sheet && typeof matchMedia === 'function' && matchMedia(COMPACT_MEDIA).matches;
+    this.toggleAttribute('docked', docked);
+    if (docked) {
+      // A sheet sits on the bottom edge: drop what an earlier anchored opening placed.
+      for (const name of ['top', 'left', '--available-height', '--available-width'])
+        this.panel.style.removeProperty(name);
+    }
     this.panel.showPopover();
-    this.stopPositioning = anchorTo(this.anchor, this.panel, this.placement);
+    this.stopPositioning = docked ? undefined : anchorTo(this.anchor, this.panel, this.placement);
     // Read at each press, so a replaced anchor still counts as inside.
     const elements = (): Element[] => (this.anchor ? [this, this.anchor] : [this]);
     this.releaseLayer = pushLayer({
@@ -101,6 +118,12 @@ export class PsPopover extends LitElement {
     this.announcedOpen = true;
     this.dispatchEvent(new CustomEvent('ps-open', { bubbles: true, composed: true }));
   }
+
+  /** A press on a sheet's scrim lands on the panel, above its box: it closes the sheet. */
+  private onPanelClick = (event: MouseEvent) => {
+    if (event.target !== this.panel || !this.hasAttribute('docked')) return;
+    if (event.clientY < this.panel.getBoundingClientRect().top) this.dismiss();
+  };
 
   private hide(): void {
     this.announcedOpen = false;

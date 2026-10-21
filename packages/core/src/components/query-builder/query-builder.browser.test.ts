@@ -101,7 +101,11 @@ describe('protspace-query-builder in a narrow panel', () => {
     const all = rows(builder);
     expect(
       all.map((row) => row.shadowRoot!.querySelector('.condition-row')!.getAttribute('aria-label')),
-    ).toEqual(['Condition 1', 'Condition 2', 'Condition 3']);
+    ).toEqual([
+      'Condition 1: Organism is Human',
+      'Condition 2: no annotation chosen',
+      'Condition 3: no annotation chosen',
+    ]);
   });
 
   it('closePopups releases an open picker’s layer', async () => {

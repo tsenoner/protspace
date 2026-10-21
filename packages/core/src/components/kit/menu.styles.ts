@@ -11,6 +11,18 @@ export const menuStyles = [
     ps-popover::part(panel) {
       min-width: 200px;
     }
+    /* A sheet's title; the menu's own name already says it to a screen reader. */
+    .sheet-title {
+      margin: 0;
+      padding: var(--ps-space-1) var(--ps-space-3) var(--ps-space-2);
+      border-bottom: 1px solid var(--ps-border);
+      color: var(--ps-text);
+      font-size: var(--ps-text-md);
+      font-weight: var(--ps-weight-semibold);
+    }
+    ps-popover:not([docked]) .sheet-title {
+      display: none;
+    }
     .items {
       display: flex;
       flex-direction: column;

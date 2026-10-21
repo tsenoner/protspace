@@ -256,7 +256,8 @@ test.describe('the bars on a phone', () => {
       .first()
       .tap();
     await row.locator('.value-add').tap();
-    await queryBuilder(page).locator('.value-picker-item').first().tap();
+    // The list leads with "Any value" and N/A, which show no chip: tick the first real value.
+    await queryBuilder(page).locator('.value-picker-item:not([data-value^="__"])').first().tap();
     // Escape closes the value picker (a layer).
     await page.keyboard.press('Escape');
 

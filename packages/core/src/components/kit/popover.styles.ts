@@ -43,5 +43,29 @@ export const popoverStyles = [
         translate: 0 -2px;
       }
     }
+
+    /* A bottom sheet on a phone (ps-dialog's sheet size): full width on the bottom edge, the top
+       corners rounded, a grip, a scrim behind. */
+    :host([docked]) .panel {
+      inset: auto 0 0;
+      width: 100%;
+      max-width: none;
+      max-height: min(85dvh, calc(100dvh - 48px));
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      border-width: 1px 0 0;
+      border-radius: var(--ps-radius-lg) var(--ps-radius-lg) 0 0;
+    }
+    :host([docked]) .panel::before {
+      content: '';
+      display: block;
+      width: 36px;
+      height: 4px;
+      margin: var(--ps-space-1-5) auto var(--ps-space-1);
+      border-radius: var(--ps-radius-full);
+      background: var(--ps-border-strong);
+    }
+    :host([docked]) .panel::backdrop {
+      background: var(--ps-scrim);
+    }
   `,
 ];

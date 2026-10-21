@@ -41,7 +41,13 @@ export function renderValueChip(value: string, onRemove: () => void, presenceTag
         class="value-chip-remove"
         data-presence=${presenceTag ?? nothing}
         @click=${onRemove}
-        aria-label="Remove value"
+        @keydown=${(e: KeyboardEvent) => {
+          // Delete or Backspace on a focused chip removes it, as on a token field.
+          if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+          e.preventDefault();
+          onRemove();
+        }}
+        aria-label=${`Remove ${displayFilterValue(value)}`}
       >
         ${icon('x', 14)}
       </button>

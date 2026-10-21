@@ -7,6 +7,9 @@ import { icon } from '../kit/icon';
 import type { PsButton } from '../kit/button';
 import type { ProtspaceData } from './types';
 import '../kit/menu';
+import '../kit/dialog';
+import { pushLayer } from '../kit/layers';
+import { COMPACT_MEDIA } from '../../utils/breakpoints';
 import type { FilterCondition, FilterGroup, FilterQuery, FilterQueryItem } from './query-types';
 import { createCondition, createGroup, isFilterGroup } from './query-types';
 import {
@@ -89,6 +92,10 @@ export class ProtspaceQueryBuilder extends LitElement {
   @state() private _groupMenuOpen = false;
   /** A joiner that would mix "and" and "or" in its list waits here for "Group these?". */
   @state() private _joinerPrompt: { id: string; joiner: Joiner } | null = null;
+  /** The prompt shows as a bottom sheet (a phone) rather than under its joiner. */
+  private _promptSheet = false;
+  /** Releases the inline prompt's layer, so Escape cancels it; set while it shows. */
+  private _releasePromptLayer?: () => void;
 
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
   // Kept apart from the open state: the menu closes (ps-close) before it reports the choice.
@@ -131,17 +138,35 @@ export class ProtspaceQueryBuilder extends LitElement {
     const apply = this.renderRoot.querySelector<PsButton>('.query-footer-apply');
     const reason = this.renderRoot.querySelector<HTMLElement>('#apply-reason');
     if (apply && reason && apply.describedBy[0] !== reason) apply.describedBy = [reason];
-    if (this._focusPrompt) {
+    this._syncPromptLayer();
+    if (this._focusPrompt && !this._promptSheet) {
       this._focusPrompt = false;
       this.renderRoot.querySelector('.joiner-prompt')?.scrollIntoView({ block: 'nearest' });
-      this.renderRoot.querySelector<HTMLElement>('.joiner-prompt-group')?.focus({
-        preventScroll: true,
+      // Once the button has rendered its own <button>: a host with nothing inside takes no focus.
+      const group = this.renderRoot.querySelector<PsButton>('.joiner-prompt-group');
+      void group?.updateComplete.then(() => group.focus({ preventScroll: true }));
+    }
+  }
+
+  /** The inline prompt is a layer while it shows: Escape cancels it before anything else. */
+  private _syncPromptLayer() {
+    const inline = this._joinerPrompt !== null && !this._promptSheet;
+    if (inline && !this._releasePromptLayer) {
+      this._releasePromptLayer = pushLayer({
+        close: () => this._resolvePrompt('cancel'),
+        elements: [this],
+        dismissOnOutsidePress: false,
       });
+    } else if (!inline && this._releasePromptLayer) {
+      this._releasePromptLayer();
+      this._releasePromptLayer = undefined;
     }
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._releasePromptLayer?.();
+    this._releasePromptLayer = undefined;
     document.removeEventListener('keydown', this._onKeydown);
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
@@ -241,6 +266,7 @@ export class ProtspaceQueryBuilder extends LitElement {
     const joiner = e.detail.value as Joiner;
     if (joiner === this._joinerOf(target.id)) return;
     if (joinerWouldMix(this.query, target.id, joiner)) {
+      this._promptSheet = typeof matchMedia === 'function' && matchMedia(COMPACT_MEDIA).matches;
       this._joinerPrompt = { id: target.id, joiner };
       this._focusPrompt = true;
       return;
@@ -268,9 +294,11 @@ export class ProtspaceQueryBuilder extends LitElement {
   private _resolvePrompt(choice: 'group' | 'all' | 'cancel') {
     const prompt = this._joinerPrompt;
     this._joinerPrompt = null;
+    this._focusPrompt = false;
     if (!prompt) return;
     if (choice === 'cancel') {
-      (this._joinerTarget?.anchor as HTMLElement | undefined)?.focus();
+      // The sheet hands focus back itself, as a dialog does.
+      if (!this._promptSheet) (this._joinerTarget?.anchor as HTMLElement | undefined)?.focus();
       return;
     }
     const next =
@@ -374,7 +402,6 @@ export class ProtspaceQueryBuilder extends LitElement {
     const label = n ? `Joiner for condition ${n}` : card ? 'Joiner' : 'Joiner for group';
     const text = isNegatedGroup(item) ? 'and not' : itemJoiner(item, index) === 'OR' ? 'or' : 'and';
     const prompt = this._joinerPrompt?.id === id ? this._joinerPrompt : null;
-    const word = prompt?.joiner === 'OR' ? 'or' : 'and';
     return html`
       <div class="joiner">
         <ps-button
@@ -387,27 +414,62 @@ export class ProtspaceQueryBuilder extends LitElement {
           ></ps-button
         >
       </div>
-      ${prompt
+      ${prompt && !this._promptSheet
         ? html`<div class="joiner-prompt" role="group" aria-label="Group these?">
             <p>“and” and “or” together are read left to right. Group these?</p>
-            <div class="joiner-prompt-actions">
-              <ps-button
-                class="joiner-prompt-group"
-                variant="primary"
-                size="sm"
-                @click=${() => this._resolvePrompt('group')}
-                >Group these</ps-button
-              >
-              <ps-button variant="secondary" size="sm" @click=${() => this._resolvePrompt('all')}
-                >Use “${word}” for all</ps-button
-              >
-              <ps-button variant="ghost" size="sm" @click=${() => this._resolvePrompt('cancel')}
-                >Cancel</ps-button
-              >
-            </div>
+            <div class="joiner-prompt-actions">${this._promptButtons(prompt.joiner, false)}</div>
           </div>`
         : nothing}
     `;
+  }
+
+  /** Group these / Use "or" for all / Cancel, under the joiner or in the phone's sheet. */
+  private _promptButtons(joiner: Joiner, sheet: boolean) {
+    const word = joiner === 'OR' ? 'or' : 'and';
+    return html`
+      <ps-button
+        class="joiner-prompt-group"
+        slot=${sheet ? 'footer' : nothing}
+        variant="primary"
+        size=${sheet ? 'md' : 'sm'}
+        ?autofocus=${sheet}
+        @click=${() => this._resolvePrompt('group')}
+        >Group these</ps-button
+      >
+      <ps-button
+        slot=${sheet ? 'footer' : nothing}
+        variant="secondary"
+        size=${sheet ? 'md' : 'sm'}
+        @click=${() => this._resolvePrompt('all')}
+        >Use “${word}” for all</ps-button
+      >
+      ${sheet
+        ? nothing
+        : html`<ps-button variant="ghost" size="sm" @click=${() => this._resolvePrompt('cancel')}
+            >Cancel</ps-button
+          >`}
+    `;
+  }
+
+  /** On a phone the prompt is a bottom sheet; its ✕, Escape and the scrim cancel it. */
+  private _renderPromptSheet() {
+    const prompt = this._promptSheet ? this._joinerPrompt : null;
+    return html`<ps-dialog
+      class="joiner-prompt-sheet"
+      size="sheet"
+      heading="Group these?"
+      .open=${prompt !== null}
+      @ps-close=${(e: Event) => {
+        e.stopPropagation();
+        this._resolvePrompt('cancel');
+      }}
+    >
+      <p class="joiner-prompt-text">
+        “and” and “or” together are read left to right. Group the conditions this joiner links, or
+        use one joiner for all of them.
+      </p>
+      ${prompt ? this._promptButtons(prompt.joiner, true) : nothing}
+    </ps-dialog>`;
   }
 
   /** A card, or the group the user built; the group "is none of" needs under "or" is a card. */
@@ -476,6 +538,7 @@ export class ProtspaceQueryBuilder extends LitElement {
     return html`
       <ps-menu
         label="Joiner"
+        sheet
         .anchor=${this._joinerTarget?.anchor ?? null}
         .open=${this._joinerMenuOpen}
         @ps-select=${this._handleJoinerSelect}
@@ -494,6 +557,7 @@ export class ProtspaceQueryBuilder extends LitElement {
       <ps-menu
         label="Actions for group"
         placement="bottom-end"
+        sheet
         .anchor=${this._groupTarget?.anchor ?? null}
         .open=${this._groupMenuOpen}
         @ps-select=${this._handleGroupMenuSelect}
@@ -568,7 +632,7 @@ export class ProtspaceQueryBuilder extends LitElement {
           </div>
         </div>
 
-        ${this._renderMenus()}
+        ${this._renderMenus()} ${this._renderPromptSheet()}
 
         <div class="query-footer">
           <div class="match-line">

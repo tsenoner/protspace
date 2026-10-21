@@ -523,7 +523,9 @@ describe('query-condition-row names', () => {
     await el.updateComplete;
     const root = el.shadowRoot!;
 
-    expect(root.querySelector('.condition-row')!.getAttribute('aria-label')).toBe('Condition 2');
+    expect(root.querySelector('.condition-row')!.getAttribute('aria-label')).toMatch(
+      /^Condition 2: /,
+    );
     const menu = root.querySelector('ps-icon-button.condition-menu-trigger') as HTMLElement & {
       label: string;
     };

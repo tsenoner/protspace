@@ -1883,6 +1883,11 @@
   display: none;
 }
 
+/* The Filter cards get what the short panel has: a slimmer frame round them. */
+.workbench[data-layout='phone'] .wb-filter-body {
+  padding: var(--ps-space-2) var(--ps-space-3);
+}
+
 /* The tabs lead the header; the annotation's name follows them, small and muted. */
 .workbench[data-layout='phone'] #myLegend::part(title) {
   color: var(--ps-text-muted);

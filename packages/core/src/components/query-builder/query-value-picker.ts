@@ -6,7 +6,7 @@ import type { LogicalOp } from './query-types';
 import { ANY_VALUE } from './query-types';
 import { toInternalValue } from '../legend/config';
 import { resolveAnnotationInternalValues } from './query-evaluate';
-import { formatCount, isNAValue } from '@protspace/utils';
+import { annotationLabel, formatCount, isNAValue } from '@protspace/utils';
 import { displayFilterValue } from './query-presence';
 import { queryBuilderStyles } from './query-builder.styles';
 import { icon } from '../kit/icon';
@@ -39,8 +39,12 @@ type Sort = 'count' | 'az';
 /** A row or a section heading; every line of the list has the same height. */
 type Line = { head: string } | { entry: Entry; index: number };
 
-/** Keep in step with `.value-picker-item` / `.value-picker-section` in the styles. */
-const LINE_HEIGHT = 36;
+/**
+ * A line's height: 36 px, or 44 px under a coarse pointer so each row is a finger-sized target.
+ * Keep in step with `.value-picker-item` / `.value-picker-section` in the styles.
+ */
+const lineHeight = () =>
+  typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 44 : 36;
 /** Lines drawn above and below the visible window. */
 const OVERSCAN = 8;
 /** More than the list's tallest box, so the drawn window always covers it. */
@@ -142,8 +146,11 @@ class ProtspaceQueryValuePicker extends LitElement {
   updated(changed: PropertyValues<this>) {
     if (changed.has('open') && this.open) {
       // The popover shows itself in its own update; focus the search once it is in the top layer.
+      // A phone's sheet focuses its title instead, so the keyboard does not cover the list.
       void (this._popoverEl?.updateComplete ?? Promise.resolve()).then(() =>
-        this._inputEl?.focus(),
+        this._popoverEl?.hasAttribute('docked')
+          ? this.renderRoot.querySelector<HTMLElement>('.value-picker-title')?.focus()
+          : this._inputEl?.focus(),
       );
     }
     const list = this._listEl;
@@ -453,11 +460,11 @@ class ProtspaceQueryValuePicker extends LitElement {
     const { pinnedRows } = this._view();
     // Lines before the row: a heading above the pinned rows, one more above the rest.
     const heads = pinnedRows.length ? (index < pinnedRows.length ? 1 : 2) : 0;
-    const top = (index + heads) * LINE_HEIGHT;
+    const line = lineHeight();
+    const top = (index + heads) * line;
     const height = this._listEl?.clientHeight || VIEWPORT;
     if (top < this._scrollTop) this._scrollTop = index === 0 ? 0 : top;
-    else if (top + LINE_HEIGHT > this._scrollTop + height)
-      this._scrollTop = top + LINE_HEIGHT - height;
+    else if (top + line > this._scrollTop + height) this._scrollTop = top + line - height;
   }
 
   private _toggle(value: string) {
@@ -561,35 +568,41 @@ class ProtspaceQueryValuePicker extends LitElement {
   }
 
   render() {
+    const name = this.annotation
+      ? `${annotationLabel(this.annotation, this.data?.annotations?.[this.annotation])} values`
+      : 'Values';
     return html`<ps-popover
       .anchor=${this.anchor}
       placement="bottom-start"
       .open=${this.open}
-      panel-label="Values"
+      sheet
+      panel-label=${name}
       @ps-close=${(e: Event) => {
         e.stopPropagation();
         this._close();
       }}
-      >${this.open ? this._renderBody() : nothing}</ps-popover
+      >${this.open ? this._renderBody(name) : nothing}</ps-popover
     >`;
   }
 
-  private _renderBody() {
+  /** `name` titles the list when it opens as a phone's bottom sheet. */
+  private _renderBody(name: string) {
     const { max, real } = this._entries();
     const rows = this._rows();
     const lines = this._lines();
     const selected = new Set(this.selectedValues);
     const active = this._highlightIndex < rows.length ? this._highlightIndex : -1;
-    const first = Math.max(0, Math.floor(this._scrollTop / LINE_HEIGHT) - OVERSCAN);
-    const last = Math.min(
-      lines.length,
-      Math.ceil((this._scrollTop + VIEWPORT) / LINE_HEIGHT) + OVERSCAN,
-    );
+    const line = lineHeight();
+    // A phone's sheet can give the list more than VIEWPORT; draw at least what it shows.
+    const shown = Math.max(VIEWPORT, this._listEl?.clientHeight ?? 0);
+    const first = Math.max(0, Math.floor(this._scrollTop / line) - OVERSCAN);
+    const last = Math.min(lines.length, Math.ceil((this._scrollTop + shown) / line) + OVERSCAN);
     const query = this._searchQuery.trim();
     const n = this.selectedValues.length;
 
     return html`
       <div class="value-picker">
+        <p class="value-picker-title" tabindex="-1">${name}</p>
         <div class="value-picker-search">
           ${icon('search', 14)}
           <input
@@ -641,10 +654,10 @@ class ProtspaceQueryValuePicker extends LitElement {
           aria-multiselectable="true"
           @scroll=${this._handleScroll}
         >
-          <div class="value-picker-spacer" style="height:${lines.length * LINE_HEIGHT}px">
+          <div class="value-picker-spacer" style="height:${lines.length * line}px">
             ${lines
               .slice(first, last)
-              .map((line, i) => this._renderLine(line, (first + i) * LINE_HEIGHT, selected, max))}
+              .map((entry, i) => this._renderLine(entry, (first + i) * line, selected, max))}
           </div>
           ${rows.length === 0
             ? html`<p class="value-picker-empty">
