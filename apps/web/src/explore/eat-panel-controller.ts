@@ -80,23 +80,32 @@ export function createEatPanelController({
   isPanelShown(): boolean;
   subscribePanel(listener: () => void): () => void;
 }): EatPanelController {
+  /**
+   * The context follows the applied filter while the panel is on screen; a hidden panel asks for
+   * none, and gets the current one when it turns active.
+   */
+  const syncContext = () => {
+    if (!eatPanel.active) return;
+    const context = filterController.getContextMask();
+    if (eatPanel.context !== context) eatPanel.context = context;
+  };
+
   const syncActive = () => {
     const shown = isPanelShown();
     if (eatPanel.active !== shown) eatPanel.active = shown;
+    syncContext();
   };
 
   /**
    * The panel's reliability, wherever it came from (its own controls, the Filter panel's Apply,
-   * a reset), reaches the legend's note and the rail dot; the context follows the applied filter,
-   * cached by the filter controller, so an unchanged one costs nothing.
+   * a reset), reaches the legend's note and the rail dot.
    */
   const syncReliability = () => {
     const { reliability } = eatPanel;
     const shown = legendElement.eatReliability;
     if (!shown || !isSameReliability(shown, reliability))
       legendElement.eatReliability = reliability;
-    const context = filterController.getContextMask();
-    if (eatPanel.context !== context) eatPanel.context = context;
+    syncContext();
     setWorkbenchStatus({ eatAdjusted: !eatPanel.isAtDefaults });
   };
 

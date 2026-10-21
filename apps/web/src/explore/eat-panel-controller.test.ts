@@ -183,6 +183,21 @@ describe('createEatPanelController', () => {
     expect(legend.eatReliability).toEqual({ mode: 'atMost', min: 0, max: 0.4 });
   });
 
+  it('asks for no context while hidden, and for the current one when the panel shows', () => {
+    const shown = { value: false };
+    const { plot, panel, filter, layoutChanged } = setup(shown);
+    filter.mask = Uint8Array.of(1, 0);
+    filter.getContextMask.mockClear();
+
+    plot.dispatchEvent(new Event('data-change'));
+    expect(filter.getContextMask).not.toHaveBeenCalled();
+
+    shown.value = true;
+    layoutChanged();
+    expect(filter.getContextMask).toHaveBeenCalledTimes(1);
+    expect(panel.context).toBe(filter.mask);
+  });
+
   it('a locked Filter row’s ✕ resets the panel for the coloured base, or that base’s condition', () => {
     const { root, panel, filter, controller } = setup({ value: false });
     const reset = (annotation: string) =>
