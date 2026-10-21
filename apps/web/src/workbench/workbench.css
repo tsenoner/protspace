@@ -201,9 +201,10 @@
   }
 }
 
-/* How far above the plot's bottom the status corner stands while the selection bar shows.
-   Registered as a length so its computed value is in px: touch-tooltip-insets.ts reads it to keep
-   a tap-pinned card clear of the lifted corner. */
+/* The most the status corner and the selection bar take of the plot's bottom edge, less the
+   status corner's own height: the bar above the status corner, as selection-bar-placement.ts puts
+   it on a plot too narrow for both side by side. Registered as a length so its computed value is
+   in px: touch-tooltip-insets.ts reads it to keep a tap-pinned card clear of both. */
 @property --wb-status-lift {
   syntax: '<length>';
   inherits: true;
@@ -214,10 +215,14 @@
   --wb-status-lift: calc(var(--ps-space-3) + var(--wb-selection-bar-height) + var(--ps-space-2));
 }
 
-/* While the selection bar shows, the status corner rises above it, so a wide chip row never
-   covers the bar's buttons on a narrow plot. */
-[data-workbench='plot']:has(> protspace-selection-bar:not([hidden])) > protspace-plot-status {
-  bottom: var(--wb-status-lift);
+/* The status corner never moves for the selection bar: the bar sits beside its count, and its
+   chips wrap upwards above the count (selection-bar-placement.ts sizes both). */
+[data-workbench='plot'] > protspace-plot-status {
+  flex-wrap: wrap-reverse;
+}
+
+[data-workbench='plot'] > protspace-selection-bar {
+  width: max-content;
 }
 
 #myPlot {

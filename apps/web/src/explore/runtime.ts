@@ -49,6 +49,7 @@ import { createSelectionController } from './selection-controller';
 import { createStatusController } from './status-controller';
 import { createStructureController } from './structure-controller';
 import { bindPhoneDim, touchDarkSource } from './phone-dim';
+import { bindSelectionBarPlacement } from './selection-bar-placement';
 import { bindTouchTooltipInsets } from './touch-tooltip-insets';
 import { createUndoController, type UndoEntry } from './undo-controller';
 import {
@@ -126,6 +127,12 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   lifecycle.addCleanup(() => structureController.dispose());
   // Tooltips stay clear of the tool strip and the status corner (and selection bar) over the plot.
   lifecycle.addCleanup(bindTouchTooltipInsets(plotElement, plotTools, plotStatus));
+  // The selection bar sits beside the status corner's count, which never moves for it.
+  if (plotStatus.parentElement) {
+    lifecycle.addCleanup(
+      bindSelectionBarPlacement(plotStatus.parentElement, plotStatus, selectionBar),
+    );
+  }
 
   importMenu.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
   importMenu.examplesDocsUrl = EXAMPLES_DOCS_URL;

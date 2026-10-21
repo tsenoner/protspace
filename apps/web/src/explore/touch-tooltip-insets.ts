@@ -3,17 +3,18 @@ import type { ProtspaceScatterplot, TouchTooltipInsets } from '@protspace/core';
 type Boxed = Pick<Element, 'getBoundingClientRect'>;
 
 /**
- * How far above the plot's bottom the status corner stands while the selection bar shows, from
- * workbench.css's `--wb-status-lift` (a registered length, so computed in px). A tap selects its
- * protein, so the bar shows; the inset assumes it whether or not it does yet, because the
- * selection reaches the bar only after the pin is placed. Without a bar the card only sits higher.
+ * How much of the plot's bottom edge the selection bar can take besides the status corner's height,
+ * from workbench.css's `--wb-status-lift` (a registered length, so computed in px): the bar above
+ * the status corner, its highest spot. A tap selects its protein, so the bar shows; the inset
+ * assumes it whether or not it does yet, because the selection reaches the bar only after the pin
+ * is placed. Without a bar, or with the bar beside the status corner, the card only sits higher.
  */
 const statusLift = (plotStatus: Element) =>
   parseFloat(getComputedStyle(plotStatus).getPropertyValue('--wb-status-lift')) || 0;
 
 /**
  * The plot's edge strips that the workbench's chrome covers: the tool strip down the left, and
- * the status corner, lifted `lift` px over the selection bar, along the bottom.
+ * the status corner and the selection bar, `lift` px over it at most, along the bottom.
  */
 export function measureTouchTooltipInsets(
   plot: Boxed,

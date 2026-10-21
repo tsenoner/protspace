@@ -75,5 +75,32 @@ export const selectionBarStyles = [
         padding: 0;
       }
     }
+    /* The same compact bar, set by the page on a plot too narrow for its labels. */
+    :host([compact]) {
+      width: max-content;
+      max-width: calc(100% - 24px);
+    }
+    :host([compact]) .selection-count {
+      display: none;
+    }
+    :host([compact]) .selection-count-short {
+      display: inline;
+    }
+    :host([compact]) .action-icon {
+      display: inline-flex;
+    }
+    :host([compact]) .action-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    :host([compact]) ps-button::part(button) {
+      min-width: var(--ps-touch-target);
+      padding: 0;
+    }
   `,
 ];
