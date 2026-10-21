@@ -169,7 +169,7 @@ describe('legend settings popover, mounted', () => {
     await openSettings(legend);
     await userEvent.click(page.getByRole('radio', { name: 'Okabe-Ito' }));
     await settle(legend);
-    const reset = page.getByRole('button', { name: 'Reset', exact: true });
+    const reset = page.getByRole('button', { name: 'Reset to defaults', exact: true });
     await expect.element(reset).toBeEnabled();
 
     await userEvent.click(reset);

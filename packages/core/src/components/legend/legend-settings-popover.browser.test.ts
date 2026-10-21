@@ -303,7 +303,7 @@ describe('protspace-legend-settings-popover', () => {
       .querySelector('ps-popover')!
       .shadowRoot!.querySelector<HTMLElement>('.panel')!;
     expect(panel.scrollHeight).toBeLessThanOrEqual(panel.clientHeight);
-    const reset = page.getByRole('button', { name: 'Reset', exact: true }).element();
+    const reset = page.getByRole('button', { name: 'Reset to defaults', exact: true }).element();
     expect(reset.getBoundingClientRect().bottom).toBeLessThanOrEqual(
       panel.getBoundingClientRect().bottom,
     );
@@ -367,7 +367,7 @@ describe('protspace-legend-settings-popover', () => {
     const { el } = await mount();
     const onReset = vi.fn();
     el.addEventListener('settings-reset', onReset);
-    const reset = page.getByRole('button', { name: 'Reset', exact: true });
+    const reset = page.getByRole('button', { name: 'Reset to defaults', exact: true });
     await userEvent.click(reset);
     expect(onReset).toHaveBeenCalledOnce();
     expect(el.open).toBe(true);

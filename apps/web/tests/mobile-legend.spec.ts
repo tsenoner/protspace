@@ -163,7 +163,7 @@ test.describe('the legend on a phone', () => {
     const settings = legend(page).locator('protspace-legend-settings-popover');
     const reset = await expectWithinViewport(
       page,
-      settings.getByRole('button', { name: 'Reset', exact: true }),
+      settings.getByRole('button', { name: 'Reset to defaults', exact: true }),
     );
     // Half a pixel of slack, as touchTargetsBelow allows: the box reads 39.99997 on some runs.
     expect(reset.height).toBeGreaterThanOrEqual(39.5);

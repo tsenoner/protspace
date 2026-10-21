@@ -10,7 +10,7 @@ export const legendSettingsPopoverStyles = [
     :host {
       display: contents;
     }
-    /* Taller than the kit's 480 px cap: the numeric content is about 625 px, Reset at its foot. */
+    /* Taller than the kit's 480 px cap: the numeric content is about 625 px, Reset to defaults at its foot. */
     ps-popover::part(panel) {
       max-height: min(640px, var(--available-height, calc(100vh - 16px)));
     }
@@ -113,6 +113,9 @@ export const legendSettingsPopoverStyles = [
       gap: var(--ps-space-1);
       padding-top: var(--ps-space-2);
       border-top: 1px solid var(--ps-border);
+    }
+    .reset-icon {
+      display: inline-flex;
     }
     @media (forced-colors: active) {
       .swatch[aria-checked='true'] {

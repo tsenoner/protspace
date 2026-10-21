@@ -7,6 +7,7 @@ import {
 } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/button';
+import { icon } from '../kit/icon';
 import type { PsButton } from '../kit/button';
 import '../kit/input';
 import type { PsInput } from '../kit/input';
@@ -171,11 +172,12 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
         <div class="footer">
           <ps-button
             id="reset-button"
-            variant="ghost"
+            variant="secondary"
             size="sm"
             ?disabled=${!this.canReset}
             @click=${this._onReset}
-            >Reset</ps-button
+            ><span slot="start" class="reset-icon">${icon('rotate-ccw', 14)}</span>Reset to
+            defaults</ps-button
           >
           <p class="hint" id="reset-hint">
             Resets this annotation's colours, order, hidden categories, palette and item count, and
