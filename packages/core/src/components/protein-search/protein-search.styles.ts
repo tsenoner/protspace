@@ -30,14 +30,14 @@ export const searchStyles = [
       box-sizing: border-box;
       height: var(--ps-control-md);
       padding: 0 var(--ps-space-2);
-      border: 1px solid var(--ps-border-control);
+      border: 1px solid var(--ps-border-strong);
       border-radius: var(--ps-radius);
       background: var(--ps-surface);
       cursor: text;
     }
 
     .search-chips:hover {
-      border-color: var(--ps-border-strong);
+      border-color: var(--ps-border-control);
     }
 
     /* The input draws no outline; the field draws the kit focus ring around it. */

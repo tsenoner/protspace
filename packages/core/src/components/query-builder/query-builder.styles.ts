@@ -194,7 +194,7 @@ export const queryBuilderStyles = [
       box-sizing: border-box;
       height: var(--ps-control-sm);
       padding: 0 var(--ps-space-1);
-      border: 1px solid var(--ps-border-control);
+      border: 1px solid var(--ps-border-strong);
       border-radius: var(--ps-radius);
       background: var(--ps-surface);
       color: var(--ps-text);
@@ -224,7 +224,7 @@ export const queryBuilderStyles = [
       min-width: 0;
       height: var(--ps-control-sm);
       padding: 0 var(--ps-space-2);
-      border: 1px solid var(--ps-border-control);
+      border: 1px solid var(--ps-border-strong);
       border-radius: var(--ps-radius);
       background: var(--ps-surface);
       color: var(--ps-text);
@@ -235,7 +235,7 @@ export const queryBuilderStyles = [
     .logical-op-select:hover,
     .numeric-operator-select:hover:not(:disabled),
     .annotation-select-trigger:hover {
-      border-color: var(--ps-border-strong);
+      border-color: var(--ps-border-control);
       background: var(--ps-surface-hover);
     }
 
@@ -368,10 +368,16 @@ export const queryBuilderStyles = [
       box-sizing: border-box;
       height: var(--ps-control-sm);
       padding: 0 var(--ps-space-2);
-      border: 1px solid var(--ps-border-control);
+      border: 1px solid var(--ps-border-strong);
       border-radius: var(--ps-radius);
       background: var(--ps-surface);
       color: var(--ps-text);
+    }
+
+    .annotation-picker-input:hover,
+    .value-picker-input:hover,
+    .numeric-field:hover {
+      border-color: var(--ps-border-control);
     }
 
     .annotation-picker-input,

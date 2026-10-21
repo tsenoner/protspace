@@ -87,7 +87,7 @@ export const publishModalStyles = [
       gap: var(--ps-space-1);
       min-height: var(--ps-control-sm);
       padding: var(--ps-space-1) var(--ps-space-2);
-      border: 1px solid var(--ps-border-control);
+      border: 1px solid var(--ps-border-strong);
       border-radius: var(--ps-radius);
       background: var(--ps-surface);
       color: var(--ps-text);
@@ -101,7 +101,7 @@ export const publishModalStyles = [
 
     .publish-toggle-btn:hover {
       background: var(--ps-surface-hover);
-      border-color: var(--ps-border-strong);
+      border-color: var(--ps-border-control);
     }
 
     .publish-toggle-btn.active {
