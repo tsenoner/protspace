@@ -215,11 +215,22 @@ test('the selected-protein card goes to the source and draws its lines', async (
   const card = eatPanel(page).getByRole('region', { name: 'Selected protein' });
   await expect(card).toContainText(`Copied from ${source}`);
   await expect(connectors).toHaveCount(1);
+  // Escape clears the click's line and keeps the selection, so the next line is Go to source's.
+  await page.keyboard.press('Escape');
+  await expect(connectors).toHaveCount(0);
+  expect(await getSelectedProteinIds(page)).toEqual([target]);
+  const transform = () =>
+    page.locator('#myPlot').evaluate((plot) => {
+      const t = (plot as unknown as { _transform: { k: number; x: number; y: number } })._transform;
+      return { k: t.k, x: t.x, y: t.y };
+    });
+  const before = await transform();
 
   await card.getByRole('button', { name: 'Go to source' }).click();
   await expect.poll(() => getSelectedProteinIds(page)).toEqual([source]);
-  // The pair stays drawn, and the card now shows the source.
+  // Go to source draws the pair and fits both; the card now shows the source.
   await expect(connectors).toHaveCount(1);
+  await expect.poll(transform).not.toEqual(before);
   await expect(card).toContainText(`${source} · curated`);
 
   await card.getByRole('button', { name: /^lent its label to [\d,]+ proteins$/ }).click();
