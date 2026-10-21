@@ -16,6 +16,8 @@ const MODE_OPTIONS: SegmentedOption[] = [
   { value: 'atMost', label: 'Keep ≤' },
   { value: 'between', label: 'Keep between' },
 ];
+/** With Show off: still announced, not choosable. */
+const MODE_OPTIONS_OFF = MODE_OPTIONS.map((option) => ({ ...option, disabled: true }));
 
 const BIN_WIDTH = 100 / EAT_BIN_COUNT;
 const SKELETON_BARS = Array.from({ length: EAT_BIN_COUNT }, (_, bin) => bin);
@@ -45,9 +47,11 @@ function renderHistogram(state: EatReliabilityState, summary: EatSummary | null)
   return html`<div class="eat-histogram">
     ${Array.from(summary.bins, (count, bin) => {
       const label = barLabel(bin, count);
+      // Out of the tab order until a bar has an action.
       return html`<button
         type="button"
         class="eat-bar"
+        tabindex="-1"
         data-kept=${String(isKept(state, (bin + 0.5) / EAT_BIN_COUNT))}
         aria-label=${label}
         title=${label}
@@ -60,7 +64,7 @@ function renderHistogram(state: EatReliabilityState, summary: EatSummary | null)
 /**
  * The reliability section (proposal B §4.4): modes and a % box per active bound, the histogram,
  * the handles on the axis under it, and the readout. `summary` null is the loading skeleton,
- * whose controls are disabled; with Show off the whole section is disabled.
+ * inert. With Show off every control stays in the accessibility tree, disabled.
  */
 export function renderReliability(
   ctrl: EatReliabilityController,
@@ -74,13 +78,13 @@ export function renderReliability(
     class="eat-reliability"
     aria-label="Reliability"
     aria-disabled=${off ? 'true' : nothing}
-    ?inert=${disabled}
+    ?inert=${!summary}
   >
     <h4 class="eat-heading">Reliability</h4>
     <div class="eat-mode-row">
       <ps-segmented
         label="Reliability filter mode"
-        .options=${MODE_OPTIONS}
+        .options=${off ? MODE_OPTIONS_OFF : MODE_OPTIONS}
         .value=${ctrl.reliability.mode}
         @change=${ctrl.onModeChange}
       ></ps-segmented>

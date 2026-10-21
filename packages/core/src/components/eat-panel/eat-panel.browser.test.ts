@@ -5,7 +5,7 @@ import { adoptTheme } from '../kit/adopt-theme';
 import type { PsSwitch } from '../kit/switch';
 import type { EatOverlayChangeDetail } from './eat-reliability-controller';
 import { EAT_THRESHOLD_COMMIT_DELAY_MS } from './eat-reliability-controller';
-import { getEatIndex } from './eat-summary';
+import { getEatIndex, summarizeEat } from './eat-summary';
 import type { ProtspaceEatPanel } from './eat-panel';
 import { createEatFixture, EAT_FIXTURE_IDS } from './test-support/eat-fixture';
 import './eat-panel';
@@ -71,6 +71,18 @@ describe('protspace-eat-panel', () => {
     el.active = true;
     await el.updateComplete;
     expect(getEatIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not recompute a hidden panel’s summary when the threshold or context moves', async () => {
+    const el = await mount();
+    el.active = false;
+    await el.updateComplete;
+    vi.mocked(summarizeEat).mockClear();
+
+    el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+    el.context = mask(['P0']);
+    await el.updateComplete;
+    expect(summarizeEat).not.toHaveBeenCalled();
   });
 
   it('shows the overview numbers', async () => {
@@ -158,9 +170,27 @@ describe('protspace-eat-panel', () => {
     expect(details.map((d) => d.enabled)).toEqual([false]);
     expect(el.overlayEnabled).toBe(false);
     expect(text(el, '.eat-counts')).toBe('4 curated · 5 predicted (hidden)');
-    expect(root(el).querySelector('.eat-reliability')!.getAttribute('aria-disabled')).toBe('true');
+    const section = root(el).querySelector<HTMLElement>('.eat-reliability')!;
+    expect(section.getAttribute('aria-disabled')).toBe('true');
+    // Not inert: a screen reader still finds the controls, and hears that they are off.
+    expect(section.inert).toBe(false);
     expect(handle(el).disabled).toBe(true);
+    const modes = root(el).querySelector<HTMLElement>('ps-segmented')!;
+    await (modes as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
+    const options = [...modes.shadowRoot!.querySelectorAll<HTMLElement>('[role="radio"]')];
+    expect(options.length).toBe(3);
+    for (const option of options) expect(option.getAttribute('aria-disabled')).toBe('true');
+    options[1].click();
+    await el.updateComplete;
+    expect(el.reliability.mode).toBe('atLeast');
+    expect(details).toHaveLength(1);
     expect(el.isAtDefaults).toBe(false);
+  });
+
+  it('keeps the bars out of the tab order', async () => {
+    const el = await mount();
+    expect(bars(el).length).toBeGreaterThan(0);
+    for (const bar of bars(el)) expect(bar.tabIndex).toBe(-1);
   });
 
   it('says the annotation has no predicted values', async () => {
