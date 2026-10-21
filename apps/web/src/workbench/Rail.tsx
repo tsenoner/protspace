@@ -20,8 +20,8 @@ interface RailProps {
 }
 
 /**
- * The 44 px icon rail at the sidebar's right edge (design decision 2): Legend, Structure and
- * Filter. It stays when the sidebar collapses, so every panel stays one click away. A panel's item
+ * The 44 px icon rail at the sidebar's right edge (design decision 2): the collapse toggle on top,
+ * then Legend, Structure and Filter. It stays when the sidebar collapses, so every panel stays one click away. A panel's item
  * opens the sidebar on that panel; the item of the panel on screen collapses the sidebar. Structure
  * shows and hides the viewer the same way, docked or floating. Hidden below 951 px. On desktop the
  * view bar has no Filter button: this item is the way to the Filter panel.
@@ -56,6 +56,15 @@ export function Rail({
   };
   return (
     <nav className="wb-rail" data-workbench="rail" data-driver-id="rail" aria-label="Panels">
+      <ps-icon-button
+        ref={toggleRef}
+        icon={sidebarOpen ? 'panel-right-close' : 'panel-right-open'}
+        label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        tooltipPlacement="left"
+        expanded={sidebarOpen ? 'true' : 'false'}
+        onClick={toggleSidebar}
+      ></ps-icon-button>
+      <span className="wb-rail-divider" aria-hidden="true"></span>
       <ps-icon-button
         icon="list"
         label="Legend"
@@ -97,15 +106,6 @@ export function Rail({
           <span className="wb-rail-dot" data-workbench="filter-dot" aria-hidden="true"></span>
         )}
       </span>
-      <span className="wb-rail-spacer" aria-hidden="true"></span>
-      <ps-icon-button
-        ref={toggleRef}
-        icon={sidebarOpen ? 'panel-right-close' : 'panel-right-open'}
-        label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-        tooltipPlacement="left"
-        expanded={sidebarOpen ? 'true' : 'false'}
-        onClick={toggleSidebar}
-      ></ps-icon-button>
     </nav>
   );
 }

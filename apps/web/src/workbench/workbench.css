@@ -1178,8 +1178,12 @@
   pointer-events: none;
 }
 
-.wb-rail-spacer {
-  flex: 1;
+.wb-rail-divider {
+  flex: none;
+  width: 20px;
+  height: 1px;
+  margin-block: var(--ps-space-1);
+  background: var(--ps-border);
 }
 
 /* ── The floating structure card (Task 2.13) ──────────────────────────────── */
