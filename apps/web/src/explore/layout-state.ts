@@ -135,8 +135,8 @@ const focusTitle = (): boolean => {
 };
 
 /**
- * Moves focus to the Filter panel's heading, after the panel opened from the view bar's Filter or
- * the status corner's filter chip. A sidebar still sliding in shows it a frame later.
+ * Moves focus to the Filter panel's heading, after the panel opened from the view bar's Filter, the
+ * rail's Filter item or the status corner's filter chip. A sidebar still sliding in shows it a frame later.
  */
 export function focusFilterTitle(): void {
   if (!focusTitle()) requestAnimationFrame(focusTitle);

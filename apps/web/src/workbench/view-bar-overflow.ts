@@ -2,11 +2,11 @@
  * The view bar's stages (design decision 1). The bar keeps one 44 px row by giving up width in
  * steps instead of wrapping: 0 shows everything; 1 hides the keys "Projection", "Color by" and
  * "Contours" (they stay in the accessible names); 2 moves Contours into the More menu; 3 moves
- * Filter there too. Projection, its details and Color by never move.
+ * Filter there too. Desktop has no Filter in the bar (the rail's Filter item replaces it), so it
+ * stops at 2. Projection, its details and Color by never move.
  */
 export type ViewBarStage = 0 | 1 | 2 | 3;
 
-const LAST_STAGE: ViewBarStage = 3;
 /** The walk from stage 0 to 3 (or back) plus the check that ends it. */
 const MAX_STEPS = 4;
 
@@ -16,7 +16,8 @@ const MAX_STEPS = 4;
  * plus `hysteresis` fits, so a window resized around a threshold keeps its stage. `measure(stage)`
  * returns the width a stage needs; each width is kept in `cache` until the caller clears it (an
  * item's own width changed), so a window resize measures nothing again. A stage the cache lacks is
- * measured once, which lets the bar step up again after a clear.
+ * measured once, which lets the bar step up again after a clear. `last` is the highest stage the
+ * bar has: 3, or 2 on desktop.
  */
 export function resolveStage(
   current: ViewBarStage,
@@ -24,6 +25,7 @@ export function resolveStage(
   measure: (stage: ViewBarStage) => number,
   cache: Map<ViewBarStage, number>,
   hysteresis = 24,
+  last: ViewBarStage = 3,
 ): ViewBarStage {
   const widthOf = (stage: ViewBarStage): number => {
     let width = cache.get(stage);
@@ -34,10 +36,10 @@ export function resolveStage(
     return width;
   };
 
-  let stage = current;
+  let stage = Math.min(current, last) as ViewBarStage;
   for (let step = 0; step < MAX_STEPS; step++) {
     if (widthOf(stage) > available) {
-      if (stage === LAST_STAGE) break;
+      if (stage >= last) break;
       stage = (stage + 1) as ViewBarStage;
     } else if (stage > 0 && widthOf((stage - 1) as ViewBarStage) + hysteresis <= available) {
       stage = (stage - 1) as ViewBarStage;

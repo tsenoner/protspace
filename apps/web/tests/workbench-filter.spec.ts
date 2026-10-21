@@ -34,7 +34,7 @@ const countLine = (page: Page) => queryBuilder(page).locator('.match-count');
 const reason = (page: Page) => queryBuilder(page).locator('#apply-reason');
 
 test.describe('the Filter panel', () => {
-  test("the view bar's Filter opens the panel in place of the legend, the structure footer stays, and #myPlot does not resize", async ({
+  test('the Filter button opens the panel in place of the legend, the structure footer stays, and #myPlot does not resize', async ({
     page,
   }) => {
     await openExplore(page);
@@ -46,7 +46,7 @@ test.describe('the Filter panel', () => {
     await expect(page.locator('#myLegend')).toBeHidden();
     await expect(structurePanel(page)).toBeVisible();
     await expect(page.locator('#wb-filter-title')).toBeFocused();
-    await expect(filterButton(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(filterButton(page)).toHaveAttribute('aria-pressed', 'true');
     // The builder sits under the panel's own heading: no title or close button of its own.
     await expect(queryBuilder(page).getByText('Filter Query', { exact: true })).toHaveCount(0);
     expect(await resizes()).toBe(0);

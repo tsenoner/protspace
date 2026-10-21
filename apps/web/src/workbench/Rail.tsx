@@ -1,6 +1,7 @@
 import type { Ref } from 'react';
+import { countNoun } from '@protspace/utils';
 import type { SidebarPanel } from '../explore/layout-defaults';
-import { openPanel, updateLayout } from '../explore/layout-state';
+import { focusFilterTitle, openPanel, updateLayout } from '../explore/layout-state';
 
 interface RailProps {
   sidebarOpen: boolean;
@@ -12,8 +13,8 @@ interface RailProps {
   structureDocked: boolean;
   /** The Structure button hid the viewer (layout state, kept across reloads). */
   structureHidden: boolean;
-  /** A filter is applied: the Filter item gets a dot. */
-  filterApplied: boolean;
+  /** The applied filter's conditions: above 0 the Filter item gets a dot and says the count. */
+  filterConditions: number;
   /** The collapse toggle, for a caller that moves focus to it. */
   toggleRef?: Ref<HTMLElement>;
 }
@@ -22,7 +23,8 @@ interface RailProps {
  * The 44 px icon rail at the sidebar's right edge (design decision 2): Legend, Structure and
  * Filter. It stays when the sidebar collapses, so every panel stays one click away. A panel's item
  * opens the sidebar on that panel; the item of the panel on screen collapses the sidebar. Structure
- * shows and hides the viewer the same way, docked or floating. Hidden below 951 px.
+ * shows and hides the viewer the same way, docked or floating. Hidden below 951 px. On desktop the
+ * view bar has no Filter button: this item is the way to the Filter panel.
  */
 export function Rail({
   sidebarOpen,
@@ -30,13 +32,18 @@ export function Rail({
   structureProteinId,
   structureDocked,
   structureHidden,
-  filterApplied,
+  filterConditions,
   toggleRef,
 }: RailProps) {
   const toggleSidebar = () => updateLayout({ sidebarOpen: !sidebarOpen });
   const togglePanel = (target: SidebarPanel) => {
-    if (sidebarOpen && panel === target) updateLayout({ sidebarOpen: false });
-    else openPanel(target);
+    if (sidebarOpen && panel === target) {
+      updateLayout({ sidebarOpen: false });
+      return;
+    }
+    openPanel(target);
+    // As the view bar's Filter does below desktop: focus moves to the panel's heading.
+    if (target === 'filter') focusFilterTitle();
   };
   // On screen: docked in an open sidebar, or floating over the plot, and not hidden. Structure
   // hides it (a docked section leaves its room to the legend), or shows it again where it was: a
@@ -77,12 +84,16 @@ export function Rail({
         <ps-icon-button
           id="wb-rail-filter"
           icon="filter"
-          label="Filter"
+          label={
+            filterConditions > 0
+              ? `Filter, ${countNoun(filterConditions, 'condition', 'conditions')} applied`
+              : 'Filter'
+          }
           tooltipPlacement="left"
           pressed={sidebarOpen && panel === 'filter'}
           onClick={() => togglePanel('filter')}
         ></ps-icon-button>
-        {filterApplied && (
+        {filterConditions > 0 && (
           <span className="wb-rail-dot" data-workbench="filter-dot" aria-hidden="true"></span>
         )}
       </span>

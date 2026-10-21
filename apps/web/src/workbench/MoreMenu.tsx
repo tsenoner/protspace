@@ -22,7 +22,7 @@ const FILTER_VALUE = 'filter';
 
 /**
  * The view bar's More (design decisions 1 and 17). On desktop and tablet a menu: from stage 2 it
- * offers the contour modes, at stage 3 Filter too. A pick goes through the inline control, which
+ * offers the contour modes, at stage 3 (tablet only) Filter too. A pick goes through the inline control, which
  * stays mounted while hidden: the contours menu's pick() (shown at once, applied after the paint;
  * re-picking the mode on screen applies nothing) or a click on the Filter button, which opens the
  * sidebar's Filter panel. On a phone it opens the More sheet instead, and the menu is not rendered.
@@ -37,7 +37,8 @@ export function MoreMenu({ stage, mode }: { stage: ViewBarStage; mode: LayoutMod
   const sheetOpen = sheet && sheetWanted;
   // The sheet holds Contours and Filter at every width.
   const contoursInside = sheet || stage >= 2;
-  const filterInside = sheet || stage === 3;
+  // Desktop has no Filter in the view bar (the rail's Filter item replaces it).
+  const filterInside = sheet || (stage === 3 && mode !== 'desktop');
   const active =
     (contoursInside && densityLayer !== 'off' ? 1 : 0) +
     (filterInside && appliedFilterConditions > 0 ? 1 : 0);

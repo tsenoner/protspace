@@ -4,19 +4,18 @@ import { flushSync } from 'react-dom';
 import { countNoun } from '@protspace/utils';
 import { focusFilterTitle, openPanel } from '../explore/layout-state';
 import { useLayout } from './use-layout';
-import { useLayoutMode } from './use-layout-mode';
 import { useWorkbenchStatus } from './use-workbench-status';
 
 /**
- * The view bar's Filter button (design decision 14): it opens the sidebar's Filter panel, never
- * closes it, and moves focus to the panel's heading. The view bar hides it at stage 3, where More
- * clicks it.
+ * The view bar's Filter button (design decision 14), on tablets and phones: it opens the sidebar's
+ * Filter panel, never closes it, and moves focus to the panel's heading. The view bar hides it at
+ * stage 3, where More clicks it. Desktop has none: the rail's Filter item takes its place.
  */
 export function FilterControl() {
   const { appliedFilterConditions: count } = useWorkbenchStatus();
   const layout = useLayout();
-  const desktop = useLayoutMode() === 'desktop';
-  const shown = layout.panel === 'filter' && (layout.sidebarOpen || !desktop);
+  // Below desktop the Filter panel is on screen whenever it is the panel.
+  const shown = layout.panel === 'filter';
   const button = useRef<HTMLElement>(null);
 
   useEffect(() => {

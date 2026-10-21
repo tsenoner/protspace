@@ -327,9 +327,15 @@ export async function appBarTextFits(page: Page): Promise<{ name: boolean; place
   return { name, placeholder };
 }
 
-/** The view bar's Filter button; its name reads "Filter" or "Filter, N conditions applied". */
+/**
+ * The Filter button: the rail's Filter item on desktop (951 px and wider), the view bar's below.
+ * Its name reads "Filter" or "Filter, N conditions applied".
+ */
 export const filterButton = (page: Page): Locator =>
-  viewBar(page).getByRole('button', { name: /^Filter/ });
+  (page.viewportSize()!.width >= 951
+    ? page.getByRole('navigation', { name: 'Panels' })
+    : viewBar(page)
+  ).getByRole('button', { name: /^Filter/ });
 
 /**
  * The sidebar's Filter panel, named by its heading "Filter": a region on desktop, a tab panel

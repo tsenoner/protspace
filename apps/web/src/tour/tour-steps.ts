@@ -117,8 +117,12 @@ const STEPS: Record<TourStepId, StepBuilder> = {
         ? 'The view bar replaces the control bar. <strong>Projection</strong> picks the 2D map and <strong>Color by</strong> the annotation that colours the points; everything else is in <strong>More</strong>.'
         : '<strong>Projection</strong> picks the 2D map (UMAP, PCA and others) and <strong>Color by</strong> the annotation that colours the points. Everything else is in <strong>More</strong>.'
       : kind === 'whats-new'
-        ? 'The view bar replaces the control bar: <strong>Projection</strong> (with its details beside it), <strong>Color by</strong>, <strong>Contours</strong> and <strong>Filter</strong> sit here. In a narrow window, what does not fit moves into <strong>More</strong>.'
-        : '<strong>Projection</strong> picks the 2D map (UMAP, PCA and others); the button beside it shows how the map was made and how well it keeps neighbours. <strong>Color by</strong> picks the annotation that colours the points, <strong>Contours</strong> draws density rings for each colour, and <strong>Filter</strong> opens the Filter panel in the sidebar. In a narrow window, what does not fit moves into <strong>More</strong>.',
+        ? ctx.mode === 'desktop'
+          ? "The view bar replaces the control bar: <strong>Projection</strong> (with its details beside it), <strong>Color by</strong> and <strong>Contours</strong> sit here; <strong>Filter</strong> is on the rail at the sidebar's edge. In a narrow window, what does not fit moves into <strong>More</strong>."
+          : 'The view bar replaces the control bar: <strong>Projection</strong> (with its details beside it), <strong>Color by</strong>, <strong>Contours</strong> and <strong>Filter</strong> sit here. In a narrow window, what does not fit moves into <strong>More</strong>.'
+        : ctx.mode === 'desktop'
+          ? '<strong>Projection</strong> picks the 2D map (UMAP, PCA and others); the button beside it shows how the map was made and how well it keeps neighbours. <strong>Color by</strong> picks the annotation that colours the points, and <strong>Contours</strong> draws density rings for each colour. In a narrow window, what does not fit moves into <strong>More</strong>.'
+          : '<strong>Projection</strong> picks the 2D map (UMAP, PCA and others); the button beside it shows how the map was made and how well it keeps neighbours. <strong>Color by</strong> picks the annotation that colours the points, <strong>Contours</strong> draws density rings for each colour, and <strong>Filter</strong> opens the Filter panel in the sidebar. In a narrow window, what does not fit moves into <strong>More</strong>.',
     target: driverId('view-bar'),
   }),
 

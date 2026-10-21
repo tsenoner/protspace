@@ -42,6 +42,9 @@ export function useViewBarStage(
 ): ViewBarStage {
   const [stage, setStage] = useState<ViewBarStage>(0);
   const fixed = hasStructureSheet(mode);
+  // Desktop has no Filter in the bar, so no stage 3. Entering or leaving desktop adds or removes
+  // that item, so the effect starts again and observes the items there are.
+  const last: ViewBarStage = mode === 'desktop' ? 2 : 3;
 
   useEffect(() => {
     const bar = barRef.current;
@@ -69,7 +72,7 @@ export function useViewBarStage(
         cache.clear();
         stale = false;
       }
-      const next = resolveStage(current, bar.clientWidth, measure, cache);
+      const next = resolveStage(current, bar.clientWidth, measure, cache, undefined, last);
       show(next);
       // The widths at the stage on screen, which the observer compares against.
       for (const item of Array.from(bar.querySelectorAll(ITEM_SELECTOR))) {
@@ -127,7 +130,7 @@ export function useViewBarStage(
       observer.disconnect();
       unsubscribe();
     };
-  }, [barRef, fixed]);
+  }, [barRef, fixed, last]);
 
   return fixed ? 3 : stage;
 }

@@ -161,7 +161,7 @@ export function Workbench() {
           structureProteinId={structureProteinId}
           structureDocked={placement === 'docked'}
           structureHidden={layout.structureHidden}
-          filterApplied={appliedFilterConditions > 0}
+          filterConditions={appliedFilterConditions}
           toggleRef={railToggleRef}
         />
         <div className="wb-drop-area" aria-hidden="true">
