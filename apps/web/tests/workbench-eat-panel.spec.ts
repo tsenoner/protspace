@@ -99,6 +99,8 @@ test('moving the EAT threshold filters the plot and the legend says so', async (
   await expect(legendEatNote(page)).toContainText('Filtered ≥ 50\u202f%');
   await legendEatLink(page).click();
   await expect(eatPanel(page)).toBeVisible();
+  // The link hid with the legend: focus moves to the EAT heading.
+  await expect(page.locator('#wb-eat-title')).toBeFocused();
   await expect(eatThresholdBox(page)).toHaveValue('50');
 
   // The header's Reset takes the filter back off.
@@ -127,6 +129,7 @@ test('the Filter panel shows the reliability as a locked row that opens the EAT 
 
   await row.getByRole('button', { name: 'Edit in EAT ›' }).click();
   await expect(eatPanel(page)).toBeVisible();
+  await expect(page.locator('#wb-eat-title')).toBeFocused();
   await expect(eatThresholdBox(page)).toHaveValue('50');
 
   // The row's ✕ resets the reliability at once: the filter goes, the panel is back at 0.

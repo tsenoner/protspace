@@ -18,7 +18,13 @@ import type { ExploreControls } from './explore-controls';
 import { createFilterController } from './filter-controller';
 import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
-import { focusFilterTitle, getLayout, openPanel, subscribeLayout } from './layout-state';
+import {
+  focusFilterTitle,
+  focusPanelTitle,
+  getLayout,
+  openPanel,
+  subscribeLayout,
+} from './layout-state';
 import { getLayoutMode, subscribeLayoutMode } from './layout-mode';
 import type { SidebarPanel } from './layout-defaults';
 import { bindPlotFill } from './plot-fill';
@@ -661,8 +667,12 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     'legend-error',
     interactionController.handleLegendError,
   );
-  // The legend's EAT note and the Filter panel's locked row open the EAT panel.
-  addTrackedEventListener(lifecycle, document, 'eat-panel-open', () => openPanel('eat'));
+  // The legend's EAT note and the Filter panel's locked row open the EAT panel. Both hide with the
+  // panel they sit in, so focus moves to the EAT heading.
+  addTrackedEventListener(lifecycle, document, 'eat-panel-open', () => {
+    openPanel('eat');
+    requestAnimationFrame(() => focusPanelTitle('wb-eat-title'));
+  });
   addTrackedEventListener(
     lifecycle,
     structureViewer,

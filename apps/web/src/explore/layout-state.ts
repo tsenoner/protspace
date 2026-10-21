@@ -128,19 +128,27 @@ export function openPanel(panel: SidebarPanel): void {
   updateLayout({ sidebarOpen: true, panel, panelFolded: false });
 }
 
-const focusTitle = (): boolean => {
-  const title = document.getElementById('wb-filter-title');
+const focusTitle = (id: string): boolean => {
+  const title = document.getElementById(id);
   // Only a phone on its side scrolls the page; focus must never scroll the fixed screens.
   title?.focus({ preventScroll: getLayoutMode() !== 'landscape' });
   return title !== null && document.activeElement === title;
 };
 
 /**
- * Moves focus to the Filter panel's heading, after the panel opened from the view bar's Filter, the
- * rail's Filter item or the status corner's filter chip. A sidebar still sliding in shows it a frame later.
+ * Moves focus to a panel's heading (`id`), after the panel opened from a control outside it. A
+ * sidebar still sliding in shows it a frame later.
+ */
+export function focusPanelTitle(id: string): void {
+  if (!focusTitle(id)) requestAnimationFrame(() => focusTitle(id));
+}
+
+/**
+ * The Filter panel's heading, after the panel opened from the view bar's Filter, the rail's Filter
+ * item or the status corner's filter chip.
  */
 export function focusFilterTitle(): void {
-  if (!focusTitle()) requestAnimationFrame(focusTitle);
+  focusPanelTitle('wb-filter-title');
 }
 
 export function resetLayoutForTests(): void {
