@@ -456,7 +456,7 @@ describe('query-condition-row annotation names', () => {
 
   it('keeps the placeholder until an annotation is chosen', async () => {
     const el = await mountNamed();
-    expect(trigger(el).textContent!.trim()).toBe('Select annotation...');
+    expect(trigger(el).textContent!.trim()).toBe('Choose annotation');
   });
 
   it('stores the column name when a label is picked', async () => {
@@ -517,22 +517,22 @@ describe('query-condition-row names', () => {
     document.body.innerHTML = '';
   });
 
-  it('labels the row and its operator by number and names its remove button', async () => {
+  it('labels the row and its operator by number and offers Remove in its menu', async () => {
     const el = await mount();
     el.number = 2;
     await el.updateComplete;
     const root = el.shadowRoot!;
 
     expect(root.querySelector('.condition-row')!.getAttribute('aria-label')).toBe('Condition 2');
-    expect(root.querySelector('.condition-number')!.textContent!.trim()).toBe('2');
     expect(root.querySelector('.logical-op-select')!.getAttribute('aria-label')).toBe(
       'Operator for condition 2',
     );
-    const remove = root.querySelector('ps-icon-button.condition-remove') as HTMLElement & {
+    const menu = root.querySelector('ps-icon-button.condition-menu-trigger') as HTMLElement & {
       label: string;
     };
-    expect(remove.label).toBe('Remove condition');
-    expect(root.querySelector('.value-chip-add')!.getAttribute('aria-label')).toBe('Add value');
+    expect(menu.label).toBe('Actions for condition 2');
+    expect(root.querySelector('ps-menu-item[value="remove"]')!.textContent!.trim()).toBe('Remove');
+    expect(root.querySelector('.value-add')!.textContent!.replace(/\s+/g, '')).toBe('Addvalue');
   });
 });
 

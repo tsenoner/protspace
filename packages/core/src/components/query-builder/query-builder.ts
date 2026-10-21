@@ -3,9 +3,16 @@ import { property, state } from 'lit/decorators.js';
 import { countNoun, formatCount } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/button';
+import { icon } from '../kit/icon';
 import type { PsButton } from '../kit/button';
 import type { ProtspaceData } from './types';
-import type { FilterCondition, FilterGroup, FilterQuery, LogicalOp } from './query-types';
+import type {
+  FilterCondition,
+  FilterGroup,
+  FilterQuery,
+  FilterQueryItem,
+  LogicalOp,
+} from './query-types';
 import { clearLeadingOpInList, createCondition, createGroup, isFilterGroup } from './query-types';
 import { evaluateQuery, evaluateQueryExcluding } from './query-evaluate';
 import { applyBlock, applyBlockText, leafConditions } from './query-apply-state';
@@ -192,6 +199,27 @@ export class ProtspaceQueryBuilder extends LitElement {
     }
   }
 
+  /** A copy of the condition, under a new id, right after it. */
+  private _handleConditionDuplicated(e: CustomEvent<{ id: string }>, groupId: string | null) {
+    e.stopPropagation();
+    const duplicateIn = <T extends FilterQueryItem>(items: T[]): T[] =>
+      items.flatMap((item) => {
+        if (isFilterGroup(item) || item.id !== e.detail.id) return [item];
+        const copy = structuredClone(item);
+        // A first card has no joiner (or NOT); its copy follows it, so it joins with AND.
+        return [item, { ...copy, id: createCondition().id, logicalOp: item.logicalOp ?? 'AND' }];
+      });
+    this._dispatchQueryChanged(
+      groupId === null
+        ? duplicateIn(this.query)
+        : this.query.map((item) =>
+            isFilterGroup(item) && item.id === groupId
+              ? { ...item, conditions: duplicateIn(item.conditions) }
+              : item,
+          ),
+    );
+  }
+
   private _handleConditionRemoved(e: CustomEvent<{ id: string }>, groupId: string | null) {
     e.stopPropagation();
     const removedId = e.detail.id;
@@ -273,6 +301,7 @@ export class ProtspaceQueryBuilder extends LitElement {
         .number=${numbers.get(condition.id) ?? 0}
         @condition-changed=${(e: CustomEvent) => this._handleConditionChanged(e, groupId)}
         @condition-removed=${(e: CustomEvent) => this._handleConditionRemoved(e, groupId)}
+        @condition-duplicated=${(e: CustomEvent) => this._handleConditionDuplicated(e, groupId)}
       ></protspace-query-condition-row>
     `;
   }
@@ -311,9 +340,13 @@ export class ProtspaceQueryBuilder extends LitElement {
             this._renderRow(item as FilterCondition, index === 0, numbers, group.id),
           )}
         </div>
-        <button type="button" class="btn-link" @click=${() => this._addConditionToGroup(group.id)}>
-          + Add group condition
-        </button>
+        <ps-button
+          class="add-group-condition"
+          variant="ghost"
+          size="sm"
+          @click=${() => this._addConditionToGroup(group.id)}
+          ><span slot="start">${icon('plus', 14)}</span>Add condition to group</ps-button
+        >
       </div>
     `;
   }
@@ -349,10 +382,12 @@ export class ProtspaceQueryBuilder extends LitElement {
               : this._renderRow(item, index === 0, numbers, null),
           )}
           <div class="query-actions">
-            <button type="button" class="btn-link" @click=${this._addCondition}>
-              + Add condition
-            </button>
-            <button type="button" class="btn-link" @click=${this._addGroup}>+ Add group</button>
+            <ps-button class="add-condition" @click=${this._addCondition}
+              ><span slot="start">${icon('plus', 16)}</span>Add condition</ps-button
+            >
+            <ps-button class="add-group" variant="ghost" size="sm" @click=${this._addGroup}
+              ><span slot="start">${icon('plus', 14)}</span>Add group</ps-button
+            >
           </div>
         </div>
 

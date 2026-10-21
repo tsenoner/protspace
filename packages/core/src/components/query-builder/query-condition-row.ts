@@ -11,11 +11,13 @@ import {
 import { renderAnnotationName } from '../common/annotation-name';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
 import { pushLayer } from '../kit/layers';
-import { isNumericAnnotation } from '@protspace/utils';
+import { annotationSource, isNumericAnnotation } from '@protspace/utils';
+import { icon } from '../kit/icon';
 import { queryBuilderStyles } from './query-builder.styles';
 import { pickerStyle, placePickerAt, type PickerPlacement } from './picker-placement';
 import { renderValueChip } from './query-presence';
 import '../kit/button';
+import '../kit/menu';
 import './query-value-picker';
 import './query-numeric-input';
 
@@ -24,7 +26,8 @@ import './query-numeric-input';
  *
  * Events:
  * - `condition-changed` — any field changed, detail: `{ condition: FilterCondition }`
- * - `condition-removed` — remove button clicked, detail: `{ id: string }`
+ * - `condition-removed` — Remove in the card's menu, detail: `{ id: string }`
+ * - `condition-duplicated` — Duplicate in the card's menu, detail: `{ id: string }`
  */
 @customElement('protspace-query-condition-row')
 class ProtspaceQueryConditionRow extends LitElement {
@@ -45,8 +48,11 @@ class ProtspaceQueryConditionRow extends LitElement {
   @state() private _annotationHighlightIndex: number = -1;
   @state() private _pickerPos: PickerPlacement = { top: 0, left: 0, room: 0 };
   @state() private _valuePickerPos: PickerPlacement = { top: 0, left: 0, room: 0 };
+  @state() private _menuOpen = false;
 
   @litQuery('.annotation-picker-input') private _annotationInputEl?: HTMLInputElement;
+  @litQuery('.condition-menu-trigger') private _menuTriggerEl?: HTMLElement;
+  @litQuery('.condition-head') private _headEl?: HTMLElement;
   /** Releases the annotation picker's layer; set while the picker is shown. */
   private _releasePickerLayer?: () => void;
 
@@ -149,6 +155,7 @@ class ProtspaceQueryConditionRow extends LitElement {
   closePickers(): void {
     this._closeAnnotationPicker();
     this._showValuePicker = false;
+    this._menuOpen = false;
   }
 
   private _toggleAnnotationPicker(e: Event) {
@@ -156,9 +163,13 @@ class ProtspaceQueryConditionRow extends LitElement {
       this._closeAnnotationPicker();
       return;
     }
+    this._openAnnotationPicker(e.currentTarget as HTMLElement);
+  }
+
+  private _openAnnotationPicker(anchor: Element) {
     this._showAnnotationPicker = true;
     this._annotationHighlightIndex = -1;
-    this._pickerPos = placePickerAt(e.currentTarget as HTMLElement);
+    this._pickerPos = placePickerAt(anchor);
   }
 
   private _handleAnnotationPickerKeydown(e: KeyboardEvent) {
@@ -247,14 +258,45 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._showValuePicker = false;
   }
 
-  private _handleRemove() {
+  private _dispatchById(type: 'condition-removed' | 'condition-duplicated') {
     this.dispatchEvent(
-      new CustomEvent('condition-removed', {
-        detail: { id: this.condition.id },
-        bubbles: true,
-        composed: true,
-      }),
+      new CustomEvent(type, { detail: { id: this.condition.id }, bubbles: true, composed: true }),
     );
+  }
+
+  private _hasValues(): boolean {
+    const c = this.condition;
+    return c.kind === 'categorical'
+      ? c.values.length > 0
+      : c.min !== null || c.max !== null || (c.presence?.length ?? 0) > 0;
+  }
+
+  private _clearValues() {
+    const c = this.condition;
+    this._dispatchChanged(
+      c.kind === 'categorical'
+        ? { ...c, values: [] }
+        : { ...c, min: null, max: null, presence: [] },
+    );
+  }
+
+  private _handleMenuSelect(e: CustomEvent<{ value: string }>) {
+    e.stopPropagation();
+    this._menuOpen = false;
+    switch (e.detail.value) {
+      case 'change':
+        // The picker hangs under the card's header, the row the menu's trigger sits on.
+        if (this._headEl) this._openAnnotationPicker(this._headEl);
+        return;
+      case 'clear':
+        this._clearValues();
+        return;
+      case 'duplicate':
+        this._dispatchById('condition-duplicated');
+        return;
+      case 'remove':
+        this._dispatchById('condition-removed');
+    }
   }
 
   // ─── Sub-renders ──────────────────────────────────────────────────────────
@@ -336,22 +378,20 @@ class ProtspaceQueryConditionRow extends LitElement {
   private _renderValues() {
     if (this.condition.kind !== 'categorical') return nothing;
     return html`
-      <div class="value-chips">
-        ${this.condition.values.map((v) => renderValueChip(v, () => this._removeValue(v)))}
-        <button
-          type="button"
-          class="value-chip-add"
-          aria-label="Add value"
-          @click=${(e: Event) => {
-            this._showValuePicker = !this._showValuePicker;
-            if (this._showValuePicker) {
-              this._valuePickerPos = placePickerAt(e.currentTarget as HTMLElement);
-            }
-          }}
-        >
-          +
-        </button>
-      </div>
+      ${this.condition.values.map((v) => renderValueChip(v, () => this._removeValue(v)))}
+      <ps-button
+        class="value-add"
+        variant="ghost"
+        size="sm"
+        @click=${(e: Event) => {
+          this._showValuePicker = !this._showValuePicker;
+          if (this._showValuePicker) {
+            this._valuePickerPos = placePickerAt(e.currentTarget as HTMLElement);
+          }
+        }}
+        ><span slot="start">${icon('plus', 14)}</span
+        ><span class="sr-only">Add </span>value</ps-button
+      >
       <protspace-query-value-picker
         .annotation=${this.condition.annotation}
         .data=${this.data}
@@ -383,65 +423,108 @@ class ProtspaceQueryConditionRow extends LitElement {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
+  /** "number" for a numeric annotation, else its source; nothing for an unknown source. */
+  private _sourceBadge() {
+    const name = this.condition.annotation;
+    const definition = this.data?.annotations?.[name];
+    const text =
+      this.condition.kind === 'numeric' || isNumericAnnotation(definition)
+        ? 'number'
+        : annotationSource(name, definition);
+    return text === 'Other' ? nothing : html`<span class="condition-badge">${text}</span>`;
+  }
+
+  private _renderLogicalOpSelect(label: string) {
+    return this.isFirst
+      ? html`
+          <select
+            class="logical-op-select ${this.condition.logicalOp === 'NOT' ? '' : 'op-blank'}"
+            aria-label=${label}
+            .value=${this.condition.logicalOp ?? ''}
+            @change=${this._handleLogicalOpChange}
+          >
+            <option value="">—</option>
+            <option value="NOT">NOT</option>
+          </select>
+        `
+      : html`
+          <select
+            class="logical-op-select"
+            aria-label=${label}
+            .value=${this.condition.logicalOp ?? 'AND'}
+            @change=${this._handleLogicalOpChange}
+          >
+            <option value="AND">AND</option>
+            <option value="OR">OR</option>
+            <option value="NOT">NOT</option>
+          </select>
+        `;
+  }
+
+  private _renderMenu(name: string) {
+    const annotation = this.condition.annotation;
+    return html`
+      <ps-icon-button
+        class="condition-menu-trigger"
+        icon="ellipsis"
+        size="sm"
+        label=${`Actions for ${name}`}
+        @click=${() => (this._menuOpen = !this._menuOpen)}
+      ></ps-icon-button>
+      <ps-menu
+        label=${`Actions for ${name}`}
+        placement="bottom-end"
+        .anchor=${this._menuTriggerEl ?? null}
+        .open=${this._menuOpen}
+        @ps-select=${this._handleMenuSelect}
+        @ps-close=${(e: Event) => {
+          e.stopPropagation();
+          this._menuOpen = false;
+        }}
+      >
+        <ps-menu-item value="change"
+          >${annotation ? 'Change annotation' : 'Choose annotation'}</ps-menu-item
+        >
+        <ps-menu-item value="clear" ?disabled=${!this._hasValues()}>Clear values</ps-menu-item>
+        <ps-menu-item value="duplicate">Duplicate</ps-menu-item>
+        <ps-menu-item value="remove">Remove</ps-menu-item>
+      </ps-menu>
+    `;
+  }
+
   render() {
     const n = this.number;
-    const operatorLabel = n > 0 ? `Operator for condition ${n}` : 'Operator';
+    const name = n > 0 ? `Condition ${n}` : 'Condition';
+    const annotation = this.condition.annotation;
     return html`
-      <div class="condition-row" role="group" aria-label=${n > 0 ? `Condition ${n}` : 'Condition'}>
-        <span class="condition-number" aria-hidden="true">${n > 0 ? n : ''}</span>
-        ${this.isFirst
-          ? html`
-              <select
-                class="logical-op-select ${this.condition.logicalOp === 'NOT' ? '' : 'op-blank'}"
-                aria-label=${operatorLabel}
-                .value=${this.condition.logicalOp ?? ''}
-                @change=${this._handleLogicalOpChange}
-              >
-                <option value="">—</option>
-                <option value="NOT">NOT</option>
-              </select>
-            `
-          : html`
-              <select
-                class="logical-op-select"
-                aria-label=${operatorLabel}
-                .value=${this.condition.logicalOp ?? 'AND'}
-                @change=${this._handleLogicalOpChange}
-              >
-                <option value="AND">AND</option>
-                <option value="OR">OR</option>
-                <option value="NOT">NOT</option>
-              </select>
-            `}
-
-        <button
-          type="button"
-          class="annotation-select-trigger"
-          @click=${this._toggleAnnotationPicker}
-          @keydown=${this._handleAnnotationPickerKeydown}
-          aria-expanded=${this._showAnnotationPicker}
-          aria-haspopup="listbox"
-        >
-          ${this.condition.annotation
-            ? renderAnnotationName(
-                this.condition.annotation,
-                this.data?.annotations?.[this.condition.annotation],
-                'dropdown-trigger-text',
-              )
-            : html`<span class="dropdown-trigger-text">Select annotation...</span>`}
-        </button>
+      <div class="condition-row" role="group" aria-label=${name}>
+        <div class="condition-head">
+          <button
+            type="button"
+            class="annotation-select-trigger ${annotation ? '' : 'is-empty'}"
+            @click=${this._toggleAnnotationPicker}
+            @keydown=${this._handleAnnotationPickerKeydown}
+            aria-expanded=${this._showAnnotationPicker}
+            aria-haspopup="listbox"
+          >
+            ${annotation
+              ? renderAnnotationName(
+                  annotation,
+                  this.data?.annotations?.[annotation],
+                  'dropdown-trigger-text',
+                )
+              : html`<span class="dropdown-trigger-text">Choose annotation</span>${icon(
+                    'chevron-down',
+                    14,
+                  )}`}
+          </button>
+          ${annotation ? this._sourceBadge() : nothing} ${this._renderMenu(name.toLowerCase())}
+        </div>
 
         ${this._showAnnotationPicker ? this._renderAnnotationPicker() : nothing}
 
-        <ps-icon-button
-          class="condition-remove"
-          icon="x"
-          size="sm"
-          label="Remove condition"
-          @click=${this._handleRemove}
-        ></ps-icon-button>
-
-        <div class="condition-values">
+        <div class="condition-values ${this.condition.kind === 'numeric' ? '' : 'value-chips'}">
+          ${this._renderLogicalOpSelect(n > 0 ? `Operator for condition ${n}` : 'Operator')}
           ${this.condition.kind === 'numeric' ? this._renderNumericInput() : this._renderValues()}
         </div>
       </div>

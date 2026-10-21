@@ -1,17 +1,19 @@
 import { css } from 'lit';
-import { focusRing } from '../kit/kit-shared.styles';
+import { focusRing, srOnly } from '../kit/kit-shared.styles';
 
 /**
  * The query builder's sheet, shared by the builder, its condition rows, the value picker and the
  * numeric input (each has its own shadow root). Every colour and type size reads a --ps-* token.
  *
- * The rows stack: number, operator, annotation and ✕ on the first line, the values below, which is
- * what a 240–480 px sidebar panel needs. The two pickers stay `position: fixed` against a measured
+ * A condition is a card: the annotation's name (it wraps, never truncates), its source badge and
+ * a ⋯ menu on the first line, the operator and the values below, which is what a 240–480 px
+ * sidebar panel needs. The two pickers stay `position: fixed` against a measured
  * trigger, so no ancestor of the Filter panel may get a transform, filter, contain or
  * container-type.
  */
 export const queryBuilderStyles = [
   focusRing,
+  srOnly,
   css`
     :host {
       font-family: var(--ps-font-sans);
@@ -63,23 +65,25 @@ export const queryBuilderStyles = [
 
     .query-actions {
       display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: var(--ps-space-3);
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--ps-space-1);
     }
 
-    .btn-link {
-      padding: var(--ps-space-0-5) var(--ps-space-1);
-      border: 0;
-      border-radius: var(--ps-radius-sm);
-      background: none;
-      color: var(--ps-accent-text);
-      font-weight: var(--ps-weight-medium);
-      cursor: pointer;
+    /* Add condition: a full-width dashed kit button at the end of the cards. */
+    .add-condition {
+      display: flex;
+      align-self: stretch;
     }
 
-    .btn-link:hover {
-      text-decoration: underline;
+    .add-condition::part(button) {
+      width: 100%;
+      border-style: dashed;
+      color: var(--ps-text-muted);
+    }
+
+    .add-condition::part(button):hover {
+      color: var(--ps-text);
     }
 
     .query-footer {
@@ -152,39 +156,50 @@ export const queryBuilderStyles = [
     /* ── A condition row ─────────────────────────────────────────────────── */
 
     .condition-row {
-      display: grid;
-      grid-template-areas:
-        'number op annotation remove'
-        'values values values values';
-      grid-template-columns: auto auto minmax(0, 1fr) auto;
-      align-items: center;
-      gap: var(--ps-space-1-5);
+      display: flex;
+      flex-direction: column;
+      gap: var(--ps-space-2);
       box-sizing: border-box;
-      padding: var(--ps-space-2);
+      padding: var(--ps-space-2) var(--ps-space-2) var(--ps-space-2) var(--ps-space-3);
       border: 1px solid var(--ps-border);
-      border-radius: var(--ps-radius);
+      border-radius: var(--ps-radius-lg);
       background: var(--ps-surface);
     }
 
-    .condition-number {
-      grid-area: number;
-      min-width: 1.25em;
+    .condition-head {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-1-5);
+      min-width: 0;
+    }
+
+    .condition-menu-trigger {
+      flex: none;
+      margin-inline-start: auto;
+    }
+
+    .condition-badge {
+      flex: none;
+      padding: var(--ps-space-0-5) var(--ps-space-1-5);
+      border-radius: var(--ps-radius-full);
+      background: var(--ps-surface-hover);
       color: var(--ps-text-muted);
-      font-size: var(--ps-text-sm);
-      font-variant-numeric: tabular-nums;
-      text-align: right;
-    }
-
-    .condition-row > .logical-op-select {
-      grid-area: op;
-    }
-
-    .condition-row > .condition-remove {
-      grid-area: remove;
+      font-size: var(--ps-text-xs);
+      font-weight: var(--ps-weight-medium);
+      line-height: var(--ps-leading-tight);
+      white-space: nowrap;
     }
 
     .condition-values {
-      grid-area: values;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--ps-space-1);
+      min-width: 0;
+    }
+
+    .condition-values > protspace-query-numeric-input {
+      flex: 1 1 auto;
       min-width: 0;
     }
 
@@ -215,26 +230,52 @@ export const queryBuilderStyles = [
       width: 4.5rem;
     }
 
+    /* The card's title: the annotation's name, which opens the annotation picker. */
     .annotation-select-trigger {
-      grid-area: annotation;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: var(--ps-space-1);
       box-sizing: border-box;
       min-width: 0;
-      height: var(--ps-control-sm);
-      padding: 0 var(--ps-space-2);
-      border: 1px solid var(--ps-border-strong);
-      border-radius: var(--ps-radius);
-      background: var(--ps-surface);
+      min-height: var(--ps-control-sm);
+      margin-inline-start: calc(-1 * var(--ps-space-1));
+      padding: var(--ps-space-0-5) var(--ps-space-1);
+      border: 0;
+      border-radius: var(--ps-radius-sm);
+      background: none;
       color: var(--ps-text);
+      font-weight: var(--ps-weight-semibold);
       text-align: left;
       cursor: pointer;
     }
 
-    .logical-op-select:hover,
-    .numeric-operator-select:hover:not(:disabled),
+    .annotation-select-trigger .dropdown-trigger-text {
+      overflow: visible;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    /* An empty card: "Choose annotation" as a control. */
+    .annotation-select-trigger.is-empty {
+      margin-inline-start: 0;
+      padding: 0 var(--ps-space-1-5) 0 var(--ps-space-2);
+      border: 1px solid var(--ps-border-strong);
+      border-radius: var(--ps-radius);
+      background: var(--ps-surface);
+      color: var(--ps-text-muted);
+      font-weight: var(--ps-weight-medium);
+    }
+
     .annotation-select-trigger:hover {
+      background: var(--ps-surface-hover);
+    }
+
+    .annotation-select-trigger.is-empty:hover {
+      border-color: var(--ps-border-control);
+    }
+
+    .logical-op-select:hover,
+    .numeric-operator-select:hover:not(:disabled) {
       border-color: var(--ps-border-control);
       background: var(--ps-surface-hover);
     }
@@ -264,25 +305,25 @@ export const queryBuilderStyles = [
       min-width: 0;
     }
 
+    /* Chips wrap their text instead of truncating it: family names are long. */
     .value-chip {
       display: inline-flex;
-      align-items: center;
-      gap: var(--ps-space-1);
+      align-items: flex-start;
+      gap: var(--ps-space-0-5);
       box-sizing: border-box;
-      max-width: 160px;
-      height: 22px;
-      padding: 0 var(--ps-space-1) 0 var(--ps-space-2);
-      border-radius: var(--ps-radius-full);
+      max-width: 100%;
+      min-height: 22px;
+      padding: 2px var(--ps-space-0-5) 2px var(--ps-space-2);
+      border-radius: var(--ps-radius);
       background: var(--ps-accent-tint);
       color: var(--ps-accent-text);
       font-size: var(--ps-text-sm);
+      line-height: 18px;
     }
 
     .value-chip-text {
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow-wrap: anywhere;
     }
 
     .value-chip-remove {
@@ -290,6 +331,7 @@ export const queryBuilderStyles = [
       flex: none;
       align-items: center;
       justify-content: center;
+      height: 18px;
       padding: 0;
       border: 0;
       background: none;
@@ -315,14 +357,16 @@ export const queryBuilderStyles = [
       }
 
       .value-chip-remove {
+        align-self: center;
         min-width: var(--ps-touch-target);
         min-height: var(--ps-touch-target);
-        margin-block: calc((var(--ps-touch-target) - 22px) / -2);
-        margin-inline: -12px calc(-12px - var(--ps-space-1));
+        margin-block: calc((var(--ps-touch-target) - 18px) / -2);
+        margin-inline: -12px calc(-12px - var(--ps-space-0-5));
       }
     }
 
-    .value-chip-add {
+    /* The numeric row's "+ N/A" and "+ Any value" toggles. */
+    button.value-chip-add {
       display: inline-flex;
       align-items: center;
       box-sizing: border-box;
@@ -336,7 +380,7 @@ export const queryBuilderStyles = [
       cursor: pointer;
     }
 
-    .value-chip-add:hover {
+    button.value-chip-add:hover {
       background: var(--ps-accent-tint);
     }
 

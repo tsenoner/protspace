@@ -52,7 +52,7 @@ describe('protspace-query-builder in a narrow panel', () => {
     expect(inner(apply).ariaDescribedByElements?.[0]).toBe(reason);
   });
 
-  it('the ✕ buttons are named Remove condition / Remove group', async () => {
+  it('the group ✕ is named Remove group; a card offers Remove in its ⋯ menu', async () => {
     const builder = await mount([createGroup()]);
     const removeGroup = builder.shadowRoot!.querySelector<PsIconButton>(
       '.group-header .condition-remove',
@@ -60,10 +60,13 @@ describe('protspace-query-builder in a narrow panel', () => {
     await removeGroup.updateComplete;
     expect(inner(removeGroup).getAttribute('aria-label')).toBe('Remove group');
 
-    const removeRow =
-      rows(builder)[0].shadowRoot!.querySelector<PsIconButton>('.condition-remove')!;
-    await removeRow.updateComplete;
-    expect(inner(removeRow).getAttribute('aria-label')).toBe('Remove condition');
+    const menuRow =
+      rows(builder)[0].shadowRoot!.querySelector<PsIconButton>('.condition-menu-trigger')!;
+    await menuRow.updateComplete;
+    expect(inner(menuRow).getAttribute('aria-label')).toBe('Actions for condition 1');
+    expect(
+      rows(builder)[0].shadowRoot!.querySelector('ps-menu-item[value="remove"]'),
+    ).not.toBeNull();
   });
 
   it('at 260 px wide a row stacks and nothing overflows horizontally', async () => {
@@ -86,7 +89,7 @@ describe('protspace-query-builder in a narrow panel', () => {
     expect(footer.scrollWidth).toBeLessThanOrEqual(footer.clientWidth);
   });
 
-  it('rows show their numbers, group leaves included', async () => {
+  it('rows are named by their numbers, group leaves included', async () => {
     const builder = await mount([
       createCondition({ annotation: 'organism', values: ['Human'] }),
       createGroup({
@@ -95,9 +98,6 @@ describe('protspace-query-builder in a narrow panel', () => {
       }),
     ]);
     const all = rows(builder);
-    expect(
-      all.map((row) => row.shadowRoot!.querySelector('.condition-number')!.textContent!.trim()),
-    ).toEqual(['1', '2', '3']);
     expect(
       all.map((row) => row.shadowRoot!.querySelector('.condition-row')!.getAttribute('aria-label')),
     ).toEqual(['Condition 1', 'Condition 2', 'Condition 3']);

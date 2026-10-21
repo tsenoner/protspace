@@ -1,6 +1,7 @@
 import { html, nothing } from 'lit';
 import { toDisplayValue } from '@protspace/utils';
 import { ANY_VALUE } from './query-types';
+import { icon } from '../kit/icon';
 
 /**
  * Display label for the `ANY_VALUE` sentinel, the companion of `NA_DISPLAY`.
@@ -42,7 +43,7 @@ export function renderValueChip(value: string, onRemove: () => void, presenceTag
         @click=${onRemove}
         aria-label="Remove value"
       >
-        ×
+        ${icon('x', 14)}
       </button>
     </span>
   `;
