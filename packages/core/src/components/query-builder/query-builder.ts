@@ -6,21 +6,25 @@ import '../kit/button';
 import { icon } from '../kit/icon';
 import type { PsButton } from '../kit/button';
 import type { ProtspaceData } from './types';
-import type {
-  FilterCondition,
-  FilterGroup,
-  FilterQuery,
-  FilterQueryItem,
-  LogicalOp,
-} from './query-types';
+import '../kit/menu';
+import type { FilterCondition, FilterGroup, FilterQuery, FilterQueryItem } from './query-types';
 import { createCondition, createGroup, isFilterGroup } from './query-types';
 import {
+  addToGroup,
   cardOf,
   duplicateCard,
+  groupRun,
+  isMixed,
+  isNegatedGroup,
+  itemJoiner,
+  joinerWouldMix,
+  nextJoiner,
   removeCard,
   replaceCondition,
   setJoiner,
+  setJoinerForAll,
   setOperator,
+  ungroup,
   type ConditionOperator,
   type Joiner,
 } from './query-operators';
@@ -68,7 +72,18 @@ export class ProtspaceQueryBuilder extends LitElement {
   /** A count is pending (the 300 ms debounce): Apply waits, with no reason text. */
   @state() private _counting = true;
 
+  /** The joiner menu is open, for the item `_joinerTarget`. */
+  @state() private _joinerMenuOpen = false;
+  /** The group menu is open, for the group `_groupTarget`. */
+  @state() private _groupMenuOpen = false;
+  /** A joiner that would mix "and" and "or" in its list waits here for "Group these?". */
+  @state() private _joinerPrompt: { id: string; joiner: Joiner } | null = null;
+
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  // Kept apart from the open state: the menu closes (ps-close) before it reports the choice.
+  private _joinerTarget: { id: string; anchor: Element } | null = null;
+  private _groupTarget: { id: string; anchor: Element } | null = null;
+  private _focusPrompt = false;
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -91,6 +106,8 @@ export class ProtspaceQueryBuilder extends LitElement {
     if (changedProperties.has('data') || changedProperties.has('query')) {
       this._counting = true;
     }
+    // The query moved on (an edit, undo, the EAT slider): a pending prompt no longer applies.
+    if (changedProperties.has('query')) this._joinerPrompt = null;
   }
 
   updated(changedProperties: Map<string, unknown>) {
@@ -101,6 +118,13 @@ export class ProtspaceQueryBuilder extends LitElement {
     const apply = this.renderRoot.querySelector<PsButton>('.query-footer-apply');
     const reason = this.renderRoot.querySelector<HTMLElement>('#apply-reason');
     if (apply && reason && apply.describedBy[0] !== reason) apply.describedBy = [reason];
+    if (this._focusPrompt) {
+      this._focusPrompt = false;
+      this.renderRoot.querySelector('.joiner-prompt')?.scrollIntoView({ block: 'nearest' });
+      this.renderRoot.querySelector<HTMLElement>('.joiner-prompt-group')?.focus({
+        preventScroll: true,
+      });
+    }
   }
 
   disconnectedCallback() {
@@ -146,34 +170,17 @@ export class ProtspaceQueryBuilder extends LitElement {
   // ─── Query mutations ─────────────────────────────────────────────────────
 
   private _addCondition() {
-    const newQuery = [
-      ...this.query,
-      createCondition({ logicalOp: this.query.length > 0 ? 'AND' : undefined }),
-    ];
-    this._dispatchQueryChanged(newQuery);
+    const condition = createCondition({ logicalOp: nextJoiner(this.query) });
+    this._dispatchQueryChanged([...this.query, condition]);
   }
 
   private _addGroup() {
-    const group = createGroup({ logicalOp: this.query.length > 0 ? 'AND' : undefined });
+    const group = createGroup({ logicalOp: nextJoiner(this.query) });
     this._dispatchQueryChanged([...this.query, group]);
   }
 
   private _addConditionToGroup(groupId: string) {
-    const newQuery = this.query.map((item) => {
-      if (isFilterGroup(item) && item.id === groupId) {
-        return {
-          ...item,
-          conditions: [
-            ...item.conditions,
-            createCondition({
-              logicalOp: item.conditions.length > 0 ? 'AND' : undefined,
-            }),
-          ],
-        };
-      }
-      return item;
-    });
-    this._dispatchQueryChanged(newQuery);
+    this._dispatchQueryChanged(addToGroup(this.query, groupId, createCondition()));
   }
 
   private _handleConditionChanged(e: CustomEvent<{ condition: FilterCondition }>) {
@@ -186,9 +193,75 @@ export class ProtspaceQueryBuilder extends LitElement {
     this._dispatchQueryChanged(setOperator(this.query, e.detail.id, e.detail.operator));
   }
 
-  private _handleJoinerChanged(e: CustomEvent<{ id: string; joiner: Joiner }>) {
+  private _openJoinerMenu(id: string, e: Event) {
+    const anchor = e.currentTarget as Element;
+    const same = this._joinerMenuOpen && this._joinerTarget?.id === id;
+    this._joinerTarget = { id, anchor };
+    this._joinerMenuOpen = !same;
+  }
+
+  /** A joiner picked: applied, unless it would mix "and" and "or", which asks first. */
+  private _handleJoinerSelect(e: CustomEvent<{ value: string }>) {
     e.stopPropagation();
-    this._dispatchQueryChanged(setJoiner(this.query, e.detail.id, e.detail.joiner));
+    this._joinerMenuOpen = false;
+    const target = this._joinerTarget;
+    if (!target) return;
+    const joiner = e.detail.value as Joiner;
+    if (joiner === this._joinerOf(target.id)) return;
+    if (joinerWouldMix(this.query, target.id, joiner)) {
+      this._joinerPrompt = { id: target.id, joiner };
+      this._focusPrompt = true;
+      return;
+    }
+    this._dispatchQueryChanged(setJoiner(this.query, target.id, joiner));
+  }
+
+  /** The joiner the item `id` shows now; "and not" (a negated group) reads as neither. */
+  private _joinerOf(id: string): Joiner | 'NOT' | undefined {
+    const find = (items: FilterQuery): Joiner | 'NOT' | undefined | null => {
+      for (const [index, item] of items.entries()) {
+        const card = cardOf(item, index === 0);
+        if (item.id === id || card?.condition.id === id)
+          return isNegatedGroup(item) && index > 0 ? 'NOT' : itemJoiner(item, index);
+        if (!card && isFilterGroup(item)) {
+          const inner = find(item.conditions);
+          if (inner !== null) return inner;
+        }
+      }
+      return null;
+    };
+    return find(this.query) ?? undefined;
+  }
+
+  private _resolvePrompt(choice: 'group' | 'all' | 'cancel') {
+    const prompt = this._joinerPrompt;
+    this._joinerPrompt = null;
+    if (!prompt) return;
+    if (choice === 'cancel') {
+      (this._joinerTarget?.anchor as HTMLElement | undefined)?.focus();
+      return;
+    }
+    const next =
+      choice === 'group'
+        ? groupRun(this.query, prompt.id, prompt.joiner)
+        : setJoinerForAll(this.query, prompt.id, prompt.joiner);
+    this._dispatchQueryChanged(next);
+  }
+
+  private _openGroupMenu(id: string, e: Event) {
+    const anchor = e.currentTarget as Element;
+    const same = this._groupMenuOpen && this._groupTarget?.id === id;
+    this._groupTarget = { id, anchor };
+    this._groupMenuOpen = !same;
+  }
+
+  private _handleGroupMenuSelect(e: CustomEvent<{ value: string }>) {
+    e.stopPropagation();
+    this._groupMenuOpen = false;
+    const id = this._groupTarget?.id;
+    if (!id) return;
+    if (e.detail.value === 'ungroup') this._dispatchQueryChanged(ungroup(this.query, id));
+    if (e.detail.value === 'remove') this._dispatchQueryChanged(removeCard(this.query, id));
   }
 
   /** A copy of the condition, under a new id, right after it. */
@@ -200,18 +273,6 @@ export class ProtspaceQueryBuilder extends LitElement {
   private _handleConditionRemoved(e: CustomEvent<{ id: string }>) {
     e.stopPropagation();
     this._dispatchQueryChanged(removeCard(this.query, e.detail.id));
-  }
-
-  private _removeGroup(groupId: string) {
-    this._dispatchQueryChanged(this.query.filter((item) => item.id !== groupId));
-  }
-
-  private _handleGroupLogicalOpChange(groupId: string, e: Event) {
-    const value = (e.target as HTMLSelectElement).value as LogicalOp;
-    const newQuery = this.query.map((item) =>
-      isFilterGroup(item) && item.id === groupId ? { ...item, logicalOp: value } : item,
-    );
-    this._dispatchQueryChanged(newQuery);
   }
 
   // ─── Apply, Reset, Cancel, Close ──────────────────────────────────────────
@@ -249,6 +310,74 @@ export class ProtspaceQueryBuilder extends LitElement {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
+  /** One list (the query or a group's): its items with a joiner pill between each two. */
+  private _renderList(items: FilterQuery, numbers: ReadonlyMap<string, number>): unknown {
+    return html`
+      ${isMixed(items)
+        ? html`<p class="mixed-note">
+            ${icon('info', 14)}<span
+              >Mixes “and” and “or”, read left to right: each joiner takes in everything above
+              it.</span
+            >
+          </p>`
+        : nothing}
+      ${items.map(
+        (item, index) => html`
+          ${index > 0 ? this._renderJoiner(item, index, numbers) : nothing}
+          ${this._renderItem(item, index, numbers)}
+        `,
+      )}
+    `;
+  }
+
+  /** "and ⌄" / "or ⌄" between two items, and the "Group these?" prompt it may raise. */
+  private _renderJoiner(
+    item: FilterQueryItem,
+    index: number,
+    numbers: ReadonlyMap<string, number>,
+  ) {
+    const card = cardOf(item, false);
+    const id = card ? card.condition.id : item.id;
+    const n = card ? numbers.get(card.condition.id) : undefined;
+    const label = n ? `Joiner for condition ${n}` : card ? 'Joiner' : 'Joiner for group';
+    const text = isNegatedGroup(item) ? 'and not' : itemJoiner(item, index) === 'OR' ? 'or' : 'and';
+    const prompt = this._joinerPrompt?.id === id ? this._joinerPrompt : null;
+    const word = prompt?.joiner === 'OR' ? 'or' : 'and';
+    return html`
+      <div class="joiner">
+        <ps-button
+          class="joiner-pill"
+          variant="ghost"
+          size="sm"
+          @click=${(e: Event) => this._openJoinerMenu(id, e)}
+          ><span class="sr-only">${label}: </span>${text}<span slot="end"
+            >${icon('chevron-down', 14)}</span
+          ></ps-button
+        >
+      </div>
+      ${prompt
+        ? html`<div class="joiner-prompt" role="group" aria-label="Group these?">
+            <p>“and” and “or” together are read left to right. Group these?</p>
+            <div class="joiner-prompt-actions">
+              <ps-button
+                class="joiner-prompt-group"
+                variant="primary"
+                size="sm"
+                @click=${() => this._resolvePrompt('group')}
+                >Group these</ps-button
+              >
+              <ps-button variant="secondary" size="sm" @click=${() => this._resolvePrompt('all')}
+                >Use “${word}” for all</ps-button
+              >
+              <ps-button variant="ghost" size="sm" @click=${() => this._resolvePrompt('cancel')}
+                >Cancel</ps-button
+              >
+            </div>
+          </div>`
+        : nothing}
+    `;
+  }
+
   /** A card, or the group the user built; the group "is none of" needs under "or" is a card. */
   private _renderItem(
     item: FilterQueryItem,
@@ -256,67 +385,107 @@ export class ProtspaceQueryBuilder extends LitElement {
     numbers: ReadonlyMap<string, number>,
   ): unknown {
     const card = cardOf(item, index === 0);
-    if (!card) return this._renderGroup(item as FilterGroup, index, numbers);
-    const { condition, joiner } = card;
+    if (!card) return this._renderGroup(item as FilterGroup, numbers);
+    const { condition } = card;
     return html`
       <protspace-query-condition-row
         .condition=${condition}
-        .joiner=${joiner}
         .annotations=${this.annotations}
         .data=${this.data}
         .matchedIndices=${this._excludedMatchMap.get(condition.id) ?? this._matchedIndices}
-        .isFirst=${index === 0}
         .number=${numbers.get(condition.id) ?? 0}
         @condition-changed=${this._handleConditionChanged}
         @operator-changed=${this._handleOperatorChanged}
-        @joiner-changed=${this._handleJoinerChanged}
         @condition-removed=${this._handleConditionRemoved}
         @condition-duplicated=${this._handleConditionDuplicated}
       ></protspace-query-condition-row>
     `;
   }
 
-  private _renderGroup(
-    group: FilterGroup,
-    groupIndex: number,
-    numbers: ReadonlyMap<string, number>,
-  ) {
+  private _renderGroup(group: FilterGroup, numbers: ReadonlyMap<string, number>) {
+    const items = group.conditions;
+    const joiners = new Set(items.map(itemJoiner).filter(Boolean));
+    const inner = joiners.size === 1 ? [...joiners][0] : undefined;
+    const label = inner === 'OR' ? 'Any of these' : inner === 'AND' ? 'All of these' : 'Group';
+    const negated = isNegatedGroup(group);
+    const name = inner ? `Group, joined with ${inner === 'OR' ? 'or' : 'and'}` : 'Group';
     return html`
-      <div class="group-container">
+      <div class="group-container" role="group" aria-label=${negated ? `${name}, negated` : name}>
         <div class="group-header">
-          ${groupIndex > 0
-            ? html`<select
-                class="logical-op-select"
-                aria-label="Operator for the group"
-                .value=${group.logicalOp ?? 'AND'}
-                @change=${(e: Event) => this._handleGroupLogicalOpChange(group.id, e)}
-              >
-                <option value="AND">AND</option>
-                <option value="OR">OR</option>
-                <option value="NOT">NOT</option>
-              </select>`
-            : html`<div class="logical-op-placeholder"></div>`}
-          <span class="group-label">Group</span>
+          <span class="group-label">${label}</span>
+          ${negated ? html`<span class="condition-badge">not</span>` : nothing}
           <ps-icon-button
-            class="condition-remove"
-            icon="x"
+            class="group-menu-trigger"
+            icon="ellipsis"
             size="sm"
-            label="Remove group"
-            @click=${() => this._removeGroup(group.id)}
+            label="Actions for group"
+            @click=${(e: Event) => this._openGroupMenu(group.id, e)}
           ></ps-icon-button>
         </div>
-        <div class="group-conditions">
-          ${group.conditions.map((item, index) => this._renderItem(item, index, numbers))}
-        </div>
+        ${this._renderList(items, numbers)}
         <ps-button
           class="add-group-condition"
           variant="ghost"
           size="sm"
           @click=${() => this._addConditionToGroup(group.id)}
-          ><span slot="start">${icon('plus', 14)}</span>Add condition to group</ps-button
+          ><span slot="start">${icon('plus', 14)}</span>Add condition</ps-button
         >
       </div>
     `;
+  }
+
+  /** The joiner and group menus, one each, anchored to the pill or ⋯ that opened them. */
+  private _renderMenus() {
+    const current = this._joinerTarget ? this._joinerOf(this._joinerTarget.id) : undefined;
+    const negated = this._groupTarget
+      ? this._findGroup(this._groupTarget.id)?.logicalOp === 'NOT'
+      : false;
+    return html`
+      <ps-menu
+        label="Joiner"
+        .anchor=${this._joinerTarget?.anchor ?? null}
+        .open=${this._joinerMenuOpen}
+        @ps-select=${this._handleJoinerSelect}
+        @ps-close=${(e: Event) => {
+          e.stopPropagation();
+          this._joinerMenuOpen = false;
+        }}
+      >
+        <ps-menu-item type="radio" value="AND" ?checked=${current === 'AND'}
+          >and<span slot="description">this and everything above must match</span></ps-menu-item
+        >
+        <ps-menu-item type="radio" value="OR" ?checked=${current === 'OR'}
+          >or<span slot="description">this or everything above may match</span></ps-menu-item
+        >
+      </ps-menu>
+      <ps-menu
+        label="Actions for group"
+        placement="bottom-end"
+        .anchor=${this._groupTarget?.anchor ?? null}
+        .open=${this._groupMenuOpen}
+        @ps-select=${this._handleGroupMenuSelect}
+        @ps-close=${(e: Event) => {
+          e.stopPropagation();
+          this._groupMenuOpen = false;
+        }}
+      >
+        <ps-menu-item value="ungroup" ?disabled=${negated}>Ungroup</ps-menu-item>
+        <ps-menu-item value="remove">Remove group</ps-menu-item>
+      </ps-menu>
+    `;
+  }
+
+  private _findGroup(id: string): FilterGroup | null {
+    const find = (items: FilterQuery): FilterGroup | null => {
+      for (const item of items) {
+        if (!isFilterGroup(item)) continue;
+        if (item.id === id) return item;
+        const inner = find(item.conditions);
+        if (inner) return inner;
+      }
+      return null;
+    };
+    return find(this.query);
   }
 
   render() {
@@ -344,7 +513,7 @@ export class ProtspaceQueryBuilder extends LitElement {
             </div>`}
 
         <div class="query-conditions">
-          ${this.query.map((item, index) => this._renderItem(item, index, numbers))}
+          ${this._renderList(this.query, numbers)}
           <div class="query-actions">
             <ps-button class="add-condition" @click=${this._addCondition}
               ><span slot="start">${icon('plus', 16)}</span>Add condition</ps-button
@@ -354,6 +523,8 @@ export class ProtspaceQueryBuilder extends LitElement {
             >
           </div>
         </div>
+
+        ${this._renderMenus()}
 
         <div class="query-footer">
           <p class="match-count" role="status" aria-live="polite">

@@ -124,33 +124,106 @@ export const queryBuilderStyles = [
       margin-inline-end: auto;
     }
 
-    /* ── Groups ──────────────────────────────────────────────────────────── */
+    /* ── Joiners and groups ──────────────────────────────────────────────── */
+
+    /* "and ⌄" / "or ⌄" centred on a rule between two cards. */
+    .joiner {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-2);
+    }
+
+    .joiner::before,
+    .joiner::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--ps-border);
+    }
+
+    .joiner-pill::part(button) {
+      gap: var(--ps-space-1);
+      padding-inline: var(--ps-space-2) var(--ps-space-1-5);
+      background: var(--ps-surface-hover);
+      color: var(--ps-text);
+      font-weight: var(--ps-weight-medium);
+    }
+
+    .joiner-pill::part(button):hover {
+      background: var(--ps-border);
+    }
+
+    .joiner-pill [slot='end'] {
+      display: inline-flex;
+      color: var(--ps-text-muted);
+    }
+
+    .joiner-prompt {
+      display: flex;
+      flex-direction: column;
+      gap: var(--ps-space-2);
+      padding: var(--ps-space-2) var(--ps-space-3);
+      border: 1px solid var(--ps-border-strong);
+      border-radius: var(--ps-radius-lg);
+      background: var(--ps-surface-raised);
+    }
+
+    .joiner-prompt p {
+      margin: 0;
+      font-size: var(--ps-text-sm);
+    }
+
+    .joiner-prompt-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--ps-space-2);
+    }
+
+    /* A list that already mixes "and" and "or" says how it reads instead of being rewritten. */
+    .mixed-note {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--ps-space-1-5);
+      margin: 0;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+    }
+
+    .mixed-note svg {
+      flex: none;
+      margin-top: 1px;
+      color: var(--ps-warning);
+    }
 
     .group-container {
       display: flex;
       flex-direction: column;
       gap: var(--ps-space-2);
-      padding-left: var(--ps-space-2);
-      border-left: 3px solid var(--ps-border);
+      padding: var(--ps-space-2);
+      border: 1px solid var(--ps-border-strong);
+      border-radius: var(--ps-radius-lg);
+      background: var(--ps-surface-muted);
     }
 
     .group-header {
       display: flex;
       align-items: center;
       gap: var(--ps-space-2);
+      padding-inline-start: var(--ps-space-1);
     }
 
     .group-label {
-      flex: 1;
       color: var(--ps-text-muted);
       font-size: var(--ps-text-sm);
       font-weight: var(--ps-weight-semibold);
     }
 
-    .group-conditions {
-      display: flex;
-      flex-direction: column;
-      gap: var(--ps-space-2);
+    .group-menu-trigger {
+      margin-inline-start: auto;
+    }
+
+    .add-group-condition {
+      align-self: flex-start;
     }
 
     /* ── A condition row ─────────────────────────────────────────────────── */
@@ -203,23 +276,6 @@ export const queryBuilderStyles = [
       min-width: 0;
     }
 
-    /* Native selects: keyboard, mobile and screen-reader support for free. */
-    .logical-op-select {
-      box-sizing: border-box;
-      height: var(--ps-control-sm);
-      padding: 0 var(--ps-space-1);
-      border: 1px solid var(--ps-border-strong);
-      border-radius: var(--ps-radius);
-      background: var(--ps-surface);
-      color: var(--ps-text);
-      cursor: pointer;
-    }
-
-    .logical-op-select {
-      min-width: 4.5rem;
-      font-weight: var(--ps-weight-medium);
-    }
-
     /* The operator in words ("is any of ⌄"), which opens the operator menu. */
     .operator-pill {
       flex: none;
@@ -247,11 +303,6 @@ export const queryBuilderStyles = [
       margin-top: var(--ps-space-1);
       padding-top: var(--ps-space-1);
       border-top: 1px solid var(--ps-border);
-    }
-
-    .logical-op-placeholder {
-      flex: none;
-      width: 4.5rem;
     }
 
     /* The card's title: the annotation's name, which opens the annotation picker. */
@@ -296,11 +347,6 @@ export const queryBuilderStyles = [
 
     .annotation-select-trigger.is-empty:hover {
       border-color: var(--ps-border-control);
-    }
-
-    .logical-op-select:hover {
-      border-color: var(--ps-border-control);
-      background: var(--ps-surface-hover);
     }
 
     .dropdown-trigger-text,

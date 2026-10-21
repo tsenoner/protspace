@@ -11,7 +11,6 @@ import {
   operatorOf,
   operatorText,
   type ConditionOperator,
-  type Joiner,
 } from './query-operators';
 import { evaluateQuery } from './query-evaluate';
 import type { ProtspaceData } from './types';
@@ -41,7 +40,6 @@ import './query-numeric-input';
  * - `condition-duplicated` — Duplicate in the card's menu, detail: `{ id: string }`
  * - `operator-changed` — an operator picked in the operator menu, detail:
  *   `{ id: string, operator: ConditionOperator }`; the builder stores it (`setOperator`)
- * - `joiner-changed` — detail: `{ id: string, joiner: Joiner }`
  */
 /** Proteins with a value, per dataset and annotation, for the operator menu's counts. */
 const presenceCounts = new WeakMap<ProtspaceData, Map<string, number>>();
@@ -54,9 +52,6 @@ class ProtspaceQueryConditionRow extends LitElement {
   @property({ type: Array }) annotations: string[] = [];
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;
   @property({ type: Object }) matchedIndices: Set<number> = new Set();
-  @property({ type: Boolean }) isFirst: boolean = false;
-  /** How the card joins the cards before it; a first card has none. */
-  @property() joiner: Joiner | undefined = undefined;
   /** The condition's number in the builder (1-based, group leaves included); 0 shows none. */
   @property({ type: Number }) number = 0;
 
@@ -249,17 +244,6 @@ class ProtspaceQueryConditionRow extends LitElement {
     // would offer a categorical bin picker instead of the numeric range input.
     const isNumeric = isNumericAnnotation(this.data?.annotations?.[annotation]);
     this._dispatchChanged(isNumeric ? createNumericCondition(base) : createCondition(base));
-  }
-
-  private _handleJoinerChange(e: Event) {
-    const joiner = (e.target as HTMLSelectElement).value as Joiner;
-    this.dispatchEvent(
-      new CustomEvent('joiner-changed', {
-        detail: { id: this.condition.id, joiner },
-        bubbles: true,
-        composed: true,
-      }),
-    );
   }
 
   /** The operator the card shows: the stored one, or the comparison just picked (`_picked`). */
@@ -498,22 +482,6 @@ class ProtspaceQueryConditionRow extends LitElement {
     return text === 'Other' ? nothing : html`<span class="condition-badge">${text}</span>`;
   }
 
-  /** "and" / "or" before a card that is not first; "is none of" lives in the operator menu. */
-  private _renderJoinerSelect(label: string) {
-    if (this.isFirst) return nothing;
-    return html`
-      <select
-        class="logical-op-select"
-        aria-label=${label}
-        .value=${this.joiner ?? 'AND'}
-        @change=${this._handleJoinerChange}
-      >
-        <option value="AND">AND</option>
-        <option value="OR">OR</option>
-      </select>
-    `;
-  }
-
   /** What each operator does; the presence ones count the proteins they keep. */
   private _operatorDescription(operator: ConditionOperator): string {
     switch (operator) {
@@ -671,7 +639,6 @@ class ProtspaceQueryConditionRow extends LitElement {
         ${this._showAnnotationPicker ? this._renderAnnotationPicker() : nothing}
 
         <div class="condition-values ${this.condition.kind === 'numeric' ? '' : 'value-chips'}">
-          ${this._renderJoinerSelect(n > 0 ? `Joiner for condition ${n}` : 'Joiner')}
           ${annotation
             ? this._renderOperator(n > 0 ? `Operator for condition ${n}` : 'Operator')
             : nothing}

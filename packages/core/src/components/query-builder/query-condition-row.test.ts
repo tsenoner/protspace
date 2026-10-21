@@ -524,9 +524,6 @@ describe('query-condition-row names', () => {
     const root = el.shadowRoot!;
 
     expect(root.querySelector('.condition-row')!.getAttribute('aria-label')).toBe('Condition 2');
-    expect(root.querySelector('.logical-op-select')!.getAttribute('aria-label')).toBe(
-      'Joiner for condition 2',
-    );
     const menu = root.querySelector('ps-icon-button.condition-menu-trigger') as HTMLElement & {
       label: string;
     };
@@ -541,10 +538,9 @@ describe('query-condition-row first operator', () => {
     document.body.innerHTML = '';
   });
 
-  it('shows no joiner on a first card', async () => {
+  it('draws no joiner of its own: the builder puts one between cards', async () => {
     const el = await mount();
-    (el as ConditionRowEl & { isFirst: boolean }).isFirst = true;
     await el.updateComplete;
-    expect(el.shadowRoot!.querySelector('.logical-op-select')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.logical-op-select, .joiner-pill')).toBeNull();
   });
 });

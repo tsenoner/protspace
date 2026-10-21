@@ -52,13 +52,14 @@ describe('protspace-query-builder in a narrow panel', () => {
     expect(inner(apply).ariaDescribedByElements?.[0]).toBe(reason);
   });
 
-  it('the group ✕ is named Remove group; a card offers Remove in its ⋯ menu', async () => {
+  it('a group offers Remove group in its ⋯ menu; a card offers Remove in its own', async () => {
     const builder = await mount([createGroup()]);
-    const removeGroup = builder.shadowRoot!.querySelector<PsIconButton>(
-      '.group-header .condition-remove',
-    )!;
-    await removeGroup.updateComplete;
-    expect(inner(removeGroup).getAttribute('aria-label')).toBe('Remove group');
+    const groupMenu = builder.shadowRoot!.querySelector<PsIconButton>('.group-menu-trigger')!;
+    await groupMenu.updateComplete;
+    expect(inner(groupMenu).getAttribute('aria-label')).toBe('Actions for group');
+    expect(
+      builder.shadowRoot!.querySelector('ps-menu-item[value="remove"]')!.textContent!.trim(),
+    ).toBe('Remove group');
 
     const menuRow =
       rows(builder)[0].shadowRoot!.querySelector<PsIconButton>('.condition-menu-trigger')!;
