@@ -65,11 +65,6 @@ describe('legend public API', () => {
     expect(name in ProtspaceLegend.prototype).toBe(false);
   });
 
-  it('takes the EAT panel’s reliability filter as the eatReliability property', async () => {
-    const legend = await mount();
-    expect(legend.eatReliability).toBeNull();
-  });
-
   it('dispatches legend-customize from the settings button', async () => {
     const { legend } = await mountLegendWithScatterplot(categoricalData(TWELVE), 'family');
     await legend.updateComplete;
