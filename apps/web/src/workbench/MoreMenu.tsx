@@ -6,7 +6,6 @@ import { createPortal } from 'react-dom';
 import type { LayoutMode } from '../explore/layout-defaults';
 import { hasStructureSheet } from '../explore/layout-mode';
 import { MoreSheet } from './MoreSheet';
-import { usePlotFill } from './use-layout';
 import { useWorkbenchStatus } from './use-workbench-status';
 import type { ViewBarStage } from './view-bar-overflow';
 
@@ -33,17 +32,15 @@ export function MoreMenu({ stage, mode }: { stage: ViewBarStage; mode: LayoutMod
   const trigger = useRef<HTMLElement>(null);
   const menu = useRef<PsMenu>(null);
   const { densityLayer, appliedFilterConditions } = useWorkbenchStatus();
-  const plotFill = usePlotFill();
   const sheet = hasStructureSheet(mode);
   const [sheetWanted, setSheetWanted] = useState(false);
   const sheetOpen = sheet && sheetWanted;
-  // The sheet holds Contours, Fill and Filter at every width.
+  // The sheet holds Contours and Filter at every width.
   const contoursInside = sheet || stage >= 2;
   const filterInside = sheet || stage === 3;
   const active =
     (contoursInside && densityLayer !== 'off' ? 1 : 0) +
-    (filterInside && appliedFilterConditions > 0 ? 1 : 0) +
-    (sheet && plotFill ? 1 : 0);
+    (filterInside && appliedFilterConditions > 0 ? 1 : 0);
 
   useEffect(() => {
     if (sheet) return;

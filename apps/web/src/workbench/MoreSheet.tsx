@@ -3,7 +3,6 @@ import type {
   ProtspaceExportMenu,
   ProtspaceImportMenu,
   PsDialog,
-  PsSwitch,
 } from '@protspace/core';
 import {
   countNoun,
@@ -16,7 +15,6 @@ import {
   ChevronRight,
   CircleHelp,
   Download,
-  Expand,
   Filter,
   Layers,
   MessageSquare,
@@ -26,12 +24,11 @@ import {
 import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { FEEDBACK_HREF } from '@/lib/support';
-import { focusFilterTitle, openPanel, updateLayout } from '../explore/layout-state';
+import { focusFilterTitle, openPanel } from '../explore/layout-state';
 import { THEME_CHOICES, THEME_LABELS, type ThemeChoice } from '../explore/theme-defaults';
 import { setTheme } from '../explore/theme-state';
 import { openDocumentation, takeTheTour } from './help-actions';
 import { ShortcutsDialog } from './ShortcutsDialog';
-import { usePlotFill } from './use-layout';
 import { useTheme } from './use-theme';
 import { useWorkbenchStatus } from './use-workbench-status';
 
@@ -57,7 +54,7 @@ interface MoreSheetProps {
 /**
  * The More sheet (design decision 17): on a phone, everything the two bars leave out, in a bottom
  * sheet (ps-dialog size="sheet": top layer, scrim, focus kept inside; Escape and a backdrop press
- * close it and focus returns to More). Contours, Fill and Theme apply in place and keep the sheet open. Every
+ * close it and focus returns to More). Contours and Theme apply in place and keep the sheet open. Every
  * other row closes the sheet first and then acts, so what it opens (a menu, a dialog, the Filter
  * panel) is never a second layer under a closing one. The Export and Import menus open from More
  * and the dataset name, since their own buttons are hidden on a phone; Help & shortcuts unfolds
@@ -67,8 +64,6 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
   const dialog = useRef<PsDialog>(null);
   const contours = useRef<HTMLElement>(null);
   const themeControl = useRef<HTMLElement>(null);
-  const fillSwitch = useRef<PsSwitch>(null);
-  const plotFill = usePlotFill();
   const { densityLayer, appliedFilterConditions } = useWorkbenchStatus();
   // Not part of the More dot, which marks only what changes the view (Contours, a filter).
   const theme = useTheme();
@@ -99,15 +94,6 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
       const mode = (event as CustomEvent<{ value: DensityLayerMode }>).detail.value;
       (document.getElementById('myContoursMenu') as ProtspaceContoursMenu | null)?.pick(mode);
     };
-    element.addEventListener('change', onChange);
-    return () => element.removeEventListener('change', onChange);
-  }, []);
-
-  // Fill applies at once, like Contours: the sheet stays open.
-  useEffect(() => {
-    const element = fillSwitch.current;
-    if (!element) return;
-    const onChange = () => updateLayout({ plotFill: element.checked });
     element.addEventListener('change', onChange);
     return () => element.removeEventListener('change', onChange);
   }, []);
@@ -161,14 +147,6 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
               options={CONTOUR_OPTIONS}
               value={densityLayer}
             ></ps-segmented>
-          </div>
-          <div className="wb-sheet-row wb-sheet-row-static">
-            <Expand className="wb-sheet-icon" {...ICON} />
-            {/* The switch carries the name; the words are for the eye. */}
-            <span className="wb-sheet-label" aria-hidden="true">
-              Fill the plot area
-            </span>
-            <ps-switch ref={fillSwitch} label="Fill the plot area" checked={plotFill}></ps-switch>
           </div>
           <button type="button" className="wb-sheet-row" onClick={showFilter}>
             <Filter className="wb-sheet-icon" {...ICON} />

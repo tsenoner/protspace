@@ -6,8 +6,3 @@ import { getLayout, subscribeLayout } from '../explore/layout-state';
 export function useLayout(): LayoutState {
   return useSyncExternalStore(subscribeLayout, getLayout);
 }
-
-/** The view bar's Fill switch; re-renders only when it flips, not on every layout change. */
-export function usePlotFill(): boolean {
-  return useSyncExternalStore(subscribeLayout, () => getLayout().plotFill);
-}

@@ -430,7 +430,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       touchDarkSource(),
     ),
   );
-  // The view bar's Fill switch lives in the layout (design decision 10).
+  // The plot always fills its area, each axis stretched (design decision 10).
   lifecycle.addCleanup(bindPlotFill(plotElement));
 
   // The Filter panel counts only while it is on screen: open on the desktop sidebar's Filter

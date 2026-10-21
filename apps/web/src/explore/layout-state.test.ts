@@ -59,7 +59,6 @@ describe('layout store', () => {
       panel: 'filter',
       panelFolded: true,
       structureHidden: true,
-      plotFill: true,
     };
     updateLayout(layout);
     resetLayoutForTests();
