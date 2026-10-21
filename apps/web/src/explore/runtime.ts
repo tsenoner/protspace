@@ -521,6 +521,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     isPanelShown: () =>
       getWorkbenchStatus().eatAvailability.kind !== 'dataset' && isPanelShown('eat'),
     subscribePanel,
+    pickAnnotation: (annotation) => viewBarController.applyAnnotationSelection(annotation),
   });
   lifecycle.addCleanup(() => eatPanelController.dispose());
   const statusController = createStatusController({

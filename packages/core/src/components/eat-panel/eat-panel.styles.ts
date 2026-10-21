@@ -16,7 +16,10 @@ const handleThumb = css`
   pointer-events: auto;
 `;
 
-/** The EAT panel (proposal B §4.1–4.4): header, Show switch, overview, reliability histogram. */
+/**
+ * The EAT panel (proposal B §4.2–4.7): Show switch, overview, reliability histogram, per-label
+ * breakdown, other annotations.
+ */
 export const eatPanelStyles = [
   kitHost,
   focusRing,
@@ -252,6 +255,141 @@ export const eatPanelStyles = [
       font-size: var(--ps-text-xs);
       font-variant-numeric: tabular-nums;
       color: var(--ps-text-faint);
+    }
+
+    .eat-breakdown {
+      display: grid;
+      gap: var(--ps-space-1);
+    }
+
+    .eat-breakdown-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--ps-space-2);
+    }
+
+    .eat-label-list,
+    .eat-color-by-list {
+      display: grid;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    /* swatch · name · bar · total · share */
+    .eat-label-row {
+      display: grid;
+      grid-template-columns: 10px minmax(0, 1fr) 30% auto 2.6rem;
+      align-items: center;
+      gap: var(--ps-space-1-5);
+      width: 100%;
+      padding: var(--ps-space-1) var(--ps-space-1);
+      border: none;
+      border-radius: var(--ps-radius-sm);
+      background: none;
+      color: var(--ps-text);
+      font: inherit;
+      font-size: var(--ps-text-xs);
+      font-variant-numeric: tabular-nums;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .eat-label-row:hover,
+    .eat-color-by:hover,
+    .eat-show-all:hover {
+      background: var(--ps-surface-hover);
+    }
+
+    .eat-swatch {
+      width: 10px;
+      height: 10px;
+      box-sizing: border-box;
+      border: 1px solid var(--ps-swatch-stroke);
+      border-radius: 50%;
+    }
+
+    .eat-label-name {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .eat-label-track {
+      display: flex;
+      height: 6px;
+    }
+
+    .eat-label-bar {
+      display: flex;
+      height: 100%;
+      overflow: hidden;
+      border-radius: var(--ps-radius-full);
+    }
+
+    .eat-label-total,
+    .eat-label-share {
+      text-align: right;
+    }
+
+    .eat-label-share {
+      color: var(--ps-text-muted);
+    }
+
+    /* Mostly borrowed: more than 80 % of the label's members are predictions. */
+    .eat-label-share.is-mostly-predicted {
+      color: var(--ps-warning);
+      font-weight: var(--ps-weight-semibold);
+    }
+
+    .eat-show-all,
+    .eat-color-by,
+    .eat-others summary {
+      padding: var(--ps-space-1);
+      border: none;
+      border-radius: var(--ps-radius-sm);
+      background: none;
+      font: inherit;
+      font-size: var(--ps-text-xs);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .eat-show-all {
+      justify-self: start;
+      color: var(--ps-accent-text);
+    }
+
+    .eat-others summary {
+      color: var(--ps-text-muted);
+      font-weight: var(--ps-weight-semibold);
+    }
+
+    .eat-color-by {
+      display: flex;
+      align-items: baseline;
+      gap: var(--ps-space-1-5);
+      width: 100%;
+      color: var(--ps-text);
+    }
+
+    .eat-color-by-name {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .eat-color-by-share {
+      color: var(--ps-text-muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .eat-chevron {
+      margin-left: auto;
+      color: var(--ps-text-muted);
     }
   `,
 ];

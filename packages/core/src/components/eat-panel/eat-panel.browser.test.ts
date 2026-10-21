@@ -1,6 +1,12 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
-import { annotationLabel, DEFAULT_EAT_RELIABILITY } from '@protspace/utils';
+import {
+  annotationLabel,
+  DEFAULT_EAT_RELIABILITY,
+  NA_VALUE,
+  type PredictedCell,
+  type VisualizationData,
+} from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { PsSwitch } from '../kit/switch';
 import type { EatOverlayChangeDetail } from './eat-reliability-controller';
@@ -25,7 +31,9 @@ afterEach(() => {
 });
 
 async function mount(
-  props: Partial<Pick<ProtspaceEatPanel, 'data' | 'annotation' | 'context' | 'active'>> = {},
+  props: Partial<
+    Pick<ProtspaceEatPanel, 'data' | 'annotation' | 'context' | 'active' | 'labelColors'>
+  > = {},
 ): Promise<ProtspaceEatPanel> {
   const el = document.createElement('protspace-eat-panel');
   Object.assign(el, { data: createEatFixture(), annotation: 'toxin', active: true, ...props });
@@ -48,6 +56,71 @@ const handle = (el: ProtspaceEatPanel) =>
 /** Mask of the fixture's proteins without the excluded ids. */
 const mask = (excluded: string[]) =>
   Uint8Array.from(EAT_FIXTURE_IDS, (id) => (excluded.includes(id) ? 0 : 1));
+
+const categorical = (values: (string | null)[]) => ({
+  kind: 'categorical' as const,
+  values,
+  colors: values.map(() => '#888'),
+  shapes: values.map(() => 'circle'),
+});
+
+/**
+ * One annotation `cls` whose labels have `curated` curated members and one predicted member per
+ * listed reliability.
+ */
+function labelData(spec: { label: string; curated: number; predicted: number[] }[]) {
+  const values = [...spec.map((s) => s.label), NA_VALUE];
+  const na = values.length - 1;
+  const rows: number[] = [];
+  const cells: (PredictedCell | null)[] = [];
+  spec.forEach(({ label, curated, predicted }, labelIndex) => {
+    for (let i = 0; i < curated; i++) {
+      rows.push(labelIndex);
+      cells.push(null);
+    }
+    for (const confidence of predicted) {
+      rows.push(na);
+      cells.push({ value: label, confidence, source: 'S' });
+    }
+  });
+  const ids = rows.map((_, i) => `Q${i}`);
+  const data: VisualizationData = {
+    protein_ids: ids,
+    projections: [{ name: 'umap', dimension: 2, data: new Float32Array(ids.length * 2) }],
+    annotations: { cls: categorical(values) },
+    annotation_data: { cls: Int32Array.from(rows) },
+    annotation_predicted: { cls: cells },
+  };
+  return data;
+}
+
+/** The fixture plus `kind` (2 curated X, 1 predicted X) and a `toxin__neighbor` column. */
+function fixtureWithOthers(): VisualizationData {
+  const data = createEatFixture();
+  const n = EAT_FIXTURE_IDS.length;
+  const kindRows = new Int32Array(n).fill(1);
+  kindRows[0] = 0;
+  kindRows[1] = 0;
+  const kindCells: (PredictedCell | null)[] = new Array(n).fill(null);
+  kindCells[2] = { value: 'X', confidence: 0.4, source: 'P0', sourceIndex: 0 };
+  data.annotations.kind = categorical(['X', NA_VALUE]);
+  data.annotations.toxin__neighbor = categorical(['near', 'distant']);
+  data.annotation_data.kind = kindRows;
+  data.annotation_data.toxin__neighbor = new Int32Array(n).fill(0);
+  data.annotation_predicted = { ...data.annotation_predicted, kind: kindCells };
+  return data;
+}
+
+const labelNames = (el: ProtspaceEatPanel) =>
+  [...root(el).querySelectorAll<HTMLElement>('.eat-label-row')].map((row) => row.dataset.label);
+
+function listenColorBy(el: ProtspaceEatPanel): string[] {
+  const picked: string[] = [];
+  el.addEventListener('eat-color-by', (event) =>
+    picked.push((event as CustomEvent<{ annotation: string }>).detail.annotation),
+  );
+  return picked;
+}
 
 function listen(el: ProtspaceEatPanel): EatOverlayChangeDetail[] {
   const details: EatOverlayChangeDetail[] = [];
@@ -221,5 +294,128 @@ describe('protspace-eat-panel', () => {
     expect(bars(el).every((bar) => bar.disabled)).toBe(true);
     expect(handle(el).disabled).toBe(true);
     expect(getEatIndex).not.toHaveBeenCalled();
+  });
+  describe('By label', () => {
+    const SPEC = [
+      { label: 'A', curated: 1, predicted: [0.9, 0.9, 0.9] },
+      { label: 'B', curated: 0, predicted: [0.2, 0.3, 0.4, 0.5, 0.6] },
+      { label: 'C', curated: 5, predicted: [0.1] },
+      { label: 'D', curated: 2, predicted: [] },
+    ];
+
+    it('sorts by most predicted, least reliable and name', async () => {
+      const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
+      expect(labelNames(el)).toEqual(['B', 'A', 'C', 'D']);
+      const select = root(el).querySelector<HTMLElement & { value: string }>('ps-select')!;
+      for (const [sort, order] of [
+        ['least-reliable', ['C', 'B', 'A', 'D']],
+        ['name', ['A', 'B', 'C', 'D']],
+      ] as const) {
+        select.value = sort;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        await el.updateComplete;
+        expect(labelNames(el)).toEqual(order);
+      }
+    });
+
+    it('shows total and predicted share, amber above 80 %, as buttons for the drill-down', async () => {
+      const el = await mount({
+        data: labelData(SPEC),
+        annotation: 'cls',
+        labelColors: new Map([
+          ['B', 'rgb(255, 0, 0)'],
+          ['Other', 'rgb(0, 0, 255)'],
+        ]),
+      });
+      const row = (label: string) =>
+        root(el).querySelector<HTMLButtonElement>(`.eat-label-row[data-label="${label}"]`)!;
+      expect(row('B').getAttribute('aria-expanded')).toBe('false');
+      expect(row('B').querySelector('.eat-label-total')!.textContent).toBe('5');
+      expect(row('B').querySelector('.eat-label-share')!.textContent).toBe(`100${PCT}`);
+      expect(row('B').querySelector('.eat-label-share')!.classList).toContain(
+        'is-mostly-predicted',
+      );
+      expect(row('A').querySelector('.eat-label-share')!.textContent).toBe(`75${PCT}`);
+      expect(row('A').querySelector('.eat-label-share')!.classList).not.toContain(
+        'is-mostly-predicted',
+      );
+      const swatch = row('B').querySelector<HTMLElement>('.eat-swatch')!;
+      expect(getComputedStyle(swatch).backgroundColor).toBe('rgb(255, 0, 0)');
+      // A label in the legend's Other bucket takes Other's colour.
+      const folded = row('A').querySelector<HTMLElement>('.eat-swatch')!;
+      expect(getComputedStyle(folded).backgroundColor).toBe('rgb(0, 0, 255)');
+      // Bars are relative to the largest label (C, 6 members).
+      const width = (label: string) =>
+        row(label).querySelector<HTMLElement>('.eat-label-bar')!.style.width;
+      expect(width('C')).toBe('100%');
+      expect(width('A')).toBe('66.67%');
+    });
+
+    it('shows 8 rows, then Show all', async () => {
+      const spec = Array.from({ length: 10 }, (_, i) => ({
+        label: `L${i}`,
+        curated: 1,
+        predicted: [0.5],
+      }));
+      const el = await mount({ data: labelData(spec), annotation: 'cls' });
+      expect(labelNames(el)).toHaveLength(8);
+      const showAll = root(el).querySelector<HTMLButtonElement>('.eat-show-all')!;
+      expect(showAll.textContent!.trim()).toBe('Show all 10 labels');
+      showAll.click();
+      await el.updateComplete;
+      expect(labelNames(el)).toHaveLength(10);
+      expect(root(el).querySelector('.eat-show-all')).toBeNull();
+    });
+  });
+
+  describe('other annotations', () => {
+    it('lists other EAT annotations once opened, and each row emits eat-color-by', async () => {
+      const el = await mount({ data: fixtureWithOthers() });
+      const picked = listenColorBy(el);
+      const details = root(el).querySelector<HTMLDetailsElement>('.eat-others')!;
+      expect(text(el, '.eat-others summary')).toBe('Other annotations with predictions (1)');
+      expect(details.open).toBe(false);
+      // Collapsed: the other annotation's index is not built.
+      expect(vi.mocked(getEatIndex).mock.calls.map(([, key]) => key)).toEqual(['toxin']);
+
+      root(el).querySelector<HTMLElement>('.eat-others summary')!.click();
+      await new Promise((resolve) => details.addEventListener('toggle', resolve, { once: true }));
+      await el.updateComplete;
+      const row = root(el).querySelector<HTMLButtonElement>('.eat-others .eat-color-by')!;
+      expect(row.textContent!.replace(/[ \t\r\n]+/g, ' ').trim()).toBe(
+        `${annotationLabel('kind')} · 33${PCT} predicted ›`,
+      );
+      row.click();
+      expect(picked).toEqual(['kind']);
+    });
+
+    it('links the EAT neighbourhood column', async () => {
+      const el = await mount({ data: fixtureWithOthers() });
+      const picked = listenColorBy(el);
+      const link = root(el).querySelector<HTMLButtonElement>('.eat-neighbour')!;
+      expect(link.getAttribute('aria-label')).toBe(
+        `Color by ${annotationLabel('toxin__neighbor')}`,
+      );
+      expect(link.textContent).toContain('EAT neighbourhood');
+      link.click();
+      expect(picked).toEqual(['toxin__neighbor']);
+    });
+
+    it('draws neither without other EAT annotations or a neighbourhood column', async () => {
+      const el = await mount();
+      expect(root(el).querySelector('.eat-others, .eat-neighbour')).toBeNull();
+    });
+  });
+
+  it('lists the annotations with predictions as Color by buttons in the empty state', async () => {
+    const el = await mount({ data: fixtureWithOthers(), annotation: 'family' });
+    const picked = listenColorBy(el);
+    const buttons = [...root(el).querySelectorAll<HTMLButtonElement>('.eat-color-by')];
+    expect(buttons.map((b) => b.textContent!.replace(/[ \t\r\n]+/g, ' ').trim())).toEqual([
+      `Color by ${annotationLabel('toxin')} 56${PCT} ›`,
+      `Color by ${annotationLabel('kind')} 33${PCT} ›`,
+    ]);
+    buttons[1].click();
+    expect(picked).toEqual(['kind']);
   });
 });

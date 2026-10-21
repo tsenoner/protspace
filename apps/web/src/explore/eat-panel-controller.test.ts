@@ -52,6 +52,7 @@ function setup(shown: { value: boolean }) {
     data: null as VisualizationData | null,
     annotation: '',
     context: null as Uint8Array | null,
+    labelColors: new Map<string, string>() as ReadonlyMap<string, string>,
     active: false,
     reliability: DEFAULT_EAT_RELIABILITY as EatReliabilityState,
     isAtDefaults: true,
@@ -64,6 +65,7 @@ function setup(shown: { value: boolean }) {
     reset: vi.fn(),
   });
   const legend = { eatReliability: null as EatReliabilityState | null };
+  const pickAnnotation = vi.fn();
   const filter = {
     mask: null as Uint8Array | null,
     setEatReliability: vi.fn(),
@@ -81,6 +83,7 @@ function setup(shown: { value: boolean }) {
       panelListeners.add(listener);
       return () => panelListeners.delete(listener);
     },
+    pickAnnotation,
   });
   const layoutChanged = () => panelListeners.forEach((listener) => listener());
   /** The panel's own controls moved: its state changes, then it emits. */
@@ -103,6 +106,7 @@ function setup(shown: { value: boolean }) {
     layoutChanged,
     panelListeners,
     emit,
+    pickAnnotation,
   };
 }
 
@@ -222,5 +226,33 @@ describe('createEatPanelController', () => {
     controller.dispose();
     emit(true, { mode: 'atLeast', min: 0.3, max: 1 });
     expect(filter.setEatReliability).not.toHaveBeenCalled();
+  });
+
+  it('gives the panel the colours of each legend colour mapping', () => {
+    const { plot, panel } = setup({ value: false });
+    const recolour = (colorMapping: Record<string, string>) =>
+      plot.dispatchEvent(
+        new CustomEvent('legend-colormapping-change', {
+          detail: { colorMapping, shapeMapping: {}, colorOnly: false },
+        }),
+      );
+    recolour({ '1.1.1.1': '#f00' });
+    expect([...panel.labelColors]).toEqual([['1.1.1.1', '#f00']]);
+    const first = panel.labelColors;
+    recolour({ '1.1.1.1': '#f00' });
+    expect(panel.labelColors).toBe(first);
+    recolour({ '1.1.1.1': '#00f' });
+    expect([...panel.labelColors]).toEqual([['1.1.1.1', '#00f']]);
+  });
+
+  it('switches Color by on the panel’s eat-color-by, until disposed', () => {
+    const { panel, controller, pickAnnotation } = setup({ value: true });
+    const colorBy = (annotation: string) =>
+      panel.dispatchEvent(new CustomEvent('eat-color-by', { detail: { annotation } }));
+    colorBy('family');
+    expect(pickAnnotation).toHaveBeenCalledWith('family');
+    controller.dispose();
+    colorBy('ec');
+    expect(pickAnnotation).toHaveBeenCalledTimes(1);
   });
 });

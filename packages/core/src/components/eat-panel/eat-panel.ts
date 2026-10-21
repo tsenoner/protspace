@@ -1,5 +1,5 @@
 import { LitElement, html, nothing, type TemplateResult } from 'lit';
-import { property } from 'lit/decorators.js';
+import { property, state } from 'lit/decorators.js';
 import {
   annotationLabel,
   DEFAULT_EAT_RELIABILITY,
@@ -12,6 +12,12 @@ import {
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/switch';
 import { formatPercent } from '../query-builder/eat-reliability';
+import {
+  renderBreakdown,
+  renderEmptyColorBy,
+  renderOtherAnnotations,
+  type EatLabelSort,
+} from './eat-panel-breakdown';
 import { renderReliability } from './eat-panel-histogram';
 import { eatPanelStyles } from './eat-panel.styles';
 import {
@@ -35,6 +41,8 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  *
  * @fires eat-overlay-change - `EatOverlayChangeDetail`: the Show switch or the reliability filter
  *   changed (a handle drag commits after `EAT_THRESHOLD_COMMIT_DELAY_MS`).
+ * @fires eat-color-by - `{ annotation }`: switch Color by to another annotation with predictions,
+ *   or to this one's EAT neighbourhood column.
  */
 @customElement('protspace-eat-panel')
 export class ProtspaceEatPanel extends LitElement {
@@ -46,8 +54,14 @@ export class ProtspaceEatPanel extends LitElement {
   @property({ type: String }) annotation = '';
   /** Proteins that pass every other filter condition (Decision 9); null = every protein. */
   @property({ attribute: false }) context: Uint8Array | null = null;
+  /** Label → swatch colour, as the legend draws it. */
+  @property({ attribute: false }) labelColors: ReadonlyMap<string, string> = new Map();
   /** Whether the panel is shown. It computes only while true. */
   @property({ type: Boolean }) active = false;
+
+  @state() private _labelSort: EatLabelSort = 'most-predicted';
+  @state() private _showAllLabels = false;
+  @state() private _othersOpen = false;
 
   private readonly _eat = new EatReliabilityController(this, {
     emit: (detail) =>
@@ -115,6 +129,7 @@ export class ProtspaceEatPanel extends LitElement {
       this._indexAnnotation = this.annotation;
       this._index = this.data ? getEatIndex(this.data, this.annotation) : null;
       this._summary = null;
+      this._showAllLabels = false;
     }
     if (!this._index) {
       this._summary = null;
@@ -138,7 +153,8 @@ export class ProtspaceEatPanel extends LitElement {
     if (!this.active) return nothing;
     if (this.data && !this._index) {
       const label = annotationLabel(this.annotation, this.data.annotations[this.annotation]);
-      return html`<p class="eat-empty">${label} has no predicted values.</p>`;
+      return html`<p class="eat-empty">${label} has no predicted values.</p>
+        ${renderEmptyColorBy(this.data, this.annotation, this._colorBy)}`;
     }
     const summary = this._summary;
     return html`<ps-switch
@@ -148,8 +164,34 @@ export class ProtspaceEatPanel extends LitElement {
         @change=${this._eat.onToggle}
         >Show predictions</ps-switch
       >
-      ${this._renderOverview(summary)} ${renderReliability(this._eat, summary)}`;
+      ${this._renderOverview(summary)} ${renderReliability(this._eat, summary)}
+      ${summary
+        ? renderBreakdown({
+            rows: summary.rows,
+            sort: this._labelSort,
+            showAll: this._showAllLabels,
+            labelColors: this.labelColors,
+            off: !this._eat.overlayEnabled,
+            onSort: (sort) => (this._labelSort = sort),
+            onShowAll: () => (this._showAllLabels = true),
+          })
+        : nothing}
+      ${this.data
+        ? renderOtherAnnotations({
+            data: this.data,
+            annotation: this.annotation,
+            open: this._othersOpen,
+            onToggle: (open) => (this._othersOpen = open),
+            onColorBy: this._colorBy,
+          })
+        : nothing}`;
   }
+
+  private readonly _colorBy = (annotation: string) => {
+    this.dispatchEvent(
+      new CustomEvent('eat-color-by', { detail: { annotation }, bubbles: true, composed: true }),
+    );
+  };
 
   /** The stacked bar and its numbers (proposal B §4.3). `summary` null is the skeleton. */
   private _renderOverview(summary: EatSummary | null): TemplateResult {

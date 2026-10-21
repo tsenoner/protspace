@@ -32,6 +32,12 @@ export function eatAvailabilityFor(
   };
 }
 
+function sameColors(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [label, color] of a) if (b.get(label) !== color) return false;
+  return true;
+}
+
 interface EatPanelController {
   resetForNewDataset(): void;
   dispose(): void;
@@ -46,7 +52,8 @@ interface EatPanelController {
  * The panel's `eat-overlay-change` reaches the plot (Show) and the filter (the one reliability
  * condition); the legend's EAT note follows the panel's reliability filter. A locked Filter row's ✕
  * (`eat-reliability-reset`) resets the panel, or, for a base the panel does not show, that base's
- * condition alone.
+ * condition alone. The breakdown's swatches follow the legend's colours, and the panel's
+ * `eat-color-by` switches Color by through `pickAnnotation`.
  */
 export function createEatPanelController({
   eatPanel,
@@ -56,12 +63,14 @@ export function createEatPanelController({
   root,
   isPanelShown,
   subscribePanel,
+  pickAnnotation,
 }: {
   eatPanel: Pick<
     ProtspaceEatPanel,
     | 'data'
     | 'annotation'
     | 'context'
+    | 'labelColors'
     | 'active'
     | 'reliability'
     | 'isAtDefaults'
@@ -79,6 +88,8 @@ export function createEatPanelController({
   root: Pick<Document, 'addEventListener' | 'removeEventListener'>;
   isPanelShown(): boolean;
   subscribePanel(listener: () => void): () => void;
+  /** Make `annotation` the Color by annotation, as a pick in the view bar does. */
+  pickAnnotation(annotation: string): void;
 }): EatPanelController {
   /**
    * The context follows the applied filter while the panel is on screen; a hidden panel asks for
@@ -125,6 +136,21 @@ export function createEatPanelController({
     syncActive();
   };
 
+  /**
+   * The legend hands the plot its colour per label with every recolour. The event carries the
+   * new mapping; the legend's own item list may not have caught up when it fires.
+   */
+  const syncColors = (event: Event) => {
+    const { colorMapping } = (event as CustomEvent<{ colorMapping: Record<string, string> }>)
+      .detail;
+    const colors = new Map(Object.entries(colorMapping));
+    if (!sameColors(eatPanel.labelColors, colors)) eatPanel.labelColors = colors;
+  };
+
+  const onColorBy = (event: Event) => {
+    pickAnnotation((event as CustomEvent<{ annotation: string }>).detail.annotation);
+  };
+
   const onOverlayChange = (event: Event) => {
     const { enabled, reliability } = (event as CustomEvent<EatOverlayChangeDetail>).detail;
     if (plotElement.eatOverlayEnabled !== enabled) plotElement.eatOverlayEnabled = enabled;
@@ -140,9 +166,11 @@ export function createEatPanelController({
   };
 
   plotElement.addEventListener('data-change', syncData);
+  plotElement.addEventListener('legend-colormapping-change', syncColors);
   root.addEventListener('annotation-change', syncData);
   root.addEventListener('eat-reliability-reset', onReliabilityReset);
   eatPanel.addEventListener('eat-overlay-change', onOverlayChange);
+  eatPanel.addEventListener('eat-color-by', onColorBy);
   const unsubscribePanel = subscribePanel(syncActive);
   syncData();
 
@@ -153,9 +181,11 @@ export function createEatPanelController({
     },
     dispose() {
       plotElement.removeEventListener('data-change', syncData);
+      plotElement.removeEventListener('legend-colormapping-change', syncColors);
       root.removeEventListener('annotation-change', syncData);
       root.removeEventListener('eat-reliability-reset', onReliabilityReset);
       eatPanel.removeEventListener('eat-overlay-change', onOverlayChange);
+      eatPanel.removeEventListener('eat-color-by', onColorBy);
       unsubscribePanel();
     },
   };
