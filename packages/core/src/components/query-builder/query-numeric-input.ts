@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
-import { annotationLabel, formatCount } from '@protspace/utils';
+import { annotationLabel, countNoun } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
 import type { NumericCondition } from './query-types';
@@ -268,9 +268,10 @@ class ProtspaceQueryNumericInput extends LitElement {
     if (this._countStale && this._matchCount !== null)
       return html`<span class="numeric-match-count" aria-busy="true">…</span>`;
     if (this._matchCount === null) return nothing;
+    // Named, so it is not read as the data's maximum next to the typed bounds.
     return html`<span class="numeric-match-count" title="Proteins this condition keeps"
-      >${formatCount(this._matchCount)}<span class="sr-only">
-        ${this._matchCount === 1 ? 'protein matches' : 'proteins match'}</span
+      >${countNoun(this._matchCount, 'protein', 'proteins')}<span class="sr-only">
+        ${this._matchCount === 1 ? 'matches' : 'match'}</span
       ></span
     >`;
   }

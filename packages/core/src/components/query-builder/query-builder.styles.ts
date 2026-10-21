@@ -945,8 +945,26 @@ export const queryBuilderStyles = [
 
     .value-picker-bar b {
       display: block;
+      min-width: 2px;
       height: 100%;
-      background: var(--ps-border-strong);
+      /* Not a border tone: a share of a few percent must still read against the track. */
+      background: var(--ps-text-faint);
+    }
+
+    /* "Any value" keeps the column, so its count lines up with the others, but draws no bar. */
+    .value-picker-bar.is-blank {
+      visibility: hidden;
+    }
+
+    /* The rule between "Any value" / N/A and the values themselves. */
+    .value-picker-item.has-divider::after {
+      position: absolute;
+      right: var(--ps-space-3);
+      bottom: 0;
+      left: var(--ps-space-2);
+      height: 1px;
+      background: var(--ps-border);
+      content: '';
     }
 
     .is-checked .value-picker-bar b {

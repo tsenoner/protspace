@@ -193,6 +193,12 @@ export class ProtspaceQueryBuilder extends LitElement {
       for (const leaf of leafConditions(query)) {
         map.set(leaf.id, evaluateQueryExcluding(query, this.data, leaf.id));
       }
+      // The first card of an "or" list adds proteins from anywhere, as the cards after it do:
+      // its values count over the whole dataset, not inside what the other cards match.
+      const first = query.length > 1 ? cardOf(query[0], true) : null;
+      if (first && itemJoiner(query[1], 1) === 'OR') {
+        map.set(first.condition.id, new Set(this.data.protein_ids?.keys() ?? []));
+      }
       this._excludedMatchMap = map;
       this._counting = false;
     }, 300);

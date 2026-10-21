@@ -15,14 +15,11 @@ import '../kit/popover';
 import '../kit/button';
 import '../kit/segmented';
 
-/**
- * One dataset walk's worth of tallies: the per-value counts plus the two
- * per-protein aggregates the NOT preview needs (see `_buildCountMap`).
- */
+/** One walk over the proteins a condition's values are counted among (see `_buildCountMap`). */
 interface CountMapResult {
   counts: Map<string, number>;
-  anyCount: number;
-  mixedNaCount: number;
+  /** How many proteins were walked: the base every count is a share of. */
+  size: number;
   /** Some protein carries more than one value, so per-value counts overlap. */
   multiLabel: boolean;
 }
@@ -50,12 +47,19 @@ const OVERSCAN = 8;
 /** More than the list's tallest box, so the drawn window always covers it. */
 const VIEWPORT = 480;
 
+const isSentinel = (value: string) => value === ANY_VALUE || isNAValue(value);
+const isSentinelLine = (line: Line | undefined) =>
+  !!line && 'entry' in line && isSentinel(line.entry.value);
+const isValueLine = (line: Line | undefined) =>
+  !!line && 'entry' in line && !isSentinel(line.entry.value);
+
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 /**
  * The checkbox value list for a categorical condition, in a popover anchored to the card's
  * "+ value" button: search, Count / A–Z sort, Select all / Clear for the search, the selected
- * values first, a count and share bar per value. Rows are virtualised.
+ * values first, each value's count with a bar for its share of the proteins counted (see
+ * `_buildCountMap`). Rows are virtualised.
  *
  * Events:
  * - `value-selected` — a value was ticked, detail: `{ value: string }`
@@ -92,18 +96,14 @@ class ProtspaceQueryValuePicker extends LitElement {
   @litQuery('ps-popover') private _popoverEl?: PsPopover;
 
   /**
-   * Memoized count maps. `_buildCountMap` walks the entire dataset (twice under
-   * OR), and render runs on every keystroke and scroll. Invalidated in
+   * Memoized count map. `_buildCountMap` walks up to the entire dataset, and render runs on every keystroke and scroll. Invalidated in
    * `willUpdate` from the inputs the counts actually depend on; `matchedIndices`
    * is compared by reference, which holds because the query builder hands down a
    * freshly built Set on every evaluation rather than mutating one in place.
    */
-  private _countCache: {
-    excluded: CountMapResult;
-    full: CountMapResult | undefined;
-  } | null = null;
+  private _countCache: CountMapResult | null = null;
   /** Every value with its count, sorted; rebuilt with the counts or the sort. */
-  private _entryCache: { entries: Entry[]; max: number; real: number } | null = null;
+  private _entryCache: { entries: Entry[]; real: number } | null = null;
   /** The search applied to `_entryCache`, split by `_pinned`. */
   private _viewCache: {
     key: string;
@@ -160,140 +160,78 @@ class ProtspaceQueryValuePicker extends LitElement {
   // ─── Counts ───────────────────────────────────────────────────────────────
 
   /**
-   * Build a map from internal value → count of proteins that have this value.
-   * When `indices` is provided, only count within that set; otherwise count all proteins.
-   * Multi-label proteins count once toward EACH distinct value they carry, so
-   * counts agree with the any-label matching semantics in query-evaluate.
-   *
-   * `ANY_VALUE` is tallied alongside the real values as a per-protein predicate:
-   * one increment for each protein carrying at least one non-N/A label, matching
-   * how evaluateCondition() resolves the sentinel.
-   *
-   * `anyCount` and `mixedNaCount` fall out of the same walk and are what the NOT
-   * preview needs, so it does not have to re-scan the dataset (see `_rowCount`):
-   * `anyCount` is the size of NOT's "carries a value" scope, and `mixedNaCount`
-   * counts the proteins inside that scope which ALSO carry an N/A label.
+   * Each value's count is the proteins carrying it among the ones this condition picks from: the
+   * whole dataset under "or" (it adds proteins from anywhere), else the proteins the rest of the
+   * query keeps (`matchedIndices`). A multi-label protein counts once toward each distinct value
+   * it carries, as query-evaluate matches. `ANY_VALUE` counts the proteins with at least one
+   * non-N/A label, as evaluateCondition() resolves it. `size` is how many proteins were walked,
+   * so a count over `size` is the value's share and every row's bar has the same base.
    */
-  private _buildCountMap(indices?: Set<number>): CountMapResult {
+  private _buildCountMap(): CountMapResult {
     const counts = new Map<string, number>();
     let anyCount = 0;
-    let mixedNaCount = 0;
+    let size = 0;
     let multiLabel = false;
-    if (!this.data || !this.annotation) return { counts, anyCount, mixedNaCount, multiLabel };
+    if (!this.data || !this.annotation) return { counts, size, multiLabel };
+    const total = this.data.protein_ids?.length ?? 0;
 
     const countProtein = (idx: number) => {
+      if (!(idx >= 0 && idx < total)) return;
+      size++;
       const resolved = resolveAnnotationInternalValues(idx, this.annotation, this.data!);
       if (resolved.length > 1) multiLabel = true;
       let hasReal = false;
-      let hasNa = false;
       for (const internal of resolved) {
         counts.set(internal, (counts.get(internal) ?? 0) + 1);
-        if (isNAValue(internal)) hasNa = true;
-        else hasReal = true;
+        if (!isNAValue(internal)) hasReal = true;
       }
-      if (hasReal) {
-        anyCount++;
-        if (hasNa) mixedNaCount++;
-      }
+      if (hasReal) anyCount++;
     };
 
-    if (indices) {
-      for (const idx of indices) countProtein(idx);
+    if (this.logicalOp === 'OR') {
+      for (let i = 0; i < total; i++) countProtein(i);
     } else {
-      const numProteins = this.data.protein_ids?.length ?? 0;
-      for (let i = 0; i < numProteins; i++) countProtein(i);
+      for (const idx of this.matchedIndices) countProtein(idx);
     }
 
     counts.set(ANY_VALUE, anyCount);
-    return { counts, anyCount, mixedNaCount, multiLabel };
+    return { counts, size, multiLabel };
   }
 
   private _counts() {
-    return (this._countCache ??= {
-      excluded: this._buildCountMap(this.matchedIndices),
-      // Full-dataset counts only needed for OR
-      full: this.logicalOp === 'OR' ? this._buildCountMap() : undefined,
-    });
+    return (this._countCache ??= this._buildCountMap());
   }
 
-  /**
-   * The count the query would reach with `v` as this condition's only value, from the walk above.
-   * Under OR the matched set unions with every carrier dataset-wide. NOT is "carries a value AND
-   * does not match": the has-a-value slice of the matched set minus the proteins in it carrying v.
-   * Carriers of a REAL value all have a value, so their tally inside that slice equals their tally
-   * in the matched set; only N/A differs, by `mixedNaCount`. ANY_VALUE's tally IS the slice, so it
-   * cancels to 0. Equals evaluateQuery() for the same single condition (see the tests).
-   */
-  private _rowCount(v: string): number {
-    const { excluded, full } = this._counts();
-    const raw = excluded.counts.get(v) ?? 0;
-    if (this.logicalOp === 'OR') return this.matchedIndices.size + (full!.counts.get(v) ?? 0) - raw;
-    if (this.logicalOp === 'NOT')
-      return excluded.anyCount - (isNAValue(v) ? excluded.mixedNaCount : raw);
-    return raw;
-  }
-
-  /**
-   * The count the query would reach with the whole selection, by the same arithmetic as
-   * `_rowCount`. Where every protein carries one value the per-value tallies add up; a
-   * multi-label annotation needs one walk for the union, cached per selection.
-   */
+  /** The proteins carrying any of the selected values, among the same proteins as the rows. */
   private _selectionCount(selected: readonly string[]): number {
     if (selected.length === 0) return 0;
-    if (selected.includes(ANY_VALUE)) return this._rowCount(ANY_VALUE);
-    const { excluded, full } = this._counts();
-    const isOR = this.logicalOp === 'OR';
-    const isNOT = this.logicalOp === 'NOT';
-    let inMatched = 0;
-    let inScope = 0;
-    let inAll = 0;
-    if (!excluded.multiLabel && !(isOR && full!.multiLabel)) {
-      for (const v of selected) {
-        const raw = excluded.counts.get(v) ?? 0;
-        inMatched += raw;
-        inScope += isNAValue(v) ? 0 : raw;
-        inAll += full?.counts.get(v) ?? 0;
-      }
-    } else {
-      const key = `${this.logicalOp}\u0000${[...selected].sort().join('\u0000')}`;
-      if (this._unionCache?.key !== key) {
-        this._unionCache = { key, count: this._walkSelection(selected) };
-      }
-      return this._unionCache.count;
+    const { counts, multiLabel } = this._counts();
+    if (selected.includes(ANY_VALUE)) return counts.get(ANY_VALUE) ?? 0;
+    if (!multiLabel) return selected.reduce((sum, v) => sum + (counts.get(v) ?? 0), 0);
+    const key = `${this.logicalOp}\u0000${[...selected].sort().join('\u0000')}`;
+    if (this._unionCache?.key !== key) {
+      this._unionCache = { key, count: this._walkSelection(selected) };
     }
-    if (isOR) return this.matchedIndices.size + inAll - inMatched;
-    if (isNOT) return excluded.anyCount - inScope;
-    return inMatched;
+    return this._unionCache.count;
   }
 
+  /** The union for a multi-label annotation, where per-value counts overlap. */
   private _walkSelection(selected: readonly string[]): number {
     const data = this.data;
     if (!data) return 0;
+    const total = data.protein_ids?.length ?? 0;
     const set = new Set(selected);
-    const carries = (idx: number) => {
-      let hasReal = false;
-      let hit = false;
-      for (const v of resolveAnnotationInternalValues(idx, this.annotation, data)) {
-        if (!isNAValue(v)) hasReal = true;
-        if (set.has(v)) hit = true;
-      }
-      return { hasReal, hit };
-    };
-    let inMatched = 0;
-    let inScope = 0;
-    for (const idx of this.matchedIndices) {
-      const { hasReal, hit } = carries(idx);
-      if (hit) inMatched++;
-      if (hit && hasReal) inScope++;
-    }
+    const hit = (idx: number) =>
+      idx >= 0 &&
+      idx < total &&
+      resolveAnnotationInternalValues(idx, this.annotation, data).some((v) => set.has(v));
+    let n = 0;
     if (this.logicalOp === 'OR') {
-      let inAll = 0;
-      const total = data.protein_ids?.length ?? 0;
-      for (let i = 0; i < total; i++) if (carries(i).hit) inAll++;
-      return this.matchedIndices.size + inAll - inMatched;
+      for (let i = 0; i < total; i++) if (hit(i)) n++;
+    } else {
+      for (const idx of this.matchedIndices) if (hit(idx)) n++;
     }
-    if (this.logicalOp === 'NOT') return this._counts().excluded.anyCount - inScope;
-    return inMatched;
+    return n;
   }
 
   // ─── The list ─────────────────────────────────────────────────────────────
@@ -312,8 +250,13 @@ class ProtspaceQueryValuePicker extends LitElement {
       if (seen.has(value)) return;
       seen.add(value);
       const label = displayFilterValue(value);
-      const entry = { value, label, lower: label.toLowerCase(), count: this._rowCount(value) };
-      (value === ANY_VALUE || isNAValue(value) ? sentinels : real).push(entry);
+      const entry = {
+        value,
+        label,
+        lower: label.toLowerCase(),
+        count: this._counts().counts.get(value) ?? 0,
+      };
+      (isSentinel(value) ? sentinels : real).push(entry);
     };
     if (meta) {
       add(ANY_VALUE);
@@ -328,9 +271,7 @@ class ProtspaceQueryValuePicker extends LitElement {
     } else {
       real.sort((a, b) => collator.compare(a.label, b.label));
     }
-    let max = 0;
-    for (const e of real) if (e.count > max) max = e.count;
-    this._entryCache = { entries: [...sentinels, ...real], max, real: real.length };
+    this._entryCache = { entries: [...sentinels, ...real], real: real.length };
     this._viewCache = null;
     return this._entryCache;
   }
@@ -529,7 +470,19 @@ class ProtspaceQueryValuePicker extends LitElement {
     return html`${before}<strong class="value-picker-highlight">${match}</strong>${after}`;
   }
 
-  private _renderLine(line: Line, top: number, selected: Set<string>, max: number) {
+  /**
+   * `base` is how many proteins the counts are taken among, so a bar is its value's share of
+   * them. "Any value" has none: it always covers every protein with a value, so its bar would be
+   * full by definition and only compete with the real ones. It and N/A sit above a rule, apart
+   * from the values themselves; `divider` draws it under the last of them.
+   */
+  private _renderLine(
+    line: Line,
+    top: number,
+    selected: Set<string>,
+    base: number,
+    divider: boolean,
+  ) {
     const style = `top:${top}px`;
     if ('head' in line) {
       return html`<div class="value-picker-section" role="presentation" style=${style}>
@@ -539,14 +492,14 @@ class ProtspaceQueryValuePicker extends LitElement {
     const { entry, index } = line;
     const checked = selected.has(entry.value);
     const locked = this._isLocked(entry.value);
-    const sentinel = entry.value === ANY_VALUE || isNAValue(entry.value);
-    const share = !sentinel && max > 0 ? Math.round((entry.count / max) * 100) : 0;
+    const any = entry.value === ANY_VALUE;
+    const share = base > 0 ? Math.min(100, (entry.count / base) * 100) : 0;
     return html`
       <div
         id="value-picker-option-${index}"
         class="value-picker-item ${locked ? 'is-disabled' : ''} ${index === this._highlightIndex
           ? 'highlighted'
-          : ''} ${checked ? 'is-checked' : ''}"
+          : ''} ${checked ? 'is-checked' : ''} ${divider ? 'has-divider' : ''}"
         role="option"
         style=${style}
         title=${entry.label}
@@ -560,8 +513,10 @@ class ProtspaceQueryValuePicker extends LitElement {
         >
         <span class="value-picker-label">${this._highlightMatch(entry.label)}</span>
         <span class="value-picker-count">${formatCount(entry.count)}</span>
-        <i class="value-picker-bar" aria-hidden="true"
-          >${sentinel ? nothing : html`<b style="width:${share}%"></b>`}</i
+        <i class="value-picker-bar ${any ? 'is-blank' : ''}" aria-hidden="true"
+          >${any || entry.count === 0
+            ? nothing
+            : html`<b style="width:${share.toFixed(2)}%"></b>`}</i
         >
       </div>
     `;
@@ -587,7 +542,8 @@ class ProtspaceQueryValuePicker extends LitElement {
 
   /** `name` titles the list when it opens as a phone's bottom sheet. */
   private _renderBody(name: string) {
-    const { max, real } = this._entries();
+    const { real } = this._entries();
+    const base = this._counts().size;
     const rows = this._rows();
     const lines = this._lines();
     const selected = new Set(this.selectedValues);
@@ -657,7 +613,15 @@ class ProtspaceQueryValuePicker extends LitElement {
           <div class="value-picker-spacer" style="height:${lines.length * line}px">
             ${lines
               .slice(first, last)
-              .map((entry, i) => this._renderLine(entry, (first + i) * line, selected, max))}
+              .map((entry, i) =>
+                this._renderLine(
+                  entry,
+                  (first + i) * line,
+                  selected,
+                  base,
+                  isSentinelLine(entry) && isValueLine(lines[first + i + 1]),
+                ),
+              )}
           </div>
           ${rows.length === 0
             ? html`<p class="value-picker-empty">
