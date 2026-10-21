@@ -558,7 +558,7 @@ async function setFilterValues(page: Page, annotation: string, values: string[])
 
 /**
  * Drive the numeric range filter for `annotation`. Numeric annotations now render
- * an operator dropdown (`>`, `>=`, `<`, `<=`, `between`) + one or two number fields
+ * an operator menu ("is more than", "is between", …) + one or two number fields
  * instead of a bin value picker, and filter on raw values (not bins). This helper
  * drives only the exclusive comparisons it was written for; the inclusive ones and
  * the N/A presence chips are covered separately. Sets the operator and
@@ -572,8 +572,11 @@ async function setNumericFilter(
   bounds: { min?: number; max?: number },
 ): Promise<void> {
   const rowIndex = await ensureCondition(page, annotation);
-  const numeric = conditionRow(page, rowIndex).locator('protspace-query-numeric-input');
-  await numeric.locator('.numeric-operator-select').selectOption(operator);
+  const row = conditionRow(page, rowIndex);
+  const words = { gt: 'is more than', lt: 'is less than', between: 'is between' }[operator];
+  await row.getByRole('button', { name: /^Operator for condition/ }).click();
+  await row.getByRole('menuitemradio', { name: new RegExp(`^${words}`) }).click();
+  const numeric = row.locator('protspace-query-numeric-input');
   if (bounds.min !== undefined) {
     await numeric.locator('input.numeric-field[placeholder="min"]').fill(String(bounds.min));
   }

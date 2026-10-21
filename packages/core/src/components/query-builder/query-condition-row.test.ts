@@ -147,9 +147,9 @@ describe('query-condition-row value chips', () => {
     expect(await select(el, ANY_VALUE)).toEqual([ANY_VALUE]);
   });
 
-  it('refuses to add another value while Any value is selected', async () => {
+  it('offers no value to add while Any value ("has any value") is selected', async () => {
     const el = await withValues([ANY_VALUE]);
-    expect(await select(el, 'Human')).toBeUndefined();
+    expect(el.shadowRoot!.querySelector('protspace-query-value-picker')).toBeNull();
   });
 });
 
@@ -525,7 +525,7 @@ describe('query-condition-row names', () => {
 
     expect(root.querySelector('.condition-row')!.getAttribute('aria-label')).toBe('Condition 2');
     expect(root.querySelector('.logical-op-select')!.getAttribute('aria-label')).toBe(
-      'Operator for condition 2',
+      'Joiner for condition 2',
     );
     const menu = root.querySelector('ps-icon-button.condition-menu-trigger') as HTMLElement & {
       label: string;
@@ -541,15 +541,10 @@ describe('query-condition-row first operator', () => {
     document.body.innerHTML = '';
   });
 
-  it('shows a visible "no operator" choice before NOT, not an empty box', async () => {
+  it('shows no joiner on a first card', async () => {
     const el = await mount();
     (el as ConditionRowEl & { isFirst: boolean }).isFirst = true;
     await el.updateComplete;
-    const select = el.shadowRoot!.querySelector<HTMLSelectElement>('.logical-op-select')!;
-
-    expect(select.value).toBe('');
-    // A zero-width space is as empty as nothing on screen.
-    expect(select.selectedOptions[0].textContent).toMatch(/[^\s\u200b]/);
-    expect([...select.options].map((option) => option.value)).toEqual(['', 'NOT']);
+    expect(el.shadowRoot!.querySelector('.logical-op-select')).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import type { FilterQuery, FilterQueryItem, NumericCondition } from './query-types';
 import { clearLeadingOpInList, isFilterGroup } from './query-types';
+import { isNoneOfGroup } from './query-operators';
 
 /**
  * Locating and replacing every numeric condition targeting one annotation column.
@@ -76,7 +77,13 @@ export function replaceConditionsForAnnotation(
   const rewrite = (items: readonly FilterQueryItem[]): FilterQueryItem[] => {
     const out: FilterQueryItem[] = [];
     for (const item of items) {
-      if (isFilterGroup(item)) {
+      // The group "is none of" needs under "or" is one card: it is replaced like one, joiner kept.
+      if (isNoneOfGroup(item) && isConditionFor(item.conditions[0], annotation)) {
+        if (next && !placed) {
+          placed = true;
+          out.push({ ...next, logicalOp: item.logicalOp });
+        }
+      } else if (isFilterGroup(item)) {
         const conditions = rewrite(item.conditions);
         if (conditions.length > 0)
           out.push({ ...item, conditions: clearLeadingOpInList(conditions) });

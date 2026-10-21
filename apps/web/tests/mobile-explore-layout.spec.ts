@@ -86,7 +86,7 @@ test.describe('explore layout on a phone', () => {
 });
 
 test.describe('the Filter panel on a phone', () => {
-  test('the Filter tab names the panel once, and the first condition shows its operator', async ({
+  test('the Filter tab names the panel once, and the first condition has no blank operator', async ({
     page,
   }) => {
     await openExplorePhone(page);
@@ -96,13 +96,10 @@ test.describe('the Filter panel on a phone', () => {
     // The heading stays for screen readers but takes no room beside the tabs.
     const title = await box(page.locator('#wb-filter-title'));
     expect(title.width).toBeLessThanOrEqual(1);
-    const operator = page.locator('#myQueryBuilder').getByRole('combobox', {
-      name: 'Operator for condition 1',
-    });
-    await expect(operator).toBeVisible();
-    expect(
-      await operator.evaluate((select: HTMLSelectElement) => select.selectedOptions[0].text),
-    ).toMatch(/[^\s\u200b]/);
+    // A first card has no joiner, so no blank select sits in front of its annotation.
+    const builder = page.locator('#myQueryBuilder');
+    await expect(builder.getByRole('button', { name: 'Choose annotation' })).toBeVisible();
+    await expect(builder.getByRole('combobox', { name: /condition 1/ })).toHaveCount(0);
   });
 });
 

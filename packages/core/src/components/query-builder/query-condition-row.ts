@@ -1,8 +1,19 @@
 import { LitElement, html, nothing } from 'lit';
 import { property, state, query as litQuery } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import type { FilterCondition, LogicalOp, NumericCondition } from './query-types';
+import type { FilterCondition, NumericCondition } from './query-types';
 import { ANY_VALUE, createCondition, createNumericCondition } from './query-types';
+import {
+  CATEGORICAL_OPERATORS,
+  NUMERIC_OPERATORS,
+  isPresenceOperator,
+  operatorLabel,
+  operatorOf,
+  operatorText,
+  type ConditionOperator,
+  type Joiner,
+} from './query-operators';
+import { evaluateQuery } from './query-evaluate';
 import type { ProtspaceData } from './types';
 import {
   filterGroupedAnnotations,
@@ -11,7 +22,7 @@ import {
 import { renderAnnotationName } from '../common/annotation-name';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
 import { pushLayer } from '../kit/layers';
-import { annotationSource, isNumericAnnotation } from '@protspace/utils';
+import { annotationSource, countNoun, isNumericAnnotation } from '@protspace/utils';
 import { icon } from '../kit/icon';
 import { queryBuilderStyles } from './query-builder.styles';
 import { pickerStyle, placePickerAt, type PickerPlacement } from './picker-placement';
@@ -28,7 +39,13 @@ import './query-numeric-input';
  * - `condition-changed` — any field changed, detail: `{ condition: FilterCondition }`
  * - `condition-removed` — Remove in the card's menu, detail: `{ id: string }`
  * - `condition-duplicated` — Duplicate in the card's menu, detail: `{ id: string }`
+ * - `operator-changed` — an operator picked in the operator menu, detail:
+ *   `{ id: string, operator: ConditionOperator }`; the builder stores it (`setOperator`)
+ * - `joiner-changed` — detail: `{ id: string, joiner: Joiner }`
  */
+/** Proteins with a value, per dataset and annotation, for the operator menu's counts. */
+const presenceCounts = new WeakMap<ProtspaceData, Map<string, number>>();
+
 @customElement('protspace-query-condition-row')
 class ProtspaceQueryConditionRow extends LitElement {
   static styles = queryBuilderStyles;
@@ -38,6 +55,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;
   @property({ type: Object }) matchedIndices: Set<number> = new Set();
   @property({ type: Boolean }) isFirst: boolean = false;
+  /** How the card joins the cards before it; a first card has none. */
+  @property() joiner: Joiner | undefined = undefined;
   /** The condition's number in the builder (1-based, group leaves included); 0 shows none. */
   @property({ type: Number }) number = 0;
 
@@ -49,9 +68,17 @@ class ProtspaceQueryConditionRow extends LitElement {
   @state() private _pickerPos: PickerPlacement = { top: 0, left: 0, room: 0 };
   @state() private _valuePickerPos: PickerPlacement = { top: 0, left: 0, room: 0 };
   @state() private _menuOpen = false;
+  @state() private _operatorMenuOpen = false;
+  /**
+   * The operator last picked in the menu, for this condition. A comparison with an N/A chip and
+   * no bound yet holds exactly what "has no value" holds; the pick keeps the card on the
+   * comparison while its bound is typed.
+   */
+  private _picked?: { id: string; operator: ConditionOperator };
 
   @litQuery('.annotation-picker-input') private _annotationInputEl?: HTMLInputElement;
   @litQuery('.condition-menu-trigger') private _menuTriggerEl?: HTMLElement;
+  @litQuery('.operator-pill') private _operatorPillEl?: HTMLElement;
   @litQuery('.condition-head') private _headEl?: HTMLElement;
   /** Releases the annotation picker's layer; set while the picker is shown. */
   private _releasePickerLayer?: () => void;
@@ -156,6 +183,7 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._closeAnnotationPicker();
     this._showValuePicker = false;
     this._menuOpen = false;
+    this._operatorMenuOpen = false;
   }
 
   private _toggleAnnotationPicker(e: Event) {
@@ -223,10 +251,44 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._dispatchChanged(isNumeric ? createNumericCondition(base) : createCondition(base));
   }
 
-  private _handleLogicalOpChange(e: Event) {
-    const raw = (e.target as HTMLSelectElement).value;
-    const value = raw === '' ? undefined : (raw as LogicalOp);
-    this._dispatchChanged({ ...this.condition, logicalOp: value });
+  private _handleJoinerChange(e: Event) {
+    const joiner = (e.target as HTMLSelectElement).value as Joiner;
+    this.dispatchEvent(
+      new CustomEvent('joiner-changed', {
+        detail: { id: this.condition.id, joiner },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /** The operator the card shows: the stored one, or the comparison just picked (`_picked`). */
+  private _operator(): ConditionOperator {
+    const stored = operatorOf(this.condition);
+    const picked = this._picked;
+    return stored === 'has-none' &&
+      picked?.id === this.condition.id &&
+      !isPresenceOperator(picked.operator) &&
+      this.condition.kind === 'numeric'
+      ? picked.operator
+      : stored;
+  }
+
+  private _handleOperatorSelect(e: CustomEvent<{ value: string }>) {
+    e.stopPropagation();
+    this._operatorMenuOpen = false;
+    const operator = e.detail.value as ConditionOperator;
+    const current = this._operator();
+    this._picked = { id: this.condition.id, operator };
+    this._showValuePicker = false;
+    if (operator === current) return;
+    this.dispatchEvent(
+      new CustomEvent('operator-changed', {
+        detail: { id: this.condition.id, operator },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private _removeValue(value: string) {
@@ -376,7 +438,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   }
 
   private _renderValues() {
-    if (this.condition.kind !== 'categorical') return nothing;
+    if (this.condition.kind !== 'categorical' || isPresenceOperator(this._operator()))
+      return nothing;
     return html`
       ${this.condition.values.map((v) => renderValueChip(v, () => this._removeValue(v)))}
       <ps-button
@@ -412,6 +475,7 @@ class ProtspaceQueryConditionRow extends LitElement {
 
   private _renderNumericInput() {
     if (this.condition.kind !== 'numeric') return nothing;
+    if (isPresenceOperator(this._operator())) return nothing;
     return html`
       <protspace-query-numeric-input
         .condition=${this.condition}
@@ -434,31 +498,114 @@ class ProtspaceQueryConditionRow extends LitElement {
     return text === 'Other' ? nothing : html`<span class="condition-badge">${text}</span>`;
   }
 
-  private _renderLogicalOpSelect(label: string) {
-    return this.isFirst
-      ? html`
-          <select
-            class="logical-op-select ${this.condition.logicalOp === 'NOT' ? '' : 'op-blank'}"
-            aria-label=${label}
-            .value=${this.condition.logicalOp ?? ''}
-            @change=${this._handleLogicalOpChange}
-          >
-            <option value="">—</option>
-            <option value="NOT">NOT</option>
-          </select>
-        `
-      : html`
-          <select
-            class="logical-op-select"
-            aria-label=${label}
-            .value=${this.condition.logicalOp ?? 'AND'}
-            @change=${this._handleLogicalOpChange}
-          >
-            <option value="AND">AND</option>
-            <option value="OR">OR</option>
-            <option value="NOT">NOT</option>
-          </select>
-        `;
+  /** "and" / "or" before a card that is not first; "is none of" lives in the operator menu. */
+  private _renderJoinerSelect(label: string) {
+    if (this.isFirst) return nothing;
+    return html`
+      <select
+        class="logical-op-select"
+        aria-label=${label}
+        .value=${this.joiner ?? 'AND'}
+        @change=${this._handleJoinerChange}
+      >
+        <option value="AND">AND</option>
+        <option value="OR">OR</option>
+      </select>
+    `;
+  }
+
+  /** What each operator does; the presence ones count the proteins they keep. */
+  private _operatorDescription(operator: ConditionOperator): string {
+    switch (operator) {
+      case 'any-of':
+        return 'matches one of the chosen values';
+      case 'none-of':
+        return 'has a value, but not these';
+      case 'has-any': {
+        const n = this._presenceCount();
+        return n === null
+          ? 'has a value'
+          : countNoun(n, 'protein has a value', 'proteins have a value');
+      }
+      case 'has-none': {
+        const n = this._presenceCount();
+        const total = this.data?.protein_ids?.length ?? 0;
+        return n === null
+          ? 'has no value (N/A)'
+          : countNoun(total - n, 'protein has none (N/A)', 'proteins have none (N/A)');
+      }
+      case 'gte':
+        return 'the number or more';
+      case 'lte':
+        return 'the number or less';
+      case 'gt':
+        return 'above the number';
+      case 'lt':
+        return 'below the number';
+      case 'between':
+        return 'both numbers included';
+    }
+  }
+
+  /** Proteins with a value for this card's annotation, counted once per dataset and annotation. */
+  private _presenceCount(): number | null {
+    const data = this.data;
+    const annotation = this.condition.annotation;
+    if (!data || !annotation) return null;
+    let counts = presenceCounts.get(data);
+    if (!counts) presenceCounts.set(data, (counts = new Map()));
+    let n = counts.get(annotation);
+    if (n === undefined) {
+      const probe =
+        this.condition.kind === 'numeric'
+          ? createNumericCondition({ annotation, presence: [ANY_VALUE] })
+          : createCondition({ annotation, values: [ANY_VALUE] });
+      n = evaluateQuery([probe], data).size;
+      counts.set(annotation, n);
+    }
+    return n;
+  }
+
+  private _renderOperator(label: string) {
+    const current = this._operator();
+    const operators = this.condition.kind === 'numeric' ? NUMERIC_OPERATORS : CATEGORICAL_OPERATORS;
+    const text =
+      current === operatorOf(this.condition)
+        ? operatorText(this.condition)
+        : operatorLabel(current);
+    const item = (operator: ConditionOperator) => html`
+      <ps-menu-item type="radio" value=${operator} ?checked=${operator === current}
+        >${operatorLabel(operator)}<span slot="description"
+          >${this._operatorMenuOpen ? this._operatorDescription(operator) : ''}</span
+        ></ps-menu-item
+      >
+    `;
+    return html`
+      <ps-button
+        class="operator-pill"
+        variant="ghost"
+        size="sm"
+        @click=${() => (this._operatorMenuOpen = !this._operatorMenuOpen)}
+        ><span class="sr-only">${label}: </span>${text}<span slot="end"
+          >${icon('chevron-down', 14)}</span
+        ></ps-button
+      >
+      <ps-menu
+        label=${label}
+        .anchor=${this._operatorPillEl ?? null}
+        .open=${this._operatorMenuOpen}
+        @ps-select=${this._handleOperatorSelect}
+        @ps-close=${(e: Event) => {
+          e.stopPropagation();
+          this._operatorMenuOpen = false;
+        }}
+      >
+        <ps-menu-group>${operators.filter((o) => !isPresenceOperator(o)).map(item)}</ps-menu-group>
+        <ps-menu-group class="presence-operators"
+          >${operators.filter(isPresenceOperator).map(item)}</ps-menu-group
+        >
+      </ps-menu>
+    `;
   }
 
   private _renderMenu(name: string) {
@@ -524,7 +671,10 @@ class ProtspaceQueryConditionRow extends LitElement {
         ${this._showAnnotationPicker ? this._renderAnnotationPicker() : nothing}
 
         <div class="condition-values ${this.condition.kind === 'numeric' ? '' : 'value-chips'}">
-          ${this._renderLogicalOpSelect(n > 0 ? `Operator for condition ${n}` : 'Operator')}
+          ${this._renderJoinerSelect(n > 0 ? `Joiner for condition ${n}` : 'Joiner')}
+          ${annotation
+            ? this._renderOperator(n > 0 ? `Operator for condition ${n}` : 'Operator')
+            : nothing}
           ${this.condition.kind === 'numeric' ? this._renderNumericInput() : this._renderValues()}
         </div>
       </div>

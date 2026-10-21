@@ -53,7 +53,7 @@ export class PsMenuItem extends LitElement {
     return html`<span class="mark"
         >${this.type !== 'item' && this.checked ? icon('check', 14) : nothing}</span
       >
-      <span class="label"><slot></slot></span>
+      <span class="label"><slot></slot><slot name="description"></slot></span>
       <slot name="end"></slot>`;
   }
 }

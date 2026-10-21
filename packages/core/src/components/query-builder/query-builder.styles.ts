@@ -204,8 +204,7 @@ export const queryBuilderStyles = [
     }
 
     /* Native selects: keyboard, mobile and screen-reader support for free. */
-    .logical-op-select,
-    .numeric-operator-select {
+    .logical-op-select {
       box-sizing: border-box;
       height: var(--ps-control-sm);
       padding: 0 var(--ps-space-1);
@@ -221,8 +220,33 @@ export const queryBuilderStyles = [
       font-weight: var(--ps-weight-medium);
     }
 
-    .logical-op-select.op-blank {
+    /* The operator in words ("is any of ⌄"), which opens the operator menu. */
+    .operator-pill {
+      flex: none;
+    }
+
+    .operator-pill::part(button) {
+      gap: var(--ps-space-1);
+      padding-inline: var(--ps-space-2) var(--ps-space-1-5);
+      background: var(--ps-surface-hover);
+      color: var(--ps-text);
+      font-weight: var(--ps-weight-medium);
+    }
+
+    .operator-pill::part(button):hover {
+      background: var(--ps-border);
+    }
+
+    .operator-pill [slot='end'] {
+      display: inline-flex;
       color: var(--ps-text-muted);
+    }
+
+    /* The menu's "has any value" / "has no value" sit under a rule, apart from the comparisons. */
+    .presence-operators {
+      margin-top: var(--ps-space-1);
+      padding-top: var(--ps-space-1);
+      border-top: 1px solid var(--ps-border);
     }
 
     .logical-op-placeholder {
@@ -274,8 +298,7 @@ export const queryBuilderStyles = [
       border-color: var(--ps-border-control);
     }
 
-    .logical-op-select:hover,
-    .numeric-operator-select:hover:not(:disabled) {
+    .logical-op-select:hover {
       border-color: var(--ps-border-control);
       background: var(--ps-surface-hover);
     }
@@ -365,7 +388,7 @@ export const queryBuilderStyles = [
       }
     }
 
-    /* The numeric row's "+ N/A" and "+ Any value" toggles. */
+    /* The numeric row's "+ N/A" toggle. */
     button.value-chip-add {
       display: inline-flex;
       align-items: center;
@@ -549,8 +572,7 @@ export const queryBuilderStyles = [
       width: 84px;
     }
 
-    .numeric-field:disabled,
-    .numeric-operator-select:disabled {
+    .numeric-field:disabled {
       background: var(--ps-surface-muted);
       color: var(--ps-text-faint);
       cursor: not-allowed;

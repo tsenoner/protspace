@@ -113,6 +113,15 @@ export const menuItemStyles = [
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    /* A line under the label that says what the item does; it wraps rather than truncates. */
+    ::slotted([slot='description']) {
+      display: block;
+      padding-bottom: var(--ps-space-1);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      font-weight: var(--ps-weight-regular);
+      white-space: normal;
+    }
     @media (pointer: coarse) {
       :host {
         min-height: var(--ps-touch-target);

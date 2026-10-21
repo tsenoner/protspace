@@ -3,7 +3,7 @@ import { property, state } from 'lit/decorators.js';
 import { NA_VALUE, countNoun } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
-import type { NumericCondition, NumericOperator } from './query-types';
+import type { NumericCondition } from './query-types';
 import { ANY_VALUE } from './query-types';
 import {
   countNumericMatches,
@@ -15,17 +15,17 @@ import { displayFilterValue, renderValueChip } from './query-presence';
 import { queryBuilderStyles } from './query-builder.styles';
 
 /**
- * Numeric value input for a query condition: an operator dropdown plus one or
- * two number fields, presence chips ("N/A" / "Any value"), and a debounced live
- * match count. A presence chip is unioned with the comparison, so `>= 0.5` plus
- * an N/A chip reads "at least 0.5, or no value at all".
+ * Numeric value input for a query condition: the one or two number fields its
+ * comparison reads (the card's operator menu picks it), an "N/A" chip, and a
+ * debounced live match count. The chip is unioned with the comparison, so
+ * `>= 0.5` plus N/A reads "at least 0.5, or no value at all".
  *
  * The condition object is owned by the control bar; this component is
  * controlled. It keeps the in-progress field text locally so a half-typed
  * value (e.g. "-" or "1.") survives the round-trip of the condition prop.
  *
  * Events:
- * - `numeric-changed` — operator or a bound changed, detail: `{ condition: NumericCondition }`
+ * - `numeric-changed` — a bound or the N/A chip changed, detail: `{ condition: NumericCondition }`
  */
 @customElement('protspace-query-numeric-input')
 class ProtspaceQueryNumericInput extends LitElement {
@@ -103,19 +103,6 @@ class ProtspaceQueryNumericInput extends LitElement {
 
   // ─── Event handlers ───────────────────────────────────────────────────────
 
-  private _handleOperatorChange(e: Event) {
-    const operator = (e.target as HTMLSelectElement).value as NumericOperator;
-    // Null out the bound the new operator doesn't use so a hidden value can't
-    // silently linger and reappear (and re-constrain the filter) on switching back.
-    const fields = numericFieldsFor(operator);
-    this._emitChanged({
-      ...this.condition,
-      operator,
-      min: fields.min ? this.condition.min : null,
-      max: fields.max ? this.condition.max : null,
-    });
-  }
-
   private _handleMinInput(e: Event) {
     this._minText = (e.target as HTMLInputElement).value;
     this._emitChanged({ ...this.condition, min: this._parseFieldValue(this._minText) });
@@ -129,17 +116,7 @@ class ProtspaceQueryNumericInput extends LitElement {
   private _addPresence(value: string) {
     const presence = presenceOf(this.condition);
     if (presence.includes(value)) return;
-
-    // "Any value" subsumes both the N/A chip and the comparison ("any value OR
-    // >= X" is just "any value"), so it replaces them rather than joining them.
-    if (value === ANY_VALUE) {
-      this._emitChanged({ ...this.condition, presence: [ANY_VALUE], min: null, max: null });
-      return;
-    }
-    this._emitChanged({
-      ...this.condition,
-      presence: [...presence.filter((p) => p !== ANY_VALUE), value],
-    });
+    this._emitChanged({ ...this.condition, presence: [...presence, value] });
   }
 
   private _removePresence(value: string) {
@@ -151,12 +128,12 @@ class ProtspaceQueryNumericInput extends LitElement {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
-  /** Presence chips, styled as the categorical value chips they mirror. */
+  /**
+   * The N/A chip, styled as the categorical value chips it mirrors. "Any value" is the operator
+   * menu's "has any value"; a chip for it left over from an older query still shows, to remove.
+   */
   private _renderPresence(presence: readonly string[]) {
-    // With "Any value" on, offering "N/A" too would be a contradiction.
-    const addable = [NA_VALUE, ANY_VALUE].filter(
-      (value) => !presence.includes(value) && !(presence.includes(ANY_VALUE) && value === NA_VALUE),
-    );
+    const addable = presence.includes(NA_VALUE) ? [] : [NA_VALUE];
 
     return html`
       ${presence.map((value) => renderValueChip(value, () => this._removePresence(value), value))}
@@ -183,20 +160,6 @@ class ProtspaceQueryNumericInput extends LitElement {
 
     return html`
       <div class="numeric-input">
-        <select
-          class="numeric-operator-select"
-          aria-label="Comparison operator"
-          ?disabled=${anyValue}
-          .value=${this.condition.operator}
-          @change=${this._handleOperatorChange}
-        >
-          <option value="gt">&gt;</option>
-          <option value="gte">&ge;</option>
-          <option value="lt">&lt;</option>
-          <option value="lte">&le;</option>
-          <option value="between">between</option>
-        </select>
-
         ${fields.min
           ? html`<input
               class="numeric-field input-base"

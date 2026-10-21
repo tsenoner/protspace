@@ -602,7 +602,7 @@ test.describe('view-bar menus and the filter draft', () => {
     const first = await draftFilterCondition(page, 0, annotation ?? '', values);
     await expect(first.locator('.value-chip')).toHaveCount(values.length);
     const second = await draftFilterCondition(page, 1, 'length');
-    await expect(second.getByLabel('Comparison operator')).toBeVisible();
+    await expect(second.getByRole('button', { name: /^Operator for condition 2/ })).toBeVisible();
     // A numeric condition needs a bound before Apply can enable.
     await second.getByLabel('Minimum value').fill('0');
     await expect(filterApplyButton(page)).toBeEnabled();

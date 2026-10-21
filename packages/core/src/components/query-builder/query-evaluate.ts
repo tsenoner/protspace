@@ -272,13 +272,13 @@ export function evaluateQueryExcluding(
 
 /**
  * Return a shallow copy of the query with the item matching `id` removed.
- * Searches both top-level items and group conditions.
+ * Searches every depth; a group left empty goes with it.
  */
 function excludeItemById(items: FilterQueryItem[], id: string): FilterQueryItem[] {
   const result: FilterQueryItem[] = [];
   for (const item of items) {
     if (isFilterGroup(item)) {
-      const filteredConditions = item.conditions.filter((c) => c.id !== id);
+      const filteredConditions = excludeItemById(item.conditions, id);
       if (filteredConditions.length > 0) {
         result.push({ ...item, conditions: filteredConditions });
       }

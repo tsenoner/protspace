@@ -46,7 +46,8 @@ async function draftTwoConditions(page: Page): Promise<void> {
   const values = (await legendRowValues(page)).slice(0, 2);
   await draftFilterCondition(page, 0, annotation, values);
   const second = await draftFilterCondition(page, 1, 'length');
-  await second.getByLabel('Comparison operator').selectOption('between');
+  await second.getByRole('button', { name: /^Operator for condition 2/ }).click();
+  await second.getByRole('menuitemradio', { name: /^is between/ }).click();
   await second.getByLabel('Minimum value').fill('60');
   await second.getByLabel('Maximum value').fill('120');
   // No focus ring on the last field in the picture.

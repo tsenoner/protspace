@@ -13,7 +13,17 @@ import type {
   FilterQueryItem,
   LogicalOp,
 } from './query-types';
-import { clearLeadingOpInList, createCondition, createGroup, isFilterGroup } from './query-types';
+import { createCondition, createGroup, isFilterGroup } from './query-types';
+import {
+  cardOf,
+  duplicateCard,
+  removeCard,
+  replaceCondition,
+  setJoiner,
+  setOperator,
+  type ConditionOperator,
+  type Joiner,
+} from './query-operators';
 import { evaluateQuery, evaluateQueryExcluding } from './query-evaluate';
 import { applyBlock, applyBlockText, leafConditions } from './query-apply-state';
 import { queryBuilderHostStyles, queryBuilderStyles } from './query-builder.styles';
@@ -114,14 +124,8 @@ export class ProtspaceQueryBuilder extends LitElement {
 
       // Build per-condition "excluded" matched sets for dynamic value counts
       const map = new Map<string, Set<number>>();
-      for (const item of query) {
-        if (isFilterGroup(item)) {
-          for (const cond of item.conditions) {
-            map.set(cond.id, evaluateQueryExcluding(query, this.data, cond.id));
-          }
-        } else {
-          map.set(item.id, evaluateQueryExcluding(query, this.data, item.id));
-        }
+      for (const leaf of leafConditions(query)) {
+        map.set(leaf.id, evaluateQueryExcluding(query, this.data, leaf.id));
       }
       this._excludedMatchMap = map;
       this._counting = false;
@@ -172,70 +176,30 @@ export class ProtspaceQueryBuilder extends LitElement {
     this._dispatchQueryChanged(newQuery);
   }
 
-  private _handleConditionChanged(
-    e: CustomEvent<{ condition: FilterCondition }>,
-    groupId: string | null,
-  ) {
+  private _handleConditionChanged(e: CustomEvent<{ condition: FilterCondition }>) {
     e.stopPropagation();
-    const updated = e.detail.condition;
-    if (groupId === null) {
-      const newQuery = this.query.map((item) =>
-        !isFilterGroup(item) && item.id === updated.id ? updated : item,
-      );
-      this._dispatchQueryChanged(newQuery);
-    } else {
-      const newQuery = this.query.map((item) => {
-        if (isFilterGroup(item) && item.id === groupId) {
-          return {
-            ...item,
-            conditions: item.conditions.map((c) =>
-              !isFilterGroup(c) && c.id === updated.id ? updated : c,
-            ),
-          };
-        }
-        return item;
-      });
-      this._dispatchQueryChanged(newQuery);
-    }
+    this._dispatchQueryChanged(replaceCondition(this.query, e.detail.condition));
+  }
+
+  private _handleOperatorChanged(e: CustomEvent<{ id: string; operator: ConditionOperator }>) {
+    e.stopPropagation();
+    this._dispatchQueryChanged(setOperator(this.query, e.detail.id, e.detail.operator));
+  }
+
+  private _handleJoinerChanged(e: CustomEvent<{ id: string; joiner: Joiner }>) {
+    e.stopPropagation();
+    this._dispatchQueryChanged(setJoiner(this.query, e.detail.id, e.detail.joiner));
   }
 
   /** A copy of the condition, under a new id, right after it. */
-  private _handleConditionDuplicated(e: CustomEvent<{ id: string }>, groupId: string | null) {
+  private _handleConditionDuplicated(e: CustomEvent<{ id: string }>) {
     e.stopPropagation();
-    const duplicateIn = <T extends FilterQueryItem>(items: T[]): T[] =>
-      items.flatMap((item) => {
-        if (isFilterGroup(item) || item.id !== e.detail.id) return [item];
-        const copy = structuredClone(item);
-        // A first card has no joiner (or NOT); its copy follows it, so it joins with AND.
-        return [item, { ...copy, id: createCondition().id, logicalOp: item.logicalOp ?? 'AND' }];
-      });
-    this._dispatchQueryChanged(
-      groupId === null
-        ? duplicateIn(this.query)
-        : this.query.map((item) =>
-            isFilterGroup(item) && item.id === groupId
-              ? { ...item, conditions: duplicateIn(item.conditions) }
-              : item,
-          ),
-    );
+    this._dispatchQueryChanged(duplicateCard(this.query, e.detail.id, createCondition().id));
   }
 
-  private _handleConditionRemoved(e: CustomEvent<{ id: string }>, groupId: string | null) {
+  private _handleConditionRemoved(e: CustomEvent<{ id: string }>) {
     e.stopPropagation();
-    const removedId = e.detail.id;
-    if (groupId === null) {
-      const filtered = this.query.filter((item) => item.id !== removedId);
-      this._dispatchQueryChanged(clearLeadingOpInList(filtered));
-    } else {
-      const newQuery = this.query.map((item) => {
-        if (isFilterGroup(item) && item.id === groupId) {
-          const conditions = item.conditions.filter((c) => c.id !== removedId);
-          return { ...item, conditions: clearLeadingOpInList(conditions) };
-        }
-        return item;
-      });
-      this._dispatchQueryChanged(newQuery);
-    }
+    this._dispatchQueryChanged(removeCard(this.query, e.detail.id));
   }
 
   private _removeGroup(groupId: string) {
@@ -285,23 +249,29 @@ export class ProtspaceQueryBuilder extends LitElement {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
-  private _renderRow(
-    condition: FilterCondition,
-    isFirst: boolean,
+  /** A card, or the group the user built; the group "is none of" needs under "or" is a card. */
+  private _renderItem(
+    item: FilterQueryItem,
+    index: number,
     numbers: ReadonlyMap<string, number>,
-    groupId: string | null,
-  ) {
+  ): unknown {
+    const card = cardOf(item, index === 0);
+    if (!card) return this._renderGroup(item as FilterGroup, index, numbers);
+    const { condition, joiner } = card;
     return html`
       <protspace-query-condition-row
         .condition=${condition}
+        .joiner=${joiner}
         .annotations=${this.annotations}
         .data=${this.data}
         .matchedIndices=${this._excludedMatchMap.get(condition.id) ?? this._matchedIndices}
-        .isFirst=${isFirst}
+        .isFirst=${index === 0}
         .number=${numbers.get(condition.id) ?? 0}
-        @condition-changed=${(e: CustomEvent) => this._handleConditionChanged(e, groupId)}
-        @condition-removed=${(e: CustomEvent) => this._handleConditionRemoved(e, groupId)}
-        @condition-duplicated=${(e: CustomEvent) => this._handleConditionDuplicated(e, groupId)}
+        @condition-changed=${this._handleConditionChanged}
+        @operator-changed=${this._handleOperatorChanged}
+        @joiner-changed=${this._handleJoinerChanged}
+        @condition-removed=${this._handleConditionRemoved}
+        @condition-duplicated=${this._handleConditionDuplicated}
       ></protspace-query-condition-row>
     `;
   }
@@ -336,9 +306,7 @@ export class ProtspaceQueryBuilder extends LitElement {
           ></ps-icon-button>
         </div>
         <div class="group-conditions">
-          ${group.conditions.map((item, index) =>
-            this._renderRow(item as FilterCondition, index === 0, numbers, group.id),
-          )}
+          ${group.conditions.map((item, index) => this._renderItem(item, index, numbers))}
         </div>
         <ps-button
           class="add-group-condition"
@@ -376,11 +344,7 @@ export class ProtspaceQueryBuilder extends LitElement {
             </div>`}
 
         <div class="query-conditions">
-          ${this.query.map((item, index) =>
-            isFilterGroup(item)
-              ? this._renderGroup(item, index, numbers)
-              : this._renderRow(item, index === 0, numbers, null),
-          )}
+          ${this.query.map((item, index) => this._renderItem(item, index, numbers))}
           <div class="query-actions">
             <ps-button class="add-condition" @click=${this._addCondition}
               ><span slot="start">${icon('plus', 16)}</span>Add condition</ps-button
