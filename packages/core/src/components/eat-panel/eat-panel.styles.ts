@@ -26,7 +26,7 @@ export const eatPanelStyles = [
       flex-direction: column;
       gap: var(--ps-space-3);
       box-sizing: border-box;
-      padding: var(--ps-space-2) var(--ps-space-3) var(--ps-space-3);
+      /* No padding here: the page's reset (* { padding: 0 }) beats :host; the shell pads it. */
       font-size: var(--ps-text-sm);
     }
 

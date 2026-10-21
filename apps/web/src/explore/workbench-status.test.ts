@@ -3,6 +3,7 @@ import { DENSITY_DEFAULT } from '@protspace/utils';
 import {
   createDatasetNamePublisher,
   datasetPhaseFor,
+  eatUnavailableReason,
   getWorkbenchStatus,
   resetWorkbenchStatusForTests,
   setStructureSheet,
@@ -25,6 +26,8 @@ describe('workbench status', () => {
       structureProteinId: null,
       datasetPhase: 'starting',
       structureSheet: 'folded',
+      eatAvailability: { kind: 'dataset' },
+      eatAdjusted: false,
     });
   });
 
@@ -44,8 +47,32 @@ describe('workbench status', () => {
       structureProteinId: null,
       datasetPhase: 'starting',
       structureSheet: 'folded',
+      eatAvailability: { kind: 'dataset' },
+      eatAdjusted: false,
     });
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('an equal EAT availability keeps its object and does not notify', () => {
+    setWorkbenchStatus({ eatAvailability: { kind: 'annotation', annotationLabel: 'Family' } });
+    const first = getWorkbenchStatus();
+    const listener = vi.fn();
+    subscribeWorkbenchStatus(listener);
+    setWorkbenchStatus({ eatAvailability: { kind: 'annotation', annotationLabel: 'Family' } });
+    expect(getWorkbenchStatus()).toBe(first);
+    expect(listener).not.toHaveBeenCalled();
+    setWorkbenchStatus({ eatAvailability: { kind: 'annotation', annotationLabel: 'Pfam' } });
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it('says why the EAT panel cannot open', () => {
+    expect(eatUnavailableReason({ kind: 'available' })).toBeNull();
+    expect(eatUnavailableReason({ kind: 'annotation', annotationLabel: 'Family' })).toBe(
+      'Family has no EAT predictions. Color by an annotation marked EAT.',
+    );
+    expect(eatUnavailableReason({ kind: 'dataset' })).toBe(
+      'This dataset has no transferred annotations (EAT).',
+    );
   });
 
   it('an equal patch does not notify', () => {
@@ -120,6 +147,8 @@ describe('createDatasetNamePublisher', () => {
       structureProteinId: null,
       datasetPhase: 'starting',
       structureSheet: 'folded',
+      eatAvailability: { kind: 'dataset' },
+      eatAdjusted: false,
     });
   });
 
@@ -140,6 +169,8 @@ describe('createDatasetNamePublisher', () => {
       structureProteinId: null,
       datasetPhase: 'starting',
       structureSheet: 'folded',
+      eatAvailability: { kind: 'dataset' },
+      eatAdjusted: false,
     });
 
     data = ids(3);
@@ -153,6 +184,8 @@ describe('createDatasetNamePublisher', () => {
       structureProteinId: null,
       datasetPhase: 'starting',
       structureSheet: 'folded',
+      eatAvailability: { kind: 'dataset' },
+      eatAdjusted: false,
     });
   });
 
@@ -177,6 +210,8 @@ describe('createDatasetNamePublisher', () => {
       structureProteinId: null,
       datasetPhase: 'starting',
       structureSheet: 'folded',
+      eatAvailability: { kind: 'dataset' },
+      eatAdjusted: false,
     });
   });
 });

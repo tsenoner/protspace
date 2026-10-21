@@ -2,6 +2,7 @@ import { memo, useRef, type KeyboardEvent, type PointerEvent, type Ref } from 'r
 import { SIDEBAR_WIDTH, type SidebarPanel } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
 import { clampSidebarWidth, sidebarStep } from './layout-geometry';
+import { EatPanel } from './EatPanel';
 import { FilterPanel } from './FilterPanel';
 import { PanelFold } from './PanelFold';
 import { PanelTabs } from './PanelTabs';
@@ -10,18 +11,18 @@ interface SidebarProps {
   ref?: Ref<HTMLElement>;
   /** A collapsed or collapsing sidebar: out of the tab order and the accessibility tree. */
   inert?: boolean;
-  /** The panel shown (the legend or Filter): both copies of the tabs mark it. */
+  /** The panel shown (the legend, Filter or EAT): every copy of the tabs marks it. */
   panel: SidebarPanel;
   /** The phone's bottom panel shows only its header. */
   panelFolded: boolean;
-  /** Below 951 px the panel tabs switch the legend and Filter, so both are tab panels. */
+  /** Below 951 px the panel tabs switch the legend, Filter and EAT, so all are tab panels. */
   tabbed: boolean;
 }
 
 /**
- * The flush right sidebar (design decisions 2 and 14): the legend or the Filter panel, above the
+ * The flush right sidebar (design decisions 2 and 14): the legend, the Filter or the EAT panel, above the
  * structure section that StructurePanel renders as the aside's sibling, so placing the structure
- * never moves either element. Memoised: it re-renders only when the sidebar becomes inert or
+ * never moves any of them. Memoised: it re-renders only when the sidebar becomes inert or
  * interactive again, the panel changes or the phone panel folds, and the legend and the query
  * builder are never re-created or moved. The ref is the slide's target (use-sidebar-transition).
  */
@@ -47,6 +48,7 @@ export const Sidebar = memo(function Sidebar({
         <PanelFold slot="header-end" folded={panelFolded} />
       </protspace-legend>
       <FilterPanel panel={panel} panelFolded={panelFolded} tabbed={tabbed} />
+      <EatPanel panel={panel} panelFolded={panelFolded} tabbed={tabbed} />
     </aside>
   );
 });

@@ -102,10 +102,10 @@ export const themeSegment = (page: Page, label: 'System' | 'Light' | 'Dark'): Lo
   moreSheetContent(page).getByRole('radio', { name: label, exact: true });
 
 /**
- * The shown Legend or Filter tab of the panel under the plot. Each panel's header holds a copy of
+ * The shown Legend, Filter or EAT tab of the panel under the plot. Each panel's header holds a copy of
  * the tabs; only the shown panel's copy is visible.
  */
-export const panelTab = (page: Page, name: 'Legend' | 'Filter'): Locator =>
+export const panelTab = (page: Page, name: 'Legend' | 'Filter' | 'EAT'): Locator =>
   page.getByRole('tab', { name, exact: true }).filter({ visible: true });
 
 /** The phone panel's fold chevron, "Fold panel" or "Unfold panel", in the shown panel's header. */

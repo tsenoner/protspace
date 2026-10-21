@@ -9,6 +9,14 @@ type DatasetPhase = 'starting' | 'loading' | 'ready' | 'empty';
 /** The phone structure sheet: folded to its header, or expanded over the lower half. */
 type StructureSheet = 'folded' | 'expanded';
 
+/** Whether the EAT panel can open: why not, for the rail tooltip and the phone tab's hint. */
+export type EatAvailability =
+  | { kind: 'available' }
+  /** The Color by annotation has no predictions; another one may. */
+  | { kind: 'annotation'; annotationLabel: string }
+  /** No annotation of the dataset has any. */
+  | { kind: 'dataset' };
+
 export interface WorkbenchStatus {
   /** The dataset on screen: an example's label or a file's name; null before a load. */
   datasetName: string | null;
@@ -32,6 +40,10 @@ export interface WorkbenchStatus {
    * structure appears and when it closes; the shell expands and folds it (setStructureSheet).
    */
   structureSheet: StructureSheet;
+  /** Whether the EAT panel can open (the rail item, the phone tab and the restored panel). */
+  eatAvailability: EatAvailability;
+  /** The EAT panel's settings differ from their defaults: the rail item's and the tab's dot. */
+  eatAdjusted: boolean;
 }
 
 const EMPTY: WorkbenchStatus = {
@@ -43,6 +55,8 @@ const EMPTY: WorkbenchStatus = {
   structureProteinId: null,
   datasetPhase: 'starting',
   structureSheet: 'folded',
+  eatAvailability: { kind: 'dataset' },
+  eatAdjusted: false,
 };
 
 let status: WorkbenchStatus = EMPTY;
@@ -60,13 +74,29 @@ export function subscribeWorkbenchStatus(listener: () => void): () => void {
   };
 }
 
-/** Merges `patch` and notifies, unless no field changes. */
+const sameAvailability = (a: EatAvailability, b: EatAvailability): boolean =>
+  a.kind === b.kind &&
+  (a.kind !== 'annotation' || a.annotationLabel === (b as typeof a).annotationLabel);
+
+/** Merges `patch` and notifies, unless no field changes. An equal availability keeps its object. */
 export function setWorkbenchStatus(patch: Partial<WorkbenchStatus>): void {
+  if (patch.eatAvailability && sameAvailability(patch.eatAvailability, status.eatAvailability)) {
+    patch = { ...patch, eatAvailability: status.eatAvailability };
+  }
   const next = { ...status, ...patch };
   const keys = Object.keys(next) as Array<keyof WorkbenchStatus>;
   if (keys.every((key) => Object.is(next[key], status[key]))) return;
   status = next;
   for (const listener of [...listeners]) listener();
+}
+
+/** Why the EAT panel cannot open (the rail's tooltip, the phone tab's hint); null when it can. */
+export function eatUnavailableReason(availability: EatAvailability): string | null {
+  if (availability.kind === 'annotation') {
+    return `${availability.annotationLabel} has no EAT predictions. Color by an annotation marked EAT.`;
+  }
+  if (availability.kind === 'dataset') return 'This dataset has no transferred annotations (EAT).';
+  return null;
 }
 
 /** The shell's one write to the status: the sheet's chevron, grip and header fold and expand it. */

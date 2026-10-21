@@ -26,6 +26,10 @@ describe('icon', () => {
     expect(markup).toMatch(/<(path|circle) /);
   });
 
+  it("has the EAT rail item's icon", () => {
+    expect(iconMarkup('waypoints', 20)).toMatch(/<(path|circle) /);
+  });
+
   it('parses each icon template once, however many places render it', () => {
     const createElement = vi.spyOn(document, 'createElement');
     const templates = () => createElement.mock.calls.filter(([tag]) => tag === 'template').length;

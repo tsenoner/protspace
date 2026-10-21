@@ -14,6 +14,7 @@ const RUNTIME_ELEMENTS = [
   'myExportMenu',
   'myProteinSearch',
   'myQueryBuilder',
+  'myEatPanel',
 ];
 
 type Remembered = { __runtimeElements: Array<Element | null> };

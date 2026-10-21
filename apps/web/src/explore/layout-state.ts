@@ -27,7 +27,8 @@ const isFiniteNumber = (value: unknown): value is number =>
 const isPlacement = (value: unknown): value is StructurePlacement =>
   value === 'docked' || value === 'floating';
 
-const isPanel = (value: unknown): value is SidebarPanel => value === 'legend' || value === 'filter';
+const isPanel = (value: unknown): value is SidebarPanel =>
+  value === 'legend' || value === 'filter' || value === 'eat';
 
 function parseRect(raw: unknown): FloatingRect | null {
   if (typeof raw !== 'object' || raw === null) return null;

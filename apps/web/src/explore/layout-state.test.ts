@@ -180,6 +180,8 @@ describe('layout store', () => {
   it('panel defaults to legend, and an unknown panel falls back', () => {
     expect(getLayout().panel).toBe('legend');
     expect(parseLayout({ panel: 'filter' }).panel).toBe('filter');
+    expect(parseLayout({ panel: 'eat' }).panel).toBe('eat');
+    expect(parseLayout({ panel: 'x' }).panel).toBe('legend');
     expect(parseLayout({ panel: 'Filter' }).panel).toBe('legend');
     expect(parseLayout({ panel: 3 }).panel).toBe('legend');
   });

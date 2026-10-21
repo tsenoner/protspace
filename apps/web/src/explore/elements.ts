@@ -1,6 +1,7 @@
 import type {
   ProtspaceAnnotationSelect,
   ProtspaceContoursMenu,
+  ProtspaceEatPanel,
   ProtspaceExportMenu,
   ProtspaceImportMenu,
   ProtspaceLegend,
@@ -21,6 +22,7 @@ interface ExploreElements {
   exportMenu: ProtspaceExportMenu;
   importMenu: ProtspaceImportMenu;
   legendElement: ProtspaceLegend;
+  eatPanel: ProtspaceEatPanel;
   plotElement: ProtspaceScatterplot;
   structureViewer: ProtspaceStructureViewer;
   queryBuilder: ProtspaceQueryBuilder;
@@ -37,6 +39,7 @@ interface ExploreElements {
 const REQUIRED_TAGS = [
   'protspace-scatterplot',
   'protspace-legend',
+  'protspace-eat-panel',
   'protspace-structure-viewer',
   'protspace-data-loader',
   'protspace-import-menu',
@@ -59,6 +62,7 @@ export async function waitForElements(): Promise<void> {
 export function getElements(doc: Document = document): ExploreElements | null {
   const plotElement = doc.getElementById('myPlot') as ProtspaceScatterplot | null;
   const legendElement = doc.getElementById('myLegend') as ProtspaceLegend | null;
+  const eatPanel = doc.getElementById('myEatPanel') as ProtspaceEatPanel | null;
   const structureViewer = doc.getElementById(
     'myStructureViewer',
   ) as ProtspaceStructureViewer | null;
@@ -84,6 +88,7 @@ export function getElements(doc: Document = document): ExploreElements | null {
   if (
     !plotElement ||
     !legendElement ||
+    !eatPanel ||
     !structureViewer ||
     !dataLoader ||
     !importMenu ||
@@ -101,6 +106,7 @@ export function getElements(doc: Document = document): ExploreElements | null {
     console.error('Could not find one or more required explore elements.', {
       plotElement,
       legendElement,
+      eatPanel,
       structureViewer,
       dataLoader,
       importMenu,
@@ -123,6 +129,7 @@ export function getElements(doc: Document = document): ExploreElements | null {
     exportMenu,
     importMenu,
     legendElement,
+    eatPanel,
     plotElement,
     structureViewer,
     queryBuilder,

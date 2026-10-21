@@ -62,8 +62,8 @@ export const LAYOUT_QUERIES = {
 
 export type StructurePlacement = 'docked' | 'floating';
 
-/** What the sidebar shows above the structure: the legend or the Filter panel (decision 14). */
-export type SidebarPanel = 'legend' | 'filter';
+/** What the sidebar shows above the structure: the legend, the Filter panel or the EAT panel. */
+export type SidebarPanel = 'legend' | 'filter' | 'eat';
 
 /** The floating card in px, relative to the plot area's top-left corner. */
 export interface FloatingRect {

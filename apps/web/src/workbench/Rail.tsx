@@ -2,10 +2,11 @@ import type { Ref } from 'react';
 import { countNoun } from '@protspace/utils';
 import type { SidebarPanel } from '../explore/layout-defaults';
 import { focusFilterTitle, openPanel, updateLayout } from '../explore/layout-state';
+import { eatUnavailableReason, type EatAvailability } from '../explore/workbench-status';
 
 interface RailProps {
   sidebarOpen: boolean;
-  /** The sidebar's panel: Legend or Filter. */
+  /** The sidebar's panel: Legend, Filter or EAT. */
   panel: SidebarPanel;
   /** The protein the structure viewer shows or waits to show; null for none. */
   structureProteinId: string | null;
@@ -15,13 +16,17 @@ interface RailProps {
   structureHidden: boolean;
   /** The applied filter's conditions: above 0 the Filter item gets a dot and says the count. */
   filterConditions: number;
+  /** Whether the EAT item is enabled, and why not. */
+  eatAvailability: EatAvailability;
+  /** The EAT panel's settings differ from their defaults: the EAT item gets a dot. */
+  eatAdjusted: boolean;
   /** The collapse toggle, for a caller that moves focus to it. */
   toggleRef?: Ref<HTMLElement>;
 }
 
 /**
  * The 44 px icon rail at the sidebar's right edge (design decision 2): the collapse toggle on top,
- * then Legend, Structure and Filter. It stays when the sidebar collapses, so every panel stays one click away. A panel's item
+ * then Legend, Structure, Filter and EAT. It stays when the sidebar collapses, so every panel stays one click away. A panel's item
  * opens the sidebar on that panel; the item of the panel on screen collapses the sidebar. Structure
  * shows and hides the viewer the same way, docked or floating. Hidden below 951 px. On desktop the
  * view bar has no Filter button: this item is the way to the Filter panel.
@@ -33,8 +38,11 @@ export function Rail({
   structureDocked,
   structureHidden,
   filterConditions,
+  eatAvailability,
+  eatAdjusted,
   toggleRef,
 }: RailProps) {
+  const eatReason = eatUnavailableReason(eatAvailability);
   const toggleSidebar = () => updateLayout({ sidebarOpen: !sidebarOpen });
   const togglePanel = (target: SidebarPanel) => {
     if (sidebarOpen && panel === target) {
@@ -104,6 +112,20 @@ export function Rail({
         ></ps-icon-button>
         {filterConditions > 0 && (
           <span className="wb-rail-dot" data-workbench="filter-dot" aria-hidden="true"></span>
+        )}
+      </span>
+      <span className="wb-rail-item">
+        <ps-icon-button
+          id="wb-rail-eat"
+          icon="waypoints"
+          label={eatReason ?? 'EAT — transferred annotations'}
+          tooltipPlacement="left"
+          disabled={eatReason !== null}
+          pressed={sidebarOpen && panel === 'eat'}
+          onClick={() => togglePanel('eat')}
+        ></ps-icon-button>
+        {eatAdjusted && (
+          <span className="wb-rail-dot" data-workbench="eat-dot" aria-hidden="true"></span>
         )}
       </span>
     </nav>

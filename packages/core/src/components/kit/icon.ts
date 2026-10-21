@@ -44,6 +44,7 @@ import {
   Target,
   Undo2,
   Upload,
+  Waypoints,
   X,
   ZoomIn,
   type IconNode,
@@ -94,6 +95,7 @@ const ICONS = {
   target: Target,
   'undo-2': Undo2,
   upload: Upload,
+  waypoints: Waypoints,
   x: X,
   'zoom-in': ZoomIn,
 } satisfies Record<string, IconNode>;

@@ -11,6 +11,7 @@ import {
 } from './notifications';
 import { chooseTour, type TourKind } from '../tour/storage-key';
 import { createDatasetController } from './dataset-controller';
+import { createEatPanelController } from './eat-panel-controller';
 import { confirmAction } from './confirm-dialog';
 import { getElements, waitForElements } from './elements';
 import { createExportHandler } from './export-handler';
@@ -20,6 +21,7 @@ import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
 import { focusFilterTitle, getLayout, openPanel, subscribeLayout } from './layout-state';
 import { getLayoutMode, subscribeLayoutMode } from './layout-mode';
+import type { SidebarPanel } from './layout-defaults';
 import { bindPlotFill } from './plot-fill';
 import { createLifecycle } from './lifecycle';
 import {
@@ -104,6 +106,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     exportMenu,
     importMenu,
     legendElement,
+    eatPanel,
     plotElement,
     queryBuilder,
     structureViewer,
@@ -440,15 +443,23 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   // The plot always fills its area, each axis stretched (design decision 10).
   lifecycle.addCleanup(bindPlotFill(plotElement));
 
-  // The Filter panel counts only while it is on screen: open on the desktop sidebar's Filter
-  // panel; below 951 px whenever Filter is the chosen panel, except in a folded phone panel,
-  // which shows only its header.
-  const isFilterPanelShown = () => {
+  // The Filter panel counts and the EAT panel computes only while on screen: open in the desktop
+  // sidebar; below 951 px whenever it is the chosen panel, except in a folded phone panel, which
+  // shows only its header.
+  const isPanelShown = (target: SidebarPanel) => {
     const { panel, sidebarOpen, panelFolded } = getLayout();
-    if (panel !== 'filter') return false;
+    if (panel !== target) return false;
     const mode = getLayoutMode();
     if (mode === 'desktop') return sidebarOpen;
     return mode !== 'phone' || !panelFolded;
+  };
+  const subscribePanel = (listener: () => void) => {
+    const unsubscribe = subscribeLayout(listener);
+    const unsubscribeMode = subscribeLayoutMode(listener);
+    return () => {
+      unsubscribe();
+      unsubscribeMode();
+    };
   };
   // "Filter removed" with Undo (decisions 13 and 15): the toast is a shortcut to the history step
   // it names, and goes as soon as a newer step would make its Undo take back something else.
@@ -484,15 +495,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     legendElement,
     queryBuilder,
     root: document,
-    isPanelShown: isFilterPanelShown,
-    subscribePanel(listener) {
-      const unsubscribe = subscribeLayout(listener);
-      const unsubscribeMode = subscribeLayoutMode(listener);
-      return () => {
-        unsubscribe();
-        unsubscribeMode();
-      };
-    },
+    isPanelShown: () => isPanelShown('filter'),
+    subscribePanel,
     // Apply, Reset and the chip's ✕ are undo steps; the EAT slider is not (it reports nothing).
     onFilterCommitted(commit) {
       const entry: UndoEntry = { kind: 'filter', ...commit };
@@ -502,6 +506,16 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     },
   });
   lifecycle.addCleanup(() => filterController.dispose());
+  // A dataset with no EAT shows the legend in the EAT panel's place (Workbench.tsx).
+  const eatPanelController = createEatPanelController({
+    eatPanel,
+    plotElement,
+    root: document,
+    isPanelShown: () =>
+      getWorkbenchStatus().eatAvailability.kind !== 'dataset' && isPanelShown('eat'),
+    subscribePanel,
+  });
+  lifecycle.addCleanup(() => eatPanelController.dispose());
   const statusController = createStatusController({
     plotElement,
     plotStatus,
@@ -558,6 +572,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       viewBarController.resetForNewDataset();
       exportMenu.reset();
       filterController.resetForNewDataset();
+      eatPanelController.resetForNewDataset();
     },
     setHasFileSettings(value) {
       exportMenu.hasFileSettings = value;

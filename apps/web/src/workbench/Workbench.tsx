@@ -45,12 +45,22 @@ const getSidebarCap = () => clampSidebarToWindow(SIDEBAR_WIDTH.max, window.inner
 export function Workbench() {
   const layout = useLayout();
   const mode = useLayoutMode();
-  const { structureProteinId, appliedFilterConditions, datasetPhase, structureSheet } =
-    useWorkbenchStatus();
+  const {
+    structureProteinId,
+    appliedFilterConditions,
+    datasetPhase,
+    structureSheet,
+    eatAvailability,
+    eatAdjusted,
+  } = useWorkbenchStatus();
   // The divider's drag or key preview; null while the stored fraction shows.
   const [legendFractionPreview, setLegendFractionPreview] = useState<number | null>(null);
   const legendFraction = legendFractionPreview ?? layout.legendFraction;
   const desktop = mode === 'desktop';
+  // A dataset with no EAT shows the legend in the EAT panel's place. The stored panel stays, so the
+  // next EAT dataset reopens it; an annotation without EAT keeps the panel on its empty state.
+  const panel =
+    layout.panel === 'eat' && eatAvailability.kind === 'dataset' ? 'legend' : layout.panel;
   // Floating is desktop-only: below 951 px a stored floating card shows docked (storage keeps it).
   const placement = desktop ? layout.structurePlacement : 'docked';
   // The empty footer under the legend, the docked viewer, or the floating card over the plot.
@@ -92,7 +102,7 @@ export function Workbench() {
       data-structure={structure}
       data-structure-hidden={structureHidden ? '' : undefined}
       data-sidebar={phase}
-      data-panel={layout.panel}
+      data-panel={panel}
       // The phone's bottom panel shows only its header (only phones fold it).
       data-panel-folded={mode === 'phone' && layout.panelFolded ? '' : undefined}
       data-sheet={sheet && structure !== 'none' ? structureSheet : undefined}
@@ -140,7 +150,7 @@ export function Workbench() {
         <Sidebar
           ref={asideRef}
           inert={sidebarHidden}
-          panel={layout.panel}
+          panel={panel}
           panelFolded={layout.panelFolded}
           tabbed={!desktop}
         />
@@ -157,11 +167,13 @@ export function Workbench() {
         />
         <Rail
           sidebarOpen={layout.sidebarOpen}
-          panel={layout.panel}
+          panel={panel}
           structureProteinId={structureProteinId}
           structureDocked={placement === 'docked'}
           structureHidden={layout.structureHidden}
           filterConditions={appliedFilterConditions}
+          eatAvailability={eatAvailability}
+          eatAdjusted={eatAdjusted}
           toggleRef={railToggleRef}
         />
         <div className="wb-drop-area" aria-hidden="true">

@@ -366,6 +366,7 @@ const RUNTIME_IDS = [
   'myExportMenu',
   'myProteinSearch',
   'myQueryBuilder',
+  'myEatPanel',
 ];
 
 test('rotating from 412×839 to 839×412 and back keeps the same runtime elements and resizes the plot once per rotation', async ({

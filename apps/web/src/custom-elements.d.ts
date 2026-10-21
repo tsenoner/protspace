@@ -107,6 +107,12 @@ declare module 'react' {
         },
         HTMLElement
       >;
+      'protspace-eat-panel': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & {
+          id?: string;
+        },
+        HTMLElement
+      >;
       'protspace-scatterplot': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & {
           id?: string;

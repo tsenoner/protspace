@@ -249,20 +249,21 @@
   background: var(--ps-surface);
 }
 
-/* The legend or the Filter panel fills the column; the sidebar draws the edges (neither has a
-   card of its own). Only one shows: data-panel on the workbench picks it. */
-:is(#myLegend, #wb-filter-panel) {
+/* The legend, the Filter or the EAT panel fills the column; the sidebar draws the edges (none has
+   a card of its own). Only one shows: data-panel on the workbench picks it. */
+:is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
   flex: 1 1 0;
   min-height: 0;
 }
 
 .workbench:not([data-panel='filter']) #wb-filter-panel,
-.workbench[data-panel='filter'] #myLegend {
+.workbench:not([data-panel='eat']) #wb-eat-panel,
+.workbench:is([data-panel='filter'], [data-panel='eat']) #myLegend {
   display: none;
 }
 
 /* No transform, contain or z-index: the query builder's pickers are position: fixed. */
-#wb-filter-panel {
+:is(#wb-filter-panel, #wb-eat-panel) {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -315,7 +316,10 @@
   margin-left: auto;
 }
 
-.workbench[data-layout='phone'] #wb-filter-panel .wb-panel-header > .wb-panel-fold {
+.workbench[data-layout='phone']
+  :is(#wb-filter-panel, #wb-eat-panel)
+  .wb-panel-header
+  > .wb-panel-fold {
   margin-left: 0;
 }
 
@@ -336,6 +340,19 @@
 #myQueryBuilder {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* The EAT panel scrolls inside the column. The padding is here: the page's reset beats :host. */
+.wb-eat-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--ps-space-2) var(--ps-space-3) var(--ps-space-3);
+}
+
+/* The Close button stands at the right of the EAT heading, as on Filter's. */
+#wb-eat-panel .wb-panel-close {
+  margin-left: auto;
 }
 
 /* ── Below 951 px (design decision 17): a fixed screen, the plot over a panel row ─────
@@ -374,7 +391,7 @@
 }
 
 /* The legend or the Filter panel fills its half; a long list scrolls inside it. */
-.workbench:not([data-layout='desktop']) :is(#myLegend, #wb-filter-panel) {
+.workbench:not([data-layout='desktop']) :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
   flex: none;
   height: 100%;
 }
@@ -416,6 +433,22 @@
   box-shadow: var(--ps-shadow-sm);
 }
 
+.wb-panel-tabs [role='tab'][aria-disabled='true'] {
+  color: var(--ps-text-faint);
+  cursor: default;
+}
+
+/* The EAT tab's dot: its settings differ from their defaults, as the rail item's dot says. */
+.wb-tab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: var(--ps-space-1);
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-accent);
+  vertical-align: middle;
+}
+
 .wb-panel-tabs [role='tab']:focus-visible {
   outline: var(--ps-focus-width) solid var(--ps-focus);
   outline-offset: var(--ps-focus-offset);
@@ -442,9 +475,9 @@
   font-size: var(--ps-text-sm);
 }
 
-/* The selected Filter tab already names the panel, so its heading stays for screen readers and
+/* The selected Filter or EAT tab already names the panel, so its heading stays for screen readers and
    for the focus moved to it (layout-state.ts), and shows only to a keyboard's focus. */
-.workbench:not([data-layout='desktop']) #wb-filter-title:not(:focus-visible) {
+.workbench:not([data-layout='desktop']) :is(#wb-filter-title, #wb-eat-title):not(:focus-visible) {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -702,12 +735,13 @@
   );
 }
 
-.workbench[data-layout='desktop'] :is(#myLegend, #wb-filter-panel) {
+.workbench[data-layout='desktop'] :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
   flex: none;
   height: calc(100% - 44px);
 }
 
-.workbench[data-layout='desktop'][data-structure='docked'] :is(#myLegend, #wb-filter-panel) {
+.workbench[data-layout='desktop'][data-structure='docked']
+  :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
   height: var(--wb-legend-height);
 }
 
@@ -1223,7 +1257,8 @@
 
 /* ── The floating structure card (Task 2.13) ──────────────────────────────── */
 
-.workbench[data-layout='desktop'][data-structure='floating'] :is(#myLegend, #wb-filter-panel) {
+.workbench[data-layout='desktop'][data-structure='floating']
+  :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
   height: 100%;
 }
 
@@ -1245,7 +1280,8 @@
 
 /* Hidden by the rail's Structure button: laid out as before (Mol* keeps its size), not painted
    and inert; a docked section leaves its room to the legend or the Filter panel. */
-.workbench[data-layout='desktop'][data-structure-hidden] :is(#myLegend, #wb-filter-panel) {
+.workbench[data-layout='desktop'][data-structure-hidden]
+  :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
   height: 100%;
 }
 
@@ -1866,7 +1902,7 @@
   border-top: 1px solid var(--ps-border);
 }
 
-.workbench[data-layout='phone'] :is(#myLegend, #wb-filter-panel) {
+.workbench[data-layout='phone'] :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
   flex: 1 1 0;
   height: auto;
   min-height: 0;
@@ -1879,7 +1915,8 @@
 }
 
 .workbench[data-layout='phone'][data-panel-folded] #myLegend::part(items),
-.workbench[data-layout='phone'][data-panel-folded] .wb-filter-body {
+.workbench[data-layout='phone'][data-panel-folded] .wb-filter-body,
+.workbench[data-layout='phone'][data-panel-folded] .wb-eat-body {
   display: none;
 }
 
