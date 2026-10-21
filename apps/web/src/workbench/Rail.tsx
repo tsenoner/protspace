@@ -120,7 +120,8 @@ export function Rail({
           icon="waypoints"
           label={eatReason ?? 'EAT — transferred annotations'}
           tooltipPlacement="left"
-          disabled={eatReason !== null}
+          // Off without EAT, except while its panel shows: pressed, it still collapses the sidebar.
+          disabled={eatReason !== null && !(sidebarOpen && panel === 'eat')}
           pressed={sidebarOpen && panel === 'eat'}
           onClick={() => togglePanel('eat')}
         ></ps-icon-button>

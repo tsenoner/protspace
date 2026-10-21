@@ -2,6 +2,7 @@ import type { ProtspaceEatPanel } from '@protspace/core';
 import { useEffect, useRef } from 'react';
 import type { SidebarPanel } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
+import { getWorkbenchStatus } from '../explore/workbench-status';
 import { PanelFold } from './PanelFold';
 import { PanelTabs } from './PanelTabs';
 import { useWorkbenchStatus } from './use-workbench-status';
@@ -17,7 +18,7 @@ const eatPanel = () => document.getElementById('myEatPanel') as ProtspaceEatPane
  * is. It hosts `#myEatPanel`, a runtime element the EAT panel controller feeds by id, so the
  * section renders once and only CSS (`data-panel` on the workbench) shows or hides it. Below
  * 951 px its header starts with the panel tabs; on desktop Close returns to the legend and hands
- * focus to the rail's EAT item.
+ * focus to the rail's EAT item, or to Legend when the EAT item is off.
  *
  * One header row, as Filter's: the heading `EAT · <annotation>`, the info popover, Reset (off at
  * the defaults) and Close. The element itself draws no header.
@@ -39,7 +40,12 @@ export function EatPanel({
     if (!button) return;
     const onClick = () => {
       updateLayout({ panel: 'legend' });
-      document.getElementById('wb-rail-eat')?.focus();
+      // On its empty state the EAT item turns disabled as the panel closes: Legend takes focus.
+      const target =
+        getWorkbenchStatus().eatAvailability.kind === 'available'
+          ? document.getElementById('wb-rail-eat')
+          : document.querySelector<HTMLElement>('.wb-rail ps-icon-button[icon="list"]');
+      target?.focus();
     };
     button.addEventListener('click', onClick);
     return () => button.removeEventListener('click', onClick);
@@ -54,14 +60,15 @@ export function EatPanel({
     >
       <header className="wb-panel-header">
         <PanelTabs panel={panel} />
-        <h2
-          id="wb-eat-title"
-          className="wb-panel-title"
-          tabIndex={-1}
-          title={eatAnnotationLabel ? `EAT · ${eatAnnotationLabel}` : undefined}
-        >
+        <h2 id="wb-eat-title" className="wb-panel-title" tabIndex={-1}>
           EAT
-          {eatAnnotationLabel && <span className="wb-eat-annotation"> · {eatAnnotationLabel}</span>}
+          {eatAnnotationLabel && (
+            // The tooltip shows a name the ellipsis cut, without repeating the heading's name.
+            <span className="wb-eat-annotation" title={eatAnnotationLabel}>
+              {' '}
+              · {eatAnnotationLabel}
+            </span>
+          )}
         </h2>
         <protspace-info-popover
           className="wb-eat-info"

@@ -18,7 +18,7 @@ import {
 } from './helpers/eat';
 import { panelTab } from './helpers/mobile';
 import { seedTourSeen } from './helpers/tour-storage-state';
-import { readLayout, seedLayout, workbenchRoot } from './helpers/workbench';
+import { rail, readLayout, seedLayout, workbenchRoot } from './helpers/workbench';
 
 /**
  * The EAT panel (Phase 9): a sidebar section like Filter, opened from the rail's EAT item on
@@ -66,6 +66,32 @@ test('the EAT rail item opens the panel in place of the legend', async ({ page }
   await page.locator('#wb-eat-panel').getByRole('button', { name: 'Close EAT' }).click();
   await expect(page.locator('#myLegend')).toBeVisible();
   await expect(item).toBeFocused();
+});
+
+test('switching Color by to an annotation without EAT keeps the panel on its empty state', async ({
+  page,
+}) => {
+  await loadPhosphataseEat(page);
+  await selectAnnotation(page, 'ec');
+  await openEatPanel(page);
+  await eatThresholdBox(page).fill('50');
+  await expect(statusChip(page, 'filter')).toContainText('Filtered');
+
+  await selectAnnotation(page, 'annotation_score');
+  await expect(eatPanel(page)).toContainText('has no predicted values.');
+  // The item says why it is off, and stays pressed and usable while its panel shows.
+  const item = eatRailItem(page);
+  await expect(item).toHaveAccessibleName(
+    /has no EAT predictions\. Color by an annotation marked EAT\./,
+  );
+  await expect(item).toHaveAttribute('aria-pressed', 'true');
+  // Nothing on this annotation to reset: the panel shows its defaults.
+  await expect(page.locator('#wb-eat-panel').getByRole('button', { name: 'Reset' })).toBeDisabled();
+
+  // Close lands on Legend, since the EAT item turns off with the panel closed.
+  await page.locator('#wb-eat-panel').getByRole('button', { name: 'Close EAT' }).click();
+  await expect(item).toBeDisabled();
+  await expect(rail(page).getByRole('button', { name: 'Legend' })).toBeFocused();
 });
 
 test('on a phone the EAT tab is the third tab', async ({ page }) => {
