@@ -130,7 +130,7 @@ test.describe('the Filter panel', () => {
     const cancel = queryBuilder(page).getByRole('button', { name: 'Cancel', exact: true });
     await expect(cancel).toBeDisabled();
 
-    await queryBuilder(page).getByRole('button', { name: '+ Add condition' }).click();
+    await queryBuilder(page).getByRole('button', { name: 'Add condition', exact: true }).click();
     await expect(conditionRows(page)).toHaveCount(2);
     await expect(cancel).toBeEnabled();
 

@@ -255,7 +255,7 @@ test.describe('the bars on a phone', () => {
       .locator(`.annotation-picker-item[data-annotation=${JSON.stringify(annotation ?? '')}]`)
       .first()
       .tap();
-    await row.locator('.value-chip-add').tap();
+    await row.locator('.value-add').tap();
     await queryBuilder(page).locator('.value-picker-item').first().tap();
     // Escape closes the value picker (a layer).
     await page.keyboard.press('Escape');

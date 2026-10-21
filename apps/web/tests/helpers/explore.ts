@@ -585,7 +585,7 @@ export async function applyFirstCategoryFilter(page: Page): Promise<void> {
     .locator(`.annotation-picker-item[data-annotation="${quoted(annotation ?? '')}"]`)
     .first()
     .click();
-  await row.locator('.value-chip-add').click();
+  await row.locator('.value-add').click();
   await queryBuilder(page)
     .locator(`.value-picker-item[data-value="${quoted(value)}"]`)
     .first()
@@ -613,7 +613,7 @@ export async function draftFilterCondition(
   const builder = queryBuilder(page);
   const rows = builder.locator('protspace-query-condition-row');
   if (row >= (await rows.count())) {
-    await builder.getByRole('button', { name: '+ Add condition' }).click();
+    await builder.getByRole('button', { name: 'Add condition', exact: true }).click();
     await expect(rows).toHaveCount(row + 1);
   }
   const condition = rows.nth(row);
@@ -625,7 +625,7 @@ export async function draftFilterCondition(
   if (values.length === 0) return condition;
   for (const value of values) {
     const item = builder.locator(`.value-picker-item[data-value="${quoted(value)}"]`).first();
-    if (!(await item.isVisible())) await condition.locator('.value-chip-add').click();
+    if (!(await item.isVisible())) await condition.locator('.value-add').click();
     await item.click();
   }
   // Escape closes the value picker (a layer) and nothing else.

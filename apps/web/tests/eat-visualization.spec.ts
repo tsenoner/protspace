@@ -807,7 +807,7 @@ test('with a dirty draft, moving the slider in the legend updates the draft’s 
 
   // A dirty draft: a second, empty row beside the seeded one.
   await openFilter(page);
-  await queryBuilder(page).getByRole('button', { name: '+ Add condition' }).click();
+  await queryBuilder(page).getByRole('button', { name: 'Add condition', exact: true }).click();
   await expect.poll(async () => (await draft()).length).toBe(2);
 
   // To the legend, move the slider, back to the panel.

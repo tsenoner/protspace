@@ -315,7 +315,7 @@ async function ensureCondition(page: Page, annotation: string): Promise<number> 
   let annotations = await topRowAnnotations(page);
   let emptyIndex = annotations.indexOf('');
   if (emptyIndex < 0) {
-    await queryBuilder(page).getByRole('button', { name: '+ Add condition' }).click();
+    await queryBuilder(page).getByRole('button', { name: 'Add condition', exact: true }).click();
     await expect
       .poll(async () => (await topRowAnnotations(page)).filter((t) => t === '').length)
       .toBeGreaterThan(0);
@@ -397,7 +397,7 @@ async function openValuePicker(page: Page, rowIndex: number): Promise<void> {
   if (await isValuePickerOpen(page, rowIndex)) {
     return;
   }
-  await conditionRow(page, rowIndex).locator('.value-chip-add').click();
+  await conditionRow(page, rowIndex).locator('.value-add').click();
   await expect.poll(async () => isValuePickerOpen(page, rowIndex)).toBe(true);
   // The value list renders synchronously, but wait until at least one item or an
   // existing chip is present so callers can read/select reliably.
