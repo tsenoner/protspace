@@ -313,7 +313,12 @@ export const eatPanelStyles = [
       cursor: pointer;
     }
 
-    .eat-label-row:hover,
+    /* In view, but every member there is curated: no list to open. */
+    .eat-label-row:disabled {
+      cursor: default;
+    }
+
+    .eat-label-row:hover:not(:disabled),
     .eat-color-by:hover,
     .eat-show-all:hover {
       background: var(--ps-surface-hover);

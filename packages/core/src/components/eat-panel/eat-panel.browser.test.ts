@@ -598,6 +598,29 @@ describe('protspace-eat-panel', () => {
       expect(escape(el).defaultPrevented).toBe(false);
     });
 
+    it('a label with only curated members in view opens no list, and an open one closes', async () => {
+      const data = labelData(SPEC);
+      const el = await mount({ data, annotation: 'cls' });
+      labelRow(el, 'A').click();
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(1);
+      // Q0 (curated A) stays; A's predictions Q1–Q6 leave the view.
+      el.context = Uint8Array.from(data.protein_ids, (id) =>
+        ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6'].includes(id) ? 0 : 1,
+      );
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(0);
+      const row = labelRow(el, 'A');
+      expect(row.disabled).toBe(true);
+      expect(row.title).toBe('No predictions in view');
+      expect(row.hasAttribute('aria-expanded')).toBe(false);
+      expect(row.getAttribute('aria-label')).toContain('no predictions in view');
+      row.click();
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(0);
+      expect(labelRow(el, 'B').disabled).toBe(false);
+    });
+
     it('closes a bar list whose bin empties', async () => {
       const data = labelData(SPEC);
       const el = await mount({ data, annotation: 'cls' });

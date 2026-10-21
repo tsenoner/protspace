@@ -28,6 +28,9 @@ export function swatchColor(
   return colors.get(label) ?? colors.get(LEGEND_VALUES.OTHER);
 }
 
+/** A label row's hint when every member in view is curated. */
+const NO_PREDICTIONS = 'No predictions in view';
+
 /** Rows shown before "Show all". */
 const COLLAPSED_ROWS = 8;
 /** Above this share of predicted members a label is mostly borrowed, and its share turns amber. */
@@ -111,15 +114,19 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
         const share = formatPercent(row.predictedShare);
         const color = swatchColor(view.labelColors, row.label);
         const open = view.openLabel === row.label;
+        // Only curated members in view: nothing to list, so the row opens nothing.
+        const noPredictions = row.kept + row.below === 0;
         return html`<li>
           <button
             type="button"
             class="eat-label-row"
             data-label=${row.label}
-            aria-expanded=${String(open)}
+            ?disabled=${noPredictions}
+            title=${noPredictions ? NO_PREDICTIONS : nothing}
+            aria-expanded=${noPredictions ? nothing : String(open)}
             aria-controls=${open ? 'eat-drill' : nothing}
             @click=${() => view.onRow(row.label)}
-            aria-label=${`${row.label}: ${formatCount(row.total)}, ${share} predicted`}
+            aria-label=${`${row.label}: ${formatCount(row.total)}, ${share} predicted${noPredictions ? `, ${NO_PREDICTIONS.toLowerCase()}` : ''}`}
           >
             <span
               class="eat-swatch"

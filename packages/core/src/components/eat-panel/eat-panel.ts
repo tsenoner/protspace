@@ -208,14 +208,17 @@ export class ProtspaceEatPanel extends LitElement {
     this._dropStaleDrill(this._summary);
   }
 
-  /** A list whose bin emptied or whose label left the view (a context change) closes. */
+  /**
+   * A list whose bin emptied, or whose label left the view or has no prediction left in it (a
+   * context change), closes.
+   */
   private _dropStaleDrill(summary: EatSummary): void {
     const drill = this._drill;
     if (!drill) return;
     const stale =
       'bin' in drill
         ? !summary.bins[drill.bin]
-        : !summary.rows.some((row) => row.label === drill.label);
+        : !summary.rows.some((row) => row.label === drill.label && row.kept + row.below > 0);
     if (stale) this._drill = null;
   }
 
