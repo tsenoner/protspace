@@ -168,22 +168,22 @@ export function reliabilityFromConditions(
   return DEFAULT_EAT_RELIABILITY;
 }
 
-/** `50 %`, with the thin no-break space the EAT copy uses. */
-const percent = (value: number) => `${Math.round(value * 100)}\u202f%`;
+/** A fraction as `50 %`, rounded, with the thin no-break space the EAT copy uses. */
+export const formatPercent = (fraction: number): string => `${Math.round(fraction * 100)}\u202f%`;
 
 /** What a reliability filter keeps, `≥ 50 %`, `≤ 40 %` or `40–60 %`; null when it keeps all. */
 export function reliabilityLabel(state: EatReliabilityState): string | null {
   const { mode, min, max } = normalizeReliability(state);
-  if (mode === 'atLeast') return min > 0 ? `≥ ${percent(min)}` : null;
-  if (mode === 'atMost') return max < 1 ? `≤ ${percent(max)}` : null;
-  return min > 0 || max < 1 ? `${Math.round(min * 100)}–${percent(max)}` : null;
+  if (mode === 'atLeast') return min > 0 ? `≥ ${formatPercent(min)}` : null;
+  if (mode === 'atMost') return max < 1 ? `≤ ${formatPercent(max)}` : null;
+  return min > 0 || max < 1 ? `${Math.round(min * 100)}–${formatPercent(max)}` : null;
 }
 
 /** The same in words, for a screen reader: `at least 50 %`, `between 40 and 60 %`, or `any`. */
 export function reliabilityWords(state: EatReliabilityState): string {
   if (!reliabilityLabel(state)) return 'any';
   const { mode, min, max } = normalizeReliability(state);
-  if (mode === 'atLeast') return `at least ${percent(min)}`;
-  if (mode === 'atMost') return `at most ${percent(max)}`;
-  return `between ${Math.round(min * 100)} and ${percent(max)}`;
+  if (mode === 'atLeast') return `at least ${formatPercent(min)}`;
+  if (mode === 'atMost') return `at most ${formatPercent(max)}`;
+  return `between ${Math.round(min * 100)} and ${formatPercent(max)}`;
 }

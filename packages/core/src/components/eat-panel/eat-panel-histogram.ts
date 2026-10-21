@@ -2,15 +2,13 @@ import { html, nothing, type TemplateResult } from 'lit';
 import { countNoun, formatCount, type EatReliabilityState } from '@protspace/utils';
 import type { SegmentedOption } from '../kit/segmented';
 import '../kit/segmented';
+import { formatPercent } from '../query-builder/eat-reliability';
 import {
   renderReliabilityPercent,
   renderReliabilityRange,
   type EatReliabilityController,
 } from './eat-reliability-controller';
 import { EAT_BIN_COUNT, isKept, type EatSummary } from './eat-summary';
-
-/** A percent sign after a thin no-break space, as the spec writes it: `50 %`. */
-export const PERCENT = ' %';
 
 /** The modes, named by what they keep. */
 const MODE_OPTIONS: SegmentedOption[] = [
@@ -25,7 +23,7 @@ const SKELETON_BARS = Array.from({ length: EAT_BIN_COUNT }, (_, bin) => bin);
 /** `55–60 %: 41 predictions`, the bar's accessible name and tooltip. */
 function barLabel(bin: number, count: number): string {
   const from = bin * BIN_WIDTH;
-  return `${from}–${from + BIN_WIDTH}${PERCENT}: ${countNoun(count, 'prediction', 'predictions')}`;
+  return `${from}–${formatPercent((from + BIN_WIDTH) / 100)}: ${countNoun(count, 'prediction', 'predictions')}`;
 }
 
 /**
@@ -103,7 +101,7 @@ export function renderReliability(
     ${predicted > 0
       ? html`<p class="eat-readout">
           Keeps ${formatCount(kept)} of ${formatCount(predicted)} predictions
-          (${Math.round((kept / predicted) * 100)}${PERCENT})
+          (${formatPercent(kept / predicted)})
         </p>`
       : nothing}
   </section>`;

@@ -11,7 +11,8 @@ import {
 } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/switch';
-import { PERCENT, renderReliability } from './eat-panel-histogram';
+import { formatPercent } from '../query-builder/eat-reliability';
+import { renderReliability } from './eat-panel-histogram';
 import { eatPanelStyles } from './eat-panel.styles';
 import {
   EatReliabilityController,
@@ -22,8 +23,7 @@ import { getEatIndex, summarizeEat, type EatIndex, type EatSummary } from './eat
 const DEFAULTS = normalizeReliability(DEFAULT_EAT_RELIABILITY);
 
 /** `40 %` of `total`, for a segment's tooltip. */
-const share = (count: number, total: number) =>
-  `${total > 0 ? Math.round((count / total) * 100) : 0}${PERCENT}`;
+const share = (count: number, total: number) => formatPercent(total > 0 ? count / total : 0);
 
 /**
  * The EAT panel: every control for the transferred annotations of the Color by annotation. It owns
