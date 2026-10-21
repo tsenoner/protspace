@@ -12,7 +12,7 @@ export const BIN_COUNT = 40;
 /** Slider positions for a continuous range; an integer range narrower than this gets one per value. */
 const MAX_STEPS = 1000;
 
-export interface NumericHistogram {
+export interface NumericRange {
   min: number;
   max: number;
   /** 'log' when the values are positive, span 2+ decades and pile into the low eighth. */
@@ -21,22 +21,42 @@ export interface NumericHistogram {
   integer: boolean;
   /** Slider positions run 0..steps. */
   steps: number;
+}
+
+export interface NumericHistogram extends NumericRange {
   counts: Uint32Array;
   peak: number;
 }
 
+const ranges = new WeakMap<Float64Array, NumericRange | null>();
 const cache = new WeakMap<Float64Array, NumericHistogram | null>();
+
+/** The slider's range and scale without binning (a phone's card has no histogram); cached. */
+export function rangeOf(values: Float64Array): NumericRange | null {
+  const cached = ranges.get(values);
+  if (cached !== undefined) return cached;
+  const range = measure(values);
+  ranges.set(values, range);
+  return range;
+}
 
 /** Bins the column once; later calls for the same array return the cached result. */
 export function histogramOf(values: Float64Array): NumericHistogram | null {
   const cached = cache.get(values);
   if (cached !== undefined) return cached;
-  const histogram = binValues(values);
+  const range = rangeOf(values);
+  let histogram: NumericHistogram | null = null;
+  if (range) {
+    const counts = fill(values, range.min, range.max, range.scale);
+    let peak = 0;
+    for (const c of counts) if (c > peak) peak = c;
+    histogram = { ...range, counts, peak };
+  }
   cache.set(values, histogram);
   return histogram;
 }
 
-function binValues(values: Float64Array): NumericHistogram | null {
+function measure(values: Float64Array): NumericRange | null {
   let min = Infinity;
   let max = -Infinity;
   let integer = true;
@@ -51,17 +71,18 @@ function binValues(values: Float64Array): NumericHistogram | null {
   }
   if (total === 0) return null;
 
-  const linear = fill(values, min, max, 'linear');
-  let low = 0;
-  for (let i = 0; i < BIN_COUNT / 8; i++) low += linear[i];
-  const skewed = min > 0 && max / min >= 100 && low >= total * 0.6;
+  // Skewed: 60% of the values in the lowest eighth of the linear range (its first 5 bins).
+  let skewed = false;
+  if (min > 0 && max / min >= 100) {
+    const lowEnd = min + (max - min) / 8;
+    let low = 0;
+    for (let i = 0; i < values.length; i++) if (values[i] >= min && values[i] < lowEnd) low++;
+    skewed = low >= total * 0.6;
+  }
   const scale = skewed ? 'log' : 'linear';
-  const counts = skewed ? fill(values, min, max, 'log') : linear;
   const span = max - min;
   const steps = integer && scale === 'linear' && span > 0 && span <= MAX_STEPS ? span : MAX_STEPS;
-  let peak = 0;
-  for (const c of counts) if (c > peak) peak = c;
-  return { min, max, scale, integer, steps, counts, peak };
+  return { min, max, scale, integer, steps };
 }
 
 function fill(
@@ -84,7 +105,7 @@ function fill(
 }
 
 /** Where a value sits along the range, 0..1 (clamped). */
-export function fractionOf(h: NumericHistogram, value: number): number {
+export function fractionOf(h: NumericRange, value: number): number {
   if (h.max === h.min) return 0;
   const f =
     h.scale === 'log'
@@ -94,12 +115,12 @@ export function fractionOf(h: NumericHistogram, value: number): number {
 }
 
 /** The slider position (0..steps) nearest a value. */
-export function positionOf(h: NumericHistogram, value: number): number {
+export function positionOf(h: NumericRange, value: number): number {
   return Math.round(fractionOf(h, value) * h.steps);
 }
 
 /** The value at a slider position, rounded to what one step can tell apart. */
-export function valueAt(h: NumericHistogram, position: number): number {
+export function valueAt(h: NumericRange, position: number): number {
   if (position <= 0) return h.min;
   if (position >= h.steps) return h.max;
   const f = position / h.steps;

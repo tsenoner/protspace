@@ -669,7 +669,11 @@ class ProtspaceQueryConditionRow extends LitElement {
     const name = n > 0 ? `Condition ${n}` : 'Condition';
     const annotation = this.condition.annotation;
     return html`
-      <div class="condition-row" role="group" aria-label=${this._summary(name)}>
+      <div
+        class="condition-row ${this.condition.kind === 'numeric' ? 'is-numeric' : ''}"
+        role="group"
+        aria-label=${this._summary(name)}
+      >
         <div class="condition-head">
           <button
             type="button"

@@ -17,14 +17,17 @@ import {
   fractionOf,
   histogramOf,
   positionOf,
+  rangeOf,
   valueAt,
   type NumericHistogram,
+  type NumericRange,
 } from './query-histogram';
 import type { RangePositions } from './query-range-slider';
 import { queryBuilderStyles } from './query-builder.styles';
 import './query-range-slider';
 import type { PsCheckbox } from '../kit/checkbox';
 import '../kit/checkbox';
+import { COMPACT_MEDIA } from '../../utils/breakpoints';
 
 /** Units shown after the typed bounds, by annotation column. */
 const UNITS: Record<string, string> = { length: 'aa' };
@@ -63,13 +66,28 @@ class ProtspaceQueryNumericInput extends LitElement {
   @state() private _maxText: string = '';
   /** The thumbs while a drag is under way, so rounding the shown value cannot nudge them. */
   @state() private _dragging: RangePositions | null = null;
+  /** A phone (upright or on its side): no histogram, the slider sits between the typed bounds. */
+  @state() private _compact = false;
 
   private _countTimer: ReturnType<typeof setTimeout> | null = null;
 
+  private _compactQuery: MediaQueryList | null = null;
+  private readonly _onCompactChange = () => (this._compact = !!this._compactQuery?.matches);
+
   // ─── Lifecycle ────────────────────────────────────────────────────────────
+
+  connectedCallback() {
+    super.connectedCallback();
+    if (typeof matchMedia !== 'function') return;
+    this._compactQuery = matchMedia(COMPACT_MEDIA);
+    this._compactQuery.addEventListener('change', this._onCompactChange);
+    this._onCompactChange();
+  }
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._compactQuery?.removeEventListener('change', this._onCompactChange);
+    this._compactQuery = null;
     if (this._countTimer) {
       clearTimeout(this._countTimer);
       this._countTimer = null;
@@ -120,12 +138,6 @@ class ProtspaceQueryNumericInput extends LitElement {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
-  /** The annotation's bins, computed on this card's first render and cached per column. */
-  private _histogram(): NumericHistogram | null {
-    const values = this.data?.numeric_annotation_data?.[this.condition.annotation];
-    return values ? histogramOf(values) : null;
-  }
-
   private _emitChanged(updated: NumericCondition) {
     this.dispatchEvent(
       new CustomEvent('numeric-changed', {
@@ -149,14 +161,14 @@ class ProtspaceQueryNumericInput extends LitElement {
   }
 
   /** The thumbs' values as typed bounds; `null` for a thumb the operator does not use. */
-  private _boundsAt(h: NumericHistogram, positions: RangePositions) {
+  private _boundsAt(h: NumericRange, positions: RangePositions) {
     return {
       min: positions.low === null ? null : valueAt(h, positions.low),
       max: positions.high === null ? null : valueAt(h, positions.high),
     };
   }
 
-  private _handleRangeInput(h: NumericHistogram, e: CustomEvent<RangePositions>) {
+  private _handleRangeInput(h: NumericRange, e: CustomEvent<RangePositions>) {
     e.stopPropagation();
     this._dragging = e.detail;
     const { min, max } = this._boundsAt(h, e.detail);
@@ -165,7 +177,7 @@ class ProtspaceQueryNumericInput extends LitElement {
     this._countStale = true;
   }
 
-  private _handleRangeChange(h: NumericHistogram, e: CustomEvent<RangePositions>) {
+  private _handleRangeChange(h: NumericRange, e: CustomEvent<RangePositions>) {
     e.stopPropagation();
     const { min, max } = this._boundsAt(h, e.detail);
     const updated = {
@@ -213,28 +225,33 @@ class ProtspaceQueryNumericInput extends LitElement {
     return html`<div class="numeric-histogram" aria-hidden="true">${bars}</div>`;
   }
 
-  private _renderSlider(h: NumericHistogram, label: string, unit: string) {
+  /** The two-thumb slider; a thumb the operator does not use is left out. */
+  private _renderSlider(h: NumericRange, label: string, unit: string) {
     const fields = numericFieldsFor(this.condition.operator);
-    const min = this._parseFieldValue(this._minText);
-    const max = this._parseFieldValue(this._maxText);
     const positions = this._dragging ?? {
-      low: fields.min ? positionOf(h, min ?? h.min) : null,
-      high: fields.max ? positionOf(h, max ?? h.max) : null,
+      low: fields.min ? positionOf(h, this._parseFieldValue(this._minText) ?? h.min) : null,
+      high: fields.max ? positionOf(h, this._parseFieldValue(this._maxText) ?? h.max) : null,
     };
-    const withUnit = (v: number) => (unit ? `${formatValue(v)} ${unit}` : formatValue(v));
+    return html`<protspace-query-range-slider
+      .steps=${h.steps}
+      .low=${positions.low}
+      .high=${positions.high}
+      .valueText=${(p: number) => withUnit(valueAt(h, p), unit)}
+      label=${label}
+      @range-input=${(e: CustomEvent<RangePositions>) => this._handleRangeInput(h, e)}
+      @range-change=${(e: CustomEvent<RangePositions>) => this._handleRangeChange(h, e)}
+    ></protspace-query-range-slider>`;
+  }
+
+  /** Above the typed bounds on a wider screen: the histogram, the slider and the extent. */
+  private _renderDistribution(h: NumericHistogram, label: string, unit: string) {
+    const fields = numericFieldsFor(this.condition.operator);
+    const min = fields.min ? this._parseFieldValue(this._minText) : null;
+    const max = fields.max ? this._parseFieldValue(this._maxText) : null;
     return html`
-      ${this._renderHistogram(h, fields.min ? min : null, fields.max ? max : null)}
-      <protspace-query-range-slider
-        .steps=${h.steps}
-        .low=${positions.low}
-        .high=${positions.high}
-        .valueText=${(p: number) => withUnit(valueAt(h, p))}
-        label=${label}
-        @range-input=${(e: CustomEvent<RangePositions>) => this._handleRangeInput(h, e)}
-        @range-change=${(e: CustomEvent<RangePositions>) => this._handleRangeChange(h, e)}
-      ></protspace-query-range-slider>
+      ${this._renderHistogram(h, min, max)} ${this._renderSlider(h, label, unit)}
       <div class="numeric-extent" aria-hidden="true">
-        <span>${formatValue(h.min)}</span><span>${withUnit(h.max)}</span>
+        <span>${formatValue(h.min)}</span><span>${withUnit(h.max, unit)}</span>
       </div>
     `;
   }
@@ -256,14 +273,24 @@ class ProtspaceQueryNumericInput extends LitElement {
     const annotation = this.condition.annotation;
     const label = annotationLabel(annotation, this.data?.annotations?.[annotation]);
     const unit = UNITS[annotation] ?? '';
-    const h = this._histogram();
+    const values = this.data?.numeric_annotation_data?.[annotation];
+    const compact = this._compact;
+    // Bins only where the histogram shows; a phone's slider needs just the range and scale.
+    const histogram = values && !compact ? histogramOf(values) : null;
+    const range = histogram ?? (values ? rangeOf(values) : null);
     // "Any value" is the operator menu's "has any value"; a chip for it left over from an older
     // query still shows, to remove, and the comparison it subsumes is off while it is there.
     const anyValue = presence.includes(ANY_VALUE);
+    const na = html`<ps-checkbox
+      class="numeric-na"
+      .checked=${presence.includes(NA_VALUE)}
+      @change=${this._handleNaToggle}
+      >or has no ${nounOf(label)} (N/A)</ps-checkbox
+    >`;
 
     return html`
-      <div class="numeric-input">
-        ${h && !anyValue ? this._renderSlider(h, label, unit) : nothing}
+      <div class="numeric-input ${compact ? 'compact' : ''}">
+        ${histogram && !anyValue ? this._renderDistribution(histogram, label, unit) : nothing}
         <div class="numeric-bounds">
           ${fields.min
             ? html`<input
@@ -277,6 +304,7 @@ class ProtspaceQueryNumericInput extends LitElement {
                 @input=${this._handleMinInput}
               />`
             : nothing}
+          ${compact && range && !anyValue ? this._renderSlider(range, label, unit) : nothing}
           ${fields.min && fields.max ? html`<span class="numeric-dash">to</span>` : nothing}
           ${fields.max
             ? html`<input
@@ -290,17 +318,13 @@ class ProtspaceQueryNumericInput extends LitElement {
                 @input=${this._handleMaxInput}
               />`
             : nothing}
-          ${unit ? html`<span class="numeric-unit">${unit}</span>` : nothing} ${this._renderCount()}
+          ${unit ? html`<span class="numeric-unit">${unit}</span>` : nothing}
+          ${compact ? nothing : this._renderCount()}
         </div>
         ${anyValue
           ? renderValueChip(ANY_VALUE, () => this._removePresence(ANY_VALUE), ANY_VALUE)
           : nothing}
-        <ps-checkbox
-          class="numeric-na"
-          .checked=${presence.includes(NA_VALUE)}
-          @change=${this._handleNaToggle}
-          >or has no ${nounOf(label)} (N/A)</ps-checkbox
-        >
+        ${compact ? html`<div class="numeric-na-line">${na} ${this._renderCount()}</div>` : na}
       </div>
     `;
   }
@@ -309,6 +333,10 @@ class ProtspaceQueryNumericInput extends LitElement {
 /** A bound as the extent labels show it: grouped digits, at most 3 decimals. */
 function formatValue(v: number): string {
   return v.toLocaleString('en-US', { maximumFractionDigits: 3 });
+}
+
+function withUnit(v: number, unit: string): string {
+  return unit ? `${formatValue(v)} ${unit}` : formatValue(v);
 }
 
 declare global {

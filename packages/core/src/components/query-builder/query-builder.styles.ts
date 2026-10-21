@@ -1019,6 +1019,88 @@ export const queryBuilderStyles = [
       color: var(--ps-text-muted);
       font-size: var(--ps-text-sm);
     }
+
+    /* A phone's card fits its short panel: no histogram or extent, and the count moves beside
+       the N/A box. Where the card is wide enough (upright), the slider sits between the typed
+       bounds; in the narrow side panel (on its side) it takes its own line above them. The
+       container is the input's own box, which holds no fixed-position picker. */
+    .numeric-input.compact {
+      container: numeric-input / inline-size;
+      padding-top: 0;
+    }
+
+    .numeric-input.compact .numeric-bounds {
+      flex-wrap: wrap;
+    }
+
+    .numeric-input.compact protspace-query-range-slider {
+      flex: 1 1 100%;
+      order: -1;
+      min-width: 0;
+    }
+
+    @container numeric-input (min-width: 300px) {
+      .numeric-input.compact .numeric-bounds {
+        flex-wrap: nowrap;
+      }
+
+      .numeric-input.compact protspace-query-range-slider {
+        flex: 1 1 auto;
+        order: 0;
+      }
+
+      .numeric-input.compact .numeric-field {
+        flex: none;
+        width: 4.5em;
+        min-width: 0;
+      }
+
+      .numeric-input.compact protspace-query-range-slider + .numeric-dash {
+        display: none;
+      }
+    }
+
+    .numeric-na-line {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .numeric-na-line .numeric-na {
+      align-self: center;
+    }
+
+    /* A phone's numeric card is tighter; upright, where the card is full width, its operator
+       pill joins the name row, before the ⋯ menu. (No container query here: the row holds the
+       fixed-position pickers.) */
+    @media ${unsafeCSS(COMPACT_MEDIA)} {
+      .condition-row.is-numeric {
+        row-gap: var(--ps-space-1);
+        padding-block: var(--ps-space-1);
+      }
+    }
+
+    @media ${unsafeCSS(PHONE_MEDIA)} {
+      .condition-row.is-numeric {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+      }
+
+      .condition-row.is-numeric > .condition-values {
+        display: contents;
+      }
+
+      .condition-row.is-numeric .operator-pill {
+        grid-area: 1 / 2;
+      }
+
+      .condition-row.is-numeric > .condition-menu-trigger {
+        grid-area: 1 / 3;
+      }
+
+      .condition-row.is-numeric protspace-query-numeric-input {
+        grid-column: 1 / -1;
+      }
+    }
   `,
 ];
 
