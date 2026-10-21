@@ -395,14 +395,16 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     loadQueue.dispose();
   });
 
+  /** Created below, once the filter exists; a selection committed before then has no card. */
+  let eatPanelController: ReturnType<typeof createEatPanelController> | undefined;
+
   const interactionController = createInteractionController({
     legendElement,
     plotElement,
     requestStructure: (proteinId) => structureController.request(proteinId),
     showSelection: (proteinIds) => {
       structureController.select(proteinIds);
-      // Selections commit on user input, after the EAT panel's controller exists below.
-      eatPanelController.setSelection(proteinIds);
+      eatPanelController?.setSelection(proteinIds);
     },
   });
 
@@ -516,7 +518,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   });
   lifecycle.addCleanup(() => filterController.dispose());
   // A dataset with no EAT shows the legend in the EAT panel's place (Workbench.tsx).
-  const eatPanelController = createEatPanelController({
+  eatPanelController = createEatPanelController({
     eatPanel,
     plotElement,
     legendElement,
@@ -532,7 +534,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       interactionController.traceProtein(proteinId, originalIndex, mode),
     setTracing: (options) => interactionController.setTracing(options),
   });
-  lifecycle.addCleanup(() => eatPanelController.dispose());
+  lifecycle.addCleanup(() => eatPanelController?.dispose());
   const statusController = createStatusController({
     plotElement,
     plotStatus,
@@ -589,7 +591,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       viewBarController.resetForNewDataset();
       exportMenu.reset();
       filterController.resetForNewDataset();
-      eatPanelController.resetForNewDataset();
+      eatPanelController?.resetForNewDataset();
     },
     setHasFileSettings(value) {
       exportMenu.hasFileSettings = value;
@@ -678,8 +680,12 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     interactionController.handleLegendError,
   );
   // The legend's EAT note and the Filter panel's locked row open the EAT panel. Both hide with the
-  // panel they sit in, so focus moves to the EAT heading.
-  addTrackedEventListener(lifecycle, document, 'eat-panel-open', () => {
+  // panel they sit in, so focus moves to the EAT heading. A locked row of another base first makes
+  // that base the Color by annotation, so the panel shows the row's threshold.
+  addTrackedEventListener(lifecycle, document, 'eat-panel-open', (event) => {
+    eatPanelController?.colorByBase(
+      (event as CustomEvent<{ annotation?: string }>).detail?.annotation,
+    );
     openPanel('eat');
     requestAnimationFrame(() => focusPanelTitle('wb-eat-title'));
   });

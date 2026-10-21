@@ -53,6 +53,8 @@ function proteinIndexOf(data: VisualizationData, proteinId: string): number | nu
 interface EatPanelController {
   /** The selection changed: the card follows a single selected protein. */
   setSelection(proteinIds: readonly string[]): void;
+  /** "Edit in EAT" on a locked row of `annotation`: Color by it unless it already is. */
+  colorByBase(annotation: string | undefined): void;
   resetForNewDataset(): void;
   dispose(): void;
 }
@@ -266,6 +268,9 @@ export function createEatPanelController({
     setSelection(proteinIds) {
       selection = [...proteinIds];
       syncFocus();
+    },
+    colorByBase(annotation) {
+      if (annotation && annotation !== plotElement.selectedAnnotation) pickAnnotation(annotation);
     },
     resetForNewDataset() {
       eatPanel.resetForNewDataset();

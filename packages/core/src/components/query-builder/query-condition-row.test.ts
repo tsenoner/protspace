@@ -648,13 +648,14 @@ describe('query-condition-row locked EAT reliability', () => {
     expect((reset.mock.calls[0][0] as CustomEvent).detail).toEqual({ annotation: 'ec' });
   });
 
-  it('Edit in EAT dispatches eat-panel-open', async () => {
+  it('Edit in EAT dispatches eat-panel-open for its base', async () => {
     const el = await mountLocked(reliabilityCondition({ min: 0.5 }));
     const open = vi.fn();
     document.addEventListener('eat-panel-open', open);
     (el.shadowRoot!.querySelector('.locked-edit') as HTMLElement).click();
     document.removeEventListener('eat-panel-open', open);
     expect(open).toHaveBeenCalledTimes(1);
+    expect((open.mock.calls[0][0] as CustomEvent).detail).toEqual({ annotation: 'ec' });
   });
 
   it('a negated band reads "any" and evaluates as before', async () => {

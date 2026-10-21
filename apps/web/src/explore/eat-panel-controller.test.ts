@@ -270,6 +270,15 @@ describe('createEatPanelController', () => {
     expect(pickAnnotation).toHaveBeenCalledTimes(1);
   });
 
+  it('colorByBase switches Color by to another base only', () => {
+    const { controller, pickAnnotation } = setup({ value: true });
+    controller.colorByBase(undefined);
+    controller.colorByBase('ec');
+    expect(pickAnnotation).not.toHaveBeenCalled();
+    controller.colorByBase('family');
+    expect(pickAnnotation).toHaveBeenCalledExactlyOnceWith('family');
+  });
+
   it('selects the proteins of eat-select-proteins and shows a single one’s structure', () => {
     const { panel, controller, selectProteins, requestStructure } = setup({ value: true });
     const select = (proteinIds: string[], zoom: boolean) =>

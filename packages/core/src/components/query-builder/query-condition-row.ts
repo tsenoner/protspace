@@ -51,7 +51,8 @@ import './query-numeric-input';
  *   `{ id: string, operator: ConditionOperator }`; the builder stores it (`setOperator`)
  * - `eat-reliability-reset` — a locked EAT reliability card's ✕, detail: `{ annotation }` (the
  *   base annotation whose reliability resets)
- * - `eat-panel-open` — a locked EAT reliability card's "Edit in EAT ›", no detail
+ * - `eat-panel-open` — a locked EAT reliability card's "Edit in EAT ›", detail: `{ annotation }`
+ *   (the base annotation, which the app makes the Color by one so the panel shows it)
  */
 /** Proteins with a value, per dataset and annotation, for the operator menu's counts. */
 const presenceCounts = new WeakMap<ProtspaceData, Map<string, number>>();
@@ -702,7 +703,11 @@ class ProtspaceQueryConditionRow extends LitElement {
           <span class="locked-text"
             >${label} — reliability ${reliabilityLabel(state) ?? 'any'}</span
           >
-          <button type="button" class="locked-edit" @click=${() => send('eat-panel-open')}>
+          <button
+            type="button"
+            class="locked-edit"
+            @click=${() => send('eat-panel-open', { annotation: base })}
+          >
             Edit in EAT <span aria-hidden="true">›</span>
           </button>
         </div>
