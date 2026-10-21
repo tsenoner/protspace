@@ -289,6 +289,36 @@
   font-weight: var(--ps-weight-semibold);
 }
 
+/* The Filter heading sits with its state label; the ⋯ menu and Close stand at the right. */
+#wb-filter-title {
+  flex: 0 1 auto;
+}
+
+.wb-filter-state {
+  overflow: hidden;
+  padding: 2px var(--ps-space-2);
+  border-radius: var(--ps-radius-full);
+  color: var(--ps-text-muted);
+  background: var(--ps-surface-muted);
+  font-size: var(--ps-text-xs);
+  font-weight: var(--ps-weight-medium);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.wb-filter-state[data-state='draft'] {
+  color: var(--ps-accent-text);
+  background: var(--ps-accent-tint);
+}
+
+.wb-filter-more {
+  margin-left: auto;
+}
+
+.workbench[data-layout='phone'] #wb-filter-panel .wb-panel-header > .wb-panel-fold {
+  margin-left: 0;
+}
+
 .wb-panel-title:focus-visible {
   outline: var(--ps-focus-width) solid var(--ps-focus);
   outline-offset: var(--ps-focus-offset);

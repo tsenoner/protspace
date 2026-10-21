@@ -87,6 +87,7 @@ export const queryBuilderStyles = [
     }
 
     .query-footer {
+      container: query-footer / inline-size;
       display: flex;
       flex: none;
       flex-direction: column;
@@ -95,7 +96,17 @@ export const queryBuilderStyles = [
       border-top: 1px solid var(--ps-border);
     }
 
+    /* "586 of 7,831 proteins", how the last edit moved it, and a thin share bar. */
+    .match-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0 var(--ps-space-2);
+    }
+
     .match-count,
+    .match-delta,
     .apply-reason {
       margin: 0;
       font-size: var(--ps-text-sm);
@@ -104,7 +115,33 @@ export const queryBuilderStyles = [
     }
 
     .match-count {
+      color: var(--ps-text-muted);
+    }
+
+    .match-number {
       color: var(--ps-text);
+      font-size: var(--ps-text-xl);
+      font-weight: var(--ps-weight-semibold);
+      line-height: var(--ps-leading-tight);
+    }
+
+    .match-delta {
+      color: var(--ps-text-muted);
+      white-space: nowrap;
+    }
+
+    .match-bar {
+      height: 4px;
+      overflow: hidden;
+      border-radius: var(--ps-radius-full);
+      background: var(--ps-border);
+    }
+
+    .match-bar > span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--ps-accent);
     }
 
     /* Room for one line even while empty, so the buttons do not jump when a reason appears. */
@@ -122,6 +159,18 @@ export const queryBuilderStyles = [
 
     .query-footer-reset {
       margin-inline-end: auto;
+    }
+
+    /* A 240 px sidebar fits Reset, Cancel and Apply on one line only with Reset as its icon. */
+    @container query-footer (max-width: 232px) {
+      .reset-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
     }
 
     /* ── Joiners and groups ──────────────────────────────────────────────── */
@@ -237,6 +286,11 @@ export const queryBuilderStyles = [
       border: 1px solid var(--ps-border);
       border-radius: var(--ps-radius-lg);
       background: var(--ps-surface);
+    }
+
+    /* Changed since the last Apply: an accent edge down the card's left side. */
+    :host([edited]) .condition-row {
+      box-shadow: inset 3px 0 0 var(--ps-accent);
     }
 
     .condition-head {

@@ -48,6 +48,7 @@ vi.mock('@protspace/core', async () => {
     conditionsForReliability: reliability.conditionsForReliability,
     reliabilityFromConditions: reliability.reliabilityFromConditions,
     sameConditions: reliability.sameConditions,
+    queryChanges: equal.queryChanges,
     sameQuery: equal.sameQuery,
   };
 });

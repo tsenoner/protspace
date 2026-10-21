@@ -54,6 +54,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   @property({ type: Object }) matchedIndices: Set<number> = new Set();
   /** The condition's number in the builder (1-based, group leaves included); 0 shows none. */
   @property({ type: Number }) number = 0;
+  /** Changed since the last Apply: the card carries an accent edge. */
+  @property({ type: Boolean, reflect: true }) edited = false;
 
   @state() private _showAnnotationPicker: boolean = false;
   @state() private _showValuePicker: boolean = false;
@@ -622,7 +624,11 @@ class ProtspaceQueryConditionRow extends LitElement {
     const name = n > 0 ? `Condition ${n}` : 'Condition';
     const annotation = this.condition.annotation;
     return html`
-      <div class="condition-row" role="group" aria-label=${name}>
+      <div
+        class="condition-row"
+        role="group"
+        aria-label=${this.edited ? `${name}, not applied` : name}
+      >
         <div class="condition-head">
           <button
             type="button"

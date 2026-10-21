@@ -99,7 +99,7 @@ describe('applyBlock', () => {
 
 describe('applyBlockText', () => {
   it.each<[ApplyBlock, string]>([
-    [{ kind: 'empty' }, 'Add a condition'],
+    [{ kind: 'empty' }, 'Choose an annotation to filter by'],
     [{ kind: 'annotation', n: 3 }, 'Choose an annotation for condition 3'],
     [{ kind: 'value', n: 2 }, 'Choose a value for condition 2'],
     [{ kind: 'bound', n: 1 }, 'Enter a number for condition 1'],

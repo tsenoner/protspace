@@ -16,6 +16,8 @@ export interface WorkbenchStatus {
   proteinCount: number | null;
   /** Configured leaf conditions of the applied filter; 0 while no filter is applied. */
   appliedFilterConditions: number;
+  /** Conditions the Filter panel's draft adds, removes or changes against the applied filter. */
+  unappliedFilterChanges: number;
   /** The plot's contour mode, which the view bar's More menu shows once Contours moves there. */
   densityLayer: DensityLayerMode;
   /** The protein the structure viewer shows or waits to show (the rail's dot); null for none. */
@@ -36,6 +38,7 @@ const EMPTY: WorkbenchStatus = {
   datasetName: null,
   proteinCount: null,
   appliedFilterConditions: 0,
+  unappliedFilterChanges: 0,
   densityLayer: DENSITY_DEFAULT,
   structureProteinId: null,
   datasetPhase: 'starting',

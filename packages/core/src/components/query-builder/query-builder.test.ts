@@ -77,12 +77,12 @@ describe('query-builder Apply gating', () => {
   const reason = () => shadow().querySelector('#apply-reason')!.textContent!.trim();
   const countLine = () => shadow().querySelector('.match-count')!;
 
-  it('keeps Apply disabled for the seeded unconfigured condition and says to add one', async () => {
+  it('keeps Apply disabled for the seeded unconfigured condition and asks for an annotation', async () => {
     builder.query = [createCondition()];
     await settle();
 
     expect(applyButton().disabled).toBe(true);
-    expect(reason()).toBe('Add a condition');
+    expect(reason()).toBe('Choose an annotation to filter by');
   });
 
   it('enables Apply once a condition is configured, with no reason shown', async () => {

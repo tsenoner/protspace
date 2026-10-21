@@ -4,6 +4,7 @@ import {
   evaluateQuery,
   findConditionsForAnnotation,
   hasConfiguredCondition,
+  queryChanges,
   reliabilityFromConditions,
   replaceConditionsForAnnotation,
   sameConditions,
@@ -126,6 +127,7 @@ export function createFilterController({
   const publish = () =>
     setWorkbenchStatus({
       appliedFilterConditions: applied.matchedIds ? countConfigured(applied.query) : 0,
+      unappliedFilterChanges: queryChanges(draft, baseline()).count,
     });
 
   /**
@@ -133,12 +135,14 @@ export function createFilterController({
    * only while the panel shows it; becoming shown hands it the latest.
    */
   const syncBuilder = () => {
+    publish();
     if (!isPanelShown()) return;
     if (queryBuilder.data !== snapshot) {
       queryBuilder.annotations = filterableAnnotations(snapshot);
       queryBuilder.data = snapshot;
     }
     queryBuilder.query = draft;
+    queryBuilder.appliedQuery = baseline();
     queryBuilder.dirty = isDirty();
   };
 
@@ -354,7 +358,7 @@ export function createFilterController({
       plotElement.removeEventListener('data-change', onDataChange);
       unsubscribePanel();
       // The status store outlives this page: no stale count after leaving /explore.
-      setWorkbenchStatus({ appliedFilterConditions: 0 });
+      setWorkbenchStatus({ appliedFilterConditions: 0, unappliedFilterChanges: 0 });
     },
   };
 }

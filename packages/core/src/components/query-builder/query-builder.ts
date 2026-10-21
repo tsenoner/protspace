@@ -28,7 +28,8 @@ import {
   type ConditionOperator,
   type Joiner,
 } from './query-operators';
-import { evaluateQuery, evaluateQueryExcluding } from './query-evaluate';
+import { evaluateQuery, evaluateQueryExcluding, hasConfiguredCondition } from './query-evaluate';
+import { queryChanges } from './query-equal';
 import { applyBlock, applyBlockText, leafConditions } from './query-apply-state';
 import { queryBuilderHostStyles, queryBuilderStyles } from './query-builder.styles';
 import './query-condition-row';
@@ -61,6 +62,12 @@ export class ProtspaceQueryBuilder extends LitElement {
    */
   @property({ attribute: false }) dirty: boolean | null = null;
   /**
+   * The query a clean draft equals (the filter last applied), set by a host that keeps a draft:
+   * cards that differ from it carry an accent edge, and Reset is off while both are empty. null:
+   * no edges, Reset always on.
+   */
+  @property({ attribute: false }) appliedQuery: FilterQuery | null = null;
+  /**
    * Hosted by a panel or dialog that brings its own heading (the app's Filter panel): the builder
    * then shows neither its title nor its close button, and leaves Escape to the host.
    */
@@ -71,6 +78,10 @@ export class ProtspaceQueryBuilder extends LitElement {
   @state() private _totalCount: number = 0;
   /** A count is pending (the 300 ms debounce): Apply waits, with no reason text. */
   @state() private _counting = true;
+  /** How the count moved with the last edit; null before a second count on the same data. */
+  @state() private _delta: number | null = null;
+  /** The data the last count ran on, so a dataset swap is not read as an edit. */
+  private _countedData: ProtspaceData | undefined = undefined;
 
   /** The joiner menu is open, for the item `_joinerTarget`. */
   @state() private _joinerMenuOpen = false;
@@ -84,6 +95,8 @@ export class ProtspaceQueryBuilder extends LitElement {
   private _joinerTarget: { id: string; anchor: Element } | null = null;
   private _groupTarget: { id: string; anchor: Element } | null = null;
   private _focusPrompt = false;
+  /** The cards that differ from `appliedQuery`, worked out once per render. */
+  private _edited: ReadonlySet<string> = new Set();
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -143,7 +156,11 @@ export class ProtspaceQueryBuilder extends LitElement {
     this._debounceTimer = setTimeout(() => {
       this._debounceTimer = null;
       if (!this.data) return;
-      this._matchedIndices = evaluateQuery(query, this.data);
+      const matched = evaluateQuery(query, this.data);
+      this._delta =
+        this._countedData === this.data ? matched.size - this._matchedIndices.size : null;
+      this._countedData = this.data;
+      this._matchedIndices = matched;
       this._totalCount = this.data.protein_ids?.length ?? 0;
 
       // Build per-condition "excluded" matched sets for dynamic value counts
@@ -174,9 +191,24 @@ export class ProtspaceQueryBuilder extends LitElement {
     this._dispatchQueryChanged([...this.query, condition]);
   }
 
-  private _addGroup() {
+  /** Adds an empty group after the last item; the Filter panel header's ⋯ menu calls it. */
+  addGroup(): void {
     const group = createGroup({ logicalOp: nextJoiner(this.query) });
     this._dispatchQueryChanged([...this.query, group]);
+  }
+
+  /**
+   * Leaves one empty card. It keeps the first card's id, so clearing a draft that was only ever
+   * the fresh panel's empty card leaves it clean.
+   */
+  clearAll(): void {
+    const first = leafConditions(this.query)[0];
+    this._dispatchQueryChanged([createCondition(first ? { id: first.id } : undefined)]);
+  }
+
+  /** Whether Clear all has anything to clear. */
+  get canClearAll(): boolean {
+    return this.query.length > 1 || hasConfiguredCondition(this.query);
   }
 
   private _addConditionToGroup(groupId: string) {
@@ -390,6 +422,7 @@ export class ProtspaceQueryBuilder extends LitElement {
     return html`
       <protspace-query-condition-row
         .condition=${condition}
+        .edited=${this._edited.has(condition.id)}
         .annotations=${this.annotations}
         .data=${this.data}
         .matchedIndices=${this._excludedMatchMap.get(condition.id) ?? this._matchedIndices}
@@ -498,6 +531,15 @@ export class ProtspaceQueryBuilder extends LitElement {
     });
     // The number each condition is called by in the reason text, group leaves included.
     const numbers = new Map(leafConditions(this.query).map((leaf, index) => [leaf.id, index + 1]));
+    const applied = this.appliedQuery;
+    this._edited = applied ? queryChanges(this.query, applied).edited : new Set();
+    const canReset =
+      !applied ||
+      hasConfiguredCondition(applied) ||
+      hasConfiguredCondition(this.query) ||
+      this.dirty === true;
+    const matched = this._matchedIndices.size;
+    const delta = this._counting ? null : this._delta;
     return html`
       <div class="query-builder">
         ${this.embedded
@@ -518,26 +560,43 @@ export class ProtspaceQueryBuilder extends LitElement {
             <ps-button class="add-condition" @click=${this._addCondition}
               ><span slot="start">${icon('plus', 16)}</span>Add condition</ps-button
             >
-            <ps-button class="add-group" variant="ghost" size="sm" @click=${this._addGroup}
-              ><span slot="start">${icon('plus', 14)}</span>Add group</ps-button
-            >
+            ${this.embedded
+              ? nothing
+              : html`<ps-button class="add-group" variant="ghost" size="sm" @click=${this.addGroup}
+                  ><span slot="start">${icon('plus', 14)}</span>Add group</ps-button
+                >`}
           </div>
         </div>
 
         ${this._renderMenus()}
 
         <div class="query-footer">
-          <p class="match-count" role="status" aria-live="polite">
-            ${total > 0
-              ? `${formatCount(this._matchedIndices.size)} of ${countNoun(total, 'protein', 'proteins')} match`
-              : ''}
-          </p>
-          <p id="apply-reason" class="apply-reason" aria-live="polite">
-            ${block ? applyBlockText(block) : ''}
-          </p>
+          <div class="match-line">
+            <p class="match-count" role="status" aria-live="polite">
+              ${total > 0
+                ? html`<span class="match-number">${formatCount(matched)}</span
+                    ><span class="match-total"
+                      >${` of ${countNoun(total, 'protein', 'proteins')}`}</span
+                    ><span class="sr-only">${' match'}</span>`
+                : nothing}
+            </p>
+            ${delta
+              ? html`<span class="match-delta"
+                  >${delta < 0 ? '−' : '+'}${formatCount(Math.abs(delta))} since last edit</span
+                >`
+              : nothing}
+          </div>
+          <div class="match-bar" aria-hidden="true">
+            <span style="width: ${total > 0 ? (100 * matched) / total : 0}%"></span>
+          </div>
           <div class="query-footer-buttons">
-            <ps-button class="query-footer-reset" variant="danger" @click=${this._handleReset}
-              >Reset</ps-button
+            <ps-button
+              class="query-footer-reset"
+              variant="ghost"
+              .disabled=${!canReset}
+              @click=${this._handleReset}
+              ><span slot="start">${icon('rotate-ccw', 16)}</span
+              ><span class="reset-label">Reset</span></ps-button
             >
             <ps-button
               class="query-footer-cancel"
@@ -554,6 +613,9 @@ export class ProtspaceQueryBuilder extends LitElement {
               >Apply</ps-button
             >
           </div>
+          <p id="apply-reason" class="apply-reason" aria-live="polite">
+            ${block ? applyBlockText(block) : ''}
+          </p>
         </div>
       </div>
     `;

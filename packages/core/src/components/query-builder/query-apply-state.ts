@@ -80,7 +80,7 @@ export function applyBlock({
 export function applyBlockText(block: ApplyBlock): string {
   switch (block.kind) {
     case 'empty':
-      return 'Add a condition';
+      return 'Choose an annotation to filter by';
     case 'annotation':
       return `Choose an annotation for condition ${block.n}`;
     case 'value':
