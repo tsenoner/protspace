@@ -99,10 +99,10 @@ export interface LegendRowHandlers {
 const stop = (e: Event) => e.stopPropagation();
 
 /**
- * One legend row (design decision 12). The main button holds the swatch and the name and toggles
- * the category; its accessible name carries the full name, the count and the state. The eye, the
- * drag handle and "⋯" sit before the count; the stylesheet reveals them on hover and focus, and the
- * name gives way to them. Rows stay plain elements in the legend's shadow root: Sortable needs them as
+ * One legend row (design decision 12). The drag handle comes first, before the swatch; the main
+ * button holds the swatch and the name and toggles the category; its accessible name carries the
+ * full name, the count and the state. The eye and "⋯" sit before the count; the stylesheet reveals
+ * them, and the handle under a mouse, on hover and focus, and the name gives way to them. Rows stay plain elements in the legend's shadow root: Sortable needs them as
  * direct children of the list, and a list can hold hundreds.
  */
 export function renderLegendRow(
@@ -136,6 +136,27 @@ export function renderLegendRow(
       @pointerleave=${() => handlers.onHover(null)}
       @focusin=${() => handlers.onFocus()}
     >
+      <button
+        type="button"
+        class="drag-handle${view.draggable ? '' : ' drag-handle-disabled'}"
+        part="row-handle"
+        ?disabled=${!view.draggable}
+        aria-hidden=${view.draggable ? nothing : 'true'}
+        aria-label=${view.draggable
+          ? `Reorder ${displayValue}`
+          : `${displayValue} cannot be reordered`}
+        aria-pressed=${view.draggable ? (view.picked ? 'true' : 'false') : nothing}
+        tabindex=${tabindex}
+        @click=${stop}
+        @dblclick=${stop}
+        @mousedown=${stop}
+        @keydown=${(e: KeyboardEvent) => {
+          e.stopPropagation();
+          handlers.onHandleKeyDown(e);
+        }}
+      >
+        ${icon('grip-vertical', 14)}
+      </button>
       <button
         type="button"
         class="legend-item-main"
@@ -194,27 +215,6 @@ export function renderLegendRow(
           @mousedown=${stop}
         >
           ${icon(item.isVisible ? 'eye' : 'eye-off', 14)}
-        </button>
-        <button
-          type="button"
-          class="drag-handle${view.draggable ? '' : ' drag-handle-disabled'}"
-          part="row-handle"
-          ?disabled=${!view.draggable}
-          aria-hidden=${view.draggable ? nothing : 'true'}
-          aria-label=${view.draggable
-            ? `Reorder ${displayValue}`
-            : `${displayValue} cannot be reordered`}
-          aria-pressed=${view.draggable ? (view.picked ? 'true' : 'false') : nothing}
-          tabindex=${tabindex}
-          @click=${stop}
-          @dblclick=${stop}
-          @mousedown=${stop}
-          @keydown=${(e: KeyboardEvent) => {
-            e.stopPropagation();
-            handlers.onHandleKeyDown(e);
-          }}
-        >
-          ${icon('grip-vertical', 14)}
         </button>
         ${view.hasMenu
           ? html`<button

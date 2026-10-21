@@ -178,7 +178,7 @@ export class ItemActionsController {
       const htmlEl = el as HTMLElement;
       if (htmlEl.getAttribute('data-value') === value) {
         htmlEl.classList.add('legend-item-just-dropped');
-        // The handle, as before the main button moved ahead of it in the row; Other has no usable one.
+        // The row's handle; Other has no usable one.
         const focusTarget =
           htmlEl.querySelector<HTMLElement>('.drag-handle:not(:disabled)') ??
           htmlEl.querySelector<HTMLElement>('.legend-item-main');

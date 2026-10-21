@@ -1,9 +1,9 @@
 import { css } from 'lit';
 
 /**
- * Legend rows (design decision 12): 28 px (40 px under a coarse pointer), the swatch and the name in
- * the main button, the count in tabular figures, and the eye, handle and "⋯" revealed before the
- * count on hover or focus. Hover and focus are CSS only, so the pointer never re-renders the legend. Sortable's states
+ * Legend rows (design decision 12): 28 px (40 px under a coarse pointer), the drag handle first,
+ * the swatch and the name in the main button, the count in tabular figures, and the eye and "⋯"
+ * revealed before the count on hover or focus. Under a mouse the handle fades in the same way. Hover and focus are CSS only, so the pointer never re-renders the legend. Sortable's states
  * and the drop highlight live here too. Every colour and type size reads a --ps-* token.
  */
 export const rowStyles = css`
@@ -192,11 +192,6 @@ export const rowStyles = css`
     display: none;
   }
 
-  /* Other has no handle to show: its strip is just the eye, after View and before the count. */
-  .legend-item-other .drag-handle-disabled {
-    display: none;
-  }
-
   .legend-item-other .legend-count {
     min-width: var(--ps-space-3);
     text-align: end;
@@ -227,7 +222,9 @@ export const rowStyles = css`
     color: var(--ps-text);
   }
 
+  /* First in the row, against its edge and close to the swatch, so the name loses little room. */
   .drag-handle {
+    margin-inline: calc(-1 * var(--ps-space-3)) calc(-1 * (var(--ps-space-1) + var(--ps-space-0-5)));
     cursor: grab;
   }
 
@@ -239,10 +236,36 @@ export const rowStyles = css`
     color: var(--ps-accent-text);
   }
 
-  /* Other's handle stays for Sortable's filter and the e2e, out of sight and out of reach. */
+  /* Other's handle stays for Sortable's filter and the e2e, out of sight and out of reach; its
+     column stays, so Other's swatch lines up with the rows above. */
   .drag-handle-disabled {
     opacity: 0;
     pointer-events: none;
+  }
+
+  /* A mouse: the handle keeps its room but shows only on a hovered, focused or picked row. It is
+     narrow, so at 240 px the name keeps room for "Other · 2 categories". */
+  @media (hover: hover) and (pointer: fine) {
+    .drag-handle {
+      width: 16px;
+      opacity: 0;
+      transition:
+        opacity var(--ps-duration-fast) var(--ps-ease),
+        background-color var(--ps-duration-fast) var(--ps-ease),
+        color var(--ps-duration-fast) var(--ps-ease);
+    }
+
+    .legend-item:hover .drag-handle:not(.drag-handle-disabled),
+    .legend-item:focus-within .drag-handle:not(.drag-handle-disabled),
+    .legend-item.picked .drag-handle:not(.drag-handle-disabled) {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .drag-handle {
+      transition: none;
+    }
   }
 
   /* The kit's focus ring, drawn inside: rows sit edge to edge. */
@@ -264,7 +287,7 @@ export const rowStyles = css`
     }
   }
 
-  /* Touch: taller rows, and the actions always shown. */
+  /* Touch: taller rows, and the actions and the handle always shown. */
   @media (pointer: coarse) {
     .legend-item {
       height: auto;

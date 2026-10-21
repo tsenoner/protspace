@@ -151,7 +151,7 @@ describe('legend rows in a browser', () => {
     await expect.poll(() => opacity(actions)).toBe('1');
   });
 
-  it('at 240 px a hovered row shows eye, handle and ⋯ before a count that stays visible, and its name ends in an ellipsis', async () => {
+  it('at 240 px a hovered row shows the handle before the swatch, and eye and ⋯ before a count that stays visible, and its name ends in an ellipsis', async () => {
     const legend = await mount();
     await userEvent.hover(part(legend, LONG, '.legend-item-main'));
     const actions = part(legend, LONG, '.legend-item-actions');
@@ -167,8 +167,9 @@ describe('legend rows in a browser', () => {
       box('.legend-more'),
       count.getBoundingClientRect(),
     ];
-    expect(eye.right).toBeLessThanOrEqual(handle.left + 0.5);
-    expect(handle.right).toBeLessThanOrEqual(more.left + 0.5);
+    expect(handle.left).toBeGreaterThanOrEqual(rowBox.left - 0.5);
+    expect(handle.right).toBeLessThanOrEqual(box('.legend-swatch').left + 0.5);
+    expect(eye.right).toBeLessThanOrEqual(more.left + 0.5);
     expect(more.right).toBeLessThanOrEqual(countBox.left + 0.5);
     expect(countBox.right).toBeLessThanOrEqual(rowBox.right + 0.5);
 
@@ -194,7 +195,7 @@ describe('legend rows in a browser', () => {
       );
     expect(order()).toEqual([LONG, 'Short']);
 
-    // Shown, the strip moves the handle to where the name gave way; it must be on top there.
+    // Shown, the handle must be on top where it is drawn.
     await userEvent.hover(part(legend, LONG, '.legend-item-main'));
     await expect.poll(() => opacity(part(legend, LONG, '.legend-item-actions'))).toBe('1');
     const handle = part(legend, LONG, '.drag-handle');
