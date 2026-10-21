@@ -20,6 +20,14 @@ const SORT_OPTIONS: SelectOption[] = [
   { value: 'name', label: 'Name' },
 ];
 
+/** A label's swatch colour; a label folded into the legend's Other bucket takes Other's. */
+export function swatchColor(
+  colors: ReadonlyMap<string, string>,
+  label: string,
+): string | undefined {
+  return colors.get(label) ?? colors.get(LEGEND_VALUES.OTHER);
+}
+
 /** Rows shown before "Show all". */
 const COLLAPSED_ROWS = 8;
 /** Above this share of predicted members a label is mostly borrowed, and its share turns amber. */
@@ -46,7 +54,7 @@ interface EatBreakdownView {
   sort: EatLabelSort;
   showAll: boolean;
   labelColors: ReadonlyMap<string, string>;
-  /** Show off: the section reads as disabled. */
+  /** Show off: the section is greyed; its rows and lists keep working. */
   off: boolean;
   /** The label whose drill-down list is open, and that list, rendered under its row. */
   openLabel: string | null;
@@ -82,10 +90,10 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
   const sorted = sortLabelRows(view.rows, view.sort);
   const shown = view.showAll ? sorted : sorted.slice(0, COLLAPSED_ROWS);
   const widest = Math.max(...view.rows.map((row) => row.total));
+  // Show off greys the section, but its rows, Sort and lists keep working: not aria-disabled.
   return html`<section
-    class="eat-breakdown"
+    class=${view.off ? 'eat-breakdown is-off' : 'eat-breakdown'}
     aria-label="By label"
-    aria-disabled=${view.off ? 'true' : nothing}
   >
     <div class="eat-breakdown-head">
       <h4 class="eat-heading">By label</h4>
@@ -101,8 +109,7 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
     <ul class="eat-label-list">
       ${shown.map((row) => {
         const share = formatPercent(row.predictedShare);
-        // A label folded into the legend's Other bucket is drawn in Other's colour.
-        const color = view.labelColors.get(row.label) ?? view.labelColors.get(LEGEND_VALUES.OTHER);
+        const color = swatchColor(view.labelColors, row.label);
         const open = view.openLabel === row.label;
         return html`<li>
           <button

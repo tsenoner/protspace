@@ -111,7 +111,8 @@ function renderHistogram(
 /**
  * The reliability section (proposal B §4.4): modes and a % box per active bound, the histogram,
  * the handles on the axis under it, and the readout. `summary` null is the loading skeleton,
- * inert. With Show off every control stays in the accessibility tree, disabled.
+ * inert. With Show off the modes, % boxes and handles stay in the accessibility tree, disabled;
+ * the bars and their lists keep working, so the section is only greyed, not aria-disabled.
  */
 export function renderReliability(
   ctrl: EatReliabilityController,
@@ -123,9 +124,8 @@ export function renderReliability(
   const bounds = ctrl.activeBounds;
   const { predicted, kept } = summary ?? { predicted: 0, kept: 0 };
   return html`<section
-    class="eat-reliability"
+    class=${off ? 'eat-reliability is-off' : 'eat-reliability'}
     aria-label="Reliability"
-    aria-disabled=${off ? 'true' : nothing}
     ?inert=${!summary}
   >
     <h4 class="eat-heading">Reliability</h4>

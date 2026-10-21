@@ -1,16 +1,37 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import {
+  countNoun,
   formatCount,
   getPredictedCellValues,
-  LEGEND_VALUES,
   type VisualizationData,
 } from '@protspace/utils';
 import '../kit/button';
 import '../kit/tooltip';
 import { formatPercent } from '../query-builder/eat-reliability';
+import { swatchColor } from './eat-panel-breakdown';
 import { rankOf, type EatIndex } from './eat-summary';
 
 const UNRESOLVED_REASON = 'The source is not in this dataset';
+
+/** What the card shows that does not move with the threshold, worked out once per selection. */
+export interface EatCardFacts {
+  /** The prediction's rank in the whole dataset; null for a protein without one. */
+  rank: { below: number; total: number } | null;
+  /** The source's protein index; null when it is not in the dataset or there is no prediction. */
+  sourceIndex: number | null;
+}
+
+export function cardFacts(
+  data: VisualizationData,
+  annotation: string,
+  index: EatIndex,
+  protein: number,
+): EatCardFacts {
+  const cell = data.annotation_predicted?.[annotation]?.[protein];
+  if (!cell) return { rank: null, sourceIndex: null };
+  const found = cell.sourceIndex ?? data.protein_ids.indexOf(cell.source);
+  return { rank: rankOf(index, protein), sourceIndex: found >= 0 ? found : null };
+}
 
 interface EatCardView {
   data: VisualizationData;
@@ -18,6 +39,7 @@ interface EatCardView {
   index: EatIndex;
   /** The single selected protein's index. */
   protein: number;
+  facts: EatCardFacts;
   labelColors: ReadonlyMap<string, string>;
   onGoToSource(detail: { targetId: string; targetIndex: number; sourceId: string }): void;
   onTraceSource(detail: { sourceId: string; sourceIndex: number }): void;
@@ -35,7 +57,7 @@ function valuesOf(view: EatCardView, protein: number): string {
   return labels.length > 0 ? `curated ${labels.join(', ')}` : '';
 }
 
-const proteins = (count: number) => `${formatCount(count)} protein${count === 1 ? '' : 's'}`;
+const proteins = (count: number) => countNoun(count, 'protein', 'proteins');
 
 /** `P01391 lent its label to 34 proteins ›`: draws the source's lines without selecting it. */
 function lentLink(
@@ -60,7 +82,7 @@ function lentLink(
  * nothing.
  */
 export function renderCard(view: EatCardView): TemplateResult | typeof nothing {
-  const { data, annotation, index, protein, labelColors } = view;
+  const { data, annotation, index, protein, labelColors, facts } = view;
   const id = data.protein_ids[protein];
   if (id === undefined) return nothing;
   const cell = data.annotation_predicted?.[annotation]?.[protein] ?? null;
@@ -76,16 +98,14 @@ export function renderCard(view: EatCardView): TemplateResult | typeof nothing {
   }
 
   const labels = getPredictedCellValues(cell);
-  const color = labelColors.get(labels[0] ?? '') ?? labelColors.get(LEGEND_VALUES.OTHER);
+  const color = swatchColor(labelColors, labels[0] ?? '');
   const sourceId = cell.source;
-  const found = cell.sourceIndex ?? data.protein_ids.indexOf(sourceId);
-  const sourceIndex = found >= 0 ? found : null;
+  const { rank, sourceIndex } = facts;
   const sourceValues = sourceIndex === null ? '' : valuesOf(view, sourceIndex);
   const copiedFrom =
     sourceIndex === null
       ? `${sourceId} (not in this dataset)`
       : `${sourceId}${sourceValues ? ` · ${sourceValues}` : ''}`;
-  const rank = rankOf(index, protein);
   const sourceLent = index.lentCount.get(sourceId) ?? 0;
   const sourceLentText = `${sourceId} lent its label to ${proteins(sourceLent)}`;
 
@@ -103,7 +123,8 @@ export function renderCard(view: EatCardView): TemplateResult | typeof nothing {
     <p class="eat-card-line">
       Reliability
       ${cell.confidence.toFixed(2)}${rank
-        ? ` · higher than ${formatPercent(rank.below / rank.total)} of ${formatCount(rank.total)}`
+        ? // Floored: the strongest of 659 is higher than 99 %, never than 100 %, of them.
+          ` · higher than ${formatPercent(Math.floor((rank.below / rank.total) * 100) / 100)} of ${formatCount(rank.total)}`
         : ''}
     </p>
     <div class="eat-card-actions">

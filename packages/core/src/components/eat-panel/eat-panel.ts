@@ -5,7 +5,6 @@ import {
   DEFAULT_EAT_RELIABILITY,
   formatCount,
   isSameReliability,
-  LEGEND_VALUES,
   normalizeReliability,
   type EatReliabilityState,
   type VisualizationData,
@@ -20,9 +19,10 @@ import {
   renderBreakdown,
   renderEmptyColorBy,
   renderOtherAnnotations,
+  swatchColor,
   type EatLabelSort,
 } from './eat-panel-breakdown';
-import { renderCard } from './eat-panel-card';
+import { cardFacts, renderCard, type EatCardFacts } from './eat-panel-card';
 import { binRange, renderReliability } from './eat-panel-histogram';
 import { eatPanelStyles } from './eat-panel.styles';
 import {
@@ -33,6 +33,7 @@ import {
   countIn,
   getEatIndex,
   isKept,
+  labelsAt,
   predictionIds,
   summarizeEat,
   weakestIn,
@@ -118,6 +119,8 @@ export class ProtspaceEatPanel extends LitElement {
   private _summary: EatSummary | null = null;
   private _summaryState: EatReliabilityState | null = null;
   private _summaryContext: Uint8Array | null = null;
+  /** The card's threshold-free facts, kept across renders while the index and protein stay. */
+  private _card: { index: EatIndex; protein: number; facts: EatCardFacts } | null = null;
 
   get reliability(): EatReliabilityState {
     return this._eat.reliability;
@@ -202,6 +205,26 @@ export class ProtspaceEatPanel extends LitElement {
     this._summary = summarizeEat(this._index, state, this.context);
     this._summaryState = state;
     this._summaryContext = this.context;
+    this._dropStaleDrill(this._summary);
+  }
+
+  /** A list whose bin emptied or whose label left the view (a context change) closes. */
+  private _dropStaleDrill(summary: EatSummary): void {
+    const drill = this._drill;
+    if (!drill) return;
+    const stale =
+      'bin' in drill
+        ? !summary.bins[drill.bin]
+        : !summary.rows.some((row) => row.label === drill.label);
+    if (stale) this._drill = null;
+  }
+
+  private _cardFacts(index: EatIndex, data: VisualizationData, protein: number): EatCardFacts {
+    const cached = this._card;
+    if (cached?.index === index && cached.protein === protein) return cached.facts;
+    const facts = cardFacts(data, this.annotation, index, protein);
+    this._card = { index, protein, facts };
+    return facts;
   }
 
   render() {
@@ -241,6 +264,7 @@ export class ProtspaceEatPanel extends LitElement {
             annotation: this.annotation,
             index: this._index,
             protein: this.focusProtein,
+            facts: this._cardFacts(this._index, this.data, this.focusProtein),
             labelColors: this.labelColors,
             onGoToSource: (detail) => this._emit('eat-go-to-source', detail),
             onTraceSource: (detail) => this._emit('eat-trace-source', detail),
@@ -273,13 +297,17 @@ export class ProtspaceEatPanel extends LitElement {
 
   constructor() {
     super();
-    // Escape inside the panel closes the open list first, and focus goes back to its opener.
+    // Escape inside the panel closes the open list first, and focus goes back to its opener. A
+    // list that is not on screen (its row sorted away) is dropped without claiming the key, so
+    // Escape still reaches the selection and connector fallbacks.
     this.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape' || event.defaultPrevented || !this._drill) return;
-      event.preventDefault();
       const opener = this._opener(this._drill);
+      const shown = this.renderRoot.querySelector('#eat-drill');
       this._drill = null;
-      void this.updateComplete.then(() => opener?.focus());
+      if (!opener || !shown) return;
+      event.preventDefault();
+      void this.updateComplete.then(() => opener.focus());
     });
   }
 
@@ -371,19 +399,14 @@ export class ProtspaceEatPanel extends LitElement {
     const weakest = weakestIn(index, drill, this.context);
     const { total, kept } = countIn(index, drill, this.context, state);
     const hides = this._eat.overlayEnabled;
-    const rows = Array.from(weakest, (protein) => {
-      const k = index.order.indexOf(protein);
+    const rows = Array.from(weakest, (k) => {
       const confidence = index.confidence[k];
-      const labels: string[] = [];
-      for (let h = index.labelOffsets[k]; h < index.labelOffsets[k + 1]; h++) {
-        labels.push(index.labels[index.labelHits[h]]);
-      }
-      const id = data.protein_ids[protein];
+      const labels = labelsAt(index, k);
+      const id = data.protein_ids[index.order[k]];
       const reliability = formatPercent(confidence);
       const hidden = hides && !isKept(state, confidence);
       const labelText = labels.join(', ');
-      const color =
-        this.labelColors.get(labels[0] ?? '') ?? this.labelColors.get(LEGEND_VALUES.OTHER);
+      const color = swatchColor(this.labelColors, labels[0] ?? '');
       return html`<li>
         <button
           type="button"
@@ -427,11 +450,7 @@ export class ProtspaceEatPanel extends LitElement {
     </div>`;
   }
 
-  private readonly _colorBy = (annotation: string) => {
-    this.dispatchEvent(
-      new CustomEvent('eat-color-by', { detail: { annotation }, bubbles: true, composed: true }),
-    );
-  };
+  private readonly _colorBy = (annotation: string) => this._emit('eat-color-by', { annotation });
 
   /** The stacked bar and its numbers (proposal B §4.3). `summary` null is the skeleton. */
   private _renderOverview(summary: EatSummary | null): TemplateResult {
@@ -454,7 +473,7 @@ export class ProtspaceEatPanel extends LitElement {
     const counts = enabled
       ? `${formatCount(curated)} curated · ${formatCount(predicted)} predicted (${formatCount(kept)} kept) · ${formatCount(none)} none`
       : `${formatCount(curated)} curated · ${formatCount(predicted)} predicted (hidden)`;
-    return html`<div class="eat-overview" aria-disabled=${enabled ? nothing : 'true'}>
+    return html`<div class=${enabled ? 'eat-overview' : 'eat-overview is-off'}>
       <div class="eat-stack">
         ${segment('curated', 'Curated', curated)} ${segment('kept', 'Predicted, kept', kept)}
         ${segment('below', 'Predicted, below threshold', below)}

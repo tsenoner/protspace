@@ -48,8 +48,8 @@ export const eatPanelStyles = [
       text-align: center;
     }
 
-    /* Show off: everything below the switch reads as disabled. */
-    [aria-disabled='true'] {
+    /* Show off: everything below the switch is greyed. */
+    .is-off {
       opacity: 0.4;
     }
 

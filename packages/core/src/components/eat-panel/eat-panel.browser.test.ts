@@ -296,7 +296,7 @@ describe('protspace-eat-panel', () => {
     });
   });
 
-  it('Show off disables the controls and says (hidden)', async () => {
+  it('Show off disables the threshold controls, greys the rest and says (hidden)', async () => {
     const el = await mount();
     const details = listen(el);
     const toggle = root(el).querySelector<PsSwitch>('ps-switch')!;
@@ -307,7 +307,9 @@ describe('protspace-eat-panel', () => {
     expect(el.overlayEnabled).toBe(false);
     expect(text(el, '.eat-counts')).toBe('4 curated · 5 predicted (hidden)');
     const section = root(el).querySelector<HTMLElement>('.eat-reliability')!;
-    expect(section.getAttribute('aria-disabled')).toBe('true');
+    // Greyed, but the bars and their lists still work: only the threshold controls are disabled.
+    expect(section.classList.contains('is-off')).toBe(true);
+    expect(section.hasAttribute('aria-disabled')).toBe(false);
     // Not inert: a screen reader still finds the controls, and hears that they are off.
     expect(section.inert).toBe(false);
     expect(handle(el).disabled).toBe(true);
@@ -555,13 +557,81 @@ describe('protspace-eat-panel', () => {
       expect(selected[1]).toEqual({ proteinIds: ['Q8'], zoom: true });
     });
 
-    it('a row emits eat-select-proteins for its protein, with zoom', async () => {
+    it('with Show off, By label is greyed but not disabled, and its lists still work', async () => {
       const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
       const selected = listenSelect(el);
-      bars(el)[10].click();
+      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      const toggle = root(el).querySelector<PsSwitch>('ps-switch')!;
+      await toggle.updateComplete;
+      toggle.shadowRoot!.querySelector('button')!.click();
       await el.updateComplete;
-      root(el).querySelector<HTMLButtonElement>('.eat-drill-row[data-protein="Q4"]')!.click();
-      expect(selected).toEqual([{ proteinIds: ['Q4'], zoom: true }]);
+      const breakdown = root(el).querySelector<HTMLElement>('.eat-breakdown')!;
+      expect(breakdown.classList.contains('is-off')).toBe(true);
+      expect(breakdown.hasAttribute('aria-disabled')).toBe(false);
+      labelRow(el, 'B').click();
+      await el.updateComplete;
+      // Nothing is hidden with Show off, so no row says so.
+      expect(text(el, '.eat-drill-row')).toBe(`Q8 20${PCT} B`);
+      root(el).querySelector<HTMLButtonElement>('.eat-drill-row')!.click();
+      expect(selected).toEqual([{ proteinIds: ['Q8'], zoom: true }]);
+    });
+
+    const escape = (el: ProtspaceEatPanel) => {
+      const event = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      });
+      el.dispatchEvent(event);
+      return event;
+    };
+
+    it('closes a list whose label leaves the view, and leaves Escape alone', async () => {
+      const data = labelData(SPEC);
+      const el = await mount({ data, annotation: 'cls' });
+      labelRow(el, 'B').click();
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(1);
+      el.context = Uint8Array.from(data.protein_ids, (id) => (id === 'Q7' || id === 'Q8' ? 0 : 1));
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(0);
+      expect(escape(el).defaultPrevented).toBe(false);
+    });
+
+    it('closes a bar list whose bin empties', async () => {
+      const data = labelData(SPEC);
+      const el = await mount({ data, annotation: 'cls' });
+      bars(el)[18].click();
+      await el.updateComplete;
+      expect(text(el, '.eat-drill-heading')).toBe(`Weakest in 90–95${PCT}`);
+      el.context = Uint8Array.from(data.protein_ids, (id) => (id === 'Q7' ? 0 : 1));
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(0);
+    });
+
+    it('does not claim Escape for a list sorted out of the first 8 rows', async () => {
+      // Z has the most predictions, so it leads by most predicted and drops past H by name.
+      const spec = [...'ABCDEFGH'].map((label) => ({ label, curated: 0, predicted: [0.5] }));
+      const el = await mount({
+        data: labelData([...spec, { label: 'Z', curated: 0, predicted: [0.6, 0.7] }]),
+        annotation: 'cls',
+      });
+      labelRow(el, 'Z').click();
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(1);
+      const select = root(el).querySelector<HTMLElement & { value: string }>(
+        '.eat-breakdown ps-select',
+      )!;
+      select.value = 'name';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(0);
+      expect(escape(el).defaultPrevented).toBe(false);
+      // The stale list is gone for good: going back to most predicted does not reopen it.
+      select.value = 'most-predicted';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      await el.updateComplete;
+      expect(drills(el)).toHaveLength(0);
     });
 
     it('keeps one list open; a second click or Escape closes it', async () => {
@@ -668,6 +738,16 @@ describe('protspace-eat-panel', () => {
       );
       links(el)[0].click();
       expect(traced).toEqual([{ sourceId: 'P0', sourceIndex: 0 }]);
+    });
+
+    it('floors the rank, so the strongest prediction is never higher than 100 % of them', async () => {
+      const predicted = Array.from({ length: 200 }, (_, i) => 0.0025 + i * 0.004);
+      const el = await mount({
+        data: labelData([{ label: 'A', curated: 0, predicted }]),
+        annotation: 'cls',
+        focusProtein: 199,
+      });
+      expect(cardLines(el)[1]).toBe(`Reliability 0.80 · higher than 99${PCT} of 200`);
     });
 
     it('shows no card for a curated non-source protein or no selection', async () => {

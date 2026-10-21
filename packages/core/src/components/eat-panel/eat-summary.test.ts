@@ -10,6 +10,7 @@ import {
   getEatIndex,
   isKept,
   predictionIds,
+  labelsAt,
   rankOf,
   summarizeEat,
   weakestIn,
@@ -125,13 +126,19 @@ describe('eat summary', () => {
     expect(rankOf(index, idx('P0'))).toBeNull();
   });
 
+  it('names the labels of a prediction by its place in the order', () => {
+    expect(labelsAt(index, index.order.indexOf(idx('P5')))).toEqual(['A', 'B']);
+  });
+
   it('lists the weakest five of a bin and of a label, weakest first', () => {
+    const weakest = (drill: EatDrill, context: Uint8Array | null, limit?: number) =>
+      ids(Array.from(weakestIn(index, drill, context, limit), (k) => index.order[k]));
     const BIN_55: EatDrill = { bin: 11 };
     const LABEL_A: EatDrill = { label: 0 };
-    expect(ids(weakestIn(index, BIN_55, null))).toEqual(['P5', 'P7']);
-    expect(ids(weakestIn(index, LABEL_A, null))).toEqual(['P3', 'P5', 'P9']);
-    expect(ids(weakestIn(index, LABEL_A, null, 2))).toEqual(['P3', 'P5']);
-    expect(ids(weakestIn(index, LABEL_A, mask(['P3'])))).toEqual(['P5', 'P9']);
+    expect(weakest(BIN_55, null)).toEqual(['P5', 'P7']);
+    expect(weakest(LABEL_A, null)).toEqual(['P3', 'P5', 'P9']);
+    expect(weakest(LABEL_A, null, 2)).toEqual(['P3', 'P5']);
+    expect(weakest(LABEL_A, mask(['P3']))).toEqual(['P5', 'P9']);
     expect(countIn(index, LABEL_A, null, at('atLeast', 0.55, 1))).toEqual({
       total: 3,
       kept: 2,

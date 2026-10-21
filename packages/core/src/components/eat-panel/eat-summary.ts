@@ -369,7 +369,19 @@ function inDrill(index: EatIndex, drill: EatDrill | undefined, k: number): boole
   return false;
 }
 
-/** The weakest predictions behind a histogram bar or a label, weakest first. */
+/** The label names of the prediction at `order[k]`. */
+export function labelsAt(index: EatIndex, k: number): string[] {
+  const labels: string[] = [];
+  for (let h = index.labelOffsets[k]; h < index.labelOffsets[k + 1]; h++) {
+    labels.push(index.labels[index.labelHits[h]]);
+  }
+  return labels;
+}
+
+/**
+ * The weakest predictions behind a histogram bar or a label, weakest first, as positions `k` in
+ * `order` (the protein is `order[k]`, its reliability `confidence[k]`).
+ */
 export function weakestIn(
   index: EatIndex,
   drill: EatDrill,
@@ -378,9 +390,8 @@ export function weakestIn(
 ): Int32Array {
   const found: number[] = [];
   for (let k = 0; k < index.order.length && found.length < limit; k++) {
-    const protein = index.order[k];
-    if (context && !context[protein]) continue;
-    if (inDrill(index, drill, k)) found.push(protein);
+    if (context && !context[index.order[k]]) continue;
+    if (inDrill(index, drill, k)) found.push(k);
   }
   return Int32Array.from(found);
 }
