@@ -369,6 +369,17 @@ describe('selection controller: the selection bar and the plot tools', () => {
     expect(m.history.peekUndo()).toMatchObject({ before: ['P1'], after: ['P2'] });
   });
 
+  it('selectProteins records no undo step for the selection already shown', () => {
+    const m = setup();
+    m.controller.selectProteins(['P2']);
+    const first = m.history.peekUndo();
+    m.controller.selectProteins(['P2'], { zoom: true });
+    expect(m.history.peekUndo()).toBe(first);
+    m.history.undo();
+    expect(m.history.canUndo()).toBe(false);
+    expect(m.plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P2']);
+  });
+
   it('selectProteins reports nothing when the protein is out of view', () => {
     const m = setup();
     m.plot.zoomToProteins.mockReturnValue(false);

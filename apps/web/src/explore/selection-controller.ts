@@ -389,6 +389,11 @@ export function createSelectionController({
     },
     selectProteins(ids, { zoom = false } = {}) {
       const next = [...ids];
+      // Already selected: nothing to commit, and no empty undo step.
+      if (next.length === selected.length && next.every((id, i) => id === selected[i])) {
+        if (zoom) plotElement.zoomToProteins(next);
+        return;
+      }
       commitSelection(next, zoom ? { afterLand: () => plotElement.zoomToProteins(next) } : {});
     },
     applyHistory,
