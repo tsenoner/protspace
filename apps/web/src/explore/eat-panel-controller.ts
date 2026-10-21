@@ -38,7 +38,21 @@ function sameColors(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, strin
   return true;
 }
 
+/** Protein id → index, per dataset, built on the first single selection. */
+const proteinIndexes = new WeakMap<VisualizationData, ReadonlyMap<string, number>>();
+
+function proteinIndexOf(data: VisualizationData, proteinId: string): number | null {
+  let byId = proteinIndexes.get(data);
+  if (!byId) {
+    byId = new Map(data.protein_ids.map((id, index) => [id, index]));
+    proteinIndexes.set(data, byId);
+  }
+  return byId.get(proteinId) ?? null;
+}
+
 interface EatPanelController {
+  /** The selection changed: the card follows a single selected protein. */
+  setSelection(proteinIds: readonly string[]): void;
   resetForNewDataset(): void;
   dispose(): void;
 }
@@ -55,6 +69,10 @@ interface EatPanelController {
  * condition alone. The breakdown's swatches follow the legend's colours, and the panel's
  * `eat-color-by` switches Color by through `pickAnnotation`. A drill-down list's
  * `eat-select-proteins` selects through `selectProteins`.
+ *
+ * The card follows a single selected protein (`setSelection`). Its Go to source selects the
+ * source, draws the pair and fits both; its `lent its label` link draws a source's lines through
+ * `traceProtein` without touching the selection.
  */
 export function createEatPanelController({
   eatPanel,
@@ -67,6 +85,7 @@ export function createEatPanelController({
   pickAnnotation,
   selectProteins,
   requestStructure,
+  traceProtein,
 }: {
   eatPanel: Pick<
     ProtspaceEatPanel,
@@ -74,6 +93,7 @@ export function createEatPanelController({
     | 'annotation'
     | 'context'
     | 'labelColors'
+    | 'focusProtein'
     | 'active'
     | 'reliability'
     | 'isAtDefaults'
@@ -84,7 +104,12 @@ export function createEatPanelController({
   >;
   plotElement: Pick<
     ProtspaceScatterplot,
-    'data' | 'selectedAnnotation' | 'eatOverlayEnabled' | 'addEventListener' | 'removeEventListener'
+    | 'data'
+    | 'selectedAnnotation'
+    | 'eatOverlayEnabled'
+    | 'zoomToProteins'
+    | 'addEventListener'
+    | 'removeEventListener'
   >;
   legendElement: Pick<ProtspaceLegend, 'eatReliability'>;
   filterController: Pick<FilterController, 'setEatReliability' | 'getContextMask'>;
@@ -97,7 +122,18 @@ export function createEatPanelController({
   selectProteins(ids: readonly string[], options: { zoom: boolean }): void;
   /** Show `proteinId` in the structure viewer. */
   requestStructure(proteinId: string): void;
+  /** Draw `proteinId`'s provenance lines as a click does, without selecting it. */
+  traceProtein(proteinId: string, originalIndex: number, mode?: 'auto' | 'source'): boolean;
 }): EatPanelController {
+  let selection: readonly string[] = [];
+
+  /** The card's protein: the single selected one, by index in the current data. */
+  const syncFocus = () => {
+    const data = plotElement.data;
+    const focus = data && selection.length === 1 ? proteinIndexOf(data, selection[0]) : null;
+    if (eatPanel.focusProtein !== focus) eatPanel.focusProtein = focus;
+  };
+
   /**
    * The context follows the applied filter while the panel is on screen; a hidden panel asks for
    * none, and gets the current one when it turns active.
@@ -132,6 +168,7 @@ export function createEatPanelController({
     const annotation = plotElement.selectedAnnotation;
     if (eatPanel.data !== data) eatPanel.data = data;
     if (eatPanel.annotation !== annotation) eatPanel.annotation = annotation;
+    syncFocus();
     setWorkbenchStatus({
       eatAvailability: eatAvailabilityFor(data, annotation),
       eatAnnotationLabel: annotation
@@ -166,6 +203,24 @@ export function createEatPanelController({
     if (proteinIds.length === 1) requestStructure(proteinIds[0]);
   };
 
+  /** Go to source: select the source (one undo step), keep the pair drawn, fit both. */
+  const onGoToSource = (event: Event) => {
+    const { targetId, targetIndex, sourceId } = (
+      event as CustomEvent<{ targetId: string; targetIndex: number; sourceId: string }>
+    ).detail;
+    selectProteins([sourceId], { zoom: false });
+    traceProtein(targetId, targetIndex);
+    plotElement.zoomToProteins([targetId, sourceId]);
+  };
+
+  /** `lent its label to N`: the source's fan-out, as a click on it draws. */
+  const onTraceSource = (event: Event) => {
+    const { sourceId, sourceIndex } = (
+      event as CustomEvent<{ sourceId: string; sourceIndex: number }>
+    ).detail;
+    traceProtein(sourceId, sourceIndex, 'source');
+  };
+
   const onOverlayChange = (event: Event) => {
     const { enabled, reliability } = (event as CustomEvent<EatOverlayChangeDetail>).detail;
     if (plotElement.eatOverlayEnabled !== enabled) plotElement.eatOverlayEnabled = enabled;
@@ -187,10 +242,16 @@ export function createEatPanelController({
   eatPanel.addEventListener('eat-overlay-change', onOverlayChange);
   eatPanel.addEventListener('eat-color-by', onColorBy);
   eatPanel.addEventListener('eat-select-proteins', onSelectProteins);
+  eatPanel.addEventListener('eat-go-to-source', onGoToSource);
+  eatPanel.addEventListener('eat-trace-source', onTraceSource);
   const unsubscribePanel = subscribePanel(syncActive);
   syncData();
 
   return {
+    setSelection(proteinIds) {
+      selection = [...proteinIds];
+      syncFocus();
+    },
     resetForNewDataset() {
       eatPanel.resetForNewDataset();
       syncReliability();
@@ -203,6 +264,8 @@ export function createEatPanelController({
       eatPanel.removeEventListener('eat-overlay-change', onOverlayChange);
       eatPanel.removeEventListener('eat-color-by', onColorBy);
       eatPanel.removeEventListener('eat-select-proteins', onSelectProteins);
+      eatPanel.removeEventListener('eat-go-to-source', onGoToSource);
+      eatPanel.removeEventListener('eat-trace-source', onTraceSource);
       unsubscribePanel();
     },
   };

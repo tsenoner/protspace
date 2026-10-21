@@ -94,11 +94,15 @@ export class EatProvenanceResolver {
     clickedProteinIndex: number,
     isLegendEligible: (proteinId: string, proteinIndex: number) => boolean,
     isInCurrentView: (proteinIndex: number) => boolean = () => true,
+    mode: 'auto' | 'source' = 'auto',
   ): ProvenanceConnectorRequest | null {
     if (!isLegendEligible(clickedProteinId, clickedProteinIndex)) return null;
 
+    // 'source' reads the clicked protein as a source even when it is a prediction itself.
     const predictedCell: PredictedCell | null =
-      data.annotation_predicted?.[annotation]?.[clickedProteinIndex] ?? null;
+      mode === 'source'
+        ? null
+        : (data.annotation_predicted?.[annotation]?.[clickedProteinIndex] ?? null);
     if (predictedCell) {
       const sourceProteinIndex =
         predictedCell.sourceIndex ??

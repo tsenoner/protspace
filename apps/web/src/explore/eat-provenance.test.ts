@@ -322,4 +322,31 @@ describe('EatProvenanceResolver', () => {
       targetProteinId: 'query',
     });
   });
+
+  it("reads a predicted protein that is also a source as a source in 'source' mode", () => {
+    const data = makeData();
+    const resolver = new EatProvenanceResolver();
+    // query-1 borrowed its family from `source` and lent it to query-0.
+    const predicted = {
+      ...data,
+      annotation_predicted: {
+        ...data.annotation_predicted,
+        family: [
+          null,
+          { value: 'PF1', confidence: 0.4, source: 'query-1' },
+          { value: 'PF1', confidence: 0.6, source: 'source' },
+        ],
+      },
+    };
+    expect(resolver.resolve(predicted, 'family', 'query-1', 2, allLegendEligible)?.pairs).toEqual([
+      { sourceProteinId: 'source', targetProteinId: 'query-1', confidence: 0.6 },
+    ]);
+    expect(
+      resolver.resolve(predicted, 'family', 'query-1', 2, allLegendEligible, () => true, 'source'),
+    ).toEqual({
+      pairs: [{ sourceProteinId: 'query-1', targetProteinId: 'query-0', confidence: 0.4 }],
+      totalCandidates: 1,
+      unavailableCandidates: 0,
+    });
+  });
 });

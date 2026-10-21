@@ -503,5 +503,65 @@ export const eatPanelStyles = [
       font-size: var(--ps-text-xs);
       font-variant-numeric: tabular-nums;
     }
+
+    /* The selected protein's card: label(s) and id, then copied from, reliability, actions, links. */
+    .eat-card {
+      display: grid;
+      gap: var(--ps-space-1);
+      padding: var(--ps-space-2);
+      border: 1px solid var(--ps-border);
+      border-radius: var(--ps-radius-sm);
+      background: var(--ps-surface-muted);
+      font-size: var(--ps-text-xs);
+    }
+
+    .eat-card-title {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-1-5);
+      min-width: 0;
+      margin: 0;
+      color: var(--ps-text);
+      font-weight: var(--ps-weight-semibold);
+    }
+
+    .eat-card-labels {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .eat-card-id {
+      margin-left: auto;
+      color: var(--ps-text-muted);
+      font-weight: normal;
+    }
+
+    .eat-card-line {
+      margin: 0;
+      color: var(--ps-text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .eat-card-actions {
+      display: flex;
+      gap: var(--ps-space-1-5);
+    }
+
+    .eat-card-link {
+      justify-self: start;
+      padding: 0;
+      border: none;
+      background: none;
+      color: var(--ps-accent-text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .eat-card-link:hover {
+      text-decoration: underline;
+    }
   `,
 ];

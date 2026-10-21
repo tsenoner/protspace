@@ -46,6 +46,7 @@ function setup(shown: { value: boolean }) {
     data: EAT_DATA as VisualizationData | null,
     selectedAnnotation: 'ec',
     eatOverlayEnabled: true,
+    zoomToProteins: vi.fn(() => true),
   });
   const root = new EventTarget();
   const panel = Object.assign(new EventTarget(), {
@@ -53,6 +54,7 @@ function setup(shown: { value: boolean }) {
     annotation: '',
     context: null as Uint8Array | null,
     labelColors: new Map<string, string>() as ReadonlyMap<string, string>,
+    focusProtein: null as number | null,
     active: false,
     reliability: DEFAULT_EAT_RELIABILITY as EatReliabilityState,
     isAtDefaults: true,
@@ -68,6 +70,7 @@ function setup(shown: { value: boolean }) {
   const pickAnnotation = vi.fn();
   const selectProteins = vi.fn();
   const requestStructure = vi.fn();
+  const traceProtein = vi.fn(() => true);
   const filter = {
     mask: null as Uint8Array | null,
     setEatReliability: vi.fn(),
@@ -88,6 +91,7 @@ function setup(shown: { value: boolean }) {
     pickAnnotation,
     selectProteins,
     requestStructure,
+    traceProtein,
   });
   const layoutChanged = () => panelListeners.forEach((listener) => listener());
   /** The panel's own controls moved: its state changes, then it emits. */
@@ -113,6 +117,7 @@ function setup(shown: { value: boolean }) {
     pickAnnotation,
     selectProteins,
     requestStructure,
+    traceProtein,
   };
 }
 
@@ -275,5 +280,49 @@ describe('createEatPanelController', () => {
     controller.dispose();
     select(['P1'], true);
     expect(selectProteins).toHaveBeenCalledTimes(2);
+  });
+
+  it('points the card at a single selected protein, by index in the current data', () => {
+    const { plot, panel, controller } = setup({ value: true });
+    controller.setSelection(['P2']);
+    expect(panel.focusProtein).toBe(1);
+    controller.setSelection(['P1', 'P2']);
+    expect(panel.focusProtein).toBeNull();
+    controller.setSelection(['P1']);
+    expect(panel.focusProtein).toBe(0);
+    controller.setSelection(['missing']);
+    expect(panel.focusProtein).toBeNull();
+
+    // A new dataset re-reads the selection against its own ids.
+    controller.setSelection(['P2']);
+    plot.data = { ...EAT_DATA, protein_ids: ['P2', 'P1'] };
+    plot.dispatchEvent(new Event('data-change'));
+    expect(panel.focusProtein).toBe(0);
+    controller.setSelection([]);
+    expect(panel.focusProtein).toBeNull();
+  });
+
+  it('Go to source selects the source, draws the pair and fits both; lent to draws a source', () => {
+    const { plot, panel, controller, selectProteins, traceProtein } = setup({ value: true });
+    panel.dispatchEvent(
+      new CustomEvent('eat-go-to-source', {
+        detail: { targetId: 'P2', targetIndex: 1, sourceId: 'P1' },
+      }),
+    );
+    expect(selectProteins).toHaveBeenCalledExactlyOnceWith(['P1'], { zoom: false });
+    expect(traceProtein).toHaveBeenCalledExactlyOnceWith('P2', 1);
+    expect(plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P2', 'P1']);
+
+    panel.dispatchEvent(
+      new CustomEvent('eat-trace-source', { detail: { sourceId: 'P1', sourceIndex: 0 } }),
+    );
+    expect(traceProtein).toHaveBeenLastCalledWith('P1', 0, 'source');
+    expect(selectProteins).toHaveBeenCalledTimes(1);
+
+    controller.dispose();
+    panel.dispatchEvent(
+      new CustomEvent('eat-trace-source', { detail: { sourceId: 'P1', sourceIndex: 0 } }),
+    );
+    expect(traceProtein).toHaveBeenCalledTimes(2);
   });
 });

@@ -19,6 +19,7 @@ import {
   renderOtherAnnotations,
   type EatLabelSort,
 } from './eat-panel-breakdown';
+import { renderCard } from './eat-panel-card';
 import { binRange, renderReliability } from './eat-panel-histogram';
 import { eatPanelStyles } from './eat-panel.styles';
 import {
@@ -59,6 +60,9 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  *   or to this one's EAT neighbourhood column.
  * @fires eat-select-proteins - `{ proteinIds, zoom }`: a drill-down row selects its protein (and
  *   asks to fit it); `Select all N kept` selects the kept predictions behind the bar or label.
+ * @fires eat-go-to-source - `{ targetId, targetIndex, sourceId }`: the card's Go to source.
+ * @fires eat-trace-source - `{ sourceId, sourceIndex }`: the card's `lent its label to N` link
+ *   draws that source's lines.
  */
 @customElement('protspace-eat-panel')
 export class ProtspaceEatPanel extends LitElement {
@@ -72,6 +76,8 @@ export class ProtspaceEatPanel extends LitElement {
   @property({ attribute: false }) context: Uint8Array | null = null;
   /** Label → swatch colour, as the legend draws it. */
   @property({ attribute: false }) labelColors: ReadonlyMap<string, string> = new Map();
+  /** The single selected protein's index, for the card; null with none or several selected. */
+  @property({ attribute: false }) focusProtein: number | null = null;
   /** Whether the panel is shown. It computes only while true. */
   @property({ type: Boolean }) active = false;
 
@@ -199,6 +205,17 @@ export class ProtspaceEatPanel extends LitElement {
           void this.updateComplete.then(() => this._bar(bin)?.focus());
         },
       })}
+      ${this._index && this.data && this.focusProtein !== null
+        ? renderCard({
+            data: this.data,
+            annotation: this.annotation,
+            index: this._index,
+            protein: this.focusProtein,
+            labelColors: this.labelColors,
+            onGoToSource: (detail) => this._emit('eat-go-to-source', detail),
+            onTraceSource: (detail) => this._emit('eat-trace-source', detail),
+          })
+        : nothing}
       ${summary
         ? renderBreakdown({
             rows: summary.rows,
@@ -257,14 +274,12 @@ export class ProtspaceEatPanel extends LitElement {
     return Array.from(rows).find((row) => row.dataset.label === drill.label) ?? null;
   }
 
+  private _emit(type: string, detail: unknown): void {
+    this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
+  }
+
   private _selectProteins(proteinIds: string[], zoom: boolean): void {
-    this.dispatchEvent(
-      new CustomEvent('eat-select-proteins', {
-        detail: { proteinIds, zoom },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    this._emit('eat-select-proteins', { proteinIds, zoom });
   }
 
   /**

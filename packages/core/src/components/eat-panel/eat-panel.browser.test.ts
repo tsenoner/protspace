@@ -32,7 +32,10 @@ afterEach(() => {
 
 async function mount(
   props: Partial<
-    Pick<ProtspaceEatPanel, 'data' | 'annotation' | 'context' | 'active' | 'labelColors'>
+    Pick<
+      ProtspaceEatPanel,
+      'data' | 'annotation' | 'context' | 'active' | 'labelColors' | 'focusProtein'
+    >
   > = {},
 ): Promise<ProtspaceEatPanel> {
   const el = document.createElement('protspace-eat-panel');
@@ -519,6 +522,101 @@ describe('protspace-eat-panel', () => {
       await el.updateComplete;
       expect(drills(el)).toHaveLength(0);
       expect(root(el).activeElement).toBe(bars(el)[10]);
+    });
+  });
+
+  describe('selected-protein card', () => {
+    const card = (el: ProtspaceEatPanel) => root(el).querySelector<HTMLElement>('.eat-card');
+    const cardLines = (el: ProtspaceEatPanel) =>
+      [...root(el).querySelectorAll('.eat-card-line')].map((line) =>
+        line.textContent!.replace(/[ \t\r\n]+/g, ' ').trim(),
+      );
+    const links = (el: ProtspaceEatPanel) => [
+      ...root(el).querySelectorAll<HTMLButtonElement>('.eat-card-link'),
+    ];
+    const goToSource = (el: ProtspaceEatPanel) =>
+      root(el).querySelector<HTMLElement & { disabled: boolean }>('.eat-go-to-source')!;
+    const listen = (el: ProtspaceEatPanel, type: string) => {
+      const details: unknown[] = [];
+      el.addEventListener(type, (event) => details.push((event as CustomEvent).detail));
+      return details;
+    };
+    const at = (id: string) => EAT_FIXTURE_IDS.indexOf(id);
+
+    it('shows a prediction: its label, its source, its rank, Go to source and lent to', async () => {
+      const el = await mount({
+        focusProtein: at('P8'),
+        labelColors: new Map([['C', 'rgb(255, 0, 0)']]),
+      });
+      expect(text(el, '.eat-card-title')).toBe('C P8');
+      expect(root(el).querySelector<HTMLElement>('.eat-card .eat-ring')!.style.borderColor).toBe(
+        'rgb(255, 0, 0)',
+      );
+      // 0.81 is above 3 of the 5 predictions (0.12, 0.55, 0.55).
+      expect(cardLines(el)).toEqual([
+        'Copied from P0 · curated A',
+        `Reliability 0.81 · higher than 60${PCT} of 5`,
+      ]);
+      expect(goToSource(el).disabled).toBe(false);
+      const went = listen(el, 'eat-go-to-source');
+      const traced = listen(el, 'eat-trace-source');
+      goToSource(el).click();
+      expect(went).toEqual([{ targetId: 'P8', targetIndex: at('P8'), sourceId: 'P0' }]);
+      expect(links(el).map((link) => link.textContent!.replace(/\s+/g, ' ').trim())).toEqual([
+        'P0 lent its label to 1 protein ›',
+      ]);
+      links(el)[0].click();
+      expect(traced).toEqual([{ sourceId: 'P0', sourceIndex: 0 }]);
+    });
+
+    it('says a source outside the dataset is not in it and disables Go to source', async () => {
+      const el = await mount({ focusProtein: at('P9') });
+      expect(cardLines(el)).toEqual([
+        'Copied from S9 (not in this dataset)',
+        `Reliability 1.00 · higher than 80${PCT} of 5`,
+        // Still counted from the index, but there is nothing to draw.
+        'S9 lent its label to 1 protein',
+      ]);
+      expect(goToSource(el).disabled).toBe(true);
+      expect(root(el).querySelector('.eat-card ps-tooltip')!.getAttribute('text')).toBe(
+        'The source is not in this dataset',
+      );
+      expect(links(el)).toHaveLength(0);
+      const went = listen(el, 'eat-go-to-source');
+      goToSource(el).click();
+      expect(went).toEqual([]);
+    });
+
+    it('lists every label of a multi-valued prediction', async () => {
+      const el = await mount({ focusProtein: at('P5') });
+      expect(text(el, '.eat-card-labels')).toBe('A, B');
+      expect(cardLines(el)[0]).toBe('Copied from S1 (not in this dataset)');
+      expect(cardLines(el)[1]).toBe(`Reliability 0.55 · higher than 20${PCT} of 5`);
+      expect(cardLines(el)[2]).toBe('S1 lent its label to 3 proteins');
+    });
+
+    it('shows a source with its value and draws its lines from the lent link', async () => {
+      const el = await mount({ focusProtein: at('P0') });
+      expect(text(el, '.eat-card-title')).toBe('P0 · curated A');
+      expect(goToSource(el)).toBeNull();
+      const traced = listen(el, 'eat-trace-source');
+      expect(links(el)).toHaveLength(1);
+      expect(links(el)[0].textContent!.replace(/\s+/g, ' ').trim()).toBe(
+        'lent its label to 1 protein ›',
+      );
+      links(el)[0].click();
+      expect(traced).toEqual([{ sourceId: 'P0', sourceIndex: 0 }]);
+    });
+
+    it('shows no card for a curated non-source protein or no selection', async () => {
+      const el = await mount({ focusProtein: at('P1') });
+      expect(card(el)).toBeNull();
+      el.focusProtein = null;
+      await el.updateComplete;
+      expect(card(el)).toBeNull();
+      el.focusProtein = at('P8');
+      await el.updateComplete;
+      expect(card(el)).not.toBeNull();
     });
   });
 });

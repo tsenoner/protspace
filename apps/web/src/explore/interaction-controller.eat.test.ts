@@ -169,4 +169,36 @@ describe('interaction controller EAT provenance', () => {
 
     expect(plotElement.setProvenanceConnectors).not.toHaveBeenCalled();
   });
+
+  it('traceProtein draws without a click, keeps the lines across a data change, and reads a source in source mode', () => {
+    const { controller, currentView, plotElement } = setup(makeFanoutData());
+
+    expect(controller.traceProtein('query-3', 4)).toBe(true);
+    expect(plotElement.setProvenanceConnectors).toHaveBeenLastCalledWith({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'query-3', confidence: 1 - 3 / 25 }],
+      totalCandidates: 1,
+      unavailableCandidates: 0,
+    });
+
+    expect(controller.traceProtein('source', 0, 'source')).toBe(true);
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].totalCandidates).toBe(24);
+    currentView.delete(5);
+    controller.handlePlotDataChange();
+    // The traced source is re-resolved against the narrowed view.
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toMatchObject({
+      totalCandidates: 24,
+      unavailableCandidates: 1,
+    });
+  });
+
+  it('traceProtein draws nothing with EAT off or without provenance', () => {
+    const { controller, plotElement } = setup();
+    plotElement.eatOverlayEnabled = false;
+    expect(controller.traceProtein('query', 1)).toBe(false);
+    expect(plotElement.setProvenanceConnectors).not.toHaveBeenCalled();
+    plotElement.eatOverlayEnabled = true;
+    // `query` lent nothing: as a source it has no lines.
+    expect(controller.traceProtein('query', 1, 'source')).toBe(false);
+    expect(plotElement.clearProvenanceConnectors).toHaveBeenCalledTimes(2);
+  });
 });

@@ -399,7 +399,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     legendElement,
     plotElement,
     requestStructure: (proteinId) => structureController.request(proteinId),
-    showSelection: (proteinIds) => structureController.select(proteinIds),
+    showSelection: (proteinIds) => {
+      structureController.select(proteinIds);
+      // Selections commit on user input, after the EAT panel's controller exists below.
+      eatPanelController.setSelection(proteinIds);
+    },
   });
 
   const selectionController = createSelectionController({
@@ -524,6 +528,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     pickAnnotation: (annotation) => viewBarController.applyAnnotationSelection(annotation),
     selectProteins: (ids, options) => selectionController.selectProteins(ids, options),
     requestStructure: (proteinId) => structureController.request(proteinId),
+    traceProtein: (proteinId, originalIndex, mode) =>
+      interactionController.traceProtein(proteinId, originalIndex, mode),
   });
   lifecycle.addCleanup(() => eatPanelController.dispose());
   const statusController = createStatusController({

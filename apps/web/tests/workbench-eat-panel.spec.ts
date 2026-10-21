@@ -8,6 +8,7 @@ import {
   selectAnnotation,
   selectionBar,
   statusChip,
+  waitForExploreInteractionReady,
 } from './helpers/explore';
 import {
   eatPanel,
@@ -19,6 +20,7 @@ import {
   openEatPanel,
 } from './helpers/eat';
 import { panelTab } from './helpers/mobile';
+import { proteinScreenPosition, provenancePair } from './helpers/plot';
 import { seedTourSeen } from './helpers/tour-storage-state';
 import { rail, readLayout, seedLayout, workbenchRoot } from './helpers/workbench';
 
@@ -197,4 +199,30 @@ test('a histogram bar lists its weakest predictions and a row selects the protei
   await page.keyboard.press('Escape');
   await expect(list).toBeHidden();
   expect(await getSelectedProteinIds(page)).toEqual([proteinId]);
+});
+
+test('the selected-protein card goes to the source and draws its lines', async ({ page }) => {
+  await loadPhosphataseEat(page);
+  await selectAnnotation(page, 'ec');
+  await openEatPanel(page);
+  await waitForExploreInteractionReady(page);
+  const { source, target } = await provenancePair(page, 'ec');
+  const connectors = page.locator('#myPlot').locator('line.eat-provenance-connector');
+
+  const at = await proteinScreenPosition(page, target);
+  await page.mouse.click(at.x, at.y);
+  await expect.poll(() => getSelectedProteinIds(page)).toEqual([target]);
+  const card = eatPanel(page).getByRole('region', { name: 'Selected protein' });
+  await expect(card).toContainText(`Copied from ${source}`);
+  await expect(connectors).toHaveCount(1);
+
+  await card.getByRole('button', { name: 'Go to source' }).click();
+  await expect.poll(() => getSelectedProteinIds(page)).toEqual([source]);
+  // The pair stays drawn, and the card now shows the source.
+  await expect(connectors).toHaveCount(1);
+  await expect(card).toContainText(`${source} · curated`);
+
+  await card.getByRole('button', { name: /^lent its label to [\d,]+ proteins$/ }).click();
+  await expect.poll(() => connectors.count()).toBeGreaterThan(1);
+  expect(await getSelectedProteinIds(page)).toEqual([source]);
 });

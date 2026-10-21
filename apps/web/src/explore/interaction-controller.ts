@@ -27,6 +27,7 @@ interface ActiveProvenanceClick {
   annotation: string;
   proteinId: string;
   originalIndex: number;
+  mode: 'auto' | 'source';
 }
 
 export interface InteractionController {
@@ -40,6 +41,12 @@ export interface InteractionController {
   /** The selection changed: remember it and offer it to the structure. */
   handleSelectionChange(proteinIds: readonly string[]): void;
   handleProteinClick(event: Event): void;
+  /**
+   * Draws `proteinId`'s provenance lines as a click on it does, without selecting it, and keeps
+   * them across data changes. `'source'` draws its fan-out even when it is a prediction itself.
+   * Returns whether lines were requested.
+   */
+  traceProtein(proteinId: string, originalIndex: number, mode?: 'auto' | 'source'): boolean;
   handlePlotDataChange(): void;
   handleLegendError(event: Event): void;
   handleStructureLoad(event: Event): void;
@@ -67,11 +74,31 @@ export function createInteractionController({
       (candidateId, candidateIndex) =>
         plotElement.isProteinLegendEligible(candidateId, candidateIndex),
       (candidateIndex) => plotElement.isProteinInCurrentView(candidateIndex),
+      click.mode,
     );
 
   const clearProvenance = () => {
     activeProvenanceClick = null;
     plotElement.clearProvenanceConnectors();
+  };
+
+  /** Resolves and draws `proteinId`'s lines, or clears them; whether lines were requested. */
+  const trace = (proteinId: string, originalIndex: number, mode: 'auto' | 'source'): boolean => {
+    const data = plotElement.data;
+    const annotation = plotElement.selectedAnnotation;
+    if (!data || !annotation || !plotElement.eatOverlayEnabled) {
+      clearProvenance();
+      return false;
+    }
+    const click = { data, annotation, proteinId, originalIndex, mode };
+    const request = resolveProvenanceClick(click);
+    if (!request) {
+      clearProvenance();
+      return false;
+    }
+    activeProvenanceClick = click;
+    plotElement.setProvenanceConnectors(request);
+    return true;
   };
 
   const updateLegend = () => {
@@ -109,32 +136,14 @@ export function createInteractionController({
       const keys = detail?.modifierKeys;
       if (proteinId && !keys?.ctrl && !keys?.meta && !keys?.shift) requestStructure(proteinId);
       const originalIndex = detail?.point?.originalIndex;
-      const data = plotElement.data;
-      const annotation = plotElement.selectedAnnotation;
-      if (
-        !proteinId ||
-        originalIndex === undefined ||
-        !data ||
-        !annotation ||
-        !plotElement.eatOverlayEnabled
-      ) {
+      if (!proteinId || originalIndex === undefined) {
         clearProvenance();
         return;
       }
-
-      const click = {
-        data,
-        annotation,
-        proteinId,
-        originalIndex,
-      };
-      const request = resolveProvenanceClick(click);
-      if (request) {
-        activeProvenanceClick = click;
-        plotElement.setProvenanceConnectors(request);
-      } else {
-        clearProvenance();
-      }
+      trace(proteinId, originalIndex, 'auto');
+    },
+    traceProtein(proteinId, originalIndex, mode = 'auto') {
+      return trace(proteinId, originalIndex, mode);
     },
     handlePlotDataChange() {
       selectedProteins = plotElement.selectedProteinIds || [];
