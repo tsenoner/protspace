@@ -53,12 +53,17 @@ describe('isNumericConditionReady', () => {
     expect(isNumericConditionReady(numericCondition({ min: null, max: 9 }))).toBe(true);
     expect(isNumericConditionReady(numericCondition({ min: null, max: null }))).toBe(false);
   });
-  it('a presence chip alone makes a bound-less condition ready', () => {
+  it('only ANY_VALUE makes a bound-less condition ready; N/A alone is the full range', () => {
+    expect(
+      isNumericConditionReady(
+        numericCondition({ operator: 'gt', min: null, presence: [ANY_VALUE] }),
+      ),
+    ).toBe(true);
     expect(
       isNumericConditionReady(
         numericCondition({ operator: 'gt', min: null, presence: [NA_VALUE] }),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isNumericConditionReady(numericCondition({ operator: 'gt', min: null, presence: [] })),
     ).toBe(false);

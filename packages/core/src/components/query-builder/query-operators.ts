@@ -1,7 +1,6 @@
 import { NA_VALUE } from '@protspace/utils';
 import type { FilterCondition, FilterGroup, FilterQuery, FilterQueryItem } from './query-types';
 import { ANY_VALUE, clearLeadingOpInList, createGroup, isFilterGroup } from './query-types';
-import { presenceOf, toRange } from './query-numeric-helpers';
 
 /**
  * The filter's operators in words, read from and written to the query model without new fields
@@ -10,9 +9,9 @@ import { presenceOf, toRange } from './query-numeric-helpers';
  * - is any of: `values`, joined by the card's joiner
  * - is none of: `logicalOp: 'NOT'` under "and" or on a first card; under "or", a one-condition
  *   group `{ logicalOp: 'OR', conditions: [{ logicalOp: 'NOT', … }] }` that renders as a plain card
- * - has any value / has no value: `values: [ANY_VALUE]` / `[NA_VALUE]`; numeric: no bounds,
- *   `presence: [ANY_VALUE]` / `[NA_VALUE]`
- * - is between: a numeric condition's `min` and `max`, both included, an empty end open
+ * - has any value / has no value: `values: [ANY_VALUE]` / `[NA_VALUE]`
+ * - is between: every numeric condition, which has no operator menu; its card is the range
+ *   editor (see `readRange`)
  */
 export type ConditionOperator = 'any-of' | 'none-of' | 'has-any' | 'has-none' | 'between';
 
@@ -25,8 +24,6 @@ export const CATEGORICAL_OPERATORS: readonly ConditionOperator[] = [
   'has-any',
   'has-none',
 ];
-
-export const NUMERIC_OPERATORS: readonly ConditionOperator[] = ['between', 'has-any', 'has-none'];
 
 const LABELS: Record<ConditionOperator, string> = {
   'any-of': 'is any of',
@@ -47,8 +44,8 @@ export function isPresenceOperator(operator: ConditionOperator): boolean {
 const only = (list: readonly string[], value: string) => list.length === 1 && list[0] === value;
 
 /**
- * The operator a condition shows. A negated condition reads "is none of" whatever it holds;
- * a numeric one keeps its range (the card says "not" in front, see `operatorText`).
+ * The operator a condition shows. A negated categorical condition reads "is none of" whatever it
+ * holds; a numeric condition is always a range.
  */
 export function operatorOf(condition: FilterCondition): ConditionOperator {
   const negated = condition.logicalOp === 'NOT';
@@ -58,20 +55,14 @@ export function operatorOf(condition: FilterCondition): ConditionOperator {
     if (only(condition.values, NA_VALUE)) return 'has-none';
     return 'any-of';
   }
-  const presence = presenceOf(condition);
-  if (!negated && presence.includes(ANY_VALUE)) return 'has-any';
-  if (!negated && only(presence, NA_VALUE) && condition.min === null && condition.max === null)
-    return 'has-none';
   return 'between';
 }
 
-/** The words on a card's operator pill: "is" for one chosen value, "not …" over a negated number. */
+/** The words on a card's operator pill: "is" for one chosen value. */
 export function operatorText(condition: FilterCondition): string {
   const operator = operatorOf(condition);
   if (condition.kind === 'categorical' && operator === 'any-of' && condition.values.length <= 1)
     return 'is';
-  if (condition.kind === 'numeric' && condition.logicalOp === 'NOT')
-    return `not ${operatorLabel(operator)}`;
   return operatorLabel(operator);
 }
 
@@ -84,26 +75,15 @@ function withOperatorFields(
   condition: FilterCondition,
   operator: ConditionOperator,
 ): FilterCondition {
-  const from = operatorOf(condition);
   if (condition.kind === 'categorical') {
+    const from = operatorOf(condition);
     if (operator === 'has-any') return { ...condition, values: [ANY_VALUE] };
     if (operator === 'has-none') return { ...condition, values: [NA_VALUE] };
     // A presence sentinel means nothing as a chosen value, so it does not carry over.
     return isPresenceOperator(from) ? { ...condition, values: [] } : condition;
   }
-  if (operator === 'has-any' || operator === 'has-none')
-    return {
-      ...toRange(condition),
-      min: null,
-      max: null,
-      presence: [operator === 'has-any' ? ANY_VALUE : NA_VALUE],
-    };
-  if (operator === 'any-of' || operator === 'none-of') return condition;
-  return {
-    ...toRange(condition),
-    // Leaving "has any/no value" drops its sentinel; an N/A chip on a range stays.
-    presence: isPresenceOperator(from) ? [] : presenceOf(condition).filter((p) => p !== ANY_VALUE),
-  };
+  // A numeric card has no operator menu: its range editor holds everything it can say.
+  return condition;
 }
 
 const NONE_OF_GROUP = ':none-of';

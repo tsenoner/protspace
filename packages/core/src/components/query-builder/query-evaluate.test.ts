@@ -815,11 +815,11 @@ describe('presence chips', () => {
 
   describe('numeric', () => {
     // length: P1=100, P2=250, P3=400, P4=550, P5=null
-    it('an N/A chip alone matches only null-valued proteins', () => {
+    it('an N/A chip alone (an older "has no value") is the full range: every protein', () => {
       const query: FilterQuery = [
         createNumericCondition({ annotation: 'length', presence: [NA_VALUE] }),
       ];
-      expect(evaluateQuery(query, createTestData())).toEqual(new Set([4]));
+      expect(evaluateQuery(query, createTestData())).toEqual(new Set([0, 1, 2, 3, 4]));
     });
 
     it('an ANY chip alone matches every protein that has a value', () => {
@@ -842,11 +842,11 @@ describe('presence chips', () => {
       expect(evaluateQuery(query, createTestData())).toEqual(new Set([2, 3, 4]));
     });
 
-    it('a presence chip alone makes the condition configured (Apply is not gated off)', () => {
-      const query: FilterQuery = [
-        createNumericCondition({ annotation: 'length', presence: [NA_VALUE] }),
-      ];
-      expect(hasConfiguredCondition(query)).toBe(true);
+    it('an ANY chip alone makes the condition configured; an N/A chip alone does not', () => {
+      const any = createNumericCondition({ annotation: 'length', presence: [ANY_VALUE] });
+      const na = createNumericCondition({ annotation: 'length', presence: [NA_VALUE] });
+      expect(hasConfiguredCondition([any])).toBe(true);
+      expect(hasConfiguredCondition([na])).toBe(false);
     });
 
     it('a condition with neither bounds nor chips stays unconfigured', () => {
@@ -854,16 +854,18 @@ describe('presence chips', () => {
       expect(hasConfiguredCondition(query)).toBe(false);
     });
 
-    it('NOT over a presence chip inverts within proteins that have a value', () => {
+    it('NOT over a range keeps the proteins with a value outside it', () => {
       const query: FilterQuery = [
         createNumericCondition({
           annotation: 'length',
+          min: 200,
+          max: 450,
           presence: [NA_VALUE],
           logicalOp: 'NOT',
         }),
       ];
-      // NOT(is N/A) → has a value and is not N/A → P1..P4.
-      expect(evaluateQuery(query, createTestData())).toEqual(new Set([0, 1, 2, 3]));
+      // NOT(250 or 400 or N/A) → has a value and is outside → P1, P4.
+      expect(evaluateQuery(query, createTestData())).toEqual(new Set([0, 3]));
     });
   });
 });

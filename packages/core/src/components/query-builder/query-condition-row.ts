@@ -5,7 +5,6 @@ import type { FilterCondition, NumericCondition } from './query-types';
 import { ANY_VALUE, createCondition, createNumericCondition } from './query-types';
 import {
   CATEGORICAL_OPERATORS,
-  NUMERIC_OPERATORS,
   isPresenceOperator,
   operatorLabel,
   operatorOf,
@@ -27,12 +26,11 @@ import {
   formatCount,
   isNAValue,
   isNumericAnnotation,
-  NA_VALUE,
 } from '@protspace/utils';
 import { icon } from '../kit/icon';
 import { queryBuilderStyles } from './query-builder.styles';
 import { displayFilterValue, renderValueChip } from './query-presence';
-import { presenceOf, toRange } from './query-numeric-helpers';
+import { readRange } from './query-numeric-helpers';
 import '../kit/button';
 import '../kit/menu';
 import '../kit/popover';
@@ -85,12 +83,6 @@ class ProtspaceQueryConditionRow extends LitElement {
   @state() private _annotationHighlightIndex: number = -1;
   @state() private _menuOpen = false;
   @state() private _operatorMenuOpen = false;
-  /**
-   * The operator last picked in the menu, for this condition. A comparison with an N/A chip and
-   * no bound yet holds exactly what "has no value" holds; the pick keeps the card on the
-   * comparison while its bound is typed.
-   */
-  private _picked?: { id: string; operator: ConditionOperator };
 
   @litQuery('.annotation-picker-input') private _annotationInputEl?: HTMLInputElement;
   @litQuery('.condition-menu-trigger') private _menuTriggerEl?: HTMLElement;
@@ -240,26 +232,12 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._dispatchChanged(isNumeric ? createNumericCondition(base) : createCondition(base));
   }
 
-  /** The operator the card shows: the stored one, or the comparison just picked (`_picked`). */
-  private _operator(): ConditionOperator {
-    const stored = operatorOf(this.condition);
-    const picked = this._picked;
-    return stored === 'has-none' &&
-      picked?.id === this.condition.id &&
-      !isPresenceOperator(picked.operator) &&
-      this.condition.kind === 'numeric'
-      ? picked.operator
-      : stored;
-  }
-
   private _handleOperatorSelect(e: CustomEvent<{ value: string }>) {
     e.stopPropagation();
     this._operatorMenuOpen = false;
     const operator = e.detail.value as ConditionOperator;
-    const current = this._operator();
-    this._picked = { id: this.condition.id, operator };
     this._showValuePicker = false;
-    if (operator === current) return;
+    if (operator === operatorOf(this.condition)) return;
     this.dispatchEvent(
       new CustomEvent('operator-changed', {
         detail: { id: this.condition.id, operator },
@@ -471,7 +449,7 @@ class ProtspaceQueryConditionRow extends LitElement {
     // Ticking only N/A reads as "has no value"; the open list stays until Done.
     if (
       this.condition.kind !== 'categorical' ||
-      (isPresenceOperator(this._operator()) && !this._showValuePicker)
+      (isPresenceOperator(operatorOf(this.condition)) && !this._showValuePicker)
     )
       return nothing;
     return html`
@@ -503,14 +481,12 @@ class ProtspaceQueryConditionRow extends LitElement {
   }
 
   private _handleNumericChanged(e: CustomEvent<{ condition: NumericCondition }>) {
-    // Ticking N/A before any bound stores what "has no value" stores; the card keeps its comparison.
-    this._picked = { id: this.condition.id, operator: this._operator() };
     this._dispatchChanged(e.detail.condition);
   }
 
+  /** A numeric card is its range editor alone: no operator menu. */
   private _renderNumericInput() {
     if (this.condition.kind !== 'numeric') return nothing;
-    if (isPresenceOperator(this._operator())) return nothing;
     return html`
       <protspace-query-numeric-input
         .condition=${this.condition}
@@ -554,7 +530,7 @@ class ProtspaceQueryConditionRow extends LitElement {
           : countNoun(total - n, 'protein has none (N/A)', 'proteins have none (N/A)');
       }
       case 'between':
-        return 'both ends included; an empty end has no limit';
+        return '';
     }
   }
 
@@ -577,13 +553,11 @@ class ProtspaceQueryConditionRow extends LitElement {
     return n;
   }
 
+  /** A categorical card's operator in words, opening the operator menu. */
   private _renderOperator(label: string) {
-    const current = this._operator();
-    const operators = this.condition.kind === 'numeric' ? NUMERIC_OPERATORS : CATEGORICAL_OPERATORS;
-    const text =
-      current === operatorOf(this.condition)
-        ? operatorText(this.condition)
-        : operatorLabel(current);
+    const current = operatorOf(this.condition);
+    const operators = CATEGORICAL_OPERATORS;
+    const text = operatorText(this.condition);
     const item = (operator: ConditionOperator) => html`
       <ps-menu-item type="radio" value=${operator} ?checked=${operator === current}
         >${operatorLabel(operator)}<span slot="description"
@@ -675,13 +649,11 @@ class ProtspaceQueryConditionRow extends LitElement {
     const tail = this.edited ? ', not applied' : '';
     if (!c.annotation) return `${name}: no annotation chosen${tail}`;
     const label = annotationLabel(c.annotation, this.data?.annotations?.[c.annotation]);
-    const operator = this._operator();
-    let words = operator === operatorOf(c) ? operatorText(c) : operatorLabel(operator);
-    // A missing value reads after a comma: "Sequence length is between, no number yet".
+    if (c.kind === 'numeric') return `${name}: ${label} ${numericSummary(c)}${tail}`;
+    const operator = operatorOf(c);
+    // A missing value reads after a comma: "Organism is any of, no value chosen".
     let what = '';
-    if (isPresenceOperator(operator)) {
-      // "has any value" / "has no value" say it all.
-    } else if (c.kind === 'categorical') {
+    if (!isPresenceOperator(operator)) {
       const k = c.values.length;
       what =
         k === 0
@@ -689,20 +661,8 @@ class ProtspaceQueryConditionRow extends LitElement {
           : k === 1
             ? ` ${displayFilterValue(c.values[0])}`
             : ` ${k} values`;
-    } else {
-      // An open end reads as the one-sided range it is: "is at least 50".
-      const { min, max } = toRange(c);
-      const not = c.logicalOp === 'NOT' ? 'not ' : '';
-      if (min !== null && max === null) words = `${not}is at least`;
-      if (min === null && max !== null) words = `${not}is at most`;
-      const bounds = [min, max].filter((v): v is number => v !== null);
-      what =
-        bounds.length === 0
-          ? ', no number yet'
-          : ` ${bounds.map((v) => formatCount(v)).join(' and ')}`;
-      if (presenceOf(c).includes(NA_VALUE)) what += ', or has no value';
     }
-    return `${name}: ${label} ${words}${what}${tail}`;
+    return `${name}: ${label} ${operatorText(c)}${what}${tail}`;
   }
 
   render() {
@@ -741,7 +701,7 @@ class ProtspaceQueryConditionRow extends LitElement {
         ${this._renderAnnotationPicker()}
 
         <div class="condition-values ${this.condition.kind === 'numeric' ? '' : 'value-chips'}">
-          ${annotation
+          ${annotation && this.condition.kind === 'categorical'
             ? this._renderOperator(n > 0 ? `Operator for condition ${n}` : 'Operator')
             : nothing}
           ${this.condition.kind === 'numeric' ? this._renderNumericInput() : this._renderValues()}
@@ -750,6 +710,23 @@ class ProtspaceQueryConditionRow extends LitElement {
       </div>
     `;
   }
+}
+
+/**
+ * A numeric card in words: "is at least 50", "is between 50 and 300, or has no value",
+ * "has any value"; "keeps every protein" untouched. A negated card says "not" first.
+ */
+function numericSummary(c: NumericCondition): string {
+  const { min, max, na } = readRange(c);
+  const not = c.logicalOp === 'NOT' ? 'not ' : '';
+  if (min === null && max === null) return na ? `${not}keeps every protein` : `${not}has any value`;
+  const words =
+    min !== null && max !== null
+      ? `is between ${formatCount(min)} and ${formatCount(max)}`
+      : min !== null
+        ? `is at least ${formatCount(min)}`
+        : `is at most ${formatCount(max as number)}`;
+  return `${not}${words}${na ? ', or has no value' : ''}`;
 }
 
 declare global {

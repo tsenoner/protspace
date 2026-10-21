@@ -397,7 +397,7 @@ export const queryBuilderStyles = [
       min-width: 0;
     }
 
-    /* Under its operator pill, the numeric input takes the card's full width. */
+    /* The numeric input takes the card's full width under its name. */
     .condition-values > protspace-query-numeric-input {
       flex: 1 1 100%;
       min-width: 0;
@@ -1010,10 +1010,10 @@ export const queryBuilderStyles = [
       display: flex;
       flex-direction: column;
       gap: var(--ps-space-1);
-      padding-top: var(--ps-space-1);
     }
 
-    /* ~40 bins of the annotation; bars inside the chosen range take the accent. */
+    /* ~40 bins of the annotation: a bar the chosen range overlaps takes the accent, the rest
+       stay grey; with no limit set every bar is in the range. */
     .numeric-histogram {
       display: flex;
       align-items: flex-end;
@@ -1032,15 +1032,6 @@ export const queryBuilderStyles = [
       background: var(--ps-accent);
     }
 
-    .numeric-extent {
-      display: flex;
-      justify-content: space-between;
-      margin-top: calc(var(--ps-space-1) * -1);
-      color: var(--ps-text-muted);
-      font-size: var(--ps-text-xs);
-      font-variant-numeric: tabular-nums;
-    }
-
     /* "60 to 120 aa   2,525" stays on one line however narrow the card: the fields shrink. */
     .numeric-bounds {
       display: flex;
@@ -1055,12 +1046,6 @@ export const queryBuilderStyles = [
       width: 0;
       min-width: 3.5em;
       max-width: 96px;
-    }
-
-    .numeric-field:disabled {
-      background: var(--ps-surface-muted);
-      color: var(--ps-text-faint);
-      cursor: not-allowed;
     }
 
     .numeric-dash,
@@ -1087,13 +1072,12 @@ export const queryBuilderStyles = [
       font-size: var(--ps-text-sm);
     }
 
-    /* A phone's card fits its short panel: no histogram or extent, and the count moves beside
+    /* A phone's card fits its short panel: no histogram, and the count moves beside
        the N/A box. Where the card is wide enough (upright), the slider sits between the typed
        bounds; in the narrow side panel (on its side) it takes its own line above them. The
        container is the input's own box, which holds no fixed-position picker. */
     .numeric-input.compact {
       container: numeric-input / inline-size;
-      padding-top: 0;
     }
 
     .numeric-input.compact .numeric-bounds {
@@ -1137,35 +1121,12 @@ export const queryBuilderStyles = [
       align-self: center;
     }
 
-    /* A phone's numeric card is tighter; upright, where the card is full width, its operator
-       pill joins the name row, before the ⋯ menu. (No container query here: the row holds the
+    /* A phone's numeric card is tighter. (No container query here: the row holds the
        fixed-position pickers.) */
     @media ${unsafeCSS(COMPACT_MEDIA)} {
       .condition-row.is-numeric {
         row-gap: var(--ps-space-1);
         padding-block: var(--ps-space-1);
-      }
-    }
-
-    @media ${unsafeCSS(PHONE_MEDIA)} {
-      .condition-row.is-numeric {
-        grid-template-columns: minmax(0, 1fr) auto auto;
-      }
-
-      .condition-row.is-numeric > .condition-values {
-        display: contents;
-      }
-
-      .condition-row.is-numeric .operator-pill {
-        grid-area: 1 / 2;
-      }
-
-      .condition-row.is-numeric > .condition-actions {
-        grid-area: 1 / 3;
-      }
-
-      .condition-row.is-numeric protspace-query-numeric-input {
-        grid-column: 1 / -1;
       }
     }
   `,

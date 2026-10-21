@@ -35,14 +35,45 @@ function hasNumericBounds(condition: NumericCondition): boolean {
 }
 
 /**
- * True when the condition constrains anything at all: its range has an end, OR
- * it carries a presence chip (`is N/A` / `has any value`), which is meaningful
- * on its own. This is the single readiness rule,
- * matching the categorical side where any selected value counts.
- * An unready condition is a match-all no-op.
+ * True when the condition constrains anything at all: its range has an end, OR it
+ * carries `ANY_VALUE` ("has a value": the full range with N/A left out). With no end
+ * and no `ANY_VALUE` it is the full range with N/A included, a match-all no-op: a
+ * fresh card, or an older "has no value" query (`presence: [NA_VALUE]`, no bounds),
+ * which loads as that full range because a card can no longer keep only the N/A rows.
  */
 export function isNumericConditionReady(condition: NumericCondition): boolean {
-  return hasNumericBounds(condition) || presenceOf(condition).length > 0;
+  return hasNumericBounds(condition) || presenceOf(condition).includes(ANY_VALUE);
+}
+
+/** What a numeric card edits: the range's ends (null: no limit) and whether N/A is kept. */
+export interface NumericRangeEdit {
+  min: number | null;
+  max: number | null;
+  na: boolean;
+}
+
+/**
+ * The condition as its card shows it. Agrees with the evaluator on every stored form: no end
+ * keeps N/A unless `ANY_VALUE` leaves it out, and `ANY_VALUE` (an older "has any value") reads as
+ * the full range whatever ends it carries, since it matched every value.
+ */
+export function readRange(condition: NumericCondition): NumericRangeEdit {
+  const presence = presenceOf(condition);
+  if (presence.includes(ANY_VALUE))
+    return { min: null, max: null, na: presence.includes(NA_VALUE) };
+  const { min, max } = toRange(condition);
+  return { min, max, na: presence.includes(NA_VALUE) || (min === null && max === null) };
+}
+
+/**
+ * The condition holding `edit`, in its one stored form: the full range with N/A kept stores no
+ * presence (the untouched no-op), without N/A stores `ANY_VALUE`; a narrowed range stores
+ * `NA_VALUE` when it keeps N/A. An older query's operator goes.
+ */
+export function writeRange(condition: NumericCondition, edit: NumericRangeEdit): NumericCondition {
+  const full = edit.min === null && edit.max === null;
+  const presence = full ? (edit.na ? [] : [ANY_VALUE]) : edit.na ? [NA_VALUE] : [];
+  return { ...toRange(condition), min: edit.min, max: edit.max, presence };
 }
 
 /**

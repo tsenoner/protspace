@@ -1,13 +1,11 @@
 import type { FilterCondition, FilterQuery, FilterQueryItem } from './query-types';
 import { isFilterGroup } from './query-types';
-import { isNumericConditionReady } from './query-numeric-helpers';
 
 /** Why Apply is disabled (design decision 14); null from `applyBlock` means it is enabled. */
 export type ApplyBlock =
   | { kind: 'empty' }
   | { kind: 'annotation'; n: number }
   | { kind: 'value'; n: number }
-  | { kind: 'bound'; n: number }
   | { kind: 'none-match' }
   | { kind: 'all-match' }
   | { kind: 'unchanged' }
@@ -26,8 +24,9 @@ export function leafConditions(query: FilterQuery): FilterCondition[] {
   return leaves;
 }
 
+/** A numeric row is never incomplete: with no ends it is the full range (a match-all no-op). */
 const isConfigured = (condition: FilterCondition): boolean =>
-  condition.kind === 'numeric' ? isNumericConditionReady(condition) : condition.values.length > 0;
+  !!condition.annotation && (condition.kind === 'numeric' || condition.values.length > 0);
 
 /**
  * A problem with the query's shape, found without counting. A row with an annotation and nothing
@@ -44,7 +43,7 @@ function structuralBlock(query: FilterQuery): ApplyBlock | null {
       continue;
     }
     if (isConfigured(condition)) continue;
-    return condition.kind === 'numeric' ? { kind: 'bound', n } : { kind: 'value', n };
+    return { kind: 'value', n };
   }
   return leaves.some(isConfigured) ? null : { kind: 'empty' };
 }
@@ -85,8 +84,6 @@ export function applyBlockText(block: ApplyBlock): string {
       return `Choose an annotation for condition ${block.n}`;
     case 'value':
       return `Choose a value for condition ${block.n}`;
-    case 'bound':
-      return `Enter a number for condition ${block.n}`;
     case 'none-match':
       return 'No proteins match';
     case 'all-match':

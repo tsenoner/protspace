@@ -46,11 +46,9 @@ describe('applyBlock', () => {
     expect(applyBlock({ query, ...ready })).toEqual({ kind: 'value', n: 2 });
   });
 
-  it('asks for a number on a numeric row without a bound or a presence chip', () => {
+  it('a numeric row without a bound is the full range, not an incomplete row', () => {
     const numeric = createNumericCondition({ annotation: 'length' });
-    expect(applyBlock({ query: [numeric], ...ready })).toEqual({ kind: 'bound', n: 1 });
-    const presence = createNumericCondition({ annotation: 'length', presence: ['__NA__'] });
-    expect(applyBlock({ query: [presence], ...ready })).toBeNull();
+    expect(applyBlock({ query: [numeric], ...ready })).toBeNull();
   });
 
   it('structural reasons win over count reasons and over counting', () => {
@@ -102,7 +100,6 @@ describe('applyBlockText', () => {
     [{ kind: 'empty' }, 'Choose an annotation to filter by'],
     [{ kind: 'annotation', n: 3 }, 'Choose an annotation for condition 3'],
     [{ kind: 'value', n: 2 }, 'Choose a value for condition 2'],
-    [{ kind: 'bound', n: 1 }, 'Enter a number for condition 1'],
     [{ kind: 'none-match' }, 'No proteins match'],
     [{ kind: 'all-match' }, 'Every protein matches; nothing to filter'],
     [{ kind: 'unchanged' }, 'No changes to apply'],
