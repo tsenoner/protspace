@@ -7,7 +7,7 @@ import './query-builder';
 import { createCondition, createGroup } from './query-types';
 import type { FilterQuery } from './query-types';
 import type { ProtspaceData } from './types';
-import { cdp } from 'vitest/browser';
+import { cdp, page } from 'vitest/browser';
 
 beforeAll(() => adoptTheme());
 afterEach(() => document.body.replaceChildren());
@@ -173,20 +173,32 @@ describe('protspace-query-builder in a narrow panel', () => {
     }
   });
 
-  it('a picker opened near the bottom of the screen opens upward and stays on it', async () => {
-    const builder = await mount([createCondition()]);
-    builder.style.cssText =
-      'display: block; width: 360px; height: 160px; position: fixed; left: 0; bottom: 40px';
-    await builder.updateComplete;
-    const row = rows(builder)[0];
-    row.shadowRoot!.querySelector<HTMLButtonElement>('.annotation-select-trigger')!.click();
-    await row.updateComplete;
+  it('a picker opened near the bottom of the screen stays on it, clear of its trigger', async () => {
+    // Wider than a phone, where the picker is a bottom sheet instead.
+    await page.viewport(1024, 896);
+    try {
+      const builder = await mount([createCondition()]);
+      builder.style.cssText =
+        'display: block; width: 360px; height: 160px; position: fixed; left: 0; bottom: 40px';
+      await builder.updateComplete;
+      const row = rows(builder)[0];
+      row.shadowRoot!.querySelector<HTMLButtonElement>('.annotation-select-trigger')!.click();
+      await row.updateComplete;
 
-    const picker = row.shadowRoot!.querySelector<HTMLElement>('.annotation-picker')!;
-    const box = picker.getBoundingClientRect();
-    expect(box.top).toBeGreaterThanOrEqual(8);
-    expect(box.bottom).toBeLessThanOrEqual(innerHeight - 8);
-    const trigger = row.shadowRoot!.querySelector('.annotation-select-trigger')!;
-    expect(box.bottom).toBeLessThanOrEqual(trigger.getBoundingClientRect().top);
+      const picker = row.shadowRoot!.querySelector<HTMLElement>('.annotation-picker')!;
+      const trigger = row.shadowRoot!.querySelector('.annotation-select-trigger')!;
+      // The popover places itself asynchronously (Floating UI), after the row's update.
+      const placed = () => {
+        const box = picker.getBoundingClientRect();
+        const t = trigger.getBoundingClientRect();
+        return {
+          onScreen: box.top >= 8 && box.bottom <= innerHeight - 8,
+          clear: box.bottom <= t.top || box.top >= t.bottom,
+        };
+      };
+      await expect.poll(placed).toEqual({ onScreen: true, clear: true });
+    } finally {
+      await page.viewport(414, 896);
+    }
   });
 });

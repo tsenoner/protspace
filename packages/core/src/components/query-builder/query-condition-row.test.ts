@@ -8,10 +8,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pushLayer, topLayer } from '../kit/layers';
+import { stubPopoverApi } from '../legend/test-support/popover-stub';
 import './query-condition-row';
 import type { FilterCondition } from './query-types';
 import { ANY_VALUE } from './query-types';
 import type { ProtspaceData } from './types';
+
+stubPopoverApi();
 
 interface ConditionRowEl extends HTMLElement {
   condition: FilterCondition;
@@ -186,7 +189,8 @@ describe('query-condition-row annotation picker accessibility', () => {
     Array.from(el.shadowRoot!.querySelectorAll('.annotation-picker-item')) as HTMLElement[];
   /** Column names, in list order — what keyboard navigation and selection work in. */
   const keys = (el: ConditionRowEl) => items(el).map((i) => i.dataset.annotation!);
-  const labels = (el: ConditionRowEl) => items(el).map((i) => i.textContent!.trim());
+  const labels = (el: ConditionRowEl) =>
+    items(el).map((i) => i.querySelector('.dropdown-item-label')!.textContent!.trim());
   const highlighted = (el: ConditionRowEl) =>
     (el.shadowRoot!.querySelector('.annotation-picker-item.highlighted') as HTMLElement | null)
       ?.dataset.annotation;
@@ -250,7 +254,7 @@ describe('query-condition-row annotation picker accessibility', () => {
     await el.updateComplete;
     await open(el);
 
-    const list = el.shadowRoot!.querySelector('.value-picker-list')!;
+    const list = el.shadowRoot!.querySelector('.annotation-picker-list')!;
     expect(list.getAttribute('role')).toBe('listbox');
 
     const options = items(el);

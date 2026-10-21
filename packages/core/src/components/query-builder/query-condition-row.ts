@@ -18,24 +18,25 @@ import {
   filterGroupedAnnotations,
   flattenGroupedAnnotations,
 } from '../common/annotation-categories';
-import { renderAnnotationName } from '../common/annotation-name';
+import { predictedMark, renderAnnotationName } from '../common/annotation-name';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
-import { pushLayer } from '../kit/layers';
 import {
   annotationLabel,
   annotationSource,
   countNoun,
   formatCount,
+  isNAValue,
   isNumericAnnotation,
   NA_VALUE,
 } from '@protspace/utils';
 import { icon } from '../kit/icon';
 import { queryBuilderStyles } from './query-builder.styles';
-import { pickerStyle, placePickerAt, type PickerPlacement } from './picker-placement';
 import { displayFilterValue, renderValueChip } from './query-presence';
 import { presenceOf } from './query-numeric-helpers';
 import '../kit/button';
 import '../kit/menu';
+import '../kit/popover';
+import type { PsPopover } from '../kit/popover';
 import './query-value-picker';
 import './query-numeric-input';
 
@@ -51,6 +52,18 @@ import './query-numeric-input';
  */
 /** Proteins with a value, per dataset and annotation, for the operator menu's counts. */
 const presenceCounts = new WeakMap<ProtspaceData, Map<string, number>>();
+
+/** Distinct values a categorical annotation holds, N/A left out, per values array. */
+const valueCounts = new WeakMap<readonly (string | null)[], number>();
+
+function distinctValues(values: readonly (string | null)[]): number {
+  let n = valueCounts.get(values);
+  if (n === undefined) {
+    n = values.filter((v) => v !== null && !isNAValue(v)).length;
+    valueCounts.set(values, n);
+  }
+  return n;
+}
 
 @customElement('protspace-query-condition-row')
 class ProtspaceQueryConditionRow extends LitElement {
@@ -70,7 +83,6 @@ class ProtspaceQueryConditionRow extends LitElement {
   @state() private _annotationSearch: string = '';
   /** Index into the *filtered* annotation list; -1 means nothing highlighted. */
   @state() private _annotationHighlightIndex: number = -1;
-  @state() private _pickerPos: PickerPlacement = { top: 0, left: 0, room: 0 };
   @state() private _menuOpen = false;
   @state() private _operatorMenuOpen = false;
   /**
@@ -85,47 +97,19 @@ class ProtspaceQueryConditionRow extends LitElement {
   @litQuery('.operator-pill') private _operatorPillEl?: HTMLElement;
   @litQuery('.condition-head') private _headEl?: HTMLElement;
   @litQuery('.value-add') private _valueAddEl?: HTMLElement;
-  /** Releases the annotation picker's layer; set while the picker is shown. */
-  private _releasePickerLayer?: () => void;
-
-  // ─── Click-outside detection ──────────────────────────────────────────────
-
-  private _handleDocumentClick = (e: MouseEvent) => {
-    if (this._showAnnotationPicker && !e.composedPath().includes(this)) {
-      this._closeAnnotationPicker();
-    }
-  };
-
-  connectedCallback() {
-    super.connectedCallback();
-    document.addEventListener('click', this._handleDocumentClick, true);
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    document.removeEventListener('click', this._handleDocumentClick, true);
-    this._releasePickerLayer?.();
-    this._releasePickerLayer = undefined;
-  }
+  @litQuery('.annotation-popover') private _annotationPopoverEl?: PsPopover;
 
   // ─── Auto-focus annotation picker input ───────────────────────────────────
 
   updated(changedProperties: Map<string, unknown>) {
-    if (!changedProperties.has('_showAnnotationPicker')) return;
-    if (this._showAnnotationPicker) {
-      // A layer while shown, so Escape closes the picker before the dialog it sits in.
-      this._releasePickerLayer ??= pushLayer({
-        close: () => this._closeAnnotationPicker(),
-        elements: [this],
-        dismissOnOutsidePress: false,
-      });
-      this.updateComplete.then(() => {
-        this._annotationInputEl?.focus();
-      });
-    } else {
-      this._releasePickerLayer?.();
-      this._releasePickerLayer = undefined;
-    }
+    if (!changedProperties.has('_showAnnotationPicker') || !this._showAnnotationPicker) return;
+    // The popover (a layer: Escape and an outside press close it) shows itself in its own update.
+    // A phone's sheet focuses its title instead, so the keyboard does not cover the list.
+    void (this._annotationPopoverEl?.updateComplete ?? Promise.resolve()).then(() =>
+      this._annotationPopoverEl?.hasAttribute('docked')
+        ? this.renderRoot.querySelector<HTMLElement>('.annotation-picker-title')?.focus()
+        : this._annotationInputEl?.focus(),
+    );
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -191,18 +175,18 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._operatorMenuOpen = false;
   }
 
-  private _toggleAnnotationPicker(e: Event) {
+  private _toggleAnnotationPicker() {
     if (this._showAnnotationPicker) {
       this._closeAnnotationPicker();
       return;
     }
-    this._openAnnotationPicker(e.currentTarget as HTMLElement);
+    this._openAnnotationPicker();
   }
 
-  private _openAnnotationPicker(anchor: Element) {
+  /** The picker hangs under the card's header, the row the trigger and the menu sit on. */
+  private _openAnnotationPicker() {
     this._showAnnotationPicker = true;
     this._annotationHighlightIndex = -1;
-    this._pickerPos = placePickerAt(anchor);
   }
 
   private _handleAnnotationPickerKeydown(e: KeyboardEvent) {
@@ -211,7 +195,7 @@ class ProtspaceQueryConditionRow extends LitElement {
       // native button activation from toggling it straight back shut.
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        this._toggleAnnotationPicker(e);
+        this._toggleAnnotationPicker();
       }
       return;
     }
@@ -348,8 +332,7 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._menuOpen = false;
     switch (e.detail.value) {
       case 'change':
-        // The picker hangs under the card's header, the row the menu's trigger sits on.
-        if (this._headEl) this._openAnnotationPicker(this._headEl);
+        this._openAnnotationPicker();
         return;
       case 'clear':
         this._clearValues();
@@ -364,7 +347,29 @@ class ProtspaceQueryConditionRow extends LitElement {
 
   // ─── Sub-renders ──────────────────────────────────────────────────────────
 
+  /** The annotation picker: a popover under the card's header, a bottom sheet on a phone. */
   private _renderAnnotationPicker() {
+    return html`<ps-popover
+      class="annotation-popover"
+      placement="bottom-start"
+      sheet
+      panel-label="Choose annotation"
+      .anchor=${this._headEl ?? null}
+      .open=${this._showAnnotationPicker}
+      @ps-close=${(e: Event) => {
+        e.stopPropagation();
+        this._closeAnnotationPicker();
+      }}
+      >${this._showAnnotationPicker ? this._renderAnnotationPickerBody() : nothing}</ps-popover
+    >`;
+  }
+
+  /**
+   * The search box over the annotations in their source sections, the Color by picker's
+   * grouping and labels: a header and a divider per section, each row its name (wrapping), the
+   * predicted mark, and what it holds ("number" or its count of values).
+   */
+  private _renderAnnotationPickerBody() {
     const filteredGroups = this._filteredAnnotationGroups();
     // Clamped: the list can shrink under a parked highlight (the annotations
     // change), and an index past the end would leave `aria-activedescendant`
@@ -372,68 +377,95 @@ class ProtspaceQueryConditionRow extends LitElement {
     const total = filteredGroups.reduce((n, g) => n + g.items.length, 0);
     const activeIndex =
       this._annotationHighlightIndex < total ? this._annotationHighlightIndex : -1;
+    const query = this._annotationSearch.trim();
 
     return html`
-      <div
-        class="annotation-picker"
-        style=${pickerStyle(this._pickerPos)}
-        @click=${(e: Event) => e.stopPropagation()}
-      >
-        <input
-          class="annotation-picker-input"
-          type="text"
-          placeholder="Search annotations..."
-          aria-label="Search annotations"
-          role="combobox"
-          aria-expanded="true"
-          aria-haspopup="listbox"
-          aria-controls="annotation-picker-list"
-          aria-activedescendant=${activeIndex >= 0
-            ? `annotation-picker-option-${activeIndex}`
-            : nothing}
-          .value=${this._annotationSearch}
-          @input=${(e: Event) => {
-            this._annotationSearch = (e.target as HTMLInputElement).value;
-            this._annotationHighlightIndex = -1;
-          }}
-          @keydown=${this._handleAnnotationPickerKeydown}
-        />
+      <div class="annotation-picker">
+        <p class="annotation-picker-title" tabindex="-1">Choose annotation</p>
+        <div class="value-picker-search">
+          ${icon('search', 14)}
+          <input
+            class="annotation-picker-input value-picker-input"
+            type="text"
+            placeholder="Search ${formatCount(this.annotations.length)} annotations"
+            aria-label="Search annotations"
+            role="combobox"
+            aria-expanded="true"
+            aria-haspopup="listbox"
+            aria-autocomplete="list"
+            aria-controls="annotation-picker-list"
+            aria-activedescendant=${activeIndex >= 0
+              ? `annotation-picker-option-${activeIndex}`
+              : nothing}
+            autocomplete="off"
+            .value=${this._annotationSearch}
+            @input=${(e: Event) => {
+              this._annotationSearch = (e.target as HTMLInputElement).value;
+              this._annotationHighlightIndex = -1;
+            }}
+            @keydown=${this._handleAnnotationPickerKeydown}
+          />
+        </div>
         <div
           id="annotation-picker-list"
-          class="value-picker-list"
+          class="annotation-picker-list"
           role="listbox"
           aria-label="Annotations"
         >
           ${filteredGroups.map(
-            (group) => html`
-              <div class="annotation-picker-category" role="presentation">${group.category}</div>
-              ${group.items.map(({ name, index }) => {
-                const isHighlighted = index === activeIndex;
-                return html`
-                  <div
-                    id="annotation-picker-option-${index}"
-                    class="dropdown-item annotation-picker-item ${isHighlighted
-                      ? 'highlighted'
-                      : ''}"
-                    role="option"
-                    data-annotation=${name}
-                    aria-selected=${name === this.condition.annotation}
-                    @click=${() => this._selectAnnotation(name)}
-                  >
-                    ${renderAnnotationName(
-                      name,
-                      this.data?.annotations?.[name],
-                      'dropdown-item-label',
-                    )}
-                  </div>
-                `;
-              })}
+            (group, g) => html`
+              <div
+                class="annotation-picker-section"
+                role="group"
+                aria-labelledby="annotation-picker-group-${g}"
+              >
+                <div
+                  class="annotation-picker-category"
+                  id="annotation-picker-group-${g}"
+                  role="presentation"
+                >
+                  ${group.category}
+                </div>
+                ${group.items.map(({ name, index }) =>
+                  this._renderAnnotationOption(name, index === activeIndex, index),
+                )}
+              </div>
             `,
           )}
-          ${filteredGroups.length === 0
-            ? html`<div class="value-picker-footer">No matching annotations</div>`
-            : nothing}
         </div>
+        ${filteredGroups.length === 0
+          ? html`<p class="annotation-picker-empty" role="status">
+              No annotations match “${query}”
+            </p>`
+          : nothing}
+      </div>
+    `;
+  }
+
+  private _renderAnnotationOption(name: string, highlighted: boolean, index: number) {
+    const definition = this.data?.annotations?.[name];
+    const selected = name === this.condition.annotation;
+    const numeric = isNumericAnnotation(definition);
+    const values = numeric || !definition ? 0 : distinctValues(definition.values);
+    return html`
+      <div
+        id="annotation-picker-option-${index}"
+        class="dropdown-item annotation-picker-item ${highlighted ? 'highlighted' : ''}"
+        role="option"
+        data-annotation=${name}
+        aria-selected=${selected}
+        @click=${() => this._selectAnnotation(name)}
+      >
+        <span class="annotation-picker-check">${selected ? icon('check', 14) : nothing}</span>
+        <span class="dropdown-item-label">${annotationLabel(name, definition)}</span>
+        ${predictedMark(name)}
+        ${numeric
+          ? html`<span class="condition-badge annotation-picker-kind">number</span>`
+          : values > 0
+            ? html`<span class="annotation-picker-count"
+                >${countNoun(values, 'value', 'values')}</span
+              >`
+            : nothing}
       </div>
     `;
   }
@@ -697,7 +729,7 @@ class ProtspaceQueryConditionRow extends LitElement {
           ${annotation ? this._sourceBadge() : nothing}
         </div>
 
-        ${this._showAnnotationPicker ? this._renderAnnotationPicker() : nothing}
+        ${this._renderAnnotationPicker()}
 
         <div class="condition-values ${this.condition.kind === 'numeric' ? '' : 'value-chips'}">
           ${annotation

@@ -565,26 +565,6 @@ export const queryBuilderStyles = [
 
     /* ── The annotation and value pickers ────────────────────────────────── */
 
-    /* position: fixed against a measured trigger, so a scrolling panel cannot clip them.
-       placePicker opens them above the trigger when below lacks room, and --picker-room caps
-       the height so the list scrolls inside the screen. */
-    .annotation-picker {
-      position: fixed;
-      z-index: 1001;
-      display: flex;
-      flex-direction: column;
-      box-sizing: border-box;
-      max-height: var(--picker-room, none);
-      min-width: 200px;
-      max-width: 280px;
-      padding: var(--ps-space-2);
-      border: 1px solid var(--ps-border);
-      border-radius: var(--ps-radius);
-      background: var(--ps-surface-raised);
-      box-shadow: var(--ps-shadow-lg);
-    }
-
-    .annotation-picker-input,
     .numeric-field {
       box-sizing: border-box;
       height: var(--ps-control-sm);
@@ -595,24 +575,15 @@ export const queryBuilderStyles = [
       color: var(--ps-text);
     }
 
-    .annotation-picker-input:hover,
     .numeric-field:hover {
       border-color: var(--ps-border-control);
     }
 
-    .annotation-picker-input {
-      flex: none;
-      width: 100%;
-      margin-bottom: var(--ps-space-1);
-    }
-
-    .annotation-picker-input::placeholder,
     .numeric-field::placeholder {
       color: var(--ps-text-muted);
     }
 
     /* Inside a tight box the ring sits on the border rather than 2 px outside it. */
-    .annotation-picker-input:focus-visible,
     .numeric-field:focus-visible {
       outline-offset: -1px;
     }
@@ -626,50 +597,144 @@ export const queryBuilderStyles = [
       scrollbar-width: thin;
     }
 
-    /* The options carry no tabindex: focus stays in the search input and .highlighted is the
-       keyboard cursor (aria-activedescendant). */
-    .dropdown-item {
-      padding: var(--ps-space-1-5) var(--ps-space-2);
-      border-radius: var(--ps-radius-sm);
-      color: var(--ps-text);
-      cursor: pointer;
-    }
-
-    .dropdown-item:hover,
-    .dropdown-item.highlighted {
-      background: var(--ps-accent-tint);
-    }
-
-    .annotation-picker-item {
+    /* The annotation picker, inside a ps-popover: under the card's header, or a phone's bottom
+       sheet (docked). Sections per source, like the Color by picker. */
+    .annotation-picker {
       display: flex;
-      align-items: center;
-      gap: var(--ps-space-2);
+      flex-direction: column;
+      box-sizing: border-box;
+      width: min(320px, calc(100vw - 16px));
+      max-height: min(440px, var(--available-height, 440px));
     }
 
-    .annotation-picker-item[aria-selected='true'] {
-      color: var(--ps-accent-text);
-      font-weight: var(--ps-weight-medium);
+    ps-popover[docked] .annotation-picker {
+      width: 100%;
+      max-height: calc(min(85dvh, 100dvh - 48px) - 20px - env(safe-area-inset-bottom, 0px));
     }
 
-    .annotation-picker .value-picker-footer {
+    .annotation-picker-title {
+      flex: none;
+      margin: 0;
+      padding: var(--ps-space-1) var(--ps-space-3) 0;
+      color: var(--ps-text);
+      font-size: var(--ps-text-md);
+      font-weight: var(--ps-weight-semibold);
+    }
+
+    ps-popover:not([docked]) .annotation-picker-title {
+      display: none;
+    }
+
+    .annotation-picker .value-picker-search {
+      border-bottom: 1px solid var(--ps-border);
+    }
+
+    .annotation-picker-list {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 0 var(--ps-space-1) var(--ps-space-1);
+      scrollbar-width: thin;
+    }
+
+    .annotation-picker-section {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Each section after the first starts on a divider. */
+    .annotation-picker-section + .annotation-picker-section {
       margin-top: var(--ps-space-1);
-      padding-top: var(--ps-space-1);
       border-top: 1px solid var(--ps-border);
-      color: var(--ps-text-muted);
-      font-size: var(--ps-text-sm);
-      text-align: center;
     }
 
+    /* Group labels read like ps-menu-label; they stay in view while their section scrolls. */
     .annotation-picker-category {
       position: sticky;
       top: 0;
+      z-index: 1;
       padding: var(--ps-space-2) var(--ps-space-2) var(--ps-space-1);
       background: var(--ps-surface-raised);
       color: var(--ps-text-muted);
       font-size: var(--ps-text-xs);
       font-weight: var(--ps-weight-semibold);
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
+    }
+
+    /* The options carry no tabindex: focus stays in the search input and .highlighted is the
+       keyboard cursor (aria-activedescendant). */
+    .annotation-picker-item {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-1-5);
+      box-sizing: border-box;
+      min-height: var(--ps-row);
+      padding: var(--ps-space-1) var(--ps-space-2) var(--ps-space-1) var(--ps-space-1);
+      border-radius: var(--ps-radius-sm);
+      color: var(--ps-text);
+      cursor: pointer;
+    }
+
+    .annotation-picker-item:hover,
+    .annotation-picker-item.highlighted {
+      background: var(--ps-surface-hover);
+    }
+
+    .annotation-picker-item.highlighted {
+      box-shadow: inset 0 0 0 1px var(--ps-border-strong);
+    }
+
+    .annotation-picker-item[aria-selected='true'] {
+      background: var(--ps-accent-tint);
+      color: var(--ps-accent-text);
+    }
+
+    /* The name wraps rather than truncating. */
+    .annotation-picker-item .dropdown-item-label {
+      flex: 0 1 auto;
+      overflow: visible;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .annotation-picker-item[aria-selected='true'] .dropdown-item-label {
+      font-weight: var(--ps-weight-medium);
+    }
+
+    .annotation-picker-check {
+      display: inline-flex;
+      flex: none;
+      width: 14px;
+    }
+
+    /* What the annotation holds sits at the row's end; the predicted mark stays by the name. */
+    .annotation-picker-kind {
+      margin-left: auto;
+    }
+
+    .annotation-picker-count {
+      flex: none;
+      margin-left: auto;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .annotation-picker-empty {
+      margin: 0;
+      padding: var(--ps-space-3);
+      color: var(--ps-text-muted);
+      overflow-wrap: anywhere;
+      text-align: center;
+    }
+
+    @media (pointer: coarse) {
+      .annotation-picker-item {
+        min-height: var(--ps-touch-target);
+      }
     }
 
     @media (forced-colors: active) {
