@@ -61,7 +61,6 @@ class ProtspaceQueryConditionRow extends LitElement {
   /** Index into the *filtered* annotation list; -1 means nothing highlighted. */
   @state() private _annotationHighlightIndex: number = -1;
   @state() private _pickerPos: PickerPlacement = { top: 0, left: 0, room: 0 };
-  @state() private _valuePickerPos: PickerPlacement = { top: 0, left: 0, room: 0 };
   @state() private _menuOpen = false;
   @state() private _operatorMenuOpen = false;
   /**
@@ -75,6 +74,7 @@ class ProtspaceQueryConditionRow extends LitElement {
   @litQuery('.condition-menu-trigger') private _menuTriggerEl?: HTMLElement;
   @litQuery('.operator-pill') private _operatorPillEl?: HTMLElement;
   @litQuery('.condition-head') private _headEl?: HTMLElement;
+  @litQuery('.value-add') private _valueAddEl?: HTMLElement;
   /** Releases the annotation picker's layer; set while the picker is shown. */
   private _releasePickerLayer?: () => void;
 
@@ -300,6 +300,11 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._dispatchChanged({ ...this.condition, values: [...values, value] });
   }
 
+  private _handleValuesChange(e: CustomEvent<{ values: string[] }>) {
+    if (this.condition.kind !== 'categorical') return;
+    this._dispatchChanged({ ...this.condition, values: e.detail.values });
+  }
+
   private _handleValuePickerClose() {
     this._showValuePicker = false;
   }
@@ -422,7 +427,11 @@ class ProtspaceQueryConditionRow extends LitElement {
   }
 
   private _renderValues() {
-    if (this.condition.kind !== 'categorical' || isPresenceOperator(this._operator()))
+    // Ticking only N/A reads as "has no value"; the open list stays until Done.
+    if (
+      this.condition.kind !== 'categorical' ||
+      (isPresenceOperator(this._operator()) && !this._showValuePicker)
+    )
       return nothing;
     return html`
       ${this.condition.values.map((v) => renderValueChip(v, () => this._removeValue(v)))}
@@ -430,11 +439,9 @@ class ProtspaceQueryConditionRow extends LitElement {
         class="value-add"
         variant="ghost"
         size="sm"
-        @click=${(e: Event) => {
+        aria-expanded=${this._showValuePicker ? 'true' : 'false'}
+        @click=${() => {
           this._showValuePicker = !this._showValuePicker;
-          if (this._showValuePicker) {
-            this._valuePickerPos = placePickerAt(e.currentTarget as HTMLElement);
-          }
         }}
         ><span slot="start">${icon('plus', 14)}</span
         ><span class="sr-only">Add </span>value</ps-button
@@ -446,8 +453,9 @@ class ProtspaceQueryConditionRow extends LitElement {
         .logicalOp=${this.condition.logicalOp}
         .selectedValues=${this.condition.values}
         .open=${this._showValuePicker}
-        .placement=${this._valuePickerPos}
+        .anchor=${this._valueAddEl ?? null}
         @value-selected=${this._handleValueSelected}
+        @values-change=${this._handleValuesChange}
         @picker-close=${this._handleValuePickerClose}
       ></protspace-query-value-picker>
     `;

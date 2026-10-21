@@ -572,6 +572,18 @@ export async function closeFilterPanel(page: Page): Promise<void> {
 const quoted = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 /**
+ * Ticks `value` in the open value list. The list draws only the rows in view, so a value further
+ * down is searched for first (its internal value is its label, except for the N/A sentinel).
+ */
+async function pickOpenValue(builder: Locator, value: string): Promise<void> {
+  const item = builder.locator(`.value-picker-item[data-value="${quoted(value)}"]`).first();
+  if (!(await item.isVisible())) {
+    await builder.locator('.value-picker-input').fill(value === '__NA__' ? 'N/A' : value);
+  }
+  await item.click();
+}
+
+/**
  * Opens the Filter panel and applies one condition: the colouring annotation equals the legend's
  * first category. The panel stays open.
  */
@@ -586,10 +598,7 @@ export async function applyFirstCategoryFilter(page: Page): Promise<void> {
     .first()
     .click();
   await row.locator('.value-add').click();
-  await queryBuilder(page)
-    .locator(`.value-picker-item[data-value="${quoted(value)}"]`)
-    .first()
-    .click();
+  await pickOpenValue(queryBuilder(page), value);
   // Escape closes the value picker (a layer), wherever it overlaps the panel: one step.
   await page.keyboard.press('Escape');
   await expect(queryBuilder(page).locator('.value-picker-item').first()).toBeHidden();
@@ -624,9 +633,10 @@ export async function draftFilterCondition(
     .click();
   if (values.length === 0) return condition;
   for (const value of values) {
-    const item = builder.locator(`.value-picker-item[data-value="${quoted(value)}"]`).first();
-    if (!(await item.isVisible())) await condition.locator('.value-add').click();
-    await item.click();
+    if (!(await builder.locator('.value-picker-input').isVisible())) {
+      await condition.locator('.value-add').click();
+    }
+    await pickOpenValue(builder, value);
   }
   // Escape closes the value picker (a layer) and nothing else.
   await page.keyboard.press('Escape');

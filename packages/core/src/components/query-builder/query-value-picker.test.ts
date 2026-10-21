@@ -21,6 +21,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { pushLayer, topLayer } from '../kit/layers';
+import { stubPopoverApi } from '../legend/test-support/popover-stub';
 import './query-value-picker';
 import type { FilterQuery, LogicalOp } from './query-types';
 import { ANY_VALUE } from './query-types';
@@ -34,7 +35,7 @@ interface ValuePickerEl extends HTMLElement {
   logicalOp: LogicalOp | undefined;
   selectedValues: string[];
   open: boolean;
-  placement: { top?: number; bottom?: number; left: number; room: number };
+  anchor: Element | null;
   updateComplete: Promise<unknown>;
 }
 
@@ -106,7 +107,7 @@ function labels(el: ValuePickerEl): string[] {
 
 function footer(el: ValuePickerEl): string {
   return el
-    .shadowRoot!.querySelector('.value-picker-footer')!
+    .shadowRoot!.querySelector('.value-picker-summary')!
     .textContent!.trim()
     .replace(/\s+/g, ' ');
 }
@@ -115,6 +116,17 @@ async function search(el: ValuePickerEl, text: string): Promise<ValuePickerEl> {
   const input = el.shadowRoot!.querySelector('.value-picker-input') as HTMLInputElement;
   input.value = text;
   input.dispatchEvent(new Event('input'));
+  await el.updateComplete;
+  return el;
+}
+
+/** Mounted with an anchor, so its popover opens and takes a layer (jsdom needs the popover stub). */
+async function mountAnchored(options: MountOptions = {}): Promise<ValuePickerEl> {
+  stubPopoverApi();
+  const el = await mount(options);
+  const anchor = document.createElement('button');
+  document.body.prepend(anchor);
+  el.anchor = anchor;
   await el.updateComplete;
   return el;
 }
@@ -130,27 +142,19 @@ describe('query-value-picker', () => {
       expect(el.shadowRoot!.querySelector('.value-picker')).toBeNull();
     });
 
-    it('lists every declared value once, in declaration order, N/A included, led by Any value', async () => {
+    it('lists every declared value once, led by Any value and N/A, then by count', async () => {
       const el = await mount();
       // Exact equality also pins that the `__NA__` sentinel is shown as its N/A label.
-      expect(labels(el)).toEqual(['Any value', 'Human', 'Mouse', 'Yeast', 'N/A']);
-      expect(footer(el)).toBe('5 of 5 values shown');
+      expect(labels(el)).toEqual(['Any value', 'N/A', 'Human', 'Mouse', 'Yeast']);
+      expect(footer(el)).toBe('0 selected');
     });
 
-    it('positions itself at the placement it is given', async () => {
-      const el = await mount();
-      el.placement = { bottom: 120, left: 40, room: 200 };
-      await el.updateComplete;
-      const panel = el.shadowRoot!.querySelector('.value-picker') as HTMLElement;
-      expect(panel.style.bottom).toBe('120px');
-      expect(panel.style.left).toBe('40px');
-      expect(panel.style.getPropertyValue('--picker-room')).toBe('200px');
-    });
-
-    it('drops already-selected values from the list', async () => {
+    it('lists the selected values first, ticked', async () => {
       const el = await mount({ selectedValues: ['Human', '__NA__'] });
-      expect(labels(el)).toEqual(['Any value', 'Mouse', 'Yeast']);
-      expect(footer(el)).toBe('3 of 3 values shown');
+      expect(labels(el)).toEqual(['N/A', 'Human', 'Any value', 'Mouse', 'Yeast']);
+      const checked = items(el).filter((i) => i.getAttribute('aria-checked') === 'true');
+      expect(checked.map((i) => i.dataset.value)).toEqual(['__NA__', 'Human']);
+      expect(footer(el)).toBe('2 selected · 3 proteins');
     });
 
     it('de-duplicates repeated raw values', async () => {
@@ -343,15 +347,16 @@ describe('query-value-picker', () => {
       expect(labels(el)).toEqual(['Any value']);
     });
 
-    it('drops out of the list once selected', async () => {
+    it('stays listed, ticked, once selected', async () => {
       const el = await mount({ selectedValues: [ANY_VALUE] });
-      expect(labels(el)).not.toContain('Any value');
+      expect(itemFor(el, 'Any value').getAttribute('aria-checked')).toBe('true');
     });
 
     it('locks out every other entry while it is selected', async () => {
       const el = await mount({ selectedValues: [ANY_VALUE] });
-      expect(items(el).length).toBeGreaterThan(0);
-      for (const item of items(el)) {
+      const others = items(el).filter((i) => i.dataset.value !== ANY_VALUE);
+      expect(others.length).toBeGreaterThan(0);
+      for (const item of others) {
         expect(item.classList.contains('is-disabled')).toBe(true);
         expect(item.getAttribute('aria-disabled')).toBe('true');
       }
@@ -381,7 +386,6 @@ describe('query-value-picker', () => {
     it('filters case-insensitively on a substring and updates the footer', async () => {
       const el = await search(await mount(), 'ou');
       expect(labels(el)).toEqual(['Mouse']);
-      expect(footer(el)).toBe('1 of 5 values shown');
     });
 
     it('matches the N/A entry by its display label', async () => {
@@ -392,7 +396,6 @@ describe('query-value-picker', () => {
     it('does not match the N/A entry by its internal sentinel', async () => {
       const el = await search(await mount(), '__na__');
       expect(labels(el)).toEqual([]);
-      expect(footer(el)).toBe('0 of 5 values shown');
     });
 
     it('ignores surrounding whitespace in the query', async () => {
@@ -417,13 +420,11 @@ describe('query-value-picker', () => {
     it('renders an empty list when the annotation is missing from the data', async () => {
       const el = await mount({ annotation: 'missing_annotation' });
       expect(labels(el)).toEqual([]);
-      expect(footer(el)).toBe('0 of 0 values shown');
     });
 
     it('renders an empty list when there is no data at all', async () => {
       const el = await mount({ data: undefined });
       expect(labels(el)).toEqual([]);
-      expect(footer(el)).toBe('0 of 0 values shown');
     });
 
     it('shows zero counts for an empty dataset', async () => {
@@ -537,7 +538,7 @@ describe('query-value-picker', () => {
       await press(el, 'ArrowDown');
       expect(highlighted(el)).toEqual(['Any value']);
       await press(el, 'ArrowDown');
-      expect(highlighted(el)).toEqual(['Human']);
+      expect(highlighted(el)).toEqual(['N/A']);
     });
 
     it('ArrowUp walks back and stops at the first item', async () => {
@@ -553,7 +554,7 @@ describe('query-value-picker', () => {
     it('ArrowDown stops at the last item', async () => {
       const el = await mount();
       for (let i = 0; i < 10; i++) await press(el, 'ArrowDown');
-      expect(highlighted(el)).toEqual(['N/A']);
+      expect(highlighted(el)).toEqual(['Yeast']);
     });
 
     it('Enter selects the highlighted value and emits the internal sentinel', async () => {
@@ -619,14 +620,17 @@ describe('query-value-picker', () => {
       el.addEventListener('value-selected', () => {
         emitted = true;
       });
+      // Only Any value itself stays reachable, to be unticked.
       await press(el, 'ArrowDown');
-      expect(highlighted(el)).toEqual([]);
+      await press(el, 'ArrowDown');
+      expect(highlighted(el)).toEqual(['Any value']);
       await press(el, 'Enter');
       expect(emitted).toBe(false);
     });
 
     it('does not select a locked-out entry left highlighted by an earlier navigation', async () => {
       const el = await mount();
+      await press(el, 'ArrowDown');
       await press(el, 'ArrowDown');
       await press(el, 'ArrowDown');
       expect(highlighted(el)).toEqual(['Human']);
@@ -677,13 +681,12 @@ describe('query-value-picker', () => {
       expect(active).not.toBe('');
       const target = el.shadowRoot!.getElementById(active)!;
       expect(target.classList.contains('highlighted')).toBe(true);
-      expect(target.getAttribute('aria-selected')).toBe('true');
     });
 
-    it('reports aria-selected false on the entries that are not highlighted', async () => {
+    it('reports aria-checked false on the entries that are not selected', async () => {
       const el = await mount();
       for (const item of items(el)) {
-        expect(item.getAttribute('aria-selected')).toBe('false');
+        expect(item.getAttribute('aria-checked')).toBe('false');
       }
     });
   });
@@ -700,14 +703,17 @@ describe('query-value-picker', () => {
       expect(closed).toBe(true);
     });
 
-    it('emits picker-close on an outside click', async () => {
-      const el = await mount();
+    it('emits picker-close on an outside press', async () => {
+      const el = await mountAnchored();
       let closed = false;
       el.addEventListener('picker-close', () => {
         closed = true;
       });
-      document.body.click();
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }));
+      document.body.dispatchEvent(new Event('pointerup', { bubbles: true, composed: true }));
       expect(closed).toBe(true);
+      el.open = false;
+      await el.updateComplete;
     });
 
     it('does not emit picker-close when clicking inside the panel', async () => {
@@ -726,7 +732,7 @@ describe('query-value-picker inside a dialog', () => {
   it('an open picker is a layer, so Escape closes it before the dialog around it', async () => {
     const dialogClose = vi.fn();
     const releaseDialog = pushLayer({ close: dialogClose, elements: [] });
-    const el = await mount({ open: false });
+    const el = await mountAnchored({ open: false });
     const onClose = vi.fn();
     el.addEventListener('picker-close', onClose);
 

@@ -458,8 +458,7 @@ export const queryBuilderStyles = [
     /* position: fixed against a measured trigger, so a scrolling panel cannot clip them.
        placePicker opens them above the trigger when below lacks room, and --picker-room caps
        the height so the list scrolls inside the screen. */
-    .annotation-picker,
-    .value-picker {
+    .annotation-picker {
       position: fixed;
       z-index: 1001;
       display: flex;
@@ -476,7 +475,6 @@ export const queryBuilderStyles = [
     }
 
     .annotation-picker-input,
-    .value-picker-input,
     .numeric-field {
       box-sizing: border-box;
       height: var(--ps-control-sm);
@@ -488,27 +486,23 @@ export const queryBuilderStyles = [
     }
 
     .annotation-picker-input:hover,
-    .value-picker-input:hover,
     .numeric-field:hover {
       border-color: var(--ps-border-control);
     }
 
-    .annotation-picker-input,
-    .value-picker-input {
+    .annotation-picker-input {
       flex: none;
       width: 100%;
       margin-bottom: var(--ps-space-1);
     }
 
     .annotation-picker-input::placeholder,
-    .value-picker-input::placeholder,
     .numeric-field::placeholder {
       color: var(--ps-text-muted);
     }
 
     /* Inside a tight box the ring sits on the border rather than 2 px outside it. */
     .annotation-picker-input:focus-visible,
-    .value-picker-input:focus-visible,
     .numeric-field:focus-visible {
       outline-offset: -1px;
     }
@@ -536,13 +530,6 @@ export const queryBuilderStyles = [
       background: var(--ps-accent-tint);
     }
 
-    .value-picker-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--ps-space-2);
-    }
-
     .annotation-picker-item {
       display: flex;
       align-items: center;
@@ -554,31 +541,7 @@ export const queryBuilderStyles = [
       font-weight: var(--ps-weight-medium);
     }
 
-    /* Locked out while the "Any value" sentinel is selected (it subsumes them). */
-    .value-picker-item.is-disabled,
-    .value-picker-item.is-disabled:hover,
-    .value-picker-item.is-disabled.highlighted {
-      background: none;
-      color: var(--ps-text-faint);
-      cursor: not-allowed;
-    }
-
-    .value-picker-highlight {
-      background: none;
-      color: var(--ps-accent-text);
-      font-weight: var(--ps-weight-semibold);
-    }
-
-    .value-picker-count {
-      flex: none;
-      color: var(--ps-text-muted);
-      font-size: var(--ps-text-sm);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-
-    .value-picker-footer {
-      flex: none;
+    .annotation-picker .value-picker-footer {
       margin-top: var(--ps-space-1);
       padding-top: var(--ps-space-1);
       border-top: 1px solid var(--ps-border);
@@ -600,8 +563,233 @@ export const queryBuilderStyles = [
     }
 
     @media (forced-colors: active) {
-      .dropdown-item.highlighted {
+      .dropdown-item.highlighted,
+      .value-picker-item.highlighted {
         outline: 1px solid Highlight;
+      }
+    }
+
+    /* ── The checkbox value list (inside a ps-popover) ───────────────────── */
+
+    .value-picker {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      width: min(320px, calc(100vw - 16px));
+      max-height: min(440px, var(--available-height, 440px));
+    }
+
+    .value-picker-search {
+      position: relative;
+      flex: none;
+      padding: var(--ps-space-2) var(--ps-space-2) var(--ps-space-1-5);
+      color: var(--ps-text-muted);
+    }
+
+    .value-picker-search .ps-icon {
+      position: absolute;
+      top: 50%;
+      left: calc(var(--ps-space-2) + var(--ps-space-2));
+      translate: 0 -40%;
+      pointer-events: none;
+    }
+
+    .value-picker-input {
+      box-sizing: border-box;
+      width: 100%;
+      height: var(--ps-control-sm);
+      padding: 0 var(--ps-space-2) 0 calc(var(--ps-space-2) + 20px);
+      border: 1px solid var(--ps-border-strong);
+      border-radius: var(--ps-radius);
+      background: var(--ps-surface);
+      color: var(--ps-text);
+      font: inherit;
+    }
+
+    .value-picker-input:hover {
+      border-color: var(--ps-border-control);
+    }
+
+    .value-picker-input::placeholder {
+      color: var(--ps-text-muted);
+    }
+
+    .value-picker-input:focus-visible {
+      outline-offset: -1px;
+    }
+
+    .value-picker-tools {
+      display: flex;
+      flex: none;
+      align-items: center;
+      gap: var(--ps-space-0-5);
+      padding: 0 var(--ps-space-2) var(--ps-space-1-5);
+      border-bottom: 1px solid var(--ps-border);
+    }
+
+    .value-picker-tools-gap {
+      flex: 1;
+    }
+
+    .value-picker .value-picker-list {
+      position: relative;
+      display: block;
+      flex: 1 1 auto;
+      min-height: 96px;
+      max-height: 320px;
+      padding: 0;
+      overscroll-behavior: contain;
+    }
+
+    .value-picker-spacer {
+      position: relative;
+    }
+
+    .value-picker-section,
+    .value-picker-item {
+      position: absolute;
+      right: 0;
+      left: 0;
+      box-sizing: border-box;
+      height: 36px;
+    }
+
+    .value-picker-section {
+      display: flex;
+      align-items: flex-end;
+      padding: 0 var(--ps-space-3) var(--ps-space-1);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      font-weight: var(--ps-weight-semibold);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .value-picker-item {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-2);
+      padding: 0 var(--ps-space-3) 0 var(--ps-space-2);
+      color: var(--ps-text);
+      cursor: pointer;
+    }
+
+    .value-picker-item:hover,
+    .value-picker-item.highlighted {
+      background: var(--ps-surface-hover);
+    }
+
+    .value-picker-item.highlighted {
+      box-shadow: inset 2px 0 0 var(--ps-accent);
+    }
+
+    .value-picker-check {
+      display: inline-grid;
+      flex: none;
+      place-items: center;
+      box-sizing: border-box;
+      width: 16px;
+      height: 16px;
+      border: 1px solid var(--ps-border-control);
+      border-radius: var(--ps-radius-sm);
+      background: var(--ps-surface);
+      color: var(--ps-text-on-accent);
+    }
+
+    .value-picker-check .ps-icon {
+      width: 12px;
+      height: 12px;
+      stroke-width: 2.5;
+    }
+
+    .is-checked .value-picker-check {
+      border-color: var(--ps-accent);
+      background: var(--ps-accent);
+    }
+
+    .value-picker-label {
+      display: -webkit-box;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      font-size: var(--ps-text-base);
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .value-picker-highlight {
+      background: none;
+      color: var(--ps-accent-text);
+      font-weight: var(--ps-weight-semibold);
+    }
+
+    .value-picker-count {
+      flex: none;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .value-picker-bar {
+      flex: none;
+      width: 36px;
+      height: 4px;
+      overflow: hidden;
+      border-radius: var(--ps-radius-full);
+      background: var(--ps-surface-hover);
+    }
+
+    .value-picker-bar b {
+      display: block;
+      height: 100%;
+      background: var(--ps-border-strong);
+    }
+
+    .is-checked .value-picker-bar b {
+      background: var(--ps-accent);
+    }
+
+    /* Locked out while the "Any value" sentinel is selected (it subsumes them). */
+    .value-picker-item.is-disabled,
+    .value-picker-item.is-disabled:hover,
+    .value-picker-item.is-disabled.highlighted {
+      background: none;
+      color: var(--ps-text-faint);
+      cursor: not-allowed;
+    }
+
+    .value-picker-empty {
+      margin: 0;
+      padding: var(--ps-space-3);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+      text-align: center;
+    }
+
+    .value-picker-footer {
+      display: flex;
+      flex: none;
+      align-items: center;
+      gap: var(--ps-space-2);
+      padding: var(--ps-space-2);
+      border-top: 1px solid var(--ps-border);
+    }
+
+    .value-picker-summary {
+      flex: 1;
+      min-width: 0;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (pointer: coarse) {
+      .value-picker-tools ps-button,
+      .value-picker-footer ps-button {
+        min-height: var(--ps-touch-target);
       }
     }
 
