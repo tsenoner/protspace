@@ -17,12 +17,14 @@ import {
   type EatReliabilityMode,
   type EatReliabilityState,
 } from '@protspace/utils';
-import type { EatPopulationCounts } from './eat-population-counts';
+import type { EatPopulationCounts } from '../legend/eat-population-counts';
 import '../common/info-popover';
 import '../kit/checkbox';
 import '../kit/select';
 import type { PsCheckbox } from '../kit/checkbox';
+import type { PsSegmented } from '../kit/segmented';
 import type { PsSelect, SelectOption } from '../kit/select';
+import type { PsSwitch } from '../kit/switch';
 
 /**
  * Debounce window (ms) for committing an EAT reliability slider drag. The slider's
@@ -38,6 +40,17 @@ export const EAT_THRESHOLD_COMMIT_DELAY_MS = 150;
  * pixel, where whichever sits on top would be the only one the pointer could reach.
  */
 const EAT_BAND_MIN_GAP = 0.01;
+
+/** How far Shift+Arrow moves a reliability handle. */
+const EAT_SHIFT_STEP = 0.1;
+
+/** Arrow keys and the direction each one steps a handle. */
+const SHIFT_STEP_KEYS: Readonly<Record<string, 1 | -1>> = {
+  ArrowRight: 1,
+  ArrowUp: 1,
+  ArrowLeft: -1,
+  ArrowDown: -1,
+};
 
 /**
  * A 0..1 bound as a CSS percentage. Rounded because the multiplication is lossy —
@@ -123,12 +136,15 @@ export interface EatOverlayChangeDetail {
   reliability: EatReliabilityState;
 }
 
-/** What the controller reads from, and tells, the legend. */
+/** What the controller reads from, and tells, its host (the legend or the EAT panel). */
 export interface EatControlsOptions {
-  /** The synced scatterplot, whose `eatOverlayEnabled` the switch drives. */
-  getScatterplot(): { eatOverlayEnabled?: boolean } | null | undefined;
+  /**
+   * The synced scatterplot, whose `eatOverlayEnabled` the switch drives. The EAT panel passes
+   * none: it never writes the plot, the app applies its events.
+   */
+  getScatterplot?(): { eatOverlayEnabled?: boolean } | null | undefined;
   /** `autoSync` is off: the host applies the switch to the plot itself. */
-  isHostDriven(): boolean;
+  isHostDriven?(): boolean;
   /** The selected annotation's key, for the help text. */
   getAnnotation(): string;
   /** The selected annotation's definition, so a runtime column is named as the picker names it. */
@@ -207,8 +223,8 @@ export class EatReliabilityController implements ReactiveController {
    */
   setOverlayEnabled(enabled: boolean): void {
     this.mirrorOverlayEnabled(enabled);
-    const scatterplot = this.options.getScatterplot();
-    if (!this.options.isHostDriven() && scatterplot) {
+    const scatterplot = this.options.getScatterplot?.();
+    if (scatterplot && !this.options.isHostDriven?.()) {
       scatterplot.eatOverlayEnabled = enabled;
     }
     this._emit();
@@ -260,11 +276,11 @@ export class EatReliabilityController implements ReactiveController {
   readonly onToggle = (event: Event): void => {
     // A discrete decision, like a mode change: it supersedes any pending drag commit.
     this.cancelCommit();
-    this.setOverlayEnabled((event.currentTarget as PsCheckbox).checked);
+    this.setOverlayEnabled((event.currentTarget as PsCheckbox | PsSwitch).checked);
   };
 
   readonly onModeChange = (event: Event): void => {
-    const mode = (event.currentTarget as PsSelect).value as EatReliabilityMode;
+    const mode = (event.currentTarget as PsSelect | PsSegmented).value as EatReliabilityMode;
     // `normalizeReliability` blanks the bound the new mode does not use, so switching
     // modes cannot leave a stale constraint applied from a side the user can no longer
     // see or edit.
@@ -297,6 +313,23 @@ export class EatReliabilityController implements ReactiveController {
     // `currentDirective._$initialize is not a function`.)
     const pinned = String(applied);
     if (slider.value !== pinned) slider.value = pinned;
+  }
+
+  /**
+   * Shift+Arrow steps a handle by 10 %; a plain arrow keeps the slider's native 1 % step. Applied
+   * at once, as the native arrow's `change` would be.
+   */
+  onBoundKeydown(bound: EatBound, event: KeyboardEvent): void {
+    const direction = SHIFT_STEP_KEYS[event.key];
+    if (!event.shiftKey || direction === undefined) return;
+    event.preventDefault();
+    const slider = event.currentTarget as HTMLInputElement;
+    const applied = this._setBoundLive(
+      bound,
+      Math.round((this._reliability[bound] + direction * EAT_SHIFT_STEP) * 100) / 100,
+    );
+    slider.value = String(applied);
+    this.flushCommit();
   }
 
   onPercentInput(bound: EatBound, event: Event): void {
@@ -402,7 +435,7 @@ export class EatReliabilityController implements ReactiveController {
   }
 }
 
-function renderReliabilityRange(
+export function renderReliabilityRange(
   ctrl: EatReliabilityController,
   bound: EatBound,
   disabled: boolean,
@@ -419,12 +452,13 @@ function renderReliabilityRange(
       ?disabled=${disabled}
       aria-label=${ctrl.activeBounds.length > 1 ? ui.sliderLabel : ui.soloLabel}
       @input=${(event: Event) => ctrl.onBoundInput(bound, event)}
+      @keydown=${(event: KeyboardEvent) => ctrl.onBoundKeydown(bound, event)}
       @change=${ctrl.flushCommit}
     />
   `;
 }
 
-function renderReliabilityPercent(
+export function renderReliabilityPercent(
   ctrl: EatReliabilityController,
   bound: EatBound,
   disabled: boolean,

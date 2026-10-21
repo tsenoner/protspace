@@ -31,6 +31,9 @@ export {
   reliabilityFromConditions,
   sameConditions,
 } from './components/query-builder/eat-reliability';
+// The EAT panel: the Show switch and the reliability filter of the transferred annotations.
+export { ProtspaceEatPanel } from './components/eat-panel/eat-panel';
+export type { EatOverlayChangeDetail } from './components/eat-panel/eat-reliability-controller';
 export { ProtspaceImportMenu } from './components/import-menu/import-menu';
 export { ProtspaceExportMenu, type ExportEventDetail } from './components/export-menu/export-menu';
 export { EXPORT_DEFAULTS } from './components/export-menu/export-defaults';

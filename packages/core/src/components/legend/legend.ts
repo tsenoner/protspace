@@ -73,7 +73,7 @@ import {
   renderEatSection,
   type EatControlsOptions,
   type EatOverlayChangeDetail,
-} from './legend-eat-controls';
+} from '../eat-panel/eat-reliability-controller';
 
 // Types
 import type {

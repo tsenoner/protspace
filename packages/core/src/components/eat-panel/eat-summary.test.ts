@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_EAT_RELIABILITY, NA_VALUE } from '@protspace/utils';
-import type { EatReliabilityState, VisualizationData } from '@protspace/utils';
+import { DEFAULT_EAT_RELIABILITY } from '@protspace/utils';
+import type { EatReliabilityState } from '@protspace/utils';
 import { conditionsForReliability } from '../query-builder/eat-reliability';
 import { evaluateQuery } from '../query-builder/query-evaluate';
 import {
@@ -15,51 +15,16 @@ import {
   weakestIn,
 } from './eat-summary';
 import type { EatDrill, EatIndex, EatSummary } from './eat-summary';
+import {
+  createEatFixture,
+  EAT_FIXTURE_CONFIDENCE_KEY,
+  EAT_FIXTURE_IDS,
+} from './test-support/eat-fixture';
 
-// P7 sits before P5 in `protein_ids`, so the 0.55 tie must be broken by id, not by index.
-const IDS = ['P0', 'P1', 'P2', 'P3', 'P7', 'P5', 'P4', 'P6', 'P8', 'P9'];
-const CONFIDENCE_KEY = 'toxin__eat_confidence';
+const IDS = EAT_FIXTURE_IDS;
+const CONFIDENCE_KEY = EAT_FIXTURE_CONFIDENCE_KEY;
 
-function createData(): VisualizationData {
-  const cells = new Array(IDS.length).fill(null);
-  cells[IDS.indexOf('P3')] = { value: 'A', confidence: 0.12, source: 'S1' };
-  cells[IDS.indexOf('P7')] = { value: 'B', confidence: 0.55, source: 'S1' };
-  cells[IDS.indexOf('P5')] = { value: 'A;B', values: ['A', 'B'], confidence: 0.55, source: 'S1' };
-  cells[IDS.indexOf('P8')] = { value: 'C', confidence: 0.81, source: 'P0', sourceIndex: 0 };
-  cells[IDS.indexOf('P9')] = { value: 'A', confidence: 1, source: 'S9' };
-  const category = (values: (string | null)[]) => ({
-    kind: 'categorical' as const,
-    values,
-    colors: values.map(() => '#888'),
-    shapes: values.map(() => 'circle'),
-  });
-  return {
-    protein_ids: [...IDS],
-    projections: [{ name: 'umap', data: new Float32Array(IDS.length * 2) }],
-    annotations: {
-      toxin: category(['A', 'B', 'C', NA_VALUE]),
-      family: category(['F']),
-      [CONFIDENCE_KEY]: {
-        kind: 'numeric',
-        values: [],
-        colors: [],
-        shapes: [],
-        runtime: { role: 'eat-confidence', baseAnnotation: 'toxin' },
-      },
-    },
-    annotation_data: {
-      // Curated: P0 A, P1 A, P2 B, P4 C. P9 also holds a curated A its prediction overrides.
-      toxin: new Int32Array([0, 0, 1, 3, 3, 3, 2, 3, 3, 0]),
-      family: new Int32Array(IDS.length).fill(0),
-    },
-    numeric_annotation_data: {
-      [CONFIDENCE_KEY]: Float64Array.from(cells, (cell) => cell?.confidence ?? NaN),
-    },
-    annotation_predicted: { toxin: cells },
-  };
-}
-
-const data = createData();
+const data = createEatFixture();
 const index = getEatIndex(data, 'toxin') as EatIndex;
 const idx = (id: string) => IDS.indexOf(id);
 const ids = (indices: ArrayLike<number>) => Array.from(indices, (i) => IDS[i]);
@@ -210,7 +175,7 @@ describe('eat summary', () => {
 
   it('caches the index per dataset and annotation', () => {
     expect(getEatIndex(data, 'toxin')).toBe(index);
-    expect(getEatIndex(createData(), 'toxin')).not.toBe(index);
+    expect(getEatIndex(createEatFixture(), 'toxin')).not.toBe(index);
   });
 
   it('returns null for an annotation without predictions', () => {

@@ -6,14 +6,17 @@ import {
   setStorageItem,
   type VisualizationData,
 } from '@protspace/utils';
-import './legend';
-import type { ProtspaceLegend } from './legend';
+import '../legend/legend';
+import type { ProtspaceLegend } from '../legend/legend';
 import {
   mountLegendWithScatterplot,
   settleLegend,
   stubLocalStorage,
-} from './test-support/legend-scatterplot-harness';
-import { EAT_THRESHOLD_COMMIT_DELAY_MS, EatReliabilityController } from './legend-eat-controls';
+} from '../legend/test-support/legend-scatterplot-harness';
+import {
+  EAT_THRESHOLD_COMMIT_DELAY_MS,
+  EatReliabilityController,
+} from './eat-reliability-controller';
 import type { PsCheckbox } from '../kit/checkbox';
 import type { PsSelect } from '../kit/select';
 
