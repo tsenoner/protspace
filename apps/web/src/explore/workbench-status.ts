@@ -44,6 +44,8 @@ export interface WorkbenchStatus {
   eatAvailability: EatAvailability;
   /** The EAT panel's settings differ from their defaults: the rail item's and the tab's dot. */
   eatAdjusted: boolean;
+  /** The Color by annotation's display name, for the EAT panel's header (`EAT · EC number`). */
+  eatAnnotationLabel: string;
 }
 
 const EMPTY: WorkbenchStatus = {
@@ -57,6 +59,7 @@ const EMPTY: WorkbenchStatus = {
   structureSheet: 'folded',
   eatAvailability: { kind: 'dataset' },
   eatAdjusted: false,
+  eatAnnotationLabel: '',
 };
 
 let status: WorkbenchStatus = EMPTY;

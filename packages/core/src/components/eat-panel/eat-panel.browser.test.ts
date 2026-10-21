@@ -2,7 +2,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { userEvent } from 'vitest/browser';
 import { annotationLabel, DEFAULT_EAT_RELIABILITY } from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
-import type { PsButton } from '../kit/button';
 import type { PsSwitch } from '../kit/switch';
 import type { EatOverlayChangeDetail } from './eat-reliability-controller';
 import { EAT_THRESHOLD_COMMIT_DELAY_MS } from './eat-reliability-controller';
@@ -46,7 +45,6 @@ const bars = (el: ProtspaceEatPanel) => [
 ];
 const handle = (el: ProtspaceEatPanel) =>
   root(el).querySelector<HTMLInputElement>('#eat-reliability-threshold')!;
-const resetButton = (el: ProtspaceEatPanel) => root(el).querySelector<PsButton>('.eat-reset')!;
 /** Mask of the fixture's proteins without the excluded ids. */
 const mask = (excluded: string[]) =>
   Uint8Array.from(EAT_FIXTURE_IDS, (id) => (excluded.includes(id) ? 0 : 1));
@@ -63,8 +61,8 @@ describe('protspace-eat-panel', () => {
   it('builds nothing while inactive', async () => {
     const el = await mount({ active: false });
     expect(getEatIndex).not.toHaveBeenCalled();
-    expect(text(el, '.eat-title')).toBe('EAT · Toxin');
-    expect(root(el).querySelector('.eat-overview')).toBeNull();
+    // The host draws the header; an inactive panel renders nothing.
+    expect(root(el).querySelector('.eat-show, .eat-overview')).toBeNull();
 
     el.context = mask(['P0']);
     await el.updateComplete;
@@ -136,19 +134,18 @@ describe('protspace-eat-panel', () => {
     expect(el.reliabilityThreshold).toBe(0.2);
   });
 
-  it('Reset is disabled at defaults and emits the default once', async () => {
+  it('reset() returns to the defaults and emits them once', async () => {
     const el = await mount();
     expect(el.isAtDefaults).toBe(true);
-    expect(resetButton(el).disabled).toBe(true);
     el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
     await el.updateComplete;
-    expect(resetButton(el).disabled).toBe(false);
+    expect(el.isAtDefaults).toBe(false);
     const details = listen(el);
-    resetButton(el).click();
+    el.reset();
     await el.updateComplete;
     expect(details).toHaveLength(1);
     expect(details[0]).toMatchObject({ enabled: true, reliability: DEFAULT_EAT_RELIABILITY });
-    expect(resetButton(el).disabled).toBe(true);
+    expect(el.isAtDefaults).toBe(true);
   });
 
   it('Show off disables the controls and says (hidden)', async () => {

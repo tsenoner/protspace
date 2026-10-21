@@ -10,8 +10,6 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
-import '../common/info-popover';
-import '../kit/button';
 import '../kit/switch';
 import { PERCENT, renderReliability } from './eat-panel-histogram';
 import { eatPanelStyles } from './eat-panel.styles';
@@ -21,9 +19,6 @@ import {
 } from './eat-reliability-controller';
 import { getEatIndex, summarizeEat, type EatIndex, type EatSummary } from './eat-summary';
 
-const INFO =
-  'Labels copied from the nearest curated protein in embedding space. A reliability score ranks predictions; it is not a probability.';
-
 const DEFAULTS = normalizeReliability(DEFAULT_EAT_RELIABILITY);
 
 /** `40 %` of `total`, for a segment's tooltip. */
@@ -32,7 +27,8 @@ const share = (count: number, total: number) =>
 
 /**
  * The EAT panel: every control for the transferred annotations of the Color by annotation. It owns
- * the reliability state and reports it; the app applies it to the plot and the filter.
+ * the reliability state and reports it; the app applies it to the plot and the filter. The host
+ * draws the header (`EAT · <annotation>`, info, Reset with `reset()`, Close) in its own row.
  *
  * Numbers come from `eat-summary.ts`. Nothing is computed while `active` is false: the index builds
  * on first show, and a hidden panel's summary is not recomputed when the threshold or context moves.
@@ -139,16 +135,13 @@ export class ProtspaceEatPanel extends LitElement {
   }
 
   render() {
-    const label = annotationLabel(this.annotation, this.data?.annotations[this.annotation]);
-    const header = this._renderHeader(label);
-    if (!this.active) return header;
+    if (!this.active) return nothing;
     if (this.data && !this._index) {
-      return html`${header}
-        <p class="eat-empty">${label} has no predicted values.</p>`;
+      const label = annotationLabel(this.annotation, this.data.annotations[this.annotation]);
+      return html`<p class="eat-empty">${label} has no predicted values.</p>`;
     }
     const summary = this._summary;
-    return html`${header}
-      <ps-switch
+    return html`<ps-switch
         class="eat-show"
         .checked=${this._eat.overlayEnabled}
         ?disabled=${!summary}
@@ -156,26 +149,6 @@ export class ProtspaceEatPanel extends LitElement {
         >Show predictions</ps-switch
       >
       ${this._renderOverview(summary)} ${renderReliability(this._eat, summary)}`;
-  }
-
-  private _renderHeader(label: string): TemplateResult {
-    const title = this.annotation ? `EAT · ${label}` : 'EAT';
-    return html`<header class="eat-header">
-      <h3 class="eat-title" title=${title}>${title}</h3>
-      <protspace-info-popover
-        label="About EAT"
-        .description=${INFO}
-        align="right"
-      ></protspace-info-popover>
-      <ps-button
-        class="eat-reset"
-        variant="ghost"
-        size="sm"
-        ?disabled=${this.isAtDefaults}
-        @click=${() => this.reset()}
-        >Reset</ps-button
-      >
-    </header>`;
   }
 
   /** The stacked bar and its numbers (proposal B §4.3). `summary` null is the skeleton. */

@@ -28,6 +28,7 @@ describe('workbench status', () => {
       structureSheet: 'folded',
       eatAvailability: { kind: 'dataset' },
       eatAdjusted: false,
+      eatAnnotationLabel: '',
     });
   });
 
@@ -49,6 +50,7 @@ describe('workbench status', () => {
       structureSheet: 'folded',
       eatAvailability: { kind: 'dataset' },
       eatAdjusted: false,
+      eatAnnotationLabel: '',
     });
     expect(listener).toHaveBeenCalledTimes(2);
   });
@@ -149,6 +151,7 @@ describe('createDatasetNamePublisher', () => {
       structureSheet: 'folded',
       eatAvailability: { kind: 'dataset' },
       eatAdjusted: false,
+      eatAnnotationLabel: '',
     });
   });
 
@@ -171,6 +174,7 @@ describe('createDatasetNamePublisher', () => {
       structureSheet: 'folded',
       eatAvailability: { kind: 'dataset' },
       eatAdjusted: false,
+      eatAnnotationLabel: '',
     });
 
     data = ids(3);
@@ -186,6 +190,7 @@ describe('createDatasetNamePublisher', () => {
       structureSheet: 'folded',
       eatAvailability: { kind: 'dataset' },
       eatAdjusted: false,
+      eatAnnotationLabel: '',
     });
   });
 
@@ -212,6 +217,7 @@ describe('createDatasetNamePublisher', () => {
       structureSheet: 'folded',
       eatAvailability: { kind: 'dataset' },
       eatAdjusted: false,
+      eatAnnotationLabel: '',
     });
   });
 });

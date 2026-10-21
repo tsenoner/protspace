@@ -1,8 +1,16 @@
+import type { ProtspaceEatPanel } from '@protspace/core';
 import { useEffect, useRef } from 'react';
 import type { SidebarPanel } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
 import { PanelFold } from './PanelFold';
 import { PanelTabs } from './PanelTabs';
+import { useWorkbenchStatus } from './use-workbench-status';
+
+const INFO =
+  'Labels copied from the nearest curated protein in embedding space. A reliability score ranks predictions; it is not a probability.';
+
+/** The panel element the EAT panel controller feeds; the header's Reset resets it. */
+const eatPanel = () => document.getElementById('myEatPanel') as ProtspaceEatPanel | null;
 
 /**
  * The sidebar's EAT panel (proposal B §5): in place of the legend, above the structure, as Filter
@@ -10,6 +18,9 @@ import { PanelTabs } from './PanelTabs';
  * section renders once and only CSS (`data-panel` on the workbench) shows or hides it. Below
  * 951 px its header starts with the panel tabs; on desktop Close returns to the legend and hands
  * focus to the rail's EAT item.
+ *
+ * One header row, as Filter's: the heading `EAT · <annotation>`, the info popover, Reset (off at
+ * the defaults) and Close. The element itself draws no header.
  */
 export function EatPanel({
   panel,
@@ -21,6 +32,7 @@ export function EatPanel({
   tabbed: boolean;
 }) {
   const close = useRef<HTMLElement>(null);
+  const { eatAdjusted, eatAnnotationLabel } = useWorkbenchStatus();
 
   useEffect(() => {
     const button = close.current;
@@ -42,9 +54,30 @@ export function EatPanel({
     >
       <header className="wb-panel-header">
         <PanelTabs panel={panel} />
-        <h2 id="wb-eat-title" className="wb-panel-title" tabIndex={-1}>
+        <h2
+          id="wb-eat-title"
+          className="wb-panel-title"
+          tabIndex={-1}
+          title={eatAnnotationLabel ? `EAT · ${eatAnnotationLabel}` : undefined}
+        >
           EAT
+          {eatAnnotationLabel && <span className="wb-eat-annotation"> · {eatAnnotationLabel}</span>}
         </h2>
+        <protspace-info-popover
+          className="wb-eat-info"
+          label="EAT"
+          description={INFO}
+          align="right"
+        ></protspace-info-popover>
+        <ps-button
+          className="wb-eat-reset"
+          variant="ghost"
+          size="sm"
+          disabled={!eatAdjusted}
+          onClick={() => eatPanel()?.reset()}
+        >
+          Reset
+        </ps-button>
         <ps-icon-button
           ref={close}
           className="wb-panel-close"

@@ -350,8 +350,26 @@
   padding: var(--ps-space-2) var(--ps-space-3) var(--ps-space-3);
 }
 
-/* The Close button stands at the right of the EAT heading, as on Filter's. */
-#wb-eat-panel .wb-panel-close {
+/* One header row, as Filter's: the heading with its annotation and ⓘ, then Reset and Close at the
+   right. A long annotation name gives way first. */
+#wb-eat-title {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-eat-annotation {
+  color: var(--ps-text-muted);
+  font-weight: var(--ps-weight-medium);
+}
+
+.wb-eat-info {
+  flex: none;
+}
+
+.wb-eat-reset {
+  flex: none;
   margin-left: auto;
 }
 

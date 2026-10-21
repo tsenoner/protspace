@@ -142,6 +142,14 @@ declare module 'react' {
         },
         HTMLElement
       >;
+      'protspace-info-popover': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & {
+          label?: string;
+          description?: string;
+          align?: 'left' | 'right';
+        },
+        HTMLElement
+      >;
       'ps-button': KitProps<PsButton, ButtonKeys>;
       'ps-icon-button': KitProps<
         PsIconButton,

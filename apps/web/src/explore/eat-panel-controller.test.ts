@@ -105,10 +105,12 @@ describe('createEatPanelController', () => {
     expect(panel.data).toBe(EAT_DATA);
     expect(panel.annotation).toBe('ec');
     expect(getWorkbenchStatus().eatAvailability).toEqual({ kind: 'available' });
+    expect(getWorkbenchStatus().eatAnnotationLabel).toBe('EC number');
 
     plot.selectedAnnotation = 'family';
     root.dispatchEvent(new Event('annotation-change'));
     expect(panel.annotation).toBe('family');
+    expect(getWorkbenchStatus().eatAnnotationLabel).toBe('Family');
     expect(getWorkbenchStatus().eatAvailability).toEqual({
       kind: 'annotation',
       annotationLabel: 'Family',

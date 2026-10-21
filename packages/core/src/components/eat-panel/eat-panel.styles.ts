@@ -30,24 +30,6 @@ export const eatPanelStyles = [
       font-size: var(--ps-text-sm);
     }
 
-    .eat-header {
-      display: flex;
-      align-items: center;
-      gap: var(--ps-space-1);
-      min-width: 0;
-    }
-
-    .eat-title {
-      flex: 1 1 auto;
-      min-width: 0;
-      margin: 0;
-      overflow: hidden;
-      font-size: var(--ps-text-md);
-      font-weight: var(--ps-weight-semibold);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
     .eat-empty,
     .eat-empty-view {
       margin: 0;

@@ -47,7 +47,12 @@ test('the EAT rail item opens the panel in place of the legend', async ({ page }
   await openEatPanel(page);
 
   await expect(page.locator('#myLegend')).toBeHidden();
-  await expect(eatPanel(page).getByRole('heading', { name: /^EAT · / })).toBeVisible();
+  // One header row: the heading names the annotation, beside it ⓘ, Reset (off at defaults), Close.
+  const section = page.locator('#wb-eat-panel');
+  await expect(section.getByRole('heading', { level: 2 })).toHaveCount(1);
+  await expect(section.getByRole('heading', { name: 'EAT · EC number' })).toBeVisible();
+  await expect(section.getByRole('button', { name: 'Information about EAT' })).toBeVisible();
+  await expect(section.getByRole('button', { name: 'Reset' })).toBeDisabled();
   await expect(item).toHaveAttribute('aria-pressed', 'true');
 
   // Close returns to the legend and hands focus to the rail item.
@@ -67,7 +72,10 @@ test('on a phone the EAT tab is the third tab', async ({ page }) => {
   await expect(eatPanel(page)).toBeVisible();
   await expect(page.locator('#myLegend')).toBeHidden();
   await expect(panelTab(page, 'EAT')).toHaveAttribute('aria-selected', 'true');
-  await expect(eatPanel(page).getByRole('heading', { name: /^EAT · / })).toBeVisible();
+  // The tab names the panel; the heading stays for screen readers.
+  await expect(
+    page.locator('#wb-eat-panel').getByRole('heading', { level: 2 }),
+  ).toHaveAccessibleName('EAT · EC number');
 });
 
 test('moving the EAT threshold filters the plot and the legend says so', async ({ page }) => {
@@ -85,4 +93,9 @@ test('moving the EAT threshold filters the plot and the legend says so', async (
   await legendEatLink(page).click();
   await expect(eatPanel(page)).toBeVisible();
   await expect(eatThresholdBox(page)).toHaveValue('50');
+
+  // The header's Reset takes the filter back off.
+  await page.locator('#wb-eat-panel').getByRole('button', { name: 'Reset' }).click();
+  await expect(statusChip(page, 'filter')).toBeHidden();
+  await expect(eatThresholdBox(page)).toHaveValue('0');
 });

@@ -101,7 +101,12 @@ export function createEatPanelController({
     const annotation = plotElement.selectedAnnotation;
     if (eatPanel.data !== data) eatPanel.data = data;
     if (eatPanel.annotation !== annotation) eatPanel.annotation = annotation;
-    setWorkbenchStatus({ eatAvailability: eatAvailabilityFor(data, annotation) });
+    setWorkbenchStatus({
+      eatAvailability: eatAvailabilityFor(data, annotation),
+      eatAnnotationLabel: annotation
+        ? annotationLabel(annotation, data?.annotations[annotation])
+        : '',
+    });
     syncReliability();
     // Whether the panel shows can depend on the availability just published.
     syncActive();
