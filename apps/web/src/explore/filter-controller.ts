@@ -223,7 +223,11 @@ export function createFilterController({
    */
   const mirrorToPanel = (force = false) => {
     const key = findEatKey(selectedAnnotation);
-    if (!key) return;
+    if (!key) {
+      // Nothing on this annotation to follow: the panel shows its resting position.
+      if (force) eatPanel.setReliabilityState(DEFAULT_EAT_RELIABILITY);
+      return;
+    }
     const derived = reliabilityFromConditions(findConditionsForAnnotation(applied.query, key));
     // No record yet: nothing moved this column off its resting position, which the panel shows.
     const last = lastMirrored.get(key) ?? DEFAULT_EAT_RELIABILITY;

@@ -16,7 +16,12 @@ import {
   type ProtspaceQueryBuilder,
   type ProtspaceScatterplot,
 } from '@protspace/core';
-import { NA_VALUE, NEUTRAL_BOUND, type VisualizationData } from '@protspace/utils';
+import {
+  DEFAULT_EAT_RELIABILITY,
+  NA_VALUE,
+  NEUTRAL_BOUND,
+  type VisualizationData,
+} from '@protspace/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findConditionsForAnnotation } from '../../../../packages/core/src/components/query-builder/query-annotation-conditions';
 import {
@@ -735,6 +740,18 @@ describe('filter controller: per-base EAT reliability (multi-EAT)', () => {
 
     // The pickers' annotation-change, heard on the root (the document in the app).
     fire(m.root, 'annotation-change', { annotation: 'go' });
+    expect(m.eatPanel.setReliabilityState).toHaveBeenLastCalledWith(
+      expect.objectContaining({ min: 0.8 }),
+    );
+  });
+
+  it('an annotation without EAT moves the panel to its resting position', () => {
+    threshold(m.controller, 'go', 0.8);
+
+    m.controller.setSelectedAnnotation('length');
+    expect(m.eatPanel.setReliabilityState).toHaveBeenLastCalledWith(DEFAULT_EAT_RELIABILITY);
+
+    m.controller.setSelectedAnnotation('go');
     expect(m.eatPanel.setReliabilityState).toHaveBeenLastCalledWith(
       expect.objectContaining({ min: 0.8 }),
     );
