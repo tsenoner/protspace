@@ -168,7 +168,9 @@ describe('legend rows in a browser', () => {
       count.getBoundingClientRect(),
     ];
     expect(handle.left).toBeGreaterThanOrEqual(rowBox.left - 0.5);
-    expect(handle.right).toBeLessThanOrEqual(box('.legend-swatch').left + 0.5);
+    // It hangs in the row's gutter, starting before the swatch, and takes no room from the row.
+    expect(handle.left).toBeLessThan(box('.legend-swatch').left);
+    expect(box('.legend-swatch').left - rowBox.left).toBeCloseTo(12, 0);
     expect(eye.right).toBeLessThanOrEqual(more.left + 0.5);
     expect(more.right).toBeLessThanOrEqual(countBox.left + 0.5);
     expect(countBox.right).toBeLessThanOrEqual(rowBox.right + 0.5);

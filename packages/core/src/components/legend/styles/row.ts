@@ -3,7 +3,9 @@ import { css } from 'lit';
 /**
  * Legend rows (design decision 12): 28 px (40 px under a coarse pointer), the drag handle first,
  * the swatch and the name in the main button, the count in tabular figures, and the eye and "⋯"
- * revealed before the count on hover or focus. Under a mouse the handle fades in the same way. Hover and focus are CSS only, so the pointer never re-renders the legend. Sortable's states
+ * revealed before the count on hover or focus. Under a mouse the handle hangs in the row's left
+ * gutter and fades in the same way. Hover and focus are CSS only, so the pointer never re-renders
+ * the legend. Sortable's states
  * and the drop highlight live here too. Every colour and type size reads a --ps-* token.
  */
 export const rowStyles = css`
@@ -222,7 +224,8 @@ export const rowStyles = css`
     color: var(--ps-text);
   }
 
-  /* First in the row, against its edge and close to the swatch, so the name loses little room. */
+  /* On touch, first in the row, against its edge and close to the swatch, so the name loses little
+     room. A mouse hangs it in the gutter (below). */
   .drag-handle {
     margin-inline: calc(-1 * var(--ps-space-3)) calc(-1 * (var(--ps-space-1) + var(--ps-space-0-5)));
     cursor: grab;
@@ -236,23 +239,34 @@ export const rowStyles = css`
     color: var(--ps-accent-text);
   }
 
-  /* Other's handle stays for Sortable's filter and the e2e, out of sight and out of reach; its
-     column stays, so Other's swatch lines up with the rows above. */
+  /* Other's handle stays for Sortable's filter and the e2e, out of sight and out of reach; on
+     touch its column stays, so Other's swatch lines up with the rows above. */
   .drag-handle-disabled {
     opacity: 0;
     pointer-events: none;
   }
 
-  /* A mouse: the handle keeps its room but shows only on a hovered, focused or picked row. It is
-     narrow, so at 240 px the name keeps room for "Other · 2 categories". */
+  /* A mouse: the handle hangs in the row's left gutter and takes no room, so the swatch lines up
+     with the header's title and the name keeps its width. Its dots sit in the gutter; the rest of
+     its 16 px hit area lies over the swatch's edge, so it draws no hover fill. It shows only on a
+     hovered, focused or picked row. */
   @media (hover: hover) and (pointer: fine) {
     .drag-handle {
+      position: absolute;
+      top: calc(50% - 12px);
+      inset-inline-start: 0;
+      z-index: 1;
+      justify-content: flex-start;
       width: 16px;
+      margin: 0;
       opacity: 0;
       transition:
         opacity var(--ps-duration-fast) var(--ps-ease),
-        background-color var(--ps-duration-fast) var(--ps-ease),
         color var(--ps-duration-fast) var(--ps-ease);
+    }
+
+    .drag-handle:hover {
+      background: transparent;
     }
 
     .legend-item:hover .drag-handle:not(.drag-handle-disabled),
