@@ -530,6 +530,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     requestStructure: (proteinId) => structureController.request(proteinId),
     traceProtein: (proteinId, originalIndex, mode) =>
       interactionController.traceProtein(proteinId, originalIndex, mode),
+    setTracing: (options) => interactionController.setTracing(options),
   });
   lifecycle.addCleanup(() => eatPanelController.dispose());
   const statusController = createStatusController({

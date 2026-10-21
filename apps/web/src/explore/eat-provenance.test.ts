@@ -92,6 +92,18 @@ describe('EatProvenanceResolver', () => {
     ]);
   });
 
+  it('draws up to the given number of lines per source', () => {
+    const data = makeData();
+    const resolver = new EatProvenanceResolver();
+    const resolveWith = (limit: number) =>
+      resolver.resolve(data, 'ec', 'source', 0, allLegendEligible, () => true, 'auto', limit);
+
+    expect(resolveWith(10)?.pairs).toHaveLength(10);
+    expect(resolveWith(10)?.pairs[9]?.targetProteinId).toBe('query-9');
+    expect(resolveWith(50)?.pairs).toHaveLength(24);
+    expect(resolveWith(50)?.totalCandidates).toBe(24);
+  });
+
   it('fills the visible fan-out cap and restores confidence order after filtering or isolation expands', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();

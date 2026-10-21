@@ -236,6 +236,66 @@ describe('protspace-eat-panel', () => {
     expect(el.isAtDefaults).toBe(true);
   });
 
+  describe('Drawing', () => {
+    function listenDrawing(el: ProtspaceEatPanel) {
+      const details: { trace: boolean; linesPerSource: number }[] = [];
+      el.addEventListener('eat-drawing-change', (event) =>
+        details.push((event as CustomEvent<(typeof details)[number]>).detail),
+      );
+      return details;
+    }
+
+    it('emits trace and lines per source, and a non-default counts against isAtDefaults', async () => {
+      const el = await mount();
+      const drawing = listenDrawing(el);
+      const trace = root(el).querySelector<PsSwitch>('.eat-drawing ps-switch')!;
+      const lines = root(el).querySelector<HTMLElement & { value: string }>(
+        '.eat-drawing ps-select',
+      )!;
+      expect(trace.textContent?.trim()).toBe('Trace source on click');
+      expect(trace.checked).toBe(true);
+      expect(lines.value).toBe('20');
+
+      await trace.updateComplete;
+      trace.shadowRoot!.querySelector('button')!.click();
+      await el.updateComplete;
+      expect(drawing).toEqual([{ trace: false, linesPerSource: 20 }]);
+      expect(el.isAtDefaults).toBe(false);
+
+      lines.value = '50';
+      lines.dispatchEvent(new Event('change', { bubbles: true }));
+      await el.updateComplete;
+      expect(drawing.at(-1)).toEqual({ trace: false, linesPerSource: 50 });
+    });
+
+    it('reset() puts the Drawing switches back and says so; Reset at defaults does not', async () => {
+      const el = await mount();
+      const drawing = listenDrawing(el);
+      el.reset();
+      expect(drawing).toHaveLength(0);
+
+      const lines = root(el).querySelector<HTMLElement & { value: string }>(
+        '.eat-drawing ps-select',
+      )!;
+      lines.value = '10';
+      lines.dispatchEvent(new Event('change', { bubbles: true }));
+      await el.updateComplete;
+      el.reset();
+      await el.updateComplete;
+      expect(drawing.at(-1)).toEqual({ trace: true, linesPerSource: 20 });
+      expect(el.isAtDefaults).toBe(true);
+      expect(lines.value).toBe('20');
+
+      // A new dataset keeps how the user likes lines drawn.
+      lines.value = '50';
+      lines.dispatchEvent(new Event('change', { bubbles: true }));
+      el.resetForNewDataset();
+      await el.updateComplete;
+      expect(drawing).toHaveLength(3);
+      expect(lines.value).toBe('50');
+    });
+  });
+
   it('Show off disables the controls and says (hidden)', async () => {
     const el = await mount();
     const details = listen(el);
@@ -324,7 +384,9 @@ describe('protspace-eat-panel', () => {
     it('sorts by most predicted, least reliable and name', async () => {
       const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
       expect(labelNames(el)).toEqual(['B', 'A', 'C', 'D']);
-      const select = root(el).querySelector<HTMLElement & { value: string }>('ps-select')!;
+      const select = root(el).querySelector<HTMLElement & { value: string }>(
+        '.eat-breakdown ps-select',
+      )!;
       for (const [sort, order] of [
         ['least-reliable', ['C', 'B', 'A', 'D']],
         ['name', ['A', 'B', 'C', 'D']],

@@ -17,8 +17,8 @@ const handleThumb = css`
 `;
 
 /**
- * The EAT panel (proposal B §4.2–4.7): Show switch, overview, reliability histogram, per-label
- * breakdown, other annotations.
+ * The EAT panel (proposal B §4.2–4.7): Show switch, overview, reliability histogram, drawing
+ * switches, per-label breakdown, other annotations.
  */
 export const eatPanelStyles = [
   kitHost,
@@ -103,9 +103,17 @@ export const eatPanelStyles = [
       color: var(--ps-text-muted);
     }
 
-    .eat-reliability {
+    .eat-reliability,
+    .eat-drawing {
       display: grid;
       gap: var(--ps-space-1-5);
+    }
+
+    .eat-lines-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--ps-space-2);
     }
 
     .eat-heading {

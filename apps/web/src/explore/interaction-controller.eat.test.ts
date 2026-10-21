@@ -201,4 +201,37 @@ describe('interaction controller EAT provenance', () => {
     expect(controller.traceProtein('query', 1, 'source')).toBe(false);
     expect(plotElement.clearProvenanceConnectors).toHaveBeenCalledTimes(2);
   });
+
+  it('trace off clears the lines and a click only selects; traceProtein still draws', () => {
+    const { controller, plotElement } = setup(makeFanoutData());
+    const clickSource = () =>
+      controller.handleProteinClick({
+        detail: { proteinId: 'source', point: { originalIndex: 0 } },
+      } as unknown as Event);
+    clickSource();
+    expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(1);
+
+    controller.setTracing({ trace: false, linesPerSource: 20 });
+    expect(plotElement.clearProvenanceConnectors).toHaveBeenCalledTimes(1);
+    clickSource();
+    expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(1);
+    expect(plotElement.clearProvenanceConnectors).toHaveBeenCalledTimes(2);
+
+    // Go to source and the card's lent link are explicit: they draw with trace off.
+    expect(controller.traceProtein('source', 0, 'source')).toBe(true);
+    expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(2);
+  });
+
+  it('lines per source caps a click and redraws the active lines', () => {
+    const { controller, plotElement } = setup(makeFanoutData());
+    controller.setTracing({ trace: true, linesPerSource: 10 });
+    controller.handleProteinClick({
+      detail: { proteinId: 'source', point: { originalIndex: 0 } },
+    } as unknown as Event);
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].pairs).toHaveLength(10);
+
+    controller.setTracing({ trace: true, linesPerSource: 50 });
+    expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(2);
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].pairs).toHaveLength(24);
+  });
 });

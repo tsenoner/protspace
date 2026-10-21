@@ -11,7 +11,10 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
+import '../kit/select';
 import '../kit/switch';
+import type { PsSelect } from '../kit/select';
+import type { PsSwitch } from '../kit/switch';
 import { formatPercent } from '../query-builder/eat-reliability';
 import {
   renderBreakdown,
@@ -43,6 +46,11 @@ const DEFAULTS = normalizeReliability(DEFAULT_EAT_RELIABILITY);
 /** The open drill-down list: a histogram bar's, or a label's (by name, as rows re-sort). */
 type OpenDrill = { bin: number } | { label: string };
 
+/** How many of a source's lines are drawn (Decision 7). */
+type LinesPerSource = 10 | 20 | 50;
+const DEFAULT_LINES_PER_SOURCE: LinesPerSource = 20;
+const LINES_OPTIONS = [10, 20, 50].map((n) => ({ value: String(n), label: String(n) }));
+
 /** `40 %` of `total`, for a segment's tooltip. */
 const share = (count: number, total: number) => formatPercent(total > 0 ? count / total : 0);
 
@@ -63,6 +71,8 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  * @fires eat-go-to-source - `{ targetId, targetIndex, sourceId }`: the card's Go to source.
  * @fires eat-trace-source - `{ sourceId, sourceIndex }`: the card's `lent its label to N` link
  *   draws that source's lines.
+ * @fires eat-drawing-change - `{ trace, linesPerSource }`: a Drawing switch changed, or Reset
+ *   moved one back to its default.
  */
 @customElement('protspace-eat-panel')
 export class ProtspaceEatPanel extends LitElement {
@@ -81,6 +91,8 @@ export class ProtspaceEatPanel extends LitElement {
   /** Whether the panel is shown. It computes only while true. */
   @property({ type: Boolean }) active = false;
 
+  @state() private _trace = true;
+  @state() private _linesPerSource: LinesPerSource = DEFAULT_LINES_PER_SOURCE;
   @state() private _labelSort: EatLabelSort = 'most-predicted';
   @state() private _showAllLabels = false;
   @state() private _othersOpen = false;
@@ -120,9 +132,17 @@ export class ProtspaceEatPanel extends LitElement {
     return this._eat.reliability.min;
   }
 
-  /** Show on and the filter keeping everything: Reset has nothing to do, the rail shows no dot. */
+  /**
+   * Show on, the filter keeping everything and the Drawing switches at their defaults: Reset has
+   * nothing to do, the rail shows no dot.
+   */
   get isAtDefaults(): boolean {
-    return this._eat.overlayEnabled && isSameReliability(this._eat.reliability, DEFAULTS);
+    return (
+      this._eat.overlayEnabled &&
+      isSameReliability(this._eat.reliability, DEFAULTS) &&
+      this._trace &&
+      this._linesPerSource === DEFAULT_LINES_PER_SOURCE
+    );
   }
 
   /** Bundle restore: Show plus "Keep ≥ threshold". Emits once. */
@@ -135,13 +155,22 @@ export class ProtspaceEatPanel extends LitElement {
     this._eat.mirror(state);
   }
 
-  /** Back to the defaults (Show on, keep everything). Emits once. */
+  /**
+   * Back to the defaults (Show on, keep everything, trace on, 20 lines). Emits
+   * `eat-overlay-change` once, and `eat-drawing-change` when a Drawing switch moved.
+   */
   reset(): void {
+    if (!this._trace || this._linesPerSource !== DEFAULT_LINES_PER_SOURCE) {
+      this._setDrawing(true, DEFAULT_LINES_PER_SOURCE);
+    }
     this._eat.mirror(DEFAULTS);
     this._eat.setOverlayEnabled(true);
   }
 
-  /** Back to the defaults for a dataset that has just loaded. Never emits. */
+  /**
+   * Back to the defaults for a dataset that has just loaded. Never emits. The Drawing switches are
+   * how the user likes lines drawn, not a property of the data, so they stay.
+   */
   resetForNewDataset(): void {
     this._eat.mirror(DEFAULTS);
     this._eat.mirrorOverlayEnabled(true);
@@ -205,6 +234,7 @@ export class ProtspaceEatPanel extends LitElement {
           void this.updateComplete.then(() => this._bar(bin)?.focus());
         },
       })}
+      ${this._renderDrawing()}
       ${this._index && this.data && this.focusProtein !== null
         ? renderCard({
             data: this.data,
@@ -272,6 +302,40 @@ export class ProtspaceEatPanel extends LitElement {
     if ('bin' in drill) return this._bar(drill.bin);
     const rows = this.renderRoot.querySelectorAll<HTMLElement>('.eat-label-row');
     return Array.from(rows).find((row) => row.dataset.label === drill.label) ?? null;
+  }
+
+  /** Trace source on click and Lines per source (proposal B §4.5, minus rings: Decision 8). */
+  private _renderDrawing(): TemplateResult {
+    return html`<section class="eat-drawing" aria-label="Drawing">
+      <h4 class="eat-heading">Drawing</h4>
+      <ps-switch
+        class="eat-trace"
+        .checked=${this._trace}
+        @change=${(event: Event) =>
+          this._setDrawing((event.currentTarget as PsSwitch).checked, this._linesPerSource)}
+        >Trace source on click</ps-switch
+      >
+      <div class="eat-lines-row">
+        <span aria-hidden="true">Lines per source</span>
+        <ps-select
+          size="sm"
+          label="Lines per source"
+          .options=${LINES_OPTIONS}
+          .value=${String(this._linesPerSource)}
+          @change=${(event: Event) =>
+            this._setDrawing(
+              this._trace,
+              Number((event.currentTarget as PsSelect).value) as LinesPerSource,
+            )}
+        ></ps-select>
+      </div>
+    </section>`;
+  }
+
+  private _setDrawing(trace: boolean, linesPerSource: LinesPerSource): void {
+    this._trace = trace;
+    this._linesPerSource = linesPerSource;
+    this._emit('eat-drawing-change', { trace, linesPerSource });
   }
 
   private _emit(type: string, detail: unknown): void {

@@ -73,6 +73,9 @@ interface EatPanelController {
  * The card follows a single selected protein (`setSelection`). Its Go to source selects the
  * source, draws the pair and fits both; its `lent its label` link draws a source's lines through
  * `traceProtein` without touching the selection.
+ *
+ * The Drawing switches (`eat-drawing-change`) reach the plot click's tracing through `setTracing`
+ * and count toward the rail dot.
  */
 export function createEatPanelController({
   eatPanel,
@@ -86,6 +89,7 @@ export function createEatPanelController({
   selectProteins,
   requestStructure,
   traceProtein,
+  setTracing,
 }: {
   eatPanel: Pick<
     ProtspaceEatPanel,
@@ -124,6 +128,8 @@ export function createEatPanelController({
   requestStructure(proteinId: string): void;
   /** Draw `proteinId`'s provenance lines as a click does, without selecting it. */
   traceProtein(proteinId: string, originalIndex: number, mode?: 'auto' | 'source'): boolean;
+  /** Trace source on click and Lines per source, for plot clicks. */
+  setTracing(options: { trace: boolean; linesPerSource: number }): void;
 }): EatPanelController {
   let selection: readonly string[] = [];
 
@@ -221,6 +227,14 @@ export function createEatPanelController({
     traceProtein(sourceId, sourceIndex, 'source');
   };
 
+  const onDrawingChange = (event: Event) => {
+    const { trace, linesPerSource } = (
+      event as CustomEvent<{ trace: boolean; linesPerSource: number }>
+    ).detail;
+    setTracing({ trace, linesPerSource });
+    setWorkbenchStatus({ eatAdjusted: !eatPanel.isAtDefaults });
+  };
+
   const onOverlayChange = (event: Event) => {
     const { enabled, reliability } = (event as CustomEvent<EatOverlayChangeDetail>).detail;
     if (plotElement.eatOverlayEnabled !== enabled) plotElement.eatOverlayEnabled = enabled;
@@ -244,6 +258,7 @@ export function createEatPanelController({
   eatPanel.addEventListener('eat-select-proteins', onSelectProteins);
   eatPanel.addEventListener('eat-go-to-source', onGoToSource);
   eatPanel.addEventListener('eat-trace-source', onTraceSource);
+  eatPanel.addEventListener('eat-drawing-change', onDrawingChange);
   const unsubscribePanel = subscribePanel(syncActive);
   syncData();
 
@@ -266,6 +281,7 @@ export function createEatPanelController({
       eatPanel.removeEventListener('eat-select-proteins', onSelectProteins);
       eatPanel.removeEventListener('eat-go-to-source', onGoToSource);
       eatPanel.removeEventListener('eat-trace-source', onTraceSource);
+      eatPanel.removeEventListener('eat-drawing-change', onDrawingChange);
       unsubscribePanel();
     },
   };

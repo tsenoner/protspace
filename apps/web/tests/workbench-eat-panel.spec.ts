@@ -226,3 +226,32 @@ test('the selected-protein card goes to the source and draws its lines', async (
   await expect.poll(() => connectors.count()).toBeGreaterThan(1);
   expect(await getSelectedProteinIds(page)).toEqual([source]);
 });
+
+test('with Trace source on click off, a click only selects; Go to source still draws', async ({
+  page,
+}) => {
+  await loadPhosphataseEat(page);
+  await selectAnnotation(page, 'ec');
+  await openEatPanel(page);
+  await waitForExploreInteractionReady(page);
+  const { source, target } = await provenancePair(page, 'ec');
+  const connectors = page.locator('#myPlot').locator('line.eat-provenance-connector');
+
+  const trace = eatPanel(page).getByRole('switch', { name: 'Trace source on click' });
+  await expect(trace).toBeChecked();
+  await trace.click();
+  await expect(trace).not.toBeChecked();
+  await expect(eatPanel(page).getByRole('combobox', { name: 'Lines per source' })).toHaveValue(
+    '20',
+  );
+
+  const at = await proteinScreenPosition(page, target);
+  await page.mouse.click(at.x, at.y);
+  await expect.poll(() => getSelectedProteinIds(page)).toEqual([target]);
+  await expect(connectors).toHaveCount(0);
+
+  const card = eatPanel(page).getByRole('region', { name: 'Selected protein' });
+  await card.getByRole('button', { name: 'Go to source' }).click();
+  await expect.poll(() => getSelectedProteinIds(page)).toEqual([source]);
+  await expect(connectors).toHaveCount(1);
+});

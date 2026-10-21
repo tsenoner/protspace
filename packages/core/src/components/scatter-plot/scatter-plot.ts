@@ -92,6 +92,9 @@ const HIT_RADIUS_MIN_PX = 4;
 // half the 40 px touch target.
 const TOUCH_HIT_RADIUS_PX = 20;
 
+/** The most provenance pairs drawn at once: the EAT panel's largest "Lines per source". */
+const PROVENANCE_CONNECTOR_CAP = 50;
+
 // D3 wheel zoom accumulates scale multiplicatively, so a symmetric round trip
 // can finish a few ULPs above identity even though the view is visually reset.
 const ZOOM_IDENTITY_EPSILON = 1e-6;
@@ -2131,7 +2134,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   /** Draw a bounded set of EAT source-to-target pairs in the current plot view. */
   setProvenanceConnectors(request: ProvenanceConnectorRequest): void {
-    const pairs = request.pairs.slice(0, 20);
+    const pairs = request.pairs.slice(0, PROVENANCE_CONNECTOR_CAP);
     const endpointIds = (ps: typeof pairs): string[] => [
       ...new Set(ps.flatMap((p) => [p.sourceProteinId, p.targetProteinId])),
     ];

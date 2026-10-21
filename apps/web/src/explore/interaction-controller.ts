@@ -47,6 +47,12 @@ export interface InteractionController {
    * Returns whether lines were requested.
    */
   traceProtein(proteinId: string, originalIndex: number, mode?: 'auto' | 'source'): boolean;
+  /**
+   * The EAT panel's Drawing switches. `trace` off clears the drawn lines and a plot click only
+   * selects; `traceProtein` still draws, since its callers are explicit. `linesPerSource` caps a
+   * source's fan-out and redraws the active lines.
+   */
+  setTracing(options: { trace: boolean; linesPerSource: number }): void;
   handlePlotDataChange(): void;
   handleLegendError(event: Event): void;
   handleStructureLoad(event: Event): void;
@@ -62,6 +68,7 @@ export function createInteractionController({
 }: InteractionControllerOptions): InteractionController {
   let selectedProteins: string[] = [];
   let activeProvenanceClick: ActiveProvenanceClick | null = null;
+  let tracing = { trace: true, linesPerSource: 20 };
   const eatProvenance = new EatProvenanceResolver();
   const history = createUndoHistory<UndoEntry>({ size: undoEntrySize });
 
@@ -75,6 +82,7 @@ export function createInteractionController({
         plotElement.isProteinLegendEligible(candidateId, candidateIndex),
       (candidateIndex) => plotElement.isProteinInCurrentView(candidateIndex),
       click.mode,
+      tracing.linesPerSource,
     );
 
   const clearProvenance = () => {
@@ -136,7 +144,7 @@ export function createInteractionController({
       const keys = detail?.modifierKeys;
       if (proteinId && !keys?.ctrl && !keys?.meta && !keys?.shift) requestStructure(proteinId);
       const originalIndex = detail?.point?.originalIndex;
-      if (!proteinId || originalIndex === undefined) {
+      if (!proteinId || originalIndex === undefined || !tracing.trace) {
         clearProvenance();
         return;
       }
@@ -144,6 +152,13 @@ export function createInteractionController({
     },
     traceProtein(proteinId, originalIndex, mode = 'auto') {
       return trace(proteinId, originalIndex, mode);
+    },
+    setTracing(options) {
+      const linesChanged = options.linesPerSource !== tracing.linesPerSource;
+      tracing = { ...options };
+      const click = activeProvenanceClick;
+      if (!options.trace) clearProvenance();
+      else if (linesChanged && click) trace(click.proteinId, click.originalIndex, click.mode);
     },
     handlePlotDataChange() {
       selectedProteins = plotElement.selectedProteinIds || [];

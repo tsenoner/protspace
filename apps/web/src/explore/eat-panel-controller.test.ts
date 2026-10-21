@@ -71,6 +71,7 @@ function setup(shown: { value: boolean }) {
   const selectProteins = vi.fn();
   const requestStructure = vi.fn();
   const traceProtein = vi.fn(() => true);
+  const setTracing = vi.fn();
   const filter = {
     mask: null as Uint8Array | null,
     setEatReliability: vi.fn(),
@@ -92,6 +93,7 @@ function setup(shown: { value: boolean }) {
     selectProteins,
     requestStructure,
     traceProtein,
+    setTracing,
   });
   const layoutChanged = () => panelListeners.forEach((listener) => listener());
   /** The panel's own controls moved: its state changes, then it emits. */
@@ -118,6 +120,7 @@ function setup(shown: { value: boolean }) {
     selectProteins,
     requestStructure,
     traceProtein,
+    setTracing,
   };
 }
 
@@ -324,5 +327,25 @@ describe('createEatPanelController', () => {
       new CustomEvent('eat-trace-source', { detail: { sourceId: 'P1', sourceIndex: 0 } }),
     );
     expect(traceProtein).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands the Drawing switches to plot clicks and lights the rail dot, until disposed', () => {
+    const { panel, controller, setTracing } = setup({ value: true });
+    const drawing = (trace: boolean, linesPerSource: number) => {
+      panel.isAtDefaults = trace && linesPerSource === 20;
+      panel.dispatchEvent(
+        new CustomEvent('eat-drawing-change', { detail: { trace, linesPerSource } }),
+      );
+    };
+
+    drawing(false, 50);
+    expect(setTracing).toHaveBeenCalledExactlyOnceWith({ trace: false, linesPerSource: 50 });
+    expect(getWorkbenchStatus().eatAdjusted).toBe(true);
+    drawing(true, 20);
+    expect(getWorkbenchStatus().eatAdjusted).toBe(false);
+
+    controller.dispose();
+    drawing(false, 10);
+    expect(setTracing).toHaveBeenCalledTimes(2);
   });
 });
