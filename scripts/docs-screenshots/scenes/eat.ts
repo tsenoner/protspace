@@ -1,21 +1,30 @@
 /**
  * Captures for docs/explore/eat.md, on the Snake three-finger toxins example, which opens coloured
- * by toxin_class with every transfer shown and the reliability filter at 0. The product demo has
- * no transferred annotations. Needs `pnpm examples:fetch` (a release asset).
+ * by toxin_class with every transfer shown and the reliability range at 0–100 %. The product demo
+ * has no transferred annotations. Needs `pnpm examples:fetch` (a release asset).
  */
 import { expect, type Locator, type Page } from '@playwright/test';
-import { plotArea, selectionBar } from '../../../apps/web/tests/helpers/explore';
-import { legend } from '../../../apps/web/tests/helpers/legend';
+import {
+  filterPanel,
+  plotArea,
+  selectionBar,
+  statusChip,
+} from '../../../apps/web/tests/helpers/explore';
+import { eatPanel, eatThresholdBox } from '../../../apps/web/tests/helpers/eat';
+import { panelTab } from '../../../apps/web/tests/helpers/mobile';
 import {
   emptyScreenPointNear,
   plotSettled,
   proteinScreenPosition,
   provenancePair,
 } from '../../../apps/web/tests/helpers/plot';
+import { rail } from '../../../apps/web/tests/helpers/workbench';
 import type { CaptureApi, CaptureEntry } from '../capture-plan';
 
 const DATASET = 'three-finger-toxins';
 const ANNOTATION = 'toxin_class';
+/** The label the checking GIF opens: most of its members are predicted. */
+const CHECKED_LABEL = 'Ancestral / non-conventional';
 /**
  * How far both clicked proteins stand from every other one. The workbench's 1280×720 plot packs
  * the islands too tight for the helper's 4 px; a click picks the nearest protein, and the scene's
@@ -29,12 +38,16 @@ type Pair = Awaited<ReturnType<typeof provenancePair>>;
 /** The connectors GIF's pair per page: picked in setup, before the zoom, and clicked in steps. */
 const pairs = new WeakMap<Page, Pair>();
 
-const eatSection = (page: Page): Locator =>
-  legend(page).getByRole('region', { name: 'Embedding Annotation Transfer' });
-const reliabilityPercent = (page: Page): Locator =>
-  eatSection(page).getByRole('spinbutton', { name: 'Lowest reliability in range (%)' });
 const connectors = (page: Page): Locator =>
   page.locator('#myPlot').locator('line.eat-provenance-connector');
+/** The EAT panel's whole section: its header row and the panel under it. */
+const eatSection = (page: Page): Locator => page.locator('#wb-eat-panel');
+const handle = (page: Page, end: 'Lowest' | 'Highest'): Locator =>
+  eatPanel(page).getByRole('slider', { name: `${end} reliability in range`, exact: true });
+const outcome = (page: Page, name: 'Hide' | 'Fade'): Locator =>
+  eatPanel(page).getByRole('radio', { name, exact: true });
+const selectedProtein = (page: Page): Locator =>
+  eatPanel(page).getByRole('region', { name: 'Selected protein' });
 
 /** A spot to rest the pointer between clicks: the plot's right margin, clear of the points. */
 async function restingSpot(page: Page): Promise<{ x: number; y: number }> {
@@ -59,20 +72,176 @@ async function zoomAround(
   await cap.moveTo(await restingSpot(page), { steps: 15 });
 }
 
+/** Zooms in on the biggest group of predictions, so the rings the range changes are large. */
+async function zoomOnPredictions(page: Page, cap: CaptureApi): Promise<void> {
+  // Clearance 0: only the spot matters here.
+  const { source } = await provenancePair(page, ANNOTATION, { clearancePx: 0 });
+  await zoomAround(page, cap, await proteinScreenPosition(page, source), ZOOM_STEPS / 2);
+}
+
+/** Types `percent` into the range's low box, as a user does, and waits for the plot. */
+async function setLowEnd(page: Page, percent: number): Promise<void> {
+  await eatThresholdBox(page).fill(String(percent));
+  await eatThresholdBox(page).press('Enter');
+  await expect(eatPanel(page).getByText(/^\s*\d+ of 659 predictions in range/)).not.toHaveText(
+    /659 of 659/,
+  );
+  await plotSettled(page);
+}
+
+/** Where a range handle's thumb sits for `percent`: the input's track runs inside its thumb. */
+async function thumbAt(slider: Locator, percent: number): Promise<{ x: number; y: number }> {
+  const box = await slider.boundingBox();
+  if (!box) throw new Error('The reliability handle has no box');
+  // The thumb is 0.85rem wide; its centre travels between half a thumb from each end.
+  const half = 7;
+  return {
+    x: box.x + half + ((box.width - 2 * half) * percent) / 100,
+    y: box.y + box.height / 2,
+  };
+}
+
+/** The panel's readout, "407 of 659 predictions in range". */
+const readout = (page: Page): Locator => eatPanel(page).locator('.eat-readout');
+
 export const EAT_CAPTURES: CaptureEntry[] = [
   {
-    name: 'eat-legend-section',
+    // The whole panel, every section on screen: a tall window and the structure hidden.
+    name: 'eat-panel',
+    kind: 'png',
+    viewport: { width: 1280, height: 1130 },
+    themes: ['light', 'dark'],
+    dataset: DATASET,
+    layout: { panel: 'eat', structureHidden: true },
+    docs: ['explore/eat.md'],
+    steps: async (page) => {
+      await expect(eatPanel(page).locator('.eat-label-row').first()).toBeVisible();
+      await expect(readout(page)).toHaveText('659 of 659 predictions in range');
+    },
+    target: (page) => eatSection(page),
+  },
+  {
+    name: 'eat-filter-row',
     kind: 'png',
     viewport: 'desktop',
     dataset: DATASET,
+    layout: { panel: 'eat' },
+    docs: ['explore/eat.md', 'explore/filter.md'],
+    steps: async (page) => {
+      await setLowEnd(page, 50);
+      await expect(statusChip(page, 'filter')).toBeVisible();
+      await rail(page).locator('#wb-rail-filter').getByRole('button').click();
+      await expect(filterPanel(page).getByRole('button', { name: /Edit in EAT/ })).toBeVisible();
+    },
+    target: (page) => filterPanel(page).locator('.condition-row.is-locked'),
+  },
+  {
+    name: 'eat-phone',
+    kind: 'png',
+    viewport: 'phone',
+    dataset: DATASET,
+    layout: { panel: 'eat' },
     docs: ['explore/eat.md'],
     steps: async (page) => {
-      // The counts row renders a frame after the section itself.
-      await expect(
-        eatSection(page).getByRole('region', { name: 'Transferred annotation counts' }),
-      ).toBeVisible();
+      await expect(panelTab(page, 'EAT')).toHaveAttribute('aria-selected', 'true');
+      await expect(eatPanel(page).locator('.eat-histogram')).toBeVisible();
     },
-    target: (page) => eatSection(page),
+  },
+  {
+    name: 'eat-range-hide',
+    kind: 'gif',
+    viewport: 'desktop',
+    dataset: DATASET,
+    layout: { panel: 'eat' },
+    timeoutMs: 120_000,
+    docs: ['explore/eat.md'],
+    setup: async (page, cap) => {
+      await zoomOnPredictions(page, cap);
+    },
+    steps: async (page, cap) => {
+      const low = handle(page, 'Lowest');
+      const high = handle(page, 'Highest');
+      await cap.hold(600);
+      // The low end up: the weakest rings leave the map, the chart's left bars go pale.
+      await cap.label('Drag the low end to 50 %');
+      await cap.drag(await thumbAt(low, 0), await thumbAt(low, 50), { steps: 40 });
+      await expect(readout(page)).toHaveText('407 of 659 predictions in range');
+      await plotSettled(page);
+      await cap.moveTo(await restingSpot(page), { steps: 15 });
+      await cap.hold(1800);
+      // The high end down: a band, both ends included.
+      await cap.label('Drag the high end to 80 %');
+      await cap.drag(await thumbAt(high, 100), await thumbAt(high, 80), { steps: 30 });
+      await expect(readout(page)).not.toHaveText('407 of 659 predictions in range');
+      await plotSettled(page);
+      await cap.moveTo(await restingSpot(page), { steps: 15 });
+      await cap.hold(1800);
+      // Reset: 0–100 % again, every prediction back.
+      await cap.click(page.locator('.wb-eat-reset'), { label: 'Reset' });
+      await expect(readout(page)).toHaveText('659 of 659 predictions in range');
+      await plotSettled(page);
+      await cap.moveTo(await restingSpot(page), { steps: 15 });
+      await cap.hold(1600);
+    },
+  },
+  {
+    name: 'eat-range-fade',
+    kind: 'gif',
+    viewport: 'desktop',
+    dataset: DATASET,
+    layout: { panel: 'eat' },
+    timeoutMs: 120_000,
+    docs: ['explore/eat.md'],
+    setup: async (page, cap) => {
+      await setLowEnd(page, 50);
+      await zoomOnPredictions(page, cap);
+    },
+    steps: async (page, cap) => {
+      await cap.hold(1200);
+      await cap.click(outcome(page, 'Fade'), { label: 'Fade' });
+      await expect(outcome(page, 'Fade')).toBeChecked();
+      await expect(statusChip(page, 'filter')).toHaveCount(0);
+      await expect(statusChip(page, 'eat-dim')).toBeVisible();
+      await plotSettled(page);
+      await cap.moveTo(await restingSpot(page), { steps: 15 });
+      await cap.hold(2000);
+      await cap.click(outcome(page, 'Hide'), { label: 'Hide' });
+      await expect(outcome(page, 'Hide')).toBeChecked();
+      await plotSettled(page);
+      await cap.moveTo(await restingSpot(page), { steps: 15 });
+      await cap.hold(1600);
+    },
+  },
+  {
+    name: 'eat-check',
+    kind: 'gif',
+    viewport: 'desktop',
+    dataset: DATASET,
+    layout: { panel: 'eat' },
+    timeoutMs: 120_000,
+    docs: ['explore/eat.md'],
+    steps: async (page, cap) => {
+      await cap.hold(600);
+      // A label: its five least reliable predictions open under its row.
+      const row = eatPanel(page).locator(`.eat-label-row[data-label="${CHECKED_LABEL}"]`);
+      await cap.click(row, { label: 'Click a label' });
+      const list = eatPanel(page).getByRole('region', { name: '5 least reliable predictions' });
+      await expect(list).toBeVisible();
+      await cap.hold(1400);
+      // One of them: the map zooms to it, and the strip says where its label came from.
+      await cap.click(list.locator('.eat-drill-row').nth(1), { label: 'Pick one' });
+      await expect(selectedProtein(page)).toBeVisible();
+      await plotSettled(page);
+      await cap.hold(2200);
+      // Its source: selected, with the line between the two.
+      await cap.click(selectedProtein(page).getByRole('button', { name: 'Go to source' }), {
+        label: 'Go to source',
+      });
+      await expect(connectors(page)).toHaveCount(1);
+      await plotSettled(page);
+      await cap.moveTo(await restingSpot(page), { steps: 15 });
+      await cap.hold(2400);
+    },
   },
   {
     name: 'eat-connectors',
@@ -120,41 +289,6 @@ export const EAT_CAPTURES: CaptureEntry[] = [
       await cap.press('Escape', { label: 'Esc again clears the selection' });
       await expect(selectionBar(page)).toBeHidden();
       await cap.hold(1200);
-    },
-  },
-  {
-    name: 'eat-reliability',
-    kind: 'gif',
-    viewport: 'desktop',
-    dataset: DATASET,
-    docs: ['explore/eat.md'],
-    setup: async (page, cap) => {
-      // Zoom in on the biggest group of transferred proteins, so the rings the filter removes
-      // are large enough to see in the docs column. Clearance 0: only the spot matters here.
-      const { source } = await provenancePair(page, ANNOTATION, { clearancePx: 0 });
-      await zoomAround(page, cap, await proteinScreenPosition(page, source), ZOOM_STEPS / 2);
-      // Rest in the gap left of the % box, so the cursor never covers the number it changes.
-      const box = await reliabilityPercent(page).boundingBox();
-      if (!box) throw new Error('The reliability percentage has no box');
-      await cap.moveTo({ x: box.x - 40, y: box.y + box.height / 2 }, { steps: 15 });
-    },
-    steps: async (page, cap) => {
-      const percent = reliabilityPercent(page);
-      // Up in stages, so the rings thin out visibly rather than snapping to the end state.
-      for (const value of ['40', '70', '90']) {
-        await cap.label(`Hide below ${value}%`);
-        await percent.fill(value);
-        await cap.press('Enter');
-        await plotSettled(page);
-        await cap.hold(1000);
-      }
-      await cap.hold(600);
-      // Back to 0: every prediction returns and the filter condition is removed.
-      await cap.label('Back to 0%');
-      await percent.fill('0');
-      await cap.press('Enter');
-      await plotSettled(page);
-      await cap.hold(1600);
     },
   },
 ];
