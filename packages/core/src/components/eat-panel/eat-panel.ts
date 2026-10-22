@@ -98,12 +98,18 @@ export class ProtspaceEatPanel extends LitElement {
   @property({ attribute: false }) focusProtein: number | null = null;
   /** Whether the panel is shown. It computes only while true. */
   @property({ type: Boolean }) active = false;
+  /**
+   * The phone layout (the shell sets it from the layout mode): a 56 px histogram, taller rows, and
+   * Drawing with the other annotations folded into one `Display options` disclosure.
+   */
+  @property({ type: Boolean, reflect: true }) compact = false;
 
   @state() private _trace = true;
   @state() private _linesPerSource: LinesPerSource = DEFAULT_LINES_PER_SOURCE;
   @state() private _labelSort: EatLabelSort = 'most-predicted';
   @state() private _showAllLabels = false;
   @state() private _othersOpen = false;
+  @state() private _displayOpen = false;
   @state() private _drill: OpenDrill | null = null;
   @state() private _exportMenu: ExportMenu | null = null;
   /** The last opened menu's scope; the menu closes before it reports the pick. */
@@ -276,7 +282,7 @@ export class ProtspaceEatPanel extends LitElement {
           void this.updateComplete.then(() => this._bar(bin)?.focus());
         },
       })}
-      ${this._renderDrawing()}
+      ${this.compact ? nothing : this._renderDrawing()}
       ${this._index && this.data && this.focusProtein !== null
         ? renderCard({
             data: this.data,
@@ -303,16 +309,32 @@ export class ProtspaceEatPanel extends LitElement {
             onRow: (label) => this._toggleDrill({ label }),
           })
         : nothing}
-      ${this.data
-        ? renderOtherAnnotations({
-            data: this.data,
-            annotation: this.annotation,
-            open: this._othersOpen,
-            onToggle: (open) => (this._othersOpen = open),
-            onColorBy: this._colorBy,
-          })
-        : nothing}
+      ${this.compact ? this._renderDisplayOptions() : this._renderOthers()}
       ${this._renderExportMenu(summary)}`;
+  }
+
+  private _renderOthers(): TemplateResult | typeof nothing {
+    if (!this.data) return nothing;
+    return renderOtherAnnotations({
+      data: this.data,
+      annotation: this.annotation,
+      open: this._othersOpen,
+      onToggle: (open) => (this._othersOpen = open),
+      onColorBy: this._colorBy,
+    });
+  }
+
+  /** On a phone, Drawing and the other annotations share one closed disclosure (proposal B §6). */
+  private _renderDisplayOptions(): TemplateResult {
+    return html`<details
+      class="eat-display"
+      ?open=${this._displayOpen}
+      @toggle=${(event: Event) =>
+        (this._displayOpen = (event.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary>Display options</summary>
+      <div class="eat-display-body">${this._renderDrawing()} ${this._renderOthers()}</div>
+    </details>`;
   }
 
   /** `Export IDs`: opens the menu for the whole context (`drill` null) or one bar or label. */
@@ -427,7 +449,7 @@ export class ProtspaceEatPanel extends LitElement {
   /** Trace source on click and Lines per source (proposal B §4.5, minus rings: Decision 8). */
   private _renderDrawing(): TemplateResult {
     return html`<section class="eat-drawing" aria-label="Drawing">
-      <h4 class="eat-heading">Drawing</h4>
+      ${this.compact ? nothing : html`<h4 class="eat-heading">Drawing</h4>`}
       <ps-switch
         class="eat-trace"
         .checked=${this._trace}

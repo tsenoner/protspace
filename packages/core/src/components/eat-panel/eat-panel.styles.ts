@@ -264,6 +264,20 @@ export const eatPanelStyles = [
       .eat-handles {
         height: 40px;
       }
+
+      /* A short bar still takes a 32 px tall tap column (20 bars share the width). */
+      .eat-bar:not(.is-skeleton) {
+        position: relative;
+      }
+
+      .eat-bar:not(.is-skeleton)::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        height: max(100%, 32px);
+      }
     }
 
     .eat-axis {
@@ -367,7 +381,8 @@ export const eatPanelStyles = [
 
     .eat-show-all,
     .eat-color-by,
-    .eat-others summary {
+    .eat-others summary,
+    .eat-display > summary {
       padding: var(--ps-space-1);
       border: none;
       border-radius: var(--ps-radius-sm);
@@ -383,9 +398,16 @@ export const eatPanelStyles = [
       color: var(--ps-accent-text);
     }
 
-    .eat-others summary {
+    .eat-others summary,
+    .eat-display > summary {
       color: var(--ps-text-muted);
       font-weight: var(--ps-weight-semibold);
+    }
+
+    .eat-display-body {
+      display: grid;
+      gap: var(--ps-space-3);
+      padding-top: var(--ps-space-1-5);
     }
 
     .eat-color-by {
@@ -492,6 +514,7 @@ export const eatPanelStyles = [
     .eat-drill-foot,
     .eat-readout-row {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
       gap: var(--ps-space-2);
@@ -578,6 +601,33 @@ export const eatPanelStyles = [
 
     .eat-card-link:hover {
       text-decoration: underline;
+    }
+
+    /* Phone (proposal B §6): a shorter histogram, 40 px handles and 44 px rows for a finger. */
+    :host([compact]) .eat-histogram {
+      height: 56px;
+    }
+
+    :host([compact]) .eat-handles {
+      height: 40px;
+    }
+
+    :host([compact]) :is(.eat-label-row, .eat-drill-row) {
+      min-height: 44px;
+      align-content: center;
+    }
+
+    :host([compact])
+      :is(
+        .eat-drill-select,
+        .eat-export,
+        .eat-show-all,
+        .eat-color-by,
+        .eat-others summary,
+        .eat-display > summary,
+        .eat-card-link
+      ) {
+      min-height: 40px;
     }
   `,
 ];

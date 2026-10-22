@@ -110,6 +110,7 @@ declare module 'react' {
       'protspace-eat-panel': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & {
           id?: string;
+          compact?: boolean;
         },
         HTMLElement
       >;

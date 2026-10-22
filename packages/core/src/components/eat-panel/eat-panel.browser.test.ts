@@ -489,6 +489,29 @@ describe('protspace-eat-panel', () => {
     });
   });
 
+  describe('compact (phone)', () => {
+    it('folds Drawing and the other annotations into Display options, without the Drawing heading', async () => {
+      const el = await mount({ data: fixtureWithOthers() });
+      expect(text(el, '.eat-drawing .eat-heading')).toBe('Drawing');
+      expect(root(el).querySelector('.eat-display')).toBeNull();
+
+      el.compact = true;
+      await el.updateComplete;
+      expect(el.hasAttribute('compact')).toBe(true);
+      const display = root(el).querySelector<HTMLDetailsElement>('details.eat-display')!;
+      expect(text(el, '.eat-display > summary')).toBe('Display options');
+      expect(display.open).toBe(false);
+      expect(root(el).querySelector('.eat-drawing .eat-heading')).toBeNull();
+      expect(display.querySelector('.eat-drawing ps-switch')?.textContent?.trim()).toBe(
+        'Trace source on click',
+      );
+      expect(display.querySelector('.eat-others, .eat-neighbour')).not.toBeNull();
+      // The histogram is the phone's 56 px.
+      const histogram = root(el).querySelector<HTMLElement>('.eat-histogram')!;
+      expect(histogram.getBoundingClientRect().height).toBe(56);
+    });
+  });
+
   it('lists the annotations with predictions as Color by buttons in the empty state', async () => {
     const el = await mount({ data: fixtureWithOthers(), annotation: 'family' });
     const picked = listenColorBy(el);

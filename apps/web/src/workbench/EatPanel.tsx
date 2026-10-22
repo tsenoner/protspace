@@ -1,10 +1,12 @@
 import type { ProtspaceEatPanel } from '@protspace/core';
 import { useEffect, useRef } from 'react';
 import type { SidebarPanel } from '../explore/layout-defaults';
+import { hasStructureSheet } from '../explore/layout-mode';
 import { updateLayout } from '../explore/layout-state';
 import { getWorkbenchStatus } from '../explore/workbench-status';
 import { PanelFold } from './PanelFold';
 import { PanelTabs } from './PanelTabs';
+import { useLayoutMode } from './use-layout-mode';
 import { useWorkbenchStatus } from './use-workbench-status';
 
 const INFO =
@@ -21,7 +23,8 @@ const eatPanel = () => document.getElementById('myEatPanel') as ProtspaceEatPane
  * focus to the rail's EAT item, or to Legend when the EAT item is off.
  *
  * One header row, as Filter's: the heading `EAT · <annotation>`, the info popover, Reset (off at
- * the defaults) and Close. The element itself draws no header.
+ * the defaults) and Close. The element itself draws no header. On a phone the element is
+ * `compact`.
  */
 export function EatPanel({
   panel,
@@ -34,6 +37,8 @@ export function EatPanel({
 }) {
   const close = useRef<HTMLElement>(null);
   const { eatAdjusted, eatAnnotationLabel } = useWorkbenchStatus();
+  // A phone, upright or on its side, gets the compact panel; a tablet's half is wide enough.
+  const compact = hasStructureSheet(useLayoutMode());
 
   useEffect(() => {
     const button = close.current;
@@ -94,7 +99,7 @@ export function EatPanel({
         <PanelFold folded={panelFolded} />
       </header>
       <div className="wb-eat-body">
-        <protspace-eat-panel id="myEatPanel"></protspace-eat-panel>
+        <protspace-eat-panel id="myEatPanel" compact={compact}></protspace-eat-panel>
       </div>
     </section>
   );

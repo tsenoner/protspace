@@ -115,6 +115,28 @@ test('on a phone the EAT tab is the third tab', async ({ page }) => {
   ).toHaveAccessibleName('EAT · EC number');
 });
 
+test('the phone EAT tab shows the histogram and opens a drill-down by tap', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await loadPhosphataseEat(page);
+  await selectAnnotation(page, 'ec');
+  await panelTab(page, 'EAT').click();
+
+  await expect(eatPanel(page)).toHaveAttribute('compact', '');
+  const histogram = eatPanel(page).getByRole('group', { name: 'Predictions by reliability' });
+  await expect(histogram).toBeVisible();
+  expect((await histogram.boundingBox())!.height).toBe(56);
+  // Drawing folds into Display options on a phone.
+  await expect(eatPanel(page).getByText('Display options', { exact: true })).toBeVisible();
+  await expect(eatPanel(page).getByRole('switch', { name: 'Trace source on click' })).toBeHidden();
+
+  const bar = histogram.getByRole('button', { name: /: [1-9][\d,]* predictions?$/ }).last();
+  await bar.click();
+  const list = eatPanel(page).getByRole('region', { name: /^Weakest in / });
+  await expect(list).toBeVisible();
+  await expect(list.getByRole('button', { name: 'Export IDs' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+});
+
 test('moving the EAT threshold filters the plot and the legend says so', async ({ page }) => {
   await loadPhosphataseEat(page);
   await selectAnnotation(page, 'ec');
