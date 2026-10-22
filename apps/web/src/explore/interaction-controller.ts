@@ -28,6 +28,8 @@ interface ActiveProvenanceClick {
   proteinId: string;
   originalIndex: number;
   mode: 'auto' | 'source';
+  /** The endpoint drawn with the highlight ring (Go to source's source). */
+  focus?: string;
 }
 
 export interface InteractionController {
@@ -44,9 +46,14 @@ export interface InteractionController {
   /**
    * Draws `proteinId`'s provenance lines as a click on it does, without selecting it, and keeps
    * them across data changes. `'source'` draws its fan-out even when it is a prediction itself.
-   * Returns whether lines were requested.
+   * `focus` is the endpoint drawn with the highlight ring. Returns whether lines were requested.
    */
-  traceProtein(proteinId: string, originalIndex: number, mode?: 'auto' | 'source'): boolean;
+  traceProtein(
+    proteinId: string,
+    originalIndex: number,
+    mode?: 'auto' | 'source',
+    focus?: string,
+  ): boolean;
   /**
    * The EAT panel's Drawing switches. `trace` off clears the drawn lines and a plot click only
    * selects; `traceProtein` still draws, since its callers are explicit. `linesPerSource` caps a
@@ -72,8 +79,8 @@ export function createInteractionController({
   const eatProvenance = new EatProvenanceResolver();
   const history = createUndoHistory<UndoEntry>({ size: undoEntrySize });
 
-  const resolveProvenanceClick = (click: ActiveProvenanceClick) =>
-    eatProvenance.resolve(
+  const resolveProvenanceClick = (click: ActiveProvenanceClick) => {
+    const request = eatProvenance.resolve(
       click.data,
       click.annotation,
       click.proteinId,
@@ -84,6 +91,8 @@ export function createInteractionController({
       click.mode,
       tracing.linesPerSource,
     );
+    return request && click.focus ? { ...request, focusProteinId: click.focus } : request;
+  };
 
   const clearProvenance = () => {
     activeProvenanceClick = null;
@@ -91,14 +100,19 @@ export function createInteractionController({
   };
 
   /** Resolves and draws `proteinId`'s lines, or clears them; whether lines were requested. */
-  const trace = (proteinId: string, originalIndex: number, mode: 'auto' | 'source'): boolean => {
+  const trace = (
+    proteinId: string,
+    originalIndex: number,
+    mode: 'auto' | 'source',
+    focus?: string,
+  ): boolean => {
     const data = plotElement.data;
     const annotation = plotElement.selectedAnnotation;
     if (!data || !annotation || !plotElement.eatOverlayEnabled) {
       clearProvenance();
       return false;
     }
-    const click = { data, annotation, proteinId, originalIndex, mode };
+    const click = { data, annotation, proteinId, originalIndex, mode, focus };
     const request = resolveProvenanceClick(click);
     if (!request) {
       clearProvenance();
@@ -150,8 +164,8 @@ export function createInteractionController({
       }
       trace(proteinId, originalIndex, 'auto');
     },
-    traceProtein(proteinId, originalIndex, mode = 'auto') {
-      return trace(proteinId, originalIndex, mode);
+    traceProtein(proteinId, originalIndex, mode = 'auto', focus) {
+      return trace(proteinId, originalIndex, mode, focus);
     },
     setTracing(options) {
       const linesChanged = options.linesPerSource !== tracing.linesPerSource;

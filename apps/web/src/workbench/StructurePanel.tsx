@@ -2,7 +2,7 @@ import { useRef, type KeyboardEvent, type MouseEvent, type PointerEvent, type Re
 import { Box } from 'lucide-react';
 import { LEGEND_FRACTION, type StructurePlacement } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
-import { setStructureSheet } from '../explore/workbench-status';
+import { expandStructure, setStructureSheet } from '../explore/workbench-status';
 import { clampLegendFraction, DIVIDER_HEIGHT, fractionStep } from './layout-geometry';
 
 /** The sidebar column, the workbench body the section and the aside are placed in. */
@@ -129,6 +129,8 @@ interface StructurePanelProps {
   sheet: boolean;
   /** The sheet is expanded (the workbench status's structureSheet). */
   sheetExpanded: boolean;
+  /** Desktop, docked: only the header row shows (structureCollapsed); it expands from there. */
+  collapsed: boolean;
   legendFraction: number;
   onLegendFractionPreview(fraction: number | null): void;
 }
@@ -150,6 +152,7 @@ export function StructurePanel({
   canFloat,
   sheet,
   sheetExpanded,
+  collapsed,
   legendFraction,
   onLegendFractionPreview,
 }: StructurePanelProps) {
@@ -166,11 +169,14 @@ export function StructurePanel({
       data-workbench="structure"
       aria-label="Structure"
       aria-describedby={floating ? 'wb-float-move-hint' : undefined}
-      // The grip and the header row fold and expand the sheet, as its chevron does.
+      // The grip and the header row fold and expand the sheet, as its chevron does; a collapsed
+      // docked structure's header row expands it.
       onClick={
-        sheet
+        sheet || collapsed
           ? (event) => {
-              if (togglesSheet(event)) toggleSheet();
+              if (!togglesSheet(event)) return;
+              if (sheet) toggleSheet();
+              else expandStructure();
             }
           : undefined
       }
@@ -200,6 +206,16 @@ export function StructurePanel({
             label={sheetExpanded ? 'Hide the structure' : 'Show the structure'}
             expanded={sheetExpanded ? 'true' : 'false'}
             onClick={toggleSheet}
+          ></ps-icon-button>
+        )}
+        {collapsed && (
+          <ps-icon-button
+            slot="header-actions"
+            size="sm"
+            icon="chevron-up"
+            label="Show the structure"
+            expanded="false"
+            onClick={expandStructure}
           ></ps-icon-button>
         )}
         {canFloat && (

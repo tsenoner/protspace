@@ -140,6 +140,22 @@ describe('createStructureController', () => {
     expect(getWorkbenchStatus().structureProteinId).toBe('P12345');
   });
 
+  it('a collapsed request keeps the structure to its header row; the next request expands it', () => {
+    const { viewer, controller } = setup();
+    controller.request('P1', { collapsed: true });
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P1');
+    expect(getWorkbenchStatus()).toMatchObject({
+      structureProteinId: 'P1',
+      structureCollapsed: true,
+    });
+    // A selection's request (the panel's pick selects first) and a map click expand it.
+    controller.request('P2');
+    expect(getWorkbenchStatus().structureCollapsed).toBe(false);
+    controller.request('P3', { collapsed: true });
+    viewer.close();
+    expect(getWorkbenchStatus().structureCollapsed).toBe(false);
+  });
+
   it('a request while hidden only publishes the protein', () => {
     const { viewer, controller } = setup();
     updateLayout({ sidebarOpen: false });

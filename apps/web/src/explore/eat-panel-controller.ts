@@ -112,6 +112,7 @@ export function createEatPanelController({
     | 'eatOverlayEnabled'
     | 'eatDim'
     | 'zoomToProteins'
+    | 'touchTooltipInsets'
     | 'addEventListener'
     | 'removeEventListener'
   >;
@@ -124,10 +125,15 @@ export function createEatPanelController({
   pickAnnotation(annotation: string): void;
   /** Select exactly `ids`, one undo step; `zoom` fits them once they land. */
   selectProteins(ids: readonly string[], options: { zoom: boolean }): void;
-  /** Show `proteinId` in the structure viewer. */
-  requestStructure(proteinId: string): void;
+  /** Show `proteinId` in the structure viewer, as its header row only (`collapsed`). */
+  requestStructure(proteinId: string, options: { collapsed: boolean }): void;
   /** Draw `proteinId`'s provenance lines as a click does, without selecting it. */
-  traceProtein(proteinId: string, originalIndex: number, mode?: 'auto' | 'source'): boolean;
+  traceProtein(
+    proteinId: string,
+    originalIndex: number,
+    mode?: 'auto' | 'source',
+    focus?: string,
+  ): boolean;
   /** The trace switch and the lines cap, for plot clicks. */
   setTracing(options: { trace: boolean; linesPerSource: number }): void;
   /** Download `ids` as `fileName`, one per line (`downloadProteinIds`). */
@@ -222,22 +228,30 @@ export function createEatPanelController({
     pickAnnotation((event as CustomEvent<{ annotation: string }>).detail.annotation);
   };
 
-  /** A drill-down row selects its protein and shows its structure; Select all selects only. */
+  /**
+   * A drill-down row selects its protein and shows its structure; Select all selects only. A pick
+   * from the panel opens the structure as its header row, so the panel keeps its room.
+   */
   const onSelectProteins = (event: Event) => {
     const { proteinIds, zoom } = (event as CustomEvent<{ proteinIds: string[]; zoom: boolean }>)
       .detail;
     selectProteins(proteinIds, { zoom });
-    if (proteinIds.length === 1) requestStructure(proteinIds[0]);
+    if (proteinIds.length === 1) requestStructure(proteinIds[0], { collapsed: true });
   };
 
-  /** Go to source: select the source (one undo step), keep the pair drawn, fit both. */
+  /**
+   * Go to source: select the source (one undo step), keep the pair drawn with the highlight ring
+   * on the source, fit both clear of the plot's tool strip, status corner and selection bar (the
+   * insets a pinned tooltip keeps off).
+   */
   const onGoToSource = (event: Event) => {
     const { targetId, targetIndex, sourceId } = (
       event as CustomEvent<{ targetId: string; targetIndex: number; sourceId: string }>
     ).detail;
     selectProteins([sourceId], { zoom: false });
-    traceProtein(targetId, targetIndex);
-    plotElement.zoomToProteins([targetId, sourceId]);
+    requestStructure(sourceId, { collapsed: true });
+    traceProtein(targetId, targetIndex, 'auto', sourceId);
+    plotElement.zoomToProteins([targetId, sourceId], { insets: plotElement.touchTooltipInsets });
   };
 
   /** `lent its label to N`: the source's fan-out, as a click on it draws. */

@@ -342,14 +342,17 @@
   min-height: 0;
 }
 
-/* The EAT panel scrolls inside the column. The padding is here: the page's reset beats :host.
-   The selected-protein strip docks at the bottom of this scroll area, out to its edges. */
+/* The EAT panel fills the column: it scrolls its own sections, over the selected-protein strip. */
 .wb-eat-body {
-  --eat-dock-inset: var(--ps-space-3);
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
-  overflow: auto;
-  padding: var(--ps-space-2) var(--eat-dock-inset) var(--eat-dock-inset);
+  overflow: hidden;
+}
+
+.wb-eat-body > #myEatPanel {
+  flex: 1 1 auto;
 }
 
 /* One header row, as Filter's: the heading with its annotation and ⓘ, then Reset and Close at the
@@ -765,6 +768,13 @@
   height: var(--wb-legend-height);
 }
 
+/* Collapsed (a pick from the EAT panel): the docked structure keeps to its header row, under a
+   border of its own, and the panel above takes the rest of the column. */
+.workbench[data-layout='desktop'][data-structure='docked'][data-structure-collapsed]
+  :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
+  height: calc(100% - 45px);
+}
+
 .wb-structure {
   display: flex;
   flex-direction: column;
@@ -794,6 +804,22 @@
 
 .workbench[data-layout='desktop'][data-structure='docked'] .wb-structure {
   top: var(--wb-legend-height);
+}
+
+.workbench[data-layout='desktop'][data-structure='docked'][data-structure-collapsed] .wb-structure {
+  top: auto;
+  height: 45px;
+  border-top: 1px solid var(--ps-border);
+}
+
+.workbench[data-structure-collapsed] #myStructureViewer::part(header) {
+  cursor: pointer;
+}
+
+.workbench[data-structure-collapsed] .wb-divider,
+.workbench[data-structure-collapsed] #myStructureViewer::part(body),
+.workbench[data-structure-collapsed] #myStructureViewer::part(links) {
+  display: none;
 }
 
 /* The right half of the panel row: the empty footer at its top, or the docked viewer. */

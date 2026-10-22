@@ -529,9 +529,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     subscribePanel,
     pickAnnotation: (annotation) => viewBarController.applyAnnotationSelection(annotation),
     selectProteins: (ids, options) => selectionController.selectProteins(ids, options),
-    requestStructure: (proteinId) => structureController.request(proteinId),
-    traceProtein: (proteinId, originalIndex, mode) =>
-      interactionController.traceProtein(proteinId, originalIndex, mode),
+    requestStructure: (proteinId, options) => structureController.request(proteinId, options),
+    traceProtein: (proteinId, originalIndex, mode, focus) =>
+      interactionController.traceProtein(proteinId, originalIndex, mode, focus),
     setTracing: (options) => interactionController.setTracing(options),
     downloadIds: downloadProteinIds,
     notify,

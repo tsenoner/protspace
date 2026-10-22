@@ -30,8 +30,11 @@ export function isStructureVisible(layout: LayoutState, mode: LayoutMode): boole
 }
 
 export interface StructureController {
-  /** Shows `proteinId` now if the structure can be seen, or keeps it until it can. */
-  request(proteinId: string): void;
+  /**
+   * Shows `proteinId` now if the structure can be seen, or keeps it until it can. `collapsed`
+   * opens it as its header row only (a pick from the EAT panel); else it opens in full.
+   */
+  request(proteinId: string, options?: { collapsed?: boolean }): void;
   /**
    * The selection changed: offer its proteins in the header and choose which one shows. A single
    * protein added to the selection shows; else the shown (or waiting) one stays while it is still
@@ -99,12 +102,14 @@ export function createStructureController({
   const visible = () => isStructureVisible(getLayout(), layoutMode.get());
   // A structure that appears from none opens folded on phones (decision 17), so the plot and the
   // tooltip stay in view; closing starts over, so the next one opens folded too.
-  const publish = (proteinId: string | null) => {
+  // A collapsed request folds the phone's sheet as well, and keeps a desktop's docked structure
+  // to its header row; any other request expands that row again.
+  const publish = (proteinId: string | null, collapsed = false) => {
     const appears = proteinId !== null && getWorkbenchStatus().structureProteinId === null;
     setWorkbenchStatus(
-      proteinId === null || appears
-        ? { structureProteinId: proteinId, structureSheet: 'folded' }
-        : { structureProteinId: proteinId },
+      proteinId === null || appears || collapsed
+        ? { structureProteinId: proteinId, structureSheet: 'folded', structureCollapsed: collapsed }
+        : { structureProteinId: proteinId, structureCollapsed: false },
     );
   };
   const load = (proteinId: string) => {
@@ -119,8 +124,8 @@ export function createStructureController({
     publish(null);
   };
 
-  const request = (proteinId: string) => {
-    publish(proteinId);
+  const request = (proteinId: string, { collapsed = false }: { collapsed?: boolean } = {}) => {
+    publish(proteinId, collapsed);
     if (visible()) load(proteinId);
     else waiting = proteinId;
   };

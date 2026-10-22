@@ -235,6 +235,9 @@ test('a histogram bar lists its weakest predictions and a row selects the protei
   await row.click();
   await expect(selectionBar(page)).toContainText('1 selected');
   expect(await getSelectedProteinIds(page)).toEqual([proteinId]);
+  // A pick from the panel keeps the structure to its header row, and the row in view.
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure-collapsed', '');
+  await expect(row).toBeInViewport({ ratio: 1 });
 
   // Escape inside the panel closes the list before it reaches the selection.
   await bar.focus();
@@ -255,7 +258,7 @@ test('the selected-protein card goes to the source and draws its lines', async (
   await page.mouse.click(at.x, at.y);
   await expect.poll(() => getSelectedProteinIds(page)).toEqual([target]);
   const card = eatPanel(page).getByRole('region', { name: 'Selected protein' });
-  await expect(card).toContainText(`from ${source}`);
+  await expect(card).toContainText(`copied from ${source}`);
   await expect(connectors).toHaveCount(1);
   // Escape clears the click's line and keeps the selection, so the next line is Go to source's.
   await page.keyboard.press('Escape');
@@ -277,7 +280,7 @@ test('the selected-protein card goes to the source and draws its lines', async (
   await expect(card).toContainText('Curated');
 
   await card
-    .getByRole('button', { name: new RegExp(`^${source} lent its label to [\\d,]+ proteins$`) })
+    .getByRole('button', { name: new RegExp(`^${source} is the source of [\\d,]+ predictions?$`) })
     .click();
   await expect.poll(() => connectors.count()).toBeGreaterThan(1);
   expect(await getSelectedProteinIds(page)).toEqual([source]);

@@ -48,6 +48,7 @@ function setup(shown: { value: boolean }) {
     eatOverlayEnabled: true,
     eatDim: null as EatReliabilityState | null,
     zoomToProteins: vi.fn(() => true),
+    touchTooltipInsets: { top: 0, right: 0, bottom: 90, left: 48 },
   });
   const root = new EventTarget();
   const panel = Object.assign(new EventTarget(), {
@@ -330,13 +331,13 @@ describe('createEatPanelController', () => {
     expect(pickAnnotation).toHaveBeenCalledExactlyOnceWith('family');
   });
 
-  it('selects the proteins of eat-select-proteins and shows a single one’s structure', () => {
+  it('selects the proteins of eat-select-proteins and shows a single one’s structure collapsed', () => {
     const { panel, controller, selectProteins, requestStructure } = setup({ value: true });
     const select = (proteinIds: string[], zoom: boolean) =>
       panel.dispatchEvent(new CustomEvent('eat-select-proteins', { detail: { proteinIds, zoom } }));
     select(['P2'], true);
     expect(selectProteins).toHaveBeenCalledWith(['P2'], { zoom: true });
-    expect(requestStructure).toHaveBeenCalledExactlyOnceWith('P2');
+    expect(requestStructure).toHaveBeenCalledExactlyOnceWith('P2', { collapsed: true });
     select(['P1', 'P2'], false);
     expect(selectProteins).toHaveBeenLastCalledWith(['P1', 'P2'], { zoom: false });
     expect(requestStructure).toHaveBeenCalledTimes(1);
@@ -383,16 +384,21 @@ describe('createEatPanelController', () => {
     expect(panel.focusProtein).toBeNull();
   });
 
-  it('Go to source selects the source, draws the pair and fits both; lent to draws a source', () => {
-    const { plot, panel, controller, selectProteins, traceProtein } = setup({ value: true });
+  it('Go to source selects the source, draws the pair and fits both clear of the chrome', () => {
+    const { plot, panel, controller, selectProteins, traceProtein, requestStructure } = setup({
+      value: true,
+    });
     panel.dispatchEvent(
       new CustomEvent('eat-go-to-source', {
         detail: { targetId: 'P2', targetIndex: 1, sourceId: 'P1' },
       }),
     );
     expect(selectProteins).toHaveBeenCalledExactlyOnceWith(['P1'], { zoom: false });
-    expect(traceProtein).toHaveBeenCalledExactlyOnceWith('P2', 1);
-    expect(plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P2', 'P1']);
+    expect(requestStructure).toHaveBeenCalledExactlyOnceWith('P1', { collapsed: true });
+    expect(traceProtein).toHaveBeenCalledExactlyOnceWith('P2', 1, 'auto', 'P1');
+    expect(plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P2', 'P1'], {
+      insets: { top: 0, right: 0, bottom: 90, left: 48 },
+    });
 
     panel.dispatchEvent(
       new CustomEvent('eat-trace-source', { detail: { sourceId: 'P1', sourceIndex: 0 } }),

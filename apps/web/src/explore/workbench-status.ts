@@ -40,6 +40,11 @@ export interface WorkbenchStatus {
    * structure appears and when it closes; the shell expands and folds it (setStructureSheet).
    */
   structureSheet: StructureSheet;
+  /**
+   * The docked structure on desktop shows its header row only. A pick from the EAT panel opens
+   * it so, to keep the panel's list in view; any other request, and its header, expand it.
+   */
+  structureCollapsed: boolean;
   /** Whether the EAT panel can open (the rail item, the phone tab and the restored panel). */
   eatAvailability: EatAvailability;
   /** The EAT panel's settings differ from their defaults: the rail item's and the tab's dot. */
@@ -59,6 +64,7 @@ const EMPTY: WorkbenchStatus = {
   structureProteinId: null,
   datasetPhase: 'starting',
   structureSheet: 'folded',
+  structureCollapsed: false,
   eatAvailability: { kind: 'dataset' },
   eatAdjusted: false,
   eatAnnotationLabel: '',
@@ -105,9 +111,14 @@ export function eatUnavailableReason(availability: EatAvailability): string | nu
   return null;
 }
 
-/** The shell's one write to the status: the sheet's chevron, grip and header fold and expand it. */
+/** The shell's writes to the status: the sheet's chevron, grip and header fold and expand it. */
 export function setStructureSheet(state: StructureSheet): void {
   setWorkbenchStatus({ structureSheet: state });
+}
+
+/** A collapsed docked structure's chevron and header row expand it. */
+export function expandStructure(): void {
+  setWorkbenchStatus({ structureCollapsed: false });
 }
 
 /**

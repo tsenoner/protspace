@@ -50,6 +50,7 @@ export function Workbench() {
     appliedFilterConditions,
     datasetPhase,
     structureSheet,
+    structureCollapsed,
     eatAvailability,
     eatAdjusted,
   } = useWorkbenchStatus();
@@ -67,6 +68,8 @@ export function Workbench() {
   const structure = structureProteinId === null ? 'none' : placement;
   // The rail's Structure button hid the viewer: desktop only, and only once there is a protein.
   const structureHidden = desktop && structure !== 'none' && layout.structureHidden;
+  // A pick from the EAT panel keeps a desktop's docked structure to its header row.
+  const collapsed = desktop && structure === 'docked' && !structureHidden && structureCollapsed;
   // Phones show the structure as a sheet at the bottom edge, folded or expanded (decision 17).
   const sheet = hasStructureSheet(mode);
   const sidebarCap = useSyncExternalStore(subscribeWindowWidth, getSidebarCap);
@@ -101,6 +104,7 @@ export function Workbench() {
       data-layout={mode}
       data-structure={structure}
       data-structure-hidden={structureHidden ? '' : undefined}
+      data-structure-collapsed={collapsed ? '' : undefined}
       data-sidebar={phase}
       data-panel={panel}
       // The phone's bottom panel shows only its header (only phones fold it).
@@ -162,6 +166,7 @@ export function Workbench() {
           canFloat={desktop}
           sheet={sheet}
           sheetExpanded={structureSheet === 'expanded'}
+          collapsed={collapsed}
           legendFraction={legendFraction}
           onLegendFractionPreview={setLegendFractionPreview}
         />
