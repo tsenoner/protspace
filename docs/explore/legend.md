@@ -5,13 +5,15 @@ The legend panel lets you filter, customize, and explore protein annotations. Mo
 ## Rows
 
 Each category is one row: its colour, its name and its protein count. A long name ends in an
-ellipsis and shows in full on hover. Hovering a row shows three controls at its right:
+ellipsis and shows in full on hover. Hovering a row shows its controls:
 
-- an **eye**, which hides or shows the category,
-- a **drag handle**, which moves the row (see [Reordering](#reordering-and-draw-order)),
-- a **⋯** menu with **Show only this** and **Colour and shape**.
+- a **grip** in the margin left of the colour, which moves the row (see
+  [Reordering](#reordering-and-draw-order)),
+- an **eye** at the right, which hides or shows the category,
+- a **⋯** menu at the right, with **Show only this** and **Colour and shape**.
 
-On a touch screen the controls are always shown and every row is a 40 px target.
+On a touch screen the controls are always shown, the grip sits inside the row before the colour,
+and every row is a 40 px target.
 
 ## Show And Hide Values
 
@@ -35,13 +37,13 @@ the focused row, and **i** shows only it.
 
 ## Reordering And Draw Order
 
-Drag a row by its handle up or down to change the draw order in the scatterplot. Items near the top
+Drag a row by its grip up or down to change the draw order in the scatterplot. Items near the top
 are drawn on top of items below them.
 
 ![Dragging a row to the top, then sorting the legend by count](./images/legend-reorder.gif)
 
-Dragging switches the annotation's order to **Your order**. On a touch screen, hold the handle for a
-moment, then drag. From the keyboard, focus a row's handle, press **Space** to pick the row up, move
+Dragging switches the annotation's order to **Your order**. On a touch screen, hold the grip for a
+moment, then drag. From the keyboard, focus a row's grip, press **Space** to pick the row up, move
 it with the arrow keys and press **Space** again to drop it (**Escape** cancels).
 
 ## The "Other" Group
@@ -104,10 +106,10 @@ The sliders button in the legend's header opens **Legend settings** for the sele
 as you make them: there is no Save button. A number applies a moment after you stop typing, or at
 once on **Enter** or when you leave the field.
 
-![The Legend settings popover open over the legend: palettes, Max legend items, Shape size, duplicate counts and Reset](./images/legend-settings.png){.light-only}
-![The Legend settings popover open over the legend: palettes, Max legend items, Shape size, duplicate counts and Reset](./images/legend-settings-dark.png){.dark-only}
+![The Legend settings popover open over the legend: palettes, Max legend items, Shape size, duplicate counts and Reset to defaults](./images/legend-settings.png){.light-only}
+![The Legend settings popover open over the legend: palettes, Max legend items, Shape size, duplicate counts and Reset to defaults](./images/legend-settings-dark.png){.dark-only}
 
-**Reset**, at the bottom, restores the defaults for the selected annotation: its colours, order,
+**Reset to defaults**, at the bottom, restores the defaults for the selected annotation: its colours, order,
 hidden categories, palette and item count, and the dataset's point size. It is unavailable while
 nothing is changed.
 
@@ -134,7 +136,7 @@ Legend settings show the dataset's default under the size field. A size you type
 dataset and exported with **Include legend settings**. A size a bundle sets for an annotation, other
 than 10 or 30, also overrides the default. To return to the default, clear the size field. This
 drops the size you picked and every size a bundle set per annotation, but keeps the annotation's
-other settings. `Reset` does the same for the size, and also resets the selected annotation's
+other settings. **Reset to defaults** does the same for the size, and also resets the selected annotation's
 colours, order and hidden values.
 
 ### Numeric Bin Distribution
@@ -257,7 +259,7 @@ Legend settings are saved per dataset and per annotation in the browser.
 - Numeric hidden values and your order are only restored when the current numeric topology still matches the saved one
 - The shape size is the exception: it is saved once per dataset, applies to every annotation, and
   travels in exported bundles with **Include legend settings**
-- Use `Reset` in Legend settings to clear saved preferences for the selected annotation; it also
+- Use **Reset to defaults** in Legend settings to clear saved preferences for the selected annotation; it also
   clears the dataset's shape size and every annotation's own size, including sizes a bundle set
   per annotation, so the [default](#default-dot-size) applies to every annotation again
 
