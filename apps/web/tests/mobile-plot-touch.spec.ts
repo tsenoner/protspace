@@ -253,13 +253,17 @@ test.describe('the plot on a 360 px phone', () => {
       '1 protein selected',
     );
     await expect(selectionBar(page)).toBeVisible();
-    const bar = await box(selectionBar(page));
-    const area = await box(plotArea(page));
-    expect(bar.x).toBeGreaterThanOrEqual(area.x);
-    expect(bar.x + bar.width).toBeLessThanOrEqual(area.x + area.width);
-    expect(bar.y + bar.height).toBeLessThanOrEqual(area.y + area.height);
-    // The status corner rises above the touch-sized bar (about 50 px under a coarse pointer).
-    expect(overlaps(await box(page.locator('#myPlotStatus')), bar)).toBe(false);
+    // Placement runs a frame after the bar shows: wait for it, then re-read until the boxes settle.
+    await expect(page.locator('#mySelectionBar')).toHaveCSS('translate', 'none');
+    await expect(async () => {
+      const bar = await box(selectionBar(page));
+      const area = await box(plotArea(page));
+      expect(bar.x).toBeGreaterThanOrEqual(area.x);
+      expect(bar.x + bar.width).toBeLessThanOrEqual(area.x + area.width);
+      expect(bar.y + bar.height).toBeLessThanOrEqual(area.y + area.height);
+      // The status corner rises above the touch-sized bar (about 50 px under a coarse pointer).
+      expect(overlaps(await box(page.locator('#myPlotStatus')), bar)).toBe(false);
+    }).toPass();
   });
 });
 

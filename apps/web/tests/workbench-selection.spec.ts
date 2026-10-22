@@ -361,10 +361,14 @@ test.describe('plot tools and selection', () => {
     await selectBySearch(page, ids.slice(0, 1));
     await expect(selectionBar(page)).toBeVisible();
 
-    // The bar moves right of the status corner, which stays where it was (no lift).
-    const chip = (await statusChip(page, 'isolation').boundingBox())!;
-    const bar = (await selectionBar(page).boundingBox())!;
-    expect(chip.x + chip.width).toBeLessThanOrEqual(bar.x);
+    // The bar moves right of the status corner, which stays where it was (no lift). Placement
+    // runs a frame after the bar shows, so wait for it and re-read the boxes until they settle.
+    await expect(page.locator('#mySelectionBar')).toHaveCSS('translate', 'none');
+    await expect(async () => {
+      const chip = (await statusChip(page, 'isolation').boundingBox())!;
+      const bar = (await selectionBar(page).boundingBox())!;
+      expect(chip.x + chip.width).toBeLessThanOrEqual(bar.x);
+    }).toPass();
 
     // Tab reads left to right: the chip's ✕ comes before the bar's first action.
     const chipClear = statusChip(page, 'isolation').getByRole('button', {
