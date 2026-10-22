@@ -45,41 +45,49 @@ interface EatCardView {
   onTraceSource(detail: { sourceId: string; sourceIndex: number }): void;
 }
 
-/** A source's own values in words: `curated Type A`, `predicted Type B`, or '' without any. */
-function valuesOf(view: EatCardView, protein: number): string {
+/** Whether a source's own value is curated or predicted; '' when it has none. */
+function originOf(view: EatCardView, protein: number): string {
   const { data, annotation, index } = view;
-  const cell = data.annotation_predicted?.[annotation]?.[protein];
-  if (cell) return `predicted ${getPredictedCellValues(cell).join(', ')}`;
+  if (data.annotation_predicted?.[annotation]?.[protein]) return 'predicted';
+  return index.curatedOffsets[protein] < index.curatedOffsets[protein + 1] ? 'curated' : '';
+}
+
+/** A curated protein's own labels. */
+function curatedLabels(index: EatIndex, protein: number): string[] {
   const labels: string[] = [];
   for (let h = index.curatedOffsets[protein]; h < index.curatedOffsets[protein + 1]; h++) {
     labels.push(index.labels[index.curatedHits[h]]);
   }
-  return labels.length > 0 ? `curated ${labels.join(', ')}` : '';
+  return labels;
 }
 
 const proteins = (count: number) => countNoun(count, 'protein', 'proteins');
 
-/** `P01391 lent its label to 34 proteins ›`: draws the source's lines without selecting it. */
+/** `lent to 34`: draws the source's lines without selecting it. Its name says it in full. */
 function lentLink(
   view: EatCardView,
   sourceId: string,
   sourceIndex: number,
-  text: string,
+  count: number,
 ): TemplateResult {
   return html`<button
     type="button"
     class="eat-card-link"
+    aria-label=${`${sourceId} lent its label to ${proteins(count)}`}
     @click=${() => view.onTraceSource({ sourceId, sourceIndex })}
   >
-    ${text} <span aria-hidden="true">›</span>
+    lent to ${formatCount(count)}
   </button>`;
 }
 
+const eyebrow = html`<p class="eat-card-eyebrow" aria-hidden="true">Selected protein</p>`;
+
 /**
- * The selected protein's card (Decision 4): for a prediction of the Color by annotation, its
- * label(s), the protein it was copied from, its reliability and rank, Go to source and how many
- * proteins that source lent to; for a source, its own value and its lent count. Anything else,
- * nothing.
+ * The selected protein's strip, docked at the bottom of the panel (Decision 4, U21): for a
+ * prediction of the Color by annotation, a ring in its label's colour, its id, label(s) and
+ * reliability; the protein it came from, whether that one is curated or predicted, how many it
+ * lent to (a link that draws them) and Go to source; then its rank. For a source, its own labels
+ * and its lent count. Anything else, nothing.
  */
 export function renderCard(view: EatCardView): TemplateResult | typeof nothing {
   const { data, annotation, index, protein, labelColors, facts } = view;
@@ -90,60 +98,80 @@ export function renderCard(view: EatCardView): TemplateResult | typeof nothing {
 
   if (!cell) {
     if (ownLent === 0) return nothing;
-    const values = valuesOf(view, protein);
+    const labels = curatedLabels(index, protein);
+    const color = swatchColor(labelColors, labels[0] ?? '');
     return html`<section class="eat-card" aria-label="Selected protein">
-      <p class="eat-card-title">${id}${values ? ` · ${values}` : ''}</p>
-      ${lentLink(view, id, protein, `lent its label to ${proteins(ownLent)}`)}
+      ${eyebrow}
+      <p class="eat-card-title">
+        <span
+          class="eat-swatch"
+          style=${color ? `background:${color}` : nothing}
+          aria-hidden="true"
+        ></span>
+        <span class="eat-card-id">${id}</span>
+        <span class="eat-card-labels" title=${labels.join(', ')}>${labels.join(', ')}</span>
+      </p>
+      <p class="eat-card-line">
+        ${labels.length > 0 ? 'Curated · ' : ''}${lentLink(view, id, protein, ownLent)}
+      </p>
     </section>`;
   }
 
   const labels = getPredictedCellValues(cell);
+  const labelText = labels.join(', ');
   const color = swatchColor(labelColors, labels[0] ?? '');
   const sourceId = cell.source;
   const { rank, sourceIndex } = facts;
-  const sourceValues = sourceIndex === null ? '' : valuesOf(view, sourceIndex);
-  const copiedFrom =
-    sourceIndex === null
-      ? `${sourceId} (not in this dataset)`
-      : `${sourceId}${sourceValues ? ` · ${sourceValues}` : ''}`;
+  const origin = sourceIndex === null ? 'not in this dataset' : originOf(view, sourceIndex);
   const sourceLent = index.lentCount.get(sourceId) ?? 0;
-  const sourceLentText = `${sourceId} lent its label to ${proteins(sourceLent)}`;
 
   return html`<section class="eat-card" aria-label="Selected protein">
+    ${eyebrow}
     <p class="eat-card-title">
       <span
         class="eat-ring"
         style=${color ? `border-color:${color}` : nothing}
         aria-hidden="true"
       ></span>
-      <span class="eat-card-labels">${labels.join(', ')}</span>
       <span class="eat-card-id">${id}</span>
+      <span class="eat-card-labels" title=${labelText}>${labelText}</span>
+      <span class="eat-card-reliability">${formatPercent(cell.confidence)}</span>
     </p>
-    <p class="eat-card-line">Copied from ${copiedFrom}</p>
-    <p class="eat-card-line">
-      Reliability
-      ${cell.confidence.toFixed(2)}${rank
-        ? // Floored: the strongest of 659 is higher than 99 %, never than 100 %, of them.
-          ` · higher than ${formatPercent(Math.floor((rank.below / rank.total) * 100) / 100)} of ${formatCount(rank.total)}`
-        : ''}
-    </p>
-    <div class="eat-card-actions">
-      <ps-button
-        size="sm"
-        class="eat-go-to-source"
-        ?disabled=${sourceIndex === null}
-        @click=${() => {
-          if (sourceIndex !== null)
-            view.onGoToSource({ targetId: id, targetIndex: protein, sourceId });
-        }}
-        >Go to source</ps-button
-      >${sourceIndex === null ? html`<ps-tooltip text=${UNRESOLVED_REASON}></ps-tooltip>` : nothing}
+    <div class="eat-card-source-row">
+      <p class="eat-card-line">
+        from <span class="eat-card-source">${sourceId}</span>${origin ? `, ${origin}` : ''}
+        <span class="eat-card-lent"
+          >${sourceIndex === null
+            ? `· lent to ${formatCount(sourceLent)}`
+            : html`· ${lentLink(view, sourceId, sourceIndex, sourceLent)}`}</span
+        >
+        ${ownLent > 0
+          ? html`<span class="eat-card-lent">· ${id} ${lentLink(view, id, protein, ownLent)}</span>`
+          : nothing}
+      </p>
+      <span class="eat-card-actions">
+        <ps-button
+          size="sm"
+          variant="primary"
+          class="eat-go-to-source"
+          ?disabled=${sourceIndex === null}
+          @click=${() => {
+            if (sourceIndex !== null)
+              view.onGoToSource({ targetId: id, targetIndex: protein, sourceId });
+          }}
+          >Go to source</ps-button
+        >${sourceIndex === null
+          ? html`<ps-tooltip text=${UNRESOLVED_REASON}></ps-tooltip>`
+          : nothing}
+      </span>
     </div>
-    ${sourceIndex === null
-      ? html`<p class="eat-card-line">${sourceLentText}</p>`
-      : lentLink(view, sourceId, sourceIndex, sourceLentText)}
-    ${ownLent > 0
-      ? lentLink(view, id, protein, `${id} lent its label to ${proteins(ownLent)}`)
+    ${rank
+      ? html`<p class="eat-card-rank">
+          ${
+            // Floored: the strongest of 659 is higher than 99 %, never than 100 %, of them.
+            `Higher than ${formatPercent(Math.floor((rank.below / rank.total) * 100) / 100)} of ${formatCount(rank.total)} predictions`
+          }
+        </p>`
       : nothing}
   </section>`;
 }

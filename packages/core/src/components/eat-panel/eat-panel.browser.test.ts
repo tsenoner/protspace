@@ -163,8 +163,8 @@ describe('protspace-eat-panel', () => {
 
   it('shows the overview numbers', async () => {
     const el = await mount();
-    expect(text(el, '.eat-counts')).toBe('4 curated · 5 predicted (5 kept) · 1 none');
-    expect(text(el, '.eat-readout')).toBe(`Keeps 5 of 5 predictions (100${PCT})`);
+    expect(text(el, '.eat-counts')).toBe('4 curated 5 predicted 1 with no value');
+    expect(text(el, '.eat-readout')).toBe('5 of 5 predictions in range');
   });
 
   it('draws 20 bars and shades the kept range', async () => {
@@ -189,7 +189,7 @@ describe('protspace-eat-panel', () => {
     await el.updateComplete;
     // The shading and readout follow the drag at once; the emit waits out the debounce.
     expect(bars(el)[11].dataset.kept).toBe('false');
-    expect(text(el, '.eat-readout')).toBe(`Keeps 2 of 5 predictions (40${PCT})`);
+    expect(text(el, '.eat-readout')).toBe('2 of 5 predictions in range');
     vi.advanceTimersByTime(EAT_THRESHOLD_COMMIT_DELAY_MS - 1);
     expect(details).toHaveLength(0);
     vi.advanceTimersByTime(1);
@@ -245,10 +245,10 @@ describe('protspace-eat-panel', () => {
       return [...control.shadowRoot!.querySelectorAll<HTMLElement>('[role="radio"]')];
     }
 
-    it('offers Hide (filter) and Dim; Dim emits eat-outcome-change and leaves the defaults', async () => {
+    it('offers Hide and Fade; Fade emits eat-outcome-change and leaves the defaults', async () => {
       const el = await mount();
       const options = await outcome(el);
-      expect(options.map((o) => o.textContent?.trim())).toEqual(['Hide (filter)', 'Dim']);
+      expect(options.map((o) => o.textContent?.trim())).toEqual(['Hide', 'Fade']);
       expect(el.outcome).toBe('hide');
       const outcomes: unknown[] = [];
       el.addEventListener('eat-outcome-change', (event) =>
@@ -272,7 +272,7 @@ describe('protspace-eat-panel', () => {
       expect(el.outcome).toBe('hide');
     });
 
-    it('a weak drill-down row says Dimmed in Dim; reset() and a new dataset go back to Hide', async () => {
+    it('a weak drill-down row says Faded in Fade; reset() and a new dataset go back to Hide', async () => {
       const el = await mount();
       el.setReliabilityState({ min: 0.99, max: 1 });
       (await outcome(el))[1].click();
@@ -281,7 +281,7 @@ describe('protspace-eat-panel', () => {
         .find((bar) => !bar.hasAttribute('data-empty'))!
         .click();
       await el.updateComplete;
-      expect(text(el, '.eat-drill-hidden')).toBe('Dimmed, outside the range');
+      expect(text(el, '.eat-drill-hidden')).toBe('Faded, outside the range');
 
       el.reset();
       await el.updateComplete;
@@ -310,7 +310,7 @@ describe('protspace-eat-panel', () => {
       const lines = root(el).querySelector<HTMLElement & { value: string }>(
         '.eat-drawing ps-select',
       )!;
-      expect(trace.textContent?.trim()).toBe('Trace source on click');
+      expect(trace.textContent?.trim()).toBe('Draw a line to the source when I click a protein');
       expect(trace.checked).toBe(true);
       expect(lines.value).toBe('20');
 
@@ -363,7 +363,7 @@ describe('protspace-eat-panel', () => {
     await el.updateComplete;
     expect(details.map((d) => d.enabled)).toEqual([false]);
     expect(el.overlayEnabled).toBe(false);
-    expect(text(el, '.eat-counts')).toBe('4 curated · 5 predicted (hidden)');
+    expect(text(el, '.eat-counts')).toBe('4 curated 5 predicted (hidden) 1 with no value');
     const section = root(el).querySelector<HTMLElement>('.eat-reliability')!;
     // Greyed, but the bars and their lists still work: only the threshold controls are disabled.
     expect(section.classList.contains('is-off')).toBe(true);
@@ -401,7 +401,7 @@ describe('protspace-eat-panel', () => {
     // Enter opens the focused bar's list (1 prediction at 100 %).
     await userEvent.keyboard('{Enter}');
     await el.updateComplete;
-    expect(text(el, '.eat-drill-heading')).toBe(`Weakest in 95–100${PCT}`);
+    expect(text(el, '.eat-drill-heading')).toBe(`1 least reliable in 95–100${PCT}`);
     await userEvent.keyboard('{Home}');
     await el.updateComplete;
     expect(tabStops()).toEqual([bars(el)[0]]);
@@ -419,7 +419,7 @@ describe('protspace-eat-panel', () => {
     el.context = mask(['P0', 'P9']);
     await el.updateComplete;
     expect(text(el, '.eat-in-view')).toBe('In view: 8 of 10');
-    expect(text(el, '.eat-counts')).toBe('3 curated · 4 predicted (4 kept) · 1 none');
+    expect(text(el, '.eat-counts')).toBe('3 curated 4 predicted 1 with no value');
   });
 
   it('renders the empty-view message when the context holds no prediction', async () => {
@@ -481,7 +481,7 @@ describe('protspace-eat-panel', () => {
       }
     });
 
-    it('shows total and predicted share, amber above 80 %, as buttons for the drill-down', async () => {
+    it('shows total, predicted share and typical reliability, tagged above 80 %, as buttons', async () => {
       const el = await mount({
         data: labelData(SPEC),
         annotation: 'cls',
@@ -494,24 +494,26 @@ describe('protspace-eat-panel', () => {
         root(el).querySelector<HTMLButtonElement>(`.eat-label-row[data-label="${label}"]`)!;
       expect(row('B').getAttribute('aria-expanded')).toBe('false');
       expect(row('B').querySelector('.eat-label-total')!.textContent).toBe('5');
-      expect(row('B').querySelector('.eat-label-share')!.textContent).toBe(`100${PCT}`);
-      expect(row('B').querySelector('.eat-label-share')!.classList).toContain(
-        'is-mostly-predicted',
+      expect(row('B').querySelector('.eat-label-share')!.textContent).toBe(
+        `5 predicted (100${PCT}) · typical reliability 40${PCT}`,
       );
-      expect(row('A').querySelector('.eat-label-share')!.textContent).toBe(`75${PCT}`);
-      expect(row('A').querySelector('.eat-label-share')!.classList).not.toContain(
-        'is-mostly-predicted',
+      expect(row('B').querySelector('.eat-label-tag')!.textContent).toBe('Mostly predicted');
+      expect(row('B').getAttribute('aria-label')).toBe(
+        `B: 5 proteins, 5 predicted (100${PCT}) · typical reliability 40${PCT}, mostly predicted`,
       );
+      expect(row('A').querySelector('.eat-label-share')!.textContent).toBe(
+        `3 predicted (75${PCT}) · typical reliability 90${PCT}`,
+      );
+      expect(row('A').querySelector('.eat-label-tag')).toBeNull();
       const swatch = row('B').querySelector<HTMLElement>('.eat-swatch')!;
       expect(getComputedStyle(swatch).backgroundColor).toBe('rgb(255, 0, 0)');
       // A label in the legend's Other bucket takes Other's colour.
       const folded = row('A').querySelector<HTMLElement>('.eat-swatch')!;
       expect(getComputedStyle(folded).backgroundColor).toBe('rgb(0, 0, 255)');
-      // Bars are relative to the largest label (C, 6 members).
-      const width = (label: string) =>
-        row(label).querySelector<HTMLElement>('.eat-label-bar')!.style.width;
-      expect(width('C')).toBe('100%');
-      expect(width('A')).toBe('66.67%');
+      // Each bar is the label's own make-up, in the label's colour, at the same width.
+      const bar = (label: string) => row(label).querySelector<HTMLElement>('.eat-label-bar')!;
+      expect(bar('B').style.getPropertyValue('--eat-ink')).toBe('rgb(255, 0, 0)');
+      expect(bar('C').getBoundingClientRect().width).toBe(bar('A').getBoundingClientRect().width);
     });
 
     it('shows 8 rows, then Show all', async () => {
@@ -580,20 +582,20 @@ describe('protspace-eat-panel', () => {
   });
 
   describe('compact (phone)', () => {
-    it('folds Drawing and the other annotations into Display options, without the Drawing heading', async () => {
+    it('folds Drawing and the other annotations into Display options, as on desktop', async () => {
       const el = await mount({ data: fixtureWithOthers() });
-      expect(text(el, '.eat-drawing .eat-heading')).toBe('Drawing');
-      expect(root(el).querySelector('.eat-display')).toBeNull();
+      expect(text(el, '.eat-display > summary')).toBe(
+        'Display options Source lines on click · up to 20 from one source',
+      );
 
       el.compact = true;
       await el.updateComplete;
       expect(el.hasAttribute('compact')).toBe(true);
       const display = root(el).querySelector<HTMLDetailsElement>('details.eat-display')!;
-      expect(text(el, '.eat-display > summary')).toBe('Display options');
       expect(display.open).toBe(false);
       expect(root(el).querySelector('.eat-drawing .eat-heading')).toBeNull();
       expect(display.querySelector('.eat-drawing ps-switch')?.textContent?.trim()).toBe(
-        'Trace source on click',
+        'Draw a line to the source when I click a protein',
       );
       expect(display.querySelector('.eat-others, .eat-neighbour')).not.toBeNull();
       // The histogram is the phone's 56 px.
@@ -640,15 +642,15 @@ describe('protspace-eat-panel', () => {
       bars(el)[10].click();
       await el.updateComplete;
       expect(bars(el)[10].getAttribute('aria-expanded')).toBe('true');
-      expect(text(el, '.eat-drill-heading')).toBe(`Weakest in 50–55${PCT}`);
+      expect(text(el, '.eat-drill-heading')).toBe(`5 least reliable in 50–55${PCT}`);
       expect(drillIds(el)).toEqual(['Q5', 'Q2', 'Q4', 'Q3', 'Q1']);
-      expect(text(el, '.eat-drill-row')).toBe(`Q5 51${PCT} A`);
-      expect(text(el, '.eat-drill-count')).toBe('5 of 6');
-      expect(text(el, '.eat-drill-select')).toBe('Select all 6 kept');
+      expect(text(el, '.eat-drill-row')).toBe(`Q5 51${PCT} from S`);
+      expect(text(el, '.eat-drill-count')).toBe('Showing 5 of 6');
+      expect(text(el, '.eat-drill-select')).toBe('Select all 6 in range');
       // An empty bar opens nothing.
       bars(el)[0].click();
       await el.updateComplete;
-      expect(text(el, '.eat-drill-heading')).toBe(`Weakest in 50–55${PCT}`);
+      expect(text(el, '.eat-drill-heading')).toBe(`5 least reliable in 50–55${PCT}`);
     });
 
     it('a label row lists the label’s weakest; Select all emits its kept ids', async () => {
@@ -659,11 +661,11 @@ describe('protspace-eat-panel', () => {
       await el.updateComplete;
       expect(labelRow(el, 'B').getAttribute('aria-expanded')).toBe('true');
       expect(labelRow(el, 'B').parentElement!.querySelector('.eat-drill')).not.toBeNull();
-      expect(text(el, '.eat-drill-heading')).toBe('Weakest B');
+      expect(text(el, '.eat-drill-heading')).toBe('2 least reliable predictions');
       expect(drillIds(el)).toEqual(['Q8', 'Q7']);
       // In Hide a row outside the range says so, and stays clickable.
-      expect(text(el, '.eat-drill-row')).toBe(`Q8 20${PCT} B Hidden, outside the range`);
-      expect(text(el, '.eat-drill-count')).toBe('2 of 2');
+      expect(text(el, '.eat-drill-row')).toBe(`Q8 20${PCT} from S Hidden, outside the range`);
+      expect(text(el, '.eat-drill-count')).toBe('Showing 2 of 2');
       root(el).querySelector<HTMLButtonElement>('.eat-drill-select')!.click();
       expect(selected).toEqual([{ proteinIds: ['Q7'], zoom: false }]);
       root(el).querySelector<HTMLButtonElement>('.eat-drill-row')!.click();
@@ -684,7 +686,7 @@ describe('protspace-eat-panel', () => {
       labelRow(el, 'B').click();
       await el.updateComplete;
       // Nothing is hidden with Show off, so no row says so.
-      expect(text(el, '.eat-drill-row')).toBe(`Q8 20${PCT} B`);
+      expect(text(el, '.eat-drill-row')).toBe(`Q8 20${PCT} from S`);
       root(el).querySelector<HTMLButtonElement>('.eat-drill-row')!.click();
       expect(selected).toEqual([{ proteinIds: ['Q8'], zoom: true }]);
     });
@@ -725,7 +727,7 @@ describe('protspace-eat-panel', () => {
       expect(drills(el)).toHaveLength(0);
       const row = labelRow(el, 'A');
       expect(row.disabled).toBe(true);
-      expect(row.title).toBe('No predictions in view');
+      expect(row.querySelector('.eat-label-share')!.textContent).toBe('No predictions in view');
       expect(row.hasAttribute('aria-expanded')).toBe(false);
       expect(row.getAttribute('aria-label')).toContain('no predictions in view');
       row.click();
@@ -739,7 +741,7 @@ describe('protspace-eat-panel', () => {
       const el = await mount({ data, annotation: 'cls' });
       bars(el)[18].click();
       await el.updateComplete;
-      expect(text(el, '.eat-drill-heading')).toBe(`Weakest in 90–95${PCT}`);
+      expect(text(el, '.eat-drill-heading')).toBe(`1 least reliable in 90–95${PCT}`);
       el.context = Uint8Array.from(data.protein_ids, (id) => (id === 'Q7' ? 0 : 1));
       await el.updateComplete;
       expect(drills(el)).toHaveLength(0);
@@ -778,7 +780,7 @@ describe('protspace-eat-panel', () => {
       await el.updateComplete;
       expect(drills(el)).toHaveLength(1);
       expect(bars(el)[10].getAttribute('aria-expanded')).toBe('false');
-      expect(text(el, '.eat-drill-heading')).toBe('Weakest A');
+      expect(text(el, '.eat-drill-heading')).toBe('5 least reliable predictions');
       labelRow(el, 'A').click();
       await el.updateComplete;
       expect(drills(el)).toHaveLength(0);
@@ -799,6 +801,7 @@ describe('protspace-eat-panel', () => {
       [...root(el).querySelectorAll('.eat-card-line')].map((line) =>
         line.textContent!.replace(/[ \t\r\n]+/g, ' ').trim(),
       );
+    const rankLine = (el: ProtspaceEatPanel) => text(el, '.eat-card-rank');
     const links = (el: ProtspaceEatPanel) => [
       ...root(el).querySelectorAll<HTMLButtonElement>('.eat-card-link'),
     ];
@@ -816,35 +819,32 @@ describe('protspace-eat-panel', () => {
         focusProtein: at('P8'),
         labelColors: new Map([['C', 'rgb(255, 0, 0)']]),
       });
-      expect(text(el, '.eat-card-title')).toBe('C P8');
+      expect(text(el, '.eat-card-title')).toBe(`P8 C 81${PCT}`);
+      // Docked: the panel's last child, stuck to the bottom of the scroll area.
+      expect(root(el).lastElementChild).toBe(card(el));
+      expect(getComputedStyle(card(el)!).position).toBe('sticky');
       expect(root(el).querySelector<HTMLElement>('.eat-card .eat-ring')!.style.borderColor).toBe(
         'rgb(255, 0, 0)',
       );
       // 0.81 is above 3 of the 5 predictions (0.12, 0.55, 0.55).
-      expect(cardLines(el)).toEqual([
-        'Copied from P0 · curated A',
-        `Reliability 0.81 · higher than 60${PCT} of 5`,
-      ]);
+      expect(cardLines(el)).toEqual(['from P0, curated · lent to 1']);
+      expect(rankLine(el)).toBe(`Higher than 60${PCT} of 5 predictions`);
       expect(goToSource(el).disabled).toBe(false);
       const went = listen(el, 'eat-go-to-source');
       const traced = listen(el, 'eat-trace-source');
       goToSource(el).click();
       expect(went).toEqual([{ targetId: 'P8', targetIndex: at('P8'), sourceId: 'P0' }]);
-      expect(links(el).map((link) => link.textContent!.replace(/\s+/g, ' ').trim())).toEqual([
-        'P0 lent its label to 1 protein ›',
-      ]);
+      expect(links(el).map((link) => link.textContent!.trim())).toEqual(['lent to 1']);
+      expect(links(el)[0].getAttribute('aria-label')).toBe('P0 lent its label to 1 protein');
       links(el)[0].click();
       expect(traced).toEqual([{ sourceId: 'P0', sourceIndex: 0 }]);
     });
 
     it('says a source outside the dataset is not in it and disables Go to source', async () => {
       const el = await mount({ focusProtein: at('P9') });
-      expect(cardLines(el)).toEqual([
-        'Copied from S9 (not in this dataset)',
-        `Reliability 1.00 · higher than 80${PCT} of 5`,
-        // Still counted from the index, but there is nothing to draw.
-        'S9 lent its label to 1 protein',
-      ]);
+      // Still counted from the index, but there is nothing to draw.
+      expect(cardLines(el)).toEqual(['from S9, not in this dataset · lent to 1']);
+      expect(rankLine(el)).toBe(`Higher than 80${PCT} of 5 predictions`);
       expect(goToSource(el).disabled).toBe(true);
       expect(root(el).querySelector('.eat-card ps-tooltip')!.getAttribute('text')).toBe(
         'The source is not in this dataset',
@@ -858,20 +858,18 @@ describe('protspace-eat-panel', () => {
     it('lists every label of a multi-valued prediction', async () => {
       const el = await mount({ focusProtein: at('P5') });
       expect(text(el, '.eat-card-labels')).toBe('A, B');
-      expect(cardLines(el)[0]).toBe('Copied from S1 (not in this dataset)');
-      expect(cardLines(el)[1]).toBe(`Reliability 0.55 · higher than 20${PCT} of 5`);
-      expect(cardLines(el)[2]).toBe('S1 lent its label to 3 proteins');
+      expect(cardLines(el)).toEqual(['from S1, not in this dataset · lent to 3']);
+      expect(rankLine(el)).toBe(`Higher than 20${PCT} of 5 predictions`);
     });
 
     it('shows a source with its value and draws its lines from the lent link', async () => {
       const el = await mount({ focusProtein: at('P0') });
-      expect(text(el, '.eat-card-title')).toBe('P0 · curated A');
+      expect(text(el, '.eat-card-title')).toBe('P0 A');
+      expect(cardLines(el)).toEqual(['Curated · lent to 1']);
       expect(goToSource(el)).toBeNull();
       const traced = listen(el, 'eat-trace-source');
       expect(links(el)).toHaveLength(1);
-      expect(links(el)[0].textContent!.replace(/\s+/g, ' ').trim()).toBe(
-        'lent its label to 1 protein ›',
-      );
+      expect(links(el)[0].getAttribute('aria-label')).toBe('P0 lent its label to 1 protein');
       links(el)[0].click();
       expect(traced).toEqual([{ sourceId: 'P0', sourceIndex: 0 }]);
     });
@@ -883,7 +881,7 @@ describe('protspace-eat-panel', () => {
         annotation: 'cls',
         focusProtein: 199,
       });
-      expect(cardLines(el)[1]).toBe(`Reliability 0.80 · higher than 99${PCT} of 200`);
+      expect(rankLine(el)).toBe(`Higher than 99${PCT} of 200 predictions`);
     });
 
     it('shows no card for a curated non-source protein or no selection', async () => {
@@ -923,7 +921,7 @@ describe('protspace-eat-panel', () => {
       await el.updateComplete;
       const trigger = root(el).querySelector<HTMLElement>('.eat-readout-row .eat-export')!;
       let items = await openExport(el, trigger);
-      expect(items.map(itemText)).toEqual(['Kept predictions (3)', 'Outside the range (1)']);
+      expect(items.map(itemText)).toEqual(['In range (3)', 'Outside the range (1)']);
       items[0].click();
       await el.updateComplete;
       expect(exported).toEqual([
@@ -942,7 +940,7 @@ describe('protspace-eat-panel', () => {
         el,
         root(el).querySelector<HTMLElement>('.eat-readout-row .eat-export')!,
       );
-      expect(items.map(itemText)).toEqual(['Kept predictions (5)', 'Outside the range (0)']);
+      expect(items.map(itemText)).toEqual(['In range (5)', 'Outside the range (0)']);
       expect(items.map((item) => item.disabled)).toEqual([false, true]);
       items[1].click();
       expect(exported).toEqual([]);
@@ -965,7 +963,7 @@ describe('protspace-eat-panel', () => {
         el,
         root(el).querySelector<HTMLElement>('.eat-drill-foot .eat-export')!,
       );
-      expect(items.map(itemText)).toEqual(['Kept predictions (1)', 'Outside the range (1)']);
+      expect(items.map(itemText)).toEqual(['In range (1)', 'Outside the range (1)']);
       items[1].click();
       expect(exported).toEqual([{ proteinIds: ['Q4'], fileName: 'cls-eat-outside-ids.txt' }]);
     });

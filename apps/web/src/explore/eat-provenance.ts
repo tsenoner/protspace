@@ -9,7 +9,7 @@ interface SourceCandidate {
 
 type SourceIndex = ReadonlyMap<string, readonly SourceCandidate[]>;
 
-/** A source's lines when no limit is given: the panel's default "Lines per source". */
+/** A source's lines when no limit is given: the panel's default "Most lines from one source". */
 const DEFAULT_LINES_PER_SOURCE = 20;
 
 function compareSourceCandidates(left: SourceCandidate, right: SourceCandidate): number {

@@ -55,39 +55,81 @@ export const eatPanelStyles = [
 
     .eat-overview {
       display: grid;
-      gap: var(--ps-space-1);
+      gap: var(--ps-space-1-5);
     }
 
-    .eat-stack {
+    /*
+     * The map's language (U21): curated is solid, a prediction in range hollow (a 2 px outline in
+     * the same ink), one outside the range dashed and faded, no value the empty track. The ink is
+     * the text colour here and the label's own colour in a label row.
+     */
+    .eat-stack,
+    .eat-label-bar,
+    .eat-counts {
+      --eat-ink: var(--ps-text);
+    }
+
+    .eat-stack,
+    .eat-label-bar {
       display: flex;
-      height: 8px;
-      overflow: hidden;
-      border-radius: var(--ps-radius-full);
-      background: var(--ps-surface-muted);
+      gap: 2px;
+      height: 10px;
     }
 
     .eat-segment {
+      box-sizing: border-box;
       min-width: 0;
+      border-radius: 3px;
     }
 
     .eat-segment[data-part='curated'] {
-      background: var(--ps-text);
+      background: var(--eat-ink);
     }
 
     .eat-segment[data-part='kept'] {
-      background: var(--ps-accent);
+      border: 2px solid var(--eat-ink);
     }
 
-    /* The same hue at 30 %, cross-hatched. */
     .eat-segment[data-part='outside'] {
-      background:
-        repeating-linear-gradient(135deg, transparent 0 2px, var(--ps-surface) 2px 3px),
-        var(--ps-accent);
-      opacity: 0.3;
+      border: 2px dashed var(--eat-ink);
+      opacity: 0.45;
     }
 
     .eat-segment[data-part='none'] {
-      background: var(--ps-border);
+      background: var(--ps-surface-hover);
+    }
+
+    .eat-counts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--ps-space-1) var(--ps-space-3);
+    }
+
+    .eat-key-item {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--ps-space-1);
+      white-space: nowrap;
+    }
+
+    .eat-key-mark {
+      box-sizing: border-box;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+    }
+
+    .eat-key-mark[data-part='curated'] {
+      background: var(--eat-ink);
+    }
+
+    .eat-key-mark[data-part='kept'] {
+      border: 2px solid var(--eat-ink);
+    }
+
+    .eat-key-mark[data-part='outside'] {
+      border: 2px dashed var(--eat-ink);
+      opacity: 0.45;
     }
 
     .eat-counts,
@@ -109,6 +151,12 @@ export const eatPanelStyles = [
       gap: var(--ps-space-1-5);
     }
 
+    .eat-help {
+      margin: 0;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+    }
+
     .eat-lines-row,
     .eat-outcome-row {
       display: flex;
@@ -118,20 +166,17 @@ export const eatPanelStyles = [
       gap: var(--ps-space-2);
     }
 
+    /* A section's question (U21), under the shell's h2. */
     .eat-heading {
       margin: 0;
-      font-size: var(--ps-text-xs);
+      color: var(--ps-text);
+      font-size: var(--ps-text-sm);
       font-weight: var(--ps-weight-semibold);
-      color: var(--ps-text-muted);
-      text-transform: uppercase;
     }
 
     .eat-range-row {
       display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--ps-space-2);
+      justify-content: flex-end;
     }
 
     .eat-bounds {
@@ -315,9 +360,10 @@ export const eatPanelStyles = [
 
     .eat-breakdown-head {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: var(--ps-space-2);
+      gap: var(--ps-space-1) var(--ps-space-2);
     }
 
     .eat-label-list,
@@ -328,14 +374,12 @@ export const eatPanelStyles = [
       list-style: none;
     }
 
-    /* swatch · name · bar · total · share */
+    /* Two lines: swatch · name · tag · total, then the label's bar and its facts in words. */
     .eat-label-row {
       display: grid;
-      grid-template-columns: 10px minmax(0, 1fr) 30% auto 2.6rem;
-      align-items: center;
-      gap: var(--ps-space-1-5);
+      gap: var(--ps-space-0-5);
       width: 100%;
-      padding: var(--ps-space-1) var(--ps-space-1);
+      padding: var(--ps-space-1);
       border: none;
       border-radius: var(--ps-radius-sm);
       background: none;
@@ -345,6 +389,10 @@ export const eatPanelStyles = [
       font-variant-numeric: tabular-nums;
       text-align: left;
       cursor: pointer;
+    }
+
+    .eat-label-list > li + li {
+      border-top: 1px solid var(--ps-border);
     }
 
     /* In view, but every member there is curated: no list to open. */
@@ -358,7 +406,15 @@ export const eatPanelStyles = [
       background: var(--ps-surface-hover);
     }
 
+    .eat-label-line {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-1-5);
+      min-width: 0;
+    }
+
     .eat-swatch {
+      flex: none;
       width: 10px;
       height: 10px;
       box-sizing: border-box;
@@ -366,37 +422,46 @@ export const eatPanelStyles = [
       border-radius: 50%;
     }
 
+    /* The full name: it wraps, never cut off. */
     .eat-label-name {
-      overflow: hidden;
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .eat-label-tag {
+      flex: none;
+      padding: 0 var(--ps-space-1);
+      border-radius: var(--ps-radius-sm);
+      background: color-mix(in srgb, var(--ps-warning) 14%, transparent);
+      color: var(--ps-warning);
+      font-size: 0.6875rem;
+      font-weight: var(--ps-weight-semibold);
       white-space: nowrap;
-      text-overflow: ellipsis;
     }
 
-    .eat-label-track {
-      display: flex;
-      height: 6px;
-    }
-
-    .eat-label-bar {
-      display: flex;
-      height: 100%;
-      overflow: hidden;
-      border-radius: var(--ps-radius-full);
-    }
-
-    .eat-label-total,
-    .eat-label-share {
-      text-align: right;
-    }
-
-    .eat-label-share {
+    .eat-label-total {
+      flex: none;
       color: var(--ps-text-muted);
     }
 
-    /* Mostly borrowed: more than 80 % of the label's members are predictions. */
-    .eat-label-share.is-mostly-predicted {
-      color: var(--ps-warning);
-      font-weight: var(--ps-weight-semibold);
+    /* Under the name: the bar (the swatch's width plus the gap in) and the facts. */
+    .eat-label-facts {
+      align-items: flex-start;
+      padding-left: calc(10px + var(--ps-space-1-5));
+    }
+
+    /* On the facts' first line when they wrap. */
+    .eat-label-bar {
+      flex: none;
+      width: 70px;
+      height: 8px;
+      margin-top: 0.25em;
+    }
+
+    .eat-label-share {
+      min-width: 0;
+      color: var(--ps-text-muted);
     }
 
     .eat-show-all,
@@ -422,6 +487,17 @@ export const eatPanelStyles = [
     .eat-display > summary {
       color: var(--ps-text-muted);
       font-weight: var(--ps-weight-semibold);
+    }
+
+    .eat-display-title {
+      color: var(--ps-text);
+    }
+
+    /* What the drawing is set to, under the closed disclosure's name. */
+    .eat-display-state {
+      display: block;
+      padding-left: 1em;
+      font-weight: normal;
     }
 
     .eat-display-body {
@@ -469,7 +545,7 @@ export const eatPanelStyles = [
 
     .eat-drill-heading {
       margin: 0;
-      color: var(--ps-text-muted);
+      color: var(--ps-text);
       font-size: var(--ps-text-xs);
       font-weight: var(--ps-weight-semibold);
     }
@@ -484,7 +560,7 @@ export const eatPanelStyles = [
     /* ring · id · reliability · label, then "Hidden, outside the range" on its own line */
     .eat-drill-row {
       display: grid;
-      grid-template-columns: 10px auto 2.6rem minmax(0, 1fr);
+      grid-template-columns: 10px minmax(auto, 5.5rem) 2.6rem minmax(0, 1fr);
       align-items: center;
       column-gap: var(--ps-space-1-5);
       width: 100%;
@@ -521,6 +597,7 @@ export const eatPanelStyles = [
     .eat-drill-label {
       min-width: 0;
       overflow: hidden;
+      font-variant-numeric: normal;
       color: var(--ps-text-muted);
       white-space: nowrap;
       text-overflow: ellipsis;
@@ -563,15 +640,37 @@ export const eatPanelStyles = [
       font-variant-numeric: tabular-nums;
     }
 
-    /* The selected protein's card: label(s) and id, then copied from, reliability, actions, links. */
+    /*
+     * The selected protein (U21): docked at the bottom of the panel's scroll area, always in view.
+     * It is the host's last child, so at the end of the scroll it sits after the last row and
+     * covers nothing. The shell sets --eat-dock-inset to its padding, so the strip runs edge to
+     * edge and down to the scroll area's bottom.
+     */
     .eat-card {
+      position: sticky;
+      bottom: calc(-1 * var(--eat-dock-inset, 0px));
+      z-index: 1;
       display: grid;
-      gap: var(--ps-space-1);
-      padding: var(--ps-space-2);
-      border: 1px solid var(--ps-border);
-      border-radius: var(--ps-radius-sm);
+      gap: var(--ps-space-0-5);
+      margin: 0 calc(-1 * var(--eat-dock-inset, 0px)) calc(-1 * var(--eat-dock-inset, 0px));
+      padding: var(--ps-space-1-5) max(var(--eat-dock-inset, 0px), var(--ps-space-2));
+      border-top: 2px solid var(--ps-accent);
       background: var(--ps-surface-muted);
       font-size: var(--ps-text-xs);
+    }
+
+    /* Scrolled to (or focused), a control stops above the dock, not under it. */
+    :host * {
+      scroll-margin-bottom: calc(var(--eat-dock-height, 0px) + var(--ps-space-2));
+    }
+
+    .eat-card-eyebrow {
+      margin: 0;
+      color: var(--ps-accent-text);
+      font-size: 0.625rem;
+      font-weight: var(--ps-weight-semibold);
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
     }
 
     .eat-card-title {
@@ -581,35 +680,61 @@ export const eatPanelStyles = [
       min-width: 0;
       margin: 0;
       color: var(--ps-text);
+    }
+
+    .eat-card-title > :is(.eat-ring, .eat-swatch) {
+      flex: none;
+    }
+
+    .eat-card-id,
+    .eat-card-reliability {
+      flex: none;
       font-weight: var(--ps-weight-semibold);
+      font-variant-numeric: tabular-nums;
     }
 
     .eat-card-labels {
+      flex: 1 1 auto;
       min-width: 0;
       overflow: hidden;
+      color: var(--ps-text-muted);
       white-space: nowrap;
       text-overflow: ellipsis;
     }
 
-    .eat-card-id {
-      margin-left: auto;
-      color: var(--ps-text-muted);
-      font-weight: normal;
+    /* The source line wraps beside Go to source rather than pushing it to a row of its own. */
+    .eat-card-source-row {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-2);
     }
 
-    .eat-card-line {
+    .eat-card-source-row > .eat-card-line {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+
+    .eat-card-line,
+    .eat-card-rank {
       margin: 0;
       color: var(--ps-text-muted);
       font-variant-numeric: tabular-nums;
     }
 
+    .eat-card-source {
+      color: var(--ps-text);
+    }
+
+    .eat-card-lent {
+      white-space: nowrap;
+    }
+
     .eat-card-actions {
       display: flex;
-      gap: var(--ps-space-1-5);
+      flex: none;
     }
 
     .eat-card-link {
-      justify-self: start;
       padding: 0;
       border: none;
       background: none;
@@ -626,6 +751,11 @@ export const eatPanelStyles = [
     /* Phone (proposal B §6): a shorter histogram. Target sizes follow the pointer, above. */
     :host([compact]) .eat-histogram {
       height: 56px;
+    }
+
+    /* The phone's panel is short: the dock keeps to its id, source and Go to source. */
+    :host([compact]) .eat-card-rank {
+      display: none;
     }
   `,
 ];

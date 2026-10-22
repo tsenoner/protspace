@@ -10,6 +10,7 @@ import {
 import { EAT_BIN_COUNT, isKept, type EatSummary } from './eat-summary';
 
 const BIN_WIDTH = 100 / EAT_BIN_COUNT;
+const RELIABILITY_HEADING = 'How reliable are the predictions?';
 const SKELETON_BARS = Array.from({ length: EAT_BIN_COUNT }, (_, bin) => bin);
 
 /** `55–60 %`, a bar's range. */
@@ -99,8 +100,9 @@ function renderHistogram(
 }
 
 /**
- * The reliability section (proposal B §4.4): the range's low and high % boxes, the histogram,
- * the two handles on the axis under it, the Outside the range outcome row, and the readout with
+ * The reliability section (proposal B §4.4): its question heading and helper line, the range's
+ * low and high % boxes, the histogram,
+ * the two handles on the axis under it, the outcome row for predictions outside the range, and the readout with
  * its Export IDs trigger. `summary` null is the loading skeleton, inert. With Show off the % boxes
  * and handles stay in the accessibility tree, disabled;
  * the bars and their lists keep working, so the section is only greyed, not aria-disabled.
@@ -117,11 +119,15 @@ export function renderReliability(
   const { predicted, kept } = summary ?? { predicted: 0, kept: 0 };
   return html`<section
     class=${off ? 'eat-reliability is-off' : 'eat-reliability'}
-    aria-label="Reliability"
+    aria-label=${RELIABILITY_HEADING}
     ?inert=${!summary}
   >
+    <h3 class="eat-heading">${RELIABILITY_HEADING}</h3>
+    <p class="eat-help">
+      Higher means the label came from a closer protein. Use it to compare predictions here, not as
+      a chance of being right.
+    </p>
     <div class="eat-range-row">
-      <h4 class="eat-heading">Reliability</h4>
       <span class="eat-bounds">
         ${EAT_BOUNDS.map(
           (bound, index) =>
@@ -140,8 +146,7 @@ export function renderReliability(
     ${predicted > 0
       ? html`<div class="eat-readout-row">
           <p class="eat-readout">
-            Keeps ${formatCount(kept)} of ${formatCount(predicted)} predictions
-            (${formatPercent(kept / predicted)})
+            ${formatCount(kept)} of ${formatCount(predicted)} predictions in range
           </p>
           ${exportButton}
         </div>`

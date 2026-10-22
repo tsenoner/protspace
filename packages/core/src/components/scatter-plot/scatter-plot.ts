@@ -93,7 +93,7 @@ const HIT_RADIUS_MIN_PX = 4;
 // half the 40 px touch target.
 const TOUCH_HIT_RADIUS_PX = 20;
 
-/** The most provenance pairs drawn at once: the EAT panel's largest "Lines per source". */
+/** The most provenance pairs drawn at once: the EAT panel's largest "Most lines from one source". */
 const PROVENANCE_CONNECTOR_CAP = 50;
 
 // D3 wheel zoom accumulates scale multiplicatively, so a symmetric round trip

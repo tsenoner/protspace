@@ -1,6 +1,7 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import {
   annotationLabel,
+  countNoun,
   formatCount,
   getEatNeighborBaseKey,
   hasEatPredictionsForAnnotation,
@@ -17,7 +18,7 @@ export type EatLabelSort = 'most-predicted' | 'least-reliable' | 'name';
 const SORT_OPTIONS: SelectOption[] = [
   { value: 'most-predicted', label: 'Most predicted' },
   { value: 'least-reliable', label: 'Least reliable' },
-  { value: 'name', label: 'Name' },
+  { value: 'name', label: 'A–Z' },
 ];
 
 /** A label's swatch colour; a label folded into the legend's Other bucket takes Other's. */
@@ -31,10 +32,13 @@ export function swatchColor(
 /** A label row's hint when every member in view is curated. */
 const NO_PREDICTIONS = 'No predictions in view';
 
+const BREAKDOWN_HEADING = 'Which labels rely on predictions?';
+
 /** Rows shown before "Show all". */
 const COLLAPSED_ROWS = 8;
-/** Above this share of predicted members a label is mostly borrowed, and its share turns amber. */
-const AMBER_SHARE = 0.8;
+/** Above this share of predicted members a label is mostly borrowed, and says so in a tag. */
+const MOSTLY_PREDICTED_SHARE = 0.8;
+const MOSTLY_PREDICTED = 'Mostly predicted';
 
 const byName = (a: EatLabelRow, b: EatLabelRow) => a.label.localeCompare(b.label);
 
@@ -68,38 +72,49 @@ interface EatBreakdownView {
   onRow(label: string): void;
 }
 
-function labelBar(row: EatLabelRow, widest: number): TemplateResult {
+/** The label's own make-up at full width: curated solid, in range hollow, outside dashed. */
+function labelBar(row: EatLabelRow, color: string | undefined): TemplateResult {
   const part = (name: string, count: number) =>
     count > 0
       ? html`<span class="eat-segment" data-part=${name} style=${`flex-grow:${count}`}></span>`
       : nothing;
-  return html`<span class="eat-label-track" aria-hidden="true">
-    <span
-      class="eat-label-bar"
-      style=${`width:${Number(((row.total / widest) * 100).toFixed(2))}%`}
-    >
-      ${part('curated', row.curated)} ${part('kept', row.kept)} ${part('outside', row.outside)}
-    </span>
+  return html`<span
+    class="eat-label-bar"
+    style=${color ? `--eat-ink:${color}` : nothing}
+    aria-hidden="true"
+  >
+    ${part('curated', row.curated)} ${part('kept', row.kept)} ${part('outside', row.outside)}
   </span>`;
 }
 
+/** `212 predicted (79 %) · typical reliability 46 %`, or the no-prediction hint. */
+function rowFacts(row: EatLabelRow): string {
+  const predicted = row.kept + row.outside;
+  if (predicted === 0) return NO_PREDICTIONS;
+  const typical =
+    row.medianReliability === null
+      ? ''
+      : ` · typical reliability ${formatPercent(row.medianReliability)}`;
+  return `${formatCount(predicted)} predicted (${formatPercent(row.predictedShare)})${typical}`;
+}
+
 /**
- * `By label` (proposal B §4.6): one row per label in the view, with its swatch, a bar of curated,
- * kept and outside-the-range members relative to the largest label, the total and the predicted
- * share. A row click opens the label's drill-down list under it.
+ * `Which labels rely on predictions?` (U21): one two-line row per label in the view. Line one: its
+ * swatch, full name, a `Mostly predicted` tag above 80 % and its protein count; line two: its
+ * own make-up as a bar, then its predicted count and share and its predictions' median
+ * reliability. A row click opens the label's drill-down list under it.
  */
 export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof nothing {
   if (view.rows.length === 0) return nothing;
   const sorted = sortLabelRows(view.rows, view.sort);
   const shown = view.showAll ? sorted : sorted.slice(0, COLLAPSED_ROWS);
-  const widest = Math.max(...view.rows.map((row) => row.total));
   // Show off greys the section, but its rows, Sort and lists keep working: not aria-disabled.
   return html`<section
     class=${view.off ? 'eat-breakdown is-off' : 'eat-breakdown'}
-    aria-label="By label"
+    aria-label=${BREAKDOWN_HEADING}
   >
     <div class="eat-breakdown-head">
-      <h4 class="eat-heading">By label</h4>
+      <h3 class="eat-heading">${BREAKDOWN_HEADING}</h3>
       <ps-select
         size="sm"
         label="Sort labels"
@@ -109,39 +124,45 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
           view.onSort((event.currentTarget as PsSelect).value as EatLabelSort)}
       ></ps-select>
     </div>
+    <p class="eat-help">Click a label to check its least reliable predictions.</p>
     <ul class="eat-label-list">
       ${shown.map((row) => {
-        const share = formatPercent(row.predictedShare);
         const color = swatchColor(view.labelColors, row.label);
         const open = view.openLabel === row.label;
         // Only curated members in view: nothing to list, so the row opens nothing.
         const noPredictions = row.kept + row.outside === 0;
+        const mostly = row.predictedShare > MOSTLY_PREDICTED_SHARE;
+        const facts = rowFacts(row);
+        const name = [
+          `${row.label}: ${countNoun(row.total, 'protein', 'proteins')}`,
+          noPredictions ? NO_PREDICTIONS.toLowerCase() : facts,
+          ...(mostly ? [MOSTLY_PREDICTED.toLowerCase()] : []),
+        ].join(', ');
         return html`<li>
           <button
             type="button"
             class="eat-label-row"
             data-label=${row.label}
             ?disabled=${noPredictions}
-            title=${noPredictions ? NO_PREDICTIONS : nothing}
             aria-expanded=${noPredictions ? nothing : String(open)}
             aria-controls=${open ? 'eat-drill' : nothing}
             @click=${() => view.onRow(row.label)}
-            aria-label=${`${row.label}: ${formatCount(row.total)}, ${share} predicted${noPredictions ? `, ${NO_PREDICTIONS.toLowerCase()}` : ''}`}
+            aria-label=${name}
           >
-            <span
-              class="eat-swatch"
-              style=${color ? `background:${color}` : nothing}
-              aria-hidden="true"
-            ></span>
-            <span class="eat-label-name" title=${row.label}>${row.label}</span>
-            ${labelBar(row, widest)}
-            <span class="eat-label-total">${formatCount(row.total)}</span>
-            <span
-              class=${row.predictedShare > AMBER_SHARE
-                ? 'eat-label-share is-mostly-predicted'
-                : 'eat-label-share'}
-              >${share}</span
-            >
+            <span class="eat-label-line">
+              <span
+                class="eat-swatch"
+                style=${color ? `background:${color}` : nothing}
+                aria-hidden="true"
+              ></span>
+              <span class="eat-label-name">${row.label}</span>
+              ${mostly ? html`<span class="eat-label-tag">${MOSTLY_PREDICTED}</span>` : nothing}
+              <span class="eat-label-total">${formatCount(row.total)}</span>
+            </span>
+            <span class="eat-label-line eat-label-facts">
+              ${labelBar(row, color)}
+              <span class="eat-label-share">${facts}</span>
+            </span>
           </button>
           ${open ? view.list : nothing}
         </li>`;

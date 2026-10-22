@@ -57,11 +57,11 @@ type LinesPerSource = 10 | 20 | 50;
 const DEFAULT_LINES_PER_SOURCE: LinesPerSource = 20;
 const LINES_OPTIONS = [10, 20, 50].map((n) => ({ value: String(n), label: String(n) }));
 
-/** What happens to the predictions the reliability filter drops: filtered out, or faded. */
+/** What happens to the predictions outside the range: filtered out, or faded (`dim`). */
 type EatOutcome = 'hide' | 'dim';
 const OUTCOME_OPTIONS: SegmentedOption[] = [
-  { value: 'hide', label: 'Hide (filter)' },
-  { value: 'dim', label: 'Dim' },
+  { value: 'hide', label: 'Hide' },
+  { value: 'dim', label: 'Fade' },
 ];
 const OUTCOME_OPTIONS_OFF = OUTCOME_OPTIONS.map((option) => ({ ...option, disabled: true }));
 
@@ -81,16 +81,16 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  * @fires eat-color-by - `{ annotation }`: switch Color by to another annotation with predictions,
  *   or to this one's EAT neighbourhood column.
  * @fires eat-select-proteins - `{ proteinIds, zoom }`: a drill-down row selects its protein (and
- *   asks to fit it); `Select all N kept` selects the kept predictions behind the bar or label.
- * @fires eat-go-to-source - `{ targetId, targetIndex, sourceId }`: the card's Go to source.
- * @fires eat-trace-source - `{ sourceId, sourceIndex }`: the card's `lent its label to N` link
+ *   asks to fit it); `Select all N in range` selects the predictions in range behind the bar or label.
+ * @fires eat-go-to-source - `{ targetId, targetIndex, sourceId }`: the docked card's Go to source.
+ * @fires eat-trace-source - `{ sourceId, sourceIndex }`: the card's `lent to N` link
  *   draws that source's lines.
  * @fires eat-drawing-change - `{ trace, linesPerSource }`: a Drawing switch changed, or Reset
  *   moved one back to its default.
  * @fires eat-export-ids - `{ proteinIds, fileName }`: Export IDs, the kept predictions or those outside the range
  *   predictions in the context (or behind a drill-down's bar or label), in reliability order.
- * @fires eat-outcome-change - `{ outcome, reliability }`: Outside the range switched between Hide
- *   (the filter) and Dim (fade, no filter). A range move in either rides `eat-overlay-change`.
+ * @fires eat-outcome-change - `{ outcome, reliability }`: Predictions outside the range switched
+ *   between Hide (the filter) and Fade (`dim`: no filter). A range move in either rides `eat-overlay-change`.
  */
 @customElement('protspace-eat-panel')
 export class ProtspaceEatPanel extends LitElement {
@@ -109,8 +109,7 @@ export class ProtspaceEatPanel extends LitElement {
   /** Whether the panel is shown. It computes only while true. */
   @property({ type: Boolean }) active = false;
   /**
-   * The phone layout (the shell sets it from the layout mode): a 56 px histogram, taller rows, and
-   * Drawing with the other annotations folded into one `Display options` disclosure.
+   * The phone layout (the shell sets it from the layout mode): a 56 px histogram.
    */
   @property({ type: Boolean, reflect: true }) compact = false;
 
@@ -266,6 +265,34 @@ export class ProtspaceEatPanel extends LitElement {
   protected updated(): void {
     // A drill-down's menu goes with its list (closed, or dropped as stale).
     if (this._exportMenu && !this._exportMenu.anchor.isConnected) this._exportMenu = null;
+    this._watchDock(this.renderRoot.querySelector<HTMLElement>('.eat-card'));
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._watchDock(null);
+  }
+
+  /** The docked card, and what keeps `--eat-dock-height` at its height. */
+  private _dock: { card: HTMLElement; observer: ResizeObserver } | null = null;
+
+  /**
+   * While the card is docked, everything above it scrolls into view clear of it (keyboard focus
+   * included): its height feeds the shadow tree's scroll margins.
+   */
+  private _watchDock(card: HTMLElement | null): void {
+    if (this._dock?.card === card) return;
+    this._dock?.observer.disconnect();
+    this._dock = null;
+    if (!card) {
+      this.style.removeProperty('--eat-dock-height');
+      return;
+    }
+    const observer = new ResizeObserver(() =>
+      this.style.setProperty('--eat-dock-height', `${card.offsetHeight}px`),
+    );
+    observer.observe(card);
+    this._dock = { card, observer };
   }
 
   private _cardFacts(index: EatIndex, data: VisualizationData, protein: number): EatCardFacts {
@@ -312,19 +339,6 @@ export class ProtspaceEatPanel extends LitElement {
           },
         },
       )}
-      ${this.compact ? nothing : this._renderDrawing()}
-      ${this._index && this.data && this.focusProtein !== null
-        ? renderCard({
-            data: this.data,
-            annotation: this.annotation,
-            index: this._index,
-            protein: this.focusProtein,
-            facts: this._cardFacts(this._index, this.data, this.focusProtein),
-            labelColors: this.labelColors,
-            onGoToSource: (detail) => this._emit('eat-go-to-source', detail),
-            onTraceSource: (detail) => this._emit('eat-trace-source', detail),
-          })
-        : nothing}
       ${summary
         ? renderBreakdown({
             rows: summary.rows,
@@ -339,17 +353,28 @@ export class ProtspaceEatPanel extends LitElement {
             onRow: (label) => this._toggleDrill({ label }),
           })
         : nothing}
-      ${this.compact ? this._renderDisplayOptions() : this._renderOthers()}
-      ${this._renderExportMenu(summary)}`;
+      ${this._renderDisplayOptions()} ${this._renderExportMenu(summary)}
+      ${this._index && this.data && this.focusProtein !== null
+        ? renderCard({
+            data: this.data,
+            annotation: this.annotation,
+            index: this._index,
+            protein: this.focusProtein,
+            facts: this._cardFacts(this._index, this.data, this.focusProtein),
+            labelColors: this.labelColors,
+            onGoToSource: (detail) => this._emit('eat-go-to-source', detail),
+            onTraceSource: (detail) => this._emit('eat-trace-source', detail),
+          })
+        : nothing}`;
   }
 
-  /** `Outside the range: Hide (filter) | Dim` (proposal B §4.4). */
+  /** `Predictions outside the range: Hide | Fade` (proposal B §4.4, U21 words). */
   private _renderOutcome(): TemplateResult {
     const off = !this._eat.overlayEnabled;
     return html`<div class="eat-outcome-row">
-      <span aria-hidden="true">Outside the range</span>
+      <span aria-hidden="true">Predictions outside the range</span>
       <ps-segmented
-        label="Outside the range"
+        label="Predictions outside the range"
         .options=${off ? OUTCOME_OPTIONS_OFF : OUTCOME_OPTIONS}
         .value=${this._outcome}
         @change=${(event: Event) =>
@@ -377,15 +402,24 @@ export class ProtspaceEatPanel extends LitElement {
     });
   }
 
-  /** On a phone, Drawing and the other annotations share one closed disclosure (proposal B §6). */
+  /**
+   * Drawing and the other annotations share one closed disclosure at the bottom (proposal B §6;
+   * on every layout since U21). Its summary says how lines are drawn.
+   */
   private _renderDisplayOptions(): TemplateResult {
+    const drawing = this._trace
+      ? `Source lines on click · up to ${this._linesPerSource} from one source`
+      : 'No source lines on click';
     return html`<details
       class="eat-display"
       ?open=${this._displayOpen}
       @toggle=${(event: Event) =>
         (this._displayOpen = (event.currentTarget as HTMLDetailsElement).open)}
     >
-      <summary>Display options</summary>
+      <summary>
+        <span class="eat-display-title">Display options</span>
+        <span class="eat-display-state">${drawing}</span>
+      </summary>
       <div class="eat-display-body">${this._renderDrawing()} ${this._renderOthers()}</div>
     </details>`;
   }
@@ -434,7 +468,7 @@ export class ProtspaceEatPanel extends LitElement {
       }}
     >
       <ps-menu-item value="kept" ?disabled=${kept === 0}
-        >Kept predictions (${formatCount(kept)})</ps-menu-item
+        >In range (${formatCount(kept)})</ps-menu-item
       >
       <ps-menu-item value="outside" ?disabled=${outside === 0}
         >Outside the range (${formatCount(outside)})</ps-menu-item
@@ -499,22 +533,21 @@ export class ProtspaceEatPanel extends LitElement {
     return Array.from(rows).find((row) => row.dataset.label === drill.label) ?? null;
   }
 
-  /** Trace source on click and Lines per source (proposal B §4.5, minus rings: Decision 8). */
+  /** The trace switch and the lines cap (proposal B §4.5, minus rings: Decision 8). */
   private _renderDrawing(): TemplateResult {
     return html`<section class="eat-drawing" aria-label="Drawing">
-      ${this.compact ? nothing : html`<h4 class="eat-heading">Drawing</h4>`}
       <ps-switch
         class="eat-trace"
         .checked=${this._trace}
         @change=${(event: Event) =>
           this._setDrawing((event.currentTarget as PsSwitch).checked, this._linesPerSource)}
-        >Trace source on click</ps-switch
+        >Draw a line to the source when I click a protein</ps-switch
       >
       <div class="eat-lines-row">
-        <span aria-hidden="true">Lines per source</span>
+        <span aria-hidden="true">Most lines from one source</span>
         <ps-select
           size="sm"
-          label="Lines per source"
+          label="Most lines from one source"
           .options=${LINES_OPTIONS}
           .value=${String(this._linesPerSource)}
           @change=${(event: Event) =>
@@ -542,9 +575,10 @@ export class ProtspaceEatPanel extends LitElement {
   }
 
   /**
-   * The open list: its weakest 5 predictions in the context, weakest first, each a button that
-   * selects the protein; then `Select all N kept` and `5 of 41`. A row outside the range says
-   * it is hidden (Hide) or dimmed (Dim), and stays clickable.
+   * The open list: its 5 least reliable predictions in the context, weakest first, each a button
+   * that selects the protein and says where its label came from; then `Select all N in range` and
+   * `Showing 5 of 41`. A row outside the range says it is hidden (Hide) or faded (Fade), and stays
+   * clickable.
    */
   private _renderDrill(): TemplateResult | typeof nothing {
     const index = this._index;
@@ -552,18 +586,20 @@ export class ProtspaceEatPanel extends LitElement {
     const open = this._drill;
     if (!index || !data || !open) return nothing;
     let drill: EatDrill;
-    let heading: string;
     if ('bin' in open) {
       drill = { bin: open.bin };
-      heading = `Weakest in ${binRange(open.bin)}`;
     } else {
       const label = index.labels.indexOf(open.label);
       if (label < 0) return nothing;
       drill = { label };
-      heading = `Weakest ${open.label}`;
     }
     const state = this._eat.reliability;
     const weakest = weakestIn(index, drill, this.context);
+    const heading =
+      'bin' in open
+        ? `${weakest.length} least reliable in ${binRange(open.bin)}`
+        : `${weakest.length} least reliable ${weakest.length === 1 ? 'prediction' : 'predictions'}`;
+    const predicted = data.annotation_predicted?.[this.annotation];
     const { total, kept } = countIn(index, drill, this.context, state);
     const hides = this._eat.overlayEnabled;
     const rows = Array.from(weakest, (k) => {
@@ -573,15 +609,17 @@ export class ProtspaceEatPanel extends LitElement {
       const reliability = formatPercent(confidence);
       const hidden = hides && !isKept(state, confidence);
       const why =
-        this._outcome === 'dim' ? 'Dimmed, outside the range' : 'Hidden, outside the range';
+        this._outcome === 'dim' ? 'Faded, outside the range' : 'Hidden, outside the range';
       const labelText = labels.join(', ');
       const color = swatchColor(this.labelColors, labels[0] ?? '');
+      const source = predicted?.[index.order[k]]?.source ?? '';
       return html`<li>
         <button
           type="button"
           class="eat-drill-row"
           data-protein=${id}
-          aria-label=${`${id}, ${reliability}, ${labelText}${hidden ? `, ${why.toLowerCase()}` : ''}`}
+          aria-label=${`${id}, ${reliability}, ${labelText}, from ${source}${hidden ? `, ${why.toLowerCase()}` : ''}`}
+          title=${`${labelText}, from ${source}`}
           @click=${() => this._selectProteins([id], true)}
         >
           <span
@@ -591,13 +629,14 @@ export class ProtspaceEatPanel extends LitElement {
           ></span>
           <span class="eat-drill-id">${id}</span>
           <span class="eat-drill-reliability">${reliability}</span>
-          <span class="eat-drill-label" title=${labelText}>${labelText}</span>
+          <span class="eat-drill-label">from ${source}</span>
           ${hidden ? html`<span class="eat-drill-hidden">${why}</span>` : nothing}
         </button>
       </li>`;
     });
     return html`<div id="eat-drill" class="eat-drill" role="region" aria-label=${heading}>
       <p class="eat-drill-heading">${heading}</p>
+      <p class="eat-help">Pick one to see it on the map and where its label came from.</p>
       <ul class="eat-drill-list">
         ${rows}
       </ul>
@@ -612,22 +651,32 @@ export class ProtspaceEatPanel extends LitElement {
               false,
             )}
         >
-          Select all ${formatCount(kept)} kept
+          Select all ${formatCount(kept)} in range
         </button>
         ${this._renderExportButton(drill)}
-        <span class="eat-drill-count">${weakest.length} of ${formatCount(total)}</span>
+        <span class="eat-drill-count">Showing ${weakest.length} of ${formatCount(total)}</span>
       </div>
     </div>`;
   }
 
   private readonly _colorBy = (annotation: string) => this._emit('eat-color-by', { annotation });
 
-  /** The stacked bar and its numbers (proposal B §4.3). `summary` null is the skeleton. */
+  /**
+   * `How much is predicted?` (proposal B §4.3, U21): the bar in the map's language (curated solid,
+   * predicted hollow, outside the range dashed and faded, no value the empty track) and its key,
+   * which carries the counts. `summary` null is the skeleton.
+   */
   private _renderOverview(summary: EatSummary | null): TemplateResult {
+    const heading = html`<h3 class="eat-heading">How much is predicted?</h3>`;
     if (!summary) {
-      return html`<div class="eat-overview" aria-busy="true">
+      return html`<section
+        class="eat-overview"
+        aria-busy="true"
+        aria-label="How much is predicted?"
+      >
+        ${heading}
         <div class="eat-stack"></div>
-      </div>`;
+      </section>`;
     }
     const enabled = this._eat.overlayEnabled;
     const { inView, curated, predicted, kept, outside, none } = summary;
@@ -640,22 +689,38 @@ export class ProtspaceEatPanel extends LitElement {
             title=${`${name}: ${formatCount(count)} (${share(count, inView)})`}
           ></span>`
         : nothing;
-    const counts = enabled
-      ? `${formatCount(curated)} curated · ${formatCount(predicted)} predicted (${formatCount(kept)} kept) · ${formatCount(none)} none`
-      : `${formatCount(curated)} curated · ${formatCount(predicted)} predicted (hidden)`;
-    return html`<div class=${enabled ? 'eat-overview' : 'eat-overview is-off'}>
+    const key = (part: string | null, text: string) =>
+      html`<span class="eat-key-item"
+        >${part
+          ? html`<span class="eat-key-mark" data-part=${part} aria-hidden="true"></span>`
+          : nothing}${text}</span
+      >`;
+    const predictedKey = !enabled
+      ? key('kept', `${formatCount(predicted)} predicted (hidden)`)
+      : outside > 0
+        ? html`${key('kept', `${formatCount(kept)} in range`)}
+          ${key('outside', `${formatCount(outside)} outside`)}`
+        : key('kept', `${formatCount(predicted)} predicted`);
+    return html`<section
+      class=${enabled ? 'eat-overview' : 'eat-overview is-off'}
+      aria-label="How much is predicted?"
+    >
+      ${heading}
       <div class="eat-stack">
-        ${segment('curated', 'Curated', curated)} ${segment('kept', 'Predicted, kept', kept)}
+        ${segment('curated', 'Curated', curated)} ${segment('kept', 'Predicted, in range', kept)}
         ${segment('outside', 'Predicted, outside the range', outside)}
         ${segment('none', 'No value', none)}
       </div>
-      <p class="eat-counts">${counts}</p>
+      <p class="eat-counts">
+        ${key('curated', `${formatCount(curated)} curated`)} ${predictedKey}
+        ${none > 0 ? key(null, `${formatCount(none)} with no value`) : nothing}
+      </p>
       ${this.context && this._index
         ? html`<p class="eat-in-view">
             In view: ${formatCount(inView)} of ${formatCount(this._index.total)}
           </p>`
         : nothing}
-    </div>`;
+    </section>`;
   }
 }
 

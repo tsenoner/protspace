@@ -142,8 +142,8 @@ export class ProtspacePlotStatus extends LitElement {
       chips.push({
         kind: 'eat-dim',
         icon: 'waypoints',
-        text: `EAT dimmed ${dimmed}`,
-        clearLabel: 'Stop dimming EAT predictions',
+        text: `EAT faded ${dimmed}`,
+        clearLabel: 'Stop fading EAT predictions',
       });
     }
     if (this.isolation) {

@@ -128,7 +128,7 @@ export function createEatPanelController({
   requestStructure(proteinId: string): void;
   /** Draw `proteinId`'s provenance lines as a click does, without selecting it. */
   traceProtein(proteinId: string, originalIndex: number, mode?: 'auto' | 'source'): boolean;
-  /** Trace source on click and Lines per source, for plot clicks. */
+  /** The trace switch and the lines cap, for plot clicks. */
   setTracing(options: { trace: boolean; linesPerSource: number }): void;
   /** Download `ids` as `fileName`, one per line (`downloadProteinIds`). */
   downloadIds(ids: readonly string[], fileName: string): void;

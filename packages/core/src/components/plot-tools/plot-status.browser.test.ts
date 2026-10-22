@@ -101,10 +101,10 @@ describe('protspace-plot-status', () => {
       eatDim: { min: 0.5, max: 1 },
     });
     expect(chips(el).map((chip) => chip.dataset.kind)).toEqual(['filter', 'eat-dim', 'hidden']);
-    expect(chipText(chips(el)[1])).toBe('EAT dimmed < 50\u202f%');
+    expect(chipText(chips(el)[1])).toBe('EAT faded < 50\u202f%');
     el.eatDim = { min: 0.4, max: 0.6 };
     await el.updateComplete;
-    expect(chipText(chips(el)[1])).toBe('EAT dimmed outside 40–60\u202f%');
+    expect(chipText(chips(el)[1])).toBe('EAT faded outside 40–60\u202f%');
     const events: string[] = [];
     el.addEventListener('status-open', (e) =>
       events.push(`open ${(e as CustomEvent).detail.kind}`),
