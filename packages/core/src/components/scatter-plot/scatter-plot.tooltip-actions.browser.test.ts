@@ -68,6 +68,23 @@ const pinned = (plot: ProtspaceScatterplot) =>
     'protspace-protein-tooltip.pinned',
   );
 
+/** Any tooltip on screen, pinned or hover. */
+const shown = (plot: ProtspaceScatterplot) =>
+  plot.shadowRoot!.querySelector<HTMLElement & { updateComplete: Promise<unknown> }>(
+    'protspace-protein-tooltip.visible',
+  );
+
+/** Past the scatterplot's PIN_LEAVE_GRACE_MS (300 ms). */
+const LEAVE_GRACE_MS = 400;
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** The mouse leaves the plot's interaction layer for `to`. */
+function leaveSurface(plot: ProtspaceScatterplot, to: Element): void {
+  plot
+    .shadowRoot!.querySelector('svg')!
+    .dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: to }));
+}
+
 function escape(): void {
   document.body.dispatchEvent(
     new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
@@ -85,7 +102,7 @@ describe('scatterplot tooltip actions', () => {
     expect(pinned(plot)).toBeNull();
   });
 
-  it('with actions a click pins the tooltip and hovers elsewhere do not clear it', async () => {
+  it('with actions a click pins the tooltip, which the mouse may cross to', async () => {
     const plot = await mountPlot();
     mouse(plot, 'click', at(plot, 'P2'));
     await plot.updateComplete;
@@ -93,16 +110,14 @@ describe('scatterplot tooltip actions', () => {
     await tip.updateComplete;
     expect(tip.shadowRoot!.textContent).toContain('P2');
 
-    // Empty plot: the hover there ends the hover tooltip, not the pin.
+    // On the way to the tooltip the mouse crosses empty plot and other proteins: the pin holds.
     const rect = plot.getBoundingClientRect();
     mouse(plot, 'mousemove', { x: rect.left + 8, y: rect.bottom - 8 });
-    await frame();
-    await plot.updateComplete;
-    expect(pinned(plot)).not.toBeNull();
-
-    // Another protein's hover keeps it: the way to the button crosses proteins.
     mouse(plot, 'mousemove', at(plot, 'P3'));
     await frame();
+    leaveSurface(plot, tip);
+    tip.dispatchEvent(new MouseEvent('mouseenter'));
+    await wait(LEAVE_GRACE_MS);
     await plot.updateComplete;
     expect(pinned(plot)).toBe(tip);
     expect(tip.shadowRoot!.textContent).toContain('P2');
@@ -112,6 +127,63 @@ describe('scatterplot tooltip actions', () => {
     await plot.updateComplete;
     await pinned(plot)!.updateComplete;
     expect(pinned(plot)!.shadowRoot!.textContent).toContain('P3');
+  });
+
+  it('resting on another protein ends a pin and shows its hover tooltip', async () => {
+    const plot = await mountPlot();
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    mouse(plot, 'mousemove', at(plot, 'P3'));
+    await frame();
+    await wait(LEAVE_GRACE_MS);
+    await plot.updateComplete;
+    expect(pinned(plot)).toBeNull();
+    const hover = shown(plot)!;
+    await hover.updateComplete;
+    expect(hover.shadowRoot!.textContent).toContain('P3');
+  });
+
+  it('resting on empty plot or leaving the plot ends a pin with no tooltip', async () => {
+    const plot = await mountPlot();
+    const rect = plot.getBoundingClientRect();
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    mouse(plot, 'mousemove', { x: rect.left + 8, y: rect.bottom - 8 });
+    await frame();
+    await wait(LEAVE_GRACE_MS);
+    await plot.updateComplete;
+    expect(shown(plot)).toBeNull();
+
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
+    leaveSurface(plot, document.body);
+    await wait(LEAVE_GRACE_MS);
+    await plot.updateComplete;
+    expect(shown(plot)).toBeNull();
+
+    // Leaving the plot from the pinned tooltip ends it too.
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    const tip = pinned(plot)!;
+    tip.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }));
+    await wait(LEAVE_GRACE_MS);
+    await plot.updateComplete;
+    expect(shown(plot)).toBeNull();
+  });
+
+  it('coming back to the pinned protein within the grace keeps the pin', async () => {
+    const plot = await mountPlot();
+    const rect = plot.getBoundingClientRect();
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    mouse(plot, 'mousemove', { x: rect.left + 8, y: rect.bottom - 8 });
+    await frame();
+    mouse(plot, 'mousemove', at(plot, 'P2'));
+    await frame();
+    await wait(LEAVE_GRACE_MS);
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
   });
 
   it('a zoom ends the pin; a reset glide at the identity keeps it', async () => {

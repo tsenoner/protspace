@@ -92,6 +92,11 @@ const HIT_RADIUS_MIN_PX = 4;
 // A fingertip is far less precise than a cursor: a tap picks the nearest protein within 20 px,
 // half the 40 px touch target.
 const TOUCH_HIT_RADIUS_PX = 20;
+/**
+ * How long a mouse pin survives the pointer leaving its protein: time to cross the gap to the
+ * tooltip's buttons. Still away when it runs out, the pin ends and the hover goes on from there.
+ */
+const PIN_LEAVE_GRACE_MS = 300;
 
 /** The most provenance pairs drawn at once: the EAT panel's largest "Most lines from one source". */
 const PROVENANCE_CONNECTOR_CAP = 50;
@@ -202,8 +207,9 @@ export class ProtspaceScatterplot extends LitElement {
   /**
    * Buttons a plain click on a protein offers in its tooltip, which then stays (pinned) until
    * Escape, a press outside the plot, the next click, a zoom or pan, a data or projection
-   * change, or until this becomes empty (a touch pin outlives that, see `tapTooltips`). Hovers over
-   * other proteins leave it. A button dispatches `tooltip-action` with its id and the protein.
+   * change, or until this becomes empty (a touch pin outlives that, see `tapTooltips`). The mouse
+   * may cross to the tooltip; resting on another protein, empty space or off the plot ends a mouse
+   * pin after PIN_LEAVE_GRACE_MS. A button dispatches `tooltip-action` with its id and the protein.
    * Empty (the default) keeps mouse tooltips hover-only.
    */
   @property({ attribute: false }) tooltipActions: readonly TooltipAction[] = [];
@@ -237,6 +243,10 @@ export class ProtspaceScatterplot extends LitElement {
   } | null = null;
   // Releases the pin's layer (kit/layers.ts), through which Escape and outside presses end it.
   private _releasePinnedTooltip: (() => void) | null = null;
+  // A mouse pin the pointer left: the timer that ends it, and the hover to show then (none: the
+  // pointer left the plot).
+  private _pinLeave: { timer: ReturnType<typeof setTimeout>; then: (() => void) | null } | null =
+    null;
   // The Escape fallback that hides the EAT connectors (ESCAPE_ORDER.connectors), while connected.
   private _releaseConnectorEscape: (() => void) | null = null;
   // The expanded duplicate-stack spider's layer: Escape collapses it before any fallback.
@@ -1348,7 +1358,7 @@ export class ProtspaceScatterplot extends LitElement {
       },
       onSelect: (ids, clearVisual) => this._commitSelection(ids, clearVisual),
       onHover: (event) => this._handleCanvasMouseMove(event),
-      onHoverEnd: () => this._handleCanvasMouseOut(),
+      onHoverEnd: (event) => this._handleCanvasMouseOut(event),
       onClick: (event, touch) => this._handleCanvasClick(event, touch),
       // A brush or lasso start ends a pin, as a click does (phase 4 ruling).
       onSelectStart: () => this._unpinTooltip(),
@@ -1621,8 +1631,15 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _handleMouseOver(event: MouseEvent, point: PlotDataPoint) {
-    // A pin ignores hovers: the way to its buttons often crosses other proteins.
-    if (this._pinnedTooltip) return;
+    const pinned = this._pinnedTooltip;
+    if (pinned) {
+      // A touch pin ignores the mouse. A mouse pin holds over its own protein, and another
+      // protein takes over once the grace runs out: the way to the buttons may cross others.
+      if (pinned.touch) return;
+      if (point.id === pinned.point.id) this._cancelPinLeave();
+      else this._leavePin(() => this._handleMouseOver(event, point));
+      return;
+    }
     if (!this.data) return;
     const { x, y } = this._getLocalPointerPosition(event);
     const view = buildTooltipView(
@@ -1758,6 +1775,9 @@ export class ProtspaceScatterplot extends LitElement {
       this._handleMouseOver(event, point);
       return;
     }
+    if (this._pinnedTooltip && !this._pinnedTooltip.touch) {
+      this._leavePin(() => this._processCanvasHover(event, mouseX, mouseY));
+    }
     // No point found, clear hover state if it exists
     this._clearHoverState();
   }
@@ -1804,7 +1824,8 @@ export class ProtspaceScatterplot extends LitElement {
   /**
    * Handle mouse out events for canvas rendering
    */
-  private _handleCanvasMouseOut(): void {
+  private _handleCanvasMouseOut(event?: MouseEvent): void {
+    this._mouseLeftFor(event?.relatedTarget ?? null);
     if (this._hoverRaf !== null) {
       cancelAnimationFrame(this._hoverRaf);
       this._hoverRaf = null;
@@ -2019,6 +2040,8 @@ export class ProtspaceScatterplot extends LitElement {
         .compact=${touch}
         .color=${touch ? this._pinnedColor() : ''}
         @protein-tooltip-action=${this._handleTooltipAction}
+        @mouseenter=${this._cancelPinLeave}
+        @mouseleave=${this._handleTooltipMouseLeave}
       ></protspace-protein-tooltip>
     `;
   }
@@ -2039,7 +2062,49 @@ export class ProtspaceScatterplot extends LitElement {
     });
   }
 
+  /** Ends a mouse pin after PIN_LEAVE_GRACE_MS, then runs `then`; a later leave replaces it. */
+  private _leavePin(then: (() => void) | null): void {
+    if (this._pinLeave) {
+      this._pinLeave.then = then;
+      return;
+    }
+    const leave = {
+      then,
+      timer: setTimeout(() => {
+        this._pinLeave = null;
+        this._unpinTooltip();
+        leave.then?.();
+      }, PIN_LEAVE_GRACE_MS),
+    };
+    this._pinLeave = leave;
+  }
+
+  private _cancelPinLeave = (): void => {
+    if (!this._pinLeave) return;
+    clearTimeout(this._pinLeave.timer);
+    this._pinLeave = null;
+  };
+
+  /**
+   * The mouse left the plot surface or the pinned tooltip for `to`. Into the tooltip it holds the
+   * pin; out of the plot it ends a mouse pin after the grace. Within the plot, its mousemove decides.
+   */
+  private _mouseLeftFor(to: EventTarget | null): void {
+    const pinned = this._pinnedTooltip;
+    if (!pinned || pinned.touch) return;
+    const node = to instanceof Node ? to : null;
+    if (node && node === this.renderRoot.querySelector('protspace-protein-tooltip')) {
+      this._cancelPinLeave();
+    } else if (!node || !(this.renderRoot.contains(node) || this.contains(node))) {
+      this._leavePin(null);
+    }
+  }
+
+  private _handleTooltipMouseLeave = (event: MouseEvent): void =>
+    this._mouseLeftFor(event.relatedTarget);
+
   private _unpinTooltip(): void {
+    this._cancelPinLeave();
     this._releasePinnedTooltip?.();
     this._releasePinnedTooltip = null;
     this._pinnedTooltip = null;

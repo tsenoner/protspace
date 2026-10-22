@@ -28,7 +28,8 @@ export interface PlotInteractionHost {
   onTransform(t: d3.ZoomTransform): void;
   onSelect(ids: string[], clearVisual: () => void): void;
   onHover(event: MouseEvent, point: PlotDataPoint | null): void;
-  onHoverEnd(): void;
+  /** `event`: the mouseout that ended the hover, whose relatedTarget says where the mouse went. */
+  onHoverEnd(event?: MouseEvent): void;
   /** `touch`: the click came from a finger's tap, which has no hover before it. */
   onClick(event: MouseEvent, touch: boolean): void;
   /** A brush or lasso gesture started: the host ends a pinned tooltip so none floats over it. */
@@ -277,7 +278,7 @@ export class PlotInteractionController {
       .on('click.canvas', (event: MouseEvent) =>
         this.host.onClick(event, this._isTouchClick(event)),
       )
-      .on('mouseout.canvas', () => this.host.onHoverEnd());
+      .on('mouseout.canvas', (event: MouseEvent) => this.host.onHoverEnd(event));
   }
 
   /** A click names its pointer in Chromium and Firefox (a PointerEvent); else the last press does. */
