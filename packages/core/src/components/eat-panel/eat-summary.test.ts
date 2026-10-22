@@ -120,9 +120,10 @@ describe('eat summary', () => {
     expect(row(summary, 'C')).toBeUndefined();
   });
 
-  it('ranks a prediction by the share strictly below it', () => {
-    expect(rankOf(index, idx('P8'))).toEqual({ below: 3, total: 5 });
-    expect(rankOf(index, idx('P7'))).toEqual({ below: 1, total: 5 });
+  it('ranks a prediction by the shares strictly below and above it', () => {
+    expect(rankOf(index, idx('P8'))).toEqual({ below: 3, above: 1, total: 5 });
+    // P7 ties another 0.55: neither is below or above the other.
+    expect(rankOf(index, idx('P7'))).toEqual({ below: 1, above: 2, total: 5 });
     expect(rankOf(index, idx('P0'))).toBeNull();
   });
 

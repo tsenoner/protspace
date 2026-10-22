@@ -797,9 +797,10 @@ describe('protspace-eat-panel', () => {
 
   describe('selected-protein card', () => {
     const card = (el: ProtspaceEatPanel) => root(el).querySelector<HTMLElement>('.eat-card');
+    // As shown: a wrapped line's hidden parts are left out.
     const cardLines = (el: ProtspaceEatPanel) =>
-      [...root(el).querySelectorAll('.eat-card-line')].map((line) =>
-        line.textContent!.replace(/[ \t\r\n]+/g, ' ').trim(),
+      [...root(el).querySelectorAll<HTMLElement>('.eat-card-line')].map((line) =>
+        line.innerText.replace(/\s+/g, ' ').trim(),
       );
     const rankLine = (el: ProtspaceEatPanel) => text(el, '.eat-card-rank');
     const links = (el: ProtspaceEatPanel) => [
@@ -814,28 +815,28 @@ describe('protspace-eat-panel', () => {
     };
     const at = (id: string) => EAT_FIXTURE_IDS.indexOf(id);
 
-    it('shows a prediction: its label, its source, its rank, Go to source and lent to', async () => {
+    it('shows a prediction: its label, its source, its rank, Go to source and its count', async () => {
       const el = await mount({
         focusProtein: at('P8'),
         labelColors: new Map([['C', 'rgb(255, 0, 0)']]),
       });
-      expect(text(el, '.eat-card-title')).toBe(`P8 C 81${PCT}`);
-      // Docked: the panel's last child, stuck to the bottom of the scroll area.
+      expect(text(el, '.eat-card-title')).toBe(`P8 C reliability 81${PCT}`);
+      // A footer: the panel's last child, after the scroll area rather than in it.
       expect(root(el).lastElementChild).toBe(card(el));
-      expect(getComputedStyle(card(el)!).position).toBe('sticky');
+      expect(card(el)!.previousElementSibling!.classList.contains('eat-scroll')).toBe(true);
       expect(root(el).querySelector<HTMLElement>('.eat-card .eat-ring')!.style.borderColor).toBe(
         'rgb(255, 0, 0)',
       );
       // 0.81 is above 3 of the 5 predictions (0.12, 0.55, 0.55).
-      expect(cardLines(el)).toEqual(['from P0, curated · lent to 1']);
-      expect(rankLine(el)).toBe(`Higher than 60${PCT} of 5 predictions`);
+      expect(cardLines(el)).toEqual(['copied from P0 (curated) · source of 1 prediction']);
+      expect(rankLine(el)).toBe(`More reliable than 60${PCT} of the 5 predictions`);
       expect(goToSource(el).disabled).toBe(false);
       const went = listen(el, 'eat-go-to-source');
       const traced = listen(el, 'eat-trace-source');
       goToSource(el).click();
       expect(went).toEqual([{ targetId: 'P8', targetIndex: at('P8'), sourceId: 'P0' }]);
-      expect(links(el).map((link) => link.textContent!.trim())).toEqual(['lent to 1']);
-      expect(links(el)[0].getAttribute('aria-label')).toBe('P0 lent its label to 1 protein');
+      expect(links(el).map((link) => link.textContent!.trim())).toEqual(['source of 1 prediction']);
+      expect(links(el)[0].getAttribute('aria-label')).toBe('P0 is the source of 1 prediction');
       links(el)[0].click();
       expect(traced).toEqual([{ sourceId: 'P0', sourceIndex: 0 }]);
     });
@@ -843,8 +844,10 @@ describe('protspace-eat-panel', () => {
     it('says a source outside the dataset is not in it and disables Go to source', async () => {
       const el = await mount({ focusProtein: at('P9') });
       // Still counted from the index, but there is nothing to draw.
-      expect(cardLines(el)).toEqual(['from S9, not in this dataset · lent to 1']);
-      expect(rankLine(el)).toBe(`Higher than 80${PCT} of 5 predictions`);
+      expect(cardLines(el)).toEqual([
+        'copied from S9 (not in this dataset) · source of 1 prediction',
+      ]);
+      expect(rankLine(el)).toBe(`More reliable than 80${PCT} of the 5 predictions`);
       expect(goToSource(el).disabled).toBe(true);
       expect(root(el).querySelector('.eat-card ps-tooltip')!.getAttribute('text')).toBe(
         'The source is not in this dataset',
@@ -858,30 +861,78 @@ describe('protspace-eat-panel', () => {
     it('lists every label of a multi-valued prediction', async () => {
       const el = await mount({ focusProtein: at('P5') });
       expect(text(el, '.eat-card-labels')).toBe('A, B');
-      expect(cardLines(el)).toEqual(['from S1, not in this dataset · lent to 3']);
-      expect(rankLine(el)).toBe(`Higher than 20${PCT} of 5 predictions`);
+      expect(cardLines(el)).toEqual([
+        'copied from S1 (not in this dataset) · source of 3 predictions',
+      ]);
+      // Below the middle the rank counts the ones above: 0.81 and 1 of the 5.
+      expect(rankLine(el)).toBe(`Less reliable than 40${PCT} of the 5 predictions`);
     });
 
-    it('shows a source with its value and draws its lines from the lent link', async () => {
+    it('shows a source with its value and draws its lines from its count', async () => {
       const el = await mount({ focusProtein: at('P0') });
       expect(text(el, '.eat-card-title')).toBe('P0 A');
-      expect(cardLines(el)).toEqual(['Curated · lent to 1']);
+      expect(cardLines(el)).toEqual(['Curated · source of 1 prediction']);
       expect(goToSource(el)).toBeNull();
       const traced = listen(el, 'eat-trace-source');
       expect(links(el)).toHaveLength(1);
-      expect(links(el)[0].getAttribute('aria-label')).toBe('P0 lent its label to 1 protein');
+      expect(links(el)[0].getAttribute('aria-label')).toBe('P0 is the source of 1 prediction');
       links(el)[0].click();
       expect(traced).toEqual([{ sourceId: 'P0', sourceIndex: 0 }]);
     });
 
-    it('floors the rank, so the strongest prediction is never higher than 100 % of them', async () => {
+    it('floors the rank, so the strongest is never more reliable than 100 % of them', async () => {
       const predicted = Array.from({ length: 200 }, (_, i) => 0.0025 + i * 0.004);
       const el = await mount({
         data: labelData([{ label: 'A', curated: 0, predicted }]),
         annotation: 'cls',
         focusProtein: 199,
       });
-      expect(rankLine(el)).toBe(`Higher than 99${PCT} of 200 predictions`);
+      expect(rankLine(el)).toBe(`More reliable than 99${PCT} of the 200 predictions`);
+      // The weakest is less reliable than the 199 others, never "higher than 0 %".
+      el.focusProtein = 0;
+      await el.updateComplete;
+      expect(rankLine(el)).toBe(`Less reliable than 99${PCT} of the 200 predictions`);
+    });
+
+    it('says when the range hides or fades the prediction, and Show faded switches to Fade', async () => {
+      const el = await mount({ focusProtein: at('P8') });
+      const outsideLine = () => text(el, '.eat-card-outside');
+      expect(outsideLine()).toBeNull();
+      el.setReliabilityState({ min: 0.9, max: 1 });
+      await el.updateComplete;
+      expect(outsideLine()).toBe(`Hidden on the map: outside the 90–100${PCT} range · Show faded`);
+      const outcomes = listen(el, 'eat-outcome-change');
+      root(el).querySelector<HTMLButtonElement>('.eat-card-outside .eat-card-link')!.click();
+      await el.updateComplete;
+      expect(el.outcome).toBe('dim');
+      expect(outcomes).toEqual([{ outcome: 'dim', reliability: { min: 0.9, max: 1 } }]);
+      expect(outsideLine()).toBe(`Faded on the map: outside the 90–100${PCT} range`);
+    });
+
+    it('is one row on a phone: id, reliability, source and Go to source', async () => {
+      const el = await mount({ focusProtein: at('P8') });
+      el.compact = true;
+      await el.updateComplete;
+      expect(root(el).querySelector('.eat-card-eyebrow')).toBeNull();
+      expect(root(el).querySelector('.eat-card-rank')).toBeNull();
+      // The label stays in the accessible text, not on screen.
+      expect(text(el, '.eat-card-title .sr-only')).toBe('C');
+      expect(text(el, '.eat-card-title > .eat-card-line')).toBe(`· reliability 81${PCT} · from P0`);
+      expect(root(el).querySelector('.eat-card-row .eat-go-to-source')).not.toBeNull();
+    });
+
+    it('puts each fact on a line of its own, naming the source, when they do not fit', async () => {
+      const el = await mount({ focusProtein: at('P8') });
+      const line = root(el).querySelector<HTMLElement>('.eat-card-facts')!;
+      expect(line.classList.contains('is-wrapped')).toBe(false);
+      el.style.width = '160px';
+      await vi.waitFor(() => expect(line.classList.contains('is-wrapped')).toBe(true));
+      expect(line.innerText.split('\n').map((part) => part.trim())).toEqual([
+        'copied from P0 (curated)',
+        'P0 is the source of 1 prediction',
+      ]);
+      el.style.width = '';
+      await vi.waitFor(() => expect(line.classList.contains('is-wrapped')).toBe(false));
     });
 
     it('shows no card for a curated non-source protein or no selection', async () => {

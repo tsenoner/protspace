@@ -333,15 +333,17 @@ function labelMedians(
 
 /**
  * A prediction's place among this annotation's predictions in the whole dataset: how many have
- * a strictly lower reliability. Null when the protein has no prediction.
+ * a strictly lower reliability, and how many a strictly higher one. Null when the protein has no
+ * prediction.
  */
 export function rankOf(
   index: EatIndex,
   proteinIndex: number,
-): { below: number; total: number } | null {
+): { below: number; above: number; total: number } | null {
   const k = index.order.indexOf(proteinIndex);
   if (k < 0) return null;
   const value = index.confidence[k];
+  const total = index.order.length;
   let lo = 0;
   let hi = k;
   while (lo < hi) {
@@ -349,7 +351,15 @@ export function rankOf(
     if (index.confidence[mid] < value) lo = mid + 1;
     else hi = mid;
   }
-  return { below: lo, total: index.order.length };
+  const below = lo;
+  lo = k + 1;
+  hi = total;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (index.confidence[mid] <= value) lo = mid + 1;
+    else hi = mid;
+  }
+  return { below, above: total - lo, total };
 }
 
 function inDrill(index: EatIndex, drill: EatDrill | undefined, k: number): boolean {

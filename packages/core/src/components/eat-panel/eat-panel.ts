@@ -65,6 +65,19 @@ const OUTCOME_OPTIONS: SegmentedOption[] = [
 ];
 const OUTCOME_OPTIONS_OFF = OUTCOME_OPTIONS.map((option) => ({ ...option, disabled: true }));
 
+/**
+ * Scrolls `scroller` the least that shows all of `element`, as `block: 'nearest'` does, without
+ * scrolling the page around it.
+ */
+function revealIn(scroller: HTMLElement, element: HTMLElement): void {
+  const room = scroller.getBoundingClientRect();
+  const box = element.getBoundingClientRect();
+  if (box.top < room.top) scroller.scrollTop -= room.top - box.top;
+  else if (box.bottom > room.bottom) {
+    scroller.scrollTop += Math.min(box.bottom - room.bottom, box.top - room.top);
+  }
+}
+
 /** `40 %` of `total`, for a segment's tooltip. */
 const share = (count: number, total: number) => formatPercent(total > 0 ? count / total : 0);
 
@@ -82,9 +95,9 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  *   or to this one's EAT neighbourhood column.
  * @fires eat-select-proteins - `{ proteinIds, zoom }`: a drill-down row selects its protein (and
  *   asks to fit it); `Select all N in range` selects the predictions in range behind the bar or label.
- * @fires eat-go-to-source - `{ targetId, targetIndex, sourceId }`: the docked card's Go to source.
- * @fires eat-trace-source - `{ sourceId, sourceIndex }`: the card's `lent to N` link
- *   draws that source's lines.
+ * @fires eat-go-to-source - `{ targetId, targetIndex, sourceId }`: the strip's Go to source.
+ * @fires eat-trace-source - `{ sourceId, sourceIndex }`: the strip's `source of N predictions`
+ *   link draws that source's lines.
  * @fires eat-drawing-change - `{ trace, linesPerSource }`: a Drawing switch changed, or Reset
  *   moved one back to its default.
  * @fires eat-export-ids - `{ proteinIds, fileName }`: Export IDs, the kept predictions or those outside the range
@@ -109,7 +122,8 @@ export class ProtspaceEatPanel extends LitElement {
   /** Whether the panel is shown. It computes only while true. */
   @property({ type: Boolean }) active = false;
   /**
-   * The phone layout (the shell sets it from the layout mode): a 56 px histogram.
+   * The phone layout (the shell sets it from the layout mode): a 56 px histogram, and the
+   * selected protein's strip in one row.
    */
   @property({ type: Boolean, reflect: true }) compact = false;
 
@@ -265,34 +279,44 @@ export class ProtspaceEatPanel extends LitElement {
   protected updated(): void {
     // A drill-down's menu goes with its list (closed, or dropped as stale).
     if (this._exportMenu && !this._exportMenu.anchor.isConnected) this._exportMenu = null;
-    this._watchDock(this.renderRoot.querySelector<HTMLElement>('.eat-card'));
+    this._watchCard(this.renderRoot.querySelector<HTMLElement>('.eat-card'));
+    this._wrapFacts();
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    this._watchDock(null);
+    this._watchCard(null);
   }
 
-  /** The docked card, and what keeps `--eat-dock-height` at its height. */
-  private _dock: { card: HTMLElement; observer: ResizeObserver } | null = null;
+  /** The strip, and what re-lays its lines of facts when its width changes. */
+  private _cardWatch: { card: HTMLElement; observer: ResizeObserver } | null = null;
 
-  /**
-   * While the card is docked, everything above it scrolls into view clear of it (keyboard focus
-   * included): its height feeds the shadow tree's scroll margins.
-   */
-  private _watchDock(card: HTMLElement | null): void {
-    if (this._dock?.card === card) return;
-    this._dock?.observer.disconnect();
-    this._dock = null;
-    if (!card) {
-      this.style.removeProperty('--eat-dock-height');
-      return;
-    }
-    const observer = new ResizeObserver(() =>
-      this.style.setProperty('--eat-dock-height', `${card.offsetHeight}px`),
-    );
+  private _watchCard(card: HTMLElement | null): void {
+    if (this._cardWatch?.card === card) return;
+    this._cardWatch?.observer.disconnect();
+    this._cardWatch = null;
+    if (!card) return;
+    let width = card.clientWidth;
+    // A frame later: re-laying the lines inside the callback would resize what it observes.
+    const observer = new ResizeObserver(() => {
+      if (card.clientWidth === width) return;
+      width = card.clientWidth;
+      requestAnimationFrame(() => this._wrapFacts());
+    });
     observer.observe(card);
-    this._dock = { card, observer };
+    this._cardWatch = { card, observer };
+  }
+
+  /** Marks each line of facts in the strip wrapped when its facts do not fit on one line. */
+  private _wrapFacts(): void {
+    for (const line of this.renderRoot.querySelectorAll<HTMLElement>('.eat-card-facts')) {
+      line.classList.remove('is-wrapped');
+      const facts = line.querySelectorAll<HTMLElement>('.eat-card-fact');
+      if (facts.length < 2) continue;
+      const top = facts[0].offsetTop;
+      const wraps = Array.from(facts).some((fact) => fact.offsetTop > top);
+      line.classList.toggle('is-wrapped', wraps);
+    }
   }
 
   private _cardFacts(index: EatIndex, data: VisualizationData, protein: number): EatCardFacts {
@@ -307,9 +331,18 @@ export class ProtspaceEatPanel extends LitElement {
     if (!this.active) return nothing;
     if (this.data && !this._index) {
       const label = annotationLabel(this.annotation, this.data.annotations[this.annotation]);
-      return html`<p class="eat-empty">${label} has no predicted values.</p>
-        ${renderEmptyColorBy(this.data, this.annotation, this._colorBy)}`;
+      return html`<div class="eat-scroll">
+        <p class="eat-empty">${label} has no predicted values.</p>
+        ${renderEmptyColorBy(this.data, this.annotation, this._colorBy)}
+      </div>`;
     }
+    // The sections scroll; the selected protein's strip is a footer under them, so nothing can
+    // sit under it.
+    return html`<div class="eat-scroll">${this._renderSections()}</div>
+      ${this._renderCard()}`;
+  }
+
+  private _renderSections(): TemplateResult {
     const summary = this._summary;
     const drill = this._drill;
     return html`<ps-switch
@@ -353,19 +386,28 @@ export class ProtspaceEatPanel extends LitElement {
             onRow: (label) => this._toggleDrill({ label }),
           })
         : nothing}
-      ${this._renderDisplayOptions()} ${this._renderExportMenu(summary)}
-      ${this._index && this.data && this.focusProtein !== null
-        ? renderCard({
-            data: this.data,
-            annotation: this.annotation,
-            index: this._index,
-            protein: this.focusProtein,
-            facts: this._cardFacts(this._index, this.data, this.focusProtein),
-            labelColors: this.labelColors,
-            onGoToSource: (detail) => this._emit('eat-go-to-source', detail),
-            onTraceSource: (detail) => this._emit('eat-trace-source', detail),
-          })
-        : nothing}`;
+      ${this._renderDisplayOptions()} ${this._renderExportMenu(summary)}`;
+  }
+
+  private _renderCard(): TemplateResult | typeof nothing {
+    const index = this._index;
+    const data = this.data;
+    if (!index || !data || this.focusProtein === null) return nothing;
+    return renderCard({
+      data,
+      annotation: this.annotation,
+      index,
+      protein: this.focusProtein,
+      facts: this._cardFacts(index, data, this.focusProtein),
+      labelColors: this.labelColors,
+      compact: this.compact,
+      reliability: this._eat.reliability,
+      shown: this._eat.overlayEnabled,
+      faded: this._outcome === 'dim',
+      onGoToSource: (detail) => this._emit('eat-go-to-source', detail),
+      onTraceSource: (detail) => this._emit('eat-trace-source', detail),
+      onShowFaded: () => this._setOutcome('dim'),
+    });
   }
 
   /** `Predictions outside the range: Hide | Fade` (proposal B §4.4, U21 words). */
@@ -575,6 +617,26 @@ export class ProtspaceEatPanel extends LitElement {
   }
 
   /**
+   * A drill-down row's pick: select its protein, then scroll the row back into view once the
+   * strip under the list and the structure's header have taken their room.
+   */
+  private _pick(id: string): void {
+    this._selectProteins([id], true);
+    const reveal = () => {
+      const scroller = this.renderRoot.querySelector<HTMLElement>('.eat-scroll');
+      const row = this.renderRoot.querySelector<HTMLElement>(
+        `.eat-drill-row[data-protein="${CSS.escape(id)}"]`,
+      );
+      if (scroller && row) revealIn(scroller, row);
+    };
+    // The strip renders with the next update; the shell lays the structure out a frame or two on.
+    void this.updateComplete.then(() => {
+      reveal();
+      requestAnimationFrame(() => requestAnimationFrame(reveal));
+    });
+  }
+
+  /**
    * The open list: its 5 least reliable predictions in the context, weakest first, each a button
    * that selects the protein and says where its label came from; then `Select all N in range` and
    * `Showing 5 of 41`. A row outside the range says it is hidden (Hide) or faded (Fade), and stays
@@ -620,7 +682,7 @@ export class ProtspaceEatPanel extends LitElement {
           data-protein=${id}
           aria-label=${`${id}, ${reliability}, ${labelText}, from ${source}${hidden ? `, ${why.toLowerCase()}` : ''}`}
           title=${`${labelText}, from ${source}`}
-          @click=${() => this._selectProteins([id], true)}
+          @click=${() => this._pick(id)}
         >
           <span
             class="eat-ring"

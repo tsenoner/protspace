@@ -1,5 +1,5 @@
 import { css } from 'lit';
-import { focusRing, kitHost } from '../kit/kit-shared.styles';
+import { focusRing, kitHost, srOnly } from '../kit/kit-shared.styles';
 
 /**
  * The reliability handle's thumb, shared by the two vendor pseudo-elements: an engine drops a whole
@@ -23,14 +23,25 @@ const handleThumb = css`
 export const eatPanelStyles = [
   kitHost,
   focusRing,
+  srOnly,
   css`
+    /* A column the shell sizes: the sections scroll, the selected protein's strip sits under them. */
     :host {
       display: flex;
       flex-direction: column;
-      gap: var(--ps-space-3);
+      min-height: 0;
       box-sizing: border-box;
-      /* No padding here: the page's reset (* { padding: 0 }) beats :host; the shell pads it. */
       font-size: var(--ps-text-sm);
+    }
+
+    .eat-scroll {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      gap: var(--ps-space-3);
+      min-height: 0;
+      overflow: auto;
+      padding: var(--ps-space-2) var(--ps-space-3) var(--ps-space-3);
     }
 
     .eat-empty,
@@ -641,27 +652,17 @@ export const eatPanelStyles = [
     }
 
     /*
-     * The selected protein (U21): docked at the bottom of the panel's scroll area, always in view.
-     * It is the host's last child, so at the end of the scroll it sits after the last row and
-     * covers nothing. The shell sets --eat-dock-inset to its padding, so the strip runs edge to
-     * edge and down to the scroll area's bottom.
+     * The selected protein (U21, U22): a footer under the scroll area, so nothing scrolls under it
+     * or shows through its edge.
      */
     .eat-card {
-      position: sticky;
-      bottom: calc(-1 * var(--eat-dock-inset, 0px));
-      z-index: 1;
+      flex: none;
       display: grid;
       gap: var(--ps-space-0-5);
-      margin: 0 calc(-1 * var(--eat-dock-inset, 0px)) calc(-1 * var(--eat-dock-inset, 0px));
-      padding: var(--ps-space-1-5) max(var(--eat-dock-inset, 0px), var(--ps-space-2));
+      padding: var(--ps-space-1-5) var(--ps-space-3);
       border-top: 2px solid var(--ps-accent);
       background: var(--ps-surface-muted);
       font-size: var(--ps-text-xs);
-    }
-
-    /* Scrolled to (or focused), a control stops above the dock, not under it. */
-    :host * {
-      scroll-margin-bottom: calc(var(--eat-dock-height, 0px) + var(--ps-space-2));
     }
 
     .eat-card-eyebrow {
@@ -702,20 +703,41 @@ export const eatPanelStyles = [
       text-overflow: ellipsis;
     }
 
-    /* The source line wraps beside Go to source rather than pushing it to a row of its own. */
-    .eat-card-source-row {
+    /* The eyebrow (compact: the one line) with Go to source at its end. */
+    .eat-card-row {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: var(--ps-space-2);
-    }
-
-    .eat-card-source-row > .eat-card-line {
-      flex: 1 1 0;
       min-width: 0;
     }
 
+    .eat-card-row > .eat-card-title {
+      flex: 1 1 auto;
+    }
+
+    /* Each fact stays whole. A line whose facts do not fit side by side is marked wrapped: one
+       fact a line, no dot, and the source named. */
+    .eat-card-fact {
+      white-space: nowrap;
+    }
+
+    .eat-card-subject,
+    .eat-card-facts.is-wrapped .eat-card-sep {
+      display: none;
+    }
+
+    .eat-card-facts.is-wrapped .eat-card-subject {
+      display: inline;
+    }
+
+    .eat-card-facts.is-wrapped .eat-card-fact {
+      display: block;
+    }
+
     .eat-card-line,
-    .eat-card-rank {
+    .eat-card-rank,
+    .eat-card-outside {
       margin: 0;
       color: var(--ps-text-muted);
       font-variant-numeric: tabular-nums;
@@ -723,10 +745,6 @@ export const eatPanelStyles = [
 
     .eat-card-source {
       color: var(--ps-text);
-    }
-
-    .eat-card-lent {
-      white-space: nowrap;
     }
 
     .eat-card-actions {
@@ -753,9 +771,12 @@ export const eatPanelStyles = [
       height: 56px;
     }
 
-    /* The phone's panel is short: the dock keeps to its id, source and Go to source. */
-    :host([compact]) .eat-card-rank {
-      display: none;
+    /* The phone's strip is one row: its facts give way, with an ellipsis, to Go to source. */
+    :host([compact]) .eat-card-title > .eat-card-line {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
     }
   `,
 ];

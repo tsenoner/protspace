@@ -1,22 +1,23 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import {
-  countNoun,
   formatCount,
   getPredictedCellValues,
+  normalizeReliability,
+  type EatReliabilityState,
   type VisualizationData,
 } from '@protspace/utils';
 import '../kit/button';
 import '../kit/tooltip';
 import { formatPercent } from '../query-builder/eat-reliability';
 import { swatchColor } from './eat-panel-breakdown';
-import { rankOf, type EatIndex } from './eat-summary';
+import { isKept, rankOf, type EatIndex } from './eat-summary';
 
 const UNRESOLVED_REASON = 'The source is not in this dataset';
 
 /** What the card shows that does not move with the threshold, worked out once per selection. */
 export interface EatCardFacts {
   /** The prediction's rank in the whole dataset; null for a protein without one. */
-  rank: { below: number; total: number } | null;
+  rank: { below: number; above: number; total: number } | null;
   /** The source's protein index; null when it is not in the dataset or there is no prediction. */
   sourceIndex: number | null;
 }
@@ -41,8 +42,17 @@ interface EatCardView {
   protein: number;
   facts: EatCardFacts;
   labelColors: ReadonlyMap<string, string>;
+  /** The phone's strip: one row, no eyebrow, no label text, no rank. */
+  compact: boolean;
+  /** The reliability range, and what the map does with a prediction outside it. */
+  reliability: EatReliabilityState;
+  /** Show predictions: off, no prediction is hidden or faded, all show as N/A. */
+  shown: boolean;
+  faded: boolean;
   onGoToSource(detail: { targetId: string; targetIndex: number; sourceId: string }): void;
   onTraceSource(detail: { sourceId: string; sourceIndex: number }): void;
+  /** `Show faded`: switch the outcome to Fade. */
+  onShowFaded(): void;
 }
 
 /** Whether a source's own value is curated or predicted; '' when it has none. */
@@ -61,10 +71,11 @@ function curatedLabels(index: EatIndex, protein: number): string[] {
   return labels;
 }
 
-const proteins = (count: number) => countNoun(count, 'protein', 'proteins');
+const sourceOf = (count: number) =>
+  `source of ${formatCount(count)} ${count === 1 ? 'prediction' : 'predictions'}`;
 
-/** `lent to 34`: draws the source's lines without selecting it. Its name says it in full. */
-function lentLink(
+/** `source of 9 predictions`: draws the source's lines without selecting it. */
+function sourceLink(
   view: EatCardView,
   sourceId: string,
   sourceIndex: number,
@@ -73,24 +84,72 @@ function lentLink(
   return html`<button
     type="button"
     class="eat-card-link"
-    aria-label=${`${sourceId} lent its label to ${proteins(count)}`}
+    aria-label=${`${sourceId} is the ${sourceOf(count)}`}
     @click=${() => view.onTraceSource({ sourceId, sourceIndex })}
   >
-    lent to ${formatCount(count)}
+    ${sourceOf(count)}
   </button>`;
 }
+
+/**
+ * `More reliable than 72 % of the 659 predictions` at or above the middle, `Less reliable than
+ * 99 % of …` below it. Floored, so the strongest is never more reliable than 100 % of them; a
+ * share that floors to 0 says nothing and is left out.
+ */
+function rankText(rank: { below: number; above: number; total: number }): string | null {
+  const more = rank.below / rank.total >= 0.5;
+  const share = Math.floor(((more ? rank.below : rank.above) / rank.total) * 100);
+  if (share === 0) return null;
+  return `${more ? 'More' : 'Less'} reliable than ${share}\u202f% of the ${formatCount(rank.total)} predictions`;
+}
+
+/** `50–100 %`, the range with both ends. */
+function rangeText(state: EatReliabilityState): string {
+  const { min, max } = normalizeReliability(state);
+  return `${Math.round(min * 100)}–${formatPercent(max)}`;
+}
+
+/**
+ * `Hidden on the map: outside the 50–100 % range · Show faded` (Fade: `Faded on the map: …`),
+ * for a prediction the range leaves out; nothing while it is in range or Show is off.
+ */
+function renderOutside(view: EatCardView, confidence: number): TemplateResult | typeof nothing {
+  if (!view.shown || isKept(view.reliability, confidence)) return nothing;
+  const range = `outside the ${rangeText(view.reliability)} range`;
+  return html`<p class="eat-card-outside eat-card-facts">
+    ${view.faded
+      ? `Faded on the map: ${range}`
+      : html`<span class="eat-card-fact">Hidden on the map: ${range}</span>
+          <span class="eat-card-fact"
+            >${SEP}<button type="button" class="eat-card-link" @click=${() => view.onShowFaded()}>
+              Show faded
+            </button></span
+          >`}
+  </p>`;
+}
+
+/**
+ * The dot between two facts of a line (`.eat-card-facts`). A fact never breaks; when the next
+ * one does not fit beside it, the panel marks the line wrapped: each fact takes a line of its
+ * own, without the dot, and a fact about the source names it (`.eat-card-subject`).
+ */
+const SEP = html`<span class="eat-card-sep">· </span>`;
+
+const subject = (id: string) =>
+  html`<span class="eat-card-subject" aria-hidden="true">${id} is the </span>`;
 
 const eyebrow = html`<p class="eat-card-eyebrow" aria-hidden="true">Selected protein</p>`;
 
 /**
- * The selected protein's strip, docked at the bottom of the panel (Decision 4, U21): for a
- * prediction of the Color by annotation, a ring in its label's colour, its id, label(s) and
- * reliability; the protein it came from, whether that one is curated or predicted, how many it
- * lent to (a link that draws them) and Go to source; then its rank. For a source, its own labels
- * and its lent count. Anything else, nothing.
+ * The selected protein's strip, a footer under the panel's scroll area (Decision 4, U21, U22):
+ * for a prediction of the Color by annotation, a ring in its label's colour, its id, label(s) and
+ * reliability; the protein it was copied from, whether that one is curated or predicted, how many
+ * it is the source of (a link that draws them) and Go to source; its rank; and, when the range
+ * leaves it out, what the map does with it. For a source, its own labels and its count. Anything
+ * else, nothing. Compact, it is one row: id, reliability, source and Go to source.
  */
 export function renderCard(view: EatCardView): TemplateResult | typeof nothing {
-  const { data, annotation, index, protein, labelColors, facts } = view;
+  const { data, annotation, index, protein, labelColors, facts, compact } = view;
   const id = data.protein_ids[protein];
   if (id === undefined) return nothing;
   const cell = data.annotation_predicted?.[annotation]?.[protein] ?? null;
@@ -100,8 +159,13 @@ export function renderCard(view: EatCardView): TemplateResult | typeof nothing {
     if (ownLent === 0) return nothing;
     const labels = curatedLabels(index, protein);
     const color = swatchColor(labelColors, labels[0] ?? '');
+    const facts = html`${labels.length > 0
+        ? html`<span class="eat-card-fact">Curated</span> `
+        : nothing}<span class="eat-card-fact"
+        >${labels.length > 0 ? SEP : nothing}${sourceLink(view, id, protein, ownLent)}</span
+      >`;
     return html`<section class="eat-card" aria-label="Selected protein">
-      ${eyebrow}
+      ${compact ? nothing : eyebrow}
       <p class="eat-card-title">
         <span
           class="eat-swatch"
@@ -109,11 +173,12 @@ export function renderCard(view: EatCardView): TemplateResult | typeof nothing {
           aria-hidden="true"
         ></span>
         <span class="eat-card-id">${id}</span>
-        <span class="eat-card-labels" title=${labels.join(', ')}>${labels.join(', ')}</span>
+        <span class=${compact ? 'sr-only' : 'eat-card-labels'} title=${labels.join(', ')}
+          >${labels.join(', ')}</span
+        >
+        ${compact ? html`<span class="eat-card-line">· ${facts}</span>` : nothing}
       </p>
-      <p class="eat-card-line">
-        ${labels.length > 0 ? 'Curated · ' : ''}${lentLink(view, id, protein, ownLent)}
-      </p>
+      ${compact ? nothing : html`<p class="eat-card-line eat-card-facts">${facts}</p>`}
     </section>`;
   }
 
@@ -124,54 +189,70 @@ export function renderCard(view: EatCardView): TemplateResult | typeof nothing {
   const { rank, sourceIndex } = facts;
   const origin = sourceIndex === null ? 'not in this dataset' : originOf(view, sourceIndex);
   const sourceLent = index.lentCount.get(sourceId) ?? 0;
+  const reliability = `reliability ${formatPercent(cell.confidence)}`;
+  const goToSource = html`<span class="eat-card-actions">
+    <ps-button
+      size="sm"
+      variant="primary"
+      class="eat-go-to-source"
+      ?disabled=${sourceIndex === null}
+      @click=${() => {
+        if (sourceIndex !== null)
+          view.onGoToSource({ targetId: id, targetIndex: protein, sourceId });
+      }}
+      >Go to source</ps-button
+    >${sourceIndex === null ? html`<ps-tooltip text=${UNRESOLVED_REASON}></ps-tooltip>` : nothing}
+  </span>`;
+  const ring = html`<span
+    class="eat-ring"
+    style=${color ? `border-color:${color}` : nothing}
+    aria-hidden="true"
+  ></span>`;
 
+  if (compact) {
+    return html`<section class="eat-card" aria-label="Selected protein">
+      <div class="eat-card-row">
+        <p class="eat-card-title">
+          ${ring}
+          <span class="eat-card-id">${id}</span>
+          <span class="sr-only">${labelText}</span>
+          <span class="eat-card-line"
+            >· ${reliability} · from <span class="eat-card-source">${sourceId}</span></span
+          >
+        </p>
+        ${goToSource}
+      </div>
+      ${renderOutside(view, cell.confidence)}
+    </section>`;
+  }
+
+  const rankLine = rank ? rankText(rank) : null;
   return html`<section class="eat-card" aria-label="Selected protein">
-    ${eyebrow}
+    <div class="eat-card-row">${eyebrow} ${goToSource}</div>
     <p class="eat-card-title">
-      <span
-        class="eat-ring"
-        style=${color ? `border-color:${color}` : nothing}
-        aria-hidden="true"
-      ></span>
+      ${ring}
       <span class="eat-card-id">${id}</span>
       <span class="eat-card-labels" title=${labelText}>${labelText}</span>
-      <span class="eat-card-reliability">${formatPercent(cell.confidence)}</span>
+      <span class="eat-card-reliability">${reliability}</span>
     </p>
-    <div class="eat-card-source-row">
-      <p class="eat-card-line">
-        from <span class="eat-card-source">${sourceId}</span>${origin ? `, ${origin}` : ''}
-        <span class="eat-card-lent"
-          >${sourceIndex === null
-            ? `· lent to ${formatCount(sourceLent)}`
-            : html`· ${lentLink(view, sourceId, sourceIndex, sourceLent)}`}</span
-        >
-        ${ownLent > 0
-          ? html`<span class="eat-card-lent">· ${id} ${lentLink(view, id, protein, ownLent)}</span>`
-          : nothing}
-      </p>
-      <span class="eat-card-actions">
-        <ps-button
-          size="sm"
-          variant="primary"
-          class="eat-go-to-source"
-          ?disabled=${sourceIndex === null}
-          @click=${() => {
-            if (sourceIndex !== null)
-              view.onGoToSource({ targetId: id, targetIndex: protein, sourceId });
-          }}
-          >Go to source</ps-button
-        >${sourceIndex === null
-          ? html`<ps-tooltip text=${UNRESOLVED_REASON}></ps-tooltip>`
-          : nothing}
-      </span>
-    </div>
-    ${rank
-      ? html`<p class="eat-card-rank">
-          ${
-            // Floored: the strongest of 659 is higher than 99 %, never than 100 %, of them.
-            `Higher than ${formatPercent(Math.floor((rank.below / rank.total) * 100) / 100)} of ${formatCount(rank.total)} predictions`
-          }
-        </p>`
-      : nothing}
+    <p class="eat-card-line eat-card-facts">
+      <span class="eat-card-fact"
+        >copied from <span class="eat-card-source">${sourceId}</span>${origin
+          ? ` (${origin})`
+          : ''}</span
+      >
+      <span class="eat-card-fact"
+        >${SEP}${subject(sourceId)}${sourceIndex === null
+          ? sourceOf(sourceLent)
+          : sourceLink(view, sourceId, sourceIndex, sourceLent)}</span
+      >
+      ${ownLent > 0
+        ? html`<span class="eat-card-fact"
+            >${SEP}${id} is the ${sourceLink(view, id, protein, ownLent)}</span
+          >`
+        : nothing}
+    </p>
+    ${rankLine ? html`<p class="eat-card-rank">${rankLine}</p>` : nothing}
+    ${renderOutside(view, cell.confidence)}
   </section>`;
 }
