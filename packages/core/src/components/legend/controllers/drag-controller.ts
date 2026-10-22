@@ -13,8 +13,11 @@ const FALLBACK_CLASS = 'sortable-fallback';
  * Callback interface for drag events
  */
 export interface DragCallbacks {
-  /** Returns all legend items (will be sorted by zOrder internally) */
-  getLegendItems: () => LegendItem[];
+  /**
+   * Returns the legend items in the order the rows are drawn. Sortable's indices count drawn
+   * rows, which differ from zOrder order in the separation sorts.
+   */
+  getDisplayedItems: () => readonly LegendItem[];
   /** Updates legend items with new z-orders */
   setLegendItems: (items: LegendItem[]) => void;
   /** Called after successful reorder */
@@ -170,9 +173,8 @@ export class DragController implements ReactiveController {
       return;
     }
 
-    // Get current legend items sorted by zOrder (visual order)
-    const items = this.callbacks.getLegendItems();
-    const sortedItems = [...items].sort((a, b) => a.zOrder - b.zOrder);
+    // The rows as drawn: Sortable's indices count them, not the zOrder.
+    const sortedItems = this.callbacks.getDisplayedItems();
 
     // Find the dragged item
     const draggedItem = sortedItems.find((i) => i.value === draggedValue);

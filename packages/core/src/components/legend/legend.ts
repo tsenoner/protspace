@@ -367,7 +367,7 @@ export class ProtspaceLegend extends LitElement {
   });
 
   private _dragController = new DragController(this, {
-    getLegendItems: () => this._legendItems,
+    getDisplayedItems: () => this._sortedLegendItems,
     setLegendItems: (items) => this._reorder.setItemsFromDrag(items),
     onReorder: () => {
       this._scatterplotController.dispatchZOrderChange();

@@ -30,7 +30,7 @@ describe('DragController', () => {
     };
 
     mockCallbacks = {
-      getLegendItems: vi.fn().mockReturnValue(mockLegendItems),
+      getDisplayedItems: vi.fn().mockReturnValue(mockLegendItems),
       setLegendItems: vi.fn(),
       onReorder: vi.fn(),
       onMergeToOther: vi.fn(),
@@ -240,6 +240,27 @@ describe('DragController', () => {
       // The DOM goes back to its pre-drag order so Lit re-renders it from state.
       expect(rowOrder()).toEqual(['cat1', 'cat2', 'cat3', 'Other']);
       expect(mockHost.requestUpdate).toHaveBeenCalled();
+    });
+
+    it('reorders by the drawn order when a separation sort draws rows off their zOrder', () => {
+      // silhouette-desc draws cat3, cat1, cat2, Other; the zOrder is still cat1, cat2, cat3.
+      const drawn = ['cat3', 'cat1', 'cat2', 'Other'].map(
+        (value) => mockLegendItems.find((item) => item.value === value)!,
+      );
+      vi.mocked(mockCallbacks.getDisplayedItems).mockReturnValue(drawn);
+      for (const item of drawn) mockContainer.appendChild(row(item.value));
+
+      // Drag the third row (cat2) to the top.
+      drag('cat2', 2, 0);
+
+      const items = vi.mocked(mockCallbacks.setLegendItems).mock.calls[0][0];
+      expect(items.map((i) => [i.value, i.zOrder])).toEqual([
+        ['cat2', 0],
+        ['cat3', 1],
+        ['cat1', 2],
+        ['Other', 3],
+      ]);
+      expect(mockCallbacks.onSortModeChange).toHaveBeenCalledWith('manual');
     });
 
     it('highlights Other and refuses the move while hovering it', () => {
