@@ -1113,9 +1113,13 @@
   grid-area: plot;
 }
 
-/* The legend header fits the column: the tabs, the info, sort and settings buttons in 240 px. */
+/* The legend header fits the column: three tabs, the info, sort and settings buttons in 240 px. */
 .workbench[data-layout='landscape'] .wb-panel-tabs [role='tab'] {
-  padding: 0 var(--ps-space-2);
+  padding: 0 var(--ps-space-1);
+}
+
+.workbench[data-layout='landscape'] #myLegend::part(header) {
+  padding-left: var(--ps-space-1);
 }
 
 /* Mockup frame 7: the column is for reading the names. The header drops the title (Color by in
