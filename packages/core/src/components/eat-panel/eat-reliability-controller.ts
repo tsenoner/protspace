@@ -16,6 +16,7 @@ import {
 } from '@protspace/utils';
 import type { PsSegmented } from '../kit/segmented';
 import type { PsSwitch } from '../kit/switch';
+import { formatPercent } from '../query-builder/eat-reliability';
 
 /**
  * Debounce window (ms) for committing an EAT reliability slider drag. The slider's
@@ -392,6 +393,7 @@ export function renderReliabilityRange(
       .value=${String(ctrl.reliability[bound])}
       ?disabled=${disabled}
       aria-label=${ctrl.activeBounds.length > 1 ? ui.sliderLabel : ui.soloLabel}
+      aria-valuetext=${formatPercent(ctrl.reliability[bound])}
       @input=${(event: Event) => ctrl.onBoundInput(bound, event)}
       @keydown=${(event: KeyboardEvent) => ctrl.onBoundKeydown(bound, event)}
       @change=${ctrl.flushCommit}

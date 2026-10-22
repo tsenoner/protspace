@@ -79,6 +79,8 @@ describe('EAT reliability controller: switch, handles and boxes', () => {
     lower(panel).dispatchEvent(new Event('change'));
     await panel.updateComplete;
     expect(percents(panel)[0]!.value).toBe('73');
+    // A screen reader hears the percentage the box shows, not the 0–1 fraction.
+    expect(lower(panel).getAttribute('aria-valuetext')).toBe('73\u202f%');
     expect(detail(listener)).toMatchObject({ enabled: true, confidenceThreshold: 0.73 });
 
     const box = percents(panel)[0]!;
