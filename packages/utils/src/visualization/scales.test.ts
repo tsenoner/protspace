@@ -71,21 +71,21 @@ describe('fitScales', () => {
 });
 
 describe('padDomain', () => {
-  it('grows each axis by 5% of its span on both sides', () => {
-    expect(padDomain({ xMin: 0, xMax: 10, yMin: -5, yMax: 5 })).toEqual({
-      xMin: -0.5,
-      xMax: 10.5,
-      yMin: -5.5,
-      yMax: 5.5,
+  it('grows each axis by 2% of its span on both sides', () => {
+    expect(padDomain({ xMin: 0, xMax: 100, yMin: -50, yMax: 50 })).toEqual({
+      xMin: -2,
+      xMax: 102,
+      yMin: -52,
+      yMax: 52,
     });
   });
 
   it('leaves a zero-span axis where it is', () => {
-    expect(padDomain({ xMin: 3, xMax: 3, yMin: 0, yMax: 20 })).toEqual({
+    expect(padDomain({ xMin: 3, xMax: 3, yMin: 0, yMax: 50 })).toEqual({
       xMin: 3,
       xMax: 3,
       yMin: -1,
-      yMax: 21,
+      yMax: 51,
     });
   });
 });
