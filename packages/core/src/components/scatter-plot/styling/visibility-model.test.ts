@@ -181,6 +181,54 @@ describe('computeVisibilityModel', () => {
     });
   });
 
+  describe('dimmedMask (EAT Dim)', () => {
+    const DIMMED = { ...OPACITIES, dimmed: 0.25 };
+    const data = () => makeData(['A', 'B'], Int32Array.of(0, 1, 0));
+    const mask = Uint8Array.of(0, 1, 0);
+
+    it('a dimmed point draws at the dimmed opacity and stays interactive', () => {
+      const model = computeVisibilityModel(
+        baseInputs({ data: data(), opacities: DIMMED, dimmedMask: mask }),
+      );
+      expect(model.opacityOf(point('p1', 1))).toBe(0.25);
+      expect(model.baseOpacityOf(point('p1', 1))).toBe(0.25);
+      expect(model.isInteractive(point('p1', 1))).toBe(true);
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
+    });
+
+    it('hidden beats dimmed', () => {
+      const model = computeVisibilityModel(
+        baseInputs({
+          data: data(),
+          opacities: DIMMED,
+          dimmedMask: mask,
+          hiddenAnnotationValues: ['B'],
+        }),
+      );
+      expect(model.opacityOf(point('p1', 1))).toBe(0);
+    });
+
+    it('a selected dimmed point keeps min(selected, dimmed); a faded one stays faded', () => {
+      const model = computeVisibilityModel(
+        baseInputs({
+          data: data(),
+          opacities: DIMMED,
+          dimmedMask: Uint8Array.of(1, 1, 0),
+          selectedProteinIds: ['p1'],
+        }),
+      );
+      expect(model.opacityOf(point('p1', 1))).toBe(Math.min(OPACITIES.selected, 0.25));
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.faded);
+      // Marks cannot carry a dimmed point at two opacities: the selection is staged.
+      expect(model.marks).toBeNull();
+    });
+
+    it('no mask: nothing dims', () => {
+      const model = computeVisibilityModel(baseInputs({ data: data(), opacities: DIMMED }));
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.base);
+    });
+  });
+
   // ── Rule 1 — hidden ⇒ opacity exactly 0 ───────────────────────────────────
   describe('rule 1: hidden points have opacity exactly 0', () => {
     it('Int32Array: hidden value yields exactly 0 (Object.is)', () => {

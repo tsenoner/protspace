@@ -1,4 +1,11 @@
-import type { PlotData, ScatterplotConfig, VisualizationData } from '@protspace/utils';
+import type {
+  EatReliabilityState,
+  PlotData,
+  ScatterplotConfig,
+  VisualizationData,
+} from '@protspace/utils';
+import { keptBy } from '../../eat-panel/eat-summary';
+import { EAT_DIMMED_OPACITY } from '../config';
 import type { PointMarks } from '../webgl/types';
 import { createStyleGetters } from './style-getters';
 import { LIGHT_NEUTRALS, sameNeutrals, type PlotNeutrals } from './plot-neutrals';
@@ -18,6 +25,8 @@ interface PointStyleHost {
   /** Shift+hover: the hovered point's category values; every other point fades. */
   focusedValues(): string[] | null;
   eatOverlayEnabled(): boolean;
+  /** EAT Dim: predictions this reliability filter would drop draw faded; null dims nothing. */
+  eatDim(): EatReliabilityState | null;
   /** The point size and the three opacity tiers. */
   config(): Required<ScatterplotConfig>;
   /** The legend's mappings, null until it sends them. */
@@ -49,7 +58,28 @@ type VisibilityModelMemoKey = {
   fadedOpacity: number;
   eatOverlayEnabled: boolean;
   focusedValues: string[] | null;
+  dimmedMask: Uint8Array | null;
 };
+
+/**
+ * A mark per protein index for the predictions of `annotation` that `state` does not keep, or
+ * null when none is dropped. One pass over the predicted cells.
+ */
+function eatDimmedMask(
+  data: VisualizationData,
+  annotation: string,
+  state: EatReliabilityState,
+): Uint8Array | null {
+  const cells = data.annotation_predicted?.[annotation];
+  if (!cells) return null;
+  const kept = keptBy(state);
+  let mask: Uint8Array | null = null;
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i];
+    if (cell && !kept(cell.confidence)) (mask ??= new Uint8Array(data.protein_ids.length))[i] = 1;
+  }
+  return mask;
+}
 
 /** The interactive slots of some plot data, see `interactable`. */
 interface InteractableSlots {
@@ -123,6 +153,14 @@ export class PointStyleState {
   private _interactable: InteractableSlots | null = null;
   // Cancels the pending idle build of the protein id index (`scheduleIdIndex`).
   private _cancelIdIndex: (() => void) | null = null;
+  // The EAT dim mask and what it was built from; rebuilt when any of them changes.
+  private _dim: {
+    data: VisualizationData | null;
+    annotation: string;
+    state: EatReliabilityState | null;
+    overlay: boolean;
+    mask: Uint8Array | null;
+  } | null = null;
 
   constructor(private readonly host: PointStyleHost) {}
 
@@ -155,6 +193,7 @@ export class PointStyleState {
     const highlightedProteinIds = host.highlightedProteinIds();
     const eatOverlayEnabled = host.eatOverlayEnabled();
     const focusedValues = host.focusedValues();
+    const dimmedMask = this.dimmedMask();
     // A lasso over another dataset's ids, until a swap releases it, marks
     // nothing here, and the model would keep it alive.
     const slotSelection =
@@ -173,7 +212,8 @@ export class PointStyleState {
       key.selectedOpacity === selectedOpacity &&
       key.fadedOpacity === fadedOpacity &&
       key.eatOverlayEnabled === eatOverlayEnabled &&
-      key.focusedValues === focusedValues
+      key.focusedValues === focusedValues &&
+      key.dimmedMask === dimmedMask
     ) {
       return this._visibilityModel;
     }
@@ -185,8 +225,14 @@ export class PointStyleState {
         hiddenAnnotationValues,
         selectedProteinIds,
         highlightedProteinIds,
-        opacities: { base: baseOpacity, selected: selectedOpacity, faded: fadedOpacity },
+        opacities: {
+          base: baseOpacity,
+          selected: selectedOpacity,
+          faded: fadedOpacity,
+          dimmed: EAT_DIMMED_OPACITY,
+        },
         focusedValues,
+        dimmedMask,
         selectionMask: slotSelection,
       },
       this._visibilityModel ?? undefined,
@@ -204,8 +250,39 @@ export class PointStyleState {
       fadedOpacity,
       eatOverlayEnabled,
       focusedValues,
+      dimmedMask,
     };
     return model;
+  }
+
+  /**
+   * The EAT dim mask over the materialized data: built once per change of the data, the Color by
+   * annotation, the dim state (by reference) or Show predictions. Null while nothing dims, and
+   * while predictions are not shown.
+   */
+  private dimmedMask(): Uint8Array | null {
+    const host = this.host;
+    const state = host.eatDim();
+    if (!state) {
+      this._dim = null;
+      return null;
+    }
+    const data = host.data();
+    const annotation = host.selectedAnnotation();
+    const overlay = host.eatOverlayEnabled();
+    const dim = this._dim;
+    if (
+      dim &&
+      dim.data === data &&
+      dim.annotation === annotation &&
+      dim.state === state &&
+      dim.overlay === overlay
+    ) {
+      return dim.mask;
+    }
+    const mask = data && overlay ? eatDimmedMask(data, annotation, state) : null;
+    this._dim = { data, annotation, state, overlay, mask };
+    return mask;
   }
 
   /**
@@ -242,6 +319,7 @@ export class PointStyleState {
     this._styleGetters = null;
     this._exportGetters = null;
     this._interactable = null;
+    this._dim = null;
     this.clearMarks();
   }
 
@@ -361,12 +439,14 @@ export class PointStyleState {
   /**
    * Whether the renderer draws the selection and highlight as marks on the GPU
    * (`pointMarks`) rather than staging them: not while focus fades points by
-   * category, nor with opacities the marks cannot draw as staging does, nor
-   * while the renderer cannot draw marks for the dataset.
+   * category, nor while EAT Dim caps some points, nor with opacities the marks
+   * cannot draw as staging does, nor while the renderer cannot draw marks for the
+   * dataset.
    */
   marksOnGpu(): boolean {
     return (
       this.host.focusedValues() === null &&
+      this.dimmedMask() === null &&
       this.getters().canMarkOnGpu() &&
       this.host.canDrawMarks()
     );

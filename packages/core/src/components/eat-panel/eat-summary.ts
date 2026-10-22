@@ -199,6 +199,12 @@ export function isKept(state: EatReliabilityState, confidence: number): boolean 
   return keeps(keeperOf(state), confidence);
 }
 
+/** `isKept` for one `state`, normalized once, for a pass over many cells. */
+export function keptBy(state: EatReliabilityState): (confidence: number) => boolean {
+  const keeper = keeperOf(state);
+  return (confidence) => keeps(keeper, confidence);
+}
+
 /**
  * The 5 % histogram bin of a reliability, 0..19. A reliability of exactly 1 falls in the last
  * bin; the epsilon keeps a decimal boundary such as 0.6 in the bin a reader expects.

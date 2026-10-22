@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import type { PlotData, VisualizationData } from '@protspace/utils';
+import type { EatReliabilityState, PlotData, VisualizationData } from '@protspace/utils';
 import { DEFAULT_CONFIG, NEUTRAL_VALUE_COLOR } from '../config';
 import { LIGHT_NEUTRALS, type PlotNeutrals } from './plot-neutrals';
 import { PointStyleState } from './point-style-state';
@@ -34,6 +34,7 @@ function makeState() {
     highlightedProteinIds: [] as string[],
     focusedValues: null as string[] | null,
     eatOverlayEnabled: true,
+    eatDim: null as EatReliabilityState | null,
     config: DEFAULT_CONFIG,
     zOrderMapping: null as Record<string, number> | null,
     colorMapping: null as Record<string, string> | null,
@@ -50,6 +51,7 @@ function makeState() {
     highlightedProteinIds: () => inputs.highlightedProteinIds,
     focusedValues: () => inputs.focusedValues,
     eatOverlayEnabled: () => inputs.eatOverlayEnabled,
+    eatDim: () => inputs.eatDim,
     config: () => inputs.config,
     zOrderMapping: () => inputs.zOrderMapping,
     colorMapping: () => inputs.colorMapping,
@@ -91,6 +93,30 @@ describe('model() memo key', () => {
       expect(state.model()).not.toBe(before);
     });
   }
+
+  it('builds a new model when the EAT dim drops a prediction, and keeps it while the dim holds', () => {
+    const { inputs, state } = makeState();
+    const data = makeData();
+    data.annotation_predicted = {
+      fam: [null, null, { value: 'A', confidence: 0.2, source: 'p0' }, null, null, null],
+    };
+    inputs.data = data;
+    const before = state.model();
+    inputs.eatDim = { mode: 'atLeast', min: 0.5, max: 1 };
+    const dimmed = state.model();
+    expect(dimmed).not.toBe(before);
+    expect(dimmed.opacityAt(2, 'p2')).toBe(0.25);
+    expect(state.model()).toBe(dimmed);
+    inputs.eatDim = null;
+    expect(state.model().opacityAt(2, 'p2')).toBe(DEFAULT_CONFIG.baseOpacity);
+  });
+
+  it('keeps the model when the EAT dim drops nothing', () => {
+    const { inputs, state } = makeState();
+    const before = state.model();
+    inputs.eatDim = { mode: 'atLeast', min: 0.5, max: 1 };
+    expect(state.model()).toBe(before);
+  });
 
   const otherFlips: Array<[string, (inputs: Inputs) => void]> = [
     ['otherAnnotationValues', (i) => (i.otherAnnotationValues = ['B'])],

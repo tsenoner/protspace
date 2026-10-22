@@ -4,6 +4,7 @@ import { customElement } from '../../utils/safe-custom-element';
 import { perfCounters } from '../../utils/perf-counters';
 import * as d3 from 'd3';
 import type {
+  EatReliabilityState,
   VisualizationData,
   PlotData,
   PlotDataPoint,
@@ -189,6 +190,11 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Object }) config: Partial<ScatterplotConfig> = {};
   @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
   /**
+   * EAT Dim: the predictions of the Color by annotation that this reliability filter would drop
+   * draw at 25 % opacity instead of being filtered out; they stay hoverable. Null dims nothing.
+   */
+  @property({ attribute: false }) eatDim: EatReliabilityState | null = null;
+  /**
    * The host shows the count elsewhere (the app's status corner): the plot does not draw its own.
    * The recalculating note and the connector status still show.
    */
@@ -305,6 +311,7 @@ export class ProtspaceScatterplot extends LitElement {
     highlightedProteinIds: () => this.highlightedProteinIds,
     focusedValues: () => this._focusedValues,
     eatOverlayEnabled: () => this.eatOverlayEnabled,
+    eatDim: () => this.eatDim,
     config: () => this._mergedConfig,
     zOrderMapping: () => this._zOrderMapping,
     colorMapping: () => this._colorMapping,
@@ -989,6 +996,7 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('highlightedProteinIds') ||
       changedProperties.has('_focusedValues') ||
       changedProperties.has('eatOverlayEnabled') ||
+      changedProperties.has('eatDim') ||
       changedProperties.has('config')
     ) {
       this._style.refreshGetters();
@@ -1000,6 +1008,11 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('selectedProteinIds') ||
       changedProperties.has('highlightedProteinIds') ||
       changedProperties.has('_focusedValues');
+    // Dim changes opacities only, as focus does: one style re-stage, no geometry. It also moves
+    // the selection between the GPU marks and staging.
+    if (changedProperties.has('eatDim')) {
+      this._webglRenderer?.invalidateStyleCache();
+    }
     if (selectionChanged) {
       this._syncWebglSelectionActive();
       // Marks the renderer draws on the GPU re-stage nothing. Focus is staged,

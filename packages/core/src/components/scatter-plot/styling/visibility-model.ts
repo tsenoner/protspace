@@ -55,7 +55,14 @@ export interface VisibilityInputs {
   hiddenAnnotationValues: string[];
   selectedProteinIds: string[];
   highlightedProteinIds: string[];
-  opacities: { base: number; selected: number; faded: number };
+  /** `dimmed` caps the points `dimmedMask` marks; unused without a mask. */
+  opacities: { base: number; selected: number; faded: number; dimmed?: number };
+  /**
+   * A mark per protein index for the points drawn at most `opacities.dimmed`: the EAT predictions
+   * below the reliability threshold in Dim mode. They stay interactive while it is above 0, and
+   * hiding still wins. Null (the default) costs nothing.
+   */
+  dimmedMask?: Uint8Array | null;
   /** Internal values to keep in focus (Shift+hover); every other point fades. */
   focusedValues?: string[] | null;
   /**
@@ -117,7 +124,8 @@ export interface VisibilityModel {
   /**
    * The selection and highlight as one mark: a protein in `markedSlots` has base
    * opacity `marked`, every other one `unmarked`. Null while nothing is marked,
-   * and while focus gives the unmarked proteins their opacity by category.
+   * while focus gives the unmarked proteins their opacity by category, and while
+   * a dim mask caps some of them.
    */
   readonly marks: { readonly marked: number; readonly unmarked: number } | null;
   /** This model with nothing selected, highlighted or focused. */
@@ -462,7 +470,10 @@ export function computeVisibilityModel(
     return markedIds.has(id);
   };
 
-  const baseOpacityAt = (originalIndex: number, id: string): number => {
+  const dimmedMask = inputs.dimmedMask ?? null;
+  const dimmed = opacities.dimmed ?? opacities.faded;
+
+  const tierOpacityAt = (originalIndex: number, id: string): number => {
     if (anyMarked) {
       if (isMarked(originalIndex, id)) return opacities.selected;
       if (hasSelection) return opacities.faded;
@@ -473,6 +484,13 @@ export function computeVisibilityModel(
     }
     return opacities.base;
   };
+
+  const baseOpacityAt = dimmedMask
+    ? (originalIndex: number, id: string): number => {
+        const opacity = tierOpacityAt(originalIndex, id);
+        return dimmedMask[originalIndex] === 1 ? Math.min(opacity, dimmed) : opacity;
+      }
+    : tierOpacityAt;
 
   const opacityAt = (originalIndex: number, id: string): number => {
     if (isHiddenAt(originalIndex)) return 0;
@@ -503,9 +521,10 @@ export function computeVisibilityModel(
     return slots;
   };
 
-  // A selection fades the rest whatever the focus; a highlight alone leaves it to focus.
+  // A selection fades the rest whatever the focus; a highlight alone leaves it to focus. Two
+  // opacities cannot carry dimmed points, so a dim mask stages the marks.
   const marks =
-    anyMarked && (hasSelection || !unfocusedMask)
+    anyMarked && !dimmedMask && (hasSelection || !unfocusedMask)
       ? { marked: opacities.selected, unmarked: hasSelection ? opacities.faded : opacities.base }
       : null;
   let unmarked: VisibilityModel | null = null;
@@ -524,7 +543,11 @@ export function computeVisibilityModel(
           hiddenMask,
           idIndex,
         };
-  const tiersInteractive = opacities.base > 0 && opacities.selected > 0 && opacities.faded > 0;
+  const tiersInteractive =
+    opacities.base > 0 &&
+    opacities.selected > 0 &&
+    opacities.faded > 0 &&
+    (!dimmedMask || dimmed > 0);
 
   const model: VisibilityModel = {
     allHidden,

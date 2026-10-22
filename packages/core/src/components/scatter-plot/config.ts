@@ -17,3 +17,6 @@ export const DEFAULT_CONFIG: Required<ScatterplotConfig> = {
 };
 
 export const NEUTRAL_VALUE_COLOR = '#888888';
+
+/** EAT Dim: predictions below the reliability threshold draw at most this opacity. */
+export const EAT_DIMMED_OPACITY = 0.25;
