@@ -1,7 +1,7 @@
 /**
  * Captures for docs/explore/controls.md (Bars and Tools) and docs/explore/filter.md: each view-bar
  * menu open beside its trigger, the search report, the Export menu, the Filter panel holding a
- * two-condition draft, the plot with contours, and the EAT badge in Color by.
+ * two-condition draft and its value list, the plot with contours, and the EAT badge in Color by.
  */
 import { expect, type Page } from '@playwright/test';
 import { DEFAULT_EXAMPLE_DATASET } from '../../../apps/web/src/explore/example-datasets';
@@ -38,16 +38,14 @@ const UNKNOWN_IDS = ['X00001', 'X00002'];
 
 /**
  * Builds a draft in the Filter panel and leaves it unapplied: the colouring annotation is one of
- * the two largest legend categories, AND length is between 60 and 120. The live count shows; Apply
- * is enabled.
+ * the two largest legend categories, AND length is between 60 and 120 in its range card. The
+ * header counts the unapplied changes; Apply is enabled.
  */
 async function draftTwoConditions(page: Page): Promise<void> {
   const annotation = DEFAULT_EXAMPLE_DATASET.defaultView.annotation;
   const values = (await legendRowValues(page)).slice(0, 2);
   await draftFilterCondition(page, 0, annotation, values);
   const second = await draftFilterCondition(page, 1, 'length');
-  await second.getByRole('button', { name: /^Operator for condition 2/ }).click();
-  await second.getByRole('menuitemradio', { name: /^is between/ }).click();
   await second.getByLabel('Minimum value').fill('60');
   await second.getByLabel('Maximum value').fill('120');
   // No focus ring on the last field in the picture.
@@ -56,11 +54,47 @@ async function draftTwoConditions(page: Page): Promise<void> {
     // The element's text keeps its template whitespace around the sentence.
     /^\s*[1-9][\d,]* of [\d,]+ proteins? match\s*$/,
   );
-  // The length condition's own count lands after a 750 ms debounce.
-  await expect(second.locator('.numeric-match-count')).toHaveText(
-    /[1-9][\d,]* (proteins match|protein matches)/,
-  );
+  // The range card's own count lands after a debounce.
+  await expect(second.locator('.numeric-match-count')).toHaveText(/^[1-9][\d,]* proteins?/);
+  await expect(filterPanel(page).getByText(/^2 unapplied changes$/)).toBeVisible();
 }
+
+/** Opens the value list of the first card, on the colouring annotation, with two values ticked. */
+async function openValueList(page: Page): Promise<void> {
+  const annotation = DEFAULT_EXAMPLE_DATASET.defaultView.annotation;
+  const values = (await legendRowValues(page)).slice(0, 2);
+  const card = await draftFilterCondition(page, 0, annotation, values);
+  await card.locator('.value-add').click();
+  await expect(valueList(page)).toBeVisible();
+  // The counts land after a debounce; until then every row reads 0.
+  await expect(valueList(page).locator('.value-picker-count').first()).not.toHaveText('0');
+  await expect(valueList(page).locator('.value-picker-summary')).not.toContainText('· 0 proteins');
+}
+
+/**
+ * Drafts "family A or family B, and length 60 to 120": three cards joined by "and", then the
+ * second joiner switched to "or", which asks "Group these?", answered with Group these.
+ */
+async function draftGroup(page: Page): Promise<void> {
+  const annotation = DEFAULT_EXAMPLE_DATASET.defaultView.annotation;
+  const [first, second] = await legendRowValues(page);
+  await draftFilterCondition(page, 0, annotation, [first]);
+  await draftFilterCondition(page, 1, annotation, [second]);
+  const length = await draftFilterCondition(page, 2, 'length');
+  await length.getByLabel('Minimum value').fill('60');
+  await length.getByLabel('Maximum value').fill('120');
+  await length.getByLabel('Maximum value').blur();
+  const builder = queryBuilder(page);
+  await builder.getByRole('button', { name: /^Joiner for condition 2/ }).click();
+  await page.getByRole('menuitemradio', { name: /^or/ }).click();
+  await builder.getByRole('button', { name: 'Group these', exact: true }).click();
+  await expect(builder.locator('.group-container')).toHaveCount(1);
+  await expect(builder.locator('.group-label')).toHaveText('Any of these');
+  await expect(length.locator('.numeric-match-count')).toHaveText(/^[1-9][\d,]* proteins?/);
+}
+
+/** The open value list's panel. */
+const valueList = (page: Page) => queryBuilder(page).locator('.value-picker');
 
 export const CONTROLS_CAPTURES: CaptureEntry[] = [
   {
@@ -141,6 +175,24 @@ export const CONTROLS_CAPTURES: CaptureEntry[] = [
     docs: ['explore/filter.md'],
     steps: draftTwoConditions,
     target: (page) => filterPanel(page),
+  },
+  {
+    name: 'filter-group',
+    kind: 'png',
+    // Tall enough for the group and the card after it without scrolling the panel.
+    viewport: { width: 1280, height: 1000 },
+    docs: ['explore/filter.md'],
+    steps: draftGroup,
+    target: (page) => filterPanel(page),
+  },
+  {
+    name: 'filter-value-list',
+    kind: 'png',
+    viewport: 'desktop',
+    themes: ['light', 'dark'],
+    docs: ['explore/filter.md'],
+    steps: openValueList,
+    target: (page) => around([filterPanel(page), valueList(page)]),
   },
   {
     name: 'scatterplot-contours',
