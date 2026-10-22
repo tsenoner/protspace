@@ -310,8 +310,8 @@ test('with source lines off, a click only selects; Go to source still draws', as
   await trace.click();
   await expect(trace).not.toBeChecked();
   await expect(
-    eatPanel(page).getByRole('combobox', { name: 'Most lines from one source' }),
-  ).toHaveValue('20');
+    eatPanel(page).getByRole('button', { name: 'Most lines from one source' }),
+  ).toHaveAccessibleName('Most lines from one source 20');
 
   const at = await proteinScreenPosition(page, target);
   await page.mouse.click(at.x, at.y);

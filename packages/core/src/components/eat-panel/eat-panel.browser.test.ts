@@ -130,6 +130,23 @@ async function sortLabels(el: ProtspaceEatPanel, sort: string): Promise<void> {
   expect(menu.open).toBe(false);
 }
 
+/** Opens the lines-cap menu from its button and picks `n`, as a user does. */
+async function pickLines(el: ProtspaceEatPanel, n: number): Promise<void> {
+  root(el).querySelector<HTMLElement>('.eat-drawing .eat-lines')!.click();
+  await el.updateComplete;
+  const menu = root(el).querySelector<HTMLElement & { open: boolean }>(
+    'ps-menu[label="Most lines from one source"]',
+  )!;
+  expect(menu.open).toBe(true);
+  menu.querySelector<HTMLElement>(`ps-menu-item[value="${n}"]`)!.click();
+  await el.updateComplete;
+  expect(menu.open).toBe(false);
+}
+
+/** The lines cap the button shows. */
+const linesShown = (el: ProtspaceEatPanel) =>
+  root(el).querySelector('.eat-drawing .eat-lines .eat-sort-value')!.textContent!.trim();
+
 function listenColorBy(el: ProtspaceEatPanel): string[] {
   const picked: string[] = [];
   el.addEventListener('eat-color-by', (event) =>
@@ -320,12 +337,9 @@ describe('protspace-eat-panel', () => {
       const el = await mount();
       const drawing = listenDrawing(el);
       const trace = root(el).querySelector<PsSwitch>('.eat-drawing ps-switch')!;
-      const lines = root(el).querySelector<HTMLElement & { value: string }>(
-        '.eat-drawing ps-select',
-      )!;
       expect(trace.textContent?.trim()).toBe('Draw a line to the source when I click a protein');
       expect(trace.checked).toBe(true);
-      expect(lines.value).toBe('20');
+      expect(linesShown(el)).toBe('20');
 
       await trace.updateComplete;
       trace.shadowRoot!.querySelector('button')!.click();
@@ -333,10 +347,9 @@ describe('protspace-eat-panel', () => {
       expect(drawing).toEqual([{ trace: false, linesPerSource: 20 }]);
       expect(el.isAtDefaults).toBe(false);
 
-      lines.value = '50';
-      lines.dispatchEvent(new Event('change', { bubbles: true }));
-      await el.updateComplete;
+      await pickLines(el, 50);
       expect(drawing.at(-1)).toEqual({ trace: false, linesPerSource: 50 });
+      expect(linesShown(el)).toBe('50');
     });
 
     it('reset() puts the Drawing switches back and says so; Reset at defaults does not', async () => {
@@ -345,25 +358,19 @@ describe('protspace-eat-panel', () => {
       el.reset();
       expect(drawing).toHaveLength(0);
 
-      const lines = root(el).querySelector<HTMLElement & { value: string }>(
-        '.eat-drawing ps-select',
-      )!;
-      lines.value = '10';
-      lines.dispatchEvent(new Event('change', { bubbles: true }));
-      await el.updateComplete;
+      await pickLines(el, 10);
       el.reset();
       await el.updateComplete;
       expect(drawing.at(-1)).toEqual({ trace: true, linesPerSource: 20 });
       expect(el.isAtDefaults).toBe(true);
-      expect(lines.value).toBe('20');
+      expect(linesShown(el)).toBe('20');
 
       // A new dataset keeps how the user likes lines drawn.
-      lines.value = '50';
-      lines.dispatchEvent(new Event('change', { bubbles: true }));
+      await pickLines(el, 50);
       el.resetForNewDataset();
       await el.updateComplete;
       expect(drawing).toHaveLength(3);
-      expect(lines.value).toBe('50');
+      expect(linesShown(el)).toBe('50');
     });
   });
 

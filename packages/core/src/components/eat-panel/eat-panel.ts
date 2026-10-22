@@ -11,12 +11,12 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
+import '../kit/button';
+import { icon } from '../kit/icon';
 import '../kit/menu';
 import '../kit/segmented';
-import '../kit/select';
 import '../kit/switch';
 import type { PsSegmented, SegmentedOption } from '../kit/segmented';
-import type { PsSelect } from '../kit/select';
 import type { PsSwitch } from '../kit/switch';
 import { formatPercent, rangeText, reliabilityLabel } from '../query-builder/eat-reliability';
 import {
@@ -63,7 +63,7 @@ type ExportMenu = { anchor: HTMLElement; drill: EatDrill | null };
 /** How many of a source's lines are drawn (Decision 7). */
 type LinesPerSource = 10 | 20 | 50;
 const DEFAULT_LINES_PER_SOURCE: LinesPerSource = 20;
-const LINES_OPTIONS = [10, 20, 50].map((n) => ({ value: String(n), label: String(n) }));
+const LINES_OPTIONS: readonly LinesPerSource[] = [10, 20, 50];
 
 /** What happens to the predictions outside the range: filtered out, or faded (`dim`). */
 type EatOutcome = 'hide' | 'dim';
@@ -153,6 +153,8 @@ export class ProtspaceEatPanel extends LitElement {
   @state() private _exportMenu: ExportMenu | null = null;
   /** The Sort trigger while the label Sort menu is open. */
   @state() private _sortMenu: HTMLElement | null = null;
+  /** The lines-cap trigger while its menu is open. */
+  @state() private _linesMenu: HTMLElement | null = null;
   /** The last opened menu's scope; the menu closes before it reports the pick. */
   private _exportDrill: EatDrill | null = null;
   /** The histogram bar holding the bar group's one tab stop. */
@@ -297,6 +299,7 @@ export class ProtspaceEatPanel extends LitElement {
     // A drill-down's menu goes with its list (closed, or dropped as stale).
     if (this._exportMenu && !this._exportMenu.anchor.isConnected) this._exportMenu = null;
     if (this._sortMenu && !this._sortMenu.isConnected) this._sortMenu = null;
+    if (this._linesMenu && !this._linesMenu.isConnected) this._linesMenu = null;
     this._watchCard(this.renderRoot.querySelector<HTMLElement>('.eat-card'));
     this._wrapFacts();
   }
@@ -636,17 +639,45 @@ export class ProtspaceEatPanel extends LitElement {
       >
       <div class="eat-lines-row">
         <span aria-hidden="true">Most lines from one source</span>
-        <ps-select
+        <ps-button
+          class="eat-sort eat-lines"
+          variant="ghost"
           size="sm"
+          @click=${(event: Event) =>
+            (this._linesMenu = this._linesMenu ? null : (event.currentTarget as HTMLElement))}
+        >
+          <span class="sr-only">Most lines from one source</span>
+          <span class="eat-sort-value">${this._linesPerSource}</span>
+          <span slot="end" class="eat-sort-chevron">${icon('chevron-down', 14)}</span>
+        </ps-button>
+        <ps-menu
           label="Most lines from one source"
-          .options=${LINES_OPTIONS}
-          .value=${String(this._linesPerSource)}
-          @change=${(event: Event) =>
+          placement="bottom-end"
+          .anchor=${this._linesMenu}
+          .open=${this._linesMenu !== null}
+          @ps-select=${(event: Event) => {
+            event.stopPropagation();
+            this._linesMenu = null;
             this._setDrawing(
               this._trace,
-              Number((event.currentTarget as PsSelect).value) as LinesPerSource,
-            )}
-        ></ps-select>
+              Number((event as CustomEvent<{ value: string }>).detail.value) as LinesPerSource,
+            );
+          }}
+          @ps-close=${(event: Event) => {
+            event.stopPropagation();
+            this._linesMenu = null;
+          }}
+        >
+          ${LINES_OPTIONS.map(
+            (n) =>
+              html`<ps-menu-item
+                type="radio"
+                value=${String(n)}
+                .checked=${n === this._linesPerSource}
+                >${n}</ps-menu-item
+              >`,
+          )}
+        </ps-menu>
       </div>
     </section>`;
   }
