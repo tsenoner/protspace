@@ -224,6 +224,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   private _selectAnnotation(annotation: string) {
     this._closeAnnotationPicker();
     this._showValuePicker = false;
+    // The annotation the card already has: keep its values, operator and range.
+    if (annotation === this.condition.annotation) return;
     // Replace the whole condition object so its kind matches the annotation.
     const base = {
       id: this.condition.id,

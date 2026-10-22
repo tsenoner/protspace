@@ -88,6 +88,17 @@ describe('query-condition-row annotation kind detection', () => {
     const el = await mount();
     expect(await kindAfterSelecting(el, 'mass')).toBe('numeric');
   });
+
+  it('re-picking the current annotation keeps the condition: no condition-changed', async () => {
+    const el = await mount();
+    el.condition = { id: 'c1', kind: 'categorical', annotation: 'organism', values: ['Human'] };
+    await el.updateComplete;
+    let fired = false;
+    el.addEventListener('condition-changed', () => (fired = true));
+    el._selectAnnotation('organism');
+    await el.updateComplete;
+    expect(fired).toBe(false);
+  });
 });
 
 /**
