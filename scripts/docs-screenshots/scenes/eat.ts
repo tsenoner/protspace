@@ -32,7 +32,7 @@ const pairs = new WeakMap<Page, Pair>();
 const eatSection = (page: Page): Locator =>
   legend(page).getByRole('region', { name: 'Embedding Annotation Transfer' });
 const reliabilityPercent = (page: Page): Locator =>
-  eatSection(page).getByRole('spinbutton', { name: 'EAT reliability filter percentage' });
+  eatSection(page).getByRole('spinbutton', { name: 'EAT reliability lower bound percentage' });
 const connectors = (page: Page): Locator =>
   page.locator('#myPlot').locator('line.eat-provenance-connector');
 

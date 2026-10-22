@@ -299,7 +299,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const panel = eatPanel(page);
   const eatToggle = panel.getByRole('switch', { name: 'Show predictions' });
   const threshold = panel.getByRole('slider', {
-    name: 'EAT reliability filter threshold',
+    name: 'EAT reliability filter lower bound',
   });
   const thresholdPercent = eatThresholdBox(page);
   // The overview's count line: curated, predicted (kept) and no-value proteins in view.
@@ -673,7 +673,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     expect(await viewBar(page).evaluate((bar) => bar.scrollWidth <= bar.clientWidth)).toBe(true);
   }).toPass({ timeout: 5_000 });
   await expect(
-    viewBar(page).getByRole('slider', { name: 'EAT reliability filter threshold' }),
+    viewBar(page).getByRole('slider', { name: 'EAT reliability filter lower bound' }),
   ).toHaveCount(0);
 
   // The panel's reliability controls fit inside it, and the panel inside the screen, at every
@@ -884,16 +884,18 @@ test('keeps curated points visible while the reliability filter hides low-confid
     });
   await expect(plotStatus(page).locator('.status-count')).toHaveText('738 proteins');
 
-  // 100%: only the 4 transfers at full reliability survive — still no curated
-  // point is dropped, which is the whole point of the filter.
+  // 100% in the low box: it stops one step short of the high end (100 %), so the range is
+  // 99–100 % and only the 5 transfers at 99 % or more survive — still no curated point is
+  // dropped, which is the whole point of the filter.
   await thresholdPercent.fill('100');
+  await expect(thresholdPercent).toHaveValue('99');
   await expect
-    .poll(() => visibility(1), { timeout: 15_000 })
+    .poll(() => visibility(0.99), { timeout: 15_000 })
     .toEqual({
-      renderedTotal: 623,
+      renderedTotal: 624,
       curatedHidden: [],
-      predictedVisible: 4,
-      predictedExpectedVisible: 4,
+      predictedVisible: 5,
+      predictedExpectedVisible: 5,
     });
 
   // Back to 0: the condition is removed and every prediction returns, so the
