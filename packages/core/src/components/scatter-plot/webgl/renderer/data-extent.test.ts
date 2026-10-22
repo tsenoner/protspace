@@ -16,14 +16,14 @@ describe('computeExtent', () => {
 });
 
 describe('computePaddedExtent', () => {
-  it('adds 5% of the span on each axis', () => {
-    expect(DATA_EXTENT_PADDING).toBe(0.05);
+  it('adds 2% of the span on each axis', () => {
+    expect(DATA_EXTENT_PADDING).toBe(0.02);
     const xs = new Float32Array([0, 10]);
     const ys = new Float32Array([0, 20]);
     const e = computePaddedExtent(xs, ys, 2);
-    expect(e.xMin).toBeCloseTo(-0.5);
-    expect(e.xMax).toBeCloseTo(10.5);
-    expect(e.yMin).toBeCloseTo(-1);
-    expect(e.yMax).toBeCloseTo(21);
+    expect(e.xMin).toBeCloseTo(-0.2);
+    expect(e.xMax).toBeCloseTo(10.2);
+    expect(e.yMin).toBeCloseTo(-0.4);
+    expect(e.yMax).toBeCloseTo(20.4);
   });
 });
