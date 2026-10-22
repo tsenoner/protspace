@@ -76,7 +76,7 @@ The rail on the sidebar's right edge switches between its three panels and folds
 - Drag a row by its handle to reorder; higher rows are drawn on top in the plot.
 - The sliders button in the header opens **Legend settings**; the sort button orders the rows.
 - Scored datasets add [separation score strips](/explore/separation-scores) above the rows.
-- Annotations with [transferred values](/explore/eat) add a `Predicted (transferred)` section.
+- Annotations with [transferred values](/explore/eat) add a line with an **EAT ›** link to the EAT panel.
 
 [Using the Legend](/explore/legend) has the details.
 

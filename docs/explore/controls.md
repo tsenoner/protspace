@@ -220,8 +220,8 @@ numbers, or see [Separation Scores](/explore/separation-scores) for what they me
 An **EAT** badge marks an annotation in which some proteins carry a value **transferred from a
 nearby annotated protein** instead of a curated record of their own, not to be confused with the ⚡
 badge. Hover it for the tooltip "Embedding Annotation Transfer predictions available". Select the
-annotation to see which proteins those are, and to get the `Predicted (transferred)` controls in the
-[legend](/explore/legend). See [Transferred Annotations (EAT)](/explore/eat) for the whole feature.
+annotation to see which proteins those are, and open the EAT panel from the rail for its
+controls. See [Transferred Annotations (EAT)](/explore/eat) for the whole feature.
 :::
 
 ::: info Tooltip-only annotations

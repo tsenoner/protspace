@@ -65,9 +65,9 @@ Numeric annotations do **not** use `Other`. They are binned directly from the ra
 
 ## Transferred Annotations (EAT)
 
-When the selected annotation carries values borrowed from nearby annotated proteins, a `Predicted (transferred)` section appears at the very top of the legend panel, above the separation strips. It holds a `Show` checkbox that adds the borrowed values to the plot and the legend rows, or removes them so those proteins fall back to `N/A`; a reliability filter — a mode dropdown (`Hide below`, `Hide above`, `Keep between`) with a slider, plus a second slider for the band — that hides predictions falling outside the chosen range; and a count of `Observed` against `Predicted by EAT` proteins. Curated values are never hidden by it in any mode, and the section is absent for annotations that have no transferred values.
+When the selected annotation carries values borrowed from nearby annotated proteins, one line under the legend's title says so, such as `Includes 659 predicted`, with an **EAT ›** link. Once you narrow the reliability range it adds what happens to the predictions outside it, `· outside 50–100 % hidden` (or `faded`), and with predictions off it reads `659 predictions off, shown as N/A`. The line holds no controls: **EAT ›** opens the EAT panel, which has them all. Borrowed values join their label's row and count while predictions are shown.
 
-See [Transferred Annotations (EAT)](/explore/eat) for where the borrowed values come from and how to read them in the plot.
+See [Transferred Annotations (EAT)](/explore/eat) for the EAT panel, where the borrowed values come from and how to read them in the plot.
 
 ## Separation Score Strips
 

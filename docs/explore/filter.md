@@ -111,10 +111,15 @@ Applying a filter is a step you can undo with **⌘ Z** (Mac) / **Ctrl + Z**, an
 
 ## Reliability and the filter
 
-For a dataset with transferred annotations, the reliability control in the legend's
-**Predicted (transferred)** section is a front end for this filter: moving it writes one condition
-on the annotation's EAT confidence, which you can see and edit here, and editing that condition
-moves the control. See [Filtering By Reliability](/explore/eat#filtering-by-reliability).
+For a dataset with transferred annotations, the reliability range in the [EAT panel](/explore/eat)
+writes one condition into this filter while it hides the predictions outside the range (**Hide**).
+The condition shows here as a locked row, such as `Toxin class — reliability ≥ 50 %`:
+
+![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row.png)
+
+You cannot edit it here. **Edit in EAT ›** opens the EAT panel, and the ✕ puts the range back to
+0–100 %. **Fade** writes no condition. See
+[The Filter Panel's Locked Row](/explore/eat#the-filter-panel-s-locked-row).
 
 ## Filter or Show only
 
