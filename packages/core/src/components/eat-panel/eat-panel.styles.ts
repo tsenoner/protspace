@@ -59,9 +59,17 @@ export const eatPanelStyles = [
       text-align: center;
     }
 
-    /* Show off: everything below the switch is greyed. */
-    .is-off {
+    /*
+     * Show off: the bars and marks are greyed, as the map draws the predictions N/A. The text
+     * stays at full contrast, since the rows, the lists and Sort still work; the range controls
+     * grey as disabled controls do.
+     */
+    .is-off :is(.eat-stack, .eat-key-mark, .eat-histogram, .eat-handles, .eat-label-bar) {
       opacity: 0.4;
+    }
+
+    .eat-off-note {
+      margin-top: calc(-1 * var(--ps-space-1));
     }
 
     .eat-overview {

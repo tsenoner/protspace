@@ -349,10 +349,10 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(eatInfo).toContainText('not a probability');
   await page.keyboard.press('Escape');
 
-  // Showing predictions off: the counts say they are hidden and the threshold turns off.
+  // Showing predictions off: the counts say they are off, shown as N/A, and the threshold turns off.
   await eatToggle.click();
   await expect(eatToggle).not.toBeChecked();
-  await expect(counts).toContainText('213 predicted (hidden)');
+  await expect(counts).toContainText('213 predicted (off, shown as N/A)');
   await expect(threshold).toBeDisabled();
   await eatToggle.click();
   await expect(counts).toHaveText('535 curated 213 predicted 84 with no value');
@@ -465,7 +465,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await eatToggle.click();
   await expect(threshold).toBeDisabled();
   await expect(thresholdPercent).toBeDisabled();
-  await expect(counts).toContainText('(hidden)');
+  await expect(counts).toContainText('(off, shown as N/A)');
   await eatToggle.click();
   await expect(threshold).toBeEnabled();
 

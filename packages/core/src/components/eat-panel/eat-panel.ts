@@ -352,6 +352,9 @@ export class ProtspaceEatPanel extends LitElement {
         @change=${this._eat.onToggle}
         >Show predictions</ps-switch
       >
+      ${summary && !this._eat.overlayEnabled
+        ? html`<p class="eat-help eat-off-note">Predictions are off. The map shows them as N/A.</p>`
+        : nothing}
       ${this._renderOverview(summary)}
       ${renderReliability(
         this._eat,
@@ -758,7 +761,7 @@ export class ProtspaceEatPanel extends LitElement {
           : nothing}${text}</span
       >`;
     const predictedKey = !enabled
-      ? key('kept', `${formatCount(predicted)} predicted (hidden)`)
+      ? key('kept', `${formatCount(predicted)} predicted (off, shown as N/A)`)
       : outside > 0
         ? html`${key('kept', `${formatCount(kept)} in range`)}
           ${key('outside', `${formatCount(outside)} outside`)}`

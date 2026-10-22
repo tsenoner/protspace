@@ -354,7 +354,7 @@ describe('protspace-eat-panel', () => {
     });
   });
 
-  it('Show off disables the threshold controls, greys the rest and says (hidden)', async () => {
+  it('Show off disables the threshold controls, greys the bars and says off, shown as N/A', async () => {
     const el = await mount();
     const details = listen(el);
     const toggle = root(el).querySelector<PsSwitch>('ps-switch')!;
@@ -363,7 +363,10 @@ describe('protspace-eat-panel', () => {
     await el.updateComplete;
     expect(details.map((d) => d.enabled)).toEqual([false]);
     expect(el.overlayEnabled).toBe(false);
-    expect(text(el, '.eat-counts')).toBe('4 curated 5 predicted (hidden) 1 with no value');
+    expect(text(el, '.eat-counts')).toBe(
+      '4 curated 5 predicted (off, shown as N/A) 1 with no value',
+    );
+    expect(text(el, '.eat-off-note')).toBe('Predictions are off. The map shows them as N/A.');
     const section = root(el).querySelector<HTMLElement>('.eat-reliability')!;
     // Greyed, but the bars and their lists still work: only the threshold controls are disabled.
     expect(section.classList.contains('is-off')).toBe(true);
