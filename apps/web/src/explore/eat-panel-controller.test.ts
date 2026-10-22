@@ -441,14 +441,14 @@ describe('createEatPanelController', () => {
     const exportIds = () =>
       panel.dispatchEvent(
         new CustomEvent('eat-export-ids', {
-          detail: { proteinIds: ['P2', 'P1'], fileName: 'ec-eat-kept-ids.txt' },
+          detail: { proteinIds: ['P2', 'P1'], fileName: 'ec-eat-in-range-ids.txt' },
         }),
       );
 
     exportIds();
-    expect(downloadIds).toHaveBeenCalledExactlyOnceWith(['P2', 'P1'], 'ec-eat-kept-ids.txt');
+    expect(downloadIds).toHaveBeenCalledExactlyOnceWith(['P2', 'P1'], 'ec-eat-in-range-ids.txt');
     expect(notify.success).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ title: 'Export ready.', description: 'ec-eat-kept-ids.txt' }),
+      expect.objectContaining({ title: 'Export ready.', description: 'ec-eat-in-range-ids.txt' }),
     );
 
     downloadIds.mockImplementationOnce(() => {

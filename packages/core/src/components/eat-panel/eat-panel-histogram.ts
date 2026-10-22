@@ -36,16 +36,19 @@ interface EatBarsView {
   onFocusBin(bin: number): void;
 }
 
-const STEP_KEYS: Record<string, (bin: number) => number> = {
-  ArrowRight: (bin) => Math.min(EAT_BIN_COUNT - 1, bin + 1),
-  ArrowLeft: (bin) => Math.max(0, bin - 1),
-  Home: () => 0,
-  End: () => EAT_BIN_COUNT - 1,
+/** The bars that hold predictions, in order: the only ones the tab stop and the arrow keys reach. */
+type StepKey = (filled: readonly number[], at: number) => number;
+
+const STEP_KEYS: Record<string, StepKey> = {
+  ArrowRight: (filled, at) => filled[Math.min(filled.length - 1, at + 1)],
+  ArrowLeft: (filled, at) => filled[Math.max(0, at - 1)],
+  Home: (filled) => filled[0],
+  End: (filled) => filled[filled.length - 1],
 };
 
 /**
- * The 20 bars, one tab stop with the arrow keys between them (a roving tabindex). A click, Enter
- * or Space opens the bar's drill-down list; an empty bar has none. A bar is shaded kept when its
+ * The 20 bars, one tab stop with the arrow keys between them (a roving tabindex) that skips the
+ * empty bars. A click, Enter or Space opens the bar's drill-down list; an empty bar has none. A bar is shaded kept when its
  * midpoint passes the filter, so the shading follows the handles live while the emit waits out
  * the debounce.
  */
@@ -65,11 +68,14 @@ function renderHistogram(
     return html`<p class="eat-empty-view">No predictions in the current view</p>`;
   }
   const tallest = Math.max(...summary.bins);
+  const filled = Array.from(summary.bins.keys()).filter((bin) => summary.bins[bin] > 0);
+  // The tab stop stays on its bar while it holds predictions, else on the first that does.
+  const focusBin = summary.bins[bars.focusBin] > 0 ? bars.focusBin : filled[0];
   const onKeydown = (event: KeyboardEvent) => {
     const step = STEP_KEYS[event.key];
     if (!step) return;
     event.preventDefault();
-    bars.onFocusBin(step(bars.focusBin));
+    bars.onFocusBin(step(filled, filled.indexOf(focusBin)));
   };
   return html`<div
     class="eat-histogram"
@@ -83,7 +89,7 @@ function renderHistogram(
         type="button"
         class="eat-bar"
         data-bin=${bin}
-        tabindex=${bin === bars.focusBin ? '0' : '-1'}
+        tabindex=${bin === focusBin ? '0' : '-1'}
         ?data-empty=${count === 0}
         aria-expanded=${count === 0 ? nothing : String(bars.openBin === bin)}
         aria-controls=${bars.openBin === bin ? 'eat-drill' : nothing}

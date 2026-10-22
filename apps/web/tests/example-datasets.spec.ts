@@ -1049,7 +1049,7 @@ test.describe('Example datasets: the EAT example', () => {
     await openEatPanel(page);
     await expect(eatPanel(page).getByRole('switch', { name: 'Show predictions' })).toBeChecked();
     await expect(
-      eatPanel(page).getByRole('slider', { name: 'EAT reliability filter lower bound' }),
+      eatPanel(page).getByRole('slider', { name: 'Lowest reliability in range' }),
     ).toHaveValue(String(EAT_ROLE_BUNDLED_THRESHOLD));
     expect(await getSearch(page)).toBe(`?dataset=${EAT.id}`);
   });

@@ -299,7 +299,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const panel = eatPanel(page);
   const eatToggle = panel.getByRole('switch', { name: 'Show predictions' });
   const threshold = panel.getByRole('slider', {
-    name: 'EAT reliability filter lower bound',
+    name: 'Lowest reliability in range',
   });
   const thresholdPercent = eatThresholdBox(page);
   // The overview's key: curated, predicted and no-value proteins in view.
@@ -673,7 +673,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     expect(await viewBar(page).evaluate((bar) => bar.scrollWidth <= bar.clientWidth)).toBe(true);
   }).toPass({ timeout: 5_000 });
   await expect(
-    viewBar(page).getByRole('slider', { name: 'EAT reliability filter lower bound' }),
+    viewBar(page).getByRole('slider', { name: 'Lowest reliability in range' }),
   ).toHaveCount(0);
 
   // The panel's reliability controls fit inside it, and the panel inside the screen, at every

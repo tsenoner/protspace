@@ -389,15 +389,16 @@ describe('protspace-eat-panel', () => {
     expect(el.isAtDefaults).toBe(false);
   });
 
-  it('makes the bars one tab stop, with the arrow keys between them', async () => {
+  it('makes the bars one tab stop, with the arrow keys between the bars that hold predictions', async () => {
+    // The fixture's predictions sit in bars 2, 11, 16 and 19.
     const el = await mount();
     const tabStops = () => bars(el).filter((bar) => bar.tabIndex === 0);
-    expect(tabStops()).toEqual([bars(el)[0]]);
-    bars(el)[0].focus();
+    expect(tabStops()).toEqual([bars(el)[2]]);
+    bars(el)[2].focus();
     await userEvent.keyboard('{ArrowRight}');
     await el.updateComplete;
-    expect(tabStops()).toEqual([bars(el)[1]]);
-    expect(root(el).activeElement).toBe(bars(el)[1]);
+    expect(tabStops()).toEqual([bars(el)[11]]);
+    expect(root(el).activeElement).toBe(bars(el)[11]);
     await userEvent.keyboard('{End}');
     await el.updateComplete;
     expect(root(el).activeElement).toBe(bars(el)[19]);
@@ -407,7 +408,7 @@ describe('protspace-eat-panel', () => {
     expect(text(el, '.eat-drill-heading')).toBe(`1 least reliable in 95–100${PCT}`);
     await userEvent.keyboard('{Home}');
     await el.updateComplete;
-    expect(tabStops()).toEqual([bars(el)[0]]);
+    expect(tabStops()).toEqual([bars(el)[2]]);
   });
 
   it('says the annotation has no predicted values', async () => {
@@ -979,12 +980,15 @@ describe('protspace-eat-panel', () => {
       items[0].click();
       await el.updateComplete;
       expect(exported).toEqual([
-        { proteinIds: ['P5', 'P7', 'P9'], fileName: 'toxin-eat-kept-ids.txt' },
+        { proteinIds: ['P5', 'P7', 'P9'], fileName: 'toxin-eat-in-range-ids.txt' },
       ]);
       expect(root(el).querySelector<HTMLElement & { open: boolean }>('ps-menu')!.open).toBe(false);
       items = await openExport(el, trigger);
       items[1].click();
-      expect(exported[1]).toEqual({ proteinIds: ['P3'], fileName: 'toxin-eat-outside-ids.txt' });
+      expect(exported[1]).toEqual({
+        proteinIds: ['P3'],
+        fileName: 'toxin-eat-outside-range-ids.txt',
+      });
     });
 
     it('disables an empty choice', async () => {
@@ -1019,7 +1023,7 @@ describe('protspace-eat-panel', () => {
       );
       expect(items.map(itemText)).toEqual(['In range (1)', 'Outside the range (1)']);
       items[1].click();
-      expect(exported).toEqual([{ proteinIds: ['Q4'], fileName: 'cls-eat-outside-ids.txt' }]);
+      expect(exported).toEqual([{ proteinIds: ['Q4'], fileName: 'cls-eat-outside-range-ids.txt' }]);
     });
   });
 });

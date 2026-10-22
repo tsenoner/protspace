@@ -35,7 +35,7 @@ export async function openEatPanel(page: Page): Promise<void> {
 
 /** The EAT panel's % box for the reliability threshold (the lower bound). */
 export const eatThresholdBox = (page: Page): Locator =>
-  eatPanel(page).getByRole('spinbutton', { name: 'EAT reliability lower bound percentage' });
+  eatPanel(page).getByRole('spinbutton', { name: 'Lowest reliability in range (%)' });
 
 /** The legend's one-line EAT note (`Includes 659 predicted · outside 50–100 % hidden`). */
 export const legendEatNote = (page: Page): Locator =>

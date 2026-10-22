@@ -56,13 +56,13 @@ export const EAT_BOUNDS: readonly EatBound[] = ['min', 'max'];
 const EAT_BOUND_UI: Record<EatBound, { id: string; sliderLabel: string; percentLabel: string }> = {
   min: {
     id: 'eat-reliability-threshold',
-    sliderLabel: 'EAT reliability filter lower bound',
-    percentLabel: 'EAT reliability lower bound percentage',
+    sliderLabel: 'Lowest reliability in range',
+    percentLabel: 'Lowest reliability in range (%)',
   },
   max: {
     id: 'eat-reliability-upper',
-    sliderLabel: 'EAT reliability filter upper bound',
-    percentLabel: 'EAT reliability upper bound percentage',
+    sliderLabel: 'Highest reliability in range',
+    percentLabel: 'Highest reliability in range (%)',
   },
 };
 

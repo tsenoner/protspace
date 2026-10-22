@@ -101,8 +101,8 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  *   link draws that source's lines.
  * @fires eat-drawing-change - `{ trace, linesPerSource }`: a Drawing switch changed, or Reset
  *   moved one back to its default.
- * @fires eat-export-ids - `{ proteinIds, fileName }`: Export IDs, the kept predictions or those outside the range
- *   predictions in the context (or behind a drill-down's bar or label), in reliability order.
+ * @fires eat-export-ids - `{ proteinIds, fileName }`: Export IDs, the predictions in range or those
+ *   outside it in the context (or behind a drill-down's bar or label), in reliability order.
  * @fires eat-outcome-change - `{ outcome, reliability }`: Predictions outside the range switched
  *   between Hide (the filter) and Fade (`dim`: no filter). A range move in either rides `eat-overlay-change`.
  */
@@ -473,9 +473,11 @@ export class ProtspaceEatPanel extends LitElement {
 
   /** `Export IDs`: opens the menu for the whole context (`drill` null) or one bar or label. */
   private _renderExportButton(drill: EatDrill | null): TemplateResult {
+    // The list's trigger is named apart from the section's, which reads plain `Export IDs`.
     return html`<button
       type="button"
       class="eat-export"
+      aria-label=${drill ? 'Export IDs of these predictions' : nothing}
       @click=${(event: Event) => {
         const anchor = event.currentTarget as HTMLElement;
         this._exportDrill = drill;
@@ -523,7 +525,7 @@ export class ProtspaceEatPanel extends LitElement {
     </ps-menu>`;
   }
 
-  /** One ID per line, named `<annotation>-eat-kept-ids.txt` or `…-outside-ids.txt` (Decision 12). */
+  /** One ID per line, named `<annotation>-eat-in-range-ids.txt` or `…-outside-range-ids.txt`. */
   private _exportIds(which: 'kept' | 'outside'): void {
     const index = this._index;
     const data = this.data;
@@ -539,7 +541,7 @@ export class ProtspaceEatPanel extends LitElement {
     );
     this._emit('eat-export-ids', {
       proteinIds,
-      fileName: `${fileNamePart(this.annotation)}-eat-${which}-ids.txt`,
+      fileName: `${fileNamePart(this.annotation)}-eat-${which === 'kept' ? 'in-range' : 'outside-range'}-ids.txt`,
     });
   }
 

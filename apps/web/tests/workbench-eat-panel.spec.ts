@@ -145,7 +145,7 @@ test('the phone EAT tab shows the histogram and opens a drill-down by tap', asyn
   await bar.click();
   const list = eatPanel(page).getByRole('region', { name: /^\d+ least reliable in / });
   await expect(list).toBeVisible();
-  await expect(list.getByRole('button', { name: 'Export IDs' })).toBeVisible();
+  await expect(list.getByRole('button', { name: 'Export IDs of these predictions' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
