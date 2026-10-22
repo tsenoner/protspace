@@ -35,6 +35,9 @@ On a desktop window the viewer sits under the legend. Drag the divider between t
 more room; with the divider focused, the arrow keys move it, and **Home** and **End** move it to
 either end.
 
+A protein you pick from the [EAT panel](/explore/eat) opens with the structure collapsed to its
+header row, so the panel keeps its room. Click the header to expand it.
+
 ### Floating over the plot
 
 **Pop out structure** in the viewer's header moves it into a card over the plot, at its
@@ -99,6 +102,8 @@ The viewer's background follows the page's theme; the model's colours do not cha
 | **Right drag**                 | Pan the view                              |
 | **Scroll**                     | Zoom in/out                               |
 | **Double-click**               | Reset the view                            |
+
+No buttons sit over the model: you turn, move and zoom it with the mouse.
 
 ## When Structures Aren't Available
 
