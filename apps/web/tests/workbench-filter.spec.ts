@@ -130,8 +130,16 @@ test.describe('the Filter panel', () => {
     const cancel = queryBuilder(page).getByRole('button', { name: 'Cancel', exact: true });
     await expect(cancel).toBeDisabled();
 
+    // An empty condition is not a change, so Cancel stays off.
     await queryBuilder(page).getByRole('button', { name: 'Add condition', exact: true }).click();
     await expect(conditionRows(page)).toHaveCount(2);
+    await expect(cancel).toBeDisabled();
+
+    // Removing the applied condition is.
+    await conditionRows(page)
+      .first()
+      .getByRole('button', { name: /^Remove condition/ })
+      .click();
     await expect(cancel).toBeEnabled();
 
     await cancel.click();

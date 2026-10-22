@@ -410,8 +410,9 @@ test('the edge is the Tab stop after the plot tools, and the rail toggle names n
   await expect(edge(page)).toBeFocused();
 
   // An id on a host would not reach the inner button that takes focus.
+  // Collapse toggle, Legend, Structure, Filter and EAT.
   const buttons = rail(page).locator('ps-icon-button');
-  await expect(buttons).toHaveCount(4);
+  await expect(buttons).toHaveCount(5);
   await expect(rail(page).locator('ps-icon-button[aria-controls]')).toHaveCount(0);
 });
 
