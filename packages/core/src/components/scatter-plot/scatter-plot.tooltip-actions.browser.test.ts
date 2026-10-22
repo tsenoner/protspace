@@ -41,11 +41,13 @@ async function mountPlot(actions: readonly TooltipAction[] = [VIEW_STRUCTURE]) {
 }
 
 async function gridReady(plot: ProtspaceScatterplot): Promise<void> {
+  // Past waitFor's 1 s default: while the unit project shares the CPU, the first frames of a
+  // software-WebGL plot take longer than that.
   await vi.waitFor(() => {
     const rect = plot.getBoundingClientRect();
     const p = at(plot, 'P3');
     expect(plot.pickInteractivePointAt(p.x - rect.left, p.y - rect.top)).not.toBeNull();
-  });
+  }, 5000);
 }
 
 /** A mouse event on the plot's interaction layer at client coordinates. */
@@ -177,11 +179,14 @@ describe('scatterplot tooltip actions', () => {
     const rect = plot.getBoundingClientRect();
     mouse(plot, 'click', at(plot, 'P2'));
     await plot.updateComplete;
+    // The grace runs on a clock the test moves: under load one frame can outlast it.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    cleanups.push(() => vi.useRealTimers());
     mouse(plot, 'mousemove', { x: rect.left + 8, y: rect.bottom - 8 });
     await frame();
     mouse(plot, 'mousemove', at(plot, 'P2'));
     await frame();
-    await wait(LEAVE_GRACE_MS);
+    vi.advanceTimersByTime(LEAVE_GRACE_MS);
     await plot.updateComplete;
     expect(pinned(plot)).not.toBeNull();
   });
