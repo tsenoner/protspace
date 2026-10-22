@@ -59,6 +59,8 @@ export interface EatSummary {
   /** Predictions outside the reliability range. */
   outside: number;
   none: number;
+  /** The median reliability of every prediction in context; null without any. */
+  medianReliability: number | null;
   /** `EAT_BIN_COUNT` predicted counts per bin, in context. */
   bins: Uint32Array;
   /** One row per label present in context (`total > 0`); unsorted, the panel sorts. */
@@ -297,9 +299,24 @@ export function summarizeEat(
     kept,
     outside,
     none: totals.inView - totals.curated - predicted,
+    medianReliability: contextMedian(index, context, predicted),
     bins,
     rows,
   };
+}
+
+/** The median of the `count` predictions in context; `order` is ascending, so it stops at the middle. */
+function contextMedian(index: EatIndex, context: Uint8Array | null, count: number): number | null {
+  if (count === 0) return null;
+  let seen = 0;
+  let lower = 0;
+  for (let k = 0; k < index.order.length; k++) {
+    if (context && !context[index.order[k]]) continue;
+    if (seen === (count - 1) >> 1) lower = index.confidence[k];
+    if (seen === count >> 1) return (lower + index.confidence[k]) / 2;
+    seen++;
+  }
+  return null;
 }
 
 /**

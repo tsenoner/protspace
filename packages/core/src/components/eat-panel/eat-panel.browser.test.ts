@@ -498,14 +498,14 @@ describe('protspace-eat-panel', () => {
       expect(row('B').getAttribute('aria-expanded')).toBe('false');
       expect(row('B').querySelector('.eat-label-total')!.textContent).toBe('5');
       expect(row('B').querySelector('.eat-label-share')!.textContent).toBe(
-        `5 predicted (100${PCT}) · typical reliability 40${PCT}`,
+        `5 predicted (100${PCT}) · typical reliability 40${PCT} (all: 50${PCT})`,
       );
       expect(row('B').querySelector('.eat-label-tag')!.textContent).toBe('Mostly predicted');
       expect(row('B').getAttribute('aria-label')).toBe(
-        `B: 5 proteins, 5 predicted (100${PCT}) · typical reliability 40${PCT}, mostly predicted`,
+        `B: 5 proteins, 5 predicted (100${PCT}), typical reliability 40${PCT} (all predictions: 50${PCT}), mostly predicted`,
       );
       expect(row('A').querySelector('.eat-label-share')!.textContent).toBe(
-        `3 predicted (75${PCT}) · typical reliability 90${PCT}`,
+        `3 predicted (75${PCT}) · typical reliability 90${PCT} (all: 50${PCT})`,
       );
       expect(row('A').querySelector('.eat-label-tag')).toBeNull();
       const swatch = row('B').querySelector<HTMLElement>('.eat-swatch')!;
@@ -751,8 +751,8 @@ describe('protspace-eat-panel', () => {
     });
 
     it('does not claim Escape for a list sorted out of the first 8 rows', async () => {
-      // Z has the most predictions, so it leads by most predicted and drops past H by name.
-      const spec = [...'ABCDEFGH'].map((label) => ({ label, curated: 0, predicted: [0.5] }));
+      // Z has the highest predicted share, so it leads by share and drops past H by name.
+      const spec = [...'ABCDEFGH'].map((label) => ({ label, curated: 1, predicted: [0.5] }));
       const el = await mount({
         data: labelData([...spec, { label: 'Z', curated: 0, predicted: [0.6, 0.7] }]),
         annotation: 'cls',
@@ -768,8 +768,8 @@ describe('protspace-eat-panel', () => {
       await el.updateComplete;
       expect(drills(el)).toHaveLength(0);
       expect(escape(el).defaultPrevented).toBe(false);
-      // The stale list is gone for good: going back to most predicted does not reopen it.
-      select.value = 'most-predicted';
+      // The stale list is gone for good: going back to the share does not reopen it.
+      select.value = 'share';
       select.dispatchEvent(new Event('change', { bubbles: true }));
       await el.updateComplete;
       expect(drills(el)).toHaveLength(0);

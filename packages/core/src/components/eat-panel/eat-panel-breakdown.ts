@@ -13,10 +13,14 @@ import '../kit/select';
 import { formatPercent } from '../query-builder/eat-reliability';
 import { getEatIndex, type EatIndex, type EatLabelRow } from './eat-summary';
 
-export type EatLabelSort = 'most-predicted' | 'least-reliable' | 'name';
+export type EatLabelSort = 'share' | 'most-predicted' | 'least-reliable' | 'name';
+
+/** The default follows the heading: the labels that rely most on predictions first. */
+export const DEFAULT_LABEL_SORT: EatLabelSort = 'share';
 
 const SORT_OPTIONS: SelectOption[] = [
-  { value: 'most-predicted', label: 'Most predicted' },
+  { value: 'share', label: 'Highest share predicted' },
+  { value: 'most-predicted', label: 'Most predictions' },
   { value: 'least-reliable', label: 'Least reliable' },
   { value: 'name', label: 'A–Z' },
 ];
@@ -53,6 +57,9 @@ function sortLabelRows(rows: readonly EatLabelRow[], sort: EatLabelSort): EatLab
       return am !== bm ? am - bm : byName(a, b);
     });
   }
+  if (sort === 'share') {
+    return sorted.sort((a, b) => b.predictedShare - a.predictedShare || byName(a, b));
+  }
   return sorted.sort((a, b) => b.kept + b.outside - (a.kept + a.outside) || byName(a, b));
 }
 
@@ -61,6 +68,8 @@ interface EatBreakdownView {
   sort: EatLabelSort;
   showAll: boolean;
   labelColors: ReadonlyMap<string, string>;
+  /** The median reliability over every prediction in the view, each row's comparison. */
+  overallMedian: number | null;
   /** Show off: the section is greyed; its rows and lists keep working. */
   off: boolean;
   /** The label whose drill-down list is open, and that list, rendered under its row. */
@@ -87,15 +96,39 @@ function labelBar(row: EatLabelRow, color: string | undefined): TemplateResult {
   </span>`;
 }
 
-/** `212 predicted (79 %) · typical reliability 46 %`, or the no-prediction hint. */
-function rowFacts(row: EatLabelRow): string {
+/**
+ * Line two's facts, each kept whole: `212 predicted (79 %)`, `40 outside` while the range leaves
+ * some out, and `typical reliability 51 % (all: 53 %)`, against the median of every prediction in
+ * the view. Empty for a label with no prediction.
+ */
+function rowFacts(row: EatLabelRow, overallMedian: number | null): string[] {
   const predicted = row.kept + row.outside;
-  if (predicted === 0) return NO_PREDICTIONS;
-  const typical =
-    row.medianReliability === null
-      ? ''
-      : ` · typical reliability ${formatPercent(row.medianReliability)}`;
-  return `${formatCount(predicted)} predicted (${formatPercent(row.predictedShare)})${typical}`;
+  if (predicted === 0) return [];
+  const facts = [`${formatCount(predicted)} predicted (${formatPercent(row.predictedShare)})`];
+  if (row.outside > 0) facts.push(`${formatCount(row.outside)} outside`);
+  if (row.medianReliability !== null) {
+    const all = overallMedian === null ? '' : ` (all: ${formatPercent(overallMedian)})`;
+    facts.push(`typical reliability ${formatPercent(row.medianReliability)}${all}`);
+  }
+  return facts;
+}
+
+/** The row's accessible name: the facts in words, with commas for the middle dots. */
+function rowName(row: EatLabelRow, overallMedian: number | null, mostly: boolean): string {
+  const predicted = row.kept + row.outside;
+  const parts = [`${row.label}: ${countNoun(row.total, 'protein', 'proteins')}`];
+  if (predicted === 0) parts.push(NO_PREDICTIONS.toLowerCase());
+  else {
+    parts.push(`${formatCount(predicted)} predicted (${formatPercent(row.predictedShare)})`);
+    if (row.outside > 0) parts.push(`${formatCount(row.outside)} outside the range`);
+    if (row.medianReliability !== null) {
+      const all =
+        overallMedian === null ? '' : ` (all predictions: ${formatPercent(overallMedian)})`;
+      parts.push(`typical reliability ${formatPercent(row.medianReliability)}${all}`);
+    }
+  }
+  if (mostly) parts.push(MOSTLY_PREDICTED.toLowerCase());
+  return parts.join(', ');
 }
 
 /**
@@ -113,8 +146,10 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
     class=${view.off ? 'eat-breakdown is-off' : 'eat-breakdown'}
     aria-label=${BREAKDOWN_HEADING}
   >
-    <div class="eat-breakdown-head">
-      <h3 class="eat-heading">${BREAKDOWN_HEADING}</h3>
+    <h3 class="eat-heading">${BREAKDOWN_HEADING}</h3>
+    <p class="eat-help">Click a label to check its least reliable predictions.</p>
+    <div class="eat-sort-row">
+      <span aria-hidden="true">Sort</span>
       <ps-select
         size="sm"
         label="Sort labels"
@@ -124,7 +159,6 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
           view.onSort((event.currentTarget as PsSelect).value as EatLabelSort)}
       ></ps-select>
     </div>
-    <p class="eat-help">Click a label to check its least reliable predictions.</p>
     <ul class="eat-label-list">
       ${shown.map((row) => {
         const color = swatchColor(view.labelColors, row.label);
@@ -132,12 +166,8 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
         // Only curated members in view: nothing to list, so the row opens nothing.
         const noPredictions = row.kept + row.outside === 0;
         const mostly = row.predictedShare > MOSTLY_PREDICTED_SHARE;
-        const facts = rowFacts(row);
-        const name = [
-          `${row.label}: ${countNoun(row.total, 'protein', 'proteins')}`,
-          noPredictions ? NO_PREDICTIONS.toLowerCase() : facts,
-          ...(mostly ? [MOSTLY_PREDICTED.toLowerCase()] : []),
-        ].join(', ');
+        const facts = rowFacts(row, view.overallMedian);
+        const name = rowName(row, view.overallMedian, mostly);
         return html`<li>
           <button
             type="button"
@@ -161,7 +191,14 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
             </span>
             <span class="eat-label-line eat-label-facts">
               ${labelBar(row, color)}
-              <span class="eat-label-share">${facts}</span>
+              <span class="eat-label-share"
+                >${noPredictions
+                  ? NO_PREDICTIONS
+                  : facts.map(
+                      (fact, i) =>
+                        html`${i > 0 ? ' · ' : ''}<span class="eat-label-fact">${fact}</span>`,
+                    )}</span
+              >
             </span>
           </button>
           ${open ? view.list : nothing}

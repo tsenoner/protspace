@@ -20,6 +20,7 @@ import type { PsSelect } from '../kit/select';
 import type { PsSwitch } from '../kit/switch';
 import { formatPercent, reliabilityLabel } from '../query-builder/eat-reliability';
 import {
+  DEFAULT_LABEL_SORT,
   renderBreakdown,
   renderEmptyColorBy,
   renderOtherAnnotations,
@@ -130,7 +131,7 @@ export class ProtspaceEatPanel extends LitElement {
   @state() private _outcome: EatOutcome = 'hide';
   @state() private _trace = true;
   @state() private _linesPerSource: LinesPerSource = DEFAULT_LINES_PER_SOURCE;
-  @state() private _labelSort: EatLabelSort = 'most-predicted';
+  @state() private _labelSort: EatLabelSort = DEFAULT_LABEL_SORT;
   @state() private _showAllLabels = false;
   @state() private _othersOpen = false;
   @state() private _displayOpen = false;
@@ -381,6 +382,7 @@ export class ProtspaceEatPanel extends LitElement {
             sort: this._labelSort,
             showAll: this._showAllLabels,
             labelColors: this.labelColors,
+            overallMedian: summary.medianReliability,
             off: !this._eat.overlayEnabled,
             openLabel: drill && 'label' in drill ? drill.label : null,
             list: drill && 'label' in drill ? this._renderDrill() : nothing,

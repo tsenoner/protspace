@@ -377,12 +377,14 @@ export const eatPanelStyles = [
       gap: var(--ps-space-1);
     }
 
-    .eat-breakdown-head {
+    /* Under the heading's helper line, so the question and its helper stay together. */
+    .eat-sort-row {
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
-      justify-content: space-between;
-      gap: var(--ps-space-1) var(--ps-space-2);
+      justify-content: flex-end;
+      gap: var(--ps-space-1-5);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
     }
 
     .eat-label-list,
@@ -442,10 +444,12 @@ export const eatPanelStyles = [
     }
 
     /* The full name: it wraps, never cut off. */
+    /* The row's tabular figures would widen the hyphens in names such as α-neurotoxin. */
     .eat-label-name {
       flex: 1 1 auto;
       min-width: 0;
       overflow-wrap: anywhere;
+      font-variant-numeric: normal;
     }
 
     .eat-label-tag {
@@ -481,6 +485,11 @@ export const eatPanelStyles = [
     .eat-label-share {
       min-width: 0;
       color: var(--ps-text-muted);
+    }
+
+    /* Each fact stays whole: line two wraps only between the middle dots. */
+    .eat-label-fact {
+      white-space: nowrap;
     }
 
     .eat-show-all,

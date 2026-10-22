@@ -92,6 +92,8 @@ describe('eat summary', () => {
     });
     expect(row(summary, 'B')).toMatchObject({ curated: 1, kept: 2, outside: 0, total: 3 });
     expect(row(summary, 'C')).toMatchObject({ curated: 1, kept: 1, medianReliability: 0.81 });
+    // Over every prediction: 0.12, 0.55, 0.55, 0.81 and the top one.
+    expect(summary.medianReliability).toBe(0.55);
   });
 
   it('restricts every count to the context', () => {
