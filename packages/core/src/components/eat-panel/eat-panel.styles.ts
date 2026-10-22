@@ -209,6 +209,16 @@ export const eatPanelStyles = [
       gap: var(--ps-space-2);
     }
 
+    /* The label and its picker share one line; the ghost button's padding hangs past the edge. */
+    .eat-lines-row {
+      flex-wrap: nowrap;
+    }
+
+    .eat-lines {
+      flex: none;
+      margin-inline-end: calc(-1 * var(--ps-space-2));
+    }
+
     /* A section's question (U21), under the shell's h2. */
     .eat-heading {
       margin: 0;

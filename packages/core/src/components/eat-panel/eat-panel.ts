@@ -650,35 +650,35 @@ export class ProtspaceEatPanel extends LitElement {
           <span class="eat-sort-value">${this._linesPerSource}</span>
           <span slot="end" class="eat-sort-chevron">${icon('chevron-down', 14)}</span>
         </ps-button>
-        <ps-menu
-          label="Most lines from one source"
-          placement="bottom-end"
-          .anchor=${this._linesMenu}
-          .open=${this._linesMenu !== null}
-          @ps-select=${(event: Event) => {
-            event.stopPropagation();
-            this._linesMenu = null;
-            this._setDrawing(
-              this._trace,
-              Number((event as CustomEvent<{ value: string }>).detail.value) as LinesPerSource,
-            );
-          }}
-          @ps-close=${(event: Event) => {
-            event.stopPropagation();
-            this._linesMenu = null;
-          }}
-        >
-          ${LINES_OPTIONS.map(
-            (n) =>
-              html`<ps-menu-item
-                type="radio"
-                value=${String(n)}
-                .checked=${n === this._linesPerSource}
-                >${n}</ps-menu-item
-              >`,
-          )}
-        </ps-menu>
       </div>
+      <ps-menu
+        label="Most lines from one source"
+        placement="bottom-end"
+        .anchor=${this._linesMenu}
+        .open=${this._linesMenu !== null}
+        @ps-select=${(event: Event) => {
+          event.stopPropagation();
+          this._linesMenu = null;
+          this._setDrawing(
+            this._trace,
+            Number((event as CustomEvent<{ value: string }>).detail.value) as LinesPerSource,
+          );
+        }}
+        @ps-close=${(event: Event) => {
+          event.stopPropagation();
+          this._linesMenu = null;
+        }}
+      >
+        ${LINES_OPTIONS.map(
+          (n) =>
+            html`<ps-menu-item
+              type="radio"
+              value=${String(n)}
+              .checked=${n === this._linesPerSource}
+              >${n}</ps-menu-item
+            >`,
+        )}
+      </ps-menu>
     </section>`;
   }
 
