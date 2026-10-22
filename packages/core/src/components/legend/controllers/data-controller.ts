@@ -15,11 +15,12 @@ import {
 import { perfCounters } from '../../../utils/perf-counters';
 import { LEGEND_DEFAULTS, LEGEND_VALUES, toInternalValue } from '../config';
 import { countEatPredictions } from '../eat-population-counts';
-import { LegendDataProcessor } from '../legend-data-processor';
+import { LegendDataProcessor, createProcessorContext } from '../legend-data-processor';
 import {
   SHAPE_SIZE_FILLER,
   calculatePointSize,
   defaultShapeSize,
+  getDefaultSortMode,
   valueToKey,
 } from '../legend-helpers';
 import {
@@ -225,6 +226,30 @@ export class LegendDataController {
       knownValues,
       this.host._hostDriven,
     );
+  }
+
+  /**
+   * The categorical items Reset would leave (the settings controller's `reset`): the item pass
+   * from scratch, with fresh colour slots, the default item count and sort, and nothing stored.
+   * Run on a context of its own, so the live slots stay as they are.
+   */
+  itemsAfterReset(): LegendItem[] {
+    const frequencies = this.computeAnnotationCounts([]);
+    if (frequencies.size === 0) return [];
+    const { legendItems } = LegendDataProcessor.processLegendItems(
+      createProcessorContext(),
+      this.host.annotationData.name || this.host.selectedAnnotation,
+      frequencies,
+      LEGEND_DEFAULTS.maxVisibleValues,
+      this.host.isolationMode,
+      [],
+      getDefaultSortMode(this.host.selectedAnnotation),
+      {},
+      this.host.isolationMode ? this.host._preIsolationVisibleValues : new Set<string>(),
+      getNumericBinLowerBoundMap(this.host.annotationData),
+      true,
+    );
+    return legendItems;
   }
 
   ensureSortModeDefaults(): void {

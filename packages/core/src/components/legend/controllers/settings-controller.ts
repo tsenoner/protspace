@@ -9,8 +9,12 @@ import {
 import { LEGEND_DEFAULTS, LEGEND_EVENTS, LEGEND_VALUES } from '../config';
 import type { ProtspaceLegend } from '../legend';
 import { calculatePointSize, defaultShapeSize, getDefaultSortMode } from '../legend-helpers';
-import { applyPaletteColors, normalizeCategoricalPaletteId } from '../legend-items-state';
-import type { LegendDisplaySettings, PersistedCategoryData } from '../types';
+import {
+  applyPaletteColors,
+  normalizeCategoricalPaletteId,
+  normalizeSortModeForType,
+} from '../legend-items-state';
+import type { LegendDisplaySettings, LegendItem, PersistedCategoryData } from '../types';
 
 /**
  * The legend's settings: the settings popover (open, close, render), each edit applied live,
@@ -126,16 +130,59 @@ export class SettingsController {
     // Closed meanwhile, or removed with the legend: there is nothing to focus.
     if (!popover || this.host._settingsAnchor === null || !this.host.isConnected) return;
     await popover.updateComplete;
-    // Reset disables itself once nothing is stored; focus moves to the palette, not the body.
+    // Reset disables itself once nothing differs; focus moves to the palette, not the body.
     popover.focusFirst();
   }
 
-  /** Something to reset: a record stored for the annotation, or a size picked for the dataset. */
+  /**
+   * Reset would change something: the annotation's settings differ from what `reset` leaves.
+   * A stored record alone is no change: a bundle's settings and an edit undone both store one.
+   */
   canReset(): boolean {
-    return (
-      this.host._persistenceController.hasPersistedSettings() ||
-      this.host._persistenceController.loadShapeSize() !== null
-    );
+    const host = this.host;
+    const annotation = host.selectedAnnotation;
+    const isNumeric = host._isCurrentAnnotationNumeric();
+    const numeric = host._numericSettingsByAnnotation[annotation];
+    const sortMode = normalizeSortModeForType(host._annotationSortModes[annotation], isNumeric);
+    const atDefaults =
+      host.maxVisibleValues === LEGEND_DEFAULTS.maxVisibleValues &&
+      host.shapeSize === defaultShapeSize(host._datasetProteinCount) &&
+      !host._enableDuplicateStackUI &&
+      host._hiddenValues.length === 0 &&
+      sortMode === (isNumeric ? 'alpha-asc' : getDefaultSortMode(annotation)) &&
+      (isNumeric
+        ? normalizeNumericPaletteId(numeric?.paletteId ?? DEFAULT_NUMERIC_PALETTE_ID) ===
+            DEFAULT_NUMERIC_PALETTE_ID &&
+          (numeric?.strategy ?? DEFAULT_NUMERIC_STRATEGY) === DEFAULT_NUMERIC_STRATEGY &&
+          !numeric?.reverseGradient &&
+          !host._numericManualOrderIdsByAnnotation[annotation]?.length
+        : normalizeCategoricalPaletteId(host._selectedPaletteId) ===
+            DEFAULT_CATEGORICAL_PALETTE_ID && this.itemsAtDefaults());
+    return !atDefaults;
+  }
+
+  /** The items Reset would rebuild, worked out once per item pass (it counts the proteins). */
+  private _resetItems: { from: LegendItem[]; equal: boolean } | null = null;
+
+  /** Every row has the colour, shape and place it would have after Reset. */
+  private itemsAtDefaults(): boolean {
+    const items = this.host._legendItems;
+    if (this._resetItems?.from === items) return this._resetItems.equal;
+    const after = this.host._data.itemsAfterReset();
+    const byValue = new Map(items.map((item) => [item.value, item]));
+    const equal =
+      after.length === items.length &&
+      after.every((item) => {
+        const live = byValue.get(item.value);
+        return (
+          !!live &&
+          live.color === item.color &&
+          live.shape === item.shape &&
+          live.zOrder === item.zOrder
+        );
+      });
+    this._resetItems = { from: items, equal };
+    return equal;
   }
 
   /**

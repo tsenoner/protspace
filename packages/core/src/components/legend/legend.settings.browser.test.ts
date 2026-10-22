@@ -184,6 +184,46 @@ describe('legend settings popover, mounted', () => {
     expect(deepActiveElement()?.textContent?.trim()).toBe("Kelly's Colors");
   });
 
+  it('Reset is disabled when the settings equal the defaults, a record stored or not', async () => {
+    const { legend } = await mount();
+    await openSettings(legend);
+    const reset = page.getByRole('button', { name: 'Reset to defaults', exact: true });
+    await expect.element(reset).toBeDisabled();
+
+    // An edit undone stores a record that equals what Reset leaves.
+    await userEvent.click(page.getByRole('radio', { name: 'Okabe-Ito' }));
+    await settle(legend);
+    await expect.element(reset).toBeEnabled();
+    await userEvent.click(page.getByRole('radio', { name: "Kelly's Colors" }));
+    await settle(legend);
+    expect(stored()).not.toBeNull();
+    await expect.element(reset).toBeDisabled();
+
+    await userEvent.fill(page.getByRole('spinbutton', { name: 'Max legend items' }), '13');
+    await userEvent.keyboard('{Enter}');
+    await settle(legend);
+    await expect.element(reset).toBeEnabled();
+    await userEvent.fill(page.getByRole('spinbutton', { name: 'Max legend items' }), '10');
+    await userEvent.keyboard('{Enter}');
+    await settle(legend);
+    await expect.element(reset).toBeDisabled();
+  });
+
+  it('Reset follows a numeric bin strategy picked and picked back', async () => {
+    const { legend } = await mount(numericData([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]), 'length');
+    await openSettings(legend);
+    const reset = page.getByRole('button', { name: 'Reset to defaults', exact: true });
+    await expect.element(reset).toBeDisabled();
+    const select = page.getByRole('combobox', { name: 'Bin distribution' });
+    const initial = (select.element() as HTMLSelectElement).value;
+    await userEvent.selectOptions(select, initial === 'linear' ? 'quantile' : 'linear');
+    await settle(legend);
+    await expect.element(reset).toBeEnabled();
+    await userEvent.selectOptions(select, initial);
+    await settle(legend);
+    await expect.element(reset).toBeDisabled();
+  });
+
   it('a press on the Bin distribution select is inside the popover, and choosing an option keeps it open', async () => {
     const { legend } = await mount(numericData([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]), 'length');
     expect(popover(legend).numeric).toBe(true);

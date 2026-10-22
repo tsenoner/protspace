@@ -237,7 +237,7 @@ export async function toggleLegendSetting(
   await expect(control).toHaveAttribute('aria-checked', checked === 'true' ? 'false' : 'true');
 }
 
-/** Reset; the popover stays open, and Reset disables itself once nothing is stored. */
+/** Reset; the popover stays open, and Reset disables itself once nothing differs. */
 export async function resetLegendSettings(page: Page): Promise<void> {
   const settings = await openLegendSettings(page);
   const reset = settings.getByRole('button', { name: 'Reset to defaults', exact: true });
