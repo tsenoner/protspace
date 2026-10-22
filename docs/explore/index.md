@@ -7,12 +7,12 @@ The Explore page is a workbench for protein embeddings: a map of your proteins i
 
 ## Page layout
 
-| Area         | Where             | What it holds                                                      |
-| ------------ | ----------------- | ------------------------------------------------------------------ |
-| **App bar**  | Top               | The dataset name, search, Import, Export, the theme and Help       |
-| **View bar** | Below the app bar | Projection, Color by, Contours and Filter                          |
-| **Plot**     | Centre            | The scatterplot, its tools, the selection bar and the status chips |
-| **Sidebar**  | Right             | The Legend, Structure and Filter panels, switched from the rail    |
+| Area         | Where             | What it holds                                                        |
+| ------------ | ----------------- | -------------------------------------------------------------------- |
+| **App bar**  | Top               | The dataset name, search, Import, Export, the theme and Help         |
+| **View bar** | Below the app bar | Projection, Color by and Contours                                    |
+| **Plot**     | Centre            | The scatterplot, its tools, the selection bar and the status chips   |
+| **Sidebar**  | Right             | The Legend, Structure, Filter and EAT panels, switched from the rail |
 
 ## App bar
 
@@ -31,39 +31,41 @@ The Explore page is a workbench for protein embeddings: a map of your proteins i
 
 ## View bar
 
-![The view bar: Projection with its details button, Color by, Contours and Filter](./images/view-bar.png){.light-only}
-![The view bar: Projection with its details button, Color by, Contours and Filter](./images/view-bar-dark.png){.dark-only}
+![The view bar: Projection with its details button, Color by and Contours](./images/view-bar.png){.light-only}
+![The view bar: Projection with its details button, Color by and Contours](./images/view-bar-dark.png){.dark-only}
 
 - **Projection** picks the 2D map: PCA, UMAP, t-SNE, PaCMAP, MDS or LocalMAP. The button beside it opens the [projection details](/explore/scatterplot#projection-metadata), with the projection's quality scores and settings.
 - **Color by** picks the annotation that colours the points.
 - **Contours** draws density rings for each legend colour: Off, Auto or Always.
-- **Filter** opens the [Filter panel](/explore/filter) in the sidebar.
+  On a tablet the bar also has **Filter**, which opens the [Filter panel](/explore/filter). On a desktop, Filter is in the sidebar's rail.
 
-The bar never wraps. In a narrow window the labels shorten first, then Contours and Filter move into **More**. Each control is described on [Bars and Tools](/explore/controls#view-bar).
+The bar never wraps. In a narrow window the labels shorten first, then Contours (and on a tablet, Filter) move into **More**. Each control is described on [Bars and Tools](/explore/controls#view-bar).
 
 ## Plot
 
-The plot shows your proteins as points in 2D. Points close together have similar embeddings. Both axes share one scale, so a distance reads the same in every direction.
+The plot shows your proteins as points in 2D. Points close together have similar embeddings. The plot always fills its area: each axis stretches to the plot's width or height.
 
 ![The scatterplot, with the tool strip in its top-left corner and the protein count in its bottom-left corner](./images/scatterplot-example.png)
 
 - **Scroll** to zoom and **drag** to pan; **double-click** the background to reset the zoom.
 - **Click** a point to select it and see its structure; **⌘/Ctrl + click** adds a point to the selection or takes it out.
 - The [tool strip](/explore/controls#selection-tools) in the top-left corner switches between Move and zoom, Box select and Lasso select, and fits every point back in view.
-- With a selection, the [selection bar](/explore/controls#selection-bar) at the bottom offers Show only these, Zoom to them, Copy IDs and Clear.
+- With a selection, the [selection bar](/explore/controls#selection-bar) appears beside the protein count at the bottom. It offers Show only these, Zoom to them, Copy IDs and Clear.
 - [Status chips](/explore/controls#status-chips) in the bottom-left corner, beside the protein count, say what is hidden; their ✕ shows it again, and [Undo](/explore/controls#undo-and-redo) takes back the last step.
 
 [Navigating the Scatterplot](/explore/scatterplot) has the details.
 
 ## Sidebar
 
-The rail on the sidebar's right edge switches between its three panels and folds the sidebar away:
+The rail on the sidebar's right edge folds the sidebar away and switches between its panels:
 
+- **Collapse sidebar**, the rail's first button, folds the sidebar to the rail; **Expand sidebar** brings it back. The plot moves to the middle of the freed space and keeps the width it had beside the open sidebar.
 - **Legend** shows the categories of the current colouring.
-- **Structure** shows or hides the selected protein in 3D, docked or floating; a dot on its rail button means a protein is loaded.
-- **Filter** builds a [filter](/explore/filter) from annotation values.
+- **Structure** shows or hides the selected protein in 3D, docked or floating; a dot on its rail button means a protein is chosen.
+- **Filter** builds a [filter](/explore/filter) from annotation values; a dot on it means a filter is applied.
+- **EAT** opens the [EAT panel](/explore/eat), for a dataset with transferred annotations.
 
-**Collapse sidebar**, the rail's last button, folds the sidebar to the rail and gives the plot the whole width; **Expand sidebar** brings it back. Drag the sidebar's left edge to make it wider or narrower.
+Drag the sidebar's left edge to make it wider or narrower.
 
 ![Folding the sidebar to the rail, bringing it back, then dragging its left edge](./images/sidebar-fold-resize.gif)
 
@@ -73,7 +75,7 @@ The rail on the sidebar's right edge switches between its three panels and folds
 <img src="./images/legend-panel-dark.png" class="dark-only" alt="The legend: the colour-by annotation in its header with the sort and settings buttons, and one row per category with its count" width="300" height="586" loading="lazy" />
 
 - Click a row to hide or show its category; double-click it to show only that one.
-- Drag a row by its handle to reorder; higher rows are drawn on top in the plot.
+- Drag a row by its grip to reorder; the grip shows in the row's left margin when you hover the row. Higher rows are drawn on top in the plot.
 - The sliders button in the header opens **Legend settings**; the sort button orders the rows.
 - Scored datasets add [separation score strips](/explore/separation-scores) above the rows.
 - Annotations with [transferred values](/explore/eat) add a line with an **EAT ›** link to the EAT panel.
@@ -163,8 +165,8 @@ On every touch screen:
 
 - Drag to pan, pinch to zoom; a tap on empty space or a pan closes a pinned tooltip.
 - Tap a legend row to hide or show it, and double-tap it to show only that category. The row's
-  eye, handle and ⋯ menu are always shown, and every control is at least 40 px.
-- To reorder the legend, hold a row's handle for a moment, then drag it.
+  eye, grip and ⋯ menu are always shown, and every control is at least 40 px.
+- To reorder the legend, hold a row's grip for a moment, then drag it.
 
 ## Next steps
 

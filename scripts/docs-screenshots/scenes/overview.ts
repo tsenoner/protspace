@@ -7,7 +7,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import {
   appBar,
-  filterButton,
+  contoursTrigger,
   plotArea,
   projectionTrigger,
   proteinSearch,
@@ -91,7 +91,7 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     kind: 'png',
     viewport: 'desktop',
     themes: ['light', 'dark'],
-    target: (page) => barSpan(viewBar(page), projectionTrigger(page), filterButton(page)),
+    target: (page) => barSpan(viewBar(page), projectionTrigger(page), contoursTrigger(page)),
     docs: ['explore/index.md'],
   },
   {
