@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { userEvent } from 'vitest/browser';
+import { cdp, userEvent } from 'vitest/browser';
 import {
   annotationLabel,
   DEFAULT_EAT_RELIABILITY,
@@ -457,6 +457,26 @@ describe('protspace-eat-panel', () => {
         select.dispatchEvent(new Event('change', { bubbles: true }));
         await el.updateComplete;
         expect(labelNames(el)).toEqual(order);
+      }
+    });
+
+    it('gives a coarse pointer finger-sized rows and buttons outside compact (a tablet)', async () => {
+      const session = cdp();
+      await session.send('Emulation.setTouchEmulationEnabled', {
+        enabled: true,
+        maxTouchPoints: 1,
+      });
+      try {
+        const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
+        expect(el.hasAttribute('compact')).toBe(false);
+        const rows = [...root(el).querySelectorAll<HTMLElement>('.eat-label-row')];
+        expect(rows.length).toBeGreaterThan(0);
+        for (const row of rows)
+          expect(row.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+        const handles = root(el).querySelector<HTMLElement>('.eat-handles')!;
+        expect(handles.getBoundingClientRect().height).toBe(40);
+      } finally {
+        await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
       }
     });
 

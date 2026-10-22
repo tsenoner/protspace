@@ -261,10 +261,28 @@ export const eatPanelStyles = [
       cursor: default;
     }
 
-    /* A finger needs a 40 px target; the thumb stays the same size. */
+    /* A finger needs a 40 px target (44 px rows), on a tablet as on a phone; the thumb
+       stays the same size. */
     @media (pointer: coarse) {
       .eat-handles {
         height: 40px;
+      }
+
+      :is(.eat-label-row, .eat-drill-row) {
+        min-height: 44px;
+        align-content: center;
+      }
+
+      :is(
+        .eat-drill-select,
+        .eat-export,
+        .eat-show-all,
+        .eat-color-by,
+        .eat-others summary,
+        .eat-display > summary,
+        .eat-card-link
+      ) {
+        min-height: 40px;
       }
 
       /* A short bar still takes a 32 px tall tap column (20 bars share the width). */
@@ -605,31 +623,9 @@ export const eatPanelStyles = [
       text-decoration: underline;
     }
 
-    /* Phone (proposal B §6): a shorter histogram, 40 px handles and 44 px rows for a finger. */
+    /* Phone (proposal B §6): a shorter histogram. Target sizes follow the pointer, above. */
     :host([compact]) .eat-histogram {
       height: 56px;
-    }
-
-    :host([compact]) .eat-handles {
-      height: 40px;
-    }
-
-    :host([compact]) :is(.eat-label-row, .eat-drill-row) {
-      min-height: 44px;
-      align-content: center;
-    }
-
-    :host([compact])
-      :is(
-        .eat-drill-select,
-        .eat-export,
-        .eat-show-all,
-        .eat-color-by,
-        .eat-others summary,
-        .eat-display > summary,
-        .eat-card-link
-      ) {
-      min-height: 40px;
     }
   `,
 ];
