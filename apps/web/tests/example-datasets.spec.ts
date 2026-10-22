@@ -40,6 +40,7 @@ import {
   PHOSPHATASE_1587_FIXTURE,
   STARTUP_DATASET_URL,
 } from './helpers/fixtures';
+import { eatPanel, openEatPanel } from './helpers/eat';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
 
 /**
@@ -1045,13 +1046,10 @@ test.describe('Example datasets: the EAT example', () => {
     await openExplore(page, `?dataset=${EAT.id}`, EAT.count);
     await expect.poll(() => getViewState(page)).toEqual(curatedViewOf(EAT.entry));
 
-    const eatGroup = page
-      .locator('protspace-legend')
-      .getByRole('region', { name: 'Embedding Annotation Transfer' });
-    await expect(eatGroup).toBeVisible();
-    await expect(eatGroup.getByRole('checkbox', { name: 'Show EAT predictions' })).toBeChecked();
+    await openEatPanel(page);
+    await expect(eatPanel(page).getByRole('switch', { name: 'Show predictions' })).toBeChecked();
     await expect(
-      eatGroup.getByRole('slider', { name: 'EAT reliability filter threshold' }),
+      eatPanel(page).getByRole('slider', { name: 'EAT reliability filter threshold' }),
     ).toHaveValue(String(EAT_ROLE_BUNDLED_THRESHOLD));
     expect(await getSearch(page)).toBe(`?dataset=${EAT.id}`);
   });
