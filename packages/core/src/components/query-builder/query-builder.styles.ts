@@ -972,6 +972,14 @@ export const queryBuilderStyles = [
       white-space: nowrap;
     }
 
+    /* The count's place while the builder's count is pending: a still bar, no number. */
+    .value-picker-count.is-pending {
+      width: 28px;
+      height: 8px;
+      border-radius: var(--ps-radius-full);
+      background: var(--ps-border);
+    }
+
     .value-picker-bar {
       flex: none;
       width: 36px;

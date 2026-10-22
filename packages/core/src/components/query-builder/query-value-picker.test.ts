@@ -27,7 +27,7 @@ import type { ProtspaceData } from './types';
 interface ValuePickerEl extends HTMLElement {
   annotation: string;
   data: ProtspaceData | undefined;
-  matchedIndices: Set<number> | null;
+  matchedIndices: Set<number> | null | undefined;
   selectedValues: string[];
   open: boolean;
   anchor: Element | null;
@@ -59,8 +59,8 @@ const MATCHED = new Set([0, 2, 3, 4]);
 interface MountOptions {
   annotation?: string;
   data?: ProtspaceData | undefined;
-  /** null counts over the whole dataset. */
-  matchedIndices?: Set<number> | null;
+  /** null counts over the whole dataset; undefined is a count still pending. */
+  matchedIndices?: Set<number> | null | undefined;
   selectedValues?: string[];
   open?: boolean;
 }
@@ -70,7 +70,7 @@ async function mount(options: MountOptions = {}): Promise<ValuePickerEl> {
   const el = document.createElement('protspace-query-value-picker') as ValuePickerEl;
   el.annotation = options.annotation ?? 'organism';
   el.data = 'data' in options ? options.data : data;
-  el.matchedIndices = 'matchedIndices' in options ? options.matchedIndices! : MATCHED;
+  el.matchedIndices = 'matchedIndices' in options ? options.matchedIndices : MATCHED;
   el.selectedValues = options.selectedValues ?? [];
   el.open = options.open ?? true;
   document.body.appendChild(el);
@@ -167,6 +167,40 @@ describe('query-value-picker', () => {
     it('counts proteins inside the matched set carrying the value', async () => {
       const el = await mount();
       expect(counts(el)).toEqual({ 'Any value': 3, Human: 2, Mouse: 2, Yeast: 0, 'N/A': 1 });
+    });
+
+    it('shows placeholders, no bars and A–Z rows while the base is pending, then the counts', async () => {
+      // Mouse ahead of Human under Count once counted, so the A–Z order while pending shows.
+      const mouseFirst: ProtspaceData = {
+        ...data,
+        annotation_data: { organism: [[1], [1], [1], [0], [], [3]] },
+      };
+      const el = await mount({ data: mouseFirst, matchedIndices: undefined });
+      const root = el.shadowRoot!;
+      expect(root.querySelectorAll('.value-picker-count.is-pending')).toHaveLength(5);
+      expect([...root.querySelectorAll('.value-picker-count')].map((c) => c.textContent)).toEqual([
+        '',
+        '',
+        '',
+        '',
+        '',
+      ]);
+      expect(root.querySelectorAll('.value-picker-bar b')).toHaveLength(0);
+      expect(root.querySelector('.value-picker-list')!.getAttribute('aria-busy')).toBe('true');
+      expect(labels(el)).toEqual(['Any value', 'N/A', 'Human', 'Mouse', 'Yeast']);
+
+      el.matchedIndices = null;
+      await el.updateComplete;
+      expect(root.querySelector('.is-pending')).toBeNull();
+      expect(root.querySelector('.value-picker-list')!.getAttribute('aria-busy')).toBe('false');
+      expect(labels(el)).toEqual(['Any value', 'N/A', 'Mouse', 'Human', 'Yeast']);
+      expect(counts(el)).toEqual({ 'Any value': 4, Mouse: 3, Human: 1, Yeast: 0, 'N/A': 2 });
+      expect(root.querySelectorAll('.value-picker-bar b').length).toBeGreaterThan(0);
+    });
+
+    it('leaves the proteins out of the footer while the base is pending', async () => {
+      const el = await mount({ matchedIndices: undefined, selectedValues: ['Human'] });
+      expect(footer(el)).toBe('1 selected');
     });
 
     it('counts the carriers dataset-wide when the base is the whole dataset (null)', async () => {

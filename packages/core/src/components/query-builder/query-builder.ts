@@ -511,9 +511,7 @@ export class ProtspaceQueryBuilder extends LitElement {
         .edited=${this._edited.has(condition.id)}
         .annotations=${this.annotations}
         .data=${this.data}
-        .matchedIndices=${this._excludedMatchMap.has(condition.id)
-          ? this._excludedMatchMap.get(condition.id)
-          : this._matchedIndices}
+        .matchedIndices=${this._countBase(condition.id)}
         .number=${numbers.get(condition.id) ?? 0}
         @condition-changed=${this._handleConditionChanged}
         @operator-changed=${this._handleOperatorChanged}
@@ -521,6 +519,17 @@ export class ProtspaceQueryBuilder extends LitElement {
         @condition-duplicated=${this._handleConditionDuplicated}
       ></protspace-query-condition-row>
     `;
+  }
+
+  /**
+   * A card's count base (see `countBases`), or undefined while it waits for the count: a card
+   * added since the last one. With nothing else configured the base is the whole dataset, known
+   * without the count.
+   */
+  private _countBase(id: string): Set<number> | null | undefined {
+    if (this._excludedMatchMap.has(id)) return this._excludedMatchMap.get(id);
+    const others = leafConditions(this.query).filter((condition) => condition.id !== id);
+    return hasConfiguredCondition(others) ? undefined : null;
   }
 
   private _renderGroup(group: FilterGroup, numbers: ReadonlyMap<string, number>) {

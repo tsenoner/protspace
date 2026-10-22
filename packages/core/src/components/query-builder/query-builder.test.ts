@@ -380,6 +380,30 @@ describe('query-builder value count bases', () => {
   const mouse = (logicalOp?: 'AND' | 'OR') =>
     createCondition({ annotation: 'organism', values: ['Mouse'], logicalOp });
 
+  /** Each card's count base before the debounced count lands. */
+  async function basesBeforeCount(query: FilterQuery) {
+    builder.query = query;
+    await builder.updateComplete;
+    return [...builder.shadowRoot!.querySelectorAll('protspace-query-condition-row')].map(
+      (row) =>
+        (row as HTMLElement & { matchedIndices: Set<number> | null | undefined }).matchedIndices,
+    );
+  }
+
+  it('before the first count, a card is pending unless nothing else filters', async () => {
+    // Never an empty set: that read as a count of 0 for every value until the count landed.
+    expect(await basesBeforeCount([human()])).toEqual([null]);
+    expect(await basesBeforeCount([human(), createCondition({ logicalOp: 'AND' })])).toEqual([
+      null,
+      undefined,
+    ]);
+    vi.advanceTimersByTime(300);
+    await builder.updateComplete;
+    const added = [human(), mouse('AND')];
+    // The first card's id is new too: both wait for the count.
+    expect(await basesBeforeCount(added)).toEqual([undefined, undefined]);
+  });
+
   it('a lone card counts over the whole dataset', async () => {
     expect(await bases([human()])).toEqual([null]);
   });

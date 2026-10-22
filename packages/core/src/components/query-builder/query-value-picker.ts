@@ -72,10 +72,12 @@ class ProtspaceQueryValuePicker extends LitElement {
   @property({ type: String }) annotation: string = '';
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;
   /**
-   * The proteins the values are counted among; null is the whole dataset. The query builder
-   * works it out from where the card sits (see its `_countBases`).
+   * The proteins the values are counted among; null is the whole dataset, undefined not known yet
+   * (the builder's count is pending): the rows then show a placeholder for their counts, no bars,
+   * and sort A–Z until the counts land. The query builder works it out from where the card sits
+   * (see its `countBases`).
    */
-  @property({ attribute: false }) matchedIndices: Set<number> | null = new Set();
+  @property({ attribute: false }) matchedIndices: Set<number> | null | undefined = undefined;
   @property({ type: Array }) selectedValues: string[] = [];
   @property({ type: Boolean }) open: boolean = false;
   /** The "+ value" button the popover hangs from. */
@@ -184,10 +186,11 @@ class ProtspaceQueryValuePicker extends LitElement {
       if (hasReal) anyCount++;
     };
 
-    if (this.matchedIndices === null) {
+    const base = this.matchedIndices;
+    if (base === null) {
       for (let i = 0; i < total; i++) countProtein(i);
-    } else {
-      for (const idx of this.matchedIndices) countProtein(idx);
+    } else if (base) {
+      for (const idx of base) countProtein(idx);
     }
 
     counts.set(ANY_VALUE, anyCount);
@@ -196,6 +199,11 @@ class ProtspaceQueryValuePicker extends LitElement {
 
   private _counts() {
     return (this._countCache ??= this._buildCountMap());
+  }
+
+  /** The count base is not known yet (see `matchedIndices`). */
+  private get _pending(): boolean {
+    return this.matchedIndices === undefined;
   }
 
   /** The proteins carrying any of the selected values, among the same proteins as the rows. */
@@ -222,10 +230,11 @@ class ProtspaceQueryValuePicker extends LitElement {
       idx < total &&
       resolveAnnotationInternalValues(idx, this.annotation, data).some((v) => set.has(v));
     let n = 0;
-    if (this.matchedIndices === null) {
+    const base = this.matchedIndices;
+    if (base === null) {
       for (let i = 0; i < total; i++) if (hit(i)) n++;
-    } else {
-      for (const idx of this.matchedIndices) if (hit(idx)) n++;
+    } else if (base) {
+      for (const idx of base) if (hit(idx)) n++;
     }
     return n;
   }
@@ -262,7 +271,7 @@ class ProtspaceQueryValuePicker extends LitElement {
     if (frozen) {
       const rank = (e: Entry) => frozen.get(e.value) ?? Number.MAX_SAFE_INTEGER;
       real.sort((a, b) => rank(a) - rank(b));
-    } else if (this._sort === 'count') {
+    } else if (this._sort === 'count' && !this._pending) {
       real.sort((a, b) => b.count - a.count || collator.compare(a.label, b.label));
     } else {
       real.sort((a, b) => collator.compare(a.label, b.label));
@@ -490,6 +499,7 @@ class ProtspaceQueryValuePicker extends LitElement {
     const locked = this._isLocked(entry.value);
     const any = entry.value === ANY_VALUE;
     const share = base > 0 ? Math.min(100, (entry.count / base) * 100) : 0;
+    const pending = this._pending;
     return html`
       <div
         id="value-picker-option-${index}"
@@ -508,9 +518,11 @@ class ProtspaceQueryValuePicker extends LitElement {
           >${checked ? icon('check', 14) : nothing}</i
         >
         <span class="value-picker-label">${this._highlightMatch(entry.label)}</span>
-        <span class="value-picker-count">${formatCount(entry.count)}</span>
-        <i class="value-picker-bar ${any ? 'is-blank' : ''}" aria-hidden="true"
-          >${any || entry.count === 0
+        ${pending
+          ? html`<span class="value-picker-count is-pending" aria-hidden="true"></span>`
+          : html`<span class="value-picker-count">${formatCount(entry.count)}</span>`}
+        <i class="value-picker-bar ${any || pending ? 'is-blank' : ''}" aria-hidden="true"
+          >${any || pending || entry.count === 0
             ? nothing
             : html`<b style="width:${share.toFixed(2)}%"></b>`}</i
         >
@@ -604,6 +616,7 @@ class ProtspaceQueryValuePicker extends LitElement {
           role="listbox"
           aria-label=${query ? `Values matching ${query}` : 'Values'}
           aria-multiselectable="true"
+          aria-busy=${this._pending ? 'true' : 'false'}
           @scroll=${this._handleScroll}
         >
           <div class="value-picker-spacer" style="height:${lines.length * line}px">
@@ -628,7 +641,7 @@ class ProtspaceQueryValuePicker extends LitElement {
         <div class="value-picker-footer">
           <span class="value-picker-summary" aria-live="polite"
             >${formatCount(n)}
-            selected${n
+            selected${n && !this._pending
               ? html` · ${formatCount(this._selectionCount(this.selectedValues))} proteins`
               : nothing}</span
           >
