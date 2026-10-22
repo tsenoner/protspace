@@ -18,7 +18,7 @@ interface SelectionBarPlacement {
  * bottom edge, pushed right of the count when the centre would cover it, compact when only that
  * fits, and only on a plot too narrow for either, above the status corner.
  */
-function placeSelectionBar(input: {
+export function placeSelectionBar(input: {
   plotWidth: number;
   countRight: number;
   statusHeight: number;
