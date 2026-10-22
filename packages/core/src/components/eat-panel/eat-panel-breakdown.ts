@@ -68,7 +68,7 @@ interface EatBreakdownView {
   sort: EatLabelSort;
   showAll: boolean;
   labelColors: ReadonlyMap<string, string>;
-  /** The median reliability over every prediction in the view, each row's comparison. */
+  /** The median reliability over every prediction in the view, named once in the helper line. */
   overallMedian: number | null;
   /** Show off: the section is greyed; its rows and lists keep working. */
   off: boolean;
@@ -98,23 +98,28 @@ function labelBar(row: EatLabelRow, color: string | undefined): TemplateResult {
 
 /**
  * Line two's facts, each kept whole: `212 predicted (79 %)`, `40 outside` while the range leaves
- * some out, and `typical reliability 51 % (all: 53 %)`, against the median of every prediction in
- * the view. Empty for a label with no prediction.
+ * some out, and `typical 51 %`; the helper line gives the overall figure once. Empty for a label
+ * with no prediction.
  */
-function rowFacts(row: EatLabelRow, overallMedian: number | null): string[] {
+function rowFacts(row: EatLabelRow): string[] {
   const predicted = row.kept + row.outside;
   if (predicted === 0) return [];
   const facts = [`${formatCount(predicted)} predicted (${formatPercent(row.predictedShare)})`];
   if (row.outside > 0) facts.push(`${formatCount(row.outside)} outside`);
-  if (row.medianReliability !== null) {
-    const all = overallMedian === null ? '' : ` (all: ${formatPercent(overallMedian)})`;
-    facts.push(`typical reliability ${formatPercent(row.medianReliability)}${all}`);
-  }
+  if (row.medianReliability !== null) facts.push(`typical ${formatPercent(row.medianReliability)}`);
   return facts;
 }
 
+/** The section's helper line, with the overall typical reliability once when there is one. */
+function breakdownHelp(overallMedian: number | null): string {
+  const help = 'Click a label to check its least reliable predictions.';
+  return overallMedian === null
+    ? help
+    : `${help} Typical reliability across all predictions: ${formatPercent(overallMedian)}.`;
+}
+
 /** The row's accessible name: the facts in words, with commas for the middle dots. */
-function rowName(row: EatLabelRow, overallMedian: number | null, mostly: boolean): string {
+function rowName(row: EatLabelRow, mostly: boolean): string {
   const predicted = row.kept + row.outside;
   const parts = [`${row.label}: ${countNoun(row.total, 'protein', 'proteins')}`];
   if (predicted === 0) parts.push(NO_PREDICTIONS.toLowerCase());
@@ -122,9 +127,7 @@ function rowName(row: EatLabelRow, overallMedian: number | null, mostly: boolean
     parts.push(`${formatCount(predicted)} predicted (${formatPercent(row.predictedShare)})`);
     if (row.outside > 0) parts.push(`${formatCount(row.outside)} outside the range`);
     if (row.medianReliability !== null) {
-      const all =
-        overallMedian === null ? '' : ` (all predictions: ${formatPercent(overallMedian)})`;
-      parts.push(`typical reliability ${formatPercent(row.medianReliability)}${all}`);
+      parts.push(`typical reliability ${formatPercent(row.medianReliability)}`);
     }
   }
   if (mostly) parts.push(MOSTLY_PREDICTED.toLowerCase());
@@ -147,7 +150,7 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
     aria-label=${BREAKDOWN_HEADING}
   >
     <h3 class="eat-heading">${BREAKDOWN_HEADING}</h3>
-    <p class="eat-help">Click a label to check its least reliable predictions.</p>
+    <p class="eat-help">${breakdownHelp(view.overallMedian)}</p>
     <div class="eat-sort-row">
       <span aria-hidden="true">Sort</span>
       <ps-select
@@ -166,8 +169,8 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
         // Only curated members in view: nothing to list, so the row opens nothing.
         const noPredictions = row.kept + row.outside === 0;
         const mostly = row.predictedShare > MOSTLY_PREDICTED_SHARE;
-        const facts = rowFacts(row, view.overallMedian);
-        const name = rowName(row, view.overallMedian, mostly);
+        const facts = rowFacts(row);
+        const name = rowName(row, mostly);
         return html`<li>
           <button
             type="button"

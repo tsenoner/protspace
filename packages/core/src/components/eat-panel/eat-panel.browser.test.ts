@@ -499,16 +499,19 @@ describe('protspace-eat-panel', () => {
       expect(row('B').getAttribute('aria-expanded')).toBe('false');
       expect(row('B').querySelector('.eat-label-total')!.textContent).toBe('5');
       expect(row('B').querySelector('.eat-label-share')!.textContent).toBe(
-        `5 predicted (100${PCT})\u00a0· typical reliability 40${PCT} (all: 50${PCT})`,
+        `5 predicted (100${PCT})\u00a0· typical 40${PCT}`,
       );
       expect(row('B').querySelector('.eat-label-tag')!.textContent).toBe('Mostly predicted');
       expect(row('B').getAttribute('aria-label')).toBe(
-        `B: 5 proteins, 5 predicted (100${PCT}), typical reliability 40${PCT} (all predictions: 50${PCT}), mostly predicted`,
+        `B: 5 proteins, 5 predicted (100${PCT}), typical reliability 40${PCT}, mostly predicted`,
       );
       expect(row('A').querySelector('.eat-label-share')!.textContent).toBe(
-        `3 predicted (75${PCT})\u00a0· typical reliability 90${PCT} (all: 50${PCT})`,
+        `3 predicted (75${PCT})\u00a0· typical 90${PCT}`,
       );
       expect(row('A').querySelector('.eat-label-tag')).toBeNull();
+      expect(root(el).querySelector('.eat-breakdown .eat-help')!.textContent).toBe(
+        `Click a label to check its least reliable predictions. Typical reliability across all predictions: 50${PCT}.`,
+      );
       const swatch = row('B').querySelector<HTMLElement>('.eat-swatch')!;
       expect(getComputedStyle(swatch).backgroundColor).toBe('rgb(255, 0, 0)');
       // A label in the legend's Other bucket takes Other's colour.
