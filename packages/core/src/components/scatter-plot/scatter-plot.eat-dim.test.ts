@@ -23,7 +23,7 @@ import { fakeFrames, mountPlot } from './test-support/plot-fixture';
 const counters = perfCounters!;
 const resetCounters = () => Object.assign(counters, createPerfCounters());
 
-const AT_LEAST_HALF: EatReliabilityState = { mode: 'atLeast', min: 0.5, max: 1 };
+const AT_LEAST_HALF: EatReliabilityState = { min: 0.5, max: 1 };
 
 function makeData(): VisualizationData {
   return {

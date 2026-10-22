@@ -155,7 +155,7 @@ describe('protspace-eat-panel', () => {
     await el.updateComplete;
     vi.mocked(summarizeEat).mockClear();
 
-    el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+    el.setReliabilityState({ min: 0.5, max: 1 });
     el.context = mask(['P0']);
     await el.updateComplete;
     expect(summarizeEat).not.toHaveBeenCalled();
@@ -169,7 +169,7 @@ describe('protspace-eat-panel', () => {
 
   it('draws 20 bars and shades the kept range', async () => {
     const el = await mount();
-    el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+    el.setReliabilityState({ min: 0.5, max: 1 });
     await el.updateComplete;
     const all = bars(el);
     expect(all).toHaveLength(20);
@@ -214,18 +214,18 @@ describe('protspace-eat-panel', () => {
     vi.useFakeTimers();
     const el = await mount();
     const details = listen(el);
-    el.setReliabilityState({ mode: 'between', min: 0.2, max: 0.7 });
+    el.setReliabilityState({ min: 0.2, max: 0.7 });
     await el.updateComplete;
     vi.advanceTimersByTime(EAT_THRESHOLD_COMMIT_DELAY_MS * 2);
     expect(details).toHaveLength(0);
-    expect(el.reliability).toEqual({ mode: 'between', min: 0.2, max: 0.7 });
+    expect(el.reliability).toEqual({ min: 0.2, max: 0.7 });
     expect(el.reliabilityThreshold).toBe(0.2);
   });
 
   it('reset() returns to the defaults and emits them once', async () => {
     const el = await mount();
     expect(el.isAtDefaults).toBe(true);
-    el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+    el.setReliabilityState({ min: 0.5, max: 1 });
     await el.updateComplete;
     expect(el.isAtDefaults).toBe(false);
     const details = listen(el);
@@ -236,7 +236,7 @@ describe('protspace-eat-panel', () => {
     expect(el.isAtDefaults).toBe(true);
   });
 
-  describe('Below threshold', () => {
+  describe('Outside the range', () => {
     async function outcome(el: ProtspaceEatPanel) {
       const control = root(el).querySelector<HTMLElement & { updateComplete: Promise<unknown> }>(
         '.eat-outcome-row ps-segmented',
@@ -254,13 +254,11 @@ describe('protspace-eat-panel', () => {
       el.addEventListener('eat-outcome-change', (event) =>
         outcomes.push((event as CustomEvent).detail),
       );
-      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      el.setReliabilityState({ min: 0.5, max: 1 });
       options[1].click();
       await el.updateComplete;
       expect(el.outcome).toBe('dim');
-      expect(outcomes).toEqual([
-        { outcome: 'dim', reliability: { mode: 'atLeast', min: 0.5, max: 1 } },
-      ]);
+      expect(outcomes).toEqual([{ outcome: 'dim', reliability: { min: 0.5, max: 1 } }]);
       expect(el.isAtDefaults).toBe(false);
     });
 
@@ -270,20 +268,20 @@ describe('protspace-eat-panel', () => {
       await el.updateComplete;
       el.setReliabilityState(DEFAULT_EAT_RELIABILITY);
       expect(el.outcome).toBe('dim');
-      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      el.setReliabilityState({ min: 0.5, max: 1 });
       expect(el.outcome).toBe('hide');
     });
 
     it('a weak drill-down row says Dimmed in Dim; reset() and a new dataset go back to Hide', async () => {
       const el = await mount();
-      el.setReliabilityState({ mode: 'atLeast', min: 0.99, max: 1 });
+      el.setReliabilityState({ min: 0.99, max: 1 });
       (await outcome(el))[1].click();
       await el.updateComplete;
       bars(el)
         .find((bar) => !bar.hasAttribute('data-empty'))!
         .click();
       await el.updateComplete;
-      expect(text(el, '.eat-drill-hidden')).toBe('Dimmed by the threshold');
+      expect(text(el, '.eat-drill-hidden')).toBe('Dimmed, outside the range');
 
       el.reset();
       await el.updateComplete;
@@ -373,14 +371,17 @@ describe('protspace-eat-panel', () => {
     // Not inert: a screen reader still finds the controls, and hears that they are off.
     expect(section.inert).toBe(false);
     expect(handle(el).disabled).toBe(true);
-    const modes = root(el).querySelector<HTMLElement>('ps-segmented')!;
-    await (modes as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
-    const options = [...modes.shadowRoot!.querySelectorAll<HTMLElement>('[role="radio"]')];
-    expect(options.length).toBe(3);
+    for (const box of root(el).querySelectorAll<HTMLInputElement>('.eat-threshold-percent')) {
+      expect(box.disabled).toBe(true);
+    }
+    const outcome = root(el).querySelector<HTMLElement>('.eat-outcome-row ps-segmented')!;
+    await (outcome as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
+    const options = [...outcome.shadowRoot!.querySelectorAll<HTMLElement>('[role="radio"]')];
+    expect(options.length).toBe(2);
     for (const option of options) expect(option.getAttribute('aria-disabled')).toBe('true');
     options[1].click();
     await el.updateComplete;
-    expect(el.reliability.mode).toBe('atLeast');
+    expect(el.outcome).toBe('hide');
     expect(details).toHaveLength(1);
     expect(el.isAtDefaults).toBe(false);
   });
@@ -653,15 +654,15 @@ describe('protspace-eat-panel', () => {
     it('a label row lists the label’s weakest; Select all emits its kept ids', async () => {
       const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
       const selected = listenSelect(el);
-      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      el.setReliabilityState({ min: 0.5, max: 1 });
       labelRow(el, 'B').click();
       await el.updateComplete;
       expect(labelRow(el, 'B').getAttribute('aria-expanded')).toBe('true');
       expect(labelRow(el, 'B').parentElement!.querySelector('.eat-drill')).not.toBeNull();
       expect(text(el, '.eat-drill-heading')).toBe('Weakest B');
       expect(drillIds(el)).toEqual(['Q8', 'Q7']);
-      // In Hide mode a row below the threshold says so, and stays clickable.
-      expect(text(el, '.eat-drill-row')).toBe(`Q8 20${PCT} B Hidden by the threshold`);
+      // In Hide a row outside the range says so, and stays clickable.
+      expect(text(el, '.eat-drill-row')).toBe(`Q8 20${PCT} B Hidden, outside the range`);
       expect(text(el, '.eat-drill-count')).toBe('2 of 2');
       root(el).querySelector<HTMLButtonElement>('.eat-drill-select')!.click();
       expect(selected).toEqual([{ proteinIds: ['Q7'], zoom: false }]);
@@ -672,7 +673,7 @@ describe('protspace-eat-panel', () => {
     it('with Show off, By label is greyed but not disabled, and its lists still work', async () => {
       const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
       const selected = listenSelect(el);
-      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      el.setReliabilityState({ min: 0.5, max: 1 });
       const toggle = root(el).querySelector<PsSwitch>('ps-switch')!;
       await toggle.updateComplete;
       toggle.shadowRoot!.querySelector('button')!.click();
@@ -915,14 +916,14 @@ describe('protspace-eat-panel', () => {
     }
     const itemText = (item: HTMLElement) => item.textContent!.replace(/\s+/g, ' ').trim();
 
-    it('exports the kept or below-threshold IDs in the view, in reliability order', async () => {
+    it('exports the kept or outside-the-range IDs in the view, in reliability order', async () => {
       const el = await mount({ context: mask(['P8']) });
       const exported = listenExport(el);
-      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      el.setReliabilityState({ min: 0.5, max: 1 });
       await el.updateComplete;
       const trigger = root(el).querySelector<HTMLElement>('.eat-readout-row .eat-export')!;
       let items = await openExport(el, trigger);
-      expect(items.map(itemText)).toEqual(['Kept predictions (3)', 'Below threshold (1)']);
+      expect(items.map(itemText)).toEqual(['Kept predictions (3)', 'Outside the range (1)']);
       items[0].click();
       await el.updateComplete;
       expect(exported).toEqual([
@@ -931,7 +932,7 @@ describe('protspace-eat-panel', () => {
       expect(root(el).querySelector<HTMLElement & { open: boolean }>('ps-menu')!.open).toBe(false);
       items = await openExport(el, trigger);
       items[1].click();
-      expect(exported[1]).toEqual({ proteinIds: ['P3'], fileName: 'toxin-eat-below-ids.txt' });
+      expect(exported[1]).toEqual({ proteinIds: ['P3'], fileName: 'toxin-eat-outside-ids.txt' });
     });
 
     it('disables an empty choice', async () => {
@@ -941,7 +942,7 @@ describe('protspace-eat-panel', () => {
         el,
         root(el).querySelector<HTMLElement>('.eat-readout-row .eat-export')!,
       );
-      expect(items.map(itemText)).toEqual(['Kept predictions (5)', 'Below threshold (0)']);
+      expect(items.map(itemText)).toEqual(['Kept predictions (5)', 'Outside the range (0)']);
       expect(items.map((item) => item.disabled)).toEqual([false, true]);
       items[1].click();
       expect(exported).toEqual([]);
@@ -956,7 +957,7 @@ describe('protspace-eat-panel', () => {
         annotation: 'cls',
       });
       const exported = listenExport(el);
-      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      el.setReliabilityState({ min: 0.5, max: 1 });
       await el.updateComplete;
       root(el).querySelector<HTMLButtonElement>('.eat-label-row[data-label="B"]')!.click();
       await el.updateComplete;
@@ -964,9 +965,9 @@ describe('protspace-eat-panel', () => {
         el,
         root(el).querySelector<HTMLElement>('.eat-drill-foot .eat-export')!,
       );
-      expect(items.map(itemText)).toEqual(['Kept predictions (1)', 'Below threshold (1)']);
+      expect(items.map(itemText)).toEqual(['Kept predictions (1)', 'Outside the range (1)']);
       items[1].click();
-      expect(exported).toEqual([{ proteinIds: ['Q4'], fileName: 'cls-eat-below-ids.txt' }]);
+      expect(exported).toEqual([{ proteinIds: ['Q4'], fileName: 'cls-eat-outside-ids.txt' }]);
     });
   });
 });

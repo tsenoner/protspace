@@ -102,7 +102,7 @@ describe('model() memo key', () => {
     };
     inputs.data = data;
     const before = state.model();
-    inputs.eatDim = { mode: 'atLeast', min: 0.5, max: 1 };
+    inputs.eatDim = { min: 0.5, max: 1 };
     const dimmed = state.model();
     expect(dimmed).not.toBe(before);
     expect(dimmed.opacityAt(2, 'p2')).toBe(0.25);
@@ -114,7 +114,7 @@ describe('model() memo key', () => {
   it('keeps the model when the EAT dim drops nothing', () => {
     const { inputs, state } = makeState();
     const before = state.model();
-    inputs.eatDim = { mode: 'atLeast', min: 0.5, max: 1 };
+    inputs.eatDim = { min: 0.5, max: 1 };
     expect(state.model()).toBe(before);
   });
 

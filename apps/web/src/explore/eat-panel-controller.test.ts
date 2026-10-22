@@ -186,7 +186,7 @@ describe('createEatPanelController', () => {
 
   it('applies the panel’s eat-overlay-change to the plot, the filter, the legend and the rail dot', () => {
     const { plot, panel, legend, filter, emit } = setup({ value: true });
-    const reliability: EatReliabilityState = { mode: 'atLeast', min: 0.5, max: 1 };
+    const reliability: EatReliabilityState = { min: 0.5, max: 1 };
     filter.mask = Uint8Array.of(1, 0);
 
     emit(false, reliability);
@@ -200,7 +200,7 @@ describe('createEatPanelController', () => {
 
   it('Dim clears the reliability condition and fades through eatDim; Hide puts the condition back', () => {
     const { plot, panel, legend, filter, emit } = setup({ value: true });
-    const reliability: EatReliabilityState = { mode: 'atLeast', min: 0.5, max: 1 };
+    const reliability: EatReliabilityState = { min: 0.5, max: 1 };
     emit(true, reliability);
     const choose = (outcome: 'hide' | 'dim') => {
       panel.outcome = outcome;
@@ -216,7 +216,7 @@ describe('createEatPanelController', () => {
     expect(getWorkbenchStatus().eatDim).toEqual(reliability);
 
     // A threshold commit in Dim moves the fade, still without a condition.
-    const tighter: EatReliabilityState = { mode: 'atLeast', min: 0.6, max: 1 };
+    const tighter: EatReliabilityState = { min: 0.6, max: 1 };
     emit(true, tighter);
     expect(filter.setEatReliability).toHaveBeenLastCalledWith('ec', DEFAULT_EAT_RELIABILITY);
     expect(plot.eatDim).toEqual(tighter);
@@ -245,11 +245,11 @@ describe('createEatPanelController', () => {
 
     // An Apply in the Filter panel: the filter moved the panel (no emit) and the plot re-derived.
     filter.mask = Uint8Array.of(0, 1);
-    panel.reliability = { mode: 'atMost', min: 0, max: 0.4 };
+    panel.reliability = { min: 0, max: 0.4 };
     plot.dispatchEvent(new Event('data-change'));
 
     expect(panel.context).toBe(filter.mask);
-    expect(legend.eatReliability).toEqual({ mode: 'atMost', min: 0, max: 0.4 });
+    expect(legend.eatReliability).toEqual({ min: 0, max: 0.4 });
   });
 
   it('asks for no context while hidden, and for the current one when the panel shows', () => {
@@ -289,7 +289,7 @@ describe('createEatPanelController', () => {
   it('removes its eat-overlay-change listener on dispose', () => {
     const { filter, controller, emit } = setup({ value: true });
     controller.dispose();
-    emit(true, { mode: 'atLeast', min: 0.3, max: 1 });
+    emit(true, { min: 0.3, max: 1 });
     expect(filter.setEatReliability).not.toHaveBeenCalled();
   });
 

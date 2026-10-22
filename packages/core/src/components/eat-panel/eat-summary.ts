@@ -4,7 +4,6 @@ import {
   getProteinAnnotationIndexAt,
   isNAValue,
   normalizeReliability,
-  RELIABILITY_BOUNDS,
 } from '@protspace/utils';
 import type { EatReliabilityState, VisualizationData } from '@protspace/utils';
 
@@ -44,7 +43,8 @@ export interface EatLabelRow {
   label: string;
   curated: number;
   kept: number;
-  below: number;
+  /** Predictions outside the reliability range. */
+  outside: number;
   total: number;
   predictedShare: number;
   medianReliability: number | null;
@@ -56,7 +56,8 @@ export interface EatSummary {
   curated: number;
   predicted: number;
   kept: number;
-  below: number;
+  /** Predictions outside the reliability range. */
+  outside: number;
   none: number;
   /** `EAT_BIN_COUNT` predicted counts per bin, in context. */
   bins: Uint32Array;
@@ -175,34 +176,19 @@ function hitsInclude(list: readonly number[], start: number, value: number): boo
   return false;
 }
 
-interface Keeper {
-  useMin: boolean;
-  min: number;
-  useMax: boolean;
-  max: number;
-}
-
-function keeperOf(state: EatReliabilityState): Keeper {
-  const { mode, min, max } = normalizeReliability(state);
-  const uses = RELIABILITY_BOUNDS[mode];
-  return { useMin: uses.min, min, useMax: uses.max, max };
-}
-
-function keeps(keeper: Keeper, confidence: number): boolean {
-  return (
-    (!keeper.useMin || confidence >= keeper.min) && (!keeper.useMax || confidence <= keeper.max)
-  );
+function keeps(range: EatReliabilityState, confidence: number): boolean {
+  return confidence >= range.min && confidence <= range.max;
 }
 
 /** Whether a prediction passes `state`: inclusive at both bounds, as the query's matcher is. */
 export function isKept(state: EatReliabilityState, confidence: number): boolean {
-  return keeps(keeperOf(state), confidence);
+  return keeps(normalizeReliability(state), confidence);
 }
 
 /** `isKept` for one `state`, normalized once, for a pass over many cells. */
 export function keptBy(state: EatReliabilityState): (confidence: number) => boolean {
-  const keeper = keeperOf(state);
-  return (confidence) => keeps(keeper, confidence);
+  const range = normalizeReliability(state);
+  return (confidence) => keeps(range, confidence);
 }
 
 /**
@@ -263,53 +249,53 @@ export function summarizeEat(
   state: EatReliabilityState,
   context: Uint8Array | null,
 ): EatSummary {
-  const keeper = keeperOf(state);
+  const keeper = normalizeReliability(state);
   const totals = contextTotals(index, context);
   const labelCount = index.labels.length;
   const labelKept = new Uint32Array(labelCount);
-  const labelBelow = new Uint32Array(labelCount);
+  const labelOutside = new Uint32Array(labelCount);
   const bins = new Uint32Array(EAT_BIN_COUNT);
   let kept = 0;
-  let below = 0;
+  let outside = 0;
 
   for (let k = 0; k < index.order.length; k++) {
     if (context && !context[index.order[k]]) continue;
     const confidence = index.confidence[k];
     const isIn = keeps(keeper, confidence);
     if (isIn) kept++;
-    else below++;
+    else outside++;
     bins[binOf(confidence)]++;
-    const counts = isIn ? labelKept : labelBelow;
+    const counts = isIn ? labelKept : labelOutside;
     for (let h = index.labelOffsets[k]; h < index.labelOffsets[k + 1]; h++) {
       counts[index.labelHits[h]]++;
     }
   }
 
-  const medians = labelMedians(index, context, labelKept, labelBelow);
+  const medians = labelMedians(index, context, labelKept, labelOutside);
   const rows: EatLabelRow[] = [];
   for (let label = 0; label < labelCount; label++) {
     const curated = totals.labelCurated[label];
-    const predictedHere = labelKept[label] + labelBelow[label];
+    const predictedHere = labelKept[label] + labelOutside[label];
     const total = curated + predictedHere;
     if (total === 0) continue;
     rows.push({
       label: index.labels[label],
       curated,
       kept: labelKept[label],
-      below: labelBelow[label],
+      outside: labelOutside[label],
       total,
       predictedShare: predictedHere / total,
       medianReliability: medians[label],
     });
   }
 
-  const predicted = kept + below;
+  const predicted = kept + outside;
   return {
     inView: totals.inView,
     curated: totals.curated,
     predicted,
     kept,
-    below,
+    outside,
     none: totals.inView - totals.curated - predicted,
     bins,
     rows,
@@ -324,11 +310,11 @@ function labelMedians(
   index: EatIndex,
   context: Uint8Array | null,
   labelKept: Uint32Array,
-  labelBelow: Uint32Array,
+  labelOutside: Uint32Array,
 ): (number | null)[] {
   const n = index.labels.length;
   const counts = new Uint32Array(n);
-  for (let label = 0; label < n; label++) counts[label] = labelKept[label] + labelBelow[label];
+  for (let label = 0; label < n; label++) counts[label] = labelKept[label] + labelOutside[label];
   const seen = new Uint32Array(n);
   const lower = new Float64Array(n);
   const medians: (number | null)[] = new Array<number | null>(n).fill(null);
@@ -409,7 +395,7 @@ export function countIn(
   context: Uint8Array | null,
   state: EatReliabilityState,
 ): { total: number; kept: number } {
-  const keeper = keeperOf(state);
+  const keeper = normalizeReliability(state);
   let total = 0;
   let kept = 0;
   for (let k = 0; k < index.order.length; k++) {
@@ -421,16 +407,16 @@ export function countIn(
   return { total, kept };
 }
 
-/** Protein ids of the kept or the below-threshold predictions, in reliability order. */
+/** Protein ids of the kept predictions or those outside the range, in reliability order. */
 export function predictionIds(
   index: EatIndex,
   data: VisualizationData,
   state: EatReliabilityState,
-  which: 'kept' | 'below',
+  which: 'kept' | 'outside',
   context: Uint8Array | null,
   drill?: EatDrill,
 ): string[] {
-  const keeper = keeperOf(state);
+  const keeper = normalizeReliability(state);
   const wantKept = which === 'kept';
   const ids: string[] = [];
   for (let k = 0; k < index.order.length; k++) {

@@ -6,7 +6,7 @@ import {
   fileNamePart,
   formatCount,
   isSameReliability,
-  normalizeReliability,
+  type EatReliabilityInput,
   type EatReliabilityState,
   type VisualizationData,
 } from '@protspace/utils';
@@ -45,8 +45,6 @@ import {
   type EatIndex,
   type EatSummary,
 } from './eat-summary';
-
-const DEFAULTS = normalizeReliability(DEFAULT_EAT_RELIABILITY);
 
 /** The open drill-down list: a histogram bar's, or a label's (by name, as rows re-sort). */
 type OpenDrill = { bin: number } | { label: string };
@@ -89,10 +87,10 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  *   draws that source's lines.
  * @fires eat-drawing-change - `{ trace, linesPerSource }`: a Drawing switch changed, or Reset
  *   moved one back to its default.
- * @fires eat-export-ids - `{ proteinIds, fileName }`: Export IDs, the kept or the below-threshold
+ * @fires eat-export-ids - `{ proteinIds, fileName }`: Export IDs, the kept predictions or those outside the range
  *   predictions in the context (or behind a drill-down's bar or label), in reliability order.
- * @fires eat-outcome-change - `{ outcome, reliability }`: Below threshold switched between Hide
- *   (the filter) and Dim (fade, no filter). A threshold move in either rides `eat-overlay-change`.
+ * @fires eat-outcome-change - `{ outcome, reliability }`: Outside the range switched between Hide
+ *   (the filter) and Dim (fade, no filter). A range move in either rides `eat-overlay-change`.
  */
 @customElement('protspace-eat-panel')
 export class ProtspaceEatPanel extends LitElement {
@@ -159,7 +157,7 @@ export class ProtspaceEatPanel extends LitElement {
     return this._eat.overlayEnabled;
   }
 
-  /** Below threshold: `hide` filters the weak predictions out, `dim` fades them. */
+  /** Outside the range: `hide` filters those predictions out, `dim` fades them. */
   get outcome(): EatOutcome {
     return this._outcome;
   }
@@ -177,13 +175,13 @@ export class ProtspaceEatPanel extends LitElement {
     return (
       this._eat.overlayEnabled &&
       this._outcome === 'hide' &&
-      isSameReliability(this._eat.reliability, DEFAULTS) &&
+      reliabilityLabel(this._eat.reliability) === null &&
       this._trace &&
       this._linesPerSource === DEFAULT_LINES_PER_SOURCE
     );
   }
 
-  /** Bundle restore: Show plus "Keep ≥ threshold", as a filter (Hide). Emits once. */
+  /** Bundle restore: Show plus the range `threshold..100 %`, as a filter (Hide). Emits once. */
   applyEatSettings(enabled: boolean, threshold: number): void {
     this._outcome = 'hide';
     this._eat.applySettings(enabled, threshold);
@@ -193,7 +191,7 @@ export class ProtspaceEatPanel extends LitElement {
    * Follow the applied filter without emitting, so the filter → panel direction cannot loop. A
    * state that filters something came from a condition, which only Hide writes: the panel says Hide.
    */
-  setReliabilityState(state: EatReliabilityState): void {
+  setReliabilityState(state: EatReliabilityInput): void {
     if (reliabilityLabel(state) !== null) this._outcome = 'hide';
     this._eat.mirror(state);
   }
@@ -207,7 +205,7 @@ export class ProtspaceEatPanel extends LitElement {
     if (!this._trace || this._linesPerSource !== DEFAULT_LINES_PER_SOURCE) {
       this._setDrawing(true, DEFAULT_LINES_PER_SOURCE);
     }
-    this._eat.mirror(DEFAULTS);
+    this._eat.mirror(DEFAULT_EAT_RELIABILITY);
     this._eat.setOverlayEnabled(true);
   }
 
@@ -217,7 +215,7 @@ export class ProtspaceEatPanel extends LitElement {
    */
   resetForNewDataset(): void {
     this._outcome = 'hide';
-    this._eat.mirror(DEFAULTS);
+    this._eat.mirror(DEFAULT_EAT_RELIABILITY);
     this._eat.mirrorOverlayEnabled(true);
   }
 
@@ -261,7 +259,7 @@ export class ProtspaceEatPanel extends LitElement {
     const stale =
       'bin' in drill
         ? !summary.bins[drill.bin]
-        : !summary.rows.some((row) => row.label === drill.label && row.kept + row.below > 0);
+        : !summary.rows.some((row) => row.label === drill.label && row.kept + row.outside > 0);
     if (stale) this._drill = null;
   }
 
@@ -345,13 +343,13 @@ export class ProtspaceEatPanel extends LitElement {
       ${this._renderExportMenu(summary)}`;
   }
 
-  /** `Below threshold: Hide (filter) | Dim` (proposal B §4.4). */
+  /** `Outside the range: Hide (filter) | Dim` (proposal B §4.4). */
   private _renderOutcome(): TemplateResult {
     const off = !this._eat.overlayEnabled;
     return html`<div class="eat-outcome-row">
-      <span aria-hidden="true">Below threshold</span>
+      <span aria-hidden="true">Outside the range</span>
       <ps-segmented
-        label="Below threshold"
+        label="Outside the range"
         .options=${off ? OUTCOME_OPTIONS_OFF : OUTCOME_OPTIONS}
         .value=${this._outcome}
         @change=${(event: Event) =>
@@ -412,14 +410,14 @@ export class ProtspaceEatPanel extends LitElement {
     const menu = this._exportMenu;
     const index = this._index;
     let kept = 0;
-    let below = 0;
+    let outside = 0;
     if (menu && index && summary) {
       if (menu.drill) {
         const counts = countIn(index, menu.drill, this.context, this._eat.reliability);
         kept = counts.kept;
-        below = counts.total - counts.kept;
+        outside = counts.total - counts.kept;
       } else {
-        ({ kept, below } = summary);
+        ({ kept, outside } = summary);
       }
     }
     return html`<ps-menu
@@ -428,7 +426,7 @@ export class ProtspaceEatPanel extends LitElement {
       .open=${menu !== null}
       @ps-select=${(event: Event) => {
         event.stopPropagation();
-        this._exportIds((event as CustomEvent<{ value: 'kept' | 'below' }>).detail.value);
+        this._exportIds((event as CustomEvent<{ value: 'kept' | 'outside' }>).detail.value);
       }}
       @ps-close=${(event: Event) => {
         event.stopPropagation();
@@ -438,14 +436,14 @@ export class ProtspaceEatPanel extends LitElement {
       <ps-menu-item value="kept" ?disabled=${kept === 0}
         >Kept predictions (${formatCount(kept)})</ps-menu-item
       >
-      <ps-menu-item value="below" ?disabled=${below === 0}
-        >Below threshold (${formatCount(below)})</ps-menu-item
+      <ps-menu-item value="outside" ?disabled=${outside === 0}
+        >Outside the range (${formatCount(outside)})</ps-menu-item
       >
     </ps-menu>`;
   }
 
-  /** One ID per line, named `<annotation>-eat-kept-ids.txt` or `…-below-ids.txt` (Decision 12). */
-  private _exportIds(which: 'kept' | 'below'): void {
+  /** One ID per line, named `<annotation>-eat-kept-ids.txt` or `…-outside-ids.txt` (Decision 12). */
+  private _exportIds(which: 'kept' | 'outside'): void {
     const index = this._index;
     const data = this.data;
     this._exportMenu = null;
@@ -545,7 +543,7 @@ export class ProtspaceEatPanel extends LitElement {
 
   /**
    * The open list: its weakest 5 predictions in the context, weakest first, each a button that
-   * selects the protein; then `Select all N kept` and `5 of 41`. A row below the threshold says
+   * selects the protein; then `Select all N kept` and `5 of 41`. A row outside the range says
    * it is hidden (Hide) or dimmed (Dim), and stays clickable.
    */
   private _renderDrill(): TemplateResult | typeof nothing {
@@ -574,7 +572,8 @@ export class ProtspaceEatPanel extends LitElement {
       const id = data.protein_ids[index.order[k]];
       const reliability = formatPercent(confidence);
       const hidden = hides && !isKept(state, confidence);
-      const why = this._outcome === 'dim' ? 'Dimmed by the threshold' : 'Hidden by the threshold';
+      const why =
+        this._outcome === 'dim' ? 'Dimmed, outside the range' : 'Hidden, outside the range';
       const labelText = labels.join(', ');
       const color = swatchColor(this.labelColors, labels[0] ?? '');
       return html`<li>
@@ -631,7 +630,7 @@ export class ProtspaceEatPanel extends LitElement {
       </div>`;
     }
     const enabled = this._eat.overlayEnabled;
-    const { inView, curated, predicted, kept, below, none } = summary;
+    const { inView, curated, predicted, kept, outside, none } = summary;
     const segment = (part: string, name: string, count: number) =>
       count > 0
         ? html`<span
@@ -647,7 +646,7 @@ export class ProtspaceEatPanel extends LitElement {
     return html`<div class=${enabled ? 'eat-overview' : 'eat-overview is-off'}>
       <div class="eat-stack">
         ${segment('curated', 'Curated', curated)} ${segment('kept', 'Predicted, kept', kept)}
-        ${segment('below', 'Predicted, below threshold', below)}
+        ${segment('outside', 'Predicted, outside the range', outside)}
         ${segment('none', 'No value', none)}
       </div>
       <p class="eat-counts">${counts}</p>

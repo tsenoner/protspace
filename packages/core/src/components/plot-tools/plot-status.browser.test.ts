@@ -98,11 +98,11 @@ describe('protspace-plot-status', () => {
     const el = await mount({
       filterConditions: 1,
       hiddenCategories: 1,
-      eatDim: { mode: 'atLeast', min: 0.5, max: 1 },
+      eatDim: { min: 0.5, max: 1 },
     });
     expect(chips(el).map((chip) => chip.dataset.kind)).toEqual(['filter', 'eat-dim', 'hidden']);
     expect(chipText(chips(el)[1])).toBe('EAT dimmed < 50\u202f%');
-    el.eatDim = { mode: 'between', min: 0.4, max: 0.6 };
+    el.eatDim = { min: 0.4, max: 0.6 };
     await el.updateComplete;
     expect(chipText(chips(el)[1])).toBe('EAT dimmed outside 40–60\u202f%');
     const events: string[] = [];
@@ -116,7 +116,7 @@ describe('protspace-plot-status', () => {
     inner(clearButton(el, 'eat-dim')).click();
     expect(events).toEqual(['open eat-dim', 'clear eat-dim']);
     // A dim that fades nothing shows no chip.
-    el.eatDim = { mode: 'atLeast', min: 0, max: 1 };
+    el.eatDim = { min: 0, max: 1 };
     await el.updateComplete;
     expect(chips(el).map((chip) => chip.dataset.kind)).toEqual(['filter', 'hidden']);
   });

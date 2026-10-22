@@ -1,6 +1,11 @@
 import { LitElement, html, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
-import { countNoun, normalizeReliability, type EatReliabilityState } from '@protspace/utils';
+import {
+  countNoun,
+  NEUTRAL_BOUND,
+  normalizeReliability,
+  type EatReliabilityState,
+} from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/button';
 import { icon, type IconName } from '../kit/icon';
@@ -23,9 +28,9 @@ const KIND_ORDER: readonly StatusChipKind[] = ['filter', 'eat-dim', 'isolation',
 function dimmedRange(state: EatReliabilityState): string | null {
   const kept = reliabilityLabel(state);
   if (!kept) return null;
-  const { mode, min, max } = normalizeReliability(state);
-  if (mode === 'atLeast') return `< ${formatPercent(min)}`;
-  if (mode === 'atMost') return `> ${formatPercent(max)}`;
+  const { min, max } = normalizeReliability(state);
+  if (max >= NEUTRAL_BOUND.max) return `< ${formatPercent(min)}`;
+  if (min <= NEUTRAL_BOUND.min) return `> ${formatPercent(max)}`;
   return `outside ${kept}`;
 }
 

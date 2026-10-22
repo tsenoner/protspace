@@ -10,11 +10,9 @@ import {
   isSameReliability,
   NEUTRAL_BOUND,
   normalizeReliability,
-  RELIABILITY_BOUNDS,
-  type EatReliabilityMode,
+  type EatReliabilityInput,
   type EatReliabilityState,
 } from '@protspace/utils';
-import type { PsSegmented } from '../kit/segmented';
 import type { PsSwitch } from '../kit/switch';
 import { formatPercent } from '../query-builder/eat-reliability';
 
@@ -27,7 +25,7 @@ import { formatPercent } from '../query-builder/eat-reliability';
 export const EAT_THRESHOLD_COMMIT_DELAY_MS = 150;
 
 /**
- * Smallest gap the two `between` thumbs may be dragged to. Doubles as the sliders'
+ * Smallest gap the two thumbs may be dragged to. Doubles as the sliders'
  * `step`, so "one step apart" is literally true: the thumbs never occupy the same
  * pixel, where whichever sits on top would be the only one the pointer could reach.
  */
@@ -46,51 +44,24 @@ const SHIFT_STEP_KEYS: Readonly<Record<string, 1 | -1>> = {
 
 /**
  * Which end of the reliability range a control edits. Deliberately the field name on
- * `EatReliabilityState`, so a bound indexes its own value, its own neutral position
- * (`NEUTRAL_BOUND`) and its own row in `RELIABILITY_BOUNDS` with no hand-written
- * lower/upper -> min/max mapping in between.
+ * `EatReliabilityState`, so a bound indexes its own value and its own neutral position
+ * (`NEUTRAL_BOUND`) with no hand-written lower/upper -> min/max mapping in between.
  */
 type EatBound = 'min' | 'max';
 
-const EAT_BOUNDS: readonly EatBound[] = ['min', 'max'];
+/** The range always has both ends: a low and a high handle, a low and a high box. */
+export const EAT_BOUNDS: readonly EatBound[] = ['min', 'max'];
 
-function boundsForMode(mode: EatReliabilityMode): readonly EatBound[] {
-  const uses = RELIABILITY_BOUNDS[mode];
-  return EAT_BOUNDS.filter((bound) => uses[bound]);
-}
-
-/**
- * Which bounds each mode renders a thumb and a percent box for — derived from the
- * shared `RELIABILITY_BOUNDS` rather than restated, so the control cannot offer a
- * widget for a bound the filter ignores. `atMost` used to render the lower bound
- * anyway, disabled and stuck at 0: a dead slider and a dead number box taking up half
- * the control. Keyed by the mode union, so a fourth mode is a compile error here.
- */
-const EAT_BOUNDS_FOR_MODE: Record<EatReliabilityMode, readonly EatBound[]> = {
-  atLeast: boundsForMode('atLeast'),
-  atMost: boundsForMode('atMost'),
-  between: boundsForMode('between'),
-};
-
-/**
- * Per-bound identity and accessible names. `soloLabel` is what the slider is called
- * when its mode renders it alone — a single thumb is the filter's threshold, not one
- * end of a band.
- */
-const EAT_BOUND_UI: Record<
-  EatBound,
-  { id: string; sliderLabel: string; soloLabel: string; percentLabel: string }
-> = {
+/** Per-bound identity and accessible names. */
+const EAT_BOUND_UI: Record<EatBound, { id: string; sliderLabel: string; percentLabel: string }> = {
   min: {
     id: 'eat-reliability-threshold',
     sliderLabel: 'EAT reliability filter lower bound',
-    soloLabel: 'EAT reliability filter threshold',
-    percentLabel: 'EAT reliability filter percentage',
+    percentLabel: 'EAT reliability lower bound percentage',
   },
   max: {
     id: 'eat-reliability-upper',
     sliderLabel: 'EAT reliability filter upper bound',
-    soloLabel: 'EAT reliability filter upper bound',
     percentLabel: 'EAT reliability upper bound percentage',
   },
 };
@@ -112,12 +83,10 @@ interface EatControlsOptions {
  * The EAT overlay switch and the reliability filter's position, with the 150 ms commit of a
  * slider drag.
  *
- * The position is one value rather than a mode and two loose bounds (#380): `atLeast` hides
- * low-confidence predictions (the original, default behaviour); `atMost` hides high-confidence
- * ones, which is how you inspect what you would throw away; `between` isolates a band — the
- * mid-confidence transfers worth reviewing by hand. Curated proteins stay visible in all three.
- * The three are only ever written together, by `set`, so no reader reassembles them and no
- * writer has to remember all three.
+ * The position is one range, both ends included (#380): raising the low end hides
+ * low-confidence predictions, lowering the high end hides high-confidence ones (how you inspect
+ * what you would throw away), and both isolate a band. The full range 0..1 keeps everything and
+ * is the default. Curated proteins always stay visible.
  */
 export class EatReliabilityController implements ReactiveController {
   private readonly host: ReactiveControllerHost;
@@ -132,7 +101,7 @@ export class EatReliabilityController implements ReactiveController {
     host.addController(this);
   }
 
-  /** The reliability filter as the filter builder models it: a mode plus bounds. */
+  /** The reliability filter as the filter builder models it: a range. */
   get reliability(): EatReliabilityState {
     return this._reliability;
   }
@@ -149,18 +118,15 @@ export class EatReliabilityController implements ReactiveController {
   /**
    * Bundle restore: the saved overlay switch plus the saved reliability position.
    *
-   * A bundle stores the LOWER bound only, so restoring it means "hide below x" — the
-   * mode has to come along with it. Writing the bound into whatever mode the control
-   * happens to be in loses it outright in `atMost` (normalization blanks the bound that
-   * mode ignores, so a saved 60% restores as no filter) and reinterprets it in `between`
-   * (a band against a stale upper bound). Both contradict the documented round trip,
-   * which is that a bundle reopens on "Hide below" at the saved value.
+   * A bundle stores the LOWER bound only, so restoring it means the range `x..100 %`: the
+   * high end goes back to 100 % rather than keeping whatever the control held, which would
+   * restore a band the bundle never saved.
    */
   applySettings(enabled: boolean, threshold: number): void {
     // A discrete apply supersedes any pending debounced threshold commit — cancel it
     // so it can't fire a stale late emit.
     this.cancelCommit();
-    this._set({ mode: 'atLeast', min: threshold, max: NEUTRAL_BOUND.max });
+    this._set({ min: threshold, max: NEUTRAL_BOUND.max });
     this.setOverlayEnabled(enabled);
   }
 
@@ -172,9 +138,8 @@ export class EatReliabilityController implements ReactiveController {
    *
    * Separate from `applySettings` because the switch decides visibility and nothing
    * else. Routing it through the restore path made every toggle a bundle restore too,
-   * which snapped the mode back to "Hide below" and dropped the bound with it — in
-   * `atMost` the lower bound it round-tripped is 0, so flipping the switch off and on
-   * silently cleared a "hide above 40%" filter.
+   * which round-tripped the lower bound only, so flipping the switch off and on silently
+   * dropped the high end.
    */
   setOverlayEnabled(enabled: boolean): void {
     this.mirrorOverlayEnabled(enabled);
@@ -197,7 +162,7 @@ export class EatReliabilityController implements ReactiveController {
    * supersedes an in-flight drag, and leaving the timer armed let a stale late emit
    * overwrite what the user had just typed into the Filter builder (#380).
    */
-  mirror(state: EatReliabilityState): void {
+  mirror(state: EatReliabilityInput): void {
     this.cancelCommit();
     this._set(state);
   }
@@ -210,26 +175,10 @@ export class EatReliabilityController implements ReactiveController {
     }
   }
 
-  /** Which bounds the selected mode filters on, and therefore which controls exist. */
-  get activeBounds(): readonly EatBound[] {
-    return EAT_BOUNDS_FOR_MODE[this._reliability.mode];
-  }
-
   readonly onToggle = (event: Event): void => {
-    // A discrete decision, like a mode change: it supersedes any pending drag commit.
+    // A discrete decision: it supersedes any pending drag commit.
     this.cancelCommit();
     this.setOverlayEnabled((event.currentTarget as PsSwitch).checked);
-  };
-
-  readonly onModeChange = (event: Event): void => {
-    const mode = (event.currentTarget as PsSegmented).value as EatReliabilityMode;
-    // `normalizeReliability` blanks the bound the new mode does not use, so switching
-    // modes cannot leave a stale constraint applied from a side the user can no longer
-    // see or edit.
-    this._set({ ...this._reliability, mode });
-    // A mode change is a discrete decision, not a drag — apply it immediately.
-    this.cancelCommit();
-    this._emit();
   };
 
   /** Slider release (@change): apply the pending threshold now, without waiting out the debounce. */
@@ -299,8 +248,8 @@ export class EatReliabilityController implements ReactiveController {
 
   /**
    * The one writer for the reliability position, so the control and the query it
-   * mirrors cannot disagree about what a state means. Every rule — clamping, blanking
-   * the bound the mode ignores, ordering a crossed band — lives in the shared
+   * mirrors cannot disagree about what a state means. Every rule — clamping, reading a
+   * legacy mode, ordering a crossed band — lives in the shared
    * `normalizeReliability`; the legend used to restate each of them by hand and had
    * already drifted (a band dragged past itself stayed crossed on screen while the
    * filter applied the ordered one).
@@ -309,7 +258,7 @@ export class EatReliabilityController implements ReactiveController {
    * `normalizeReliability` always returns a fresh object, and re-normalising an unchanged
    * position must not re-render the whole panel.
    */
-  private _set(state: EatReliabilityState): void {
+  private _set(state: EatReliabilityInput): void {
     const next = normalizeReliability(state);
     const changed = !isSameReliability(next, this._reliability);
     this._reliability = next;
@@ -346,7 +295,7 @@ export class EatReliabilityController implements ReactiveController {
   }
 
   /**
-   * On the shared `between` track a thumb stops at its neighbour instead of passing it.
+   * On the shared track a thumb stops at its neighbour instead of passing it.
    *
    * Two independent bars could cross, and the crossed pair was only put back in order
    * later, by `normalizeReliability` at commit time — so the bounds swapped under the
@@ -359,8 +308,7 @@ export class EatReliabilityController implements ReactiveController {
    * the same pixel, where the one on top would be the only one you could grab.
    */
   private _clampBandBound(bound: EatBound, value: number): number {
-    const { mode, min, max } = this._reliability;
-    if (mode !== 'between') return value;
+    const { min, max } = this._reliability;
     return bound === 'min'
       ? Math.min(value, max - EAT_BAND_MIN_GAP)
       : Math.max(value, min + EAT_BAND_MIN_GAP);
@@ -392,7 +340,7 @@ export function renderReliabilityRange(
       step=${EAT_BAND_MIN_GAP}
       .value=${String(ctrl.reliability[bound])}
       ?disabled=${disabled}
-      aria-label=${ctrl.activeBounds.length > 1 ? ui.sliderLabel : ui.soloLabel}
+      aria-label=${ui.sliderLabel}
       aria-valuetext=${formatPercent(ctrl.reliability[bound])}
       @input=${(event: Event) => ctrl.onBoundInput(bound, event)}
       @keydown=${(event: KeyboardEvent) => ctrl.onBoundKeydown(bound, event)}

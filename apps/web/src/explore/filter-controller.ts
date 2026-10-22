@@ -17,6 +17,7 @@ import {
   DEFAULT_EAT_RELIABILITY,
   isEatConfidenceAnnotation,
   isSameReliability,
+  type EatReliabilityInput,
   type EatReliabilityState,
   type VisualizationData,
 } from '@protspace/utils';
@@ -58,7 +59,7 @@ export interface FilterController {
   /** The colouring annotation changed: move the reliability control to its column's state. */
   setSelectedAnnotation(annotation: string): void;
   /** The EAT panel's reliability filter: replaces its base's condition and applies the filter. */
-  setEatReliability(baseKey: string, state: EatReliabilityState): void;
+  setEatReliability(baseKey: string, state: EatReliabilityInput): void;
   /**
    * Proteins that pass the applied filter without the selected base's reliability condition, as a
    * 0/1 mask over the snapshot's protein indices; null when no other condition constrains anything.
@@ -326,8 +327,8 @@ export function createFilterController({
       // A reliability state is one un-negated condition, or none at all.
       const nextConditions = conditionsForReliability(key, state, existing[0]?.id);
       const [replacement = null] = nextConditions;
-      // Record what the filter will READ BACK as, before the guard below: state -> conditions is
-      // not injective, and a mode that constrains nothing still has a position to keep.
+      // Record what the filter will READ BACK as, before the guard below, so the next mirror
+      // compares against the canonical range rather than the spelling handed in.
       lastMirrored.set(key, reliabilityFromConditions(nextConditions));
       const draftWasClean = !isDirty();
       if (!sameConditions(existing, nextConditions)) {

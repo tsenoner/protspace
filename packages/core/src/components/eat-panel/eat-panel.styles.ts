@@ -79,7 +79,7 @@ export const eatPanelStyles = [
     }
 
     /* The same hue at 30 %, cross-hatched. */
-    .eat-segment[data-part='below'] {
+    .eat-segment[data-part='outside'] {
       background:
         repeating-linear-gradient(135deg, transparent 0 2px, var(--ps-surface) 2px 3px),
         var(--ps-accent);
@@ -126,7 +126,7 @@ export const eatPanelStyles = [
       text-transform: uppercase;
     }
 
-    .eat-mode-row {
+    .eat-range-row {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
@@ -144,7 +144,7 @@ export const eatPanelStyles = [
 
     .eat-threshold-percent {
       box-sizing: border-box;
-      width: 2.8rem;
+      width: 3.4rem;
       height: var(--ps-control-sm);
       padding: var(--ps-space-0-5) var(--ps-space-1);
       border: 1px solid var(--ps-border-strong);
@@ -481,7 +481,7 @@ export const eatPanelStyles = [
       list-style: none;
     }
 
-    /* ring · id · reliability · label, then "Hidden by the threshold" on its own line */
+    /* ring · id · reliability · label, then "Hidden, outside the range" on its own line */
     .eat-drill-row {
       display: grid;
       grid-template-columns: 10px auto 2.6rem minmax(0, 1fr);

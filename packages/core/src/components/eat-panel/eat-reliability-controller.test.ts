@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { EatReliabilityState } from '@protspace/utils';
-import type { PsSegmented } from '../kit/segmented';
+import type { EatReliabilityInput } from '@protspace/utils';
 import type { PsSwitch } from '../kit/switch';
 import './eat-panel';
 import type { ProtspaceEatPanel } from './eat-panel';
 import { EAT_THRESHOLD_COMMIT_DELAY_MS } from './eat-reliability-controller';
 import { createEatFixture } from './test-support/eat-fixture';
 
-/** The controller through the EAT panel, its one host: the switch, the modes, the handles and boxes. */
+/** The controller through the EAT panel, its one host: the switch, the handles and boxes. */
 async function setup(): Promise<ProtspaceEatPanel> {
   const panel = document.createElement('protspace-eat-panel');
   Object.assign(panel, { data: createEatFixture(), annotation: 'toxin', active: true });
@@ -17,7 +16,7 @@ async function setup(): Promise<ProtspaceEatPanel> {
   return panel;
 }
 
-async function setupAt(state: EatReliabilityState): Promise<ProtspaceEatPanel> {
+async function setupAt(state: EatReliabilityInput): Promise<ProtspaceEatPanel> {
   const panel = await setup();
   panel.setReliabilityState(state);
   await panel.updateComplete;
@@ -48,13 +47,6 @@ async function toggle(panel: ProtspaceEatPanel, checked: boolean): Promise<void>
   const show = $<PsSwitch>(panel, 'ps-switch.eat-show');
   show.checked = checked;
   show.dispatchEvent(new Event('change'));
-  await panel.updateComplete;
-}
-
-async function pickMode(panel: ProtspaceEatPanel, mode: EatReliabilityState['mode']) {
-  const modes = $<PsSegmented>(panel, 'ps-segmented');
-  modes.value = mode;
-  modes.dispatchEvent(new Event('change'));
   await panel.updateComplete;
 }
 
@@ -178,7 +170,7 @@ describe('EAT reliability controller: switch, handles and boxes', () => {
     const panel = await setup();
     const listener = listen(panel);
 
-    panel.setReliabilityState({ mode: 'atLeast', min: 0.42, max: 1 });
+    panel.setReliabilityState({ min: 0.42, max: 1 });
     await panel.updateComplete;
 
     expect(panel.reliabilityThreshold).toBe(0.42);
@@ -188,72 +180,76 @@ describe('EAT reliability controller: switch, handles and boxes', () => {
 });
 
 /**
- * #380: three filter directions, each emitted as the full state so the filter controller can write
- * one un-negated condition carrying the N/A presence chip, which keeps curated points visible.
+ * #380: one range, both ends included, emitted as the full state so the filter controller can
+ * write one un-negated condition carrying the N/A presence chip, which keeps curated points visible.
  */
-describe('EAT reliability controller: modes (#380)', () => {
-  it('emits the mode immediately, without waiting out the drag debounce', async () => {
+describe('EAT reliability controller: the range (#380)', () => {
+  it('always shows a low and a high handle and box, starting at the full range', async () => {
+    const panel = await setup();
+    const handles = [...panel.shadowRoot!.querySelectorAll('input[type="range"]')];
+    expect(handles.map((el) => el.id)).toEqual([
+      'eat-reliability-threshold',
+      'eat-reliability-upper',
+    ]);
+    expect(percents(panel).map((box) => box.value)).toEqual(['0', '100']);
+    expect(panel.reliability).toEqual({ min: 0, max: 1 });
+    expect(panel.isAtDefaults).toBe(true);
+    expect(panel.shadowRoot!.querySelector('.eat-range-row ps-segmented')).toBeNull();
+  });
+
+  it('moves the high end alone and emits the range', async () => {
     const panel = await setup();
     const listener = listen(panel);
-    await pickMode(panel, 'atMost');
-    expect(detail(listener).reliability.mode).toBe('atMost');
-  });
-
-  it('gives each mode a handle and a box per bound it filters on, and no dead one', async () => {
-    const panel = await setup();
-    for (const [state, expected] of [
-      [{ mode: 'atLeast' as const, min: 0.3, max: 1 }, ['eat-reliability-threshold']],
-      [{ mode: 'atMost' as const, min: 0, max: 0.5 }, ['eat-reliability-upper']],
-      [
-        { mode: 'between' as const, min: 0.3, max: 0.7 },
-        ['eat-reliability-threshold', 'eat-reliability-upper'],
-      ],
-    ] as const) {
-      panel.setReliabilityState(state);
-      await panel.updateComplete;
-      const handles = [...panel.shadowRoot!.querySelectorAll('input[type="range"]')];
-      expect(handles.map((el) => el.id)).toEqual(expected);
-      expect(percents(panel)).toHaveLength(expected.length);
-      expect(panel.shadowRoot!.querySelector('input:disabled')).toBeNull();
-    }
-  });
-
-  it('clears the bound a mode no longer uses, so no invisible constraint survives', async () => {
-    const panel = await setupAt({ mode: 'between', min: 0.2, max: 0.6 });
-    await pickMode(panel, 'atLeast');
-    expect(panel.reliability.max).toBe(1);
+    drag(upper(panel), '0.8');
+    upper(panel).dispatchEvent(new Event('change'));
+    expect(detail(listener).reliability).toEqual({ min: 0, max: 0.8 });
+    expect(panel.isAtDefaults).toBe(false);
   });
 
   it('round-trips the full state through the reverse mirror', async () => {
-    const panel = await setupAt({ mode: 'between', min: 0.25, max: 0.75 });
-    expect(panel.reliability).toEqual({ mode: 'between', min: 0.25, max: 0.75 });
+    const panel = await setupAt({ min: 0.25, max: 0.75 });
+    expect(panel.reliability).toEqual({ min: 0.25, max: 0.75 });
   });
 
-  it('restores a bundle threshold as a lower bound, whatever mode the control was in', async () => {
-    // A bundle stores the lower bound only; written into `atMost` it would be blanked.
-    const panel = await setupAt({ mode: 'atMost', min: 0, max: 0.4 });
+  it('loads a legacy mode as its range, ignoring the bound the mode never used', async () => {
+    expect((await setupAt({ mode: 'atLeast', min: 0.3, max: 0.5 })).reliability).toEqual({
+      min: 0.3,
+      max: 1,
+    });
+    expect((await setupAt({ mode: 'atMost', min: 0.3, max: 0.5 })).reliability).toEqual({
+      min: 0,
+      max: 0.5,
+    });
+    expect((await setupAt({ mode: 'between', min: 0.3, max: 0.5 })).reliability).toEqual({
+      min: 0.3,
+      max: 0.5,
+    });
+  });
+
+  it('restores a bundle threshold as the range threshold..100 %', async () => {
+    // A bundle stores the lower bound only; a high end left over would be a band it never saved.
+    const panel = await setupAt({ min: 0, max: 0.4 });
     panel.applyEatSettings(true, 0.6);
-    expect(panel.reliability).toEqual({ mode: 'atLeast', min: 0.6, max: 1 });
+    expect(panel.reliability).toEqual({ min: 0.6, max: 1 });
   });
 
-  it('keeps the mode and bounds when the switch is toggled', async () => {
-    const panel = await setupAt({ mode: 'atMost', min: 0, max: 0.4 });
+  it('keeps both bounds when the switch is toggled', async () => {
+    const panel = await setupAt({ min: 0, max: 0.4 });
     await toggle(panel, false);
     await toggle(panel, true);
-    expect(panel.reliability).toEqual({ mode: 'atMost', min: 0, max: 0.4 });
+    expect(panel.reliability).toEqual({ min: 0, max: 0.4 });
   });
 
-  it('resets the whole position for a new dataset, not just the lower bound', async () => {
-    // A mode carried over would reinterpret the next bundle's threshold: the opposite filter.
-    const panel = await setupAt({ mode: 'atMost', min: 0, max: 0.4 });
+  it('resets the whole range for a new dataset, not just the lower bound', async () => {
+    const panel = await setupAt({ min: 0.2, max: 0.4 });
     panel.resetForNewDataset();
-    expect(panel.reliability).toEqual({ mode: 'atLeast', min: 0, max: 1 });
+    expect(panel.reliability).toEqual({ min: 0, max: 1 });
   });
 });
 
 describe('EAT reliability controller: a band’s two handles', () => {
   it('stops the lower handle at the upper one instead of letting it pass', async () => {
-    const panel = await setupAt({ mode: 'between', min: 0.2, max: 0.6 });
+    const panel = await setupAt({ min: 0.2, max: 0.6 });
     drag(lower(panel), '0.9');
     const { min, max } = panel.reliability;
     expect(max).toBe(0.6);
@@ -261,7 +257,7 @@ describe('EAT reliability controller: a band’s two handles', () => {
   });
 
   it('stops the upper handle at the lower one instead of letting it pass', async () => {
-    const panel = await setupAt({ mode: 'between', min: 0.4, max: 0.8 });
+    const panel = await setupAt({ min: 0.4, max: 0.8 });
     drag(upper(panel), '0.1');
     const { min, max } = panel.reliability;
     expect(min).toBe(0.4);
@@ -269,7 +265,7 @@ describe('EAT reliability controller: a band’s two handles', () => {
   });
 
   it('never lets the two handles land on the same pixel', async () => {
-    const panel = await setupAt({ mode: 'between', min: 0.5, max: 0.51 });
+    const panel = await setupAt({ min: 0.5, max: 0.51 });
     drag(lower(panel), '1');
     const { min, max } = panel.reliability;
     expect(max - min).toBeCloseTo(0.01, 10);
@@ -282,19 +278,19 @@ describe('EAT reliability controller: a band’s two handles', () => {
  */
 describe('EAT reliability controller: percent boxes', () => {
   it('reads an emptied upper-bound box as "no upper constraint", not as 0 %', async () => {
-    const panel = await setupAt({ mode: 'atMost', min: 0, max: 0.5 });
-    drag(percents(panel)[0]!, '');
-    expect(panel.reliability).toEqual({ mode: 'atMost', min: 0, max: 1 });
+    const panel = await setupAt({ min: 0, max: 0.5 });
+    drag(percents(panel)[1]!, '');
+    expect(panel.reliability).toEqual({ min: 0, max: 1 });
   });
 
   it('reads an emptied lower-bound box as "no lower constraint"', async () => {
-    const panel = await setupAt({ mode: 'atLeast', min: 0.6, max: 1 });
+    const panel = await setupAt({ min: 0.6, max: 1 });
     drag(percents(panel)[0]!, '');
-    expect(panel.reliability).toEqual({ mode: 'atLeast', min: 0, max: 1 });
+    expect(panel.reliability).toEqual({ min: 0, max: 1 });
   });
 
   it('pins a band box back onto the clamped bound so it cannot show an unused value', async () => {
-    const panel = await setupAt({ mode: 'between', min: 0.4, max: 0.6 });
+    const panel = await setupAt({ min: 0.4, max: 0.6 });
     const box = percents(panel)[0]!;
     drag(box, '95');
     await panel.updateComplete;

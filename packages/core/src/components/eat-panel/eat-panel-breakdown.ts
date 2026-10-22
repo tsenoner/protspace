@@ -49,7 +49,7 @@ function sortLabelRows(rows: readonly EatLabelRow[], sort: EatLabelSort): EatLab
       return am !== bm ? am - bm : byName(a, b);
     });
   }
-  return sorted.sort((a, b) => b.kept + b.below - (a.kept + a.below) || byName(a, b));
+  return sorted.sort((a, b) => b.kept + b.outside - (a.kept + a.outside) || byName(a, b));
 }
 
 interface EatBreakdownView {
@@ -78,14 +78,14 @@ function labelBar(row: EatLabelRow, widest: number): TemplateResult {
       class="eat-label-bar"
       style=${`width:${Number(((row.total / widest) * 100).toFixed(2))}%`}
     >
-      ${part('curated', row.curated)} ${part('kept', row.kept)} ${part('below', row.below)}
+      ${part('curated', row.curated)} ${part('kept', row.kept)} ${part('outside', row.outside)}
     </span>
   </span>`;
 }
 
 /**
  * `By label` (proposal B §4.6): one row per label in the view, with its swatch, a bar of curated,
- * kept and below-threshold members relative to the largest label, the total and the predicted
+ * kept and outside-the-range members relative to the largest label, the total and the predicted
  * share. A row click opens the label's drill-down list under it.
  */
 export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof nothing {
@@ -115,7 +115,7 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
         const color = swatchColor(view.labelColors, row.label);
         const open = view.openLabel === row.label;
         // Only curated members in view: nothing to list, so the row opens nothing.
-        const noPredictions = row.kept + row.below === 0;
+        const noPredictions = row.kept + row.outside === 0;
         return html`<li>
           <button
             type="button"

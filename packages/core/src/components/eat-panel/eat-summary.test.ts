@@ -29,11 +29,11 @@ const data = createEatFixture();
 const index = getEatIndex(data, 'toxin') as EatIndex;
 const idx = (id: string) => IDS.indexOf(id);
 const ids = (indices: ArrayLike<number>) => Array.from(indices, (i) => IDS[i]);
-const at = (mode: EatReliabilityState['mode'], min: number, max: number) => ({ mode, min, max });
+const at = (min: number, max: number): EatReliabilityState => ({ min, max });
 const mask = (excluded: string[]) => Uint8Array.from(IDS, (id) => (excluded.includes(id) ? 0 : 1));
 const counts = (summary: EatSummary) => {
-  const { inView, curated, predicted, kept, below, none } = summary;
-  return { inView, curated, predicted, kept, below, none };
+  const { inView, curated, predicted, kept, outside, none } = summary;
+  return { inView, curated, predicted, kept, outside, none };
 };
 const row = (summary: EatSummary, label: string) => summary.rows.find((r) => r.label === label);
 
@@ -50,23 +50,23 @@ describe('eat summary', () => {
       curated: 4,
       predicted: 5,
       kept: 5,
-      below: 0,
+      outside: 0,
       none: 1,
     });
   });
 
-  it('splits kept and below by the mode, inclusive at the bound', () => {
-    const atLeast = summarizeEat(index, at('atLeast', 0.55, 1), null);
-    expect([atLeast.kept, atLeast.below]).toEqual([4, 1]);
-    const atMost = summarizeEat(index, at('atMost', 0, 0.55), null);
-    expect([atMost.kept, atMost.below]).toEqual([3, 2]);
+  it('splits kept and outside by the range, inclusive at the bound', () => {
+    const atLeast = summarizeEat(index, at(0.55, 1), null);
+    expect([atLeast.kept, atLeast.outside]).toEqual([4, 1]);
+    const atMost = summarizeEat(index, at(0, 0.55), null);
+    expect([atMost.kept, atMost.outside]).toEqual([3, 2]);
   });
 
-  it('keeps a between band inclusive at both ends', () => {
-    const summary = summarizeEat(index, at('between', 0.55, 0.81), null);
-    expect([summary.kept, summary.below]).toEqual([3, 2]);
-    expect(isKept(at('between', 0.55, 0.81), 0.81)).toBe(true);
-    expect(isKept(at('between', 0.55, 0.81), 0.82)).toBe(false);
+  it('keeps a band inclusive at both ends', () => {
+    const summary = summarizeEat(index, at(0.55, 0.81), null);
+    expect([summary.kept, summary.outside]).toEqual([3, 2]);
+    expect(isKept(at(0.55, 0.81), 0.81)).toBe(true);
+    expect(isKept(at(0.55, 0.81), 0.82)).toBe(false);
   });
 
   it('bins a confidence of 1 into the last bin', () => {
@@ -80,17 +80,17 @@ describe('eat summary', () => {
   });
 
   it('counts a multi-valued prediction under each label', () => {
-    const summary = summarizeEat(index, at('atLeast', 0.55, 1), null);
+    const summary = summarizeEat(index, at(0.55, 1), null);
     expect(row(summary, 'A')).toEqual({
       label: 'A',
       curated: 2,
       kept: 2,
-      below: 1,
+      outside: 1,
       total: 5,
       predictedShare: 3 / 5,
       medianReliability: 0.55,
     });
-    expect(row(summary, 'B')).toMatchObject({ curated: 1, kept: 2, below: 0, total: 3 });
+    expect(row(summary, 'B')).toMatchObject({ curated: 1, kept: 2, outside: 0, total: 3 });
     expect(row(summary, 'C')).toMatchObject({ curated: 1, kept: 1, medianReliability: 0.81 });
   });
 
@@ -102,7 +102,7 @@ describe('eat summary', () => {
       curated: 3,
       predicted: 4,
       kept: 4,
-      below: 0,
+      outside: 0,
       none: 1,
     });
     expect(summary.bins[19]).toBe(0);
@@ -139,11 +139,11 @@ describe('eat summary', () => {
     expect(weakest(LABEL_A, null)).toEqual(['P3', 'P5', 'P9']);
     expect(weakest(LABEL_A, null, 2)).toEqual(['P3', 'P5']);
     expect(weakest(LABEL_A, mask(['P3']))).toEqual(['P5', 'P9']);
-    expect(countIn(index, LABEL_A, null, at('atLeast', 0.55, 1))).toEqual({
+    expect(countIn(index, LABEL_A, null, at(0.55, 1))).toEqual({
       total: 3,
       kept: 2,
     });
-    expect(countIn(index, BIN_55, null, at('atLeast', 0.6, 1))).toEqual({ total: 2, kept: 0 });
+    expect(countIn(index, BIN_55, null, at(0.6, 1))).toEqual({ total: 2, kept: 0 });
   });
 
   it('counts lent predictions per source, missing sources included', () => {
@@ -152,25 +152,25 @@ describe('eat summary', () => {
     expect(index.lentCount.get('S9')).toBe(1);
   });
 
-  it('returns kept and below ids in reliability order', () => {
-    const state = at('atLeast', 0.55, 1);
+  it('returns kept and outside ids in reliability order', () => {
+    const state = at(0.55, 1);
     expect(predictionIds(index, data, state, 'kept', null)).toEqual(['P5', 'P7', 'P8', 'P9']);
-    expect(predictionIds(index, data, state, 'below', null)).toEqual(['P3']);
+    expect(predictionIds(index, data, state, 'outside', null)).toEqual(['P3']);
     expect(predictionIds(index, data, state, 'kept', null, { label: 1 })).toEqual(['P5', 'P7']);
     expect(predictionIds(index, data, state, 'kept', mask(['P8']))).toEqual(['P5', 'P7', 'P9']);
   });
 
-  it('agrees with the query filter on every mode', () => {
+  it('agrees with the query filter on every range', () => {
     const states: EatReliabilityState[] = [
       DEFAULT_EAT_RELIABILITY,
-      at('atLeast', 0.55, 1),
-      at('atLeast', 0.13, 1),
-      at('atLeast', 1, 1),
-      at('atMost', 0, 0.55),
-      at('atMost', 0, 0.12),
-      at('between', 0.55, 0.81),
-      at('between', 0.12, 1),
-      at('between', 0.81, 0.55),
+      at(0.55, 1),
+      at(0.13, 1),
+      at(1, 1),
+      at(0, 0.55),
+      at(0, 0.12),
+      at(0.55, 0.81),
+      at(0.12, 1),
+      at(0.81, 0.55),
     ];
     for (const state of states) {
       const byIsKept = Array.from(index.order).filter((_, k) => isKept(state, index.confidence[k]));

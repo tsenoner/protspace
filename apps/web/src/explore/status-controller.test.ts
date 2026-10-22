@@ -81,7 +81,7 @@ describe('status controller', () => {
 
   it('the EAT dim chip follows the status; its body opens the EAT panel, its ✕ resets it', () => {
     const m = setup();
-    const dim = { mode: 'atLeast', min: 0.5, max: 1 } as const;
+    const dim = { min: 0.5, max: 1 } as const;
     m.publish({ eatDim: dim });
     expect(m.status.eatDim).toBe(dim);
     fire(m.status, 'status-open', { kind: 'eat-dim' });

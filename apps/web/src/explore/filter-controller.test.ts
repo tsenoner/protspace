@@ -187,9 +187,9 @@ const apply = (queryBuilder: EventTarget, indices: Iterable<number>) =>
   fire(queryBuilder, 'query-apply', { matchedIndices: new Set(indices) });
 const editQuery = (queryBuilder: EventTarget, query: FilterQuery) =>
   fire(queryBuilder, 'query-changed', { query });
-/** The panel slider's scalar form: "hide below `x`". */
+/** The range with only its low end moved: `x..100 %`. */
 const threshold = (controller: FilterController, base: string, x: number) =>
-  controller.setEatReliability(base, { mode: 'atLeast', min: x, max: NEUTRAL_BOUND.max });
+  controller.setEatReliability(base, { min: x, max: NEUTRAL_BOUND.max });
 /** A categorical condition with a value picked, so it constrains the query. */
 const configured = (id: string): FilterQuery[number] => ({
   id,
@@ -669,15 +669,14 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
     expect(m.eatPanel.setReliabilityState).not.toHaveBeenCalled();
   });
 
-  it('keeps a mode that constrains nothing, across an unrelated Apply', () => {
+  it('keeps a range that constrains nothing, across an unrelated Apply', () => {
     // A freshly loaded dataset: the reset empties the per-column record, and the colour-by
     // annotation is unchanged, so nothing repopulates it.
     m.controller.resetForNewDataset();
 
-    // "Hide above" picked before its bound moves constrains nothing, so the forward mirror
-    // emits no condition and returns early. It must still record the position, or the next
-    // unrelated Apply pushes the `atLeast` default back onto the panel's mode control.
-    m.controller.setEatReliability('family', { mode: 'atMost', min: 0, max: 1 });
+    // The full range constrains nothing, so the forward mirror emits no condition and returns
+    // early. It must still record the position, or the next unrelated Apply re-mirrors the panel.
+    m.controller.setEatReliability('family', { min: 0, max: 1 });
     m.eatPanel.setReliabilityState.mockClear();
 
     editQuery(m.queryBuilder, [
@@ -706,7 +705,7 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
     ]);
 
     const before = m.queryBuilder.query;
-    m.controller.setEatReliability('family', { mode: 'atLeast', min: 0.5, max: 1 });
+    m.controller.setEatReliability('family', { min: 0.5, max: 1 });
 
     // Identity, not equality: the draft already says this, so it is not rewritten.
     expect(m.queryBuilder.query).toBe(before);
@@ -785,7 +784,7 @@ describe('filter controller: per-base EAT reliability (multi-EAT)', () => {
   });
 });
 
-describe('filter controller: every reliability mode (#380)', () => {
+describe('filter controller: every reliability range (#380)', () => {
   let m: ReturnType<typeof mount>;
 
   beforeEach(() => {
@@ -810,12 +809,12 @@ describe('filter controller: every reliability mode (#380)', () => {
     expect(m.plot.filteredProteinIds.length).toBeGreaterThan(0);
   });
 
-  it('never hides the curated points, in any mode', () => {
+  it('never hides the curated points, for any range', () => {
     const curated = ['p0', 'p1', 'p2', 'p3', 'p4'];
     for (const state of [
-      { mode: 'atLeast' as const, min: 0.5, max: 1 },
-      { mode: 'atMost' as const, min: 0, max: 0.5 },
-      { mode: 'between' as const, min: 0.4, max: 0.8 },
+      { min: 0.5, max: 1 },
+      { min: 0, max: 0.5 },
+      { min: 0.4, max: 0.8 },
     ]) {
       m.controller.setEatReliability('family', state);
       for (const id of curated) expect(m.plot.filteredProteinIds).toContain(id);
@@ -823,13 +822,13 @@ describe('filter controller: every reliability mode (#380)', () => {
   });
 
   it('applies an upper bound that actually removes the high-confidence points', () => {
-    m.controller.setEatReliability('family', { mode: 'atMost', min: 0, max: 0.5 });
+    m.controller.setEatReliability('family', { min: 0, max: 0.5 });
     expect(m.plot.filteredProteinIds).not.toContain('p19'); // 0.95
     expect(m.plot.filteredProteinIds).toContain('p5'); // 0.25
   });
 
   it('applies a band from both sides', () => {
-    m.controller.setEatReliability('family', { mode: 'between', min: 0.4, max: 0.6 });
+    m.controller.setEatReliability('family', { min: 0.4, max: 0.6 });
     expect(m.plot.filteredProteinIds).not.toContain('p5'); // 0.25, below the band
     expect(m.plot.filteredProteinIds).not.toContain('p19'); // 0.95, above the band
     expect(m.plot.filteredProteinIds).toContain('p10'); // 0.50, inside

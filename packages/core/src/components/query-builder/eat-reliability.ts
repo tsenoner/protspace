@@ -6,25 +6,24 @@ import {
   NA_VALUE,
   NEUTRAL_BOUND,
   normalizeReliability,
-  RELIABILITY_BOUNDS,
 } from '@protspace/utils';
-import type { EatReliabilityState } from '@protspace/utils';
+import type { EatReliabilityInput, EatReliabilityState } from '@protspace/utils';
 
 /**
  * The EAT reliability filter's user-facing model, and its translation to and from
  * query conditions.
  *
- * ## Why every mode carries an N/A chip
+ * ## Why the condition carries an N/A chip
  *
  * Curated proteins have no prediction, so they carry `null` in the eat-confidence
  * column and no comparison can match them. The presence chip is what keeps them
  * visible: `>= X` with `[NA_VALUE]` reads "reliable enough, **or** not an EAT
- * prediction at all". Every mode therefore states its intent directly, as one
- * un-negated condition:
+ * prediction at all". The range therefore states its intent directly, as one
+ * un-negated condition, with an end left open when it sits at its neutral position:
  *
- *   at least X    ->  confidence >= X   or N/A
- *   at most  X    ->  confidence <= X   or N/A
- *   between A,B   ->  confidence between A and B (inclusive), or N/A
+ *   A..1   ->  confidence >= A   or N/A
+ *   0..B   ->  confidence <= B   or N/A
+ *   A..B   ->  confidence between A and B (inclusive), or N/A
  *
  * The predecessor spelled the first of these `NOT(confidence < X)`, which worked
  * only because `NOT` was a bare index complement that happened to sweep nulls back
@@ -42,17 +41,17 @@ import type { EatReliabilityState } from '@protspace/utils';
  */
 export function conditionsForReliability(
   annotation: string,
-  state: EatReliabilityState,
+  state: EatReliabilityInput,
   id?: string,
 ): NumericCondition[] {
-  // Normalize here, so no caller can emit an inverted band or a stale unused bound.
-  const { mode, min, max } = normalizeReliability(state);
-  const uses = RELIABILITY_BOUNDS[mode];
+  // Normalize here, so no caller can emit an inverted band.
+  const { min, max } = normalizeReliability(state);
 
   // A bound sitting at its neutral position constrains nothing, and the range is
   // inclusive on both ends — so a full-range band is no filter at all.
-  const constrains = (uses.min && min > NEUTRAL_BOUND.min) || (uses.max && max < NEUTRAL_BOUND.max);
-  if (!constrains) return [];
+  const usesMin = min > NEUTRAL_BOUND.min;
+  const usesMax = max < NEUTRAL_BOUND.max;
+  if (!usesMin && !usesMax) return [];
 
   return [
     createNumericCondition({
@@ -60,9 +59,9 @@ export function conditionsForReliability(
       // Curated points carry no confidence score; this chip is what retains them.
       presence: [NA_VALUE],
       ...(id === undefined ? {} : { id }),
-      // Only the ends the mode reads; the other stays null, an open end.
-      ...(uses.min ? { min } : {}),
-      ...(uses.max ? { max } : {}),
+      // Only the ends that constrain; the other stays null, an open end.
+      ...(usesMin ? { min } : {}),
+      ...(usesMax ? { max } : {}),
     }),
   ];
 }
@@ -84,10 +83,8 @@ function samePresence(a: readonly string[], b: readonly string[]): boolean {
  * so it is ignored.
  *
  * The mirror's guard compares conditions rather than the states they came from
- * because state -> conditions is not injective: `atMost 0..1` and `between 0..1`
- * both constrain nothing and emit nothing, while an empty query reads back as the
- * `atLeast` default. Comparing derived states therefore never matched at those two
- * positions and re-applied the whole filter on every emit.
+ * because state -> conditions need not be injective (the legacy modes spelled "no filter"
+ * several ways); conditions are what the query actually holds.
  *
  * Only NEGATION is compared, not the raw `logicalOp`. The surrounding query owns the
  * `AND`/`OR` connector — `replaceConditionsForAnnotation` re-imposes whatever the
@@ -117,29 +114,15 @@ export function sameConditions(
 }
 
 /**
- * A one-sided mode carrying the single bound it filters on, canonicalised. Going
- * through `normalizeReliability` is what keeps the reverse mirror speaking the same
- * spelling as the forward one: the app's EAT panel controller compares this state, by
- * value, against the state the EAT panel has normalised.
- */
-function boundedBy(mode: 'atLeast' | 'atMost', bound: number): EatReliabilityState {
-  return normalizeReliability(
-    mode === 'atLeast'
-      ? { mode, min: bound, max: NEUTRAL_BOUND.max }
-      : { mode, min: NEUTRAL_BOUND.min, max: bound },
-  );
-}
-
-/**
  * Recover the control's position from the conditions it owns — the reverse mirror.
  * A shape it does not recognise degrades to whichever bound is present rather than
  * silently resetting to 0, which is what made a hand-built condition invisible.
  *
- * The mode follows from which ends the range has (an older query's operator read
- * through `toRange`, as the builder and the evaluator read it). Falling through to
- * `DEFAULT_EAT_RELIABILITY` for a shape with a bound would leave the user's own
- * condition invisible and snap the control back to "Hide below 0%", which is the
- * #380 symptom this file exists to fix.
+ * The range follows from which ends the condition has (an older query's operator read
+ * through `toRange`, as the builder and the evaluator read it); an open end is the
+ * neutral bound. Falling through to `DEFAULT_EAT_RELIABILITY` for a shape with a bound
+ * would leave the user's own condition invisible and snap the control back to the full
+ * range, which is the #380 symptom this file exists to fix.
  */
 export function reliabilityFromConditions(
   conditions: readonly NumericCondition[],
@@ -151,18 +134,22 @@ export function reliabilityFromConditions(
     const { min, max } = toRange(condition);
 
     if (min !== null && max !== null) {
-      // A NEGATED band keeps everything OUTSIDE it, which none of the three modes can
+      // A NEGATED band keeps everything OUTSIDE it, which one range cannot
       // express — so it is skipped rather than read as its positive form. Reading it
       // positively would show the user a band that keeps exactly what their condition
       // hides, and the next nudge of the control would silently commit that inversion
       // back into the query.
-      if (!negated) return normalizeReliability({ mode: 'between', min, max });
+      if (!negated) return normalizeReliability({ min, max });
     } else if (min !== null) {
-      // "at least" keeps everything above the bound; negated, everything below it.
-      return boundedBy(negated ? 'atMost' : 'atLeast', min);
+      // ">= min" keeps everything above the bound; negated, everything below it.
+      return normalizeReliability(
+        negated ? { min: NEUTRAL_BOUND.min, max: min } : { min, max: NEUTRAL_BOUND.max },
+      );
     } else if (max !== null) {
-      // "at most" keeps everything below the bound; negated, everything above it.
-      return boundedBy(negated ? 'atLeast' : 'atMost', max);
+      // "<= max" keeps everything below the bound; negated, everything above it.
+      return normalizeReliability(
+        negated ? { min: max, max: NEUTRAL_BOUND.max } : { min: NEUTRAL_BOUND.min, max },
+      );
     }
   }
   return DEFAULT_EAT_RELIABILITY;
@@ -171,19 +158,27 @@ export function reliabilityFromConditions(
 /** A fraction as `50 %`, rounded, with the thin no-break space the EAT copy uses. */
 export const formatPercent = (fraction: number): string => `${Math.round(fraction * 100)}\u202f%`;
 
-/** What a reliability filter keeps, `≥ 50 %`, `≤ 40 %` or `40–60 %`; null when it keeps all. */
-export function reliabilityLabel(state: EatReliabilityState): string | null {
-  const { mode, min, max } = normalizeReliability(state);
-  if (mode === 'atLeast') return min > 0 ? `≥ ${formatPercent(min)}` : null;
-  if (mode === 'atMost') return max < 1 ? `≤ ${formatPercent(max)}` : null;
-  return min > 0 || max < 1 ? `${Math.round(min * 100)}–${formatPercent(max)}` : null;
+/**
+ * What a reliability filter keeps, by which ends moved: `≥ 61 %` (only the low end), `≤ 80 %`
+ * (only the high end) or `30–80 %` (both); null when it keeps all.
+ */
+export function reliabilityLabel(state: EatReliabilityInput): string | null {
+  const { min, max } = normalizeReliability(state);
+  const low = min > NEUTRAL_BOUND.min;
+  const high = max < NEUTRAL_BOUND.max;
+  if (low && high) return `${Math.round(min * 100)}–${formatPercent(max)}`;
+  if (low) return `≥ ${formatPercent(min)}`;
+  if (high) return `≤ ${formatPercent(max)}`;
+  return null;
 }
 
 /** The same in words, for a screen reader: `at least 50 %`, `between 40 and 60 %`, or `any`. */
-export function reliabilityWords(state: EatReliabilityState): string {
-  if (!reliabilityLabel(state)) return 'any';
-  const { mode, min, max } = normalizeReliability(state);
-  if (mode === 'atLeast') return `at least ${formatPercent(min)}`;
-  if (mode === 'atMost') return `at most ${formatPercent(max)}`;
-  return `between ${Math.round(min * 100)} and ${formatPercent(max)}`;
+export function reliabilityWords(state: EatReliabilityInput): string {
+  const { min, max } = normalizeReliability(state);
+  const low = min > NEUTRAL_BOUND.min;
+  const high = max < NEUTRAL_BOUND.max;
+  if (low && high) return `between ${Math.round(min * 100)} and ${formatPercent(max)}`;
+  if (low) return `at least ${formatPercent(min)}`;
+  if (high) return `at most ${formatPercent(max)}`;
+  return 'any';
 }

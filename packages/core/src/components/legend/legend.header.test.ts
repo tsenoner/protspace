@@ -205,7 +205,7 @@ describe('legend header: the EAT note', () => {
     const legend = await mount(createEatFixture(), 'toxin');
     expect(noteText(legend)).toBe('Includes 5 predicted');
 
-    legend.eatReliability = { mode: 'atLeast', min: 0.6, max: 1 };
+    legend.eatReliability = { min: 0.6, max: 1 };
     await legend.updateComplete;
     expect(noteText(legend)).toBe('Includes 5 predicted · Filtered ≥ 60\u202f%');
 
@@ -221,12 +221,12 @@ describe('legend header: the EAT note', () => {
     expect(open).toHaveBeenCalledOnce();
   });
 
-  it('names an upper bound and a band, and says nothing of a filter that keeps all', async () => {
+  it('names the high end alone and both ends, and says nothing of the full range', async () => {
     const legend = await mount(createEatFixture(), 'toxin');
     for (const [state, text] of [
-      [{ mode: 'atMost', min: 0, max: 0.4 }, 'Includes 5 predicted · Filtered ≤ 40\u202f%'],
-      [{ mode: 'between', min: 0.4, max: 0.6 }, 'Includes 5 predicted · Filtered 40–60\u202f%'],
-      [{ mode: 'atLeast', min: 0, max: 1 }, 'Includes 5 predicted'],
+      [{ min: 0, max: 0.4 }, 'Includes 5 predicted · Filtered ≤ 40\u202f%'],
+      [{ min: 0.4, max: 0.6 }, 'Includes 5 predicted · Filtered 40–60\u202f%'],
+      [{ min: 0, max: 1 }, 'Includes 5 predicted'],
     ] as const) {
       legend.eatReliability = state;
       await legend.updateComplete;

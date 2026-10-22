@@ -1,23 +1,13 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { countNoun, formatCount, type EatReliabilityState } from '@protspace/utils';
-import type { SegmentedOption } from '../kit/segmented';
-import '../kit/segmented';
 import { formatPercent } from '../query-builder/eat-reliability';
 import {
+  EAT_BOUNDS,
   renderReliabilityPercent,
   renderReliabilityRange,
   type EatReliabilityController,
 } from './eat-reliability-controller';
 import { EAT_BIN_COUNT, isKept, type EatSummary } from './eat-summary';
-
-/** The modes, named by what they keep. */
-const MODE_OPTIONS: SegmentedOption[] = [
-  { value: 'atLeast', label: 'Keep ≥' },
-  { value: 'atMost', label: 'Keep ≤' },
-  { value: 'between', label: 'Keep between' },
-];
-/** With Show off: still announced, not choosable. */
-const MODE_OPTIONS_OFF = MODE_OPTIONS.map((option) => ({ ...option, disabled: true }));
 
 const BIN_WIDTH = 100 / EAT_BIN_COUNT;
 const SKELETON_BARS = Array.from({ length: EAT_BIN_COUNT }, (_, bin) => bin);
@@ -109,9 +99,10 @@ function renderHistogram(
 }
 
 /**
- * The reliability section (proposal B §4.4): modes and a % box per active bound, the histogram,
- * the handles on the axis under it, the Below threshold outcome row, and the readout with its Export IDs trigger. `summary` null is the loading skeleton,
- * inert. With Show off the modes, % boxes and handles stay in the accessibility tree, disabled;
+ * The reliability section (proposal B §4.4): the range's low and high % boxes, the histogram,
+ * the two handles on the axis under it, the Outside the range outcome row, and the readout with
+ * its Export IDs trigger. `summary` null is the loading skeleton, inert. With Show off the % boxes
+ * and handles stay in the accessibility tree, disabled;
  * the bars and their lists keep working, so the section is only greyed, not aria-disabled.
  */
 export function renderReliability(
@@ -123,23 +114,16 @@ export function renderReliability(
 ): TemplateResult {
   const off = !ctrl.overlayEnabled;
   const disabled = off || !summary;
-  const bounds = ctrl.activeBounds;
   const { predicted, kept } = summary ?? { predicted: 0, kept: 0 };
   return html`<section
     class=${off ? 'eat-reliability is-off' : 'eat-reliability'}
     aria-label="Reliability"
     ?inert=${!summary}
   >
-    <h4 class="eat-heading">Reliability</h4>
-    <div class="eat-mode-row">
-      <ps-segmented
-        label="Reliability filter mode"
-        .options=${off ? MODE_OPTIONS_OFF : MODE_OPTIONS}
-        .value=${ctrl.reliability.mode}
-        @change=${ctrl.onModeChange}
-      ></ps-segmented>
+    <div class="eat-range-row">
+      <h4 class="eat-heading">Reliability</h4>
       <span class="eat-bounds">
-        ${bounds.map(
+        ${EAT_BOUNDS.map(
           (bound, index) =>
             html`${index > 0 ? html`<span aria-hidden="true">–</span>` : nothing}
             ${renderReliabilityPercent(ctrl, bound, disabled)}`,
@@ -149,7 +133,7 @@ export function renderReliability(
     </div>
     ${renderHistogram(ctrl.reliability, summary, bars)}
     <div class="eat-handles">
-      ${bounds.map((bound) => renderReliabilityRange(ctrl, bound, disabled))}
+      ${EAT_BOUNDS.map((bound) => renderReliabilityRange(ctrl, bound, disabled))}
     </div>
     <div class="eat-axis" aria-hidden="true"><span>0</span><span>50</span><span>100</span></div>
     ${bars.openBin !== null && summary && summary.predicted > 0 ? bars.list : nothing} ${outcome}

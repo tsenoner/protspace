@@ -141,7 +141,7 @@ describe('captureAtResolution under EAT Dim', () => {
     const undimmed = alphaAt(plot, before, 'P2');
     expect(undimmed).toBeGreaterThan(200);
 
-    plot.eatDim = { mode: 'atLeast', min: 0.5, max: 1 };
+    plot.eatDim = { min: 0.5, max: 1 };
     await plot.updateComplete;
     const out = plot.captureAtResolution(480, 360, { backgroundColor: 'transparent' });
     expect(alphaAt(plot, out, 'P2')).toBeLessThan(undimmed);

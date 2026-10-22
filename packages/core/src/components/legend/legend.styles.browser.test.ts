@@ -143,7 +143,7 @@ describe('legend styles', () => {
       },
     };
     const { legend } = await mountLegendWithScatterplot(data, 'ec');
-    legend.eatReliability = { mode: 'between', min: 0.4, max: 0.6 };
+    legend.eatReliability = { min: 0.4, max: 0.6 };
     await settle(legend);
     await frame();
     const root = legend.shadowRoot!;
