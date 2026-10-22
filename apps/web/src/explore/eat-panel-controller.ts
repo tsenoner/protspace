@@ -95,6 +95,7 @@ export function createEatPanelController({
     | 'context'
     | 'labelColors'
     | 'focusProtein'
+    | 'otherFilters'
     | 'active'
     | 'reliability'
     | 'outcome'
@@ -117,7 +118,10 @@ export function createEatPanelController({
     | 'removeEventListener'
   >;
   legendElement: Pick<ProtspaceLegend, 'eatReliability' | 'eatFade'>;
-  filterController: Pick<FilterController, 'setEatReliability' | 'getContextMask'>;
+  filterController: Pick<
+    FilterController,
+    'setEatReliability' | 'getContextMask' | 'getOtherEatReliabilities'
+  >;
   root: Pick<Document, 'addEventListener' | 'removeEventListener'>;
   isPanelShown(): boolean;
   subscribePanel(listener: () => void): () => void;
@@ -165,6 +169,17 @@ export function createEatPanelController({
     if (!eatPanel.active) return;
     const context = filterController.getContextMask();
     if (eatPanel.context !== context) eatPanel.context = context;
+    // A Color by switch keeps the previous annotation's reliability filter: the panel says so.
+    const others = filterController.getOtherEatReliabilities();
+    const shown = eatPanel.otherFilters;
+    const same =
+      others.length === shown.length &&
+      others.every(
+        (other, i) =>
+          other.annotation === shown[i].annotation &&
+          isSameReliability(other.reliability, shown[i].reliability),
+      );
+    if (!same) eatPanel.otherFilters = others;
   };
 
   const syncActive = () => {
@@ -305,6 +320,13 @@ export function createEatPanelController({
     );
   };
 
+  /** Clear on the panel's line about another annotation's reliability filter. */
+  const onClearFilter = (event: Event) => {
+    const { annotation } = (event as CustomEvent<{ annotation: string }>).detail;
+    filterController.setEatReliability(annotation, DEFAULT_EAT_RELIABILITY);
+    syncContext();
+  };
+
   const onReliabilityReset = (event: Event) => {
     const base = (event as CustomEvent<{ annotation?: string }>).detail?.annotation;
     if (!base || base === plotElement.selectedAnnotation) eatPanel.reset();
@@ -323,6 +345,7 @@ export function createEatPanelController({
   eatPanel.addEventListener('eat-trace-source', onTraceSource);
   eatPanel.addEventListener('eat-drawing-change', onDrawingChange);
   eatPanel.addEventListener('eat-export-ids', onExportIds);
+  eatPanel.addEventListener('eat-clear-filter', onClearFilter);
   const unsubscribePanel = subscribePanel(syncActive);
   syncData();
 
@@ -351,6 +374,7 @@ export function createEatPanelController({
       eatPanel.removeEventListener('eat-trace-source', onTraceSource);
       eatPanel.removeEventListener('eat-drawing-change', onDrawingChange);
       eatPanel.removeEventListener('eat-export-ids', onExportIds);
+      eatPanel.removeEventListener('eat-clear-filter', onClearFilter);
       unsubscribePanel();
     },
   };

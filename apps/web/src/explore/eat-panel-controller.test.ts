@@ -57,6 +57,7 @@ function setup(shown: { value: boolean }) {
     context: null as Uint8Array | null,
     labelColors: new Map<string, string>() as ReadonlyMap<string, string>,
     focusProtein: null as number | null,
+    otherFilters: [] as readonly { annotation: string; reliability: EatReliabilityState }[],
     active: false,
     reliability: DEFAULT_EAT_RELIABILITY as EatReliabilityState,
     outcome: 'hide' as 'hide' | 'dim',
@@ -82,6 +83,8 @@ function setup(shown: { value: boolean }) {
     mask: null as Uint8Array | null,
     setEatReliability: vi.fn(),
     getContextMask: vi.fn((): Uint8Array | null => filter.mask),
+    others: [] as { annotation: string; reliability: EatReliabilityState }[],
+    getOtherEatReliabilities: () => filter.others,
   };
   const panelListeners = new Set<() => void>();
   const controller = createEatPanelController({
@@ -254,6 +257,18 @@ describe('createEatPanelController', () => {
 
     expect(panel.context).toBe(filter.mask);
     expect(legend.eatReliability).toEqual({ min: 0, max: 0.4 });
+  });
+
+  it('tells the panel of another annotation’s reliability filter, and clears it from there', () => {
+    const { plot, panel, filter } = setup({ value: true });
+    filter.others = [{ annotation: 'family', reliability: { min: 0.5, max: 1 } }];
+    plot.dispatchEvent(new Event('data-change'));
+    expect(panel.otherFilters).toEqual(filter.others);
+
+    filter.setEatReliability.mockImplementation(() => (filter.others = []));
+    panel.dispatchEvent(new CustomEvent('eat-clear-filter', { detail: { annotation: 'family' } }));
+    expect(filter.setEatReliability).toHaveBeenCalledWith('family', DEFAULT_EAT_RELIABILITY);
+    expect(panel.otherFilters).toEqual([]);
   });
 
   it('asks for no context while hidden, and for the current one when the panel shows', () => {

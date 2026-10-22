@@ -18,7 +18,7 @@ import '../kit/switch';
 import type { PsSegmented, SegmentedOption } from '../kit/segmented';
 import type { PsSelect } from '../kit/select';
 import type { PsSwitch } from '../kit/switch';
-import { formatPercent, reliabilityLabel } from '../query-builder/eat-reliability';
+import { formatPercent, rangeText, reliabilityLabel } from '../query-builder/eat-reliability';
 import {
   DEFAULT_LABEL_SORT,
   renderBreakdown,
@@ -46,6 +46,13 @@ import {
   type EatIndex,
   type EatSummary,
 } from './eat-summary';
+
+/** A reliability filter on another annotation than the one the panel shows. */
+interface EatOtherFilter {
+  /** The base annotation's key. */
+  annotation: string;
+  reliability: EatReliabilityState;
+}
 
 /** The open drill-down list: a histogram bar's, or a label's (by name, as rows re-sort). */
 type OpenDrill = { bin: number } | { label: string };
@@ -103,6 +110,8 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  *   moved one back to its default.
  * @fires eat-export-ids - `{ proteinIds, fileName }`: Export IDs, the predictions in range or those
  *   outside it in the context (or behind a drill-down's bar or label), in reliability order.
+ * @fires eat-clear-filter - `{ annotation }`: Clear on the line about another annotation's
+ *   reliability filter.
  * @fires eat-outcome-change - `{ outcome, reliability }`: Predictions outside the range switched
  *   between Hide (the filter) and Fade (`dim`: no filter). A range move in either rides `eat-overlay-change`.
  */
@@ -120,6 +129,11 @@ export class ProtspaceEatPanel extends LitElement {
   @property({ attribute: false }) labelColors: ReadonlyMap<string, string> = new Map();
   /** The single selected protein's index, for the card; null with none or several selected. */
   @property({ attribute: false }) focusProtein: number | null = null;
+  /**
+   * Reliability filters still applied to other annotations (a Color by switch keeps them): each
+   * gets a line saying so, with Clear.
+   */
+  @property({ attribute: false }) otherFilters: readonly EatOtherFilter[] = [];
   /** Whether the panel is shown. It computes only while true. */
   @property({ type: Boolean }) active = false;
   /**
@@ -356,7 +370,7 @@ export class ProtspaceEatPanel extends LitElement {
       ${summary && !this._eat.overlayEnabled
         ? html`<p class="eat-help eat-off-note">Predictions are off. The map shows them as N/A.</p>`
         : nothing}
-      ${this._renderOverview(summary)}
+      ${this._renderOtherFilters()} ${this._renderOverview(summary)}
       ${renderReliability(
         this._eat,
         summary,
@@ -413,6 +427,29 @@ export class ProtspaceEatPanel extends LitElement {
       onTraceSource: (detail) => this._emit('eat-trace-source', detail),
       onShowFaded: () => this._setOutcome('dim'),
     });
+  }
+
+  /** `Toxin family is still filtered to reliability 50–100 %  Clear`, one line per annotation. */
+  private _renderOtherFilters(): TemplateResult | typeof nothing {
+    const data = this.data;
+    if (!data || this.otherFilters.length === 0) return nothing;
+    return html`${this.otherFilters.map(({ annotation, reliability }) => {
+      const label = annotationLabel(annotation, data.annotations[annotation]);
+      return html`<p class="eat-other-filter" data-annotation=${annotation}>
+        <span
+          >${label} is still filtered to reliability
+          <span class="eat-nowrap">${rangeText(reliability)}</span></span
+        >
+        <button
+          type="button"
+          class="eat-other-filter-clear"
+          aria-label=${`Clear the ${label} reliability filter`}
+          @click=${() => this._emit('eat-clear-filter', { annotation })}
+        >
+          Clear
+        </button>
+      </p>`;
+    })}`;
   }
 
   /** `Predictions outside the range: Hide | Fade` (proposal B §4.4, U21 words). */

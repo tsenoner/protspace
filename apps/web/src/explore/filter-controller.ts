@@ -66,6 +66,11 @@ export interface FilterController {
    * Cached: a new mask only when that reduced query or the snapshot changes.
    */
   getContextMask(): Uint8Array | null;
+  /**
+   * The reliability conditions the applied filter holds for annotations other than the selected
+   * one, by base annotation: what a Color by switch leaves behind.
+   */
+  getOtherEatReliabilities(): { annotation: string; reliability: EatReliabilityState }[];
   /** The filter chip's ✕: removes the applied filter; a dirty draft keeps its edits. */
   clear(): void;
   /**
@@ -391,6 +396,21 @@ export function createFilterController({
       }
       context = { query, snapshot, mask };
       return mask;
+    },
+    getOtherEatReliabilities() {
+      const others: { annotation: string; reliability: EatReliabilityState }[] = [];
+      for (const [key, annotation] of Object.entries(snapshot?.annotations ?? {})) {
+        const base = annotation.runtime?.baseAnnotation;
+        if (!isEatConfidenceAnnotation(annotation) || !base || base === selectedAnnotation)
+          continue;
+        const conditions = findConditionsForAnnotation(applied.query, key);
+        if (conditions.length === 0) continue;
+        const reliability = reliabilityFromConditions(conditions);
+        if (!isSameReliability(reliability, DEFAULT_EAT_RELIABILITY)) {
+          others.push({ annotation: base, reliability });
+        }
+      }
+      return others;
     },
     getApplied: () => applied,
     resetForNewDataset() {

@@ -68,6 +68,27 @@ export const eatPanelStyles = [
       opacity: 0.4;
     }
 
+    /* A reliability filter another annotation still applies, with its Clear. */
+    .eat-other-filter {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--ps-space-2);
+      margin: 0;
+      padding: var(--ps-space-1) var(--ps-space-1) var(--ps-space-1) var(--ps-space-2);
+      border-radius: var(--ps-radius-sm);
+      border: 1px solid var(--ps-border);
+      font-size: var(--ps-text-xs);
+    }
+
+    .eat-other-filter-clear {
+      flex: none;
+    }
+
+    .eat-nowrap {
+      white-space: nowrap;
+    }
+
     .eat-off-note {
       margin-top: calc(-1 * var(--ps-space-1));
     }
@@ -340,6 +361,7 @@ export const eatPanelStyles = [
       :is(
         .eat-drill-select,
         .eat-export,
+        .eat-other-filter-clear,
         .eat-show-all,
         .eat-color-by,
         .eat-others summary,
@@ -606,7 +628,8 @@ export const eatPanelStyles = [
 
     .eat-drill-row:hover,
     .eat-drill-select:hover:not(:disabled),
-    .eat-export:hover {
+    .eat-export:hover,
+    .eat-other-filter-clear:hover {
       background: var(--ps-surface-hover);
     }
 
@@ -646,7 +669,8 @@ export const eatPanelStyles = [
     }
 
     .eat-drill-select,
-    .eat-export {
+    .eat-export,
+    .eat-other-filter-clear {
       padding: var(--ps-space-1);
       border: none;
       border-radius: var(--ps-radius-sm);
