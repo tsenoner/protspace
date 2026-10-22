@@ -240,7 +240,7 @@ export async function toggleLegendSetting(
 /** Reset; the popover stays open, and Reset disables itself once nothing is stored. */
 export async function resetLegendSettings(page: Page): Promise<void> {
   const settings = await openLegendSettings(page);
-  const reset = settings.getByRole('button', { name: 'Reset', exact: true });
+  const reset = settings.getByRole('button', { name: 'Reset to defaults', exact: true });
   await reset.click();
   await expect(reset).toBeDisabled();
 }

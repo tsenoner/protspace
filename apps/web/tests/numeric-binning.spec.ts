@@ -572,10 +572,10 @@ async function setNumericFilter(
   const row = conditionRow(page, rowIndex);
   const numeric = row.locator('protspace-query-numeric-input');
   if (bounds.min !== undefined) {
-    await numeric.locator('input.numeric-field[placeholder="min"]').fill(String(bounds.min));
+    await numeric.getByRole('spinbutton', { name: 'Minimum value' }).fill(String(bounds.min));
   }
   if (bounds.max !== undefined) {
-    await numeric.locator('input.numeric-field[placeholder="max"]').fill(String(bounds.max));
+    await numeric.getByRole('spinbutton', { name: 'Maximum value' }).fill(String(bounds.max));
   }
 }
 
