@@ -795,12 +795,23 @@ export class ProtspaceEatPanel extends LitElement {
             title=${`${name}: ${formatCount(count)} (${share(count, inView)})`}
           ></span>`
         : nothing;
+    const mark = (part: string) =>
+      part === 'outside'
+        ? html`<svg class="eat-key-mark" data-part="outside" viewBox="0 0 9 9" aria-hidden="true">
+            <circle
+              cx="4.5"
+              cy="4.5"
+              r="3.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              pathLength="12"
+              stroke-dasharray="1.2 0.8"
+            />
+          </svg>`
+        : html`<span class="eat-key-mark" data-part=${part} aria-hidden="true"></span>`;
     const key = (part: string | null, text: string) =>
-      html`<span class="eat-key-item"
-        >${part
-          ? html`<span class="eat-key-mark" data-part=${part} aria-hidden="true"></span>`
-          : nothing}${text}</span
-      >`;
+      html`<span class="eat-key-item">${part ? mark(part) : nothing}${text}</span>`;
     const predictedKey = !enabled
       ? key('kept', `${formatCount(predicted)} predicted (off, shown as N/A)`)
       : outside > 0

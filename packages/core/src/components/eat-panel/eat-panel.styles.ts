@@ -99,14 +99,16 @@ export const eatPanelStyles = [
     }
 
     /*
-     * The map's language (U21): curated is solid, a prediction in range hollow (a 2 px outline in
-     * the same ink), one outside the range dashed and faded, no value the empty track. The ink is
-     * the text colour here and the label's own colour in a label row.
+     * The map's language (U21): curated is solid, a prediction in range hollow (a 2 px outline),
+     * one outside the range dashed, no value the empty track. The ink is the text colour here and
+     * the label's own colour in a label row. Outlines mix the ink a step toward the text colour
+     * (U22), so pale inks in light mode and dark inks in dark mode keep 3:1 against the panel.
      */
     .eat-stack,
     .eat-label-bar,
     .eat-counts {
       --eat-ink: var(--ps-text);
+      --eat-line: color-mix(in oklab, var(--eat-ink), var(--ps-text) 35%);
     }
 
     .eat-stack,
@@ -116,9 +118,10 @@ export const eatPanelStyles = [
       height: 10px;
     }
 
+    /* A part that holds any protein stays at least 8 px, so a few never shrink to a blob. */
     .eat-segment {
       box-sizing: border-box;
-      min-width: 0;
+      min-width: 8px;
       border-radius: 3px;
     }
 
@@ -127,12 +130,11 @@ export const eatPanelStyles = [
     }
 
     .eat-segment[data-part='kept'] {
-      border: 2px solid var(--eat-ink);
+      border: 2px solid var(--eat-line);
     }
 
     .eat-segment[data-part='outside'] {
-      border: 2px dashed var(--eat-ink);
-      opacity: 0.45;
+      border: 2px dashed var(--eat-line);
     }
 
     .eat-segment[data-part='none'] {
@@ -164,12 +166,13 @@ export const eatPanelStyles = [
     }
 
     .eat-key-mark[data-part='kept'] {
-      border: 2px solid var(--eat-ink);
+      border: 2px solid var(--eat-line);
     }
 
-    .eat-key-mark[data-part='outside'] {
-      border: 2px dashed var(--eat-ink);
-      opacity: 0.45;
+    /* An SVG ring of six dashes: a 9 px CSS dashed border draws two arcs that read as a spinner. */
+    svg.eat-key-mark {
+      flex: none;
+      color: var(--eat-line);
     }
 
     .eat-counts,
