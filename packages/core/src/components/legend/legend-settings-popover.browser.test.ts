@@ -384,6 +384,30 @@ describe('protspace-legend-settings-popover', () => {
     await expect.element(reset).toBeDisabled();
   });
 
+  it('a Reset that turns itself off keeps focus, greyed and still named', async () => {
+    const { el } = await mount();
+    el.addEventListener('settings-reset', () => (el.canReset = false));
+    const reset = root(el).querySelector<HTMLElement>('#reset-button')!;
+    const button = reset.shadowRoot!.querySelector('button')!;
+    button.focus();
+    await userEvent.keyboard('{Enter}');
+    await settle(el);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(deepActiveElement()).toBe(button);
+    expect(el.open).toBe(true);
+  });
+
+  it('Shift+Tab from the first stop closes the panel and returns focus to the anchor', async () => {
+    const { el, anchor } = await mount();
+    const onClose = vi.fn(() => (el.open = false));
+    el.addEventListener('ps-close', onClose);
+    el.focusFirst();
+    await userEvent.tab({ shift: true });
+    await settle(el);
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(anchor);
+  });
+
   it('there is no Save or Cancel and no title attribute', async () => {
     const { el } = await mount({ numeric: true });
     expect(page.getByRole('button', { name: /^(Save|Cancel)$/ }).elements()).toHaveLength(0);

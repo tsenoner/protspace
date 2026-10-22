@@ -347,6 +347,31 @@ describe('legend colour and shape picker', () => {
     expect(deepActiveElement()).toBe(more(legend, 'A'));
   });
 
+  it("Shift+Tab out closes it, flushes, and returns focus to the row's ⋯ button", async () => {
+    const { legend, plot } = await mount();
+    await openPicker(legend, 'A');
+    const commits = colourCommits(plot);
+    inputColour(legend, '#654321');
+
+    await userEvent.tab({ shift: true });
+    await settle(legend);
+
+    expect(picker(legend).open).toBe(false);
+    expect(commits()).toBe(1);
+    expect(deepActiveElement()).toBe(more(legend, 'A'));
+  });
+
+  it('Tab past the shapes closes it', async () => {
+    const { legend } = await mount();
+    await openPicker(legend, 'A');
+    // The swatch, then the checked shape: the next Tab leaves the panel.
+    await userEvent.tab();
+    expect(deepActiveElement()?.classList.contains('shape-picker-item')).toBe(true);
+    await userEvent.tab();
+    await settle(legend);
+    expect(picker(legend).open).toBe(false);
+  });
+
   it('still closes on Escape and on a press outside after the legend is moved', async () => {
     const { legend } = await mount();
     const parent = legend.parentElement!;

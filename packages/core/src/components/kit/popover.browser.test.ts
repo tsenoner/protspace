@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from './adopt-theme';
 import { ESCAPE_ORDER, onEscapeFallback, topLayer } from './layers';
 import type { PsPopover } from './popover';
@@ -104,6 +104,65 @@ describe('ps-popover', () => {
     expect(panel(pop).matches(':popover-open')).toBe(false);
     expect(onClose).toHaveBeenCalledOnce();
     expect(document.activeElement).toBe(anchor);
+  });
+
+  describe('close-on-tab-out', () => {
+    async function tabSetup() {
+      document.body.innerHTML = `
+        <button id="anchor">Open</button>
+        <button id="before">Before</button>
+        <ps-popover close-on-tab-out><button id="first">First</button><button id="last">Last</button></ps-popover>
+        <button id="after">After</button>`;
+      const anchor = document.getElementById('anchor')!;
+      const pop = document.querySelector('ps-popover')!;
+      pop.anchor = anchor;
+      anchor.focus();
+      pop.open = true;
+      await settle(pop);
+      const onClose = vi.fn();
+      pop.addEventListener('ps-close', onClose);
+      return { anchor, pop, onClose };
+    }
+
+    it('Tab past the last stop closes the panel and leaves focus where Tab put it', async () => {
+      const { pop, onClose } = await tabSetup();
+      document.getElementById('last')!.focus();
+      await userEvent.tab();
+      await settle(pop);
+      expect(pop.open).toBe(false);
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(document.activeElement?.id).toBe('after');
+    });
+
+    it('Shift+Tab before the first stop closes the panel and returns to the anchor', async () => {
+      const { anchor, pop, onClose } = await tabSetup();
+      document.getElementById('first')!.focus();
+      await userEvent.tab({ shift: true });
+      await settle(pop);
+      expect(pop.open).toBe(false);
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(document.activeElement).toBe(anchor);
+    });
+
+    it('Tab between stops inside the panel keeps it open', async () => {
+      const { pop, onClose } = await tabSetup();
+      document.getElementById('first')!.focus();
+      await userEvent.tab();
+      await settle(pop);
+      expect(pop.open).toBe(true);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
+  it('without close-on-tab-out, Tab out leaves the panel open', async () => {
+    const { anchor, pop } = await setup();
+    anchor.focus();
+    pop.open = true;
+    await settle(pop);
+    document.getElementById('inside')!.focus();
+    await userEvent.tab();
+    expect(document.activeElement?.id).toBe('outside');
+    expect(pop.open).toBe(true);
   });
 
   it("keeps a nested overlay's ps-close from its owner", async () => {

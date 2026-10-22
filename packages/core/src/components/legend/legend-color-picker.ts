@@ -129,6 +129,7 @@ export class ColorPickerController implements ReactiveController {
       .anchor=${this._anchor}
       .open=${open}
       placement="left-start"
+      close-on-tab-out
       panel-label=${open ? `Colour and shape: ${label}` : 'Colour and shape'}
       @ps-open=${this._onOpen}
       @ps-close=${this._onClose}

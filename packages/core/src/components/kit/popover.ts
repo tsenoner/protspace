@@ -30,12 +30,20 @@ export class PsPopover extends LitElement {
   @property({ attribute: 'panel-label' }) panelLabel = '';
   /** On a phone, open as a bottom sheet rather than beside the anchor. */
   @property({ type: Boolean }) sheet = false;
+  /**
+   * Tab or Shift+Tab out of the panel closes it. The panel sits at the end of its owner's DOM, so
+   * Tab order runs on from it into the page while it stays on screen. Shift+Tab out goes back to
+   * what had focus at open, rather than to whatever precedes the panel in the DOM.
+   */
+  @property({ type: Boolean, attribute: 'close-on-tab-out' }) closeOnTabOut = false;
 
   @query('.panel') private panel!: HTMLElement;
   private releaseLayer?: () => void;
   private stopPositioning?: () => void;
   private returnFocusTo: HTMLElement | null = null;
   private announcedOpen = false;
+  /** A Tab or Shift+Tab pressed in the panel, in this task: the focus move it makes. */
+  private tabbing: 'forward' | 'back' | null = null;
 
   render() {
     return html`<div
@@ -46,6 +54,8 @@ export class PsPopover extends LitElement {
       aria-label=${this.panelLabel || nothing}
       @ps-close=${stopNestedClose}
       @click=${this.onPanelClick}
+      @keydown=${this.onPanelKeyDown}
+      @focusout=${this.onPanelFocusOut}
     >
       <slot></slot>
     </div>`;
@@ -123,6 +133,26 @@ export class PsPopover extends LitElement {
   private onPanelClick = (event: MouseEvent) => {
     if (event.target !== this.panel || !this.hasAttribute('docked')) return;
     if (event.clientY < this.panel.getBoundingClientRect().top) this.dismiss();
+  };
+
+  // Focus moves as the key's default action, after its listeners, in the same task.
+  private onPanelKeyDown = (event: KeyboardEvent) => {
+    if (!this.closeOnTabOut || event.key !== 'Tab') return;
+    this.tabbing = event.shiftKey ? 'back' : 'forward';
+    setTimeout(() => (this.tabbing = null));
+  };
+
+  // Only a Tab moves count: a menu or dialog the panel opens takes focus without closing it. The
+  // anchor is outside here (Shift+Tab may reach a roving row that anchors the panel); a null
+  // target is focus leaving the page.
+  private onPanelFocusOut = (event: FocusEvent) => {
+    const next = event.relatedTarget as Node | null;
+    if (!this.closeOnTabOut || !this.open || !this.tabbing || flatContains(this, next)) return;
+    // Shift+Tab goes back to what had focus at open (the anchor, or a row's menu button).
+    const back = this.tabbing === 'back' ? (this.returnFocusTo ?? this.anchor) : null;
+    this.tabbing = null;
+    this.dismiss();
+    if (back instanceof HTMLElement && back.isConnected) back.focus();
   };
 
   private hide(): void {

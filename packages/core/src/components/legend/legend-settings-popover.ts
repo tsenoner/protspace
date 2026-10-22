@@ -130,6 +130,7 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
       .anchor=${this.anchor}
       .open=${this.open}
       placement="bottom-end"
+      close-on-tab-out
       panel-role="dialog"
       panel-label=${`Legend settings: ${this.annotationLabel}`}
       @ps-close=${this._onClose}
@@ -175,6 +176,7 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
             variant="secondary"
             size="sm"
             ?disabled=${!this.canReset}
+            focusable-when-disabled
             @click=${this._onReset}
             ><span slot="start" class="reset-icon">${icon('rotate-ccw', 14)}</span>Reset to
             defaults</ps-button
