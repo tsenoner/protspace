@@ -25,7 +25,8 @@ current view at 2048 × 1024 px and does not use the editor's settings.
 
 The editor always renders the full view, what a double-click on the plot shows, not your current
 zoom. Its dots are therefore drawn at their unzoomed size, while Quick Export keeps the zoom and the
-larger dots that come with it. [Contours](/explore/controls#contours) are not drawn in the
+larger dots that come with it. The plot fills the figure's frame, each axis stretched, as it fills
+its area on screen. [Contours](/explore/controls#contours) are not drawn in the
 preview or the exported figure yet; see [Exporting Results](/explore/exporting#dot-size-in-images).
 
 ## Journal Presets

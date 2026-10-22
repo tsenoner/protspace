@@ -101,8 +101,8 @@ protein.
 
 ### The selection bar
 
-While proteins are selected, a bar at the bottom of the plot shows how many and what you can do
-with them:
+While proteins are selected, a bar beside the protein count, at the bottom of the plot, shows how
+many and what you can do with them:
 
 - **Show only these** narrows the plot to the selection. Each time you do it is one step of the
   `Showing only … · K steps` chip; its ✕ (**Show all proteins**) brings every protein back.
@@ -128,12 +128,13 @@ text field, where these keys edit the text.
 
 Points close together have similar embeddings - often indicating similar structure, function, or evolutionary history.
 
-Both axes share one scale, so a cluster keeps its shape whatever the size of the window: the plot
-fits the data's extent inside the plot area and centres it, and a window wider than the data shows
-margin at the sides (a taller one, above and below). Opening or closing the sidebar changes how
-much room the plot has, never the clusters' proportions. Exported images use the same rule, so a
-figure has the shape you see on screen. A projection whose first axis spans much more than its
-second, as PCA often does, shows as a band rather than filling the plot.
+The plot always fills its area. Each axis stretches on its own: the data's width spans the plot's
+width, and its height spans the plot's height. The two axes are not on the same scale, so a
+cluster's shape follows the shape of the plot.
+
+Collapsing the sidebar does not stretch the plot wider. It keeps at most the width it had beside the
+open sidebar and moves to the middle of the freed space. Exported images fill their frame the same
+way.
 
 ### Point Colors
 
@@ -152,11 +153,15 @@ Hover over a point to see a tooltip with details about that protein:
 Protein name, gene name, and UniProtKB ID are tooltip-only and don't appear in the
 [Color by menu](/explore/controls#color-by).
 
-When the structure cannot be seen (on a desktop, while the sidebar is collapsed with the structure
-docked in it), a click on a point pins its tooltip with a **View structure** button, which opens
-the sidebar and shows that protein's structure. On a phone, a tap pins the tooltip and **View
-structure** expands the structure sheet. A pinned tooltip closes on **Escape**, a press outside
-the plot, the next click, or a pan or zoom.
+When the structure cannot be seen, a click on a point pins its tooltip with a **View structure**
+button. On a desktop that is while the structure is hidden with the rail's **Structure** button, or
+docked in a collapsed sidebar; **View structure** shows that protein's structure, opening the
+sidebar if needed. On a phone, a tap pins the tooltip and **View structure** expands the structure
+sheet.
+
+You can move the mouse onto a pinned tooltip to reach its button. A pinned tooltip closes when the
+mouse rests elsewhere (on another protein, on empty space or off the plot), on **Escape**, a press
+outside the plot, the next click, or a pan or zoom.
 
 ### Focusing a Category
 

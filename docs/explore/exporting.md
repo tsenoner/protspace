@@ -55,6 +55,11 @@ Dots [grow as you zoom in](/explore/scatterplot#navigation). Quick Export keeps 
 so its dots match the size you see on screen. The Figure Editor always renders the full view, so its
 dots are drawn at their unzoomed size.
 
+### Plot shape in images
+
+As on screen, the plot fills the image: each axis stretches to the image's width or height. A wide
+image stretches the clusters sideways, a tall one stretches them up and down.
+
 ::: warning Contours are not exported yet
 [Contours](/explore/controls#contours) are not drawn in exported images: Quick Export PNG and
 PDF, the Figure Editor and its zoom insets show the points only. The Figure Editor preview shows

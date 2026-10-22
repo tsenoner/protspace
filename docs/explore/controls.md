@@ -123,8 +123,9 @@ where it works) and **Take the tour** (the guided tour of the page). On a phone 
 ## View bar
 
 The view bar sits under the app bar and holds what changes the picture: **Projection**,
-**Color by**, **Contours** and **Filter**. When the window is too narrow for all of them, Contours
-and then Filter move into **More**.
+**Color by** and **Contours**. On a tablet it also holds **Filter**; on a desktop, Filter is in
+the sidebar's rail. When the window is too narrow for all of them, Contours and then Filter move
+into **More**.
 
 ### Projection
 
@@ -298,13 +299,14 @@ it still shows contours on a device that supports them.
 ### Filter
 
 **Filter** opens the Filter panel in the sidebar, in place of the legend, where you build a query
-from annotation values. While a filter is applied the button shows how many conditions it has.
-[Filtering](/explore/filter) describes the panel.
+from annotation values. On a desktop it is the rail's Filter button, which carries a dot while a
+filter is applied. On a tablet it is in the view bar, and shows how many conditions are applied.
+On a phone, Filter is in **More**. [Filtering](/explore/filter) describes the panel.
 
 ### More
 
 **More** appears when the window is too narrow for the whole view bar and holds what no longer fits:
-the contour modes, then Filter. A dot on it says that something inside is on (contours, or an
+the contour modes, then (on a tablet) Filter. A dot on it says that something inside is on (contours, or an
 applied filter). On a phone, **More** opens a sheet that also holds Import, Export, Theme,
 Help & shortcuts and Feedback.
 
@@ -326,7 +328,8 @@ The tool strip in the plot's corner picks what a drag on the plot does:
 
 ### Selection bar
 
-While proteins are selected, a bar at the bottom of the plot shows how many and offers:
+While proteins are selected, a bar beside the protein count, at the bottom of the plot, shows how
+many and offers:
 
 - **Show only these** hides every other protein. The plot's status corner then shows a
   **Showing only** chip; its ✕ (**Show all proteins**) brings them back.
