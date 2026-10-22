@@ -2,7 +2,11 @@ import type { Ref } from 'react';
 import { countNoun } from '@protspace/utils';
 import type { SidebarPanel } from '../explore/layout-defaults';
 import { focusFilterTitle, openPanel, updateLayout } from '../explore/layout-state';
-import { eatUnavailableReason, type EatAvailability } from '../explore/workbench-status';
+import {
+  eatUnavailableReason,
+  expandStructure,
+  type EatAvailability,
+} from '../explore/workbench-status';
 
 interface RailProps {
   sidebarOpen: boolean;
@@ -14,6 +18,8 @@ interface RailProps {
   structureDocked: boolean;
   /** The Structure button hid the viewer (layout state, kept across reloads). */
   structureHidden: boolean;
+  /** The docked viewer shows its header row only (a pick from the EAT panel). */
+  structureCollapsed: boolean;
   /** The applied filter's conditions: above 0 the Filter item gets a dot and says the count. */
   filterConditions: number;
   /** Whether the EAT item is enabled, and why not. */
@@ -37,6 +43,7 @@ export function Rail({
   structureProteinId,
   structureDocked,
   structureHidden,
+  structureCollapsed,
   filterConditions,
   eatAvailability,
   eatAdjusted,
@@ -53,13 +60,19 @@ export function Rail({
     // As the view bar's Filter does below desktop: focus moves to the panel's heading.
     if (target === 'filter') focusFilterTitle();
   };
-  // On screen: docked in an open sidebar, or floating over the plot, and not hidden. Structure
-  // hides it (a docked section leaves its room to the legend), or shows it again where it was: a
-  // docked one opens a collapsed sidebar, which loads a waiting protein.
-  const structureVisible = !structureHidden && (!structureDocked || sidebarOpen);
+  // On screen: docked in an open sidebar, or floating over the plot, not hidden and not cut to
+  // its header row. Structure hides it (a docked section leaves its room to the legend), or shows
+  // it again where it was: a header row expands, a docked one opens a collapsed sidebar, which
+  // loads a waiting protein.
+  const structureVisible =
+    !structureHidden && !structureCollapsed && (!structureDocked || sidebarOpen);
   const toggleStructure = () => {
-    if (structureVisible) updateLayout({ structureHidden: true });
-    else if (structureDocked) updateLayout({ structureHidden: false, sidebarOpen: true });
+    if (structureVisible) {
+      updateLayout({ structureHidden: true });
+      return;
+    }
+    if (structureCollapsed) expandStructure();
+    if (structureDocked) updateLayout({ structureHidden: false, sidebarOpen: true });
     else updateLayout({ structureHidden: false });
   };
   return (

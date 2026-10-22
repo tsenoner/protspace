@@ -238,6 +238,13 @@ test('a histogram bar lists its weakest predictions and a row selects the protei
   // A pick from the panel keeps the structure to its header row, and the row in view.
   await expect(workbenchRoot(page)).toHaveAttribute('data-structure-collapsed', '');
   await expect(row).toBeInViewport({ ratio: 1 });
+  // The rail's Structure reads shown only once the viewer is: a header row is not pressed, and
+  // Structure expands it.
+  const structureItem = rail(page).getByRole('button', { name: /^Structure: / });
+  await expect(structureItem).toHaveAttribute('aria-pressed', 'false');
+  await structureItem.click();
+  await expect(workbenchRoot(page)).not.toHaveAttribute('data-structure-collapsed');
+  await expect(structureItem).toHaveAttribute('aria-pressed', 'true');
 
   // Escape inside the panel closes the list before it reaches the selection.
   await bar.focus();

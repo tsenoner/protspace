@@ -176,6 +176,7 @@ export function Workbench() {
           structureProteinId={structureProteinId}
           structureDocked={placement === 'docked'}
           structureHidden={layout.structureHidden}
+          structureCollapsed={collapsed}
           filterConditions={appliedFilterConditions}
           eatAvailability={eatAvailability}
           eatAdjusted={eatAdjusted}
