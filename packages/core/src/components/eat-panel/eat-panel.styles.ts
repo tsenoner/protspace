@@ -506,7 +506,7 @@ export const eatPanelStyles = [
       border-radius: var(--ps-radius-sm);
       background: color-mix(in srgb, var(--ps-warning) 14%, transparent);
       color: var(--ps-warning);
-      font-size: 0.6875rem;
+      font-size: var(--ps-text-xs);
       font-weight: var(--ps-weight-semibold);
       white-space: nowrap;
     }
@@ -735,7 +735,7 @@ export const eatPanelStyles = [
     .eat-card-eyebrow {
       margin: 0;
       color: var(--ps-accent-text);
-      font-size: 0.625rem;
+      font-size: var(--ps-text-xs);
       font-weight: var(--ps-weight-semibold);
       letter-spacing: 0.07em;
       text-transform: uppercase;
