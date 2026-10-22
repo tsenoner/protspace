@@ -371,6 +371,28 @@ describe('ps-menu', () => {
   });
 });
 
+describe('ps-menu under a page CSS reset', () => {
+  it('keeps item and caption insets when the page zeroes padding', async () => {
+    // Tailwind's preflight does this; a document rule outranks the kit's :host rules.
+    const reset = document.createElement('style');
+    reset.textContent = '* { padding: 0; }';
+    document.head.append(reset);
+    try {
+      const { menu } = await setup();
+      const item = menu.querySelector('ps-menu-item')!;
+      const row = getComputedStyle(item.shadowRoot!.querySelector('.row')!);
+      expect(row.paddingLeft).toBe('8px');
+      expect(row.paddingRight).toBe('8px');
+      const label = menu.querySelector('ps-menu-label')!;
+      const caption = getComputedStyle(label.shadowRoot!.querySelector('.caption')!);
+      expect(caption.paddingLeft).toBe('8px');
+      expect(caption.paddingTop).toBe('8px');
+    } finally {
+      reset.remove();
+    }
+  });
+});
+
 describe('ps-menu-group', () => {
   async function grouped(attrs = '', extra = '') {
     document.body.innerHTML = `
@@ -419,7 +441,9 @@ describe('ps-menu-group', () => {
   it('draws its caption like ps-menu-label', async () => {
     const { menu, groups } = await grouped();
     const caption = getComputedStyle(groups[0].shadowRoot!.querySelector('.caption')!);
-    const label = getComputedStyle(menu.querySelector('ps-menu-label')!);
+    const label = getComputedStyle(
+      menu.querySelector('ps-menu-label')!.shadowRoot!.querySelector('.caption')!,
+    );
     for (const prop of [
       'color',
       'fontSize',

@@ -50,11 +50,13 @@ export class PsMenuItem extends LitElement {
   }
 
   render() {
-    return html`<span class="mark"
+    return html`<span class="row"
+      ><span class="mark"
         >${this.type !== 'item' && this.checked ? icon('check', 14) : nothing}</span
       >
       <span class="label"><slot></slot><slot name="description"></slot></span>
-      <slot name="end"></slot>`;
+      <slot name="end"></slot
+    ></span>`;
   }
 }
 
@@ -69,7 +71,7 @@ export class PsMenuLabel extends LitElement {
   }
 
   render() {
-    return html`<slot></slot>`;
+    return html`<span class="caption"><slot></slot></span>`;
   }
 }
 

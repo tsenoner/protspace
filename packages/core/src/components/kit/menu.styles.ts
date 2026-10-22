@@ -75,12 +75,11 @@ export const menuStyles = [
 export const menuItemStyles = [
   kitHost,
   css`
+    /* The insets sit on .row, not the host: a light-DOM host loses its padding to a page reset
+       such as Tailwind's preflight, which outranks :host rules. */
     :host {
       display: flex;
-      align-items: center;
-      gap: var(--ps-space-2);
       min-height: var(--ps-row);
-      padding: 0 var(--ps-space-2);
       border-radius: var(--ps-radius-sm);
       outline: none;
       cursor: default;
@@ -88,6 +87,14 @@ export const menuItemStyles = [
     }
     :host([hidden]) {
       display: none;
+    }
+    .row {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      gap: var(--ps-space-2);
+      min-width: 0;
+      padding: 0 var(--ps-space-2);
     }
     :host(:hover) {
       background: var(--ps-surface-hover);
@@ -156,7 +163,11 @@ const caption = css`
 export const menuLabelStyles = [
   kitHost,
   css`
+    /* The caption is inside the shadow root, so a page reset cannot strip its padding. */
     :host {
+      display: block;
+    }
+    .caption {
       ${caption}
     }
     :host([hidden]) {
