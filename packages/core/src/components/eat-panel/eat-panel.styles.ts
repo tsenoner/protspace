@@ -305,7 +305,7 @@ export const eatPanelStyles = [
       justify-content: space-between;
       font-size: var(--ps-text-xs);
       font-variant-numeric: tabular-nums;
-      color: var(--ps-text-faint);
+      color: var(--ps-text-muted);
     }
 
     .eat-breakdown {

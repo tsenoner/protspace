@@ -569,6 +569,15 @@ describe('protspace-eat-panel', () => {
     });
   });
 
+  it('draws the histogram axis in the muted text colour, not the faint one', async () => {
+    const el = await mount();
+    const axis = root(el).querySelector<HTMLElement>('.eat-axis')!;
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--ps-text-muted)';
+    el.shadowRoot!.append(probe);
+    expect(getComputedStyle(axis).color).toBe(getComputedStyle(probe).color);
+  });
+
   describe('compact (phone)', () => {
     it('folds Drawing and the other annotations into Display options, without the Drawing heading', async () => {
       const el = await mount({ data: fixtureWithOthers() });
