@@ -1,6 +1,6 @@
 import type { ProtspaceScatterplot } from '@protspace/core';
 import { RAIL_WIDTH } from './layout-defaults';
-import { subscribeLayout } from './layout-state';
+import { getLayout, subscribeLayout } from './layout-state';
 import { getLayoutMode, subscribeLayoutMode } from './layout-mode';
 
 /**
@@ -18,13 +18,21 @@ function openPlotWidth(body: HTMLElement | null): number | undefined {
 /**
  * The explore plot always fills its area, each axis stretched (design decision 10). It is at most
  * as wide as beside the open sidebar, so collapsing the desktop sidebar centres it in the freed
- * area instead of stretching it; while the sidebar is open the cap is the plot's own width and
- * changes nothing. The plot and its exports read both from the config.
+ * area instead of stretching it. The plot and its exports read both from the config.
+ *
+ * With the sidebar open and the plot at its open width, the cap would be the plot's own width and
+ * would follow every window resize, a second render behind the plot's own; there is no cap then.
+ * It stays while the plot is still wider (a sidebar sliding open over it), and the plot draws
+ * nothing for a cap move that reaches no edge.
  */
 export function bindPlotFill(plotElement: ProtspaceScatterplot): () => void {
   const body = plotElement.closest<HTMLElement>('[data-workbench="body"]');
   const sync = () => {
-    const fillMaxWidth = openPlotWidth(body);
+    const open = openPlotWidth(body);
+    const fillMaxWidth =
+      open !== undefined && getLayout().sidebarOpen && plotElement.clientWidth <= open
+        ? undefined
+        : open;
     const config = plotElement.config ?? {};
     if (config.fillPlot && config.fillMaxWidth === fillMaxWidth) return;
     plotElement.config = { ...config, fillPlot: true, fillMaxWidth };
