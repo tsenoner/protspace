@@ -499,14 +499,14 @@ describe('protspace-eat-panel', () => {
       expect(row('B').getAttribute('aria-expanded')).toBe('false');
       expect(row('B').querySelector('.eat-label-total')!.textContent).toBe('5');
       expect(row('B').querySelector('.eat-label-share')!.textContent).toBe(
-        `5 predicted (100${PCT}) · typical reliability 40${PCT} (all: 50${PCT})`,
+        `5 predicted (100${PCT})\u00a0· typical reliability 40${PCT} (all: 50${PCT})`,
       );
       expect(row('B').querySelector('.eat-label-tag')!.textContent).toBe('Mostly predicted');
       expect(row('B').getAttribute('aria-label')).toBe(
         `B: 5 proteins, 5 predicted (100${PCT}), typical reliability 40${PCT} (all predictions: 50${PCT}), mostly predicted`,
       );
       expect(row('A').querySelector('.eat-label-share')!.textContent).toBe(
-        `3 predicted (75${PCT}) · typical reliability 90${PCT} (all: 50${PCT})`,
+        `3 predicted (75${PCT})\u00a0· typical reliability 90${PCT} (all: 50${PCT})`,
       );
       expect(row('A').querySelector('.eat-label-tag')).toBeNull();
       const swatch = row('B').querySelector<HTMLElement>('.eat-swatch')!;

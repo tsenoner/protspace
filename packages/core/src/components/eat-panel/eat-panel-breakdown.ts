@@ -195,8 +195,11 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
                 >${noPredictions
                   ? NO_PREDICTIONS
                   : facts.map(
+                      // The dot holds on to the fact before it, so a wrap never leaves it alone.
                       (fact, i) =>
-                        html`${i > 0 ? ' · ' : ''}<span class="eat-label-fact">${fact}</span>`,
+                        html`${i > 0 ? ' ' : ''}<span class="eat-label-fact"
+                            >${fact}${i < facts.length - 1 ? '\u00a0·' : ''}</span
+                          >`,
                     )}</span
               >
             </span>
