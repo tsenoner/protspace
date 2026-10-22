@@ -65,13 +65,21 @@ export function bindSelectionBarPlacement(
   const update = () => {
     if (selectionBar.hidden || !plotArea.isConnected) return reset();
     const plotBox = plotArea.getBoundingClientRect();
-    const count = plotStatus.shadowRoot?.querySelector('.status-count');
-    const countRight = count ? count.getBoundingClientRect().right - plotBox.left : EDGE - GAP;
     selectionBar.removeAttribute('compact');
     const fullWidth = selectionBar.offsetWidth;
     selectionBar.setAttribute('compact', '');
     const compactWidth = selectionBar.offsetWidth;
     plotStatus.style.removeProperty('max-width');
+    // The chips wrap above the count, each on its own row, but they still reach into the bar's
+    // height: the bar clears the widest of the count and the chips, not the count alone.
+    const parts = Array.from(
+      plotStatus.shadowRoot?.querySelectorAll('.status-count, .status-chip') ?? [],
+    );
+    const widest = Math.max(0, ...parts.map((part) => part.getBoundingClientRect().width));
+    const countRight =
+      parts.length > 0
+        ? plotStatus.getBoundingClientRect().left - plotBox.left + widest
+        : EDGE - GAP;
     const place = placeSelectionBar({
       plotWidth: plotArea.clientWidth,
       countRight,

@@ -349,7 +349,7 @@ test.describe('plot tools and selection', () => {
     ).toBe(false);
   });
 
-  test('with the isolation chip and a selection showing, the corner sits above the bar and Tab reaches it first', async ({
+  test('with the isolation chip and a selection showing, the bar sits beside the corner and Tab reaches the corner first', async ({
     page,
   }) => {
     // A narrow plot, where a centred bar reaches under the chip row.
@@ -361,9 +361,10 @@ test.describe('plot tools and selection', () => {
     await selectBySearch(page, ids.slice(0, 1));
     await expect(selectionBar(page)).toBeVisible();
 
+    // The bar moves right of the status corner, which stays where it was (no lift).
     const chip = (await statusChip(page, 'isolation').boundingBox())!;
     const bar = (await selectionBar(page).boundingBox())!;
-    expect(chip.y + chip.height).toBeLessThanOrEqual(bar.y);
+    expect(chip.x + chip.width).toBeLessThanOrEqual(bar.x);
 
     // Tab reads left to right: the chip's ✕ comes before the bar's first action.
     const chipClear = statusChip(page, 'isolation').getByRole('button', {
