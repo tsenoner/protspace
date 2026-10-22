@@ -2,7 +2,6 @@ import { LitElement, html, nothing, type PropertyValues } from 'lit';
 import { property, state, query as litQuery } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
-import type { LogicalOp } from './query-types';
 import { ANY_VALUE } from './query-types';
 import { toInternalValue } from '../legend/config';
 import { resolveAnnotationInternalValues } from './query-evaluate';
@@ -72,8 +71,11 @@ class ProtspaceQueryValuePicker extends LitElement {
 
   @property({ type: String }) annotation: string = '';
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;
-  @property({ type: Object }) matchedIndices: Set<number> = new Set();
-  @property({ type: String }) logicalOp: LogicalOp | undefined = undefined;
+  /**
+   * The proteins the values are counted among; null is the whole dataset. The query builder
+   * works it out from where the card sits (see its `_countBases`).
+   */
+  @property({ attribute: false }) matchedIndices: Set<number> | null = new Set();
   @property({ type: Array }) selectedValues: string[] = [];
   @property({ type: Boolean }) open: boolean = false;
   /** The "+ value" button the popover hangs from. */
@@ -122,12 +124,7 @@ class ProtspaceQueryValuePicker extends LitElement {
   private _unionCache: { key: string; count: number } | null = null;
 
   willUpdate(changed: PropertyValues<this>) {
-    if (
-      changed.has('data') ||
-      changed.has('annotation') ||
-      changed.has('matchedIndices') ||
-      changed.has('logicalOp')
-    ) {
+    if (changed.has('data') || changed.has('annotation') || changed.has('matchedIndices')) {
       this._countCache = null;
       this._entryCache = null;
       this._unionCache = null;
@@ -160,9 +157,8 @@ class ProtspaceQueryValuePicker extends LitElement {
   // ─── Counts ───────────────────────────────────────────────────────────────
 
   /**
-   * Each value's count is the proteins carrying it among the ones this condition picks from: the
-   * whole dataset under "or" (it adds proteins from anywhere), else the proteins the rest of the
-   * query keeps (`matchedIndices`). A multi-label protein counts once toward each distinct value
+   * Each value's count is the proteins carrying it among the ones this condition picks from
+   * (`matchedIndices`, or the whole dataset when null). A multi-label protein counts once toward each distinct value
    * it carries, as query-evaluate matches. `ANY_VALUE` counts the proteins with at least one
    * non-N/A label, as evaluateCondition() resolves it. `size` is how many proteins were walked,
    * so a count over `size` is the value's share and every row's bar has the same base.
@@ -188,7 +184,7 @@ class ProtspaceQueryValuePicker extends LitElement {
       if (hasReal) anyCount++;
     };
 
-    if (this.logicalOp === 'OR') {
+    if (this.matchedIndices === null) {
       for (let i = 0; i < total; i++) countProtein(i);
     } else {
       for (const idx of this.matchedIndices) countProtein(idx);
@@ -208,7 +204,7 @@ class ProtspaceQueryValuePicker extends LitElement {
     const { counts, multiLabel } = this._counts();
     if (selected.includes(ANY_VALUE)) return counts.get(ANY_VALUE) ?? 0;
     if (!multiLabel) return selected.reduce((sum, v) => sum + (counts.get(v) ?? 0), 0);
-    const key = `${this.logicalOp}\u0000${[...selected].sort().join('\u0000')}`;
+    const key = [...selected].sort().join('\u0000');
     if (this._unionCache?.key !== key) {
       this._unionCache = { key, count: this._walkSelection(selected) };
     }
@@ -226,7 +222,7 @@ class ProtspaceQueryValuePicker extends LitElement {
       idx < total &&
       resolveAnnotationInternalValues(idx, this.annotation, data).some((v) => set.has(v));
     let n = 0;
-    if (this.logicalOp === 'OR') {
+    if (this.matchedIndices === null) {
       for (let i = 0; i < total; i++) if (hit(i)) n++;
     } else {
       for (const idx of this.matchedIndices) if (hit(idx)) n++;

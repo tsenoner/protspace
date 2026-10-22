@@ -38,6 +38,34 @@ import { queryBuilderHostStyles, queryBuilderStyles } from './query-builder.styl
 import './query-condition-row';
 
 /**
+ * Each card's count base, by condition id: the proteins its values are counted among, null for
+ * the whole dataset. A card joined with "or" adds proteins from anywhere its list reaches, so it
+ * counts over its list's base; so does the first card of an "or" list. A card joined with "and"
+ * counts inside what the rest of its list keeps. A group passes its own base down to its cards,
+ * worked out by the same rule; the top-level list's base is the whole dataset.
+ */
+function countBases(query: FilterQuery, data: ProtspaceData): Map<string, Set<number> | null> {
+  const bases = new Map<string, Set<number> | null>();
+  const walk = (items: FilterQueryItem[], context: Set<number> | null) => {
+    items.forEach((item, index) => {
+      const orJoined =
+        itemJoiner(item, index) === 'OR' ||
+        (index === 0 && items.length > 1 && itemJoiner(items[1], 1) === 'OR');
+      let base = context;
+      if (!orJoined && hasConfiguredCondition(items.filter((_, i) => i !== index))) {
+        const rest = evaluateQueryExcluding(items, data, item.id);
+        base = context ? new Set([...rest].filter((i) => context.has(i))) : rest;
+      }
+      const card = cardOf(item, index === 0);
+      if (card) bases.set(card.condition.id, base);
+      else walk((item as FilterGroup).conditions, base);
+    });
+  };
+  walk(query, null);
+  return bases;
+}
+
+/**
  * The filter's query builder (design decision 14): conditions and groups, a live count of the
  * proteins the query keeps, and Apply, which says why it is disabled.
  *
@@ -77,7 +105,8 @@ export class ProtspaceQueryBuilder extends LitElement {
   @property({ type: Boolean, reflect: true }) embedded = false;
 
   @state() private _matchedIndices: Set<number> = new Set();
-  @state() private _excludedMatchMap: Map<string, Set<number>> = new Map();
+  /** Each card's count base, by condition id (see `countBases`). */
+  @state() private _excludedMatchMap: Map<string, Set<number> | null> = new Map();
   @state() private _totalCount: number = 0;
   /** A count is pending (the 300 ms debounce): Apply waits, with no reason text. */
   @state() private _counting = true;
@@ -188,17 +217,7 @@ export class ProtspaceQueryBuilder extends LitElement {
       this._matchedIndices = matched;
       this._totalCount = this.data.protein_ids?.length ?? 0;
 
-      // Build per-condition "excluded" matched sets for dynamic value counts
-      const map = new Map<string, Set<number>>();
-      for (const leaf of leafConditions(query)) {
-        map.set(leaf.id, evaluateQueryExcluding(query, this.data, leaf.id));
-      }
-      // The first card of an "or" list adds proteins from anywhere, as the cards after it do:
-      // its values count over the whole dataset, not inside what the other cards match.
-      const first = query.length > 1 ? cardOf(query[0], true) : null;
-      if (first && itemJoiner(query[1], 1) === 'OR') {
-        map.set(first.condition.id, new Set(this.data.protein_ids?.keys() ?? []));
-      }
+      const map = countBases(query, this.data);
       this._excludedMatchMap = map;
       this._counting = false;
     }, 300);
@@ -492,7 +511,9 @@ export class ProtspaceQueryBuilder extends LitElement {
         .edited=${this._edited.has(condition.id)}
         .annotations=${this.annotations}
         .data=${this.data}
-        .matchedIndices=${this._excludedMatchMap.get(condition.id) ?? this._matchedIndices}
+        .matchedIndices=${this._excludedMatchMap.has(condition.id)
+          ? this._excludedMatchMap.get(condition.id)
+          : this._matchedIndices}
         .number=${numbers.get(condition.id) ?? 0}
         @condition-changed=${this._handleConditionChanged}
         @operator-changed=${this._handleOperatorChanged}

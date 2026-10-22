@@ -76,7 +76,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   @property({ type: Object }) condition!: FilterCondition;
   @property({ type: Array }) annotations: string[] = [];
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;
-  @property({ type: Object }) matchedIndices: Set<number> = new Set();
+  /** The proteins this card's values are counted among; null is the whole dataset. */
+  @property({ attribute: false }) matchedIndices: Set<number> | null = new Set();
   /** The condition's number in the builder (1-based, group leaves included); 0 shows none. */
   @property({ type: Number }) number = 0;
   /** Changed since the last Apply: the card carries an accent edge. */
@@ -477,7 +478,6 @@ class ProtspaceQueryConditionRow extends LitElement {
         .annotation=${this.condition.annotation}
         .data=${this.data}
         .matchedIndices=${this.matchedIndices}
-        .logicalOp=${this.condition.logicalOp}
         .selectedValues=${this.condition.values}
         .open=${this._showValuePicker}
         .anchor=${this._valueAddEl ?? null}

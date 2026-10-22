@@ -4,10 +4,9 @@
  * Characterization of the value picker's live per-value counts.
  *
  * The count shown next to each value is how many proteins carry it among the
- * proteins the condition picks from, so its bar can be its share of them:
- *   OR  → the whole dataset (an "or" adds proteins from anywhere)
- *   AND, NOT (and any missing/unknown op) → the matched set, the proteins the
- *         rest of the query keeps; under NOT these are the ones it would drop
+ * proteins the condition picks from, so its bar can be its share of them: the
+ * matched set the query builder hands down (`matchedIndices`), or the whole
+ * dataset when that is null (the builder works out which from the card's place).
  *
  * Counts are multi-label aware: a protein carrying two labels contributes once
  * to each, mirroring resolveAnnotationInternalValues() in query-evaluate.ts.
@@ -20,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { pushLayer, topLayer } from '../kit/layers';
 import { stubPopoverApi } from '../legend/test-support/popover-stub';
 import './query-value-picker';
-import type { FilterQuery, LogicalOp } from './query-types';
+import type { FilterQuery } from './query-types';
 import { ANY_VALUE } from './query-types';
 import { evaluateQuery } from './query-evaluate';
 import type { ProtspaceData } from './types';
@@ -28,8 +27,7 @@ import type { ProtspaceData } from './types';
 interface ValuePickerEl extends HTMLElement {
   annotation: string;
   data: ProtspaceData | undefined;
-  matchedIndices: Set<number>;
-  logicalOp: LogicalOp | undefined;
+  matchedIndices: Set<number> | null;
   selectedValues: string[];
   open: boolean;
   anchor: Element | null;
@@ -61,8 +59,8 @@ const MATCHED = new Set([0, 2, 3, 4]);
 interface MountOptions {
   annotation?: string;
   data?: ProtspaceData | undefined;
-  matchedIndices?: Set<number>;
-  logicalOp?: LogicalOp | undefined;
+  /** null counts over the whole dataset. */
+  matchedIndices?: Set<number> | null;
   selectedValues?: string[];
   open?: boolean;
 }
@@ -72,8 +70,7 @@ async function mount(options: MountOptions = {}): Promise<ValuePickerEl> {
   const el = document.createElement('protspace-query-value-picker') as ValuePickerEl;
   el.annotation = options.annotation ?? 'organism';
   el.data = 'data' in options ? options.data : data;
-  el.matchedIndices = options.matchedIndices ?? MATCHED;
-  el.logicalOp = options.logicalOp;
+  el.matchedIndices = 'matchedIndices' in options ? options.matchedIndices! : MATCHED;
   el.selectedValues = options.selectedValues ?? [];
   el.open = options.open ?? true;
   document.body.appendChild(el);
@@ -166,41 +163,31 @@ describe('query-value-picker', () => {
     });
   });
 
-  describe('count math per logical operator', () => {
-    it('AND counts proteins inside the matched set carrying the value', async () => {
-      const el = await mount({ logicalOp: 'AND' });
+  describe('count base', () => {
+    it('counts proteins inside the matched set carrying the value', async () => {
+      const el = await mount();
       expect(counts(el)).toEqual({ 'Any value': 3, Human: 2, Mouse: 2, Yeast: 0, 'N/A': 1 });
     });
 
-    it('uses the AND arithmetic when no logical operator is set (first condition)', async () => {
-      const el = await mount({ logicalOp: undefined });
-      expect(counts(el)).toEqual({ 'Any value': 3, Human: 2, Mouse: 2, Yeast: 0, 'N/A': 1 });
-    });
-
-    it('NOT counts the matched proteins carrying the value, the ones it would drop', async () => {
-      const el = await mount({ logicalOp: 'NOT' });
-      expect(counts(el)).toEqual({ 'Any value': 3, Human: 2, Mouse: 2, Yeast: 0, 'N/A': 1 });
-    });
-
-    it('OR counts the carriers dataset-wide, never the matched set on top', async () => {
-      const el = await mount({ logicalOp: 'OR' });
+    it('counts the carriers dataset-wide when the base is the whole dataset (null)', async () => {
+      const el = await mount({ matchedIndices: null });
       // Rows for single-label proteins add up to the dataset, not to more than it.
       expect(counts(el)).toEqual({ 'Any value': 4, Human: 3, Mouse: 2, Yeast: 0, 'N/A': 2 });
     });
 
-    it('recomputes counts when the operator changes on the open picker', async () => {
-      const el = await mount({ logicalOp: 'AND' });
+    it('recomputes counts when the base switches to and from the whole dataset', async () => {
+      const el = await mount();
       expect(counts(el).Human).toBe(2);
-      el.logicalOp = 'OR';
+      el.matchedIndices = null;
       await el.updateComplete;
       expect(counts(el).Human).toBe(3);
-      el.logicalOp = 'NOT';
+      el.matchedIndices = MATCHED;
       await el.updateComplete;
       expect(counts(el).Human).toBe(2);
     });
 
     it('recomputes counts when the matched set changes', async () => {
-      const el = await mount({ logicalOp: 'AND' });
+      const el = await mount();
       expect(counts(el).Human).toBe(2);
       el.matchedIndices = new Set([0, 1, 2, 3, 4, 5]);
       await el.updateComplete;
@@ -210,7 +197,7 @@ describe('query-value-picker', () => {
     it('agrees with evaluateQuery for every value under NOT', async () => {
       // A row is the matched proteins that "is <value>" keeps, which NOT drops;
       // this pins the tally to the evaluator so the two cannot drift.
-      const el = await mount({ logicalOp: 'NOT' });
+      const el = await mount();
       const shown = counts(el);
       for (const [label, value] of [
         ['Any value', ANY_VALUE],
@@ -237,14 +224,13 @@ describe('query-value-picker', () => {
   describe('multi-label proteins', () => {
     it('counts a multi-label protein once toward each of its labels', async () => {
       // Only the multi-label protein P3 (Human + Mouse) is matched.
-      const el = await mount({ logicalOp: 'AND', matchedIndices: new Set([3]) });
+      const el = await mount({ matchedIndices: new Set([3]) });
       // ...but only once toward "Any value", which is a per-protein predicate.
       expect(counts(el)).toEqual({ 'Any value': 1, Human: 1, Mouse: 1, Yeast: 0, 'N/A': 0 });
     });
 
     it('de-duplicates repeated label indices resolving to the same value', async () => {
       const el = await mount({
-        logicalOp: 'AND',
         matchedIndices: new Set([0]),
         data: {
           protein_ids: ['P0'],
@@ -255,23 +241,16 @@ describe('query-value-picker', () => {
       });
       expect(counts(el)).toEqual({ 'Any value': 1, Human: 1 });
     });
-
-    it('counts a multi-label protein under NOT toward each label that would drop it', async () => {
-      // Matched = {P3} which carries BOTH Human and Mouse: NOT Human and NOT Mouse both drop it.
-      const el = await mount({ logicalOp: 'NOT', matchedIndices: new Set([3]) });
-      expect(counts(el)).toEqual({ 'Any value': 1, Human: 1, Mouse: 1, Yeast: 0, 'N/A': 0 });
-    });
   });
 
   describe('the N/A entry', () => {
     it('counts both label-less proteins and proteins pointing at a null value', async () => {
-      const el = await mount({ logicalOp: 'AND', matchedIndices: new Set([0, 1, 2, 3, 4, 5]) });
+      const el = await mount({ matchedIndices: new Set([0, 1, 2, 3, 4, 5]) });
       expect(counts(el)['N/A']).toBe(2); // P4 (no labels) + P5 (null value)
     });
 
     it('omits N/A from the list when the annotation declares no null value', async () => {
       const el = await mount({
-        logicalOp: 'AND',
         matchedIndices: new Set([0, 1]),
         data: {
           protein_ids: ['P0', 'P1'],
@@ -401,7 +380,7 @@ describe('query-value-picker', () => {
     });
 
     it('keeps counts unchanged while filtering', async () => {
-      const el = await search(await mount({ logicalOp: 'OR' }), 'mouse');
+      const el = await search(await mount({ matchedIndices: null }), 'mouse');
       expect(counts(el)).toEqual({ Mouse: 2 });
     });
   });
@@ -423,24 +402,15 @@ describe('query-value-picker', () => {
         annotations: { organism: { kind: 'categorical', values: ['Human', null] } },
         annotation_data: { organism: [] },
       };
-      for (const op of ['AND', 'OR', 'NOT'] as LogicalOp[]) {
-        const el = await mount({ data: empty, matchedIndices: new Set(), logicalOp: op });
+      for (const matchedIndices of [new Set<number>(), null]) {
+        const el = await mount({ data: empty, matchedIndices });
         expect(counts(el)).toEqual({ 'Any value': 0, Human: 0, 'N/A': 0 });
       }
     });
 
-    // AND and NOT count among the matched set, so an empty one shows zeros.
-    it.each(['AND', 'NOT'] as LogicalOp[])(
-      'shows zero counts under %s when nothing is matched yet',
-      async (logicalOp) => {
-        const el = await mount({ logicalOp, matchedIndices: new Set() });
-        expect(counts(el)).toEqual({ 'Any value': 0, Human: 0, Mouse: 0, Yeast: 0, 'N/A': 0 });
-      },
-    );
-
-    it('falls back to the full-dataset counts under OR when nothing is matched yet', async () => {
-      const el = await mount({ logicalOp: 'OR', matchedIndices: new Set() });
-      expect(counts(el)).toEqual({ 'Any value': 4, Human: 3, Mouse: 2, Yeast: 0, 'N/A': 2 });
+    it('shows zero counts when nothing is matched yet', async () => {
+      const el = await mount({ matchedIndices: new Set() });
+      expect(counts(el)).toEqual({ 'Any value': 0, Human: 0, Mouse: 0, Yeast: 0, 'N/A': 0 });
     });
 
     it('treats every protein as N/A when the annotation column is absent from annotation_data', async () => {
@@ -449,27 +419,15 @@ describe('query-value-picker', () => {
         annotations: { organism: { kind: 'categorical', values: ['Human', null] } },
         annotation_data: {},
       };
-      const and = await mount({
-        data: noColumn,
-        matchedIndices: new Set([0, 1]),
-        logicalOp: 'AND',
-      });
-      expect(counts(and)).toEqual({ 'Any value': 0, Human: 0, 'N/A': 2 });
+      const some = await mount({ data: noColumn, matchedIndices: new Set([0, 1]) });
+      expect(counts(some)).toEqual({ 'Any value': 0, Human: 0, 'N/A': 2 });
 
-      const or = await mount({ data: noColumn, matchedIndices: new Set([0, 1]), logicalOp: 'OR' });
-      expect(counts(or)).toEqual({ 'Any value': 0, Human: 0, 'N/A': 3 });
-
-      const not = await mount({
-        data: noColumn,
-        matchedIndices: new Set([0, 1]),
-        logicalOp: 'NOT',
-      });
-      expect(counts(not)).toEqual({ 'Any value': 0, Human: 0, 'N/A': 2 });
+      const all = await mount({ data: noColumn, matchedIndices: null });
+      expect(counts(all)).toEqual({ 'Any value': 0, Human: 0, 'N/A': 3 });
     });
 
     it('counts an out-of-range label index as N/A', async () => {
       const el = await mount({
-        logicalOp: 'AND',
         matchedIndices: new Set([0, 1]),
         data: {
           protein_ids: ['P0', 'P1'],
@@ -482,7 +440,6 @@ describe('query-value-picker', () => {
 
     it('supports Int32Array annotation data', async () => {
       const el = await mount({
-        logicalOp: 'AND',
         matchedIndices: new Set([0, 1, 2]),
         data: {
           protein_ids: ['P0', 'P1', 'P2'],
@@ -495,7 +452,7 @@ describe('query-value-picker', () => {
     });
 
     it('ignores matched indices that are out of range for the dataset', async () => {
-      const el = await mount({ logicalOp: 'AND', matchedIndices: new Set([0, 42]) });
+      const el = await mount({ matchedIndices: new Set([0, 42]) });
       // The bogus index is skipped: it is no protein, so it counts toward nothing.
       expect(counts(el)).toEqual({ 'Any value': 1, Human: 1, Mouse: 0, Yeast: 0, 'N/A': 0 });
     });

@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './query-builder';
-import { createCondition } from './query-types';
+import { createCondition, createGroup } from './query-types';
 import type { FilterQuery } from './query-types';
 import type { ProtspaceData } from './types';
 
@@ -346,5 +346,77 @@ describe('query-builder embedded in a host', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('query-builder value count bases', () => {
+  let builder: QueryBuilderInternals;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '';
+    builder = document.createElement('protspace-query-builder') as QueryBuilderInternals;
+    builder.annotations = ['organism'];
+    builder.data = makeData();
+    document.body.appendChild(builder);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Each card's count base, in card order: sorted indices, or null for the whole dataset. */
+  async function bases(query: FilterQuery) {
+    builder.query = query;
+    await builder.updateComplete;
+    vi.advanceTimersByTime(300);
+    await builder.updateComplete;
+    return [...builder.shadowRoot!.querySelectorAll('protspace-query-condition-row')].map((row) => {
+      const set = (row as HTMLElement & { matchedIndices: Set<number> | null }).matchedIndices;
+      return set === null ? null : [...set].sort();
+    });
+  }
+
+  const mouse = (logicalOp?: 'AND' | 'OR') =>
+    createCondition({ annotation: 'organism', values: ['Mouse'], logicalOp });
+
+  it('a lone card counts over the whole dataset', async () => {
+    expect(await bases([human()])).toEqual([null]);
+  });
+
+  it('an "and" card counts inside what the other cards keep', async () => {
+    // Human = P1,P3 (0, 2); Mouse = P2,P4,P5 (1, 3, 4).
+    expect(await bases([human(), mouse('AND')])).toEqual([
+      [1, 3, 4],
+      [0, 2],
+    ]);
+  });
+
+  it('both cards of an "or" list count over the whole dataset', async () => {
+    expect(await bases([human(), mouseOr()])).toEqual([null, null]);
+  });
+
+  it('the first card of an "or" group counts over the whole dataset too', async () => {
+    const group = createGroup({ conditions: [human(), mouseOr()] });
+    expect(await bases([group])).toEqual([null, null]);
+  });
+
+  it('the cards of an "or" group joined with "and" count inside the rest of the query', async () => {
+    const group = createGroup({ logicalOp: 'AND', conditions: [human(), mouseOr()] });
+    expect(await bases([human(), group])).toEqual([
+      [0, 1, 2, 3, 4],
+      [0, 2],
+      [0, 2],
+    ]);
+  });
+
+  it('"is none of" under "or" counts over the whole dataset', async () => {
+    const negated = { ...mouse(), logicalOp: 'NOT' as const };
+    const noneOf = createGroup({
+      id: `${negated.id}:none-of`,
+      logicalOp: 'OR',
+      conditions: [negated],
+    });
+    expect(await bases([human(), noneOf])).toEqual([null, null]);
   });
 });
