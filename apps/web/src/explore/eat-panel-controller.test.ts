@@ -46,6 +46,7 @@ function setup(shown: { value: boolean }) {
     data: EAT_DATA as VisualizationData | null,
     selectedAnnotation: 'ec',
     eatOverlayEnabled: true,
+    eatDim: null as EatReliabilityState | null,
     zoomToProteins: vi.fn(() => true),
   });
   const root = new EventTarget();
@@ -57,6 +58,7 @@ function setup(shown: { value: boolean }) {
     focusProtein: null as number | null,
     active: false,
     reliability: DEFAULT_EAT_RELIABILITY as EatReliabilityState,
+    outcome: 'hide' as 'hide' | 'dim',
     isAtDefaults: true,
     resets: 0,
   });
@@ -192,6 +194,41 @@ describe('createEatPanelController', () => {
     expect(legend.eatReliability).toEqual(reliability);
     expect(panel.context).toBe(filter.mask);
     expect(getWorkbenchStatus().eatAdjusted).toBe(true);
+  });
+
+  it('Dim clears the reliability condition and fades through eatDim; Hide puts the condition back', () => {
+    const { plot, panel, legend, filter, emit } = setup({ value: true });
+    const reliability: EatReliabilityState = { mode: 'atLeast', min: 0.5, max: 1 };
+    emit(true, reliability);
+    const choose = (outcome: 'hide' | 'dim') => {
+      panel.outcome = outcome;
+      panel.dispatchEvent(
+        new CustomEvent('eat-outcome-change', { detail: { outcome, reliability } }),
+      );
+    };
+
+    choose('dim');
+    expect(filter.setEatReliability).toHaveBeenLastCalledWith('ec', DEFAULT_EAT_RELIABILITY);
+    expect(plot.eatDim).toEqual(reliability);
+    expect(legend.eatReliability).toEqual(DEFAULT_EAT_RELIABILITY);
+    expect(getWorkbenchStatus().eatDim).toEqual(reliability);
+
+    // A threshold commit in Dim moves the fade, still without a condition.
+    const tighter: EatReliabilityState = { mode: 'atLeast', min: 0.6, max: 1 };
+    emit(true, tighter);
+    expect(filter.setEatReliability).toHaveBeenLastCalledWith('ec', DEFAULT_EAT_RELIABILITY);
+    expect(plot.eatDim).toEqual(tighter);
+    // The same state again keeps the plot's object: no re-stage.
+    const drawn = plot.eatDim;
+    emit(true, { ...tighter });
+    expect(plot.eatDim).toBe(drawn);
+
+    panel.reliability = reliability;
+    choose('hide');
+    expect(filter.setEatReliability).toHaveBeenLastCalledWith('ec', reliability);
+    expect(plot.eatDim).toBeNull();
+    expect(legend.eatReliability).toEqual(reliability);
+    expect(getWorkbenchStatus().eatDim).toBeNull();
   });
 
   it('refreshes the context and the legend’s note on every data-change', () => {

@@ -110,7 +110,7 @@ function renderHistogram(
 
 /**
  * The reliability section (proposal B §4.4): modes and a % box per active bound, the histogram,
- * the handles on the axis under it, and the readout with its Export IDs trigger. `summary` null is the loading skeleton,
+ * the handles on the axis under it, the Below threshold outcome row, and the readout with its Export IDs trigger. `summary` null is the loading skeleton,
  * inert. With Show off the modes, % boxes and handles stay in the accessibility tree, disabled;
  * the bars and their lists keep working, so the section is only greyed, not aria-disabled.
  */
@@ -118,6 +118,7 @@ export function renderReliability(
   ctrl: EatReliabilityController,
   summary: EatSummary | null,
   exportButton: TemplateResult,
+  outcome: TemplateResult,
   bars: EatBarsView,
 ): TemplateResult {
   const off = !ctrl.overlayEnabled;
@@ -151,7 +152,7 @@ export function renderReliability(
       ${bounds.map((bound) => renderReliabilityRange(ctrl, bound, disabled))}
     </div>
     <div class="eat-axis" aria-hidden="true"><span>0</span><span>50</span><span>100</span></div>
-    ${bars.openBin !== null && summary && summary.predicted > 0 ? bars.list : nothing}
+    ${bars.openBin !== null && summary && summary.predicted > 0 ? bars.list : nothing} ${outcome}
     ${predicted > 0
       ? html`<div class="eat-readout-row">
           <p class="eat-readout">

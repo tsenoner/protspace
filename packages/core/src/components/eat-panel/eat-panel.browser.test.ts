@@ -236,6 +236,56 @@ describe('protspace-eat-panel', () => {
     expect(el.isAtDefaults).toBe(true);
   });
 
+  describe('Below threshold', () => {
+    async function outcome(el: ProtspaceEatPanel) {
+      const control = root(el).querySelector<HTMLElement & { updateComplete: Promise<unknown> }>(
+        '.eat-outcome-row ps-segmented',
+      )!;
+      await control.updateComplete;
+      return [...control.shadowRoot!.querySelectorAll<HTMLElement>('[role="radio"]')];
+    }
+
+    it('offers Hide (filter) and Dim; Dim emits eat-outcome-change and leaves the defaults', async () => {
+      const el = await mount();
+      const options = await outcome(el);
+      expect(options.map((o) => o.textContent?.trim())).toEqual(['Hide (filter)', 'Dim']);
+      expect(el.outcome).toBe('hide');
+      const outcomes: unknown[] = [];
+      el.addEventListener('eat-outcome-change', (event) =>
+        outcomes.push((event as CustomEvent).detail),
+      );
+      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      options[1].click();
+      await el.updateComplete;
+      expect(el.outcome).toBe('dim');
+      expect(outcomes).toEqual([
+        { outcome: 'dim', reliability: { mode: 'atLeast', min: 0.5, max: 1 } },
+      ]);
+      expect(el.isAtDefaults).toBe(false);
+    });
+
+    it('a weak drill-down row says Dimmed in Dim; reset() and a new dataset go back to Hide', async () => {
+      const el = await mount();
+      el.setReliabilityState({ mode: 'atLeast', min: 0.99, max: 1 });
+      (await outcome(el))[1].click();
+      await el.updateComplete;
+      bars(el)
+        .find((bar) => !bar.hasAttribute('data-empty'))!
+        .click();
+      await el.updateComplete;
+      expect(text(el, '.eat-drill-hidden')).toBe('Dimmed by the threshold');
+
+      el.reset();
+      await el.updateComplete;
+      expect(el.outcome).toBe('hide');
+      expect(el.isAtDefaults).toBe(true);
+
+      (await outcome(el))[1].click();
+      el.resetForNewDataset();
+      expect(el.outcome).toBe('hide');
+    });
+  });
+
   describe('Drawing', () => {
     function listenDrawing(el: ProtspaceEatPanel) {
       const details: { trace: boolean; linesPerSource: number }[] = [];

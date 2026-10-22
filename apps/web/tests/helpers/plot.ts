@@ -17,7 +17,7 @@ interface PlotAutomation extends HTMLElement {
     annotations?: Record<string, { values: Array<string | null> }>;
     annotation_data?: Record<string, AnnotationData>;
     /** Per annotation, per protein: the transferred (EAT) cell and the protein it came from. */
-    annotation_predicted?: Record<string, Array<{ source: string } | null>>;
+    annotation_predicted?: Record<string, Array<{ source: string; confidence: number } | null>>;
   } | null;
   selectedAnnotation?: string;
   /** The interactive point within `minRadiusPx` of a point in the plot's own coordinates. */
@@ -25,6 +25,39 @@ interface PlotAutomation extends HTMLElement {
   getProteinClientPosition(proteinId: string): Point | null;
   getDuplicateStacks(): Array<{ key: string; x: number; y: number; count: number }>;
   dataToClient(x: number, y: number): Point | null;
+}
+
+/**
+ * A prediction of `annotation` with a reliability below `below`, standing at least `clearancePx`
+ * clear of every other protein so a hover there finds it alone. Throws when there is none.
+ */
+export async function weakPrediction(
+  page: Page,
+  annotation: string,
+  below: number,
+  clearancePx = 4,
+): Promise<string> {
+  const id = await page.locator('#myPlot').evaluate(
+    (element, { key, limit, clearance }) => {
+      const plot = element as PlotAutomation;
+      const ids = plot.data?.protein_ids;
+      const cells = plot.data?.annotation_predicted?.[key];
+      if (!ids || !cells) return null;
+      const positions = ids.map((proteinId) => plot.getProteinClientPosition(proteinId));
+      const index = cells.findIndex((cell, i) => {
+        const here = positions[i];
+        if (!cell || cell.confidence >= limit || !here) return false;
+        return positions.every(
+          (other, j) =>
+            j === i || !other || Math.hypot(other.x - here.x, other.y - here.y) > clearance,
+        );
+      });
+      return index < 0 ? null : ids[index];
+    },
+    { key: annotation, limit: below, clearance: clearancePx },
+  );
+  if (!id) throw new Error(`No "${annotation}" prediction below ${below} stands clear`);
+  return id;
 }
 
 /**

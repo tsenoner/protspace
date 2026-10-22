@@ -551,6 +551,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     openLegend: () => openPanel('legend'),
     showAllCategories: () => legendElement.showAllCategories(),
     resetIsolation: () => selectionController.resetIsolation(),
+    openEat: () => openPanel('eat'),
+    resetEat: () => eatPanel.reset(),
   });
   lifecycle.addCleanup(() => statusController.dispose());
   // Clear and Show only these hide the bar they were pressed in. Show only these hands focus to

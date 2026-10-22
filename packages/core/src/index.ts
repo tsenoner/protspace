@@ -29,6 +29,7 @@ export {
 export {
   conditionsForReliability,
   reliabilityFromConditions,
+  reliabilityLabel,
   sameConditions,
 } from './components/query-builder/eat-reliability';
 // The EAT panel: the Show switch and the reliability filter of the transferred annotations.

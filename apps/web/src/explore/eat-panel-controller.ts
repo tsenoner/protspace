@@ -10,8 +10,10 @@ import {
   hasEatPredictions,
   hasEatPredictionsForAnnotation,
   isSameReliability,
+  type EatReliabilityState,
   type VisualizationData,
 } from '@protspace/utils';
+import { reliabilityLabel } from '@protspace/core';
 import type { notify as appNotify } from '../lib/notify';
 import type { FilterController } from './filter-controller';
 import { getExportFailureNotification, getExportSuccessNotification } from './notifications';
@@ -68,7 +70,7 @@ interface EatPanelController {
  * the rail, the phone tab and the restore, and whether it is off its defaults (the rail dot).
  *
  * The panel's `eat-overlay-change` reaches the plot (Show) and the filter (the one reliability
- * condition); the legend's EAT note follows the panel's reliability filter. A locked Filter row's ✕
+ * condition), or in Dim (`eat-outcome-change`) the plot's `eatDim` and no condition; the legend's EAT note follows the panel's reliability filter. A locked Filter row's ✕
  * (`eat-reliability-reset`) resets the panel, or, for a base the panel does not show, that base's
  * condition alone. The breakdown's swatches follow the legend's colours, and the panel's
  * `eat-color-by` switches Color by through `pickAnnotation`. A drill-down list's
@@ -107,6 +109,7 @@ export function createEatPanelController({
     | 'focusProtein'
     | 'active'
     | 'reliability'
+    | 'outcome'
     | 'isAtDefaults'
     | 'resetForNewDataset'
     | 'reset'
@@ -118,6 +121,7 @@ export function createEatPanelController({
     | 'data'
     | 'selectedAnnotation'
     | 'eatOverlayEnabled'
+    | 'eatDim'
     | 'zoomToProteins'
     | 'addEventListener'
     | 'removeEventListener'
@@ -168,15 +172,24 @@ export function createEatPanelController({
 
   /**
    * The panel's reliability, wherever it came from (its own controls, the Filter panel's Apply,
-   * a reset), reaches the legend's note and the rail dot.
+   * a reset), reaches the legend's note and the rail dot. In Dim it filters nothing: it reaches
+   * the plot as `eatDim` and the status corner's chip instead, and the legend says no filter.
    */
   const syncReliability = () => {
     const { reliability } = eatPanel;
+    const dims = eatPanel.outcome === 'dim';
+    const filtered = dims ? DEFAULT_EAT_RELIABILITY : reliability;
     const shown = legendElement.eatReliability;
-    if (!shown || !isSameReliability(shown, reliability))
-      legendElement.eatReliability = reliability;
+    if (!shown || !isSameReliability(shown, filtered)) legendElement.eatReliability = filtered;
+    const dim: EatReliabilityState | null =
+      dims && reliabilityLabel(reliability) ? reliability : null;
+    const drawn = plotElement.eatDim;
+    // By value: a new object of the same state would re-stage every point for nothing.
+    if (dim === null ? drawn !== null : !drawn || !isSameReliability(drawn, dim)) {
+      plotElement.eatDim = dim;
+    }
     syncContext();
-    setWorkbenchStatus({ eatAdjusted: !eatPanel.isAtDefaults });
+    setWorkbenchStatus({ eatAdjusted: !eatPanel.isAtDefaults, eatDim: plotElement.eatDim });
   };
 
   const syncData = () => {
@@ -260,9 +273,23 @@ export function createEatPanelController({
   const onOverlayChange = (event: Event) => {
     const { enabled, reliability } = (event as CustomEvent<EatOverlayChangeDetail>).detail;
     if (plotElement.eatOverlayEnabled !== enabled) plotElement.eatOverlayEnabled = enabled;
+    applyReliability(reliability);
+  };
+
+  /** Hide writes the condition; Dim clears it and fades instead (`syncReliability`). */
+  const applyReliability = (reliability: EatReliabilityState) => {
     // The full state (mode and both bounds) reaches the query, which a lower bound alone cannot.
-    filterController.setEatReliability(plotElement.selectedAnnotation, reliability);
+    filterController.setEatReliability(
+      plotElement.selectedAnnotation,
+      eatPanel.outcome === 'dim' ? DEFAULT_EAT_RELIABILITY : reliability,
+    );
     syncReliability();
+  };
+
+  const onOutcomeChange = (event: Event) => {
+    applyReliability(
+      (event as CustomEvent<{ reliability: EatReliabilityState }>).detail.reliability,
+    );
   };
 
   const onReliabilityReset = (event: Event) => {
@@ -276,6 +303,7 @@ export function createEatPanelController({
   root.addEventListener('annotation-change', syncData);
   root.addEventListener('eat-reliability-reset', onReliabilityReset);
   eatPanel.addEventListener('eat-overlay-change', onOverlayChange);
+  eatPanel.addEventListener('eat-outcome-change', onOutcomeChange);
   eatPanel.addEventListener('eat-color-by', onColorBy);
   eatPanel.addEventListener('eat-select-proteins', onSelectProteins);
   eatPanel.addEventListener('eat-go-to-source', onGoToSource);
@@ -303,6 +331,7 @@ export function createEatPanelController({
       root.removeEventListener('annotation-change', syncData);
       root.removeEventListener('eat-reliability-reset', onReliabilityReset);
       eatPanel.removeEventListener('eat-overlay-change', onOverlayChange);
+      eatPanel.removeEventListener('eat-outcome-change', onOutcomeChange);
       eatPanel.removeEventListener('eat-color-by', onColorBy);
       eatPanel.removeEventListener('eat-select-proteins', onSelectProteins);
       eatPanel.removeEventListener('eat-go-to-source', onGoToSource);

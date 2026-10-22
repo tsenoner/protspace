@@ -1,4 +1,4 @@
-import { DENSITY_DEFAULT, type DensityLayerMode } from '@protspace/utils';
+import { DENSITY_DEFAULT, type DensityLayerMode, type EatReliabilityState } from '@protspace/utils';
 
 /**
  * Transient facts the explore runtime publishes for the React shell, which never reads them off the
@@ -46,6 +46,8 @@ export interface WorkbenchStatus {
   eatAdjusted: boolean;
   /** The Color by annotation's display name, for the EAT panel's header (`EAT · EC number`). */
   eatAnnotationLabel: string;
+  /** EAT Dim's reliability filter while it fades predictions (the plot's chip); else null. */
+  eatDim: EatReliabilityState | null;
 }
 
 const EMPTY: WorkbenchStatus = {
@@ -60,6 +62,7 @@ const EMPTY: WorkbenchStatus = {
   eatAvailability: { kind: 'dataset' },
   eatAdjusted: false,
   eatAnnotationLabel: '',
+  eatDim: null,
 };
 
 let status: WorkbenchStatus = EMPTY;

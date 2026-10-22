@@ -16,6 +16,10 @@ interface StatusControllerOptions {
   showAllCategories(): void;
   /** The isolation chip's ✕. */
   resetIsolation(): void;
+  /** The EAT dim chip's body: show the EAT panel. */
+  openEat(): void;
+  /** The EAT dim chip's ✕: the EAT panel back to its defaults. */
+  resetEat(): void;
 }
 
 /**
@@ -33,6 +37,8 @@ export function createStatusController({
   openLegend,
   showAllCategories,
   resetIsolation,
+  openEat,
+  resetEat,
 }: StatusControllerOptions): { dispose(): void } {
   const onViewStatus = (event: Event) => {
     const { count, zoomedIn } = (event as CustomEvent<{ count: number; zoomedIn: boolean }>).detail;
@@ -52,16 +58,20 @@ export function createStatusController({
     plotStatus.isolation = null;
   };
   const syncFilter = () => {
-    plotStatus.filterConditions = getStatus().appliedFilterConditions;
+    const status = getStatus();
+    plotStatus.filterConditions = status.appliedFilterConditions;
+    plotStatus.eatDim = status.eatDim;
   };
   const onOpen = (event: Event) => {
     const { kind } = (event as CustomEvent<{ kind: StatusChipKind }>).detail;
     if (kind === 'filter') openFilter();
+    else if (kind === 'eat-dim') openEat();
     else if (kind === 'hidden') openLegend();
   };
   const onClear = (event: Event) => {
     const { kind } = (event as CustomEvent<{ kind: StatusChipKind }>).detail;
     if (kind === 'filter') clearFilter();
+    else if (kind === 'eat-dim') resetEat();
     else if (kind === 'isolation') resetIsolation();
     else showAllCategories();
   };

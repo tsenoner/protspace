@@ -13,7 +13,7 @@ async function mount(
   props: Partial<
     Pick<
       ProtspacePlotStatus,
-      'count' | 'zoomedIn' | 'filterConditions' | 'isolation' | 'hiddenCategories'
+      'count' | 'zoomedIn' | 'filterConditions' | 'isolation' | 'hiddenCategories' | 'eatDim'
     >
   > = {},
   parent: HTMLElement = document.body,
@@ -92,6 +92,33 @@ describe('protspace-plot-status', () => {
       'Showing only 1,204 proteins · 2 steps',
       '4 categories hidden',
     ]);
+  });
+
+  it('the EAT dim chip names what it fades, sits after the filter, opens and clears', async () => {
+    const el = await mount({
+      filterConditions: 1,
+      hiddenCategories: 1,
+      eatDim: { mode: 'atLeast', min: 0.5, max: 1 },
+    });
+    expect(chips(el).map((chip) => chip.dataset.kind)).toEqual(['filter', 'eat-dim', 'hidden']);
+    expect(chipText(chips(el)[1])).toBe('EAT dimmed < 50\u202f%');
+    el.eatDim = { mode: 'between', min: 0.4, max: 0.6 };
+    await el.updateComplete;
+    expect(chipText(chips(el)[1])).toBe('EAT dimmed outside 40–60\u202f%');
+    const events: string[] = [];
+    el.addEventListener('status-open', (e) =>
+      events.push(`open ${(e as CustomEvent).detail.kind}`),
+    );
+    el.addEventListener('status-clear', (e) =>
+      events.push(`clear ${(e as CustomEvent).detail.kind}`),
+    );
+    openButton(el, 'eat-dim')!.click();
+    inner(clearButton(el, 'eat-dim')).click();
+    expect(events).toEqual(['open eat-dim', 'clear eat-dim']);
+    // A dim that fades nothing shows no chip.
+    el.eatDim = { mode: 'atLeast', min: 0, max: 1 };
+    await el.updateComplete;
+    expect(chips(el).map((chip) => chip.dataset.kind)).toEqual(['filter', 'hidden']);
   });
 
   it('chips render in the order filter, isolation, hidden', async () => {

@@ -14,6 +14,7 @@ function setup() {
     filterConditions: 0,
     isolation: null as { steps: number; size: number } | null,
     hiddenCategories: 0,
+    eatDim: null as unknown,
   });
   let current = { appliedFilterConditions: 0 } as WorkbenchStatus;
   const listeners = new Set<() => void>();
@@ -23,6 +24,8 @@ function setup() {
     openLegend: vi.fn(),
     showAllCategories: vi.fn(),
     resetIsolation: vi.fn(),
+    openEat: vi.fn(),
+    resetEat: vi.fn(),
   };
   const controller = createStatusController({
     plotElement: plot as unknown as ProtspaceScatterplot,
@@ -74,6 +77,20 @@ describe('status controller', () => {
     expect(m.status.filterConditions).toBe(0);
     m.publish({ appliedFilterConditions: 2 });
     expect(m.status.filterConditions).toBe(2);
+  });
+
+  it('the EAT dim chip follows the status; its body opens the EAT panel, its ✕ resets it', () => {
+    const m = setup();
+    const dim = { mode: 'atLeast', min: 0.5, max: 1 } as const;
+    m.publish({ eatDim: dim });
+    expect(m.status.eatDim).toBe(dim);
+    fire(m.status, 'status-open', { kind: 'eat-dim' });
+    fire(m.status, 'status-clear', { kind: 'eat-dim' });
+    expect(m.openEat).toHaveBeenCalledOnce();
+    expect(m.resetEat).toHaveBeenCalledOnce();
+    expect(m.showAllCategories).not.toHaveBeenCalled();
+    m.publish({ eatDim: null });
+    expect(m.status.eatDim).toBeNull();
   });
 
   it('each chip event calls its callback', () => {

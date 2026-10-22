@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
+  clearStatusChip,
   filterButton,
   filterPanel,
   getSelectedProteinIds,
@@ -20,7 +21,7 @@ import {
   openEatPanel,
 } from './helpers/eat';
 import { panelTab } from './helpers/mobile';
-import { proteinScreenPosition, provenancePair } from './helpers/plot';
+import { proteinScreenPosition, provenancePair, weakPrediction } from './helpers/plot';
 import { seedTourSeen } from './helpers/tour-storage-state';
 import { rail, readLayout, seedLayout, workbenchRoot } from './helpers/workbench';
 
@@ -287,4 +288,33 @@ test('with Trace source on click off, a click only selects; Go to source still d
   await card.getByRole('button', { name: 'Go to source' }).click();
   await expect.poll(() => getSelectedProteinIds(page)).toEqual([source]);
   await expect(connectors).toHaveCount(1);
+});
+
+test('Dim fades weak predictions without filtering', async ({ page }) => {
+  await loadPhosphataseEat(page);
+  await selectAnnotation(page, 'ec');
+  await openEatPanel(page);
+  await waitForExploreInteractionReady(page);
+  await eatThresholdBox(page).fill('50');
+  await expect(statusChip(page, 'filter')).toContainText('Filtered');
+
+  await eatPanel(page).getByRole('radio', { name: 'Dim' }).click();
+  await expect(statusChip(page, 'filter')).toBeHidden();
+  await expect(statusChip(page, 'eat-dim')).toContainText('EAT dimmed < 50\u202f%');
+  await expect(legendEatNote(page)).not.toContainText('Filtered');
+
+  // A below-threshold ring is still on the plot and hoverable.
+  const weak = await weakPrediction(page, 'ec', 0.5);
+  const at = await proteinScreenPosition(page, weak);
+  await page.mouse.move(at.x, at.y);
+  await expect(page.locator('#myPlot').locator('protspace-protein-tooltip')).toContainText(weak);
+
+  // Hide puts the filter back; the dim chip's ✕ resets the panel to Hide at 0.
+  await eatPanel(page).getByRole('radio', { name: 'Hide (filter)' }).click();
+  await expect(statusChip(page, 'filter')).toContainText('Filtered');
+  await expect(statusChip(page, 'eat-dim')).toBeHidden();
+  await eatPanel(page).getByRole('radio', { name: 'Dim' }).click();
+  await clearStatusChip(page, 'eat-dim');
+  await expect(eatThresholdBox(page)).toHaveValue('0');
+  await expect(eatPanel(page).getByRole('radio', { name: 'Hide (filter)' })).toBeChecked();
 });

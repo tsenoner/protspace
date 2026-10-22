@@ -1,13 +1,14 @@
 import { LitElement, html, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
-import { countNoun } from '@protspace/utils';
+import { countNoun, normalizeReliability, type EatReliabilityState } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/button';
 import { icon, type IconName } from '../kit/icon';
+import { formatPercent, reliabilityLabel } from '../query-builder/eat-reliability';
 import { plotStatusStyles } from './plot-status.styles';
 
 /** The ways a view is narrowed, one chip each. */
-export type StatusChipKind = 'filter' | 'isolation' | 'hidden';
+export type StatusChipKind = 'filter' | 'eat-dim' | 'isolation' | 'hidden';
 
 interface Chip {
   kind: StatusChipKind;
@@ -16,12 +17,22 @@ interface Chip {
   clearLabel: string;
 }
 
-const KIND_ORDER: readonly StatusChipKind[] = ['filter', 'isolation', 'hidden'];
+const KIND_ORDER: readonly StatusChipKind[] = ['filter', 'eat-dim', 'isolation', 'hidden'];
+
+/** What EAT Dim fades, `< 50 %`, `> 40 %` or `outside 40–60 %`; null when it fades nothing. */
+function dimmedRange(state: EatReliabilityState): string | null {
+  const kept = reliabilityLabel(state);
+  if (!kept) return null;
+  const { mode, min, max } = normalizeReliability(state);
+  if (mode === 'atLeast') return `< ${formatPercent(min)}`;
+  if (mode === 'atMost') return `> ${formatPercent(max)}`;
+  return `outside ${kept}`;
+}
 
 /**
  * The plot's bottom-left corner (design decision 13): the visible protein count, and a chip for
- * each way the view is narrowed, each with an ✕. The filter and hidden chips open the place to
- * change them; the isolation chip has nothing to open (no panel edits an isolation). It reports
+ * each way the view is narrowed or faded, each with an ✕. The filter, EAT dim and hidden chips
+ * open the place to change them; the isolation chip has nothing to open (no panel edits an isolation). It reports
  * presses; the host acts and sets the properties.
  *
  * @fires status-open - `{ kind: StatusChipKind }`
@@ -38,6 +49,8 @@ export class ProtspacePlotStatus extends LitElement {
   @property({ attribute: false }) filterConditions = 0;
   /** The isolation's steps and the proteins it keeps; null hides the chip. */
   @property({ attribute: false }) isolation: { steps: number; size: number } | null = null;
+  /** EAT Dim's reliability filter; null (or one that fades nothing) hides the chip. */
+  @property({ attribute: false }) eatDim: EatReliabilityState | null = null;
   /** Category values the legend hides; 0 hides the chip. */
   @property({ attribute: false }) hiddenCategories = 0;
 
@@ -117,6 +130,15 @@ export class ProtspacePlotStatus extends LitElement {
         icon: 'filter',
         text: `Filtered · ${countNoun(this.filterConditions, 'condition', 'conditions')}`,
         clearLabel: 'Remove filter',
+      });
+    }
+    const dimmed = this.eatDim && dimmedRange(this.eatDim);
+    if (dimmed) {
+      chips.push({
+        kind: 'eat-dim',
+        icon: 'waypoints',
+        text: `EAT dimmed ${dimmed}`,
+        clearLabel: 'Stop dimming EAT predictions',
       });
     }
     if (this.isolation) {

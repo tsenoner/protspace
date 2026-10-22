@@ -468,10 +468,11 @@ export async function animationsFinished(locator: Locator): Promise<void> {
   });
 }
 
-type StatusChipKind = 'filter' | 'isolation' | 'hidden';
+type StatusChipKind = 'filter' | 'eat-dim' | 'isolation' | 'hidden';
 
 const STATUS_CLEAR_NAMES: Readonly<Record<StatusChipKind, string>> = {
   filter: 'Remove filter',
+  'eat-dim': 'Stop dimming EAT predictions',
   isolation: 'Show all proteins',
   hidden: 'Show hidden categories',
 };

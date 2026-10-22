@@ -12,8 +12,10 @@ import {
 } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/menu';
+import '../kit/segmented';
 import '../kit/select';
 import '../kit/switch';
+import type { PsSegmented, SegmentedOption } from '../kit/segmented';
 import type { PsSelect } from '../kit/select';
 import type { PsSwitch } from '../kit/switch';
 import { formatPercent } from '../query-builder/eat-reliability';
@@ -57,6 +59,14 @@ type LinesPerSource = 10 | 20 | 50;
 const DEFAULT_LINES_PER_SOURCE: LinesPerSource = 20;
 const LINES_OPTIONS = [10, 20, 50].map((n) => ({ value: String(n), label: String(n) }));
 
+/** What happens to the predictions the reliability filter drops: filtered out, or faded. */
+type EatOutcome = 'hide' | 'dim';
+const OUTCOME_OPTIONS: SegmentedOption[] = [
+  { value: 'hide', label: 'Hide (filter)' },
+  { value: 'dim', label: 'Dim' },
+];
+const OUTCOME_OPTIONS_OFF = OUTCOME_OPTIONS.map((option) => ({ ...option, disabled: true }));
+
 /** `40 %` of `total`, for a segment's tooltip. */
 const share = (count: number, total: number) => formatPercent(total > 0 ? count / total : 0);
 
@@ -81,6 +91,8 @@ const share = (count: number, total: number) => formatPercent(total > 0 ? count 
  *   moved one back to its default.
  * @fires eat-export-ids - `{ proteinIds, fileName }`: Export IDs, the kept or the below-threshold
  *   predictions in the context (or behind a drill-down's bar or label), in reliability order.
+ * @fires eat-outcome-change - `{ outcome, reliability }`: Below threshold switched between Hide
+ *   (the filter) and Dim (fade, no filter). A threshold move in either rides `eat-overlay-change`.
  */
 @customElement('protspace-eat-panel')
 export class ProtspaceEatPanel extends LitElement {
@@ -104,6 +116,7 @@ export class ProtspaceEatPanel extends LitElement {
    */
   @property({ type: Boolean, reflect: true }) compact = false;
 
+  @state() private _outcome: EatOutcome = 'hide';
   @state() private _trace = true;
   @state() private _linesPerSource: LinesPerSource = DEFAULT_LINES_PER_SOURCE;
   @state() private _labelSort: EatLabelSort = 'most-predicted';
@@ -146,26 +159,33 @@ export class ProtspaceEatPanel extends LitElement {
     return this._eat.overlayEnabled;
   }
 
+  /** Below threshold: `hide` filters the weak predictions out, `dim` fades them. */
+  get outcome(): EatOutcome {
+    return this._outcome;
+  }
+
   /** The lower bound, which is what a bundle stores. */
   get reliabilityThreshold(): number {
     return this._eat.reliability.min;
   }
 
   /**
-   * Show on, the filter keeping everything and the Drawing switches at their defaults: Reset has
-   * nothing to do, the rail shows no dot.
+   * Show on, the filter keeping everything, Hide, and the Drawing switches at their defaults:
+   * Reset has nothing to do, the rail shows no dot.
    */
   get isAtDefaults(): boolean {
     return (
       this._eat.overlayEnabled &&
+      this._outcome === 'hide' &&
       isSameReliability(this._eat.reliability, DEFAULTS) &&
       this._trace &&
       this._linesPerSource === DEFAULT_LINES_PER_SOURCE
     );
   }
 
-  /** Bundle restore: Show plus "Keep ≥ threshold". Emits once. */
+  /** Bundle restore: Show plus "Keep ≥ threshold", as a filter (Hide). Emits once. */
   applyEatSettings(enabled: boolean, threshold: number): void {
+    this._outcome = 'hide';
     this._eat.applySettings(enabled, threshold);
   }
 
@@ -175,10 +195,11 @@ export class ProtspaceEatPanel extends LitElement {
   }
 
   /**
-   * Back to the defaults (Show on, keep everything, trace on, 20 lines). Emits
+   * Back to the defaults (Show on, keep everything, Hide, trace on, 20 lines). Emits
    * `eat-overlay-change` once, and `eat-drawing-change` when a Drawing switch moved.
    */
   reset(): void {
+    this._outcome = 'hide';
     if (!this._trace || this._linesPerSource !== DEFAULT_LINES_PER_SOURCE) {
       this._setDrawing(true, DEFAULT_LINES_PER_SOURCE);
     }
@@ -191,6 +212,7 @@ export class ProtspaceEatPanel extends LitElement {
    * how the user likes lines drawn, not a property of the data, so they stay.
    */
   resetForNewDataset(): void {
+    this._outcome = 'hide';
     this._eat.mirror(DEFAULTS);
     this._eat.mirrorOverlayEnabled(true);
   }
@@ -269,19 +291,25 @@ export class ProtspaceEatPanel extends LitElement {
         >Show predictions</ps-switch
       >
       ${this._renderOverview(summary)}
-      ${renderReliability(this._eat, summary, this._renderExportButton(null), {
-        openBin: drill && 'bin' in drill ? drill.bin : null,
-        focusBin: this._focusBin,
-        list: drill && 'bin' in drill ? this._renderDrill() : nothing,
-        onBar: (bin) => {
-          this._focusBin = bin;
-          this._toggleDrill({ bin });
+      ${renderReliability(
+        this._eat,
+        summary,
+        this._renderExportButton(null),
+        this._renderOutcome(),
+        {
+          openBin: drill && 'bin' in drill ? drill.bin : null,
+          focusBin: this._focusBin,
+          list: drill && 'bin' in drill ? this._renderDrill() : nothing,
+          onBar: (bin) => {
+            this._focusBin = bin;
+            this._toggleDrill({ bin });
+          },
+          onFocusBin: (bin) => {
+            this._focusBin = bin;
+            void this.updateComplete.then(() => this._bar(bin)?.focus());
+          },
         },
-        onFocusBin: (bin) => {
-          this._focusBin = bin;
-          void this.updateComplete.then(() => this._bar(bin)?.focus());
-        },
-      })}
+      )}
       ${this.compact ? nothing : this._renderDrawing()}
       ${this._index && this.data && this.focusProtein !== null
         ? renderCard({
@@ -311,6 +339,29 @@ export class ProtspaceEatPanel extends LitElement {
         : nothing}
       ${this.compact ? this._renderDisplayOptions() : this._renderOthers()}
       ${this._renderExportMenu(summary)}`;
+  }
+
+  /** `Below threshold: Hide (filter) | Dim` (proposal B §4.4). */
+  private _renderOutcome(): TemplateResult {
+    const off = !this._eat.overlayEnabled;
+    return html`<div class="eat-outcome-row">
+      <span aria-hidden="true">Below threshold</span>
+      <ps-segmented
+        label="Below threshold"
+        .options=${off ? OUTCOME_OPTIONS_OFF : OUTCOME_OPTIONS}
+        .value=${this._outcome}
+        @change=${(event: Event) =>
+          this._setOutcome((event.currentTarget as PsSegmented).value as EatOutcome)}
+      ></ps-segmented>
+    </div>`;
+  }
+
+  private _setOutcome(outcome: EatOutcome): void {
+    if (outcome === this._outcome) return;
+    this._outcome = outcome;
+    // A discrete decision supersedes a pending drag commit; the event carries the current state.
+    this._eat.cancelCommit();
+    this._emit('eat-outcome-change', { outcome, reliability: this._eat.reliability });
   }
 
   private _renderOthers(): TemplateResult | typeof nothing {
@@ -490,8 +541,8 @@ export class ProtspaceEatPanel extends LitElement {
 
   /**
    * The open list: its weakest 5 predictions in the context, weakest first, each a button that
-   * selects the protein; then `Select all N kept` and `5 of 41`. In Hide mode, a row below the
-   * threshold says so, and stays clickable.
+   * selects the protein; then `Select all N kept` and `5 of 41`. A row below the threshold says
+   * it is hidden (Hide) or dimmed (Dim), and stays clickable.
    */
   private _renderDrill(): TemplateResult | typeof nothing {
     const index = this._index;
@@ -519,6 +570,7 @@ export class ProtspaceEatPanel extends LitElement {
       const id = data.protein_ids[index.order[k]];
       const reliability = formatPercent(confidence);
       const hidden = hides && !isKept(state, confidence);
+      const why = this._outcome === 'dim' ? 'Dimmed by the threshold' : 'Hidden by the threshold';
       const labelText = labels.join(', ');
       const color = swatchColor(this.labelColors, labels[0] ?? '');
       return html`<li>
@@ -526,7 +578,7 @@ export class ProtspaceEatPanel extends LitElement {
           type="button"
           class="eat-drill-row"
           data-protein=${id}
-          aria-label=${`${id}, ${reliability}, ${labelText}${hidden ? ', hidden by the threshold' : ''}`}
+          aria-label=${`${id}, ${reliability}, ${labelText}${hidden ? `, ${why.toLowerCase()}` : ''}`}
           @click=${() => this._selectProteins([id], true)}
         >
           <span
@@ -537,7 +589,7 @@ export class ProtspaceEatPanel extends LitElement {
           <span class="eat-drill-id">${id}</span>
           <span class="eat-drill-reliability">${reliability}</span>
           <span class="eat-drill-label" title=${labelText}>${labelText}</span>
-          ${hidden ? html`<span class="eat-drill-hidden">Hidden by the threshold</span>` : nothing}
+          ${hidden ? html`<span class="eat-drill-hidden">${why}</span>` : nothing}
         </button>
       </li>`;
     });

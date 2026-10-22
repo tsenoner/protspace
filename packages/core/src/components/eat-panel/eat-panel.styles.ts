@@ -109,8 +109,10 @@ export const eatPanelStyles = [
       gap: var(--ps-space-1-5);
     }
 
-    .eat-lines-row {
+    .eat-lines-row,
+    .eat-outcome-row {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
       gap: var(--ps-space-2);
