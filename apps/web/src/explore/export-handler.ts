@@ -30,8 +30,8 @@ interface ExportHandlerOptions {
   /** Proteins the loaded file holds that the dataset, and so a bundle export, leaves out. */
   getUnplacedProteinCount(): number;
   legendElement: ProtspaceLegend;
-  /** The EAT panel, whose reliability threshold a bundle stores. */
-  eatPanel: Pick<ProtspaceEatPanel, 'reliabilityThreshold'>;
+  /** The EAT panel, whose reliability filter (Hide) a bundle stores. */
+  eatPanel: Pick<ProtspaceEatPanel, 'reliabilityThreshold' | 'outcome'>;
   plotElement: ProtspaceScatterplot;
   notify: Pick<typeof appNotify, 'success' | 'error'>;
 }
@@ -173,8 +173,9 @@ export function createExportHandler(options: ExportHandlerOptions): void {
             exportOptions: {},
             publishState: loadPublishState() ?? undefined,
             eatOverlayEnabled: plotElement.eatOverlayEnabled,
-            // The EAT panel owns the reliability filter; a bundle stores its lower bound.
-            eatConfidenceThreshold: eatPanel.reliabilityThreshold,
+            // The EAT panel owns the reliability filter; a bundle stores its lower bound. Dim
+            // filters nothing, and a restore applies the threshold as Hide, so Dim stores none.
+            eatConfidenceThreshold: eatPanel.outcome === 'hide' ? eatPanel.reliabilityThreshold : 0,
             // Only a picked size: the live one may be seeded from the current annotation, and as
             // a top-level size it would override every other one.
             shapeSize: legendElement.pickedShapeSize,

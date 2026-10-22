@@ -33,7 +33,7 @@ import { createExportHandler } from './export-handler';
 
 type Listener = (event: Event) => unknown;
 
-function setup(options: { unplaced?: number } = {}) {
+function setup(options: { unplaced?: number; outcome?: 'hide' | 'dim' } = {}) {
   const listeners = new Map<string, Listener>();
   const notify = { success: vi.fn(), error: vi.fn() };
   const plotElement = {
@@ -50,7 +50,7 @@ function setup(options: { unplaced?: number } = {}) {
     getSelectedProteins: () => [],
     getUnplacedProteinCount: () => options.unplaced ?? 0,
     legendElement: legendElement as never,
-    eatPanel: { reliabilityThreshold: 0.5 },
+    eatPanel: { reliabilityThreshold: 0.5, outcome: options.outcome ?? 'hide' },
     plotElement: plotElement as never,
     notify,
   });
@@ -124,6 +124,14 @@ describe('createExportHandler', () => {
     expect(options.includeSettings).toBe(true);
     expect(options.settings.publishState).toEqual({ preset: 'nature' });
     expect(options.settings.eatConfidenceThreshold).toBe(0.5);
+  });
+
+  it('a bundle saved in Dim stores no reliability filter', async () => {
+    const { exportAs } = setup({ outcome: 'dim' });
+    await exportAs({ type: 'parquet', includeLegendSettings: true });
+
+    const [, , options] = bundle.exportParquetBundle.mock.calls[0];
+    expect(options.settings.eatConfidenceThreshold).toBe(0);
   });
 
   it('a null file name toasts the failure', async () => {

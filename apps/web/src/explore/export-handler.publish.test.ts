@@ -49,7 +49,7 @@ async function openEditor(plotElement: unknown) {
     getSelectedProteins: () => [],
     getUnplacedProteinCount: () => 0,
     legendElement: {} as never,
-    eatPanel: { reliabilityThreshold: 0 },
+    eatPanel: { reliabilityThreshold: 0, outcome: 'hide' },
     plotElement: plotElement as never,
     notify: notify as never,
   });
