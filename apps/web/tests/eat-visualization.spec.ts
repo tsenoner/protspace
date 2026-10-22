@@ -302,7 +302,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     name: 'EAT reliability filter lower bound',
   });
   const thresholdPercent = eatThresholdBox(page);
-  // The overview's count line: curated, predicted (kept) and no-value proteins in view.
+  // The overview's key: curated, predicted and no-value proteins in view.
   const counts = panel.locator('.eat-counts');
   // The plot's filter channel, which the Filter button's badge reflects.
   const plotFiltersActive = () =>
@@ -355,7 +355,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(counts).toContainText('213 predicted (hidden)');
   await expect(threshold).toBeDisabled();
   await eatToggle.click();
-  await expect(counts).toContainText('213 predicted (213 kept)');
+  await expect(counts).toHaveText('535 curated 213 predicted 84 with no value');
 
   const colorBy = annotationSelect(page);
   await colorByTrigger(page).click();
@@ -373,7 +373,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(threshold).toBeVisible();
 
   // 832 proteins: 535 curated with an EC number, 213 predicted, 84 with neither.
-  await expect(counts).toHaveText('535 curated · 213 predicted (213 kept) · 84 none');
+  await expect(counts).toHaveText('535 curated 213 predicted 84 with no value');
 
   const noAnnotationExample = await page.evaluate(() => {
     const plotElement = document.querySelector('protspace-scatterplot') as unknown as
@@ -405,7 +405,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await searchInput(page).press('Enter');
   await isolateSelection(page);
   // The panel counts what the filter keeps, not the isolation (EAT plan, Decision 9).
-  await expect(counts).toHaveText('535 curated · 213 predicted (213 kept) · 84 none');
+  await expect(counts).toHaveText('535 curated 213 predicted 84 with no value');
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -458,7 +458,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(isolatedTooltip).toContainText('A0JMF6');
   await expect(isolatedTooltip).not.toContainText('Predicted (transferred)');
   await resetIsolation(page);
-  await expect(counts).toHaveText('535 curated · 213 predicted (213 kept) · 84 none');
+  await expect(counts).toHaveText('535 curated 213 predicted 84 with no value');
 
   await expect.poll(predictedVisibleCount).toBe(213);
 

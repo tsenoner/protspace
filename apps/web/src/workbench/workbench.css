@@ -342,12 +342,14 @@
   min-height: 0;
 }
 
-/* The EAT panel scrolls inside the column. The padding is here: the page's reset beats :host. */
+/* The EAT panel scrolls inside the column. The padding is here: the page's reset beats :host.
+   The selected-protein strip docks at the bottom of this scroll area, out to its edges. */
 .wb-eat-body {
+  --eat-dock-inset: var(--ps-space-3);
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: var(--ps-space-2) var(--ps-space-3) var(--ps-space-3);
+  padding: var(--ps-space-2) var(--eat-dock-inset) var(--eat-dock-inset);
 }
 
 /* One header row, as Filter's: the heading with its annotation and ⓘ, then Reset and Close at the

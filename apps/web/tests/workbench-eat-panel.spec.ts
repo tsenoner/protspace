@@ -133,13 +133,17 @@ test('the phone EAT tab shows the histogram and opens a drill-down by tap', asyn
   const histogram = eatPanel(page).getByRole('group', { name: 'Predictions by reliability' });
   await expect(histogram).toBeVisible();
   expect((await histogram.boundingBox())!.height).toBe(56);
-  // Drawing folds into Display options on a phone.
+  // Drawing folds into Display options.
   await expect(eatPanel(page).getByText('Display options', { exact: true })).toBeVisible();
-  await expect(eatPanel(page).getByRole('switch', { name: 'Trace source on click' })).toBeHidden();
+  await expect(
+    eatPanel(page).getByRole('switch', {
+      name: 'Draw a line to the source when I click a protein',
+    }),
+  ).toBeHidden();
 
   const bar = histogram.getByRole('button', { name: /: [1-9][\d,]* predictions?$/ }).last();
   await bar.click();
-  const list = eatPanel(page).getByRole('region', { name: /^Weakest in / });
+  const list = eatPanel(page).getByRole('region', { name: /^\d+ least reliable in / });
   await expect(list).toBeVisible();
   await expect(list.getByRole('button', { name: 'Export IDs' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
@@ -222,9 +226,9 @@ test('a histogram bar lists its weakest predictions and a row selects the protei
   const bar = histogram.getByRole('button', { name: /: [1-9][\d,]* predictions?$/ }).first();
   await bar.click();
   await expect(bar).toHaveAttribute('aria-expanded', 'true');
-  const list = eatPanel(page).getByRole('region', { name: /^Weakest in / });
+  const list = eatPanel(page).getByRole('region', { name: /^\d+ least reliable in / });
   await expect(list).toBeVisible();
-  await expect(list.getByRole('button', { name: /^Select all [\d,]+ kept$/ })).toBeVisible();
+  await expect(list.getByRole('button', { name: /^Select all [\d,]+ in range$/ })).toBeVisible();
 
   const row = list.getByRole('listitem').first().getByRole('button');
   const proteinId = (await row.getAttribute('aria-label'))!.split(',')[0];
@@ -251,7 +255,7 @@ test('the selected-protein card goes to the source and draws its lines', async (
   await page.mouse.click(at.x, at.y);
   await expect.poll(() => getSelectedProteinIds(page)).toEqual([target]);
   const card = eatPanel(page).getByRole('region', { name: 'Selected protein' });
-  await expect(card).toContainText(`Copied from ${source}`);
+  await expect(card).toContainText(`from ${source}`);
   await expect(connectors).toHaveCount(1);
   // Escape clears the click's line and keeps the selection, so the next line is Go to source's.
   await page.keyboard.press('Escape');
@@ -269,16 +273,17 @@ test('the selected-protein card goes to the source and draws its lines', async (
   // Go to source draws the pair and fits both; the card now shows the source.
   await expect(connectors).toHaveCount(1);
   await expect.poll(transform).not.toEqual(before);
-  await expect(card).toContainText(`${source} · curated`);
+  await expect(card.locator('.eat-card-title')).toContainText(source);
+  await expect(card).toContainText('Curated');
 
-  await card.getByRole('button', { name: /^lent its label to [\d,]+ proteins$/ }).click();
+  await card
+    .getByRole('button', { name: new RegExp(`^${source} lent its label to [\\d,]+ proteins$`) })
+    .click();
   await expect.poll(() => connectors.count()).toBeGreaterThan(1);
   expect(await getSelectedProteinIds(page)).toEqual([source]);
 });
 
-test('with Trace source on click off, a click only selects; Go to source still draws', async ({
-  page,
-}) => {
+test('with source lines off, a click only selects; Go to source still draws', async ({ page }) => {
   await loadPhosphataseEat(page);
   await selectAnnotation(page, 'ec');
   await openEatPanel(page);
@@ -286,13 +291,17 @@ test('with Trace source on click off, a click only selects; Go to source still d
   const { source, target } = await provenancePair(page, 'ec');
   const connectors = page.locator('#myPlot').locator('line.eat-provenance-connector');
 
-  const trace = eatPanel(page).getByRole('switch', { name: 'Trace source on click' });
+  // The drawing settings sit in the closed Display options.
+  await eatPanel(page).getByText('Display options', { exact: true }).click();
+  const trace = eatPanel(page).getByRole('switch', {
+    name: 'Draw a line to the source when I click a protein',
+  });
   await expect(trace).toBeChecked();
   await trace.click();
   await expect(trace).not.toBeChecked();
-  await expect(eatPanel(page).getByRole('combobox', { name: 'Lines per source' })).toHaveValue(
-    '20',
-  );
+  await expect(
+    eatPanel(page).getByRole('combobox', { name: 'Most lines from one source' }),
+  ).toHaveValue('20');
 
   const at = await proteinScreenPosition(page, target);
   await page.mouse.click(at.x, at.y);
@@ -305,7 +314,7 @@ test('with Trace source on click off, a click only selects; Go to source still d
   await expect(connectors).toHaveCount(1);
 });
 
-test('Dim fades weak predictions without filtering', async ({ page }) => {
+test('Fade fades weak predictions without filtering', async ({ page }) => {
   await loadPhosphataseEat(page);
   await selectAnnotation(page, 'ec');
   await openEatPanel(page);
@@ -313,9 +322,9 @@ test('Dim fades weak predictions without filtering', async ({ page }) => {
   await eatThresholdBox(page).fill('50');
   await expect(statusChip(page, 'filter')).toContainText('Filtered');
 
-  await eatPanel(page).getByRole('radio', { name: 'Dim' }).click();
+  await eatPanel(page).getByRole('radio', { name: 'Fade' }).click();
   await expect(statusChip(page, 'filter')).toBeHidden();
-  await expect(statusChip(page, 'eat-dim')).toContainText('EAT dimmed < 50\u202f%');
+  await expect(statusChip(page, 'eat-dim')).toContainText('EAT faded < 50\u202f%');
   await expect(legendEatNote(page)).not.toContainText('Filtered');
 
   // A below-threshold ring is still on the plot and hoverable.
@@ -324,12 +333,12 @@ test('Dim fades weak predictions without filtering', async ({ page }) => {
   await page.mouse.move(at.x, at.y);
   await expect(page.locator('#myPlot').locator('protspace-protein-tooltip')).toContainText(weak);
 
-  // Hide puts the filter back; the dim chip's ✕ resets the panel to Hide at 0.
-  await eatPanel(page).getByRole('radio', { name: 'Hide (filter)' }).click();
+  // Hide puts the filter back; the fade chip's ✕ resets the panel to Hide at 0.
+  await eatPanel(page).getByRole('radio', { name: 'Hide' }).click();
   await expect(statusChip(page, 'filter')).toContainText('Filtered');
   await expect(statusChip(page, 'eat-dim')).toBeHidden();
-  await eatPanel(page).getByRole('radio', { name: 'Dim' }).click();
+  await eatPanel(page).getByRole('radio', { name: 'Fade' }).click();
   await clearStatusChip(page, 'eat-dim');
   await expect(eatThresholdBox(page)).toHaveValue('0');
-  await expect(eatPanel(page).getByRole('radio', { name: 'Hide (filter)' })).toBeChecked();
+  await expect(eatPanel(page).getByRole('radio', { name: 'Hide' })).toBeChecked();
 });
