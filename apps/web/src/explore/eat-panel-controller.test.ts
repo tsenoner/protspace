@@ -59,6 +59,7 @@ function setup(shown: { value: boolean }) {
     active: false,
     reliability: DEFAULT_EAT_RELIABILITY as EatReliabilityState,
     outcome: 'hide' as 'hide' | 'dim',
+    overlayEnabled: true,
     isAtDefaults: true,
     resets: 0,
   });
@@ -105,6 +106,7 @@ function setup(shown: { value: boolean }) {
   /** The panel's own controls moved: its state changes, then it emits. */
   const emit = (enabled: boolean, reliability: EatReliabilityState) => {
     panel.reliability = reliability;
+    panel.overlayEnabled = enabled;
     panel.isAtDefaults = false;
     panel.dispatchEvent(
       new CustomEvent('eat-overlay-change', {
@@ -222,6 +224,12 @@ describe('createEatPanelController', () => {
     const drawn = plot.eatDim;
     emit(true, { ...tighter });
     expect(plot.eatDim).toBe(drawn);
+    // Show off fades nothing, so the chip goes too; Show on brings both back.
+    emit(false, tighter);
+    expect(plot.eatDim).toBeNull();
+    expect(getWorkbenchStatus().eatDim).toBeNull();
+    emit(true, tighter);
+    expect(plot.eatDim).toEqual(tighter);
 
     panel.reliability = reliability;
     choose('hide');
@@ -354,6 +362,24 @@ describe('createEatPanelController', () => {
     plot.dispatchEvent(new Event('data-change'));
     expect(panel.focusProtein).toBe(0);
     controller.setSelection([]);
+    expect(panel.focusProtein).toBeNull();
+  });
+
+  it('looks the card’s protein up only while the panel shows a dataset with predictions', () => {
+    const shown = { value: false };
+    const { plot, panel, controller, layoutChanged } = setup(shown);
+    controller.setSelection(['P2']);
+    expect(panel.focusProtein).toBeNull();
+    shown.value = true;
+    layoutChanged();
+    expect(panel.focusProtein).toBe(1);
+    shown.value = false;
+    layoutChanged();
+    expect(panel.focusProtein).toBeNull();
+
+    shown.value = true;
+    plot.data = { ...TEST_DATA, protein_ids: ['P1', 'P2'] };
+    plot.dispatchEvent(new Event('data-change'));
     expect(panel.focusProtein).toBeNull();
   });
 

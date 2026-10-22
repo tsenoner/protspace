@@ -42,18 +42,6 @@ function sameColors(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, strin
   return true;
 }
 
-/** Protein id → index, per dataset, built on the first single selection. */
-const proteinIndexes = new WeakMap<VisualizationData, ReadonlyMap<string, number>>();
-
-function proteinIndexOf(data: VisualizationData, proteinId: string): number | null {
-  let byId = proteinIndexes.get(data);
-  if (!byId) {
-    byId = new Map(data.protein_ids.map((id, index) => [id, index]));
-    proteinIndexes.set(data, byId);
-  }
-  return byId.get(proteinId) ?? null;
-}
-
 interface EatPanelController {
   /** The selection changed: the card follows a single selected protein. */
   setSelection(proteinIds: readonly string[]): void;
@@ -110,6 +98,7 @@ export function createEatPanelController({
     | 'active'
     | 'reliability'
     | 'outcome'
+    | 'overlayEnabled'
     | 'isAtDefaults'
     | 'resetForNewDataset'
     | 'reset'
@@ -147,10 +136,18 @@ export function createEatPanelController({
 }): EatPanelController {
   let selection: readonly string[] = [];
 
-  /** The card's protein: the single selected one, by index in the current data. */
+  /**
+   * The card's protein: the single selected one, by index in the current data, while the panel is
+   * on screen with predictions to show. A hidden panel looks nothing up, and gets the current one
+   * when it turns active.
+   */
   const syncFocus = () => {
     const data = plotElement.data;
-    const focus = data && selection.length === 1 ? proteinIndexOf(data, selection[0]) : null;
+    let focus: number | null = null;
+    if (data && selection.length === 1 && eatPanel.active && hasEatPredictions(data)) {
+      const index = data.protein_ids.indexOf(selection[0]);
+      focus = index === -1 ? null : index;
+    }
     if (eatPanel.focusProtein !== focus) eatPanel.focusProtein = focus;
   };
 
@@ -167,6 +164,7 @@ export function createEatPanelController({
   const syncActive = () => {
     const shown = isPanelShown();
     if (eatPanel.active !== shown) eatPanel.active = shown;
+    syncFocus();
     syncContext();
   };
 
@@ -181,8 +179,9 @@ export function createEatPanelController({
     const filtered = dims ? DEFAULT_EAT_RELIABILITY : reliability;
     const shown = legendElement.eatReliability;
     if (!shown || !isSameReliability(shown, filtered)) legendElement.eatReliability = filtered;
+    // Without Show nothing fades (the plot's dim mask needs the overlay), so no chip says it does.
     const dim: EatReliabilityState | null =
-      dims && reliabilityLabel(reliability) ? reliability : null;
+      dims && eatPanel.overlayEnabled && reliabilityLabel(reliability) ? reliability : null;
     const drawn = plotElement.eatDim;
     // By value: a new object of the same state would re-stage every point for nothing.
     if (dim === null ? drawn !== null : !drawn || !isSameReliability(drawn, dim)) {
@@ -197,7 +196,6 @@ export function createEatPanelController({
     const annotation = plotElement.selectedAnnotation;
     if (eatPanel.data !== data) eatPanel.data = data;
     if (eatPanel.annotation !== annotation) eatPanel.annotation = annotation;
-    syncFocus();
     setWorkbenchStatus({
       eatAvailability: eatAvailabilityFor(data, annotation),
       eatAnnotationLabel: annotation
