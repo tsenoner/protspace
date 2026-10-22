@@ -160,6 +160,11 @@ const scatterplotStylesCore = css`
     vector-effect: non-scaling-stroke;
   }
 
+  /* The endpoint the user went to (Go to source): a wider, heavier ring, where the eye lands. */
+  .eat-provenance-endpoint.is-focus {
+    stroke-width: 3.5px;
+  }
+
   .connector-status {
     position: absolute;
     top: var(--ps-space-2);

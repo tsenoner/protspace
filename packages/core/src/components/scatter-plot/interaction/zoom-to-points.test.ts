@@ -84,4 +84,21 @@ describe('zoomTransformFor', () => {
       ),
     ).toEqual(zoomTransformFor([[5, 5]], VIEW));
   });
+
+  it('insets fit the box inside what the chrome leaves, and centre it there', () => {
+    const insets = { top: 0, right: 0, bottom: 100, left: 60 };
+    const t = zoomTransformFor(
+      [
+        [0, 0],
+        [100, 100],
+      ],
+      { ...VIEW, insets },
+    )!;
+    const [x0, y0] = [t.x, t.y];
+    const [x1, y1] = [t.x + 100 * t.k, t.y + 100 * t.k];
+    expect(x0).toBeGreaterThanOrEqual(insets.left + VIEW.margin - 1e-9);
+    expect(y1).toBeLessThanOrEqual(VIEW.height - insets.bottom - VIEW.margin + 1e-9);
+    expect((x0 + x1) / 2).toBeCloseTo((insets.left + VIEW.width) / 2);
+    expect((y0 + y1) / 2).toBeCloseTo((VIEW.height - insets.bottom) / 2);
+  });
 });

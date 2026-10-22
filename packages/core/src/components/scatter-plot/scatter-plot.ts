@@ -1895,9 +1895,10 @@ export class ProtspaceScatterplot extends LitElement {
    * Pans and zooms, untweened, to frame the plotted, visible proteins among `ids`: one lands at
    * the plot centre at 8× or more, several are fitted inside a 40 px margin. Returns false and
    * leaves the view alone when none of them is plotted and visible (unknown, filtered out,
-   * isolated away or hidden by the legend).
+   * isolated away or hidden by the legend). `insets` keeps the framing clear of chrome over the
+   * plot's edges, such as the workbench's tool strip and selection bar.
    */
-  zoomToProteins(ids: readonly string[]): boolean {
+  zoomToProteins(ids: readonly string[], options: { insets?: TouchTooltipInsets } = {}): boolean {
     const scales = this._scales;
     const plotData = this._plotData;
     if (!scales || !this._interaction || plotData.length === 0 || ids.length === 0) return false;
@@ -1940,7 +1941,15 @@ export class ProtspaceScatterplot extends LitElement {
         [minX, minY],
         [maxX, maxY],
       ],
-      { width, height, margin: 40, currentK: this._transform.k, extent: zoomExtent, singleK: 8 },
+      {
+        width,
+        height,
+        margin: 40,
+        currentK: this._transform.k,
+        extent: zoomExtent,
+        singleK: 8,
+        insets: options.insets,
+      },
     );
     if (!t) return false;
     this._interaction.setTransform(d3.zoomIdentity.translate(t.x, t.y).scale(t.k));
