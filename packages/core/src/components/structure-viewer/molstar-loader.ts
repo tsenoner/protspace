@@ -28,6 +28,8 @@ export interface MolstarViewer {
   /** Paints the canvas behind the structure (a `0xRRGGBB` number); a no-op without a canvas. */
   /** False when Mol* has no canvas to paint, so nothing was applied. */
   setBackground: (color: number) => boolean;
+  /** Returns the camera to the view the structure loaded with; a double-click does it too. */
+  resetCamera: () => void;
   dispose: () => void;
 }
 
@@ -129,7 +131,11 @@ interface MolstarPlugin {
     };
   };
   /** The 3D canvas. Absent when WebGL failed to start, and in the e2e stub. */
-  canvas3d?: { setProps(props: { renderer: { backgroundColor: number } }): void };
+  canvas3d?: {
+    setProps(props: { renderer: { backgroundColor: number } }): void;
+    requestCameraReset(options?: { snapshot?: unknown; durationMs?: number }): void;
+    camera?: { getSnapshot(): unknown };
+  };
 }
 
 interface RawMolstarViewer {
@@ -448,6 +454,24 @@ export async function createMolstarViewer(
   // Theme updates are serialized so the most recently requested mode is applied last
   let colorThemeQueue: Promise<void> = Promise.resolve();
 
+  // Mol*'s own reset keeps the camera's turn, so Reset returns to the camera as it was at the
+  // first press on the model: the view the structure loaded with. Mol* binds no double-click,
+  // and its viewport buttons are hidden, so a double-click on the model resets.
+  let loadedView: unknown;
+  const resetCamera = () => {
+    plugin.canvas3d?.requestCameraReset(
+      loadedView === undefined ? undefined : { snapshot: loadedView, durationMs: 250 },
+    );
+  };
+  container.addEventListener(
+    'pointerdown',
+    () => {
+      loadedView ??= plugin.canvas3d?.camera?.getSnapshot();
+    },
+    { capture: true },
+  );
+  container.addEventListener('dblclick', resetCamera, { capture: true });
+
   return {
     loadStructureFromUrl: (...args) => viewer.loadStructureFromUrl(...args),
     setColorTheme: (mode) => {
@@ -460,6 +484,7 @@ export async function createMolstarViewer(
       plugin.canvas3d.setProps({ renderer: { backgroundColor: color } });
       return true;
     },
+    resetCamera,
     dispose: () => viewer.dispose(),
   };
 }

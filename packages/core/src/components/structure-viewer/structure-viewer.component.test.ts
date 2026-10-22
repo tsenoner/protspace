@@ -142,12 +142,14 @@ describe('protspace-structure-viewer Mol* background', () => {
   // What --ps-surface resolves to on the viewer: jsdom resolves no token, so the test chooses it.
   let surface = '#ffffff';
   const setProps = vi.fn();
+  const requestCameraReset = vi.fn();
   const realGetComputedStyle = window.getComputedStyle.bind(window);
   const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
   beforeEach(() => {
     surface = '#ffffff';
     setProps.mockReset();
+    requestCameraReset.mockReset();
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       queueMicrotask(() => callback(0));
       return 1;
@@ -174,7 +176,7 @@ describe('protspace-structure-viewer Mol* background', () => {
           dispose: vi.fn(),
           plugin: {
             representation: { structure: { themes: { colorThemeRegistry: { add: vi.fn() } } } },
-            canvas3d: { setProps },
+            canvas3d: { setProps, requestCameraReset },
           },
         })),
       },
@@ -204,6 +206,15 @@ describe('protspace-structure-viewer Mol* background', () => {
   it('the background is applied once the viewer is created', async () => {
     await mountLoaded();
     expect(setProps).toHaveBeenCalledWith({ renderer: { backgroundColor: 0xffffff } });
+  });
+
+  it('a double-click on the model resets the camera', async () => {
+    const viewer = await mountLoaded();
+    const mount = viewer.shadowRoot!.querySelector<HTMLElement>('.molstar-mount')!;
+    // A press inside Mol*'s canvas bubbles up to its mount.
+    const canvas = mount.appendChild(document.createElement('canvas'));
+    canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(requestCameraReset).toHaveBeenCalledOnce();
   });
 
   it('the canvas stays hidden until its background is set', async () => {

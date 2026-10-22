@@ -51,7 +51,10 @@ export async function dragDivider(page: Page, dy: number): Promise<void> {
 const MOLSTAR_STUB = `window.molstar = { Viewer: { create: async () => ({
   plugin: {
     representation: { structure: { themes: { colorThemeRegistry: { add() {} } } } },
-    canvas3d: { setProps(p) { window.__molstarBackground = p.renderer.backgroundColor; } },
+    canvas3d: {
+      setProps(p) { window.__molstarBackground = p.renderer.backgroundColor; },
+      requestCameraReset() {},
+    },
   },
   loadStructureFromUrl: async () => {},
   dispose() {},

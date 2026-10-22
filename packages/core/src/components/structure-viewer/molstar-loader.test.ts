@@ -317,6 +317,37 @@ describe('Mol* color theme adapter', () => {
     expect(setProps).toHaveBeenCalledWith({ renderer: { backgroundColor: 0x0f172a } });
   });
 
+  it('resetCamera asks canvas3d for a camera reset, and does nothing without one', async () => {
+    const { rawViewer } = installRawViewer(vi.fn(applyThemeUpdate));
+    const viewer = await createMolstarViewer(document.createElement('div'), domains);
+    expect(() => viewer.resetCamera()).not.toThrow();
+    const requestCameraReset = vi.fn();
+    Object.assign(rawViewer.plugin, { canvas3d: { setProps: vi.fn(), requestCameraReset } });
+    viewer.resetCamera();
+    expect(requestCameraReset).toHaveBeenCalledWith(undefined);
+  });
+
+  it('a double-click returns the camera to where it was at the first press on the model', async () => {
+    const { rawViewer } = installRawViewer(vi.fn(applyThemeUpdate));
+    const requestCameraReset = vi.fn();
+    let view = { position: [0, 0, 50] };
+    const loaded = view;
+    Object.assign(rawViewer.plugin, {
+      canvas3d: { setProps: vi.fn(), requestCameraReset, camera: { getSnapshot: () => view } },
+    });
+    const container = document.createElement('div');
+    await createMolstarViewer(container, domains);
+    const canvas = container.appendChild(document.createElement('canvas'));
+
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    view = { position: [10, 0, 40] }; // the drag turned it
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    expect(requestCameraReset).toHaveBeenCalledOnce();
+    expect(requestCameraReset).toHaveBeenCalledWith({ snapshot: loaded, durationMs: 250 });
+  });
+
   it('setBackground without canvas3d does nothing and says so', async () => {
     // A failed WebGL start leaves Mol* without a canvas, as does the e2e stub before this task.
     installRawViewer(vi.fn(applyThemeUpdate));
