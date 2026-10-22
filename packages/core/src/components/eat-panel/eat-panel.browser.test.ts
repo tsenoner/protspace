@@ -117,6 +117,19 @@ function fixtureWithOthers(): VisualizationData {
 const labelNames = (el: ProtspaceEatPanel) =>
   [...root(el).querySelectorAll<HTMLElement>('.eat-label-row')].map((row) => row.dataset.label);
 
+/** Opens the label Sort menu from its button and picks `sort`, as a user does. */
+async function sortLabels(el: ProtspaceEatPanel, sort: string): Promise<void> {
+  root(el).querySelector<HTMLElement>('.eat-breakdown .eat-sort')!.click();
+  await el.updateComplete;
+  const menu = root(el).querySelector<HTMLElement & { open: boolean }>(
+    'ps-menu[label="Sort labels"]',
+  )!;
+  expect(menu.open).toBe(true);
+  menu.querySelector<HTMLElement>(`ps-menu-item[value="${sort}"]`)!.click();
+  await el.updateComplete;
+  expect(menu.open).toBe(false);
+}
+
 function listenColorBy(el: ProtspaceEatPanel): string[] {
   const picked: string[] = [];
   el.addEventListener('eat-color-by', (event) =>
@@ -451,16 +464,11 @@ describe('protspace-eat-panel', () => {
     it('sorts by most predicted, least reliable and name', async () => {
       const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
       expect(labelNames(el)).toEqual(['B', 'A', 'C', 'D']);
-      const select = root(el).querySelector<HTMLElement & { value: string }>(
-        '.eat-breakdown ps-select',
-      )!;
       for (const [sort, order] of [
         ['least-reliable', ['C', 'B', 'A', 'D']],
         ['name', ['A', 'B', 'C', 'D']],
       ] as const) {
-        select.value = sort;
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        await el.updateComplete;
+        await sortLabels(el, sort);
         expect(labelNames(el)).toEqual(order);
       }
     });
@@ -764,18 +772,11 @@ describe('protspace-eat-panel', () => {
       labelRow(el, 'Z').click();
       await el.updateComplete;
       expect(drills(el)).toHaveLength(1);
-      const select = root(el).querySelector<HTMLElement & { value: string }>(
-        '.eat-breakdown ps-select',
-      )!;
-      select.value = 'name';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      await el.updateComplete;
+      await sortLabels(el, 'name');
       expect(drills(el)).toHaveLength(0);
       expect(escape(el).defaultPrevented).toBe(false);
       // The stale list is gone for good: going back to the share does not reopen it.
-      select.value = 'share';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      await el.updateComplete;
+      await sortLabels(el, 'share');
       expect(drills(el)).toHaveLength(0);
     });
 
@@ -966,9 +967,15 @@ describe('protspace-eat-panel', () => {
     async function openExport(el: ProtspaceEatPanel, trigger: HTMLElement) {
       trigger.click();
       await el.updateComplete;
-      const menu = root(el).querySelector<HTMLElement & { open: boolean }>('ps-menu')!;
+      const menu = root(el).querySelector<HTMLElement & { open: boolean }>(
+        'ps-menu[label="Export IDs"]',
+      )!;
       expect(menu.open).toBe(true);
-      return [...root(el).querySelectorAll<HTMLElement & { disabled: boolean }>('ps-menu-item')];
+      return [
+        ...root(el).querySelectorAll<HTMLElement & { disabled: boolean }>(
+          'ps-menu[label="Export IDs"] ps-menu-item',
+        ),
+      ];
     }
     const itemText = (item: HTMLElement) => item.textContent!.replace(/\s+/g, ' ').trim();
 
@@ -985,7 +992,10 @@ describe('protspace-eat-panel', () => {
       expect(exported).toEqual([
         { proteinIds: ['P5', 'P7', 'P9'], fileName: 'toxin-eat-in-range-ids.txt' },
       ]);
-      expect(root(el).querySelector<HTMLElement & { open: boolean }>('ps-menu')!.open).toBe(false);
+      expect(
+        root(el).querySelector<HTMLElement & { open: boolean }>('ps-menu[label="Export IDs"]')!
+          .open,
+      ).toBe(false);
       items = await openExport(el, trigger);
       items[1].click();
       expect(exported[1]).toEqual({

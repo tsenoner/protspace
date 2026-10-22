@@ -405,11 +405,24 @@ export const eatPanelStyles = [
     /* Under the heading's helper line, so the question and its helper stay together. */
     .eat-sort-row {
       display: flex;
-      align-items: center;
       justify-content: flex-end;
-      gap: var(--ps-space-1-5);
+    }
+
+    /* The view bar's pickers: a ghost button, "Sort" muted, the order in full ink, a chevron. */
+    .eat-sort-key {
       color: var(--ps-text-muted);
-      font-size: var(--ps-text-xs);
+      font-weight: 400;
+    }
+
+    .eat-sort-value {
+      color: var(--ps-text);
+      font-weight: var(--ps-weight-medium);
+      white-space: nowrap;
+    }
+
+    .eat-sort-chevron {
+      display: inline-flex;
+      color: var(--ps-text-faint);
     }
 
     .eat-label-list,

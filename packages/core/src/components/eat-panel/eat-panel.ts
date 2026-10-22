@@ -151,6 +151,8 @@ export class ProtspaceEatPanel extends LitElement {
   @state() private _displayOpen = false;
   @state() private _drill: OpenDrill | null = null;
   @state() private _exportMenu: ExportMenu | null = null;
+  /** The Sort trigger while the label Sort menu is open. */
+  @state() private _sortMenu: HTMLElement | null = null;
   /** The last opened menu's scope; the menu closes before it reports the pick. */
   private _exportDrill: EatDrill | null = null;
   /** The histogram bar holding the bar group's one tab stop. */
@@ -294,6 +296,7 @@ export class ProtspaceEatPanel extends LitElement {
   protected updated(): void {
     // A drill-down's menu goes with its list (closed, or dropped as stale).
     if (this._exportMenu && !this._exportMenu.anchor.isConnected) this._exportMenu = null;
+    if (this._sortMenu && !this._sortMenu.isConnected) this._sortMenu = null;
     this._watchCard(this.renderRoot.querySelector<HTMLElement>('.eat-card'));
     this._wrapFacts();
   }
@@ -400,6 +403,8 @@ export class ProtspaceEatPanel extends LitElement {
             off: !this._eat.overlayEnabled,
             openLabel: drill && 'label' in drill ? drill.label : null,
             list: drill && 'label' in drill ? this._renderDrill() : nothing,
+            sortMenu: this._sortMenu,
+            onSortMenu: (anchor) => (this._sortMenu = anchor),
             onSort: (sort) => (this._labelSort = sort),
             onShowAll: () => (this._showAllLabels = true),
             onRow: (label) => this._toggleDrill({ label }),

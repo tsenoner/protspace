@@ -8,8 +8,9 @@ import {
   LEGEND_VALUES,
   type VisualizationData,
 } from '@protspace/utils';
-import type { PsSelect, SelectOption } from '../kit/select';
-import '../kit/select';
+import '../kit/button';
+import { icon } from '../kit/icon';
+import '../kit/menu';
 import { formatPercent } from '../query-builder/eat-reliability';
 import { getEatIndex, type EatIndex, type EatLabelRow } from './eat-summary';
 
@@ -18,7 +19,7 @@ export type EatLabelSort = 'share' | 'most-predicted' | 'least-reliable' | 'name
 /** The default follows the heading: the labels that rely most on predictions first. */
 export const DEFAULT_LABEL_SORT: EatLabelSort = 'share';
 
-const SORT_OPTIONS: SelectOption[] = [
+const SORT_OPTIONS: ReadonlyArray<{ value: EatLabelSort; label: string }> = [
   { value: 'share', label: 'Highest share predicted' },
   { value: 'most-predicted', label: 'Most predictions' },
   { value: 'least-reliable', label: 'Least reliable' },
@@ -75,6 +76,10 @@ interface EatBreakdownView {
   /** The label whose drill-down list is open, and that list, rendered under its row. */
   openLabel: string | null;
   list: TemplateResult | typeof nothing;
+  /** The Sort trigger while its menu is open, else null. */
+  sortMenu: HTMLElement | null;
+  /** Open the Sort menu at its trigger, or close it (null). */
+  onSortMenu(anchor: HTMLElement | null): void;
   onSort(sort: EatLabelSort): void;
   onShowAll(): void;
   /** A row was clicked: open its list, or close it when it is the open one. */
@@ -152,15 +157,43 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
     <h3 class="eat-heading">${BREAKDOWN_HEADING}</h3>
     <p class="eat-help">${breakdownHelp(view.overallMedian)}</p>
     <div class="eat-sort-row">
-      <span aria-hidden="true">Sort</span>
-      <ps-select
+      <ps-button
+        class="eat-sort"
+        variant="ghost"
         size="sm"
+        @click=${(event: Event) =>
+          view.onSortMenu(view.sortMenu ? null : (event.currentTarget as HTMLElement))}
+      >
+        <span class="eat-sort-key">Sort</span>
+        <span class="eat-sort-value"
+          >${SORT_OPTIONS.find((option) => option.value === view.sort)?.label}</span
+        >
+        <span slot="end" class="eat-sort-chevron">${icon('chevron-down', 14)}</span>
+      </ps-button>
+      <ps-menu
         label="Sort labels"
-        .options=${SORT_OPTIONS}
-        .value=${view.sort}
-        @change=${(event: Event) =>
-          view.onSort((event.currentTarget as PsSelect).value as EatLabelSort)}
-      ></ps-select>
+        placement="bottom-end"
+        .anchor=${view.sortMenu}
+        .open=${view.sortMenu !== null}
+        @ps-select=${(event: Event) => {
+          event.stopPropagation();
+          view.onSort((event as CustomEvent<{ value: EatLabelSort }>).detail.value);
+        }}
+        @ps-close=${(event: Event) => {
+          event.stopPropagation();
+          view.onSortMenu(null);
+        }}
+      >
+        ${SORT_OPTIONS.map(
+          (option) =>
+            html`<ps-menu-item
+              type="radio"
+              value=${option.value}
+              .checked=${option.value === view.sort}
+              >${option.label}</ps-menu-item
+            >`,
+        )}
+      </ps-menu>
     </div>
     <ul class="eat-label-list">
       ${shown.map((row) => {
