@@ -2,13 +2,12 @@ import { html, nothing, type TemplateResult } from 'lit';
 import {
   formatCount,
   getPredictedCellValues,
-  normalizeReliability,
   type EatReliabilityState,
   type VisualizationData,
 } from '@protspace/utils';
 import '../kit/button';
 import '../kit/tooltip';
-import { formatPercent } from '../query-builder/eat-reliability';
+import { formatPercent, rangeText } from '../query-builder/eat-reliability';
 import { swatchColor } from './eat-panel-breakdown';
 import { isKept, rankOf, type EatIndex } from './eat-summary';
 
@@ -101,12 +100,6 @@ function rankText(rank: { below: number; above: number; total: number }): string
   const share = Math.floor(((more ? rank.below : rank.above) / rank.total) * 100);
   if (share === 0) return null;
   return `${more ? 'More' : 'Less'} reliable than ${share}\u202f% of the ${formatCount(rank.total)} predictions`;
-}
-
-/** `50–100 %`, the range with both ends. */
-function rangeText(state: EatReliabilityState): string {
-  const { min, max } = normalizeReliability(state);
-  return `${Math.round(min * 100)}–${formatPercent(max)}`;
 }
 
 /**

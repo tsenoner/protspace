@@ -1,15 +1,10 @@
 import { LitElement, html, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
-import {
-  countNoun,
-  NEUTRAL_BOUND,
-  normalizeReliability,
-  type EatReliabilityState,
-} from '@protspace/utils';
+import { countNoun, type EatReliabilityState } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/button';
 import { icon, type IconName } from '../kit/icon';
-import { formatPercent, reliabilityLabel } from '../query-builder/eat-reliability';
+import { rangeText, reliabilityLabel } from '../query-builder/eat-reliability';
 import { plotStatusStyles } from './plot-status.styles';
 
 /** The ways a view is narrowed, one chip each. */
@@ -24,14 +19,12 @@ interface Chip {
 
 const KIND_ORDER: readonly StatusChipKind[] = ['filter', 'eat-dim', 'isolation', 'hidden'];
 
-/** What EAT Dim fades, `< 50 %`, `> 40 %` or `outside 40–60 %`; null when it fades nothing. */
+/**
+ * What EAT Dim fades, in the panel's and the legend's words: `outside 50–100 %`; null when it
+ * fades nothing.
+ */
 function dimmedRange(state: EatReliabilityState): string | null {
-  const kept = reliabilityLabel(state);
-  if (!kept) return null;
-  const { min, max } = normalizeReliability(state);
-  if (max >= NEUTRAL_BOUND.max) return `< ${formatPercent(min)}`;
-  if (min <= NEUTRAL_BOUND.min) return `> ${formatPercent(max)}`;
-  return `outside ${kept}`;
+  return reliabilityLabel(state) ? `outside ${rangeText(state)}` : null;
 }
 
 /**
@@ -142,7 +135,7 @@ export class ProtspacePlotStatus extends LitElement {
       chips.push({
         kind: 'eat-dim',
         icon: 'waypoints',
-        text: `EAT faded ${dimmed}`,
+        text: `EAT: ${dimmed} faded`,
         clearLabel: 'Stop fading EAT predictions',
       });
     }

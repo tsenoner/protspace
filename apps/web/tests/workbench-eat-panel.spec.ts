@@ -163,7 +163,7 @@ test('moving the EAT threshold filters the plot and the legend says so', async (
   );
 
   await page.locator('#wb-eat-panel').getByRole('button', { name: 'Close EAT' }).click();
-  await expect(legendEatNote(page)).toContainText('Filtered ≥ 50\u202f%');
+  await expect(legendEatNote(page)).toContainText('outside 50–100\u202f% hidden');
   await legendEatLink(page).click();
   await expect(eatPanel(page)).toBeVisible();
   // The link hid with the legend: focus moves to the EAT heading.
@@ -327,8 +327,8 @@ test('Fade fades weak predictions without filtering', async ({ page }) => {
 
   await eatPanel(page).getByRole('radio', { name: 'Fade' }).click();
   await expect(statusChip(page, 'filter')).toBeHidden();
-  await expect(statusChip(page, 'eat-dim')).toContainText('EAT faded < 50\u202f%');
-  await expect(legendEatNote(page)).not.toContainText('Filtered');
+  await expect(statusChip(page, 'eat-dim')).toContainText('EAT: outside 50–100\u202f% faded');
+  await expect(legendEatNote(page)).toContainText('outside 50–100\u202f% faded');
 
   // A below-threshold ring is still on the plot and hoverable.
   const weak = await weakPrediction(page, 'ec', 0.5);

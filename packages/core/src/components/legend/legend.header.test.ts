@@ -201,13 +201,18 @@ describe('legend header: the EAT note', () => {
       .textContent!.replace(/[\t\r\n ]+/g, ' ')
       .trim();
 
-  it('reads Includes 5 predicted · Filtered ≥ 60 % and its EAT › link dispatches eat-panel-open', async () => {
+  it('reads Includes 5 predicted · outside 60–100 % hidden and its EAT › link dispatches eat-panel-open', async () => {
     const legend = await mount(createEatFixture(), 'toxin');
     expect(noteText(legend)).toBe('Includes 5 predicted');
 
     legend.eatReliability = { min: 0.6, max: 1 };
     await legend.updateComplete;
-    expect(noteText(legend)).toBe('Includes 5 predicted · Filtered ≥ 60\u202f%');
+    expect(noteText(legend)).toBe('Includes 5 predicted · outside 60–100\u202f% hidden');
+    legend.eatFade = true;
+    await legend.updateComplete;
+    expect(noteText(legend)).toBe('Includes 5 predicted · outside 60–100\u202f% faded');
+    legend.eatFade = false;
+    await legend.updateComplete;
 
     const open = vi.fn();
     document.addEventListener('eat-panel-open', open);
@@ -221,11 +226,11 @@ describe('legend header: the EAT note', () => {
     expect(open).toHaveBeenCalledOnce();
   });
 
-  it('names the high end alone and both ends, and says nothing of the full range', async () => {
+  it('names the range with both ends, and says nothing of the full range', async () => {
     const legend = await mount(createEatFixture(), 'toxin');
     for (const [state, text] of [
-      [{ min: 0, max: 0.4 }, 'Includes 5 predicted · Filtered ≤ 40\u202f%'],
-      [{ min: 0.4, max: 0.6 }, 'Includes 5 predicted · Filtered 40–60\u202f%'],
+      [{ min: 0, max: 0.4 }, 'Includes 5 predicted · outside 0–40\u202f% hidden'],
+      [{ min: 0.4, max: 0.6 }, 'Includes 5 predicted · outside 40–60\u202f% hidden'],
       [{ min: 0, max: 1 }, 'Includes 5 predicted'],
     ] as const) {
       legend.eatReliability = state;
@@ -234,7 +239,7 @@ describe('legend header: the EAT note', () => {
     }
   });
 
-  it('is absent without predictions, and while Show is off', async () => {
+  it('is absent without predictions, and says off, shown as N/A while Show is off', async () => {
     const plain = await mount(categoricalData(TWELVE), 'family');
     expect(note(plain)).toBeNull();
 
@@ -243,6 +248,6 @@ describe('legend header: the EAT note', () => {
     plot.eatOverlayEnabled = false;
     plot.dispatchEvent(new CustomEvent('data-change', { detail: { data: plot.data } }));
     await settleLegend(legend);
-    expect(note(legend)).toBeNull();
+    expect(noteText(legend)).toBe('5 predictions off, shown as N/A');
   });
 });

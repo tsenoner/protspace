@@ -1,11 +1,11 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { live } from 'lit/directives/live.js';
-import { formatCount, type EatReliabilityState } from '@protspace/utils';
+import { countNoun, formatCount, type EatReliabilityState } from '@protspace/utils';
 import '../kit/button';
 import '../kit/menu';
 import '../kit/tooltip';
 import { icon, type IconName } from '../kit/icon';
-import { reliabilityLabel } from '../query-builder/eat-reliability';
+import { rangeText, reliabilityLabel } from '../query-builder/eat-reliability';
 import type { LegendSortMode } from './types';
 
 /** What the legend header shows (design decision 12). */
@@ -23,10 +23,11 @@ export interface LegendHeaderModel {
   /** The settings popover is open: the settings button reports it (ps-popover does not). */
   settingsOpen?: boolean;
   /**
-   * The one-line EAT note under the title: the annotation has predictions and Show is on.
-   * `predicted` counts the whole dataset; `reliability` is the EAT panel's filter.
+   * The one-line EAT note under the title: the annotation has predictions. `predicted` counts the
+   * whole dataset; `reliability` is the EAT panel's range, `fade` whether the map fades (rather
+   * than hides) what falls outside it, `off` whether Show predictions is off.
    */
-  eat?: { predicted: number; reliability: EatReliabilityState | null };
+  eat?: { predicted: number; reliability: EatReliabilityState | null; fade: boolean; off: boolean };
 }
 
 export interface LegendHeaderHandlers {
@@ -69,13 +70,25 @@ const SORT_ICONS: Record<LegendSortMode, IconName> = {
 
 const PREDICTED_NOTE = 'Predicted: computational, not experimentally curated';
 
-/** `Includes 659 predicted · Filtered ≥ 50 %   EAT ›`: a note and a link, no controls. */
+/**
+ * `Includes 659 predicted · outside 50–100 % hidden   EAT ›` (`… faded` in Fade), or `659
+ * predictions off, shown as N/A` with Show off: a note and a link, no controls. The range reads
+ * as the EAT panel and the plot chip say it.
+ */
+function eatNoteText(eat: NonNullable<LegendHeaderModel['eat']>): string {
+  if (eat.off) return `${countNoun(eat.predicted, 'prediction', 'predictions')} off, shown as N/A`;
+  const narrowed = eat.reliability !== null && reliabilityLabel(eat.reliability) !== null;
+  const outside = narrowed
+    ? ` · outside ${rangeText(eat.reliability!)} ${eat.fade ? 'faded' : 'hidden'}`
+    : '';
+  return `Includes ${formatCount(eat.predicted)} predicted${outside}`;
+}
+
 function renderEatNote(
   eat: NonNullable<LegendHeaderModel['eat']>,
   onOpen: () => void,
 ): TemplateResult {
-  const filter = eat.reliability ? reliabilityLabel(eat.reliability) : null;
-  const text = `Includes ${formatCount(eat.predicted)} predicted${filter ? ` · Filtered ${filter}` : ''}`;
+  const text = eatNoteText(eat);
   return html`<p class="legend-eat-note" part="eat-note">
     <span class="legend-eat-text">${text}</span
     ><button type="button" class="legend-eat-link" aria-label="Open the EAT panel" @click=${onOpen}>

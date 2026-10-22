@@ -132,10 +132,12 @@ export class ProtspaceLegend extends LitElement {
   autoHide: boolean = true;
 
   /**
-   * The EAT panel's reliability filter, for the one-line EAT note under the title
-   * (`Includes 659 predicted · Filtered ≥ 50 %`); null or unconstrained says nothing about it.
+   * The EAT panel's reliability range, for the one-line EAT note under the title
+   * (`Includes 659 predicted · outside 50–100 % hidden`); null or unconstrained says nothing about it.
    */
   @property({ attribute: false }) eatReliability: EatReliabilityState | null = null;
+  /** The EAT panel fades the predictions outside the range rather than hiding them. */
+  @property({ type: Boolean, attribute: false }) eatFade = false;
 
   // ─────────────────────────────────────────────────────────────────
   // Internal State
@@ -176,8 +178,10 @@ export class ProtspaceLegend extends LitElement {
   @state() _selectedPaletteId: string = DEFAULT_CATEGORICAL_PALETTE_ID;
   @state() _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
-  /** Predictions of the selected annotation in the whole dataset while Show is on; else null. */
+  /** Predictions of the selected annotation in the whole dataset; null without any. */
   @state() _eatPredicted: number | null = null;
+  /** Show predictions is off: the plot draws them as N/A. */
+  @state() _eatOff = false;
   @state() _categoryScores: CategoryScore[] = [];
   /**
    * Whether the current annotation is one of the backend's auto-clustering membership
@@ -779,7 +783,12 @@ export class ProtspaceLegend extends LitElement {
       eat:
         this._eatPredicted === null
           ? undefined
-          : { predicted: this._eatPredicted, reliability: this.eatReliability },
+          : {
+              predicted: this._eatPredicted,
+              reliability: this.eatReliability,
+              fade: this.eatFade,
+              off: this._eatOff,
+            },
     };
   }
 

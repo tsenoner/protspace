@@ -116,7 +116,7 @@ export function createEatPanelController({
     | 'addEventListener'
     | 'removeEventListener'
   >;
-  legendElement: Pick<ProtspaceLegend, 'eatReliability'>;
+  legendElement: Pick<ProtspaceLegend, 'eatReliability' | 'eatFade'>;
   filterController: Pick<FilterController, 'setEatReliability' | 'getContextMask'>;
   root: Pick<Document, 'addEventListener' | 'removeEventListener'>;
   isPanelShown(): boolean;
@@ -177,14 +177,15 @@ export function createEatPanelController({
   /**
    * The panel's reliability, wherever it came from (its own controls, the Filter panel's Apply,
    * a reset), reaches the legend's note and the rail dot. In Dim it filters nothing: it reaches
-   * the plot as `eatDim` and the status corner's chip instead, and the legend says no filter.
+   * the plot as `eatDim` and the status corner's chip instead, and the legend says it fades.
    */
   const syncReliability = () => {
     const { reliability } = eatPanel;
     const dims = eatPanel.outcome === 'dim';
-    const filtered = dims ? DEFAULT_EAT_RELIABILITY : reliability;
     const shown = legendElement.eatReliability;
-    if (!shown || !isSameReliability(shown, filtered)) legendElement.eatReliability = filtered;
+    if (!shown || !isSameReliability(shown, reliability))
+      legendElement.eatReliability = reliability;
+    if (legendElement.eatFade !== dims) legendElement.eatFade = dims;
     // Without Show nothing fades (the plot's dim mask needs the overlay), so no chip says it does.
     const dim: EatReliabilityState | null =
       dims && eatPanel.overlayEnabled && reliabilityLabel(reliability) ? reliability : null;

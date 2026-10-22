@@ -70,7 +70,7 @@ function setup(shown: { value: boolean }) {
     },
     reset: vi.fn(),
   });
-  const legend = { eatReliability: null as EatReliabilityState | null };
+  const legend = { eatReliability: null as EatReliabilityState | null, eatFade: false };
   const pickAnnotation = vi.fn();
   const selectProteins = vi.fn();
   const requestStructure = vi.fn();
@@ -213,7 +213,9 @@ describe('createEatPanelController', () => {
     choose('dim');
     expect(filter.setEatReliability).toHaveBeenLastCalledWith('ec', DEFAULT_EAT_RELIABILITY);
     expect(plot.eatDim).toEqual(reliability);
-    expect(legend.eatReliability).toEqual(DEFAULT_EAT_RELIABILITY);
+    // The legend names the range and says it fades.
+    expect(legend.eatReliability).toEqual(reliability);
+    expect(legend.eatFade).toBe(true);
     expect(getWorkbenchStatus().eatDim).toEqual(reliability);
 
     // A threshold commit in Dim moves the fade, still without a condition.
@@ -237,6 +239,7 @@ describe('createEatPanelController', () => {
     expect(filter.setEatReliability).toHaveBeenLastCalledWith('ec', reliability);
     expect(plot.eatDim).toBeNull();
     expect(legend.eatReliability).toEqual(reliability);
+    expect(legend.eatFade).toBe(false);
     expect(getWorkbenchStatus().eatDim).toBeNull();
   });
 

@@ -37,7 +37,7 @@ export async function openEatPanel(page: Page): Promise<void> {
 export const eatThresholdBox = (page: Page): Locator =>
   eatPanel(page).getByRole('spinbutton', { name: 'EAT reliability lower bound percentage' });
 
-/** The legend's one-line EAT note (`Includes 659 predicted · Filtered ≥ 50 %`). */
+/** The legend's one-line EAT note (`Includes 659 predicted · outside 50–100 % hidden`). */
 export const legendEatNote = (page: Page): Locator =>
   page.locator('#myLegend').getByText(/^Includes [\d,]+ predicted/);
 
