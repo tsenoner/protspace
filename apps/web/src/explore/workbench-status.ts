@@ -149,6 +149,11 @@ export function createDatasetNamePublisher(
   };
 }
 
+/** Back to the empty status, notifying listeners: a page leaving /explore leaves nothing behind. */
+export function resetWorkbenchStatus(): void {
+  setWorkbenchStatus(EMPTY);
+}
+
 export function resetWorkbenchStatusForTests(): void {
   status = EMPTY;
   listeners.clear();

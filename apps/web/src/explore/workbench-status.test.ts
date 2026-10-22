@@ -5,6 +5,7 @@ import {
   datasetPhaseFor,
   eatUnavailableReason,
   getWorkbenchStatus,
+  resetWorkbenchStatus,
   resetWorkbenchStatusForTests,
   setStructureSheet,
   setWorkbenchStatus,
@@ -31,6 +32,25 @@ describe('workbench status', () => {
       eatAnnotationLabel: '',
       eatDim: null,
     });
+  });
+
+  it('resets every field, structure and EAT included, and notifies', () => {
+    const empty = getWorkbenchStatus();
+    setWorkbenchStatus({
+      datasetName: 'demo.parquetbundle',
+      proteinCount: 7,
+      datasetPhase: 'ready',
+      structureProteinId: 'P12345',
+      structureSheet: 'expanded',
+      eatAvailability: { kind: 'available' },
+      eatAdjusted: true,
+      eatAnnotationLabel: 'EC',
+    });
+    const listener = vi.fn();
+    subscribeWorkbenchStatus(listener);
+    resetWorkbenchStatus();
+    expect(getWorkbenchStatus()).toEqual(empty);
+    expect(listener).toHaveBeenCalledOnce();
   });
 
   it('merges a patch and notifies once', () => {

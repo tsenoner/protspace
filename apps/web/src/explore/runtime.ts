@@ -71,6 +71,7 @@ import {
   createDatasetNamePublisher,
   datasetPhaseFor,
   getWorkbenchStatus,
+  resetWorkbenchStatus,
   setWorkbenchStatus,
   subscribeWorkbenchStatus,
 } from './workbench-status';
@@ -160,10 +161,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     importMenu.currentExampleId = id;
   };
 
-  // A remounted page starts from an empty app bar, and no empty state, until its own first load.
-  lifecycle.addCleanup(() =>
-    setWorkbenchStatus({ datasetName: null, proteinCount: null, datasetPhase: 'starting' }),
-  );
+  // A remounted page starts from the empty status (app bar, structure, EAT, sheet), and no empty
+  // state, until its own first load.
+  lifecycle.addCleanup(resetWorkbenchStatus);
 
   // What the plot area shows (workbench-status.ts): the overlay while a load runs, the plot once a
   // dataset is on screen, the empty state once startup has ended with nothing to show.
