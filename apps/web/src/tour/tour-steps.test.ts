@@ -212,4 +212,13 @@ describe('tourSteps', () => {
       inner: '[data-driver-id="other-row"]',
     });
   });
+
+  it('names every rail panel, EAT included, in the Sidebar step', () => {
+    for (const kind of KINDS) {
+      const { description } = step(tourSteps(kind, context('desktop')), 'sidebar');
+      for (const panel of ['Legend', 'Structure', 'Filter', 'EAT']) {
+        expect(description).toContain(`<strong>${panel}</strong>`);
+      }
+    }
+  });
 });

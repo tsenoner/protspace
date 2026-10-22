@@ -188,8 +188,8 @@ const STEPS: Record<TourStepId, StepBuilder> = {
     title: 'The Sidebar',
     description:
       kind === 'whats-new'
-        ? '<strong>Legend</strong>, <strong>Structure</strong> and <strong>Filter</strong> are now panels of the sidebar. Collapse it from this rail, drag its left edge to resize it, and pop the structure out to float it over the plot.'
-        : "The rail switches the sidebar between <strong>Legend</strong>, <strong>Structure</strong> (a dot shows when a protein is loaded) and <strong>Filter</strong>, and collapses the sidebar to give the plot the whole width. Drag the sidebar's left edge to resize it, and pop the structure out to float it over the plot.",
+        ? '<strong>Legend</strong>, <strong>Structure</strong>, <strong>Filter</strong> and <strong>EAT</strong> (when the annotation has transferred labels) are now panels of the sidebar. Collapse it from this rail, drag its left edge to resize it, and pop the structure out to float it over the plot.'
+        : "The rail switches the sidebar between <strong>Legend</strong>, <strong>Structure</strong> (a dot shows when a protein is loaded), <strong>Filter</strong> and <strong>EAT</strong> (when the annotation has transferred labels), and collapses the sidebar to give the plot the whole width. Drag the sidebar's left edge to resize it, and pop the structure out to float it over the plot.",
     target: driverId('rail'),
   }),
 
