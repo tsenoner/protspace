@@ -1349,6 +1349,44 @@
   outline-offset: calc(-1 * var(--ps-focus-width));
 }
 
+/* A finger needs a 40 px target on the drag handles too, e.g. an iPad in landscape (design
+   decision 17). The divider keeps its 9 px of layout (DIVIDER_HEIGHT) and takes the presses
+   15 px above and below it through a ::after; the sidebar edge reaches further over the plot than over the
+   sidebar, so the legend's left edge stays tappable. */
+@media (pointer: coarse) {
+  .wb-divider {
+    position: relative;
+    z-index: 1;
+  }
+
+  .wb-divider::after {
+    content: '';
+    position: absolute;
+    inset: calc((var(--wb-divider-height) - var(--ps-touch-target)) / 2) 0;
+  }
+
+  /* The docked section would clip the half that reaches up over the legend. */
+  .workbench[data-layout='desktop'][data-structure='docked'] .wb-structure {
+    overflow: clip visible;
+  }
+
+  .workbench[data-layout='desktop'][data-sidebar='open'] .wb-sidebar-edge {
+    right: calc(var(--wb-rail-width) + var(--wb-sidebar-live-width) - 12px);
+    width: var(--ps-touch-target);
+  }
+
+  /* The pill stays where it was, on the sidebar's border. */
+  .wb-sidebar-edge::before {
+    left: auto;
+    right: 10px;
+  }
+
+  .wb-float-grip {
+    width: var(--ps-touch-target);
+    height: var(--ps-touch-target);
+  }
+}
+
 /* index.css answers reduced motion with a 0.01 ms transition-duration on every element, which
    makes any property change a transition: the plot's box would follow its inset a frame late.
    The boxes that move with the sidebar change at once instead (still one resize per change). */

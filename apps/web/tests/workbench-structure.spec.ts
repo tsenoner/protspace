@@ -580,6 +580,30 @@ test('View structure from the keyboard moves focus to the structure', async ({ p
 test.describe('on a touch screen', () => {
   test.use({ hasTouch: true });
 
+  test('the divider, the sidebar edge and the float grip are 40 px targets', async ({ page }) => {
+    await openExplore(page);
+    await clickProteinNearPlotCentre(page);
+    const line = (await divider(page).boundingBox())!;
+    // The divider keeps its 9 px of layout and takes presses 15 px above and below it.
+    expect(Math.round(line.height)).toBe(9);
+    const midX = line.x + line.width / 2;
+    const midY = line.y + line.height / 2;
+    for (const dy of [-15, 15]) {
+      const hit = await page.evaluate(
+        ([x, y]) => document.elementFromPoint(x, y)?.classList.contains('wb-divider') ?? false,
+        [midX, midY + dy],
+      );
+      expect(hit, `${dy} px from the divider`).toBe(true);
+    }
+    const edge = (await page.locator('[data-workbench="sidebar-edge"]').boundingBox())!;
+    expect(edge.width).toBeGreaterThanOrEqual(40);
+
+    await floatStructure(page);
+    const grip = (await page.getByRole('button', { name: 'Resize structure' }).boundingBox())!;
+    expect(grip.width).toBeGreaterThanOrEqual(40);
+    expect(grip.height).toBeGreaterThanOrEqual(40);
+  });
+
   test('the card drags by its header', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'CDP touch input is Chromium only');
     await openExplore(page);
