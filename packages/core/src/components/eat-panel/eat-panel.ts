@@ -18,7 +18,7 @@ import '../kit/switch';
 import type { PsSegmented, SegmentedOption } from '../kit/segmented';
 import type { PsSelect } from '../kit/select';
 import type { PsSwitch } from '../kit/switch';
-import { formatPercent } from '../query-builder/eat-reliability';
+import { formatPercent, reliabilityLabel } from '../query-builder/eat-reliability';
 import {
   renderBreakdown,
   renderEmptyColorBy,
@@ -189,8 +189,12 @@ export class ProtspaceEatPanel extends LitElement {
     this._eat.applySettings(enabled, threshold);
   }
 
-  /** Follow the applied filter without emitting, so the filter → panel direction cannot loop. */
+  /**
+   * Follow the applied filter without emitting, so the filter → panel direction cannot loop. A
+   * state that filters something came from a condition, which only Hide writes: the panel says Hide.
+   */
   setReliabilityState(state: EatReliabilityState): void {
+    if (reliabilityLabel(state) !== null) this._outcome = 'hide';
     this._eat.mirror(state);
   }
 

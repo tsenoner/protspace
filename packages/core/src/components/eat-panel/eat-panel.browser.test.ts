@@ -264,6 +264,16 @@ describe('protspace-eat-panel', () => {
       expect(el.isAtDefaults).toBe(false);
     });
 
+    it('a mirrored state that filters goes back to Hide; one that keeps all stays in Dim', async () => {
+      const el = await mount();
+      (await outcome(el))[1].click();
+      await el.updateComplete;
+      el.setReliabilityState(DEFAULT_EAT_RELIABILITY);
+      expect(el.outcome).toBe('dim');
+      el.setReliabilityState({ mode: 'atLeast', min: 0.5, max: 1 });
+      expect(el.outcome).toBe('hide');
+    });
+
     it('a weak drill-down row says Dimmed in Dim; reset() and a new dataset go back to Hide', async () => {
       const el = await mount();
       el.setReliabilityState({ mode: 'atLeast', min: 0.99, max: 1 });
