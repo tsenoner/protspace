@@ -58,8 +58,8 @@ const hasSpan = (span: number) => Number.isFinite(span) && span > 0;
  * (design decision 3): the largest that fits inside the margins, centred there. An axis without a
  * span (one point, or equal values) cannot set the scale, so the other axis does and the zero-span
  * axis keeps its whole inner extent; with neither, the rectangle is the whole inner area. The inner
- * size never drops below 1 px, so no range collapses. With `fill` (the view bar's Fill switch)
- * the rectangle is always the whole inner area: each axis stretches on its own. `fillMaxWidth`
+ * size never drops below 1 px, so no range collapses. With `fill` (the explore plot always
+ * fills, see the app's plot-fill.ts) the rectangle is always the whole inner area: each axis stretches on its own. `fillMaxWidth`
  * caps the width that fill spreads over: a wider plot fills as if it were that wide, centred.
  */
 export function fitRect(

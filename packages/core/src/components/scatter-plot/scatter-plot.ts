@@ -1438,7 +1438,7 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * The Fill switch changed the scales' ranges (not their domains), so the renderer carries the
+   * `fillPlot` or the `fillMaxWidth` cap changed the scales' ranges (not their domains), so the renderer carries the
    * staged points over with a rescale, as on a resize. The zoom stays, with `centre` kept at the
    * centre of the view; the overlays drawn in base pixels (duplicate stacks, the point index, the
    * provenance connectors) are laid out again with the new scales.

@@ -40,8 +40,8 @@ export function getEatNeighborBaseKey(key: string): string | null {
  * Which side(s) of the reliability scale the EAT filter constrains (#380).
  *
  * Lives here rather than beside the query-condition translation in `core` because
- * both the legend control and the control bar need the vocabulary, and neither
- * should have to import from the other.
+ * the EAT panel, the legend and the app's EAT panel controller all need the
+ * vocabulary, and none should have to import from another.
  */
 export type EatReliabilityMode = 'atLeast' | 'atMost' | 'between';
 
@@ -113,8 +113,8 @@ export function clampReliabilityBound(value: number, fallback: number = NEUTRAL_
  * de-dupe guard never fires and every repeat call rewrites the query.
  *
  * Lives beside the type rather than beside the query translation because both ends
- * of the mirror — the legend control and the control bar — have to agree on what a
- * state means, and a second hand-rolled copy is exactly how they drifted apart.
+ * of the mirror — the EAT panel and the filter controller's reliability condition —
+ * have to agree on what a state means, and a second hand-rolled copy is exactly how they drifted apart.
  */
 export function normalizeReliability(state: EatReliabilityState): EatReliabilityState {
   const uses = RELIABILITY_BOUNDS[state.mode];

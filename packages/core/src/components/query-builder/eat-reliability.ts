@@ -119,8 +119,8 @@ export function sameConditions(
 /**
  * A one-sided mode carrying the single bound it filters on, canonicalised. Going
  * through `normalizeReliability` is what keeps the reverse mirror speaking the same
- * spelling as the forward one: the control bar records this state and later compares
- * it, by value, against a state the legend has normalised.
+ * spelling as the forward one: the app's EAT panel controller compares this state, by
+ * value, against the state the EAT panel has normalised.
  */
 function boundedBy(mode: 'atLeast' | 'atMost', bound: number): EatReliabilityState {
   return normalizeReliability(

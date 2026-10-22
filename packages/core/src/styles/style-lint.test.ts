@@ -20,13 +20,12 @@ const MODULES = import.meta.glob<Record<string, CSSResultGroup>>(
 const COLOUR =
   /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(|\b(?:white|black)\b/i;
 /**
- * Set at run time, not tokens: by kit code (position.ts), the query pickers (picker-placement.ts)
- * and the plot's tooltip placement (tooltips/tooltip-position.ts).
+ * Set at run time, not tokens: by kit code (position.ts) and the plot's tooltip placement
+ * (tooltips/tooltip-position.ts).
  */
 const RUNTIME_VARS = new Set([
   '--available-height',
   '--available-width',
-  '--picker-room',
   '--protspace-tooltip-max-height',
   '--protspace-tooltip-effective-width',
 ]);

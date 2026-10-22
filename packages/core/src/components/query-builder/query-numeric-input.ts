@@ -45,7 +45,7 @@ function nounOf(label: string): string {
  * empties its box. Untouched, the card is the full range with N/A kept, so it matches every
  * protein; unticking N/A then reads "has a value" (see `readRange` / `writeRange`).
  *
- * The condition object is owned by the control bar; this component is controlled. It keeps the
+ * The condition object is owned by the query builder; this component is controlled. It keeps the
  * in-progress field text locally so a half-typed value (e.g. "-" or "1.") survives the
  * round-trip of the condition prop. A slider drag writes the typed bounds as it moves and the
  * condition on release (each keyboard step is a release).
