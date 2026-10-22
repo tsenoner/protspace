@@ -251,6 +251,8 @@ export class ProtspaceScatterplot extends LitElement {
   // Whether _updateSizeAndRender has measured the element yet; until then _mergedConfig holds the
   // default size, which no view was drawn at.
   private _sizeMeasured = false;
+  /** The last `config` change moved nothing on screen (only an unreached width cap); no render. */
+  private _configChangeDrawsNothing = false;
   @state() private _isolationHistory: string[][] = [];
   @state() private _isolationMode = false;
   private _zOrderMapping: Record<string, number> | null = null;
@@ -912,9 +914,15 @@ export class ProtspaceScatterplot extends LitElement {
     if (changedProperties.has('config')) {
       const prev = this._mergedConfig;
       const merged = { ...DEFAULT_CONFIG, ...prev, ...this.config };
+      // A cap at or above the plot's width caps nothing: moving it there is no fill change.
+      const cap = (c: typeof merged) => Math.min(c.fillMaxWidth ?? Infinity, c.width);
       const fillChanged =
-        merged.fillPlot !== prev.fillPlot ||
-        (merged.fillPlot && merged.fillMaxWidth !== prev.fillMaxWidth);
+        merged.fillPlot !== prev.fillPlot || (merged.fillPlot && cap(merged) !== cap(prev));
+      this._configChangeDrawsNothing =
+        !fillChanged &&
+        (Object.keys(merged) as (keyof typeof merged)[]).every(
+          (k) => k === 'fillMaxWidth' || merged[k] === prev[k],
+        );
       // Read with the old scales, before the merge: the data at the centre of the view.
       const centre = fillChanged ? this._viewCentre() : null;
       this._mergedConfig = merged;
@@ -935,7 +943,7 @@ export class ProtspaceScatterplot extends LitElement {
       if (CONFIG_STYLE_KEYS.some(changed)) {
         this._webglRenderer?.invalidateStyleCache();
       }
-      if (CONFIG_INDEX_KEYS.some(changed)) {
+      if (!this._configChangeDrawsNothing && CONFIG_INDEX_KEYS.some(changed)) {
         this._pointGrid.scheduleRebuild();
       }
     }
@@ -1029,7 +1037,11 @@ export class ProtspaceScatterplot extends LitElement {
     }
     const changedKeys = Array.from(changedProperties.keys(), String);
     const canSkipRender =
-      changedKeys.length > 0 && changedKeys.every((k) => NO_ADDITIONAL_RENDER_KEYS.has(k));
+      changedKeys.length > 0 &&
+      changedKeys.every(
+        (k) =>
+          NO_ADDITIONAL_RENDER_KEYS.has(k) || (k === 'config' && this._configChangeDrawsNothing),
+      );
     if (selectionChanged || !canSkipRender) {
       this._renderLoop.request();
       this._updateSelectionOverlays();
