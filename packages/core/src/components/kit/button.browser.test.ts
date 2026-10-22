@@ -77,6 +77,36 @@ describe('ps-button', () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it('focusable-when-disabled stays focusable as aria-disabled and ignores presses', async () => {
+    const el = await mount<PsButton>(
+      '<ps-button disabled focusable-when-disabled>Reset</ps-button>',
+    );
+    const onClick = vi.fn();
+    el.addEventListener('click', onClick);
+    expect(inner(el).disabled).toBe(false);
+    expect(inner(el).getAttribute('aria-disabled')).toBe('true');
+    inner(el).click();
+    expect(onClick).not.toHaveBeenCalled();
+    el.focus();
+    expect(el.shadowRoot!.activeElement).toBe(inner(el));
+    // Enabled again, it is an ordinary button.
+    el.disabled = false;
+    await el.updateComplete;
+    expect(inner(el).hasAttribute('aria-disabled')).toBe(false);
+    inner(el).click();
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it('keeps focus when a press disables a focusable-when-disabled button', async () => {
+    const el = await mount<PsButton>('<ps-button focusable-when-disabled>Reset</ps-button>');
+    el.addEventListener('click', () => (el.disabled = true));
+    el.focus();
+    inner(el).click();
+    await el.updateComplete;
+    expect(document.activeElement).toBe(el);
+    expect(el.shadowRoot!.activeElement).toBe(inner(el));
+  });
+
   it('forwards aria-haspopup and aria-expanded to its inner button', async () => {
     const el = await mount<PsButton>('<ps-button>Color by</ps-button>');
     expect(inner(el).hasAttribute('aria-haspopup')).toBe(false);

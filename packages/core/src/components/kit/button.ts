@@ -21,12 +21,26 @@ class KitButtonBase extends LitElement {
   @property({ reflect: true }) variant: ButtonVariant = 'secondary';
   @property({ reflect: true }) size: ButtonSize = 'md';
   @property({ type: Boolean, reflect: true }) disabled = false;
+  /**
+   * While `disabled`, stay in the Tab order as `aria-disabled` and ignore presses, rather than
+   * going native-disabled: focus is not dropped when a press disables the button, and a keyboard
+   * user still reaches its name or tooltip (which may say why it is off).
+   */
+  @property({ type: Boolean, attribute: 'focusable-when-disabled' }) focusableWhenDisabled = false;
   @property({ attribute: 'aria-haspopup' }) hasPopup: string | null = null;
   @property({ attribute: 'aria-expanded' }) expanded: string | null = null;
   /** Elements that describe this control; an id reference cannot reach into the shadow root. */
   @property({ attribute: false }) describedBy: readonly Element[] = [];
 
+  /** A soft-disabled press stops here, inside the shadow root, so no host listener hears it. */
+  private readonly swallowSoftDisabled = (event: Event) => {
+    if (!(this.disabled && this.focusableWhenDisabled)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
   protected button(content: unknown, label?: string, pressed?: boolean) {
+    const soft = this.disabled && this.focusableWhenDisabled;
     return html`<button
       part="button"
       class=${label === undefined ? nothing : 'icon-only'}
@@ -36,7 +50,9 @@ class KitButtonBase extends LitElement {
       aria-haspopup=${this.hasPopup ?? nothing}
       aria-expanded=${this.expanded ?? nothing}
       .ariaDescribedByElements=${this.describedBy.length ? this.describedBy : null}
-      ?disabled=${this.disabled}
+      aria-disabled=${soft ? 'true' : nothing}
+      ?disabled=${this.disabled && !this.focusableWhenDisabled}
+      @click=${this.swallowSoftDisabled}
     >
       ${content}
     </button>`;

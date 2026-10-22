@@ -38,7 +38,7 @@ export const buttonStyles = [
       background: var(--ps-accent);
       color: var(--ps-text-on-accent);
     }
-    :host([variant='primary']) button:hover:not(:disabled) {
+    :host([variant='primary']) button:hover:not(:disabled):not([aria-disabled='true']) {
       background: var(--ps-accent-hover);
     }
     :host([variant='secondary']) button,
@@ -52,9 +52,9 @@ export const buttonStyles = [
     :host([variant='ghost']) button {
       color: var(--ps-text-muted);
     }
-    :host([variant='secondary']) button:hover:not(:disabled),
-    :host([variant='danger']) button:hover:not(:disabled),
-    :host([variant='ghost']) button:hover:not(:disabled) {
+    :host([variant='secondary']) button:hover:not(:disabled):not([aria-disabled='true']),
+    :host([variant='danger']) button:hover:not(:disabled):not([aria-disabled='true']),
+    :host([variant='ghost']) button:hover:not(:disabled):not([aria-disabled='true']) {
       background: var(--ps-surface-hover);
     }
     /* A ghost menu button shows its menu is open: the tint plus an inset ring (the focus ring is an outline). */
@@ -64,11 +64,12 @@ export const buttonStyles = [
     }
     /* Same specificity as the variant and hover rules above, and later, so pressed wins. */
     :host button[aria-pressed='true'],
-    :host button[aria-pressed='true']:hover:not(:disabled) {
+    :host button[aria-pressed='true']:hover:not(:disabled):not([aria-disabled='true']) {
       background: var(--ps-accent-tint);
       color: var(--ps-accent-text);
     }
-    button:disabled {
+    button:disabled,
+    button[aria-disabled='true'] {
       cursor: not-allowed;
       opacity: 0.5;
     }
