@@ -89,6 +89,8 @@ export function PanelTabs({ panel, slot }: PanelTabsProps) {
             aria-selected={tab.panel === panel}
             aria-controls={tab.controls}
             aria-disabled={disabled ? 'true' : undefined}
+            // The dot is visual only: the name says the settings changed.
+            aria-label={tab.panel === 'eat' && eatAdjusted ? 'EAT, settings changed' : undefined}
             title={disabled ? eatReason : undefined}
             tabIndex={tab.panel === panel ? 0 : -1}
             onClick={() => onClick(tab.panel)}

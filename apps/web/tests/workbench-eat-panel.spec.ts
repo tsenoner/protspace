@@ -42,6 +42,9 @@ test('the EAT rail item is disabled with its reason on a dataset without EAT', a
   const item = eatRailItem(page);
   await expect(item).toBeDisabled();
   await expect(item).toHaveAccessibleName('This dataset has no transferred annotations (EAT).');
+  // Off, it stays focusable, so a keyboard user reaches the reason.
+  await item.focus();
+  await expect(item).toBeFocused();
   await expect(workbenchRoot(page)).toHaveAttribute('data-panel', 'legend');
   await expect(page.locator('#myLegend')).toBeVisible();
   await expect(eatPanel(page)).toBeHidden();
@@ -114,6 +117,10 @@ test('on a phone the EAT tab is the third tab', async ({ page }) => {
   await expect(
     page.locator('#wb-eat-panel').getByRole('heading', { level: 2 }),
   ).toHaveAccessibleName('EAT · EC number');
+
+  // Changed settings: the tab says so, as its dot shows.
+  await eatThresholdBox(page).fill('50');
+  await expect(page.getByRole('tab', { name: 'EAT, settings changed' })).toBeVisible();
 });
 
 test('the phone EAT tab shows the histogram and opens a drill-down by tap', async ({ page }) => {
@@ -147,6 +154,9 @@ test('moving the EAT threshold filters the plot and the legend says so', async (
   await openEatPanel(page);
   await eatThresholdBox(page).fill('50');
   await expect(statusChip(page, 'filter')).toContainText('Filtered');
+  await expect(eatRailItem(page)).toHaveAccessibleName(
+    'EAT — transferred annotations, settings changed',
+  );
 
   await page.locator('#wb-eat-panel').getByRole('button', { name: 'Close EAT' }).click();
   await expect(legendEatNote(page)).toContainText('Filtered ≥ 50\u202f%');
@@ -156,10 +166,15 @@ test('moving the EAT threshold filters the plot and the legend says so', async (
   await expect(page.locator('#wb-eat-title')).toBeFocused();
   await expect(eatThresholdBox(page)).toHaveValue('50');
 
-  // The header's Reset takes the filter back off.
-  await page.locator('#wb-eat-panel').getByRole('button', { name: 'Reset' }).click();
+  // The header's Reset takes the filter back off, and turns off without dropping focus.
+  const reset = page.locator('#wb-eat-panel').getByRole('button', { name: 'Reset' });
+  await reset.focus();
+  await page.keyboard.press('Enter');
   await expect(statusChip(page, 'filter')).toBeHidden();
   await expect(eatThresholdBox(page)).toHaveValue('0');
+  await expect(reset).toBeDisabled();
+  await expect(reset).toBeFocused();
+  await expect(eatRailItem(page)).toHaveAccessibleName('EAT — transferred annotations');
 });
 
 test('the Filter panel shows the reliability as a locked row that opens the EAT panel', async ({

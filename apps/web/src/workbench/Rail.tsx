@@ -91,6 +91,8 @@ export function Rail({
           }
           tooltipPlacement="left"
           disabled={structureProteinId === null}
+          // Off, it stays in the Tab order: its name says why.
+          focusableWhenDisabled
           pressed={structureProteinId !== null && structureVisible}
           onClick={toggleStructure}
         ></ps-icon-button>
@@ -119,10 +121,16 @@ export function Rail({
         <ps-icon-button
           id="wb-rail-eat"
           icon="waypoints"
-          label={eatReason ?? 'EAT — transferred annotations'}
+          label={
+            eatReason ??
+            (eatAdjusted
+              ? 'EAT — transferred annotations, settings changed'
+              : 'EAT — transferred annotations')
+          }
           tooltipPlacement="left"
           // Off without EAT, except while its panel shows: pressed, it still collapses the sidebar.
           disabled={eatReason !== null && !(sidebarOpen && panel === 'eat')}
+          focusableWhenDisabled
           pressed={sidebarOpen && panel === 'eat'}
           onClick={() => togglePanel('eat')}
         ></ps-icon-button>

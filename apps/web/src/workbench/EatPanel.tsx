@@ -86,6 +86,8 @@ export function EatPanel({
           variant="ghost"
           size="sm"
           disabled={!eatAdjusted}
+          // Off at the defaults, yet focusable: a press that resets keeps focus on it.
+          focusableWhenDisabled
           onClick={() => eatPanel()?.reset()}
         >
           Reset

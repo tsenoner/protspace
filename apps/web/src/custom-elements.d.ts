@@ -34,7 +34,14 @@ type KitProps<E, K extends keyof E = never, Extra = unknown> = React.DetailedHTM
   Partial<Pick<E, K>> &
   Extra;
 
-type ButtonKeys = 'variant' | 'size' | 'disabled' | 'describedBy' | 'expanded' | 'hasPopup';
+type ButtonKeys =
+  | 'variant'
+  | 'size'
+  | 'disabled'
+  | 'focusableWhenDisabled'
+  | 'describedBy'
+  | 'expanded'
+  | 'hasPopup';
 
 /** `ps-close` reaches the owner when the overlay closes by itself (Escape, outside press, pick). */
 interface CloseEvents {
