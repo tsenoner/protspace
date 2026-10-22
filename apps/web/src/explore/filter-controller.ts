@@ -67,7 +67,10 @@ export interface FilterController {
   getContextMask(): Uint8Array | null;
   /** The filter chip's ✕: removes the applied filter; a dirty draft keeps its edits. */
   clear(): void;
-  /** Undo and redo: makes `snapshot` the applied filter as it was, without evaluating. */
+  /**
+   * Undo and redo: makes `snapshot` the applied filter as it was, without evaluating, except that
+   * the EAT reliability conditions stay as they are now (re-evaluated when they differ).
+   */
   restore(snapshot: FilterSnapshot): void;
   getApplied(): FilterSnapshot;
   /** A new dataset has other proteins, so the filter, the draft and the mirror record go. */
@@ -336,7 +339,8 @@ export function createFilterController({
         // Only this column's condition changes in a dirty draft, under the draft's own id, so
         // the row keeps its live count and any half-typed bound (decision 14).
         const inDraft = findConditionsForAnnotation(draft, key);
-        const forDraft = conditionsForReliability(key, state, inDraft[0]?.id);
+        // A row new to the draft takes the applied condition's id, so it reads as applied.
+        const forDraft = conditionsForReliability(key, state, inDraft[0]?.id ?? replacement?.id);
         if (!sameConditions(inDraft, forDraft)) {
           draft = replaceConditionsForAnnotation(draft, key, forDraft[0] ?? null);
         }
@@ -355,7 +359,16 @@ export function createFilterController({
     },
     restore(next) {
       const draftWasClean = !isDirty();
-      setApplied(next);
+      // The EAT slider is not an undo step: the reliability conditions stay as they are now.
+      let query = next.query;
+      for (const [key, annotation] of Object.entries(snapshot?.annotations ?? {})) {
+        if (!isEatConfidenceAnnotation(annotation)) continue;
+        const current = findConditionsForAnnotation(applied.query, key);
+        if (sameConditions(findConditionsForAnnotation(query, key), current)) continue;
+        query = replaceConditionsForAnnotation(query, key, current[0] ?? null);
+      }
+      if (query === next.query) setApplied(next);
+      else applyQuery(query);
       if (draftWasClean) draft = baseline();
       mirrorToPanel();
       syncBuilder();

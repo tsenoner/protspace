@@ -553,6 +553,33 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
     expect(m.queryBuilder.query[0]).toEqual(configured('a'));
     expect(eatCondition(m.queryBuilder.query)).toMatchObject({ min: 0.5 });
   });
+  it('a reliability row new to a dirty draft has the applied condition’s id: one unapplied change', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
+    threshold(m.controller, 'family', 0.5);
+    expect(eatCondition(m.queryBuilder.query)?.id).toBe(eatCondition(applied(m.controller))?.id);
+    expect(getWorkbenchStatus().unappliedFilterChanges).toBe(1);
+  });
+
+  it('undo and redo of a filter step keep the reliability condition set after it', () => {
+    const before = m.controller.getApplied();
+    editQuery(m.queryBuilder, [configured('a')]);
+    apply(m.queryBuilder, range(20));
+    const after = m.controller.getApplied();
+    threshold(m.controller, 'family', 0.5);
+
+    m.controller.restore(before);
+    expect(applied(m.controller)).toHaveLength(1);
+    expect(eatCondition(applied(m.controller))).toMatchObject({ min: 0.5 });
+    expect(m.plot.filteredProteinIds).toHaveLength(15);
+
+    m.controller.restore(after);
+    expect(applied(m.controller)).toHaveLength(2);
+    expect(eatCondition(applied(m.controller))).toMatchObject({ min: 0.5 });
+    // Re-evaluated, not the ids recorded without the reliability condition.
+    expect(m.controller.getApplied().matchedIds).not.toBe(after.matchedIds);
+    // The panel's base kept its state, so nothing moves the panel.
+    expect(m.eatPanel.setReliabilityState).not.toHaveBeenCalled();
+  });
 
   it('forward: re-applying with a new threshold replaces (does not stack) the condition', () => {
     threshold(m.controller, 'family', 0.5);
