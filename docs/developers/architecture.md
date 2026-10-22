@@ -49,7 +49,7 @@ and applies selection and isolation steps (`applyHistory`); the filter controlle
 filters (`onFilterCommitted`) and restores a snapshot's id set without evaluating the query again
 (`restore`). `undo-controller.ts` owns only the keys: a press in a text field (an `INPUT`,
 `TEXTAREA`, `SELECT` or contentEditable anywhere in the composed path), in an open modal or with Alt
-is left alone. A new dataset clears the history. The EAT reliability slider, legend hiding and zoom
+is left alone. A new dataset clears the history. The EAT panel's reliability range, legend hiding and zoom
 are not recorded.
 
 ## Legend Component
@@ -74,15 +74,14 @@ children of one list for drag-and-drop, and the e2e, perf and tour code reach ro
 | `legend-other-control.ts`                | `OtherPopoverControl`: the legend's side of the Other popover (its anchor, opening and closing, focus when Other empties)                                                                                                                                                                                         |
 | `legend-list.ts`                         | The list template, `LegendKeyboardController` (row keys, the list's one Tab stop, keyboard reorder as a layer) and `TruncatedNameTooltip`                                                                                                                                                                         |
 | `legend-score-strips.ts`                 | Score-strip points and the strips section                                                                                                                                                                                                                                                                         |
-| `legend-eat-controls.ts`                 | `EatReliabilityController` and the EAT section                                                                                                                                                                                                                                                                    |
+| `eat-population-counts.ts`               | `countEatPredictions`: the count behind the one-line EAT note under the title                                                                                                                                                                                                                                     |
 | `legend-color-picker.ts`                 | `ColorPickerController`: the colour and shape picker, a `ps-popover` on the layer stack                                                                                                                                                                                                                           |
 | `legend-items-state.ts`                  | Pure functions: sort, palette and numeric helpers, and the reading of a stored record                                                                                                                                                                                                                             |
 
 Templates take explicit view models and handlers. Two kinds of controller hold the logic:
 
 - Lit reactive controllers keep their own transient state and timers and reach the element through
-  callbacks: those beside the templates (`LegendKeyboardController`, `ColorPickerController`,
-  `EatReliabilityController`, …) and `PersistenceController`, `DragController` and
+  callbacks: those beside the templates (`LegendKeyboardController`, `ColorPickerController`, …) and `PersistenceController`, `DragController` and
   `ScatterplotSyncController` in `controllers/`.
 - Plain classes in `controllers/` (`LegendDataController`, `ItemActionsController`,
   `ReorderController`) hold the legend's own logic and read and write the element's state
@@ -197,6 +196,18 @@ tour. The runtime and the Help menu import `product-tour.ts` lazily, which keeps
 the explore chunk. Tests, the perf harness and the docs captures seed the key through
 `apps/web/tests/helpers/tour-storage-state.ts`, never as a literal.
 
+## EAT panel
+
+`protspace-eat-panel` (`packages/core/src/components/eat-panel/`) holds every EAT control. It owns
+the reliability state (`EatReliabilityController` in `eat-reliability-controller.ts`) and reports
+it in events; it never writes to the plot or the filter. `eat-summary.ts` builds the per-annotation
+index and the counts, chart bins and label rows; `eat-panel-histogram.ts`,
+`eat-panel-breakdown.ts` and `eat-panel-card.ts` hold the reliability section, the label rows and
+the Selected protein strip. The app's `apps/web/src/explore/eat-panel-controller.ts` feeds it and
+applies its events: in Hide, a filter condition through the filter controller; in Fade, the plot's
+`eatDim`; and the legend's `eatReliability` and `eatFade` for its one-line note. The shell's
+`apps/web/src/workbench/EatPanel.tsx` draws the header (`EAT · <annotation>`, info, Reset, close).
+
 ## Filter panel
 
 The app's filter controller (`apps/web/src/explore/filter-controller.ts`) keeps two queries: the
@@ -204,7 +215,8 @@ applied filter, written to the scatterplot's `filteredProteinIds` and `filtersAc
 draft the Filter panel's query builder edits. Apply makes the draft the applied filter and keeps
 the panel open; Cancel returns the draft to it; Reset and the status chip's ✕ remove it. The
 builder gets data and recounts only while the panel is on screen (`panel` in the layout store;
-the filter itself is never stored). The legend's EAT reliability control writes the applied
-filter at once and changes only its own column's condition in a dirty draft. Each Apply, Reset and
+the filter itself is never stored). The EAT panel's reliability range, in Hide, writes the
+applied filter at once and changes only its own column's condition in a dirty draft; the Filter
+panel shows that condition as a locked row. Each Apply, Reset and
 removal is reported as a `FilterCommit` holding the applied query and its matched ids by
 reference, which the undo history records.

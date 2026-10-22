@@ -14,6 +14,7 @@ it exists on `main`.
 | ------------------------------------------- | --------------------------------- | --------------------------------------------- |
 | [Scatterplot](#scatterplot)                 | `<protspace-scatterplot>`         | Main projection visualization                 |
 | [Legend](#legend)                           | `<protspace-legend>`              | Category filtering and colors                 |
+| [EAT Panel](#eat-panel)                     | `<protspace-eat-panel>`           | Transferred annotations (EAT) and reliability |
 | [Projection Select](#projection-select)     | `<protspace-projection-select>`   | Projection picker                             |
 | [Annotation Select](#annotation-select)     | `<protspace-annotation-select>`   | Color by and tooltip annotations              |
 | [Contours Menu](#contours-menu)             | `<protspace-contours-menu>`       | Density contour mode                          |
@@ -212,18 +213,20 @@ Category filtering and color mapping with automatic settings persistence.
 
 ### Properties
 
-| Property             | Type                      | Default | Description                             |
-| -------------------- | ------------------------- | ------- | --------------------------------------- |
-| `data`               | `LegendDataInput \| null` | `null`  | Dataset the legend describes            |
-| `selectedAnnotation` | `string`                  | `''`    | Annotation being shown                  |
-| `annotationName`     | `string`                  | `''`    | Display name of the annotation          |
-| `annotationValues`   | `(string \| null)[]`      | `[]`    | Values in the annotation column         |
-| `proteinIds`         | `string[]`                | `[]`    | Protein IDs backing the counts          |
-| `selectedItems`      | `string[]`                | `[]`    | Selected legend entries                 |
-| `maxVisibleValues`   | `number`                  | -       | Max categories (or target numeric bins) |
-| `shapeSize`          | `number`                  | -       | Dot size in use (see below)             |
-| `isolationMode`      | `boolean`                 | `false` | Reflects the plot's isolation state     |
-| `isolationHistory`   | `string[][]`              | `[]`    | Isolation stack from the plot           |
+| Property             | Type                          | Default | Description                             |
+| -------------------- | ----------------------------- | ------- | --------------------------------------- |
+| `data`               | `LegendDataInput \| null`     | `null`  | Dataset the legend describes            |
+| `selectedAnnotation` | `string`                      | `''`    | Annotation being shown                  |
+| `annotationName`     | `string`                      | `''`    | Display name of the annotation          |
+| `annotationValues`   | `(string \| null)[]`          | `[]`    | Values in the annotation column         |
+| `proteinIds`         | `string[]`                    | `[]`    | Protein IDs backing the counts          |
+| `selectedItems`      | `string[]`                    | `[]`    | Selected legend entries                 |
+| `maxVisibleValues`   | `number`                      | -       | Max categories (or target numeric bins) |
+| `shapeSize`          | `number`                      | -       | Dot size in use (see below)             |
+| `isolationMode`      | `boolean`                     | `false` | Reflects the plot's isolation state     |
+| `isolationHistory`   | `string[][]`                  | `[]`    | Isolation stack from the plot           |
+| `eatReliability`     | `EatReliabilityState \| null` | `null`  | The EAT panel's range, for the EAT note |
+| `eatFade`            | `boolean`                     | `false` | The EAT panel fades rather than hides   |
 
 ### HTML attributes
 
@@ -255,6 +258,7 @@ An empty slot takes no room. The demo app puts its Legend/Filter tabs in `header
 | `legend-customize`           | none                                                      | Settings popover opened               |
 | `legend-download`            | none                                                      | Download requested                    |
 | `legend-error`               | `{ message, severity, source, context?, originalError? }` | Host-consumed error event             |
+| `eat-panel-open`             | none                                                      | The EAT note's `EAT ›` link clicked   |
 
 Settings and the "Other" categories open as popovers (`protspace-legend-settings-popover`,
 `protspace-legend-other-popover`) in the top layer, inside the legend's shadow root. Settings
@@ -267,6 +271,13 @@ ignored). A finger held 250 ms on a row's drag handle lifts the row to reorder i
 starts on the handle scrolls the list. A finger held 500 ms on a name that ends in an ellipsis
 shows it in full until it lifts, without toggling the row. A row marks its score-strip dot on mouse
 or pen hover only.
+
+::: warning BREAKING
+The legend no longer holds the EAT controls. `applyEatSettings()`, `setReliabilityState()`,
+`reliabilityState` and `reliabilityThreshold` are gone from `protspace-legend`; the
+[EAT panel](#eat-panel) has them. The legend keeps a one-line note, fed by `eatReliability` and
+`eatFade`, whose link fires `eat-panel-open`.
+:::
 
 ### Methods
 
@@ -307,6 +318,41 @@ legend.addEventListener('legend-zorder-change', (e) => {
 });
 ```
 
+## EAT Panel
+
+Every control for the transferred annotations of the Color by annotation: Show predictions, the
+reliability range with Hide or Fade, the label rows, the drill-down lists and the Selected protein
+strip. It owns the reliability state and reports it in events; the host applies it to the plot,
+the filter and the legend, as `apps/web/src/explore/eat-panel-controller.ts` does. It computes
+nothing while `active` is false.
+
+| Property       | Type                            | Description                                            |
+| -------------- | ------------------------------- | ------------------------------------------------------ |
+| `data`         | `VisualizationData \| null`     | The plot's raw data                                    |
+| `annotation`   | `string`                        | The Color by annotation's key                          |
+| `context`      | `Uint8Array \| null`            | Proteins that pass every other filter condition        |
+| `labelColors`  | `ReadonlyMap<string, string>`   | Label to swatch colour, as the legend draws it         |
+| `focusProtein` | `number \| null`                | The single selected protein's index, for the strip     |
+| `otherFilters` | `{ annotation, reliability }[]` | Reliability filters still applied to other annotations |
+| `active`       | `boolean`                       | Whether the panel is shown                             |
+| `compact`      | `boolean`                       | The phone layout                                       |
+
+| Member                           | Description                                                          |
+| -------------------------------- | -------------------------------------------------------------------- |
+| `reliability` (getter)           | The range, `{ min, max }`, 0 to 1                                    |
+| `reliabilityThreshold` (getter)  | The low end, which a bundle stores                                   |
+| `overlayEnabled` (getter)        | Show predictions                                                     |
+| `outcome` (getter)               | `'hide'` (a filter) or `'dim'` (Fade)                                |
+| `isAtDefaults` (getter)          | Every setting at its default                                         |
+| `applyEatSettings(enabled, min)` | Bundle restore: Show and the range `min..100 %` in Hide; emits once  |
+| `setReliabilityState(state)`     | Follow the applied filter without emitting                           |
+| `reset()`                        | Back to the defaults; emits                                          |
+| `resetForNewDataset()`           | Back to the defaults for a new dataset, keeping the drawing settings |
+
+Events, all bubbling and composed: `eat-overlay-change` (`EatOverlayChangeDetail`),
+`eat-outcome-change`, `eat-color-by`, `eat-select-proteins`, `eat-go-to-source`,
+`eat-trace-source`, `eat-drawing-change`, `eat-export-ids` and `eat-clear-filter`.
+
 ## View and App Controls
 
 ::: warning BREAKING
@@ -319,7 +365,7 @@ the scatterplot (`auto-sync` and `scatterplot-selector` are gone): listen for th
 `selectedProteinIds`, `selectionMode` and `selectionTool` yourself, as the app's controllers in
 `apps/web/src/explore/*-controller.ts` do. `selection-disabled-notification` is replaced by the
 scatterplot's `auto-disable-selection`, and `eat-threshold-mirror` by the host's own filter, which
-calls the legend's `setReliabilityState()`. The legend hears `annotation-change` and
+calls the EAT panel's `setReliabilityState()`. The legend hears `annotation-change` and
 `projection-change` from anywhere in its document.
 :::
 
