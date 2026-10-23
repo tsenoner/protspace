@@ -986,35 +986,34 @@ export const queryBuilderStyles = [
       height: 4px;
       overflow: hidden;
       border-radius: var(--ps-radius-full);
-      background: var(--ps-surface-hover);
+      /* An accent fill on an accent-tinted track (over 3:1 in both themes), so a near-full bar
+         reads as a bar and never as a grey rule. */
+      background: var(--ps-accent-tint);
     }
 
     .value-picker-bar b {
       display: block;
       min-width: 2px;
       height: 100%;
-      /* Not a border tone: a share of a few percent must still read against the track. */
-      background: var(--ps-text-faint);
+      border-radius: inherit;
+      background: var(--ps-accent);
     }
 
-    /* "Any value" keeps the column, so its count lines up with the others, but draws no bar. */
+    /* While the count is pending the column stays, so the placeholders line up, but draws no bar. */
     .value-picker-bar.is-blank {
       visibility: hidden;
     }
 
-    /* The rule between "Any value" / N/A and the values themselves. */
+    /* The rule between "Any value" / N/A and the values themselves. It stops short of the bar
+       column (36px plus the row's gap), so it never runs into a bar. */
     .value-picker-item.has-divider::after {
       position: absolute;
-      right: var(--ps-space-3);
+      right: calc(var(--ps-space-3) + 36px + var(--ps-space-2) * 2);
       bottom: 0;
       left: var(--ps-space-2);
       height: 1px;
       background: var(--ps-border);
       content: '';
-    }
-
-    .is-checked .value-picker-bar b {
-      background: var(--ps-accent);
     }
 
     /* Locked out while the "Any value" sentinel is selected (it subsumes them). */

@@ -477,9 +477,9 @@ class ProtspaceQueryValuePicker extends LitElement {
 
   /**
    * `base` is how many proteins the counts are taken among, so a bar is its value's share of
-   * them. "Any value" has none: it always covers every protein with a value, so its bar would be
-   * full by definition and only compete with the real ones. It and N/A sit above a rule, apart
-   * from the values themselves; `divider` draws it under the last of them.
+   * them, "Any value" included: it is full only when every protein counted has a value. It and
+   * N/A sit above a rule, apart from the values themselves; `divider` draws it under the last of
+   * them.
    */
   private _renderLine(
     line: Line,
@@ -497,7 +497,6 @@ class ProtspaceQueryValuePicker extends LitElement {
     const { entry, index } = line;
     const checked = selected.has(entry.value);
     const locked = this._isLocked(entry.value);
-    const any = entry.value === ANY_VALUE;
     const share = base > 0 ? Math.min(100, (entry.count / base) * 100) : 0;
     const pending = this._pending;
     return html`
@@ -521,8 +520,8 @@ class ProtspaceQueryValuePicker extends LitElement {
         ${pending
           ? html`<span class="value-picker-count is-pending" aria-hidden="true"></span>`
           : html`<span class="value-picker-count">${formatCount(entry.count)}</span>`}
-        <i class="value-picker-bar ${any || pending ? 'is-blank' : ''}" aria-hidden="true"
-          >${any || pending || entry.count === 0
+        <i class="value-picker-bar ${pending ? 'is-blank' : ''}" aria-hidden="true"
+          >${pending || entry.count === 0
             ? nothing
             : html`<b style="width:${share.toFixed(2)}%"></b>`}</i
         >
