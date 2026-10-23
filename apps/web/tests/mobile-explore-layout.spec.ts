@@ -355,6 +355,19 @@ test.describe('the bottom panel on a phone', () => {
     await expect(page.locator('#wb-filter-title')).toBeFocused();
     expect((await readLayout(page))?.panelFolded).toBe(false);
   });
+
+  test('a tab tapped on a folded panel unfolds it', async ({ page }) => {
+    await openExplorePhone(page);
+    await panelFold(page).tap();
+    await expect(workbench(page)).toHaveAttribute('data-panel-folded', '');
+
+    await panelTab(page, 'Filter').tap();
+
+    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(workbench(page)).not.toHaveAttribute('data-panel-folded');
+    await expect(page.locator('#wb-filter-panel .wb-filter-body')).toBeVisible();
+    await expect.poll(async () => (await readLayout(page))?.panelFolded).toBe(false);
+  });
 });
 
 /** The runtime's elements: rendered once, never re-created or moved (Review Focus 1). */

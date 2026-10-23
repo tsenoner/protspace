@@ -16,11 +16,12 @@ const hostOf = (panel: SidebarPanel): string =>
   TABS.find((tab) => tab.panel === panel)?.controls ?? 'myLegend';
 
 /**
- * Shows `panel`, then focuses its tab in the copy of the tabs that is now on screen: each panel's
- * header holds its own copy, and the one just used is now hidden.
+ * Shows `panel`, unfolding a folded phone panel so the tab shows something, then focuses its tab
+ * in the copy of the tabs that is now on screen: each panel's header holds its own copy, and the
+ * one just used is now hidden.
  */
 function choose(panel: SidebarPanel): void {
-  flushSync(() => updateLayout({ panel }));
+  flushSync(() => updateLayout({ panel, panelFolded: false }));
   const host = document.getElementById(hostOf(panel));
   host?.querySelector<HTMLElement>(`.wb-panel-tabs [data-tab="${panel}"]`)?.focus();
 }
