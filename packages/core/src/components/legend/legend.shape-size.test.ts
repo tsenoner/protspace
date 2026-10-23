@@ -14,7 +14,7 @@ import type { ProtspaceLegend } from './legend';
 import { createDefaultSettings } from './legend-helpers';
 import {
   mountLegendWithScatterplot,
-  settle,
+  settleLegend,
   stubLocalStorage,
 } from './test-support/legend-scatterplot-harness';
 
@@ -25,12 +25,8 @@ type ShapeSizeLegend = HTMLElement & {
   shapeSize: number;
   selectedAnnotation: string;
   annotationData: { name: string; values: string[]; kind?: 'categorical' | 'numeric' };
-  _dialogSettings: Record<string, unknown> & { shapeSize: number | null };
-  _handleCustomize: () => Promise<void>;
-  _handleSettingsSave: () => void;
-  _handleSettingsReset: () => void;
+  _settings: ProtspaceLegend['_settings'];
   _updateLegendItems: () => void;
-  _dispatchLegendStateChange: () => void;
   _scatterplotController: { updateConfig: (config: { pointSize?: number }) => void };
   _persistenceController: {
     _datasetHash: string;
@@ -64,7 +60,6 @@ function makeLegend(proteinCount = 2) {
     if (config.pointSize !== undefined) pointSizes.push(config.pointSize);
   };
   el._updateLegendItems = vi.fn();
-  el._dispatchLegendStateChange = vi.fn();
   el._persistenceController.updateDatasetHash(DATASET);
   el._datasetProteinCount = proteinCount;
   const hash = el._persistenceController._datasetHash;
@@ -79,11 +74,8 @@ function makeLegend(proteinCount = 2) {
       buildStorageKey('legend', hash, annotation),
       JSON.stringify({ shapeSize, maxVisibleValues: 10, hiddenValues: [], categories: {} }),
     );
-  /** Save the settings dialog with `shapeSize` in the size field, null for an emptied one. */
-  const pick = (shapeSize: number | null) => {
-    el._dialogSettings = { ...el._dialogSettings, shapeSize, annotationSortModes: {} };
-    el._handleSettingsSave();
-  };
+  /** Commit a size from the settings popover's size field, null for an emptied one. */
+  const pick = (shapeSize: number | null) => el._settings.apply({ shapeSize });
   /** Give the legend data with these annotations, which Reset and exports go through. */
   const annotate = (...annotations: string[]) => {
     el.data = {
@@ -142,7 +134,7 @@ describe('legend shape size', () => {
     switchTo('a');
     pick(12);
     switchTo('b');
-    el._handleSettingsReset();
+    el._settings.reset();
     expect(el.shapeSize).toBe(10);
     switchTo('a');
     expect(el.shapeSize).toBe(10);
@@ -187,18 +179,37 @@ describe('legend shape size', () => {
     expect(el.getAllPersistedSettings().a.shapeSize).toBe(64);
   });
 
-  it('caps a host-set size when the settings dialog is saved', async () => {
+  it('caps a host-set size in the settings popover and when it is committed', async () => {
     const { el, pointSizes, switchTo } = makeLegend();
     switchTo('a');
     el.shapeSize = 200;
-    // Opening the dialog awaits a render, which a detached element never does.
+    // The popover renders only inside a connected legend.
     document.body.appendChild(el);
     try {
-      await el._handleCustomize();
-      expect(el._dialogSettings.shapeSize).toBe(64);
-      el._handleSettingsSave();
+      await el.updateComplete;
+      const popover = el.shadowRoot!.querySelector('protspace-legend-settings-popover')!;
+      expect(popover.settings.shapeSize).toBe(64);
+      popover.dispatchEvent(new CustomEvent('settings-change', { detail: { shapeSize: 640 } }));
       expect(el.shapeSize).toBe(64);
       expect(pointSizes.at(-1)).toBe(512);
+    } finally {
+      el.remove();
+    }
+  });
+
+  it('a render with a size off the default reads no stored size for the closed popover', async () => {
+    const { el, switchTo } = makeLegend();
+    switchTo('a');
+    el.shapeSize = 20;
+    document.body.appendChild(el);
+    try {
+      await el.updateComplete;
+      const getItem = vi.spyOn(localStorage, 'getItem');
+      el.requestUpdate();
+      await el.updateComplete;
+      const keys = getItem.mock.calls.map(([key]) => key);
+      expect(keys.some((key) => key.startsWith('protspace:shape-size:'))).toBe(false);
+      getItem.mockRestore();
     } finally {
       el.remove();
     }
@@ -371,7 +382,7 @@ describe('legend default shape size from the protein count', () => {
     expect(storedPick()).toBe('12');
     annotate('a', 'b');
 
-    el._handleSettingsReset();
+    el._settings.reset();
     expect(el.shapeSize).toBe(2);
     expect(pointSizes.at(-1)).toBe(16);
     expect(storedPick()).toBeNull();
@@ -429,7 +440,7 @@ describe('legend default shape size from the protein count', () => {
     expect(el.shapeSize).toBe(5);
     annotate('a', 'b');
 
-    el._handleSettingsReset();
+    el._settings.reset();
     expect(el.shapeSize).toBe(2);
     switchTo('b');
     expect(el.shapeSize).toBe(2);
@@ -437,11 +448,6 @@ describe('legend default shape size from the protein count', () => {
 });
 
 type MockPlot = Awaited<ReturnType<typeof mountLegendWithScatterplot>>['plot'];
-type ResettableLegend = ProtspaceLegend & {
-  _handleSettingsReset: () => void;
-  _handleCustomize: () => Promise<void>;
-  _handleItemClick: (value: string) => void;
-};
 
 function makeData(count: number, prefix = 'p'): VisualizationData {
   const codes = Int32Array.from({ length: count }, (_, i) => i % 2);
@@ -459,6 +465,7 @@ function makeData(count: number, prefix = 'p'): VisualizationData {
   };
 }
 
+/** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
 function showView(plot: MockPlot, view: VisualizationData): void {
   plot.getCurrentData = () => view;
   plot.dispatchEvent(new CustomEvent('data-change', { detail: { data: view } }));
@@ -473,8 +480,8 @@ describe('legend default shape size with a scatterplot', () => {
   async function mount(count: number) {
     const data = makeData(count);
     const { legend, plot } = await mountLegendWithScatterplot(data, 'group');
-    await settle(legend);
-    return { data, legend: legend as ResettableLegend, plot };
+    await settleLegend(legend);
+    return { data, legend, plot };
   }
 
   const pointSize = (plot: MockPlot) => (plot.config as { pointSize?: number }).pointSize;
@@ -484,8 +491,8 @@ describe('legend default shape size with a scatterplot', () => {
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
 
-    legend._handleItemClick('A');
-    await settle(legend);
+    legend._actions.toggle('A');
+    await settleLegend(legend);
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
   });
@@ -497,15 +504,15 @@ describe('legend default shape size with a scatterplot', () => {
     plot.filtersActive = true;
     plot.filteredProteinIds = view.protein_ids;
     showView(plot, view);
-    await settle(legend);
+    await settleLegend(legend);
     expect(legend.proteinIds).toHaveLength(1_000);
 
     plot.selectedAnnotation = 'kind';
     legend.selectedAnnotation = 'kind';
-    await settle(legend);
+    await settleLegend(legend);
     expect(legend.shapeSize).toBe(4);
 
-    legend._handleSettingsReset();
+    legend._settings.reset();
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
   });
@@ -518,31 +525,35 @@ describe('legend default shape size with a scatterplot', () => {
     legend.clearForNewDataset(generateDatasetHash(next));
     plot.data = next;
     showView(plot, next);
-    await settle(legend);
+    await settleLegend(legend);
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
   });
 
-  it('names the default in the settings dialog and returns to it from an emptied field', async () => {
+  it('names the default in the settings popover and returns to it from an emptied field', async () => {
     const { legend, plot } = await mount(40_000);
     legend.applyShapeSize(10);
+    await settleLegend(legend);
     expect(pointSize(plot)).toBe(80);
 
-    await legend._handleCustomize();
-    await settle(legend);
-    const input = legend.shadowRoot!.querySelector<HTMLInputElement>('#shape-size-input')!;
-    expect(input.value).toBe('10');
-    expect(input.placeholder).toBe('4');
-    expect(input.parentElement?.querySelector('.settings-note')?.textContent).toContain(
-      'Default for this dataset: 4',
-    );
-    input.value = '';
-    input.dispatchEvent(new Event('input'));
-    legend.shadowRoot!.querySelector<HTMLButtonElement>('.modal-footer .btn-primary')!.click();
-    await settle(legend);
+    const popover = legend.shadowRoot!.querySelector('protspace-legend-settings-popover')!;
+    await popover.updateComplete;
+    expect(popover.settings.shapeSize).toBe(10);
+    expect(popover.defaultShapeSize).toBe(4);
+    const field = popover.shadowRoot!.querySelector<
+      HTMLElement & { value: string; placeholder: string }
+    >('#shape-size-input')!;
+    expect(field.value).toBe('10');
+    expect(field.placeholder).toBe('4');
+    expect(popover.shadowRoot!.textContent).toContain('Default for this dataset: 4');
+
+    popover.dispatchEvent(new CustomEvent('settings-change', { detail: { shapeSize: null } }));
+    await settleLegend(legend);
 
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
     expect(legend.pickedShapeSize).toBeUndefined();
+    // The default is in use: the field is empty and its placeholder names it.
+    expect(popover.settings.shapeSize).toBeNull();
   });
 });

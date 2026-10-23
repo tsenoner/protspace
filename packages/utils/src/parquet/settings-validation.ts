@@ -1,6 +1,7 @@
 import { DEFAULT_CATEGORICAL_PALETTE_ID } from '../generated/shared-constants';
 import type {
   BundleSettings,
+  EatOutcome,
   ExportOptionsMap,
   LegacyBundleSettings,
   LegendPersistedSettings,
@@ -163,6 +164,8 @@ export function isLegacyBundleSettings(obj: unknown): obj is LegacyBundleSetting
   return isValidLegendSettingsMap(obj);
 }
 
+const isEatOutcome = (value: unknown): value is EatOutcome => value === 'hide' || value === 'dim';
+
 /**
  * Validates the current normalized bundle settings object.
  */
@@ -193,6 +196,9 @@ export function isNormalizedBundleSettings(obj: unknown): obj is BundleSettings 
       settings.eatConfidenceThreshold < 0 ||
       settings.eatConfidenceThreshold > 1)
   ) {
+    return false;
+  }
+  if (settings.eatOutcome !== undefined && !isEatOutcome(settings.eatOutcome)) {
     return false;
   }
 
@@ -335,6 +341,7 @@ export function normalizeBundleSettings(
           : obj.publishState,
       eatOverlayEnabled: obj.eatOverlayEnabled,
       eatConfidenceThreshold: obj.eatConfidenceThreshold,
+      eatOutcome: obj.eatOutcome,
       shapeSize: positiveOrUndefined(obj.shapeSize),
     };
   }
@@ -376,6 +383,7 @@ export function normalizeBundleSettings(
           settings.eatConfidenceThreshold <= 1
             ? settings.eatConfidenceThreshold
             : undefined,
+        eatOutcome: isEatOutcome(settings.eatOutcome) ? settings.eatOutcome : undefined,
         shapeSize: positiveOrUndefined(settings.shapeSize),
       };
     }

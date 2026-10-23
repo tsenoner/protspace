@@ -62,8 +62,8 @@ export interface ExampleLoadContext {
   entry: ExampleDataset;
   source: DatasetChangeSource;
   /**
-   * Whether this load replaces the user's stored import (a menu choice, or
-   * the recovery banner's "Load default"). `handleDataLoaded` clears the
+   * Whether this load replaces the user's stored import (the recovery
+   * banner's "Load default"; a menu choice keeps it). `handleDataLoaded` clears the
    * stored copy only once the example has decoded and is still the current
    * request, so a failed download or parse, or a superseded request, never
    * deletes the import that is still on screen. Absent means false.
@@ -74,6 +74,8 @@ export interface ExampleLoadContext {
 export interface LoadMeta {
   sequence: number;
   kind: DatasetLoadKind;
+  /** The loaded file's name: the overlay names a user file and a stored import by it. */
+  fileName?: string;
   example?: ExampleLoadContext;
   /**
    * The request epoch the load began under (see `beginUserRequest` in

@@ -13,7 +13,7 @@ vi.mock('./data-renderer', () => ({
 
 vi.mock('./persisted-dataset', () => ({
   createPersistedDatasetController: () => ({
-    loadExampleDatasetAndClearPersistedFile: vi.fn(),
+    loadChosenExample: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
     tryLoadPersistedAgain: vi.fn(),
     clearCorruptedPersistedDataset: vi.fn(),
@@ -33,6 +33,16 @@ vi.mock('./tooltip-annotations-store', () => ({
 
 import { createDatasetController } from './dataset-controller';
 
+/** The controls a new dataset resets and fills, spied. */
+function createControls() {
+  return {
+    resetForNewDataset: vi.fn(),
+    setHasFileSettings: vi.fn(),
+    showInitialView: vi.fn(),
+    clearStructure: vi.fn(),
+  };
+}
+
 describe('dataset controller EAT settings restore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -41,18 +51,16 @@ describe('dataset controller EAT settings restore', () => {
   });
 
   it('applies embedded EAT settings after an OPFS reload while retaining OPFS legend precedence', async () => {
-    const controlBar = {
-      clearForNewDataset: vi.fn(),
-      hasFileSettings: false,
-    };
+    const controls = createControls();
     const legendElement = {
       clearForNewDataset: vi.fn(),
       setFileSettings: vi.fn(),
-      applyEatSettings: vi.fn(),
     };
+    const eatPanel = { applyEatSettings: vi.fn() };
     const options = buildControllerOptions({
-      controlBar,
+      controls,
       legendElement,
+      eatPanel,
       plotElement: { eatOverlayEnabled: true },
       loadQueue: {
         getRunningLoadMeta: () => ({ sequence: 7, kind: 'opfs' }),
@@ -72,9 +80,9 @@ describe('dataset controller EAT settings restore', () => {
       }),
     );
 
-    expect(controlBar.clearForNewDataset).toHaveBeenCalledOnce();
-    expect(legendElement.applyEatSettings).toHaveBeenCalledWith(false, 0.75);
-    expect(controlBar.hasFileSettings).toBe(true);
+    expect(controls.resetForNewDataset).toHaveBeenCalledOnce();
+    expect(eatPanel.applyEatSettings).toHaveBeenCalledWith(false, 0.75, 'hide');
+    expect(controls.setHasFileSettings).toHaveBeenLastCalledWith(true);
     expect(legendElement.setFileSettings).not.toHaveBeenCalled();
     expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
     expect(options.loadQueue.resolvePendingLoadFinalization).toHaveBeenCalledWith(7, true);
@@ -88,14 +96,28 @@ describe('dataset controller EAT settings restore', () => {
         },
       }),
     );
-    expect(legendElement.applyEatSettings).toHaveBeenLastCalledWith(
+    expect(eatPanel.applyEatSettings).toHaveBeenLastCalledWith(
       true,
       DEFAULT_EAT_CONFIDENCE_THRESHOLD,
+      'hide',
     );
+
+    // A bundle saved in Fade reopens in Fade, with its range.
+    await controller.handleDataLoaded(
+      dataLoadedEvent({
+        settings: {
+          legendSettings: {},
+          exportOptions: {},
+          eatConfidenceThreshold: 0.5,
+          eatOutcome: 'dim',
+        },
+      }),
+    );
+    expect(eatPanel.applyEatSettings).toHaveBeenLastCalledWith(true, 0.5, 'dim');
   });
 
   it('applies a bundle shape size after the legend settings of a user import', async () => {
-    const controlBar = { clearForNewDataset: vi.fn(), hasFileSettings: false };
+    const controls = createControls();
     const calls: string[] = [];
     const legendElement = {
       clearForNewDataset: vi.fn(),
@@ -103,11 +125,10 @@ describe('dataset controller EAT settings restore', () => {
       applyShapeSize: vi.fn((size: number, hash: string) =>
         calls.push(`applyShapeSize:${size}:${typeof hash}`),
       ),
-      applyEatSettings: vi.fn(),
     };
     const controller = createDatasetController(
       buildControllerOptions({
-        controlBar,
+        controls,
         legendElement,
         plotElement: { eatOverlayEnabled: true },
         loadQueue: {
@@ -125,6 +146,37 @@ describe('dataset controller EAT settings restore', () => {
     );
 
     expect(calls).toEqual(['setFileSettings', 'applyShapeSize:12:string']);
-    expect(controlBar.hasFileSettings).toBe(true);
+    expect(controls.setHasFileSettings).toHaveBeenLastCalledWith(true);
+  });
+
+  it('bundle settings report hasFileSettings', async () => {
+    const controls = createControls();
+    const controller = createDatasetController(
+      buildControllerOptions({
+        controls,
+        plotElement: { eatOverlayEnabled: true },
+        loadQueue: {
+          getRunningLoadMeta: () => ({ sequence: 4, kind: 'user' }),
+          getLatestSequence: () => 4,
+        },
+      }),
+    );
+
+    await controller.handleDataLoaded(
+      dataLoadedEvent({
+        settings: { legendSettings: { ec: { categories: {} } }, exportOptions: {} },
+        source: 'user',
+      }),
+    );
+    expect(controls.resetForNewDataset).toHaveBeenCalledOnce();
+    expect(controls.setHasFileSettings).toHaveBeenLastCalledWith(true);
+
+    // Settings that hold nothing, and no settings at all, are no file settings.
+    await controller.handleDataLoaded(
+      dataLoadedEvent({ settings: { legendSettings: {}, exportOptions: {} }, source: 'user' }),
+    );
+    expect(controls.setHasFileSettings).toHaveBeenLastCalledWith(false);
+    await controller.handleDataLoaded(dataLoadedEvent({ source: 'user' }));
+    expect(controls.setHasFileSettings).toHaveBeenLastCalledWith(false);
   });
 });

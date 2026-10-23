@@ -27,15 +27,14 @@ export const LEGEND_DEFAULTS = {
 export const LEGEND_STYLES = {
   strokeWidth: {
     default: 1,
-    selected: 2,
     outline: 2,
   },
   colors: {
     defaultStroke: '#394150',
-    selectedStroke: '#00A3E0',
   },
   outlineShapes: new Set<string>([]),
-  legendDisplaySize: 16,
+  // The row symbol's size in px: a 10 px mark in a 16 px box (3 px padding), as the mockups draw it.
+  legendDisplaySize: 10,
 } as const;
 
 // Re-export legend utilities so existing imports from './config' keep working

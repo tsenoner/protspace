@@ -169,6 +169,57 @@ describe('render coalescing', () => {
     expect(render).toHaveBeenCalledTimes(1);
   });
 
+  it('a tooltip change does not render', () => {
+    const { el, renderer } = makePlot();
+    const render = vi.spyOn(renderer, 'render');
+    const overlays = vi.spyOn(el, '_updateSelectionOverlays');
+
+    // A hover sets a new { x, y, view } every time; nothing in WebGL draws it.
+    el._reconcileSelectionOverlays(new Map<string, unknown>([['_tooltipData', null]]));
+    frames.run();
+    expect(render).not.toHaveBeenCalled();
+    expect(overlays).not.toHaveBeenCalled();
+  });
+
+  it('a measured tooltip height does not render', () => {
+    const { el, renderer } = makePlot();
+    const render = vi.spyOn(renderer, 'render');
+    const overlays = vi.spyOn(el, '_updateSelectionOverlays');
+
+    el._reconcileSelectionOverlays(new Map<string, unknown>([['_tooltipHeight', null]]));
+    frames.run();
+    expect(render).not.toHaveBeenCalled();
+    expect(overlays).not.toHaveBeenCalled();
+  });
+
+  it('a tooltip change with a selection change still renders', () => {
+    const { el, renderer } = makePlot();
+    const render = vi.spyOn(renderer, 'render');
+
+    el.selectedProteinIds = ['p0'];
+    el._reconcileSelectionOverlays(
+      new Map<string, unknown>([
+        ['_tooltipData', null],
+        ['selectedProteinIds', []],
+      ]),
+    );
+    frames.run();
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it('a tooltip change with a non-skippable change still renders', () => {
+    const { el, renderer } = makePlot();
+    const render = vi.spyOn(renderer, 'render');
+    el._reconcileSelectionOverlays(
+      new Map<string, unknown>([
+        ['_tooltipData', null],
+        ['hiddenAnnotationValues', []],
+      ]),
+    );
+    frames.run();
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
   it('a flush with nothing requested does not render', () => {
     const { el } = makePlot();
     const render = vi.spyOn(el, '_renderPlot');

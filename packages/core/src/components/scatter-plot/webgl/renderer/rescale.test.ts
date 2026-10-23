@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as d3 from 'd3';
+import { fitScales } from '@protspace/utils';
 import { IDENTITY_RESCALE, linearAxis, mapLinear, rescaleBetween, snapshotScales } from './rescale';
 
 const scales = (width: number, height: number, domain: [number, number] = [-3, 7]) => ({
@@ -52,6 +53,25 @@ describe('rescaleBetween', () => {
     const snap = snapshotScales(s);
     s.x.range([0, 10]);
     expect(rescaleBetween(snap, scales(800, 600))).toBe(IDENTITY_RESCALE);
+  });
+
+  it('a resize between two fitted scales is a rescale with one factor for x and y, not a re-stage', () => {
+    const domain = { xMin: -3, xMax: 7, yMin: -1, yMax: 4 };
+    const margin = { top: 40, right: 40, bottom: 40, left: 40 };
+    const from = fitScales(domain, 800, 600, margin);
+    const to = fitScales(domain, 1100, 700, margin);
+    const r = rescaleBetween(snapshotScales(from), to);
+    expect(r).not.toBeNull();
+    expect(r!.x.scale).toBeCloseTo(r!.y.scale, 12);
+    for (const [x, y] of [
+      [-3, -1],
+      [0, 0],
+      [2.5, 1.5],
+      [7, 4],
+    ]) {
+      expect(from.x(x) * r!.x.scale + r!.x.offset).toBeCloseTo(to.x(x), 9);
+      expect(from.y(y) * r!.y.scale + r!.y.offset).toBeCloseTo(to.y(y), 9);
+    }
   });
 });
 

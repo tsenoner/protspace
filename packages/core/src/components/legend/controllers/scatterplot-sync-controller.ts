@@ -78,7 +78,8 @@ export class ScatterplotSyncController implements ReactiveController {
   private callbacks: ScatterplotSyncCallbacks;
 
   private _scatterplotElement: IScatterplotElement | null = null;
-  private _controlBarElement: Element | null = null;
+  /** The legend's root node, where the view pickers' bubbling, composed events arrive. */
+  private _eventRoot: Document | ShadowRoot | null = null;
   private _boundHandleDataChange: (e: Event) => void;
   private _boundHandleAnnotationChange: (e: Event) => void;
   private _boundHandleProjectionChange: () => void;
@@ -120,7 +121,7 @@ export class ScatterplotSyncController implements ReactiveController {
     const currentData = this._scatterplotElement?.getCurrentData?.();
     const annotationData = currentData?.annotation_data?.[selectedAnnotation];
 
-    // Cached: this runs from `_renderColorPicker`, i.e. on every legend re-render
+    // Cached: this runs from `ColorPickerController.render`, i.e. on every legend re-render
     // while the picker is open, and dense storage makes the uncached form an O(N)
     // sweep over 573K proteins for an answer that cannot change without the
     // storage object changing.
@@ -252,7 +253,7 @@ export class ScatterplotSyncController implements ReactiveController {
    * Both manual isolation AND an active query filter are constrained views: the
    * plot shows a kept subset of proteins. The legend treats them identically —
    * counts reflect the kept set while the visible-category structure is preserved
-   * (see legend `_handleScatterplotDataChange` / `processLegendItems`). So an active
+   * (see `LegendDataController.onDataChange` / `processLegendItems`). So an active
    * query filter is reported here as `isolationMode: true` with the kept id set
    * appended as an extra history layer; when isolation is ALSO active the layers
    * intersect, matching the plot's own combined cull. This does NOT couple the
@@ -305,29 +306,18 @@ export class ScatterplotSyncController implements ReactiveController {
 
     this._scatterplotElement = element;
     element.addEventListener(LEGEND_EVENTS.DATA_CHANGE, this._boundHandleDataChange);
-    const escapedSelector =
-      typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
-        ? CSS.escape(this.scatterplotSelector)
-        : this.scatterplotSelector.replace(/["\\]/g, '\\$&');
-
+    // The view bar's pickers dispatch annotation-change and projection-change, bubbling and
+    // composed, wherever they sit: listen on the legend's own root (the document in the app).
     const root = this.host.getRootNode();
-    const queryRoot = root instanceof ShadowRoot || root instanceof Document ? root : document;
-    const matchingControlBar = queryRoot.querySelector(
-      `protspace-control-bar[scatterplot-selector="${escapedSelector}"]`,
+    this._eventRoot = root instanceof ShadowRoot || root instanceof Document ? root : document;
+    this._eventRoot.addEventListener(
+      LEGEND_EVENTS.ANNOTATION_CHANGE,
+      this._boundHandleAnnotationChange,
     );
-    const controlBars = Array.from(queryRoot.querySelectorAll('protspace-control-bar'));
-    this._controlBarElement =
-      matchingControlBar ?? (controlBars.length === 1 ? controlBars[0] : null);
-    if (this._controlBarElement) {
-      this._controlBarElement.addEventListener(
-        LEGEND_EVENTS.ANNOTATION_CHANGE,
-        this._boundHandleAnnotationChange,
-      );
-      this._controlBarElement.addEventListener(
-        LEGEND_EVENTS.PROJECTION_CHANGE,
-        this._boundHandleProjectionChange,
-      );
-    }
+    this._eventRoot.addEventListener(
+      LEGEND_EVENTS.PROJECTION_CHANGE,
+      this._boundHandleProjectionChange,
+    );
 
     this._syncWithScatterplot();
   }
@@ -452,15 +442,16 @@ export class ScatterplotSyncController implements ReactiveController {
         this._boundHandleDataChange,
       );
     }
-    if (this._controlBarElement) {
-      this._controlBarElement.removeEventListener(
+    if (this._eventRoot) {
+      this._eventRoot.removeEventListener(
         LEGEND_EVENTS.ANNOTATION_CHANGE,
         this._boundHandleAnnotationChange,
       );
-      this._controlBarElement.removeEventListener(
+      this._eventRoot.removeEventListener(
         LEGEND_EVENTS.PROJECTION_CHANGE,
         this._boundHandleProjectionChange,
       );
+      this._eventRoot = null;
     }
   }
 }

@@ -8,28 +8,31 @@ ProtSpace accepts two kinds of input:
   ProtSpace prep backend, then opened automatically. See
   [FASTA Upload (Instant Prep)](#fasta-upload-instant-prep).
 
-Both the drop zone and the **Import** button accept either kind.
+You can drop either kind anywhere on the page, or open it from the **Import** menu.
 
 ## Drag and Drop (Recommended)
 
 The easiest way to load data:
 
 1. Locate your `.parquetbundle` or FASTA file on your computer
-2. Drag it onto the scatterplot canvas
-3. Drop when you see the drop indicator
+2. Drag it over the ProtSpace page; `Drop to open this file` appears over the workbench
+3. Drop it
 4. Data loads automatically
 
 ::: tip Drop Anywhere
-You can drop the file anywhere on the scatterplot area - it doesn't need to be a specific location.
+The drop works anywhere on the page: the plot, the legend, the bars. When nothing is loaded, the
+plot says `Drop a file or pick an example`, with **Open a file…** and **Pick an example** buttons.
 :::
 
-## Import Button
+## The Import Menu
 
-Alternatively, use the **Import** button in the control bar:
+**Import** in the app bar opens the Import menu, and so does the dataset's name at the left of the
+app bar. On a phone, tap the dataset's name, or open **More** and choose **Import data**. The menu
+holds:
 
-1. Click the **Import** button in the top-right corner
-2. Select your `.parquetbundle` or FASTA file from the file picker
-3. Click **Open**
+- **Open a file…**, which opens your system's file picker for a `.parquetbundle` or FASTA file
+- **Last file**, which reopens the file you imported last, from this browser's storage
+- **Examples**, the [example datasets](/explore/example-datasets); each opens in its curated view
 
 ## FASTA Upload (Instant Prep)
 
@@ -105,6 +108,14 @@ import the resulting `.parquetbundle`.
 
 ## What Happens When You Load Data
 
+While a dataset loads, a card over the page says what is happening and how far it has got: for a
+file, that it is being read in your browser; for an example, `Downloading …` with a
+**Cancel download** button, then `Opening …`; then `Drawing N proteins`. A file you open never
+leaves your computer; only a FASTA file is sent to the server, for embedding.
+
+![The loading card while an example downloads](./images/loading-overlay.png){.light-only}
+![The loading card while an example downloads](./images/loading-overlay-dark.png){.dark-only}
+
 After successfully loading a file:
 
 1. **Scatterplot populates**: All proteins appear as colored points
@@ -146,10 +157,10 @@ Smaller v1 and v2 bundles still load, with a notice that these formats stop open
 All persistence is local to your browser, **stored datasets and settings are never sent to a
 server**. (The one time data leaves your machine is a FASTA upload, described above.)
 
-- **Your dataset is remembered**: The last imported file is saved in your browser's Origin Private File System (OPFS) and automatically restored when you revisit ProtSpace. Choosing an example from the Import menu (see [Example Datasets](/explore/example-datasets)) replaces it and clears the stored file. Opening an example through a `?dataset=` link does not touch the stored file — the app returns to it once you drop the parameter.
+- **Your dataset is remembered**: The last imported file is saved in your browser's Origin Private File System (OPFS) and automatically restored when you revisit ProtSpace. Choosing an example from the Import menu (see [Example Datasets](/explore/example-datasets)) or opening one through a `?dataset=` link keeps the stored file: the Import menu's **Last file** reopens it, and the app returns to it once you drop the parameter. **Load default** and **Clear stored data** on the recovery banner remove it.
 - **Settings persist per dataset**: Legend customizations (colors, shapes, hidden categories, sort order) and export options are saved in browser storage for each dataset. The shape size you pick is saved once for the whole dataset, not per annotation. When you reload or revisit the same dataset, your settings are restored, except for the examples (next point).
-- **Examples always reopen in their curated state**: Examples are the exception. Each time an example loads — from the Import menu, a link, **Back**/**Forward** or a reload — it opens with its curated legend settings and tooltip fields, and changes you made to it are discarded. [Contours](/explore/control-bar#_10-contours) don't carry over either: an example chosen from the Import menu opens with contours off, as its plain `?dataset=` link does, and **Back** returns to the previous dataset with its contours. To keep a customized example, export it as a `.parquetbundle` with the legend settings included and import that file; it then persists like any import. Keep the file: an imported copy counts as the same dataset as the example, so opening the example again resets the copy's saved settings until you import the file again.
-- **Annotation and projection persist in the URL**: ProtSpace keeps the currently selected annotation and projection in the page URL as query parameters (`annotation=...` and `projection=...`). Refreshing the page, using the browser's back/forward buttons, or sharing the link will restore the same view when those options exist in the active dataset. A bare `/explore` URL stays unchanged on first load; ProtSpace only writes view params after you change the selection or when it needs to normalize an invalid URL value. The [Contours](/explore/control-bar#_10-contours) mode is kept the same way, as `density=auto` for Auto or `density=on` for Always; with contours off the parameter is left out.
+- **Examples always reopen in their curated state**: Examples are the exception. Each time an example loads — from the Import menu, a link, **Back**/**Forward** or a reload — it opens with its curated legend settings and tooltip fields, and changes you made to it are discarded. [Contours](/explore/controls#contours) don't carry over either: an example chosen from the Import menu opens with contours off, as its plain `?dataset=` link does, and **Back** returns to the previous dataset with its contours. To keep a customized example, export it as a `.parquetbundle` with the legend settings included and import that file; it then persists like any import. Keep the file: an imported copy counts as the same dataset as the example, so opening the example again resets the copy's saved settings until you import the file again.
+- **Annotation and projection persist in the URL**: ProtSpace keeps the currently selected annotation and projection in the page URL as query parameters (`annotation=...` and `projection=...`). Refreshing the page, using the browser's back/forward buttons, or sharing the link will restore the same view when those options exist in the active dataset. A bare `/explore` URL stays unchanged on first load; ProtSpace only writes view params after you change the selection or when it needs to normalize an invalid URL value. The [Contours](/explore/controls#contours) mode is kept the same way, as `density=auto` for Auto or `density=on` for Always; with contours off the parameter is left out.
 - **File-embedded settings take priority**: If a `.parquetbundle` includes saved settings (via the export dialog's "Include legend/export settings" options), those are applied on import, replacing any previously stored settings for that dataset.
 - **Starting fresh**: To reset all settings for a dataset, re-import a `.parquetbundle` that has embedded settings, or clear site data in your browser settings. For an example, just open it again.
 
@@ -183,7 +194,7 @@ Auto-retry would loop forever on a genuinely broken file. The banner makes the f
 
 ## Need a Data File?
 
-If you only have sequences, drop the FASTA straight onto the scatterplot, see
+If you only have sequences, drop the FASTA file anywhere on the page, see
 [FASTA Upload (Instant Prep)](#fasta-upload-instant-prep). To build a `.parquetbundle` yourself:
 
 - **[Using Google Colab](/guide/data-preparation)** - No installation required (recommended)

@@ -4,23 +4,32 @@ ProtSpace allows you to export publication-ready figures, raw data, protein IDs 
 
 ## Export Button
 
-Click **Export** in the control bar to see available formats:
+Click **Export** in the app bar to open its menu (on a phone: **More**, then **Export**):
 
-| Format          | Description                                                       |
-| --------------- | ----------------------------------------------------------------- |
-| **PNG**         | Raster image of the current view with legend                      |
-| **PDF**         | PDF document of the current view with legend                      |
-| **Protein IDs** | Text file with newline-separated identifiers                      |
-| **Table**       | Tab-separated table of the visible proteins and their annotations |
-| **Parquet**     | `.parquetbundle` file with all data and optional settings         |
+![The Export menu open under the Export button](./images/export-menu.png)
+
+| Item                             | What it does                                                     |
+| -------------------------------- | ---------------------------------------------------------------- |
+| **Figure editor…**               | Opens the full-screen editor for publication figures             |
+| **Quick PNG**                    | Downloads a raster image of the current view with legend         |
+| **Quick PDF**                    | Downloads a PDF of the current view with legend                  |
+| **Protein IDs (.txt)**           | Downloads the visible proteins' identifiers, one per line        |
+| **Table (.tsv)**                 | Downloads the visible proteins as a [table](#table-export)       |
+| **Data bundle (.parquetbundle)** | Downloads a `.parquetbundle` with all data and optional settings |
+
+**Include legend settings**, below them, decides whether a data bundle carries your legend
+settings. Every export confirms with a message naming the downloaded file:
+
+![The notification after an export](./images/toast.png){.light-only}
+![The notification after an export](./images/toast-dark.png){.dark-only}
 
 ## Image Export (PNG / PDF)
 
-When PNG or PDF is selected, you have two export paths:
+Images have two paths:
 
 ### Figure Editor (Recommended)
 
-Click **Figure Editor** to open a full-screen editor with live preview. This is the primary workflow for creating publication-quality figures. See the [Figure Editor guide](./figure-editor) for full documentation.
+Choose **Figure editor…** to open a full-screen editor with live preview. This is the primary workflow for creating publication-quality figures. See the [Figure Editor guide](./figure-editor) for full documentation.
 
 Key features:
 
@@ -35,7 +44,7 @@ Key features:
 
 ### Quick Export
 
-Click **Quick Export** to download an image immediately, with no preview. It always uses fixed
+Choose **Quick PNG** or **Quick PDF** to download an image immediately, with no preview. It always uses fixed
 defaults, a 2048 × 1024 px image with the legend on the right, and keeps your current zoom and pan;
 it does not use Figure Editor settings. For another size or layout, or for the full plot, use the
 Figure Editor.
@@ -46,10 +55,21 @@ Dots [grow as you zoom in](/explore/scatterplot#navigation). Quick Export keeps 
 so its dots match the size you see on screen. The Figure Editor always renders the full view, so its
 dots are drawn at their unzoomed size.
 
+### Plot shape in images
+
+As on screen, the plot fills the image: each axis stretches to the image's width or height. A wide
+image stretches the clusters sideways, a tall one stretches them up and down.
+
 ::: warning Contours are not exported yet
-[Contours](/explore/control-bar#_10-contours) are not drawn in exported images: Quick Export PNG and
+[Contours](/explore/controls#contours) are not drawn in exported images: Quick Export PNG and
 PDF, the Figure Editor and its zoom insets show the points only. The Figure Editor preview shows
 exactly what will be exported. Tracked in [#498](https://github.com/tsenoner/protspace/issues/498).
+:::
+
+::: info Exports are always light
+Quick PNG and PDF, the Figure Editor's preview and its exports always use the light colours (a
+white background and the light greys for `Other` and `N/A`), whatever theme the app shows, so a
+figure looks the same whoever made it. See [Light and dark](/explore/#light-and-dark).
 :::
 
 ## Parquet Export
@@ -82,7 +102,7 @@ one row per protein:
 
 - `protein_id`
 - the coordinates of the projection on screen, as `<projection>_x` and `<projection>_y` (for a
-  [deprecated 3D projection](/explore/control-bar#_1-projection-selector), the X/Y view you see,
+  [deprecated 3D projection](/explore/controls#projection), the X/Y view you see,
   which matches the 2D projection only for PCA; no `z`)
 - one column per annotation, `cluster_*` columns included. A cell holds the labels you see in the
   legend, joined with `;` when a protein has several; a numeric annotation holds its value, not its
@@ -104,13 +124,16 @@ in the legend to show it alone, and export.
 The **Protein IDs** and **Table** exports hold exactly the proteins visible in the plot. A protein
 is left out when:
 
-- the [filter query](/explore/control-bar#_7-filter-button) excludes it, the EAT reliability filter
-  included;
-- [isolation](/explore/control-bar#_6-isolate-button) is on and it is not in the isolated set;
+- the [filter](/explore/filter) excludes it, the EAT reliability filter included;
+- **Show only these** is on and it is not among the proteins shown;
 - every value it has in the annotation you colour by is hidden in the legend.
 
-The **Parquet** export holds the proteins left by the filter query and isolation, whatever the
+The **data bundle** holds the proteins left by the filter and **Show only these**, whatever the
 legend hides. Images show what is drawn.
+
+To export a subset, filter the plot, or select its proteins and press **Show only these** in the
+selection bar. To export everything, clear both with the ✕ on their chips in the plot's
+[status corner](/explore/scatterplot#status-corner).
 
 A subset export drops the statistics: the scores were computed over the whole dataset, so keeping
 them in a slice would make them read as describing that slice.

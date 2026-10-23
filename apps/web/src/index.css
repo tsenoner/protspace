@@ -2,6 +2,16 @@
 
 @plugin 'tailwindcss-animate';
 
+/* Arial sized to Inter's metrics, so text barely moves when Inter swaps in. */
+@font-face {
+  font-family: 'Inter Fallback';
+  src: local('Arial');
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0%;
+  size-adjust: 107.12%;
+}
+
 @utility container {
   margin-inline: auto;
   padding-inline: 2rem;
@@ -57,6 +67,40 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  /* Core's --ps-* tokens (packages/core/src/styles/theme.ts), for the explore shell. */
+  --color-ps-surface: var(--ps-surface);
+  --color-ps-surface-muted: var(--ps-surface-muted);
+  --color-ps-surface-raised: var(--ps-surface-raised);
+  --color-ps-surface-hover: var(--ps-surface-hover);
+  --color-ps-border: var(--ps-border);
+  --color-ps-border-strong: var(--ps-border-strong);
+  --color-ps-text: var(--ps-text);
+  --color-ps-text-muted: var(--ps-text-muted);
+  --color-ps-text-faint: var(--ps-text-faint);
+  --color-ps-text-on-accent: var(--ps-text-on-accent);
+  --color-ps-accent: var(--ps-accent);
+  --color-ps-accent-hover: var(--ps-accent-hover);
+  --color-ps-accent-text: var(--ps-accent-text);
+  --color-ps-accent-tint: var(--ps-accent-tint);
+  --color-ps-focus: var(--ps-focus);
+  --color-ps-danger: var(--ps-danger);
+  --color-ps-warning: var(--ps-warning);
+  --color-ps-success: var(--ps-success);
+  --color-ps-scrim: var(--ps-scrim);
+  --font-ps: var(--ps-font-sans);
+  --text-ps-xs: var(--ps-text-xs);
+  --text-ps-sm: var(--ps-text-sm);
+  --text-ps-base: var(--ps-text-base);
+  --text-ps-md: var(--ps-text-md);
+  --text-ps-lg: var(--ps-text-lg);
+  --text-ps-xl: var(--ps-text-xl);
+  --radius-ps-sm: var(--ps-radius-sm);
+  --radius-ps: var(--ps-radius);
+  --radius-ps-lg: var(--ps-radius-lg);
+  --shadow-ps-sm: var(--ps-shadow-sm);
+  --shadow-ps-md: var(--ps-shadow-md);
+  --shadow-ps-lg: var(--ps-shadow-lg);
 }
 
 /*
@@ -139,13 +183,6 @@ All colors MUST be HSL.
 
   html {
     scroll-behavior: smooth;
-  }
-
-  /* The explorer scales its dense UI with the viewport; text pages keep the browser default. */
-  @media (min-width: 1380px) {
-    html:has(.explore-wrapper) {
-      font-size: clamp(0.75rem, 0.87vw, 1.125rem);
-    }
   }
 
   body {

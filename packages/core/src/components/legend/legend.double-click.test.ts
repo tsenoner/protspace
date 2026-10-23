@@ -217,16 +217,53 @@ describe('legend item double-click', () => {
     expect(handedToPlot).toEqual([['A'], []]);
   });
 
-  it('keeps toggling both taps of a touch double-tap, then isolates', async () => {
+  it('two touch taps within 300 ms isolate the category even with no dblclick', async () => {
+    const { click, visible, handedToPlot, actions } = await setup();
+
+    click('A', 1, 'touch');
+    click('A', 2, 'touch');
+
+    expect(visible()).toEqual(['A']);
+    // The first tap's hide, then the isolate from the legend before it.
+    expect(handedToPlot).toEqual([['A'], ['B', 'C']]);
+    expect(actions).toEqual(['toggle:A', 'isolate:A']);
+  });
+
+  it('a touch dblclick after the two taps does nothing more', async () => {
     const { click, dblclick, visible, handedToPlot } = await setup();
 
     click('A', 1, 'touch');
     click('A', 2, 'touch');
-    expect(visible()).toEqual(['A', 'B', 'C']);
     dblclick('A');
 
     expect(visible()).toEqual(['A']);
-    expect(handedToPlot).toEqual([['A'], [], ['B', 'C']]);
+    expect(handedToPlot).toEqual([['A'], ['B', 'C']]);
+  });
+
+  it('touch taps on two rows toggle both', async () => {
+    const { click, visible } = await setup();
+
+    click('A', 1, 'touch');
+    click('B', 2, 'touch');
+
+    expect(visible()).toEqual(['C']);
+  });
+
+  it('a click with no pointer type after a touch press counts as a tap', async () => {
+    const { legend, click, visible } = await setup();
+    const press = () =>
+      legend
+        .shadowRoot!.querySelector('[data-value="A"] .legend-item-main')!
+        .dispatchEvent(
+          new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true, composed: true }),
+        );
+
+    press();
+    click('A', 1);
+    press();
+    click('A', 2);
+
+    expect(visible()).toEqual(['A']);
   });
 
   it('isolates on a dblclick that no click preceded', async () => {

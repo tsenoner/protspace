@@ -18,20 +18,20 @@ function makePlot() {
 }
 
 describe('scatter-plot provenance connector contract', () => {
-  it('caps requests at 20 and replaces highlighted ids with connector endpoints', () => {
+  it('caps requests at 50 and replaces highlighted ids with connector endpoints', () => {
     const { plot, overlay } = makePlot();
-    const pairs = Array.from({ length: 25 }, (_, index) => ({
+    const pairs = Array.from({ length: 60 }, (_, index) => ({
       sourceProteinId: 'source',
       targetProteinId: `target-${index}`,
       confidence: 1 - index / 100,
     }));
 
-    plot.setProvenanceConnectors({ pairs, totalCandidates: 25 });
+    plot.setProvenanceConnectors({ pairs, totalCandidates: 60 });
 
-    expect(overlay.set).toHaveBeenCalledWith({ pairs: pairs.slice(0, 20), totalCandidates: 25 });
+    expect(overlay.set).toHaveBeenCalledWith({ pairs: pairs.slice(0, 50), totalCandidates: 60 });
     expect(plot.highlightedProteinIds).toEqual([
       'source',
-      ...pairs.slice(0, 20).map((pair) => pair.targetProteinId),
+      ...pairs.slice(0, 50).map((pair) => pair.targetProteinId),
     ]);
   });
 
@@ -90,7 +90,7 @@ describe('scatter-plot provenance connector contract', () => {
     const { plot } = makePlot();
 
     expect(plot._formatConnectorStatus({ shown: 0, total: 1, missingEndpoints: 1 })).toBe(
-      '1 hidden (off-view)',
+      '1 hidden (off view)',
     );
   });
 
@@ -115,7 +115,7 @@ describe('scatter-plot provenance connector contract', () => {
 
     const chip = shadow.querySelector('.connector-status');
     expect(chip).not.toBeNull();
-    expect(chip?.textContent).toContain('1 hidden (off-view)');
+    expect(chip?.textContent).toContain('1 hidden (off view)');
   });
 
   it('suppresses a pair that becomes non-interactable under connector-owned highlighting', () => {
@@ -135,5 +135,28 @@ describe('scatter-plot provenance connector contract', () => {
     expect(overlay.set).not.toHaveBeenCalled();
     expect(overlay.clear).toHaveBeenCalledOnce();
     expect(plot.highlightedProteinIds).toEqual([]);
+  });
+
+  it('groups the hidden connector count', () => {
+    const { plot } = makePlot();
+    expect(plot._formatConnectorStatus({ shown: 0, total: 1234, missingEndpoints: 1234 })).toBe(
+      '1,234 hidden (off view)',
+    );
+  });
+
+  it('names the annotation whose bins are recalculated by its display name', () => {
+    const { plot } = makePlot();
+    const internals = plot as unknown as {
+      _numericRecomputeRunning: boolean;
+      _numericRecompute: { runningAnnotation(): string | null };
+    };
+    internals._numericRecomputeRunning = true;
+    vi.spyOn(internals._numericRecompute, 'runningAnnotation').mockReturnValue('ec');
+
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    litRender(plot.render(), shadow);
+
+    expect(shadow.textContent).toContain('Recalculating bins for EC number…');
   });
 });

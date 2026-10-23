@@ -2,8 +2,9 @@
 
 Three Playwright modes drive the real Explore UI: annotation switch, projection switch (a glide,
 then the same switch under reduced motion, which is instant), legend isolate, camera drag and
-wheel, resize, search, import. A separate tool, the cross-browser WebGL suite (`pnpm perf:webgl`),
-measures render passes per dataset in Chrome, Firefox and Safari; see its section at the end.
+wheel, resize, sidebar collapse, search, import. A separate tool, the cross-browser WebGL suite
+(`pnpm perf:webgl`), measures render passes per dataset in Chrome, Firefox and Safari; see its
+section at the end.
 
 | Command            | What it measures            | Browser                   | Gated                  | Time                |
 | ------------------ | --------------------------- | ------------------------- | ---------------------- | ------------------- |
@@ -45,6 +46,12 @@ until the counters and buffer bytes stay unchanged for two animation frames and 
 sleeps a fixed time. It fails at 3 s (60 s in timing mode): a page that keeps working with no input
 has a render loop or leaked work. Segments that change the view reset it through the UI, and the
 plot's pixels before the segment must equal the pixels after the reset.
+
+Every run pins the layout and the colour scheme. Its browser context stores `DEFAULT_LAYOUT`
+(`apps/web/src/explore/layout-defaults.ts`) under `protspace:layout:v1`, so the sidebar is open at
+its default width with the structure docked and closed, and asks for the light colour scheme. The
+sidebar's width sets the plot's size, which feeds the point scale and the Auto contour strength,
+so an unpinned layout would make runs incomparable.
 
 The segments are listed once, in `apps/web/tests/helpers/perf/scenarios.ts`, with what the checks
 need to know about each: whether timing mode can repeat it, which counts follow the number of
@@ -122,18 +129,18 @@ pnpm perf --datasets /abs/path/other.parquetbundle
 pnpm perf --scenarios annotation,camera --cpu 4
 ```
 
-| Flag                | Default    | Meaning                                                                            |
-| ------------------- | ---------- | ---------------------------------------------------------------------------------- |
-| `--datasets a,b`    | `default`  | `default` (the demo bundle), a fetched perf dataset id, or a path                  |
-| `--scenarios a,b`   | all        | `annotation`, `projection` (both switches), `legend`, `camera`, `resize`, `search` |
-| `--runs N`          | 5          | runs per segment; the first is a warm-up and is dropped                            |
-| `--cpu N`           | 1          | CPU throttling; 4 makes the demo bundle cost about what a 100K one does            |
-| `--url URL`         | own server | measure this server instead of building and serving the app                        |
-| `--no-build`        |            | serve the existing `apps/web/dist` without rebuilding                              |
-| `--compare URL`     |            | a second build, measured interleaved with the first                                |
-| `--save-baseline`   |            | write the medians to `perf/baselines/<dataset>.local.json`                         |
-| `--baseline [file]` |            | report against that file, or against `perf/baselines/<dataset>.local.json`         |
-| `--trace`           |            | record a DevTools trace per segment under `perf/results/<stamp>-traces/`           |
+| Flag                | Default    | Meaning                                                                                     |
+| ------------------- | ---------- | ------------------------------------------------------------------------------------------- |
+| `--datasets a,b`    | `default`  | `default` (the demo bundle), a fetched perf dataset id, or a path                           |
+| `--scenarios a,b`   | all        | `annotation`, `projection` (both switches), `legend`, `camera`, `resize`, `panel`, `search` |
+| `--runs N`          | 5          | runs per segment; the first is a warm-up and is dropped                                     |
+| `--cpu N`           | 1          | CPU throttling; 4 makes the demo bundle cost about what a 100K one does                     |
+| `--url URL`         | own server | measure this server instead of building and serving the app                                 |
+| `--no-build`        |            | serve the existing `apps/web/dist` without rebuilding                                       |
+| `--compare URL`     |            | a second build, measured interleaved with the first                                         |
+| `--save-baseline`   |            | write the medians to `perf/baselines/<dataset>.local.json`                                  |
+| `--baseline [file]` |            | report against that file, or against `perf/baselines/<dataset>.local.json`                  |
+| `--trace`           |            | record a DevTools trace per segment under `perf/results/<stamp>-traces/`                    |
 
 Without `--url`, `perf/perf.mjs` builds the app and serves it with `vite preview --port 8301
 --strictPort`, and stops that server on exit, on failure and on Ctrl-C. It never uses or stops

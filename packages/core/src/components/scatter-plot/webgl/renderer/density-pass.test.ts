@@ -8,11 +8,13 @@ import {
   accumulateAndBlurDensity,
   compositeDensity,
   densityFieldsKey,
+  neutralKeyOf,
   type ColorTarget,
   type DensityFrame,
   type DensityResources,
   type SlotPalette,
 } from './density-pass';
+import { NEUTRAL_VALUE_COLOR } from '../../config';
 
 function mockGL(opts: { framebufferComplete?: boolean } = {}) {
   const calls: string[] = [];
@@ -171,6 +173,28 @@ function stagedReds(runs: Array<[number, number]>): Float32Array {
 const redBytes = (p: SlotPalette) =>
   Array.from({ length: p.count }, (_, s) => Math.round(p.keys[s * 3] * 255));
 
+/** `n` staged points of one colour, given as 0–255 channels. */
+const stagedRgb = (r: number, g: number, b: number, n: number): number[] =>
+  Array.from({ length: n }, () => [r / 255, g / 255, b / 255, 1]).flat();
+
+const slotRgb = (p: SlotPalette, s: number) =>
+  [0, 1, 2].map((c) => Math.round(p.keys[s * 3 + c] * 255));
+
+/** Sixteen reds, red k with 17 - k points, then 50 points of the dark Other grey #64748b. */
+const redsAndDarkGrey = () =>
+  new Float32Array([
+    ...stagedReds(Array.from({ length: 16 }, (_, i) => [i + 1, 16 - i] as [number, number])),
+    ...stagedRgb(0x64, 0x74, 0x8b, 50),
+  ]);
+
+describe('neutralKeyOf', () => {
+  it("neutralKeyOf('#888888') equals the default key", () => {
+    expect(neutralKeyOf(NEUTRAL_VALUE_COLOR)).toBe(0x888888);
+    expect(neutralKeyOf('#64748B')).toBe(0x64748b);
+    expect(neutralKeyOf(' #2a3547 ')).toBe(0x2a3547);
+  });
+});
+
 describe('computeDensityGrid', () => {
   it('puts 512 cells on the long side, never more than the canvas has pixels', () => {
     expect(computeDensityGrid(1920, 1080)).toEqual({ width: 512, height: 288 });
@@ -262,6 +286,29 @@ describe('buildSlotPalette', () => {
     const p = buildSlotPalette(new Float32Array([v, v, v, 1]), 1, 2.2);
     expect(p.keys[0]).toBe(0.8666666746139526);
     expect(p.colors[0]).toBe(0.7704310417175293);
+  });
+
+  it('a passed neutral key takes the tail slot over the cap', () => {
+    const staged = redsAndDarkGrey();
+    const p = buildSlotPalette(staged, staged.length / 4, 2.2, null, neutralKeyOf('#64748b'));
+    expect(p.count).toBe(16);
+    expect(p.tailSlot).toBe(0);
+    expect(slotRgb(p, 0)).toEqual([0x64, 0x74, 0x8b]);
+    // The fifteen most populous reds keep their own slots; the dark grey has none of its own.
+    expect(redBytes(p).slice(1)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  });
+
+  it("the default key keeps today's palettes", () => {
+    const staged = redsAndDarkGrey();
+    const count = staged.length / 4;
+    const p = buildSlotPalette(staged, count, 2.2);
+    expect(p.tailSlot).toBe(0);
+    expect(slotRgb(p, 0)).toEqual([0x88, 0x88, 0x88]);
+    // Without its key the dark grey is just another colour: the most populous, so its own slot.
+    expect(redBytes(p)).toEqual([136, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0x64]);
+    expect(buildSlotPalette(staged, count, 2.2, null, neutralKeyOf(NEUTRAL_VALUE_COLOR))).toEqual(
+      p,
+    );
   });
 });
 

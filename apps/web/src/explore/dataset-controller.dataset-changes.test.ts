@@ -8,7 +8,7 @@ import {
   recordDatasetChanges,
 } from './dataset-controller.fixtures';
 import { TEST_DEMO, TEST_EXAMPLE } from './example-catalog.fixtures';
-import { progressAfterExampleDownload } from './loading-overlay';
+import { LOADING_COPY, progressAfterExampleDownload } from './loading-overlay';
 import type { LoadMeta } from './types';
 import { createEmptyExploreViewRequest } from './url-state';
 
@@ -20,10 +20,11 @@ const mocks = vi.hoisted(() => ({
     overlayController?: unknown;
   },
   loadData: vi.fn(),
+  readTooltipAnnotations: vi.fn((): string[] => []),
   markLastLoadStatus: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
   persisted: {
-    loadExampleDatasetAndClearPersistedFile: vi.fn(),
+    loadChosenExample: vi.fn(),
     loadExampleDataset: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
     tryLoadPersistedAgain: vi.fn(),
@@ -66,7 +67,7 @@ vi.mock('./opfs-dataset-store', () => ({
 }));
 
 vi.mock('./tooltip-annotations-store', () => ({
-  readTooltipAnnotations: (): string[] => [],
+  readTooltipAnnotations: mocks.readTooltipAnnotations,
   writeTooltipAnnotations: vi.fn(),
 }));
 
@@ -113,6 +114,7 @@ beforeEach(() => {
   mocks.markLastLoadStatus.mockResolvedValue(undefined);
   // `clearAllMocks` keeps implementations, and a test may leave this returning false.
   mocks.persisted.isCurrentRequest.mockReturnValue(true);
+  mocks.readTooltipAnnotations.mockReturnValue([]);
 });
 
 afterEach(() => {
@@ -121,15 +123,15 @@ afterEach(() => {
 
 describe('startup outcomes and dataset-change emits (persisted-dataset mocked)', () => {
   it('loadDefaultDatasetAndClearPersistedFile loads the demo in place of the stored import', async () => {
-    mocks.persisted.loadExampleDatasetAndClearPersistedFile.mockResolvedValue('loaded');
+    mocks.persisted.loadExampleDataset.mockResolvedValue('loaded');
     const { controller } = createController();
 
     await controller.loadDefaultDatasetAndClearPersistedFile();
 
-    expect(mocks.persisted.loadExampleDatasetAndClearPersistedFile).toHaveBeenCalledWith(
-      DEMO,
-      'startup',
-    );
+    expect(mocks.persisted.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'startup', {
+      replacesStoredImport: true,
+    });
+    expect(mocks.persisted.loadChosenExample).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -319,6 +321,70 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     ]);
   });
 
+  it('says where a load reads from: a user file in the browser, an example by name, a stored import', () => {
+    const user = createController({
+      getRunningLoadMeta: (): LoadMeta => ({
+        sequence: 1,
+        kind: 'user',
+        epoch: 1,
+        fileName: 'mine.parquetbundle',
+      }),
+    });
+    user.controller.handleLoadingStart();
+    expect(user.overlayController.update).toHaveBeenLastCalledWith(
+      true,
+      5,
+      'Reading mine.parquetbundle…',
+      'Reading your file in the browser',
+      undefined,
+    );
+    user.controller.handleLoadingProgress({ detail: { percentage: 50 } } as unknown as Event);
+    expect(user.overlayController.update).toHaveBeenLastCalledWith(
+      true,
+      10,
+      'Reading mine.parquetbundle…',
+      'Reading your file in the browser',
+      undefined,
+    );
+
+    const example = createController({ getRunningLoadMeta: () => exampleMeta('menu') });
+    example.controller.handleLoadingStart();
+    expect(example.overlayController.update).toHaveBeenLastCalledWith(
+      true,
+      progressAfterExampleDownload(5),
+      '',
+      `Opening ${OTHER.label.split(' · ')[0]}`,
+      undefined,
+    );
+
+    const stored = createController({
+      getRunningLoadMeta: (): LoadMeta => ({
+        sequence: 1,
+        kind: 'opfs',
+        epoch: 1,
+        fileName: 'mine.parquetbundle',
+      }),
+    });
+    stored.controller.handleLoadingStart();
+    expect(stored.overlayController.update).toHaveBeenLastCalledWith(
+      true,
+      5,
+      '',
+      'Reopening mine.parquetbundle from this browser',
+      undefined,
+    );
+
+    const texts = [user, example, stored].flatMap(({ overlayController }) =>
+      vi
+        .mocked(overlayController.update)
+        .mock.calls.flatMap(([, , message, subMessage]) => [
+          String(message ?? ''),
+          String(subMessage ?? ''),
+        ]),
+    );
+    expect(texts.filter((text) => /upload/i.test(text))).toEqual([]);
+  });
+
   it('decode progress of a superseded (e.g. cancelled) example never brings the overlay back', () => {
     const loadMeta = exampleMeta('menu');
     const { controller, overlayController } = createController({
@@ -344,7 +410,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     // A newer request (say a Back to another example, now downloading) owns
     // the overlay: neither a render step nor the load's final hide reaches it.
     mocks.persisted.isCurrentRequest.mockReturnValue(false);
-    renderOverlay.update(true, 60, 'Organizing color categories...', 'Visualizing 1 proteins');
+    renderOverlay.update(true, 60, '', LOADING_COPY.drawing(1));
     renderOverlay.update(false);
     expect(overlayController.update).not.toHaveBeenCalled();
 
@@ -556,6 +622,26 @@ describe('handleDataLoaded: curated default view', () => {
 
     expect(viewController.setDatasetDefaults).toHaveBeenCalledWith(null);
     expect(viewController.recordRequestedView).not.toHaveBeenCalled();
+  });
+
+  it.each(['menu', 'url', 'startup'] as const)(
+    'a %s example load ignores the tooltip saved for it and keeps the curated one',
+    async (source) => {
+      mocks.readTooltipAnnotations.mockReturnValue(['old']);
+      const viewController = await loadWith(exampleMeta(source));
+
+      expect(viewController.setRequestedView).not.toHaveBeenCalled();
+      expect(viewController.applyLatestViewForDatasetLoad).toHaveBeenCalled();
+    },
+  );
+
+  it('an OPFS restore with a silent URL still restores its saved tooltip', async () => {
+    mocks.readTooltipAnnotations.mockReturnValue(['old']);
+    const viewController = await loadWith({ sequence: 1, kind: 'opfs' });
+
+    expect(viewController.setRequestedView).toHaveBeenCalledWith(
+      expect.objectContaining({ requested: expect.objectContaining({ tooltip: ['old'] }) }),
+    );
   });
 
   it('a load superseded before render changes neither the defaults nor the request', async () => {

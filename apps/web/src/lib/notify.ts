@@ -26,6 +26,8 @@ export interface NotifyOptions {
 }
 
 type NotifyLevel = 'success' | 'info' | 'warning' | 'error';
+/** A shown toast; undefined when a repeat inside the dedupe window was skipped. */
+type ToastId = string | number;
 
 const DEFAULT_DURATIONS_MS: Record<NotifyLevel, number> = {
   success: 4_000,
@@ -34,8 +36,22 @@ const DEFAULT_DURATIONS_MS: Record<NotifyLevel, number> = {
   error: 10_000,
 };
 
+/** How long an Undo stays offered (design decision 15). */
+const UNDO_DURATION_MS = 8_000;
+
 const DEDUPE_WINDOW_MS = 5_000;
 const recentNotifications = new Map<string, number>();
+
+/** The toaster every toast goes to while set: the workbench's own, on /explore. */
+let notifyTarget: string | null = null;
+
+/**
+ * Routes every toast to the `<Toaster id={toasterId}>` (the workbench's, at the plot's bottom
+ * edge); null returns them to the app's toaster. The workbench sets it while it is mounted.
+ */
+export function setNotifyTarget(toasterId: string | null): void {
+  notifyTarget = toasterId;
+}
 
 function pruneExpiredDedupes(now: number): void {
   for (const [key, timestamp] of recentNotifications.entries()) {
@@ -72,9 +88,14 @@ function openHref(href: string): void {
   }
 }
 
-function emitNotification(level: NotifyLevel, options: NotifyOptions): void {
+function emitNotification(
+  level: NotifyLevel,
+  options: NotifyOptions,
+  /** Runs when the toast goes: dismissed (its ✕ or code) or timed out. */
+  onClose?: () => void,
+): ToastId | undefined {
   if (shouldSkipNotification(options.dedupeKey)) {
-    return;
+    return undefined;
   }
 
   const description = options.description?.trim();
@@ -97,29 +118,77 @@ function emitNotification(level: NotifyLevel, options: NotifyOptions): void {
     },
   });
 
-  toast[level](options.title, {
+  return toast[level](options.title, {
     description,
     duration,
+    ...(notifyTarget ? { toasterId: notifyTarget } : {}),
     ...(action && { action: toSonnerAction(action) }),
     ...(secondaryAction && { cancel: toSonnerAction(secondaryAction) }),
+    ...(onClose && { onDismiss: onClose, onAutoClose: onClose }),
   });
 }
 
 export const notify = {
-  success(options: NotifyOptions): void {
-    emitNotification('success', options);
+  success(options: NotifyOptions): ToastId | undefined {
+    return emitNotification('success', options);
   },
-  info(options: NotifyOptions): void {
-    emitNotification('info', options);
+  info(options: NotifyOptions): ToastId | undefined {
+    return emitNotification('info', options);
   },
-  warning(options: NotifyOptions): void {
-    emitNotification('warning', options);
+  warning(options: NotifyOptions): ToastId | undefined {
+    return emitNotification('warning', options);
   },
-  error(options: NotifyOptions): void {
-    emitNotification('error', options);
+  error(options: NotifyOptions): ToastId | undefined {
+    return emitNotification('error', options);
+  },
+  dismiss(id: ToastId): void {
+    toast.dismiss(id);
+  },
+  /**
+   * An info toast with an Undo button, offered for 8 s (design decision 13). `onUndo` runs at
+   * most once; the handle dismisses the toast early, when the step it would undo is gone.
+   */
+  undoable({
+    title,
+    description,
+    onUndo,
+    onClose,
+    durationMs = UNDO_DURATION_MS,
+  }: {
+    title: string;
+    description?: string;
+    onUndo(): void;
+    /** The toast went (dismissed or timed out): the caller drops what it kept for it. */
+    onClose?(): void;
+    durationMs?: number;
+  }): { dismiss(): void } {
+    let used = false;
+    const id = emitNotification(
+      'info',
+      {
+        title,
+        description,
+        durationMs,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            if (used) return;
+            used = true;
+            onUndo();
+          },
+        },
+      },
+      onClose,
+    );
+    return {
+      dismiss() {
+        if (id !== undefined) toast.dismiss(id);
+      },
+    };
   },
 };
 
 export function resetNotifyStateForTests(): void {
   recentNotifications.clear();
+  notifyTarget = null;
 }

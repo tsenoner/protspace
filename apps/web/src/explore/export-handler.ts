@@ -1,4 +1,10 @@
-import type { ProtspaceControlBar, ProtspaceLegend, ProtspaceScatterplot } from '@protspace/core';
+import type {
+  ExportEventDetail,
+  ProtspaceEatPanel,
+  ProtspaceExportMenu,
+  ProtspaceLegend,
+  ProtspaceScatterplot,
+} from '@protspace/core';
 import { EXPORT_DEFAULTS, pxToMm } from '@protspace/core';
 import type { BundleSettings } from '@protspace/utils';
 import {
@@ -8,163 +14,140 @@ import {
   generateBundleFilename,
   pngWithDpi,
 } from '@protspace/utils';
-import { notify } from '../lib/notify';
+import type { notify as appNotify } from '../lib/notify';
 import { getExportFailureNotification, getExportSuccessNotification } from './notifications';
+import { loadPublishState, savePublishState } from './publish-state-store';
 
-interface ExportEventDetail {
-  imageHeight?: number;
-  imageWidth?: number;
-  includeLegend?: boolean;
-  includeLegendSettings?: boolean;
-  legendFontSizePx?: number;
-  legendWidthPercent?: number;
-  type: 'ids' | 'tsv' | 'pdf' | 'png' | 'parquet';
-}
+/** The menu sends every field; other dispatchers may send only the type, so the rest default. */
+type ExportRequest = Pick<ExportEventDetail, 'type'> & Partial<Omit<ExportEventDetail, 'type'>>;
 
 interface ExportHandlerOptions {
-  controlBar: ProtspaceControlBar;
+  /** The Export menu. Its events arrive through `listen`; the figure editor's host code reads it. */
+  exportMenu: ProtspaceExportMenu;
+  /** Adds a listener on the Export menu for as long as the runtime lives. */
+  listen(type: string, listener: EventListener): void;
   getSelectedProteins(): string[];
   /** Proteins the loaded file holds that the dataset, and so a bundle export, leaves out. */
   getUnplacedProteinCount(): number;
   legendElement: ProtspaceLegend;
+  /** The EAT panel, whose reliability filter (Hide) a bundle stores. */
+  eatPanel: Pick<ProtspaceEatPanel, 'reliabilityThreshold' | 'outcome'>;
   plotElement: ProtspaceScatterplot;
+  notify: Pick<typeof appNotify, 'success' | 'error'>;
 }
 
-const PUBLISH_STATE_KEY = 'protspace_publishState';
-
-function savePublishState(state: Record<string, unknown>): void {
-  try {
-    localStorage.setItem(PUBLISH_STATE_KEY, JSON.stringify(state));
-  } catch {
-    /* localStorage full or unavailable */
-  }
+function generateFilename(ext: string): string {
+  const date = new Date().toISOString().split('T')[0];
+  return `protspace_figure_${date}.${ext}`;
 }
 
-function loadPublishState(): Record<string, unknown> | null {
-  try {
-    const raw = localStorage.getItem(PUBLISH_STATE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    }
-  } catch {
-    /* corrupt or unavailable */
-  }
-  return null;
+function downloadFile(url: string, filename: string): void {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
 }
 
-export function createExportHandler({
-  controlBar,
-  getSelectedProteins,
-  getUnplacedProteinCount,
-  legendElement,
-  plotElement,
-}: ExportHandlerOptions) {
-  // ── Publish editor handler ─────────────────────────
+/**
+ * The Export menu's two requests: the figure editor (lazy-loaded) and the quick exports. Every
+ * export confirms with a toast naming its file (design decision 15), or says why it failed.
+ */
+export function createExportHandler(options: ExportHandlerOptions): void {
+  const {
+    listen,
+    getSelectedProteins,
+    getUnplacedProteinCount,
+    legendElement,
+    eatPanel,
+    plotElement,
+    notify,
+  } = options;
 
-  function setupPublishEditorHandler() {
-    controlBar.addEventListener('open-publish-editor', async () => {
-      try {
-        // Lazy-import the publish modal component (side-effect registers
-        // the custom element on first open).
-        const { ProtspacePublishModal } = await import('@protspace/core/publish');
+  async function openPublishEditor(): Promise<void> {
+    try {
+      // Lazy-import the publish modal component (side-effect registers the custom element on
+      // first open).
+      const { ProtspacePublishModal } = await import('@protspace/core/publish');
 
-        // Remove any existing modal
-        document.querySelector('protspace-publish-modal')?.remove();
+      // Remove any existing modal
+      document.querySelector('protspace-publish-modal')?.remove();
 
-        // Construct via the registry, not `new ProtspacePublishModal()`.
-        // After Vite HMR re-evaluates publish-modal.ts the class object on
-        // the import diverges from the one registered for the tag, and
-        // `new` on the unregistered class throws "Illegal constructor".
-        // createElement always uses the registered class.
-        const modal = document.createElement('protspace-publish-modal') as InstanceType<
-          typeof ProtspacePublishModal
-        >;
-        modal.plotElement = plotElement;
-        modal.legendElement = legendElement;
-        // Restore the last saved publish state (localStorage), else the modal's defaults.
-        modal.savedPublishState = loadPublishState();
+      // Construct via the registry, not `new ProtspacePublishModal()`. After Vite HMR
+      // re-evaluates publish-modal.ts the class object on the import diverges from the one
+      // registered for the tag, and `new` on the unregistered class throws "Illegal
+      // constructor". createElement always uses the registered class.
+      const modal = document.createElement('protspace-publish-modal') as InstanceType<
+        typeof ProtspacePublishModal
+      >;
+      modal.plotElement = plotElement;
+      modal.legendElement = legendElement;
+      // Restore the last saved publish state (localStorage), else the modal's defaults.
+      modal.savedPublishState = loadPublishState();
+      // The editor compares it with the projection its overlays were placed on.
+      const projection = plotElement.data?.projections[plotElement.selectedProjectionIndex];
+      modal.currentProjection = projection
+        ? { projection: projection.name, dimensionality: projection.dimension }
+        : null;
 
-        // Handle export from the figure editor
-        modal.addEventListener('publish-export', (async (e: CustomEvent) => {
-          const { canvas, state } = e.detail as {
-            canvas: HTMLCanvasElement;
-            state: Record<string, unknown> & {
-              format: string;
-              dpi: number;
-            };
-          };
+      // Handle export from the figure editor
+      modal.addEventListener('publish-export', (async (e: CustomEvent) => {
+        const { canvas, state } = e.detail as {
+          canvas: HTMLCanvasElement;
+          state: Record<string, unknown> & { format: string; dpi: number };
+        };
 
-          // Persist state to localStorage
-          savePublishState(state);
+        savePublishState(state);
 
-          try {
-            const fname = generateFilename(state.format);
-            if (state.format === 'pdf') {
-              const widthMm = pxToMm(canvas.width, state.dpi);
-              const heightMm = pxToMm(canvas.height, state.dpi);
-              await exportCanvasAsPdf(canvas, { widthMm, heightMm, filename: fname });
-            } else {
-              const blob: Blob = await new Promise((resolve, reject) => {
-                canvas.toBlob(
-                  (b) => (b ? resolve(b) : reject(new Error('canvas.toBlob produced no blob'))),
-                  'image/png',
-                );
-              });
-              const withDpi = await pngWithDpi(blob, state.dpi);
-              const url = URL.createObjectURL(withDpi);
-              try {
-                downloadFile(url, fname);
-              } finally {
-                URL.revokeObjectURL(url);
-              }
+        try {
+          const fname = generateFilename(state.format);
+          if (state.format === 'pdf') {
+            const widthMm = pxToMm(canvas.width, state.dpi);
+            const heightMm = pxToMm(canvas.height, state.dpi);
+            await exportCanvasAsPdf(canvas, { widthMm, heightMm, filename: fname });
+          } else {
+            const blob: Blob = await new Promise((resolve, reject) => {
+              canvas.toBlob(
+                (b) => (b ? resolve(b) : reject(new Error('canvas.toBlob produced no blob'))),
+                'image/png',
+              );
+            });
+            const withDpi = await pngWithDpi(blob, state.dpi);
+            const url = URL.createObjectURL(withDpi);
+            try {
+              downloadFile(url, fname);
+            } finally {
+              URL.revokeObjectURL(url);
             }
-            notify.success(getExportSuccessNotification(fname));
-            modal.remove();
-          } catch (err) {
-            console.error('Publish export failed:', err);
-            notify.error(getExportFailureNotification(err));
-            // Leave the modal open so the user can retry without losing context.
           }
-        }) as EventListener);
-
-        // Handle close — persist state to localStorage
-        modal.addEventListener('close', ((e: CustomEvent) => {
-          if (e.detail?.state) {
-            savePublishState(e.detail.state as Record<string, unknown>);
-          }
+          notify.success(getExportSuccessNotification(fname));
           modal.remove();
-        }) as EventListener);
+        } catch (err) {
+          console.error('Publish export failed:', err);
+          // A toast would sit under the modal dialog, hidden and inert: say it in the editor.
+          const failure = getExportFailureNotification(err);
+          modal.showExportError(
+            failure.description ? `${failure.title} ${failure.description}` : failure.title,
+          );
+          // Leave the modal open so the user can retry without losing context.
+        }
+      }) as EventListener);
 
-        document.body.appendChild(modal);
-      } catch (err) {
-        console.error('Failed to open figure editor:', err);
-        notify.error(getExportFailureNotification(err));
-      }
-    });
+      // Handle close — persist state to localStorage
+      modal.addEventListener('close', ((e: CustomEvent) => {
+        if (e.detail?.state) {
+          savePublishState(e.detail.state as Record<string, unknown>);
+        }
+        modal.remove();
+      }) as EventListener);
+
+      document.body.appendChild(modal);
+    } catch (err) {
+      console.error('Failed to open figure editor:', err);
+      notify.error(getExportFailureNotification(err));
+    }
   }
 
-  function generateFilename(ext: string): string {
-    const date = new Date().toISOString().split('T')[0];
-    return `protspace_figure_${date}.${ext}`;
-  }
-
-  function downloadFile(url: string, filename: string) {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-  }
-
-  // Wire up the publish editor listener
-  setupPublishEditorHandler();
-
-  // ── Original export handler ────────────────────────
-
-  return async (event: Event) => {
-    const customEvent = event as CustomEvent<ExportEventDetail>;
+  async function quickExport(request: ExportRequest): Promise<void> {
     const {
       type,
       imageWidth,
@@ -173,7 +156,7 @@ export function createExportHandler({
       legendFontSizePx,
       includeLegend,
       includeLegendSettings,
-    } = customEvent.detail;
+    } = request;
 
     try {
       if (type === 'parquet') {
@@ -190,11 +173,12 @@ export function createExportHandler({
             exportOptions: {},
             publishState: loadPublishState() ?? undefined,
             eatOverlayEnabled: plotElement.eatOverlayEnabled,
-            // The reliability slider position lives on the legend now (it drives
-            // the query filter, not scatter-plot dimming), so persist it from there.
-            eatConfidenceThreshold: legendElement.reliabilityThreshold,
-            // Only a picked size: the live one may be seeded from the current
-            // annotation, and as a top-level size it would override every other one.
+            // The EAT panel owns the reliability range; a bundle stores its lower bound and
+            // whether the range hides or fades what it leaves out.
+            eatConfidenceThreshold: eatPanel.reliabilityThreshold,
+            eatOutcome: eatPanel.outcome,
+            // Only a picked size: the live one may be seeded from the current annotation, and as
+            // a top-level size it would override every other one.
             shapeSize: legendElement.pickedShapeSize,
           };
         }
@@ -202,10 +186,7 @@ export function createExportHandler({
         const filename = generateBundleFilename(includeSettings);
         // Subset exports carry no statistics by construction: sliceVisualizationDataByIndices
         // strips them, so whole-dataset scores can never describe an isolated/filtered slice.
-        exportParquetBundle(currentData, filename, {
-          includeSettings,
-          settings,
-        });
+        exportParquetBundle(currentData, filename, { includeSettings, settings });
         notify.success(getExportSuccessNotification(filename, getUnplacedProteinCount()));
         return;
       }
@@ -219,7 +200,7 @@ export function createExportHandler({
         : totalWidth;
       const targetHeight = imageHeight ?? EXPORT_DEFAULTS.IMAGE_HEIGHT;
 
-      const options = {
+      const exportOptions = {
         targetWidth,
         targetHeight,
         legendWidthPercent: legendWidthPercent ?? EXPORT_DEFAULTS.LEGEND_WIDTH_PERCENT,
@@ -231,23 +212,27 @@ export function createExportHandler({
         backgroundColor: 'white' as const,
       };
 
-      switch (type) {
-        case 'ids':
-          exporter.exportProteinIds(options);
-          break;
-        case 'tsv':
-          exporter.exportTable(options);
-          break;
-        case 'png':
-          await exporter.exportPNG(options);
-          break;
-        case 'pdf':
-          await exporter.exportPDF(options);
-          break;
+      // PNG and PDF at 573K points take seconds: the toast waits for the file.
+      const fileName =
+        type === 'ids'
+          ? exporter.exportProteinIds(exportOptions)
+          : type === 'tsv'
+            ? exporter.exportTable(exportOptions)
+            : type === 'png'
+              ? await exporter.exportPNG(exportOptions)
+              : await exporter.exportPDF(exportOptions);
+      if (fileName === null) {
+        throw new Error('No data available for export');
       }
+      notify.success(getExportSuccessNotification(fileName));
     } catch (error) {
       console.error('Export failed:', error);
       notify.error(getExportFailureNotification(error));
     }
-  };
+  }
+
+  listen('open-publish-editor', () => {
+    void openPublishEditor();
+  });
+  listen('export', (event) => quickExport((event as CustomEvent<ExportRequest>).detail));
 }

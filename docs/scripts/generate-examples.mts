@@ -146,7 +146,7 @@ function validate(): string[] {
     }
     if (!existsSync(thumbnailPath(id))) {
       errors.push(
-        `"${id}": docs/explore/images/examples/${id}.png is missing; capture it with the examples-live Playwright project.`,
+        `"${id}": docs/explore/images/examples/${id}.png is missing; capture it with \`pnpm docs:screenshots -g "examples/${id}.png"\`.`,
       );
     }
 

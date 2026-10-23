@@ -415,6 +415,30 @@ describe('plot-data-accessors', () => {
       expect(block.scores).toEqual([[0.9], null]);
       expect(block.evidence).toEqual([null, 'EXP']);
     });
+
+    it('a block carries the display label (registry name, prettified key, EAT confidence)', () => {
+      const data = baseData();
+      data.annotations.ec = { kind: 'categorical', values: [], colors: [], shapes: [] };
+      data.annotations.my_score = { kind: 'categorical', values: [], colors: [], shapes: [] };
+      data.annotations.score__eat_confidence = {
+        kind: 'categorical',
+        values: [],
+        colors: [],
+        shapes: [],
+        runtime: { role: 'eat-confidence', baseAnnotation: 'ec' },
+      };
+      data.annotation_data.ec = Int32Array.of(-1, -1, -1);
+      data.annotation_data.my_score = Int32Array.of(-1, -1, -1);
+      data.annotation_data.score__eat_confidence = Int32Array.of(-1, -1, -1);
+
+      const view = buildTooltipView(data, 0, 'ec', ['my_score', 'score__eat_confidence']);
+
+      expect(view.blocks.map((block) => [block.key, block.label])).toEqual([
+        ['ec', 'EC number'],
+        ['my_score', 'My score'],
+        ['score__eat_confidence', 'EC number — EAT confidence'],
+      ]);
+    });
   });
 });
 

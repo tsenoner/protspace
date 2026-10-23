@@ -1,8 +1,7 @@
 import type {
-  ProtspaceControlBar,
+  ProtspaceEatPanel,
   ProtspaceLegend,
   ProtspaceScatterplot,
-  ProtspaceStructureViewer,
   DataLoadedEventDetail,
   DataErrorEventDetail,
   DataLoader as ProtspaceDataLoader,
@@ -23,9 +22,15 @@ import {
 } from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
 import { DEFAULT_EXAMPLE_DATASET, type ExampleDataset } from './example-datasets';
+import type { ExploreControls } from './explore-controls';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
-import { progressAfterExampleDownload, type LoadingOverlayController } from './loading-overlay';
+import {
+  LOADING_COPY,
+  loadingCopyFor,
+  progressAfterExampleDownload,
+  type LoadingOverlayController,
+} from './loading-overlay';
 import { createPersistedDatasetController } from './persisted-dataset';
 import type {
   ExampleLoadCancel,
@@ -43,17 +48,19 @@ import { createEmptyExploreViewRequest } from './url-state';
 import type { ViewController } from './view-controller';
 
 interface DatasetControllerOptions {
-  controlBar: ProtspaceControlBar;
+  /** The controls a new dataset resets and fills; `runtime.ts` builds them. */
+  controls: ExploreControls;
   dataLoader: ProtspaceDataLoader;
   getIsDisposed: () => boolean;
   interactionController: InteractionController;
   legendElement: ProtspaceLegend;
+  /** The EAT panel, which takes a bundle's Show and reliability threshold. */
+  eatPanel: Pick<ProtspaceEatPanel, 'applyEatSettings'>;
   loadQueue: LoadQueue;
   overlayController: Pick<LoadingOverlayController, 'update' | 'setCancelHandler'>;
   plotElement: ProtspaceScatterplot;
   setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
-  structureViewer: ProtspaceStructureViewer;
   viewController: ViewController;
   /**
    * Called after the loading overlay's Cancel has aborted an example
@@ -65,11 +72,8 @@ interface DatasetControllerOptions {
 
 export interface DatasetController {
   loadDefaultDatasetAndClearPersistedFile(): Promise<void>;
-  /**
-   * Loads an example in place of the stored import (a menu choice), which
-   * `handleDataLoaded` clears once the example has decoded and is current.
-   */
-  loadExampleDatasetAndClearPersistedFile(
+  /** Loads an example chosen from the Import menu; the stored import stays. */
+  loadChosenExample(
     entry: ExampleDataset,
     source: DatasetChangeSource,
   ): Promise<ExampleLoadOutcome>;
@@ -162,17 +166,17 @@ function warnOnMissingDefaultViewNames(entry: ExampleDataset, data: Visualizatio
 }
 
 export function createDatasetController({
-  controlBar,
+  controls,
   dataLoader,
   getIsDisposed,
   interactionController,
   legendElement,
+  eatPanel,
   loadQueue,
   overlayController,
   plotElement,
   setCurrentExampleId,
   setCurrentDatasetName,
-  structureViewer,
   viewController,
   onExampleLoadCancelled,
 }: DatasetControllerOptions): DatasetController {
@@ -205,14 +209,13 @@ export function createDatasetController({
   };
 
   const loadData = createDataRenderer({
-    controlBar,
+    controls,
     getIsDisposed,
     interactionController,
     legendElement,
     overlayController: phaseOverlayController,
     plotElement,
     resolveInitialView: viewController.resolveLatestView,
-    structureViewer,
   });
 
   const exampleRetrySubscribers = new Set<(exampleId: string) => void>();
@@ -252,11 +255,12 @@ export function createDatasetController({
   // Name, id and the dataset-change emit for a successful example load happen
   // in `handleDataLoaded`, keyed on the example in load meta, so a load that
   // later fails to parse never announces success.
+  // The recovery banner's "Load default" (and "Clear stored data"): the demo replaces the stored
+  // import, which `handleDataLoaded` clears once the demo has decoded and is current.
   const loadDefaultDatasetAndClearPersistedFile = async (): Promise<void> => {
-    await persistedDatasetController.loadExampleDatasetAndClearPersistedFile(
-      DEFAULT_EXAMPLE_DATASET,
-      'startup',
-    );
+    await persistedDatasetController.loadExampleDataset(DEFAULT_EXAMPLE_DATASET, 'startup', {
+      replacesStoredImport: true,
+    });
   };
 
   const loadPersistedOrDefaultDataset = async (
@@ -366,7 +370,7 @@ export function createDatasetController({
       }
 
       // From here the load replaces the stored import (saving a user import,
-      // clearing it for a menu choice) and then the plot, so it finishes even
+      // clearing it for Load default) and then the plot, so it finishes even
       // when a newer user request supersedes it meanwhile. Stopping between
       // the two would leave the store out of step with the screen: the import
       // still on screen deleted, or a new one saved as 'pending' but never
@@ -382,12 +386,7 @@ export function createDatasetController({
         (loadMeta.kind === 'user' && file ? beginSaveImportedFile(file) : undefined);
       loadMeta.pendingSave = undefined;
       if (pendingSave) {
-        phaseOverlayController.update(
-          true,
-          20,
-          'Saving imported dataset...',
-          'Preparing reload support...',
-        );
+        phaseOverlayController.update(true, 20, '', LOADING_COPY.saving);
         try {
           await pendingSave.commit();
         } catch (error) {
@@ -395,7 +394,7 @@ export function createDatasetController({
           notify.warning(getDatasetPersistenceFailureNotification(error));
         }
       } else if (loadMeta.example?.replacesStoredImport) {
-        // A menu choice replaces the stored import only now that the example
+        // "Load default" replaces the stored import only now that the demo
         // has downloaded, decoded and is still current — never before the
         // fetch, which deleted the import still on screen whenever the
         // download or parse failed or the request was superseded. Running
@@ -413,7 +412,7 @@ export function createDatasetController({
         loadMeta.kind === 'default' || (loadMeta.kind === 'user' && settings != null);
 
       legendElement.clearForNewDataset(datasetHash, shouldClearPersistedState);
-      controlBar.clearForNewDataset(datasetHash, shouldClearPersistedState);
+      controls.resetForNewDataset();
 
       // The dataset's own landing view fills whatever the view request leaves
       // unset. Set for every load (null for user imports, OPFS restores and
@@ -452,15 +451,21 @@ export function createDatasetController({
         const eatOverlayEnabled = settings.eatOverlayEnabled ?? true;
         const eatConfidenceThreshold =
           settings.eatConfidenceThreshold ?? DEFAULT_EAT_CONFIDENCE_THRESHOLD;
-        legendElement.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);
+        eatPanel.applyEatSettings(
+          eatOverlayEnabled,
+          eatConfidenceThreshold,
+          settings.eatOutcome ?? 'hide',
+        );
       }
 
-      controlBar.hasFileSettings =
+      controls.setHasFileSettings(
         settings != null &&
-        (Object.keys(settings.legendSettings).length > 0 ||
-          settings.eatOverlayEnabled !== undefined ||
-          settings.eatConfidenceThreshold !== undefined ||
-          settings.shapeSize !== undefined);
+          (Object.keys(settings.legendSettings).length > 0 ||
+            settings.eatOverlayEnabled !== undefined ||
+            settings.eatConfidenceThreshold !== undefined ||
+            settings.eatOutcome !== undefined ||
+            settings.shapeSize !== undefined),
+      );
 
       // An example load carries its entry in load meta (set by
       // persisted-dataset.ts's `loadExampleDataset`), so it's identified by
@@ -540,9 +545,9 @@ export function createDatasetController({
         } else {
           // Default load ('default') or OPFS restore ('opfs'): the URL tooltip param
           // is authoritative. Only restore the persisted set when the URL is silent.
-          // Examples never have one (their saved state was wiped above), so a
-          // menu choice, whose request was reset above, lands on the curated view.
-          if (!latestRequest.present.tooltip) {
+          // Never for an example: it reopens on its curated tooltip, whatever was
+          // saved for its hash, so a silent URL lands on its defaultView.
+          if (!latestRequest.present.tooltip && !loadMeta.example) {
             if (savedTooltip.length > 0) {
               viewController.setRequestedView({
                 ...latestRequest,
@@ -699,8 +704,7 @@ export function createDatasetController({
 
   return {
     loadDefaultDatasetAndClearPersistedFile,
-    loadExampleDatasetAndClearPersistedFile:
-      persistedDatasetController.loadExampleDatasetAndClearPersistedFile,
+    loadChosenExample: persistedDatasetController.loadChosenExample,
     loadExampleDataset: persistedDatasetController.loadExampleDataset,
     loadPersistedOrDefaultDataset,
     tryLoadPersistedAgain: persistedDatasetController.tryLoadPersistedAgain,
@@ -726,18 +730,15 @@ export function createDatasetController({
         return;
       }
       console.log('Data loading started');
-      phaseOverlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');
+      const copy = loadingCopyFor(loadQueue.getRunningLoadMeta());
+      phaseOverlayController.update(true, 5, copy.detail, copy.title);
     },
     handleLoadingProgress(event: Event) {
       const customEvent = event as CustomEvent<{ percentage?: number }>;
       const percentage = Number(customEvent.detail.percentage ?? 0);
       const visualProgress = Math.min(20, Math.max(5, percentage * 0.2));
-      phaseOverlayController.update(
-        true,
-        visualProgress,
-        'Reading protein data...',
-        'Uploading...',
-      );
+      const copy = loadingCopyFor(loadQueue.getRunningLoadMeta());
+      phaseOverlayController.update(true, visualProgress, copy.detail, copy.title);
     },
     handleDataLoaded,
     handleDataError,

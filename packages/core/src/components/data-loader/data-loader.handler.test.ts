@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import './data-loader';
 import type { DataErrorEventDetail } from './data-loader.events';
 
@@ -74,5 +74,22 @@ describe('data-loader file input reset', () => {
 
     expect(loaded).toEqual([file]);
     expect(input.value).toBe('');
+  });
+});
+
+describe('data-loader openFilePicker', () => {
+  it('openFilePicker clicks the file input', async () => {
+    document.body.innerHTML = '';
+    const dataLoader = document.createElement('protspace-data-loader') as HTMLElement & {
+      openFilePicker(): void;
+      updateComplete: Promise<unknown>;
+    };
+    document.body.appendChild(dataLoader);
+    await dataLoader.updateComplete;
+
+    const input = dataLoader.shadowRoot!.querySelector('input[type="file"]') as HTMLInputElement;
+    const click = vi.spyOn(input, 'click');
+    dataLoader.openFilePicker();
+    expect(click).toHaveBeenCalledOnce();
   });
 });

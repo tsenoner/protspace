@@ -45,6 +45,7 @@ import {
   type CsrAnnotationData,
   type CsrEvidence,
   type CsrScores,
+  formatCount,
   type Projection,
   DEFAULT_CATEGORICAL_PALETTE_ID,
   rankByFrequency,
@@ -1001,8 +1002,8 @@ export async function readV3Bundle(
   // runs the tab out of memory first: refuse it here, before anything is allocated.
   if (numRows > MAX_DRAWABLE_POINTS) {
     throw new Error(
-      `Dataset too large: ${numRows.toLocaleString()} proteins, but ProtSpace can draw at ` +
-        `most ${MAX_DRAWABLE_POINTS.toLocaleString()} points.`,
+      `Dataset too large: ${formatCount(numRows)} proteins, but ProtSpace can draw at ` +
+        `most ${formatCount(MAX_DRAWABLE_POINTS)} points.`,
     );
   }
 

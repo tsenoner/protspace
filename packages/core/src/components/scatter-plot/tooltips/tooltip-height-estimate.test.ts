@@ -12,6 +12,7 @@ function makeBlock(
 ): TooltipView['blocks'][number] {
   return {
     key: 'annotation',
+    label: 'Annotation',
     displayValues: ['ValueA'],
     numericValue: null,
     numericType: 'float',

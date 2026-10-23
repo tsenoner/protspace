@@ -41,7 +41,7 @@ vi.mock('./persisted-dataset', () => ({
     isCurrentRequest: mocks.isCurrentRequest,
     loadExampleDataset: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
-    loadExampleDatasetAndClearPersistedFile: vi.fn(),
+    loadChosenExample: vi.fn(),
     recoverFromCorruptedPersistedDataset: mocks.recoverFromCorruptedPersistedDataset,
     tryLoadPersistedAgain: vi.fn(),
   }),
@@ -370,7 +370,7 @@ describe('dataset controller legacy bundle notice', () => {
       sequence: 3,
       kind: 'default',
       epoch: 1,
-      example: { entry: EXAMPLE_DATASETS[1], source: 'menu', replacesStoredImport: true },
+      example: { entry: EXAMPLE_DATASETS[1], source: 'menu' },
     });
     await controller.handleDataLoaded(eventFor(2));
 

@@ -1,22 +1,19 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { LegendItem, OtherItem } from './types';
 import { LEGEND_VALUES, NA_VALUE, LEGEND_EVENTS } from './config';
 
 // Import the component to register the custom element
 import './legend';
-import {
-  mountLegendWithScatterplot,
-  settle,
-  stubLocalStorage,
-} from './test-support/legend-scatterplot-harness';
+import type { ProtspaceLegend } from './legend';
+import { LegendDataProcessor } from './legend-data-processor';
 
 type AnyLegend = HTMLElement & Record<string, unknown>;
 
-stubLocalStorage();
+/** The legend's item actions (controllers/item-actions-controller.ts). */
+const actions = (el: AnyLegend) => (el as unknown as ProtspaceLegend)._actions;
 
 function createLegendItem(value: string, overrides: Partial<LegendItem> = {}): LegendItem {
   return {
@@ -48,28 +45,32 @@ describe('legend extract methods', () => {
     el = createLegend();
   });
 
-  describe('_handleExtractFromOther', () => {
+  describe('extractFromOther', () => {
     beforeEach(() => {
-      el._showOtherDialog = true;
+      el._otherPopover.show(document.createElement('button'));
       el.maxVisibleValues = 5;
     });
 
     it('sets _pendingExtractValue to the given value', () => {
-      (el as AnyLegend)._handleExtractFromOther('cat1');
+      actions(el).extractFromOther('cat1');
       expect(el._pendingExtractValue).toBe('cat1');
     });
 
+    it('keeps a value extracted while isolated out of Other on later rebuilds', () => {
+      el.isolationMode = true;
+      el._preIsolationVisibleValues = new Set(['visible1']);
+      actions(el).extractFromOther('cat1');
+      expect([...(el._preIsolationVisibleValues as Set<string>)]).toEqual(['visible1', 'cat1']);
+    });
+
     it('increments maxVisibleValues by 1', () => {
-      (el as AnyLegend)._handleExtractFromOther('cat1');
+      actions(el).extractFromOther('cat1');
       expect(el.maxVisibleValues).toBe(6);
     });
 
-    it('closes the Other dialog and clears its outside-press latch', () => {
-      // A latch left set would close the dialog on the next overlay mouseup once reopened.
-      el._mouseDownOutsideOther = true;
-      (el as AnyLegend)._handleExtractFromOther('cat1');
-      expect(el._showOtherDialog).toBe(false);
-      expect(el._mouseDownOutsideOther).toBe(false);
+    it('keeps the Other popover open', () => {
+      actions(el).extractFromOther('cat1');
+      expect(el._otherPopover.anchor).not.toBeNull();
     });
 
     it('dispatches extract event with the value', () => {
@@ -77,7 +78,7 @@ describe('legend extract methods', () => {
       el.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((e: CustomEvent) =>
         events.push(e)) as EventListener);
 
-      (el as AnyLegend)._handleExtractFromOther('cat1');
+      actions(el).extractFromOther('cat1');
 
       expect(events).toHaveLength(1);
       expect(events[0].detail).toEqual({ value: 'cat1', action: 'extract' });
@@ -88,7 +89,7 @@ describe('legend extract methods', () => {
       el.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((e: CustomEvent) =>
         events.push(e)) as EventListener);
 
-      (el as AnyLegend)._handleExtractFromOther(NA_VALUE);
+      actions(el).extractFromOther(NA_VALUE);
 
       expect(el._pendingExtractValue).toBe(NA_VALUE);
       expect(events[0].detail.value).toBe(NA_VALUE);
@@ -98,7 +99,7 @@ describe('legend extract methods', () => {
       const resolved = Promise.resolve(true);
       vi.spyOn(el, 'updateComplete', 'get').mockReturnValue(resolved);
 
-      (el as AnyLegend)._handleExtractFromOther('cat1');
+      actions(el).extractFromOther('cat1');
 
       // Queued on updateComplete — flush the microtask
       await resolved;
@@ -106,7 +107,7 @@ describe('legend extract methods', () => {
     });
   });
 
-  describe('_handleExtractAllFromOther', () => {
+  describe('extractAllFromOther', () => {
     const otherItems: OtherItem[] = [
       { value: 'cat1', count: 5 },
       { value: 'cat2', count: 3 },
@@ -114,7 +115,7 @@ describe('legend extract methods', () => {
     ];
 
     beforeEach(() => {
-      el._showOtherDialog = true;
+      el._otherPopover.show(document.createElement('button'));
       el._otherItems = otherItems;
       el._legendItems = [
         createLegendItem('visible1', { zOrder: 0 }),
@@ -124,16 +125,14 @@ describe('legend extract methods', () => {
     });
 
     it('sets maxVisibleValues to nonOtherCount + otherItems.length', () => {
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
       // 2 non-Other legend items + 3 other items = 5
       expect(el.maxVisibleValues).toBe(5);
     });
 
-    it('closes the Other dialog and clears its outside-press latch', () => {
-      el._mouseDownOutsideOther = true;
-      (el as AnyLegend)._handleExtractAllFromOther();
-      expect(el._showOtherDialog).toBe(false);
-      expect(el._mouseDownOutsideOther).toBe(false);
+    it('closes the Other popover', () => {
+      actions(el).extractAllFromOther();
+      expect(el._otherPopover.anchor).toBeNull();
     });
 
     it('dispatches extract event for each other item', () => {
@@ -141,7 +140,7 @@ describe('legend extract methods', () => {
       el.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((e: CustomEvent) =>
         events.push(e)) as EventListener);
 
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
 
       expect(events).toHaveLength(3);
       expect(events[0].detail).toEqual({ value: 'cat1', action: 'extract' });
@@ -164,52 +163,53 @@ describe('legend extract methods', () => {
       }) as EventListener);
 
       const origMaxVisible = el.maxVisibleValues;
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
 
       // maxVisibleValues should have been the original value when first event fired
       expect(maxVisibleAtEventTime).toBe(origMaxVisible);
       expect(eventValues).toHaveLength(3);
     });
 
-    it('syncs settings dialog when it is open', () => {
-      el._showSettingsDialog = true;
-      el._dialogSettings = {
-        maxVisibleValues: 10,
-        shapeSize: 1,
-        enableDuplicateStackUI: false,
-        annotationSortModes: {},
-        selectedPaletteId: 'kellys',
-      };
-
-      (el as AnyLegend)._handleExtractAllFromOther();
-
-      expect(el._dialogSettings.maxVisibleValues).toBe(5);
-    });
-
-    it('does not modify _dialogSettings when settings dialog is closed', () => {
-      el._showSettingsDialog = false;
-      const original = {
-        maxVisibleValues: 10,
-        shapeSize: 1,
-        enableDuplicateStackUI: false,
-        annotationSortModes: {},
-        selectedPaletteId: 'kellys',
-      };
-      el._dialogSettings = { ...original };
-
-      (el as AnyLegend)._handleExtractAllFromOther();
-
-      expect(el._dialogSettings.maxVisibleValues).toBe(10);
-    });
-
     it('schedules settings save after update completes', async () => {
       const resolved = Promise.resolve(true);
       vi.spyOn(el, 'updateComplete', 'get').mockReturnValue(resolved);
 
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
 
       await resolved;
       expect(el._persistenceController.saveSettings).toHaveBeenCalled();
+    });
+
+    it('moves every Other value into the visible set while a subset is isolated', () => {
+      el.isolationMode = true;
+      el._preIsolationVisibleValues = new Set(['visible1', 'visible2']);
+
+      actions(el).extractAllFromOther();
+
+      // Isolation keeps this set and fills no free slots, so the cap alone promotes nothing.
+      const visible = el._preIsolationVisibleValues as Set<string>;
+      const { otherItems: left } = LegendDataProcessor.sortAndLimitItems(
+        new Map([
+          ['visible1', 9],
+          ['visible2', 8],
+          ['cat1', 5],
+          ['cat2', 3],
+          [NA_VALUE, 2],
+        ]),
+        el.maxVisibleValues as number,
+        true,
+        'size-desc',
+        new Map(),
+        visible,
+      );
+      expect([...visible]).toEqual(['visible1', 'visible2', 'cat1', 'cat2', NA_VALUE]);
+      expect(left).toEqual([]);
+    });
+
+    it('keeps the visible set alone when not isolated', () => {
+      el._preIsolationVisibleValues = new Set(['visible1']);
+      actions(el).extractAllFromOther();
+      expect([...(el._preIsolationVisibleValues as Set<string>)]).toEqual(['visible1']);
     });
 
     it('handles empty otherItems gracefully', () => {
@@ -223,109 +223,11 @@ describe('legend extract methods', () => {
       el.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((e: CustomEvent) =>
         events.push(e)) as EventListener);
 
-      (el as AnyLegend)._handleExtractAllFromOther();
+      actions(el).extractAllFromOther();
 
       expect(events).toHaveLength(0);
       // 1 non-Other + 0 other items
       expect(el.maxVisibleValues).toBe(1);
     });
-  });
-});
-
-// Four categories by count: a (4), b (3), c (2), d (1).
-function makeExtractData(): VisualizationData {
-  return {
-    protein_ids: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'],
-    projections: [{ name: 'UMAP 2', dimension: 2, data: new Float32Array(20) }],
-    annotations: {
-      family: {
-        kind: 'categorical',
-        values: ['a', 'b', 'c', 'd'],
-        colors: ['#ff0000', '#00ff00', '#0000ff', '#ffff00'],
-        shapes: ['circle', 'circle', 'circle', 'circle'],
-      },
-    },
-    annotation_data: {
-      family: new Int32Array([0, 0, 0, 0, 1, 1, 1, 2, 2, 3]),
-    },
-  };
-}
-
-function rowValues(root: ShadowRoot): (string | undefined)[] {
-  return Array.from(root.querySelectorAll<HTMLElement>('.legend-item')).map(
-    (row) => row.dataset.value,
-  );
-}
-
-describe('extracting from Other in a mounted legend', () => {
-  // Both tests mount the same fixture, so settings the first one saves could seed the second.
-  beforeEach(() => localStorage.clear());
-
-  afterEach(() => {
-    document.body.innerHTML = '';
-  });
-
-  /** Mount the legend capped at two rows, so c and d sit in Other, and open the Other dialog. */
-  async function openOtherDialog() {
-    const { legend } = await mountLegendWithScatterplot(makeExtractData(), 'family');
-    legend.maxVisibleValues = 2;
-    await settle(legend);
-
-    const root = legend.shadowRoot!;
-    expect(rowValues(root)).toEqual(['a', 'b', LEGEND_VALUES.OTHER]);
-    root.querySelector<HTMLButtonElement>('.view-button')!.click();
-    await settle(legend);
-    expect(root.querySelectorAll('.other-item')).toHaveLength(2);
-    return { legend, root };
-  }
-
-  it('renders the extracted item as a row, not the largest Other item', async () => {
-    const { legend, root } = await openOtherDialog();
-    const otherRow = Array.from(root.querySelectorAll('.other-item')).find(
-      (row) => row.querySelector('.other-item-name')?.textContent === 'd',
-    )!;
-    otherRow.querySelector<HTMLButtonElement>('.extract-button')!.click();
-    await settle(legend);
-
-    // The cap grows by one and the extract decides who fills it: d, not the larger c.
-    expect(rowValues(root)).toEqual(['a', 'b', 'd', LEGEND_VALUES.OTHER]);
-    // The Other dialog closed.
-    expect(root.querySelector('.other-item')).toBeNull();
-  });
-
-  it('renders every Other item as a row after Extract All and closes the dialog', async () => {
-    const { legend, root } = await openOtherDialog();
-    root.querySelector<HTMLButtonElement>('.extract-all-button')!.click();
-    await settle(legend);
-
-    expect(rowValues(root)).toEqual(['a', 'b', 'c', 'd']);
-    // The dialog itself closed: with Other emptied, no .other-item rows would render even if
-    // it stayed open.
-    expect(root.querySelector('#legend-other-dialog')).toBeNull();
-  });
-});
-
-describe('Other dialog focus trap', () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it('is never created when cleaned up before the dialog has rendered', () => {
-    const frames = new Map<number, FrameRequestCallback>();
-    let nextFrame = 0;
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
-      frames.set(++nextFrame, cb);
-      return nextFrame;
-    });
-    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
-      frames.delete(id);
-    });
-    const el = createLegend();
-    el._setupFocusTrap('legend-other-dialog');
-
-    expect(frames.size).toBe(1);
-
-    // A disconnect (or the next dialog's setup) within that frame drops the pending setup.
-    el._cleanupFocusTrap();
-
-    expect(frames.size).toBe(0);
   });
 });

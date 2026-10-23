@@ -81,8 +81,9 @@ plot.addEventListener('brush-selection', (e) => {
 ```
 
 The scatter plot's public events are `protein-click`, `protein-hover`, `brush-selection`,
-`data-change`, `data-isolation`, `data-isolation-reset`, `auto-disable-selection`, `file-dropped`
-and `tour-start`.
+`data-change`, `data-isolation`, `data-isolation-reset`, `auto-disable-selection`,
+`renderer-degraded`, `view-status-change` and `hidden-values-change`; a dropped file is the host
+page's to handle (see [Embedding](/developers/embedding#drag-and-drop-pattern)).
 
 ::: tip
 Event names and payloads are a public contract. When you change one, update

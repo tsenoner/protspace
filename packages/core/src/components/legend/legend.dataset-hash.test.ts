@@ -8,6 +8,7 @@ import {
   generateDatasetHash,
   generateLegacyDatasetHash,
   rememberDatasetHash,
+  setStorageItem,
   type VisualizationData,
 } from '@protspace/utils';
 import './legend';
@@ -16,6 +17,7 @@ import { decodeParquetBundle } from '../data-loader/utils/bundle';
 import {
   mountLegendWithScatterplot,
   type MockScatterplot,
+  settleLegend,
 } from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 
@@ -50,13 +52,9 @@ function makeData(prefix = 'p', withPredictions = true): VisualizationData {
 }
 
 /** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 async function mount(data: VisualizationData) {
   const { legend, plot } = await mountLegendWithScatterplot(data, 'ec');
-  await settle(legend);
+  await settleLegend(legend);
   return { legend: legend as HashedLegend, plot };
 }
 
@@ -91,7 +89,7 @@ describe('legend dataset hash', () => {
     expect(generateLegacyDatasetHash(data)).not.toBe(workerHash);
 
     const { legend } = await mountLegendWithScatterplot(data, annotation);
-    await settle(legend);
+    await settleLegend(legend);
 
     expect((legend as HashedLegend)._persistenceController._datasetHash).toBe(workerHash);
   });
@@ -160,7 +158,7 @@ describe('legend state under the hash without predictions', () => {
 
     legend.clearForNewDataset(hash, true);
     showData(plot, data);
-    await settle(legend);
+    await settleLegend(legend);
 
     expect(legend._persistenceController._datasetHash).toBe(hash);
     expect(localStorage.getItem(legendKey(legacy, 'ec'))).toBeNull();
@@ -196,3 +194,46 @@ function showData(plot: MockScatterplot, data: VisualizationData): void {
   plot.getCurrentData = () => data;
   plot.dispatchEvent(new CustomEvent('data-change', { detail: { data } }));
 }
+
+/**
+ * The dataset controller keys a load's storage by `generateDatasetHash` of the whole dataset,
+ * EAT predictions included: it sweeps that key set for a fresh load and writes a bundle's
+ * settings there. The legend has to load and save under the same key set.
+ */
+describe('legend dataset hash for an EAT dataset', () => {
+  it('loads the settings stored under the dataset controller hash', async () => {
+    setStorageItem(legendKey(generateDatasetHash(makeData()), 'ec'), { shapeSize: 42 });
+    const { legend } = await mount(makeData());
+    expect(legend.shapeSize).toBe(42);
+  });
+
+  it('forgets its saved settings when the dataset controller clears the dataset', async () => {
+    const data = makeData();
+    const { legend, plot } = await mount(data);
+    legend.applyShapeSize(42);
+    expect(legend.pickedShapeSize).toBe(42);
+
+    legend.clearForNewDataset(generateDatasetHash(data));
+    plot.dispatchEvent(new CustomEvent('data-change', { detail: { data } }));
+    await settleLegend(legend);
+
+    expect(legend.pickedShapeSize).toBeUndefined();
+    expect(legend.shapeSize).toBe(10);
+  });
+
+  it('loads the settings stored under the hash of the dataset it is given, without a plot', async () => {
+    const data = makeData();
+    setStorageItem(legendKey(generateDatasetHash(data), 'ec'), { shapeSize: 42 });
+
+    const legend = document.createElement('protspace-legend') as ProtspaceLegend;
+    legend.autoSync = false;
+    legend.data = data;
+    legend.proteinIds = data.protein_ids;
+    legend.selectedAnnotation = 'ec';
+    legend.annotationData = { name: 'ec', values: data.annotations.ec.values, kind: 'categorical' };
+    document.body.append(legend);
+    await settleLegend(legend);
+
+    expect(legend.shapeSize).toBe(42);
+  });
+});

@@ -296,6 +296,18 @@ export interface ScatterplotConfig {
    * Default: 'off'.
    */
   densityLayer?: DensityLayerMode;
+  /**
+   * Stretch each axis on its own so the points fill the plot area, live and in exports. Off keeps
+   * one pixels-per-unit for both axes, the data's true shape (design decision 3).
+   *
+   * Default: false.
+   */
+  fillPlot?: boolean;
+  /**
+   * With `fillPlot`, the widest the filled area spreads: a wider plot fills this width, centred
+   * horizontally; the height still fills. Exports scale it with their width. Unset: no cap.
+   */
+  fillMaxWidth?: number;
 }
 
 /** Every density-layer mode, in the order the control bar lists them. */
@@ -304,6 +316,18 @@ export const DENSITY_LAYER_MODES = ['off', 'auto', 'on'] as const;
 export type DensityLayerMode = (typeof DENSITY_LAYER_MODES)[number];
 
 export const DENSITY_DEFAULT: DensityLayerMode = 'off';
+
+/** Menu copy per contour mode; the tokens stay off/auto/on (URL, config), only 'on' reads as 'Always'. */
+export const DENSITY_MODE_LABELS: Readonly<
+  Record<DensityLayerMode, { readonly label: string; readonly hint: string }>
+> = {
+  off: { label: 'Off', hint: 'No contours' },
+  auto: {
+    label: 'Auto',
+    hint: 'Fades out as you zoom in; faint or hidden when few points are shown',
+  },
+  on: { label: 'Always', hint: 'Full strength at every zoom level' },
+};
 
 export function isValidDensityLayerMode(value: unknown): value is DensityLayerMode {
   return typeof value === 'string' && DENSITY_LAYER_MODES.includes(value as DensityLayerMode);
@@ -375,6 +399,9 @@ export type LegendSettingsMap = Record<string, LegendPersistedSettings>;
 
 export type ExportOptionsMap = Record<string, PersistedExportOptions>;
 
+/** What the EAT reliability range does with a prediction outside it: hide it or fade it. */
+export type EatOutcome = 'hide' | 'dim';
+
 /**
  * Current bundle settings format.
  */
@@ -391,6 +418,11 @@ export interface BundleSettings {
    * above 0 — so an absent or `0` value means no reliability filter (#6b).
    */
   eatConfidenceThreshold?: number;
+  /**
+   * What the map does with a prediction below the threshold: `hide` filters it out (the
+   * default, and what an absent value means), `dim` fades it and filters nothing.
+   */
+  eatOutcome?: EatOutcome;
   /** The dataset-level legend shape size; per-annotation `shapeSize` is kept for old readers. */
   shapeSize?: number;
 }

@@ -101,7 +101,24 @@ Your dataset still loads and works normally for the current session. You only ne
 
 ### Can I customize colors?
 
-Yes! Click the **cog icon** (⚙️) in the legend panel to access settings. You can select from multiple **color palettes** (including colorblind-safe options), and your color choices persist per category across sessions.
+Yes. The sliders button in the legend's header opens **Legend settings**: pick a palette from its swatches
+(colorblind-safe ones included), set how many categories show before the rest are grouped into
+`Other`, and change the size of the points. Changes apply at once. To recolour one category, choose
+**Colour and shape** from its row's ⋯ menu. Your choices are kept per dataset and annotation in
+this browser. See [Settings](/explore/legend#settings).
+
+### Why are my figures light when the app is dark?
+
+ProtSpace has a light and a dark theme: **Theme** in the app bar, or in **More** on a phone, with
+**System** following your device. Exports always use the light colours: Quick PNG and PDF, the
+Figure Editor's preview and its exports have a white background and the light greys, so a figure
+looks the same whoever made it. See [Light and dark](/explore/#light-and-dark).
+
+### Can I use ProtSpace on a phone or tablet?
+
+Yes. Below 951 px the page rearranges for smaller screens and touch: on a phone the legend sits in
+a panel under the plot, and the controls that do not fit are in **More**. See
+[Phones and tablets](/explore/#phones-and-tablets).
 
 ### What are multi-label annotations?
 

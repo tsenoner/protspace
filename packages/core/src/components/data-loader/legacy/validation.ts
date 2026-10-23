@@ -1,5 +1,5 @@
 import type { Rows } from '../utils/types';
-import { sanitizeForMessage } from '@protspace/utils';
+import { formatCount, sanitizeForMessage } from '@protspace/utils';
 
 /**
  * The most rows a v1/v2 bundle may hold. Its reader decodes every row to an object, at
@@ -36,8 +36,8 @@ export function assertWithinLegacyRowLimit(
 ): void {
   if (rows > maxRows) {
     throw new Error(
-      `Dataset too large for a v1/v2 bundle: ${rows.toLocaleString()} rows (proteins x ` +
-        `projections) exceeds the limit of ${maxRows.toLocaleString()}. Run "protspace convert" ` +
+      `Dataset too large for a v1/v2 bundle: ${formatCount(rows)} rows (proteins x ` +
+        `projections) exceeds the limit of ${formatCount(maxRows)}. Run "protspace convert" ` +
         `on the file to upgrade it to the current format, which has no such limit.`,
     );
   }

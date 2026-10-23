@@ -147,3 +147,47 @@ export function shouldShowFingerprintWarning(
   if (!saved || !current) return false;
   return saved.projection !== current.projection || saved.dimensionality !== current.dimensionality;
 }
+
+/** What the legend hands the figure editor (mirrors the export-utils reader). */
+export interface LegendExportState {
+  annotation: string;
+  otherItemsCount: number;
+  items: Array<{
+    value: string;
+    displayValue?: string;
+    color: string;
+    shape: string;
+    count: number;
+    isVisible: boolean;
+    zOrder: number;
+  }>;
+}
+
+/** The legend's export data, or null when the element has none, it has no items, or it throws. */
+export function readLegendExportState(
+  el: (Element & { getLegendExportData?: () => LegendExportState }) | null,
+): LegendExportState | null {
+  if (!el || typeof el.getLegendExportData !== 'function') return null;
+  try {
+    const s = el.getLegendExportData();
+    if (s && Array.isArray(s.items)) return s;
+  } catch (e) {
+    console.warn('Failed to read legend export state:', e);
+  }
+  return null;
+}
+
+const FORM_CONTROL_TAGS = new Set(['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON']);
+
+/**
+ * Whether a key event's composed path runs through any form control (an input of any type, a
+ * select, textarea or button) or a contentEditable element. Wider than utils'
+ * `isEditableEventPath`, which lets undo work on a slider: Delete on a focused slider or checkbox
+ * must not remove the selected overlay.
+ */
+export function isFormControlEventPath(path: readonly EventTarget[]): boolean {
+  return path.some((node) => {
+    const { tagName, isContentEditable } = node as Partial<HTMLElement>;
+    return (tagName !== undefined && FORM_CONTROL_TAGS.has(tagName)) || isContentEditable === true;
+  });
+}

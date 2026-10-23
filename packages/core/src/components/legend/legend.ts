@@ -1,185 +1,71 @@
-import { LitElement, html } from 'lit';
+import { LitElement, html, type TemplateResult } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { perfCounters } from '../../utils/perf-counters';
 import {
-  COLOR_SCHEMES,
   DEFAULT_CATEGORICAL_PALETTE_ID,
-  DEFAULT_NUMERIC_PALETTE_ID,
-  DEFAULT_NUMERIC_STRATEGY,
-  getNumericBinLabelMap,
-  getNumericBinLowerBoundMap,
-  getOrderedNumericBinIds,
-  isGradientPalette,
   isNumericAnnotation,
-  materializeNumericAnnotation,
-  normalizeNumericPaletteId,
-  resolveNumericAnnotationDisplaySettings,
   annotationLabel,
-  clampReliabilityBound,
-  isSameReliability,
-  normalizeReliability,
-  DEFAULT_EAT_RELIABILITY,
-  NEUTRAL_BOUND,
-  RELIABILITY_BOUNDS,
-  hasEatPredictionsForAnnotation,
   isPredictedAnnotation,
   getAnnotationMeta,
-  annotationCategoryScores,
-  autoClusterScoreCaveat,
-  metricDisplay,
-  type NumericBinningStrategy,
   type NumericAnnotationDisplaySettingsMap,
-  type EatReliabilityMode,
   type EatReliabilityState,
   type CategoryScore,
 } from '@protspace/utils';
 import type { AnnotationData, LegendSettingsMap } from '@protspace/utils';
 
 // Configuration and styles
-import {
-  LEGEND_DEFAULTS,
-  LEGEND_STYLES,
-  LEGEND_VALUES,
-  LEGEND_EVENTS,
-  NA_VALUE,
-  toDisplayValue,
-  toInternalValue,
-  SHAPE_PATH_GENERATORS,
-} from './config';
+import { LEGEND_DEFAULTS, LEGEND_STYLES, LEGEND_VALUES, LEGEND_EVENTS, isNAValue } from './config';
 
-import type { PointShape } from '@protspace/utils';
 import { legendStyles } from './legend.styles';
 import '../common/info-popover';
-import './category-score-strip';
-import type { ScoreStripPoint } from './category-score-strip';
 
 // Controllers
-import { ScatterplotSyncController, PersistenceController, DragController } from './controllers';
+import {
+  ScatterplotSyncController,
+  PersistenceController,
+  DragController,
+  LegendDataController,
+  ItemActionsController,
+  ReorderController,
+  SettingsController,
+} from './controllers';
 
 // Processors and renderers
+import { createProcessorContext, type LegendProcessorContext } from './legend-data-processor';
 import {
-  LegendDataProcessor,
-  createProcessorContext,
-  type LegendProcessorContext,
-} from './legend-data-processor';
-import { LegendRenderer } from './legend-renderer';
+  renderLegendHeader,
+  renderSortMenu,
+  type LegendHeaderHandlers,
+  type LegendHeaderModel,
+  type SortMenuModel,
+} from './legend-header';
+import { renderLegendRow, type LegendRowHandlers, type LegendRowView } from './legend-row';
+import { LegendKeyboardController, renderLegendList, TruncatedNameTooltip } from './legend-list';
+import { ColorPickerController } from './legend-color-picker';
+import { LegendRowMenu } from './legend-row-menu';
+import { OtherPopoverControl } from './legend-other-control';
+import './legend-settings-popover';
+import type { ProtspaceLegendSettingsPopover } from './legend-settings-popover';
+import {
+  deriveStripPoints,
+  EMPTY_STRIP_POINTS,
+  renderScoreStrips,
+  type ScoreStripsHandlers,
+  type ScoreStripsView,
+  type StripPoints,
+} from './legend-score-strips';
 
 // Helpers
 import {
-  valueToKey,
   calculatePointSize,
-  defaultShapeSize,
-  explicitShapeSize,
-  SHAPE_SIZE_FILLER,
-  getDefaultSortMode,
   getItemClasses,
   isItemSelected,
   createItemActionEvent,
-  updateItemsVisibility,
-  isolateItem,
-  isSecondClickOfDouble,
-  isolationBase,
-  type FirstClick,
   computeOtherConcreteValues,
 } from './legend-helpers';
-import { computeEatPopulationCounts, type EatPopulationCounts } from './eat-population-counts';
+import { sortItemsForDisplay } from './legend-items-state';
 
-// Dialogs
-import {
-  renderSettingsDialog,
-  initializeAnnotationSortMode,
-  type SettingsDialogState,
-  type SettingsDialogCallbacks,
-} from './legend-settings-dialog';
-import { renderOtherDialog } from './legend-other-dialog';
-import { createFocusTrap } from './focus-trap';
 import { createLegendErrorEventDetail } from './legend.events';
-
-/**
- * Debounce window (ms) for committing an EAT reliability slider drag. The slider's
- * visual value + percent readout update live on every tick, but the expensive
- * downstream apply (reliability query re-eval + geometry/point index rebuild at 570k
- * points) is deferred to a drag-pause/release so dragging stays smooth.
- */
-const EAT_THRESHOLD_COMMIT_DELAY_MS = 150;
-
-/**
- * Smallest gap the two `between` thumbs may be dragged to. Doubles as the sliders'
- * `step`, so "one step apart" is literally true: the thumbs never occupy the same
- * pixel, where whichever sits on top would be the only one the pointer could reach.
- */
-const EAT_BAND_MIN_GAP = 0.01;
-
-/**
- * A 0..1 bound as a CSS percentage. Rounded because the multiplication is lossy —
- * `(1 - 0.41) * 100` is `59.00000000000001`, which would otherwise be written into the
- * style attribute verbatim. Two decimals is finer than the sliders' own 0.01 step.
- */
-const bandPercent = (value: number): number => Number((value * 100).toFixed(2));
-
-/**
- * Which end of the reliability range a control edits. Deliberately the field name on
- * `EatReliabilityState`, so a bound indexes its own value, its own neutral position
- * (`NEUTRAL_BOUND`) and its own row in `RELIABILITY_BOUNDS` with no hand-written
- * lower/upper -> min/max mapping in between.
- */
-type EatBound = 'min' | 'max';
-
-const EAT_BOUNDS: readonly EatBound[] = ['min', 'max'];
-
-function boundsForMode(mode: EatReliabilityMode): readonly EatBound[] {
-  const uses = RELIABILITY_BOUNDS[mode];
-  return EAT_BOUNDS.filter((bound) => uses[bound]);
-}
-
-/**
- * Which bounds each mode renders a thumb and a percent box for — derived from the
- * shared `RELIABILITY_BOUNDS` rather than restated, so the control cannot offer a
- * widget for a bound the filter ignores. `atMost` used to render the lower bound
- * anyway, disabled and stuck at 0: a dead slider and a dead number box taking up half
- * the control. Keyed by the mode union, so a fourth mode is a compile error here.
- */
-const EAT_BOUNDS_FOR_MODE: Record<EatReliabilityMode, readonly EatBound[]> = {
-  atLeast: boundsForMode('atLeast'),
-  atMost: boundsForMode('atMost'),
-  between: boundsForMode('between'),
-};
-
-/**
- * Per-bound identity and accessible names. `soloLabel` is what the slider is called
- * when its mode renders it alone — a single thumb is the filter's threshold, not one
- * end of a band.
- */
-const EAT_BOUND_UI: Record<
-  EatBound,
-  { id: string; sliderLabel: string; soloLabel: string; percentLabel: string }
-> = {
-  min: {
-    id: 'eat-reliability-threshold',
-    sliderLabel: 'EAT reliability filter lower bound',
-    soloLabel: 'EAT reliability filter threshold',
-    percentLabel: 'EAT reliability filter percentage',
-  },
-  max: {
-    id: 'eat-reliability-upper',
-    sliderLabel: 'EAT reliability filter upper bound',
-    soloLabel: 'EAT reliability filter upper bound',
-    percentLabel: 'EAT reliability upper bound percentage',
-  },
-};
-
-/**
- * What each mode actually does to the plot. The popover sits beside the mode select,
- * so it has to describe the mode that is selected; it used to say "predictions below
- * this reliability are hidden" unconditionally, which is false in two of the three.
- */
-const EAT_RELIABILITY_EFFECT: Record<EatReliabilityMode, string> = {
-  atLeast: 'Predictions below this reliability are hidden (filtered out). Set to 0% to show all.',
-  atMost: 'Predictions above the upper bound are hidden (filtered out). Set to 100% to show all.',
-  between:
-    'Only predictions between the two bounds are kept; everything outside the band is hidden. Widen the band to 0–100% to show all.',
-};
 
 // Types
 import type {
@@ -188,9 +74,6 @@ import type {
   LegendItem,
   LegendSortMode,
   OtherItem,
-  ScatterplotData,
-  LegendPersistedSettings,
-  PersistedCategoryData,
   LegendErrorEventDetail,
   LegendErrorSource,
 } from './types';
@@ -201,11 +84,14 @@ import type {
  * @fires legend-item-click - When a legend item is clicked (toggled, isolated, extracted, or merged)
  * @fires legend-zorder-change - When the z-order of legend items changes
  * @fires legend-colormapping-change - When color/shape mappings change
- * @fires legend-customize - When the customize dialog is opened
+ * @fires legend-customize - When the settings popover is opened
  * @fires legend-download - When download is requested
  * @fires legend-error - When an error occurs during data processing, persistence, or syncing
+ * @fires eat-panel-open - When the EAT note's `EAT ›` link is clicked (bubbles, composed)
  *
  * @csspart container - The main legend container
+ * @csspart row-handle - A row's reorder handle
+ * @csspart row-menu - A row's "More actions" button
  *
  * @slot - Default slot for custom content
  */
@@ -237,8 +123,7 @@ export class ProtspaceLegend extends LitElement {
   /**
    * Off while the host drives the legend, as the app does during a dataset load. The legend
    * follows the scatterplot either way: its sync controller subscribes on connect. While off,
-   * it counts in protein order, the order a host's per-protein `annotationValues` feed has, and
-   * leaves the EAT overlay switch for the host to apply to the plot.
+   * it counts in protein order, the order a host's per-protein `annotationValues` feed has.
    */
   @property({ type: Boolean, attribute: 'auto-sync' })
   autoSync: boolean = true;
@@ -246,62 +131,64 @@ export class ProtspaceLegend extends LitElement {
   @property({ type: Boolean, attribute: 'auto-hide' })
   autoHide: boolean = true;
 
+  /**
+   * The EAT panel's reliability range, for the one-line EAT note under the title
+   * (`Includes 659 predicted · outside 50–100 % hidden`); null or unconstrained says nothing about it.
+   */
+  @property({ attribute: false }) eatReliability: EatReliabilityState | null = null;
+  /** The EAT panel fades the predictions outside the range rather than hiding them. */
+  @property({ type: Boolean, attribute: false }) eatFade = false;
+
   // ─────────────────────────────────────────────────────────────────
   // Internal State
   // ─────────────────────────────────────────────────────────────────
 
-  @state() private _legendItems: LegendItem[] = [];
-  @state() private _sortedLegendItems: LegendItem[] = [];
-  @state() private _otherItems: OtherItem[] = [];
-  @state() private _hiddenValues: string[] = [];
-  @state() private _annotationSortModes: Record<string, LegendSortMode> = {};
-  @state() private _showOtherDialog = false;
-  private _preIsolationVisibleValues: Set<string> = new Set();
-  @state() private _showSettingsDialog = false;
   @state() private _statusMessage = '';
-  @state() private _colorPickerItem: string | null = null;
-  @state() private _colorPickerPosition: { x: number; y: number } | null = null;
-  @state() private _showShapePicker = false;
-  @state() private _selectedPaletteId: string = DEFAULT_CATEGORICAL_PALETTE_ID;
-  @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
-  @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
-  @state() private _eatCounts: EatPopulationCounts | null = null;
-  @state() private _categoryScores: CategoryScore[] = [];
-  /**
-   * The caveat for the current annotation's scores when it is one of the backend's
-   * auto-clustering membership columns, whose separation scores are optimistic by
-   * construction; `null` otherwise. Derived alongside `_categoryScores` because both need
-   * `statisticsRows`, which render time does not see.
-   */
-  @state() private _clusterCaveat: string | null = null;
   /**
    * Category under the pointer, from a legend row or from a score strip. Read by
-   * `_renderLegendItem` (the row's `legend-item-score-hover` class) and by `_renderScoreStrip`
+   * `_renderLegendItem` (the row's `legend-item-score-hover` class) and by `_renderScoreStrips`
    * (each strip's `highlighted` binding), so a hover in either place lights up both.
    */
   @state() private _hoveredCategory: string | null = null;
-  @state() private _eatOverlayEnabled = true;
+
+  @query('.legend-items')
+  private _legendItemsEl?: HTMLDivElement;
+
+  // ─────────────────────────────────────────────────────────────────
+  // Read and written by the legend's controllers (controllers/*); not public API.
+  // ─────────────────────────────────────────────────────────────────
+
+  @state() _legendItems: LegendItem[] = [];
+  @state() _sortedLegendItems: LegendItem[] = [];
+  /** The sort button while its menu is open (the menu's anchor); null when closed. */
+  @state() _sortMenu: HTMLElement | null = null;
+  /** The settings button while the settings popover is open under it (design decision 12). */
+  @state() _settingsAnchor: HTMLElement | null = null;
+  @query('protspace-legend-settings-popover')
+  _settingsPopover?: ProtspaceLegendSettingsPopover;
+  @state() _otherItems: OtherItem[] = [];
+  @state() _hiddenValues: string[] = [];
+  @state() _annotationSortModes: Record<string, LegendSortMode> = {};
+  _preIsolationVisibleValues: Set<string> = new Set();
   /**
-   * The reliability filter's position: which side(s) of the scale it constrains, and
-   * where (#380). `atLeast` hides low-confidence predictions (the original, default
-   * behaviour); `atMost` hides high-confidence ones, which is how you inspect what you
-   * would throw away; `between` isolates a band — the mid-confidence transfers worth
-   * reviewing by hand. Curated proteins stay visible in all three.
-   *
-   * One field rather than a mode and two loose bounds: the three are only ever written
-   * together, by `_setReliability`, and holding them apart meant every reader had to
-   * reassemble them and every writer had to remember all three.
-   *
-   * `hasChanged` compares by value because `_setReliability` always assigns a fresh
-   * normalized object — under Lit's default identity check, re-normalizing an unchanged
-   * position would re-render the whole legend. `prev` is undefined for the initial
-   * field write, which Lit performs from the constructor.
+   * "Show duplicate counts and spread overlaps" for the selected annotation. Live state: the
+   * stored record reads it, so an unrelated save never writes false over a stored true.
    */
-  @state({
-    hasChanged: (next: EatReliabilityState, prev: EatReliabilityState | undefined) =>
-      prev === undefined || !isSameReliability(next, prev),
-  })
-  private _reliability: EatReliabilityState = DEFAULT_EAT_RELIABILITY;
+  @state() _enableDuplicateStackUI = false;
+  @state() _selectedPaletteId: string = DEFAULT_CATEGORICAL_PALETTE_ID;
+  @state() _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
+  @state() _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
+  /** Predictions of the selected annotation in the whole dataset; null without any. */
+  @state() _eatPredicted: number | null = null;
+  /** Show predictions is off: the plot draws them as N/A. */
+  @state() _eatOff = false;
+  @state() _categoryScores: CategoryScore[] = [];
+  /**
+   * Whether the current annotation is one of the backend's auto-clustering membership
+   * columns, whose separation scores are optimistic by construction. Derived alongside
+   * `_categoryScores` because both need `statisticsRows`, which render time does not see.
+   */
+  @state() _clusterCaveat: string | null = null;
   /**
    * The annotation storage the legend counts from, captured on every scatterplot
    * data change. Counting straight out of it (`countFromStorage`) replaces the
@@ -309,577 +196,57 @@ export class ProtspaceLegend extends LitElement {
    * and misaligned isolation filtering. `null` means "no synced storage": a host
    * that feeds the public `annotationValues` property instead.
    */
-  private _countSource: {
+  _countSource: {
     colData: AnnotationData;
     values: (string | null)[];
     proteinCount: number;
   } | null = null;
-  @state() private _keyboardDragValue: string | null = null;
-  private _announceManualPromotionOnNextReorder = false;
-  private _keyboardReorderSnapshot: {
-    annotation: string;
-    sortMode: LegendSortMode;
-    legendItems: LegendItem[];
-    otherItems: OtherItem[];
-    numericManualOrderIds?: string[];
-  } | null = null;
 
   // Pending extract/merge values for next update cycle.
   // undefined = no pending operation, string = value to extract/merge (including '__NA__' for N/A)
-  private _pendingExtractValue: string | undefined = undefined;
-  private _pendingMergeValue: string | undefined = undefined;
+  _pendingExtractValue: string | undefined = undefined;
+  _pendingMergeValue: string | undefined = undefined;
 
   /**
    * Protein count of the whole dataset, taken with its hash in `updated()` from the same
    * unfiltered data, so a filter, an isolation or hidden categories never change it. It sets
    * the default shape size.
    */
-  private _datasetProteinCount = 0;
+  _datasetProteinCount = 0;
 
   /**
    * The selected annotation's own shape size from a bundle or browser storage, or null when it
    * holds a filler. Its persisted record keeps this, never the live size, so neither a picked
    * size nor the computed default is ever stored or exported as the annotation's own.
    */
-  private _annotationShapeSize: number | null = null;
-
-  // Kept until its dblclick arrives, which isolates from `isolationBase`.
-  private _firstClick: FirstClick | null = null;
-
-  // Settings dialog temporary state (consolidated into single object)
-  @state() private _dialogSettings: {
-    maxVisibleValues: number;
-    /** null once the user empties the size field: Save then returns to the dataset's default. */
-    shapeSize: number | null;
-    enableDuplicateStackUI: boolean;
-    annotationSortModes: Record<string, LegendSortMode>;
-    selectedPaletteId: string;
-    numericStrategy: NumericBinningStrategy;
-    reverseGradient: boolean;
-  } = {
-    maxVisibleValues: LEGEND_DEFAULTS.maxVisibleValues,
-    shapeSize: LEGEND_DEFAULTS.symbolSize,
-    enableDuplicateStackUI: false,
-    annotationSortModes: {},
-    selectedPaletteId: DEFAULT_CATEGORICAL_PALETTE_ID,
-    numericStrategy: DEFAULT_NUMERIC_STRATEGY,
-    reverseGradient: false,
-  };
-
-  @query('#legend-settings-dialog')
-  private _settingsDialogEl?: HTMLDivElement;
-
-  @query('.legend-items')
-  private _legendItemsEl?: HTMLDivElement;
+  _annotationShapeSize: number | null = null;
 
   // Instance-specific processor context (avoids global state conflicts)
-  private _processorContext: LegendProcessorContext = createProcessorContext();
+  _processorContext: LegendProcessorContext = createProcessorContext();
 
-  // Focus trap cleanup function (stored for proper cleanup)
-  private _focusTrapCleanup: (() => void) | null = null;
-  // Frame that will create the focus trap once the dialog has rendered
-  private _focusTrapSetupFrame: number | null = null;
+  _announceManualPromotionOnNextReorder = false;
+  /**
+   * The last press on a row: older Safari sends clicks with no pointer type, so a row click
+   * (`ItemActionsController.rowClick`) takes it from here.
+   */
+  _lastRowPointerDown: { pointerType: string; time: number } | null = null;
 
-  // Debounce timer for color picker updates
-  private _colorChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // Debounce timer for committing an EAT reliability slider drag (the expensive apply).
-  private _eatThresholdCommitTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // Track where mousedown occurred for click-outside detection
-  private _mouseDownOutsideColorPicker = false;
-  private _mouseDownOutsideSettings = false;
-  private _mouseDownOutsideOther = false;
-
-  // ─────────────────────────────────────────────────────────────────
-  // Controllers
-  // ─────────────────────────────────────────────────────────────────
-
-  private _scatterplotController = new ScatterplotSyncController(this, {
-    onDataChange: (data, annotation, projectionName) =>
-      this._handleScatterplotDataChange(data, annotation, projectionName),
-    onAnnotationChange: (annotation) => this._handleAnnotationChange(annotation),
-    getHiddenValues: () => this._hiddenValues,
-    getOtherItems: () => this._otherItems,
-    getLegendItems: () => this._legendItems,
-    getOtherConcreteValues: () => computeOtherConcreteValues(this._otherItems),
-    getAutoHide: () => this.autoHide,
-    getNumericAnnotationSettings: () => this._numericSettingsByAnnotation,
-    getAnnotationSortModes: () => this._annotationSortModes,
-    getNumericManualOrderIds: () => this._numericManualOrderIdsByAnnotation,
-  });
-
-  private _persistenceController = new PersistenceController(this, {
-    onSettingsLoaded: (settings) => this._applyPersistedSettings(settings),
-    getLegendItems: () => this._legendItems,
-    getHiddenValues: () => this._hiddenValues,
-    shouldPersistCategories: () => !this._isCurrentAnnotationNumeric(),
-    shouldPersistCategoryEncodings: () => !this._isCurrentAnnotationNumeric(),
-    isNumericAnnotation: () => this._isCurrentAnnotationNumeric(),
-    getCurrentSettings: () => {
-      const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-      return {
-        maxVisibleValues: this.maxVisibleValues,
-        shapeSize: this._annotationShapeSize ?? SHAPE_SIZE_FILLER,
-        sortMode: this._normalizeSortModeForEffectiveType(
-          this._annotationSortModes[this.selectedAnnotation],
-          isNumericAnnotation,
-        ),
-        enableDuplicateStackUI: this._dialogSettings.enableDuplicateStackUI,
-        selectedPaletteId: isNumericAnnotation
-          ? normalizeNumericPaletteId(this._selectedPaletteId)
-          : this._normalizeCategoricalPaletteId(this._selectedPaletteId),
-        numericSettings: isNumericAnnotation
-          ? {
-              strategy:
-                this._numericSettingsByAnnotation[this.selectedAnnotation]?.strategy ??
-                DEFAULT_NUMERIC_STRATEGY,
-              reverseGradient:
-                this._numericSettingsByAnnotation[this.selectedAnnotation]?.reverseGradient ??
-                false,
-              signature: this.annotationData.numericMetadata?.signature ?? '',
-              topologySignature: this.annotationData.numericMetadata?.topologySignature ?? '',
-              manualOrderIds: this._buildNumericManualOrderIds(this.selectedAnnotation),
-            }
-          : undefined,
-      };
-    },
-  });
-
-  private _dragController = new DragController(this, {
-    getLegendItems: () => this._legendItems,
-    setLegendItems: (items) => {
-      this._legendItems = items;
-      if (this._isNumericAnnotation()) {
-        // Exclude Other (synthetic) and NA (locked to legend end regardless of
-        // sort) from the persisted manual order — they have no observable
-        // position effect and would clutter the saved state.
-        const orderedIds = [...items]
-          .filter((item) => item.value !== LEGEND_VALUES.OTHER && item.value !== NA_VALUE)
-          .sort((left, right) => left.zOrder - right.zOrder)
-          .map((item) => item.value);
-        this._setNumericManualOrderIds(this.selectedAnnotation, orderedIds);
-      }
-    },
-    onReorder: () => {
-      this._scatterplotController.dispatchZOrderChange();
-      this._persistenceController.saveSettings();
-      this._dispatchLegendStateChange();
-    },
-    onMergeToOther: (value) => this._handleMergeToOther(value),
-    onSortModeChange: (mode) => {
-      this._announceManualPromotionOnNextReorder =
-        mode === 'manual' && !this._currentSortMode.startsWith('manual');
-      this._annotationSortModes = {
-        ...this._annotationSortModes,
-        [this.selectedAnnotation]: mode,
-      };
-      this._keyboardDragValue = null;
-      this._scatterplotController.syncNumericAnnotationSettings();
-    },
-    onDropComplete: (value) => this._highlightDroppedItem(value),
-  });
-
-  private _canDragLegendItem(item: LegendItem): boolean {
-    return item.value !== LEGEND_VALUES.OTHER;
-  }
-
-  private _clearKeyboardReorderState(): void {
-    this._keyboardDragValue = null;
-    this._announceManualPromotionOnNextReorder = false;
-    this._keyboardReorderSnapshot = null;
-  }
-
-  private _beginKeyboardReorder(itemValue: string): void {
-    this._keyboardDragValue = itemValue;
-    this._keyboardReorderSnapshot = {
-      annotation: this.selectedAnnotation,
-      sortMode: this._currentSortMode,
-      legendItems: this._legendItems.map((item) => ({ ...item })),
-      otherItems: this._otherItems.map((item) => ({ ...item })),
-      numericManualOrderIds: this._isNumericAnnotation()
-        ? [...(this._numericManualOrderIdsByAnnotation[this.selectedAnnotation] ?? [])]
-        : undefined,
-    };
-  }
-
-  private _restoreKeyboardReorderSnapshot(): void {
-    const snapshot = this._keyboardReorderSnapshot;
-    if (!snapshot || snapshot.annotation !== this.selectedAnnotation) {
-      this._clearKeyboardReorderState();
-      return;
-    }
-
-    this._annotationSortModes = {
-      ...this._annotationSortModes,
-      [this.selectedAnnotation]: snapshot.sortMode,
-    };
-    if (this._isNumericAnnotation()) {
-      this._setNumericManualOrderIds(this.selectedAnnotation, snapshot.numericManualOrderIds);
-    }
-    this._legendItems = snapshot.legendItems.map((item) => ({ ...item }));
-    this._otherItems = snapshot.otherItems.map((item) => ({ ...item }));
-    this._clearKeyboardReorderState();
-
-    if (!snapshot.sortMode.startsWith('manual')) {
-      this._updateLegendItems();
-    }
-
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.dispatchZOrderChange();
-    this._scatterplotController.syncOtherValues();
-    this._persistenceController.saveSettings();
-    this._dispatchLegendStateChange();
-    this.requestUpdate();
-  }
-
-  private _syncNumericSettingsFromPersistence(): void {
-    const annotationEntries = Object.entries(this.data?.annotations ?? {});
-    if (annotationEntries.length === 0) {
-      return;
-    }
-
-    const persistedSettings = this.getAllPersistedSettings();
-    const nextNumericSettings = { ...this._numericSettingsByAnnotation };
-    let didChange = false;
-
-    for (const [annotationName, annotation] of annotationEntries) {
-      if (!isNumericAnnotation(annotation)) {
-        continue;
-      }
-
-      const persisted = persistedSettings[annotationName];
-      const { settings: nextSettings } = resolveNumericAnnotationDisplaySettings({
-        persistedSettings: persisted,
-        liveSettings: nextNumericSettings[annotationName],
-        defaultBinCount: LEGEND_DEFAULTS.maxVisibleValues,
-      });
-
-      const currentSettings = nextNumericSettings[annotationName];
-      if (
-        !currentSettings ||
-        currentSettings.binCount !== nextSettings.binCount ||
-        currentSettings.strategy !== nextSettings.strategy ||
-        currentSettings.paletteId !== nextSettings.paletteId ||
-        currentSettings.reverseGradient !== nextSettings.reverseGradient
-      ) {
-        nextNumericSettings[annotationName] = nextSettings;
-        didChange = true;
-      }
-    }
-
-    if (didChange) {
-      this._numericSettingsByAnnotation = nextNumericSettings;
-      this._scatterplotController.syncNumericAnnotationSettings();
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Keyboard Handler
-  // ─────────────────────────────────────────────────────────────────
-
-  private _onWindowKeydownCapture = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      // Close color picker first if open
-      if (this._colorPickerItem !== null) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        this._flushColorChangeDebounce();
-        this._colorPickerItem = null;
-        this._showShapePicker = false;
-        return;
-      }
-      // Close Other dialog second if open
-      if (this._showOtherDialog) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        this._showOtherDialog = false;
-        return;
-      }
-      // Then close Settings dialog if open
-      if (this._showSettingsDialog) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        this._handleSettingsClose();
-        return;
-      }
-      // Cancel active keyboard reorder. The drag-handle's own Escape handler
-      // works only while focus stays on that handle, but Lit re-renders during
-      // ArrowDown can briefly move focus to <body> before rAF restores it —
-      // catching Escape here makes cancel robust to that focus gap.
-      if (this._keyboardDragValue !== null) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        this._restoreKeyboardReorderSnapshot();
-        this._announceStatus('Reordering canceled.');
-        return;
-      }
-    }
-  };
-
-  private _onWindowMouseDown = (e: MouseEvent) => {
-    if (this._colorPickerItem === null) return;
-
-    // Check if mousedown is outside the color picker
-    const colorPicker = this.shadowRoot?.querySelector('.color-picker-popover');
-    if (colorPicker && !colorPicker.contains(e.target as Node)) {
-      this._mouseDownOutsideColorPicker = true;
-    } else {
-      this._mouseDownOutsideColorPicker = false;
-    }
-  };
-
-  private _onWindowMouseUp = () => {
-    // Only close if mousedown also occurred outside
-    if (this._colorPickerItem !== null && this._mouseDownOutsideColorPicker) {
-      this._flushColorChangeDebounce();
-      this._colorPickerItem = null;
-      this._showShapePicker = false;
-      this._mouseDownOutsideColorPicker = false;
-    }
-  };
-
-  private _handleItemKeyDown(e: KeyboardEvent, item: LegendItem, itemIndex: number): void {
-    switch (e.key) {
-      case 'ArrowDown':
-      case 'ArrowRight': {
-        e.preventDefault();
-        const nextIndex = Math.min(itemIndex + 1, this._sortedLegendItems.length - 1);
-        this._focusItem(nextIndex);
-        break;
-      }
-      case 'ArrowUp':
-      case 'ArrowLeft': {
-        e.preventDefault();
-        const prevIndex = Math.max(itemIndex - 1, 0);
-        this._focusItem(prevIndex);
-        break;
-      }
-      case 'Home': {
-        e.preventDefault();
-        this._focusItem(0);
-        break;
-      }
-      case 'End': {
-        e.preventDefault();
-        this._focusItem(this._sortedLegendItems.length - 1);
-        break;
-      }
-      case 'Enter':
-      case ' ': {
-        e.preventDefault();
-        this._handleItemClick(item.value);
-        break;
-      }
-      case 'i':
-      case 'I': {
-        e.preventDefault();
-        this._handleItemDoubleClick(item.value);
-        break;
-      }
-    }
-  }
-
-  private _focusItem(index: number): void {
-    const items = this.shadowRoot?.querySelectorAll('.legend-item-main');
-    if (items?.[index]) {
-      (items[index] as HTMLElement).focus();
-    }
-  }
-
-  private _focusDragHandleForValue(value: string): void {
-    const handle = this.shadowRoot?.querySelector(
-      `.legend-item[data-value="${CSS.escape(value)}"] .drag-handle`,
-    ) as HTMLButtonElement | null;
-    handle?.focus();
-  }
-
-  private _dispatchLegendStateChange(): void {
-    window.dispatchEvent(
-      new CustomEvent('protspace-legend-state-change', {
-        detail: {
-          annotation: this.selectedAnnotation,
-          scatterplotSelector: this.scatterplotSelector,
-        },
-      }),
-    );
-  }
-
-  private _commitManualOrderFromVisibleValues(
-    orderedValues: string[],
-    options: { preserveKeyboardDragValue?: boolean } = {},
-  ): void {
-    const visibleOrder = [...orderedValues];
-    const didPromote = !this._currentSortMode.startsWith('manual');
-    this._annotationSortModes = {
-      ...this._annotationSortModes,
-      [this.selectedAnnotation]: 'manual',
-    };
-
-    const itemMap = new Map(this._legendItems.map((item) => [item.value, item]));
-    const otherItem = itemMap.get(LEGEND_VALUES.OTHER);
-
-    if (this._isNumericAnnotation()) {
-      this._setNumericManualOrderIds(this.selectedAnnotation, visibleOrder);
-      this._updateLegendItems();
-    } else {
-      const reorderedItems = visibleOrder
-        .map((value, index) => {
-          const item = itemMap.get(value);
-          return item ? { ...item, zOrder: index } : null;
-        })
-        .filter((item): item is LegendItem => item !== null);
-
-      if (otherItem) {
-        reorderedItems.push({ ...otherItem, zOrder: reorderedItems.length });
-      }
-
-      this._legendItems = reorderedItems;
-    }
-
-    this._announceManualPromotionOnNextReorder = didPromote;
-    if (!options.preserveKeyboardDragValue) {
-      this._keyboardDragValue = null;
-    }
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.dispatchZOrderChange();
-    this._persistenceController.saveSettings();
-    this._dispatchLegendStateChange();
-    this.requestUpdate();
-  }
-
-  private _moveFocusedManualItem(value: string, direction: -1 | 1): void {
-    const orderedItems = [...this._sortedLegendItems].filter(
-      (item) => item.value !== LEGEND_VALUES.OTHER,
-    );
-    const currentIndex = orderedItems.findIndex((item) => item.value === value);
-    if (currentIndex === -1) {
-      return;
-    }
-
-    const nextIndex = Math.max(0, Math.min(orderedItems.length - 1, currentIndex + direction));
-    if (nextIndex === currentIndex) {
-      return;
-    }
-
-    const reordered = [...orderedItems];
-    const [moved] = reordered.splice(currentIndex, 1);
-    reordered.splice(nextIndex, 0, moved);
-    this._commitManualOrderFromVisibleValues(
-      reordered.map((item) => item.value),
-      {
-        preserveKeyboardDragValue: true,
-      },
-    );
-
-    this._announceStatus(
-      this._announceManualPromotionOnNextReorder
-        ? `Moved ${moved.displayValue ?? toDisplayValue(moved.value)}. Switched ${this.selectedAnnotation} to Manual order.`
-        : `Moved ${moved.displayValue ?? toDisplayValue(moved.value)}.`,
-    );
-    this._announceManualPromotionOnNextReorder = false;
-    requestAnimationFrame(() => this._focusDragHandleForValue(value));
-  }
-
-  private _handleDragHandleKeyDown(e: KeyboardEvent, item: LegendItem): void {
-    if (!this._canDragLegendItem(item)) {
-      return;
-    }
-
-    switch (e.key) {
-      case 'Enter':
-      case ' ': {
-        e.preventDefault();
-        const isDropping = this._keyboardDragValue === item.value;
-        if (isDropping) {
-          this._clearKeyboardReorderState();
-        } else {
-          this._beginKeyboardReorder(item.value);
-        }
-        this._announceStatus(
-          !isDropping
-            ? `Picked up ${item.displayValue ?? toDisplayValue(item.value)} for reordering`
-            : `Dropped ${item.displayValue ?? toDisplayValue(item.value)}`,
-        );
-        break;
-      }
-      case 'Escape': {
-        if (this._keyboardDragValue === item.value) {
-          e.preventDefault();
-          this._restoreKeyboardReorderSnapshot();
-          this._announceStatus('Reordering canceled.');
-          requestAnimationFrame(() => this._focusDragHandleForValue(item.value));
-        }
-        break;
-      }
-      case 'ArrowUp': {
-        if (this._keyboardDragValue === item.value) {
-          e.preventDefault();
-          this._moveFocusedManualItem(item.value, -1);
-        }
-        break;
-      }
-      case 'ArrowDown': {
-        if (this._keyboardDragValue === item.value) {
-          e.preventDefault();
-          this._moveFocusedManualItem(item.value, 1);
-        }
-        break;
-      }
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Computed Properties
-  // ─────────────────────────────────────────────────────────────────
-
-  private get _currentSortMode(): LegendSortMode {
-    return this._normalizeSortModeForAnnotation(
-      this.selectedAnnotation,
-      this._annotationSortModes[this.selectedAnnotation],
-    );
+  /** The selected annotation's display name, never its key (decision 15). */
+  get _annotationDisplayName(): string {
+    const name = this.selectedAnnotation;
+    return name ? annotationLabel(name, this.data?.annotations?.[name] ?? this.annotationData) : '';
   }
 
   /** `autoSync` is off; its doc lists what that changes. */
-  private get _hostDriven(): boolean {
+  get _hostDriven(): boolean {
     return !this.autoSync;
   }
 
-  /**
-   * Display order for the legend list. Every mode but `silhouette-desc` has already been
-   * applied upstream and is carried by `zOrder`; scores arrive too late for that path, so
-   * they are applied here. Deliberately display-only: bucket membership stays size-driven,
-   * so switching sort never changes which categories are visible.
-   */
-  private _sortLegendItemsForDisplay(): LegendItem[] {
-    const items = [...this._legendItems];
-    const mode = this._currentSortMode;
-    if (mode !== 'silhouette-desc' && mode !== 'silhouette-asc') {
-      return items.sort((a, b) => a.zOrder - b.zOrder);
-    }
-    // Indexed once rather than a `.find()` per comparison: the comparator runs
-    // O(items · log items) times and the scan is O(categories), so a legend with a few
-    // hundred categories paid hundreds of thousands of string compares per rebuild.
-    const scoreByCategory = new Map(
-      this._categoryScores.map((score) => [score.category, score.silhouette]),
+  get _currentSortMode(): LegendSortMode {
+    return this._data.normalizeSortMode(
+      this.selectedAnnotation,
+      this._annotationSortModes[this.selectedAnnotation],
     );
-    const scoreOf = (value: string): number =>
-      scoreByCategory.get(value) ?? Number.NEGATIVE_INFINITY;
-    // Ascending is the header reverse button's result. Unscored categories keep sorting last
-    // either way: they sit at -Infinity, so the ascending branch negates only the scored gap.
-    const descending = mode === 'silhouette-desc';
-    return items.sort((a, b) => {
-      // "Other" is a bucket, not a category, so it has no score and stays last.
-      if (a.value === LEGEND_VALUES.OTHER) return 1;
-      if (b.value === LEGEND_VALUES.OTHER) return -1;
-      const scoreA = scoreOf(a.value);
-      const scoreB = scoreOf(b.value);
-      const unscored = scoreA === Number.NEGATIVE_INFINITY || scoreB === Number.NEGATIVE_INFINITY;
-      const diff = unscored || descending ? scoreB - scoreA : scoreA - scoreB;
-      // `||` (not `!== 0 ? … :`) so an unscored pair, where diff is NaN, also falls
-      // through to the zOrder tiebreak instead of coercing to a no-op comparator.
-      return diff || a.zOrder - b.zOrder;
-    });
   }
 
   /**
@@ -887,7 +254,7 @@ export class ProtspaceLegend extends LitElement {
    * Used to preserve membership when sort mode changes.
    * N/A items use '__NA__' as their value.
    */
-  private get _visibleValues(): Set<string> {
+  get _visibleValues(): Set<string> {
     const visible = new Set<string>();
 
     // Collect visible values from current _legendItems (excluding "Other")
@@ -915,6 +282,176 @@ export class ProtspaceLegend extends LitElement {
     return visible;
   }
 
+  /**
+   * The one entry to the item pass. `LegendDataController.updateItems` has no other caller, so
+   * `perfCounters.legendUpdate` counts exactly these calls, the ones tests spy on and replace.
+   */
+  _updateLegendItems(): void {
+    this._data.updateItems();
+  }
+
+  _isNumericAnnotation(): boolean {
+    return isNumericAnnotation(this.annotationData);
+  }
+
+  _isCurrentAnnotationNumeric(): boolean {
+    const sourceAnnotation =
+      this._scatterplotController.scatterplot?.data?.annotations?.[this.selectedAnnotation];
+    return isNumericAnnotation(sourceAnnotation) || this._isNumericAnnotation();
+  }
+
+  /** Closes the annotation's own overlays, landing their pending edits on it first. */
+  _closeAnnotationOverlays(): void {
+    this._settings.close();
+    this._colorPicker.close();
+  }
+
+  _dispatchItemAction(value: string, action: 'toggle' | 'isolate' | 'extract'): void {
+    this.dispatchEvent(createItemActionEvent(LEGEND_EVENTS.ITEM_CLICK, value, action));
+  }
+
+  _announceStatus(message: string): void {
+    this._statusMessage = message;
+    // Clear after announcement to allow repeated messages
+    setTimeout(() => {
+      this._statusMessage = '';
+    }, 1000);
+  }
+
+  _dispatchError(message: string, source: LegendErrorSource, originalError?: Error): void {
+    const detail: LegendErrorEventDetail = createLegendErrorEventDetail(message, source, {
+      annotation: this.selectedAnnotation || undefined,
+      originalError,
+    });
+    this.dispatchEvent(
+      new CustomEvent(LEGEND_EVENTS.ERROR, {
+        detail,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    console.error(`[protspace-legend] ${source}: ${message}`, originalError);
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Controllers (a field without `private` is read by controllers/* or by tests; not public API)
+  // ─────────────────────────────────────────────────────────────────
+
+  /** The data pipeline (controllers/data-controller.ts); the callbacks below call it. */
+  readonly _data = new LegendDataController(this);
+  /** Row, Other and sort-menu actions (controllers/item-actions-controller.ts). */
+  readonly _actions = new ItemActionsController(this);
+  /** Keyboard reorder and what a drag commits (controllers/reorder-controller.ts). */
+  readonly _reorder = new ReorderController(this);
+  /** Settings popover, live edits, picker commits (controllers/settings-controller.ts). */
+  readonly _settings = new SettingsController(this);
+
+  _scatterplotController = new ScatterplotSyncController(this, {
+    onDataChange: (data, annotation, projectionName) =>
+      this._data.onDataChange(data, annotation, projectionName),
+    onAnnotationChange: (annotation) => this._data.onAnnotationChange(annotation),
+    getHiddenValues: () => this._hiddenValues,
+    getOtherItems: () => this._otherItems,
+    getLegendItems: () => this._legendItems,
+    getOtherConcreteValues: () => computeOtherConcreteValues(this._otherItems),
+    getAutoHide: () => this.autoHide,
+    getNumericAnnotationSettings: () => this._numericSettingsByAnnotation,
+    getAnnotationSortModes: () => this._annotationSortModes,
+    getNumericManualOrderIds: () => this._numericManualOrderIdsByAnnotation,
+  });
+
+  _persistenceController = new PersistenceController(this, {
+    onSettingsLoaded: (settings) => this._data.applyPersistedSettings(settings),
+    getLegendItems: () => this._legendItems,
+    getHiddenValues: () => this._hiddenValues,
+    shouldPersistCategories: () => !this._isCurrentAnnotationNumeric(),
+    shouldPersistCategoryEncodings: () => !this._isCurrentAnnotationNumeric(),
+    isNumericAnnotation: () => this._isCurrentAnnotationNumeric(),
+    getCurrentSettings: () => this._data.currentSettings(),
+  });
+
+  private _dragController = new DragController(this, {
+    getDisplayedItems: () => this._sortedLegendItems,
+    setLegendItems: (items) => this._reorder.setItemsFromDrag(items),
+    onReorder: () => {
+      this._scatterplotController.dispatchZOrderChange();
+      this._persistenceController.saveSettings();
+    },
+    onMergeToOther: (value) => this._actions.mergeToOther(value),
+    onSortModeChange: (mode) => this._reorder.onDragSortModeChange(mode),
+    onDropComplete: (value) => this._actions.highlightDropped(value),
+  });
+
+  private _headerHandlers: LegendHeaderHandlers = {
+    onSortMenu: (anchor) => {
+      this._sortMenu = this._sortMenu ? null : anchor;
+    },
+    onSettings: (anchor) => this._settings.toggle(anchor),
+    onTitlePointerEnter: (e) => {
+      const title = e.currentTarget as HTMLElement;
+      this._nameTooltip.hover(title, title);
+    },
+    onEatOpen: () =>
+      this.dispatchEvent(new CustomEvent('eat-panel-open', { bubbles: true, composed: true })),
+  };
+
+  private _sortMenuHandlers: Parameters<typeof renderSortMenu>[1] = {
+    onPick: (mode) => this._actions.applySortMode(mode),
+    onReverse: () => this._actions.toggleOrderDirection(),
+    onClose: () => {
+      this._sortMenu = null;
+    },
+  };
+
+  _colorPicker = new ColorPickerController(this, {
+    getItem: (value) => this._legendItems.find((item) => item.value === value),
+    preview: (value, color) => this._settings.previewColor(value, color),
+    commitColor: (value, color) => this._settings.commitColor(value, color),
+    commitShape: (value, shape) => this._settings.commitShape(value, shape),
+    isMultilabel: () => this._isMultilabelAnnotation(),
+  });
+
+  _keyboard = new LegendKeyboardController(this, {
+    getSortedItems: () => this._sortedLegendItems,
+    canDrag: (item) => this._canDragLegendItem(item),
+    toggle: (value) => this._actions.toggle(value),
+    isolate: (value) => this._actions.isolate(value),
+    snapshot: () => this._reorder.snapshot(),
+    restore: (snapshot) => this._reorder.restore(snapshot),
+    move: (value, direction) => this._reorder.move(value, direction),
+    announce: (message) => this._announceStatus(message),
+    annotationName: () => this._annotationDisplayName,
+  });
+
+  private _nameTooltip = new TruncatedNameTooltip(this);
+
+  _rowMenu = new LegendRowMenu(this, {
+    getItems: () => this._legendItems,
+    isNumeric: () => this._isNumericAnnotation(),
+    isolate: (value) => this._actions.isolate(value),
+    customize: (value) => {
+      // Found by its dataset rather than a selector: a value can hold any character.
+      const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>('.legend-item') ?? [])].find(
+        (each) => each.dataset.value === value,
+      );
+      // Opening is idempotent: chosen again for the row whose picker is open, it stays open.
+      if (row) this._colorPicker.open(value, row);
+    },
+  });
+
+  _otherPopover = new OtherPopoverControl(this, {
+    getItems: () => this._otherItems,
+    add: (value) => this._actions.extractFromOther(value),
+    addAll: () => this._actions.extractAllFromOther(),
+    focusFirstRow: () => this._keyboard.focusItem(0),
+  });
+
+  /** Other never moves, nor does a numeric legend's N/A row, pinned below its bins. */
+  _canDragLegendItem(item: LegendItem): boolean {
+    if (item.value === LEGEND_VALUES.OTHER) return false;
+    return !(isNAValue(item.value) && this._isNumericAnnotation());
+  }
+
   // ─────────────────────────────────────────────────────────────────
   // Lifecycle
   // ─────────────────────────────────────────────────────────────────
@@ -924,113 +461,7 @@ export class ProtspaceLegend extends LitElement {
     this._scatterplotController.scatterplotSelector = this.scatterplotSelector;
   }
 
-  disconnectedCallback(): void {
-    window.removeEventListener('keydown', this._onWindowKeydownCapture, true);
-    window.removeEventListener('mousedown', this._onWindowMouseDown);
-    window.removeEventListener('mouseup', this._onWindowMouseUp);
-    this._cleanupFocusTrap();
-    this._cleanupColorChangeDebounce();
-    this._cancelEatThresholdCommit();
-    super.disconnectedCallback();
-  }
-
-  private _cleanupColorChangeDebounce(): void {
-    if (this._colorChangeDebounceTimer !== null) {
-      clearTimeout(this._colorChangeDebounceTimer);
-      this._colorChangeDebounceTimer = null;
-    }
-  }
-
-  private _flushColorChangeDebounce(): void {
-    if (this._colorChangeDebounceTimer !== null) {
-      clearTimeout(this._colorChangeDebounceTimer);
-      this._colorChangeDebounceTimer = null;
-      // The color has already been updated in the UI by _handleColorChangeDebounced
-      // We just need to trigger the scatterplot sync
-      if (this._colorPickerItem !== null) {
-        const item = this._legendItems.find((i) => i.value === this._colorPickerItem);
-        if (item) {
-          this._handleColorChange(item.value, item.color);
-        }
-      }
-    }
-  }
-
-  private _cleanupFocusTrap(): void {
-    // A trap still waiting for its dialog to render must not be created after this
-    // cleanup: nothing would remove it (a disconnect, or a second dialog's setup
-    // overwriting `_focusTrapCleanup`).
-    if (this._focusTrapSetupFrame !== null) {
-      cancelAnimationFrame(this._focusTrapSetupFrame);
-      this._focusTrapSetupFrame = null;
-    }
-    if (this._focusTrapCleanup) {
-      this._focusTrapCleanup();
-      this._focusTrapCleanup = null;
-    }
-  }
-
-  private _setupFocusTrap(dialogId: string): void {
-    this._cleanupFocusTrap();
-    this._focusTrapSetupFrame = requestAnimationFrame(() => {
-      this._focusTrapSetupFrame = null;
-      const dialog = this.shadowRoot?.querySelector(`#${dialogId}`) as HTMLElement | null;
-      if (dialog) {
-        this._focusTrapCleanup = createFocusTrap(dialog);
-      }
-    });
-  }
-
   updated(changedProperties: Map<string, unknown>): void {
-    // Handle keyboard events for dialogs, color picker, and active keyboard reorder
-    const dialogsChanged =
-      changedProperties.has('_showSettingsDialog') ||
-      changedProperties.has('_showOtherDialog') ||
-      changedProperties.has('_colorPickerItem') ||
-      changedProperties.has('_keyboardDragValue');
-    if (dialogsChanged) {
-      const anyDialogOpen =
-        this._showSettingsDialog ||
-        this._showOtherDialog ||
-        this._colorPickerItem !== null ||
-        this._keyboardDragValue !== null;
-      if (anyDialogOpen) {
-        window.addEventListener('keydown', this._onWindowKeydownCapture, true);
-      } else {
-        window.removeEventListener('keydown', this._onWindowKeydownCapture, true);
-      }
-    }
-
-    // Handle global mousedown/mouseup for color picker (close on press outside)
-    if (changedProperties.has('_colorPickerItem')) {
-      if (this._colorPickerItem !== null) {
-        window.addEventListener('mousedown', this._onWindowMouseDown);
-        window.addEventListener('mouseup', this._onWindowMouseUp);
-      } else {
-        window.removeEventListener('mousedown', this._onWindowMouseDown);
-        window.removeEventListener('mouseup', this._onWindowMouseUp);
-        this._mouseDownOutsideColorPicker = false;
-      }
-    }
-
-    // Handle settings dialog focus trapping
-    if (changedProperties.has('_showSettingsDialog')) {
-      if (this._showSettingsDialog) {
-        this._setupFocusTrap('legend-settings-dialog');
-      } else if (!this._showOtherDialog) {
-        this._cleanupFocusTrap();
-      }
-    }
-
-    // Handle other dialog focus trapping
-    if (changedProperties.has('_showOtherDialog')) {
-      if (this._showOtherDialog) {
-        this._setupFocusTrap('legend-other-dialog');
-      } else if (!this._showSettingsDialog) {
-        this._cleanupFocusTrap();
-      }
-    }
-
     // Update dataset hash when protein IDs change.
     // Skip during isolation mode: isolation filters protein IDs to a subset,
     // which would produce a different hash and cause settings (maxVisibleValues,
@@ -1057,8 +488,8 @@ export class ProtspaceLegend extends LitElement {
 
     // Handle data or annotation changes
     if (changedProperties.has('data') || changedProperties.has('selectedAnnotation')) {
-      this._updateAnnotationDataFromData();
-      this._ensureSortModeDefaults();
+      this._data.refreshAnnotationData();
+      this._data.ensureSortModeDefaults();
 
       const annotationChanged = this._persistenceController.updateSelectedAnnotation(
         this.selectedAnnotation,
@@ -1071,7 +502,7 @@ export class ProtspaceLegend extends LitElement {
         this._persistenceController.loadSettings();
       }
 
-      this._syncNumericSettingsFromPersistence();
+      this._data.syncNumericSettingsFromPersistence();
     }
 
     // An externally fed annotationValues array is the source of truth while it is
@@ -1093,12 +524,7 @@ export class ProtspaceLegend extends LitElement {
       changedProperties.has('isolationMode') ||
       changedProperties.has('isolationHistory')
     ) {
-      this._rebuildLegendItems();
-    }
-
-    // Update sorted items cache when legend items or their scores change
-    if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
-      this._sortedLegendItems = this._sortLegendItemsForDisplay();
+      this._data.rebuildItems();
     }
 
     // Initialize Sortable when container becomes available
@@ -1106,6 +532,7 @@ export class ProtspaceLegend extends LitElement {
     if (this._legendItemsEl && this._sortedLegendItems.length > 0) {
       this._dragController.initialize(this._legendItemsEl, true);
     }
+    this._otherPopover.updated();
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -1179,7 +606,7 @@ export class ProtspaceLegend extends LitElement {
       // (the file's category set). Without this, _visibleValues uses the default items
       // built during loadNewData(), which may have a different visible set than the file.
       this._legendItems = [];
-      this._rebuildLegendItems();
+      this._data.rebuildItems();
     }
   }
 
@@ -1190,6 +617,11 @@ export class ProtspaceLegend extends LitElement {
    * @param datasetHash - The hash of the NEW dataset (used to clear its localStorage entries)
    */
   public clearForNewDataset(datasetHash: string, clearPersistedState: boolean = true): void {
+    // A value typed into the settings popover belongs to the dataset it was typed for.
+    this._settings.close();
+    // A colour still waiting for its delay lands on the dataset it was picked on, not the next one.
+    this._colorPicker.close();
+
     // Reset visual encoding state
     this._processorContext.slotTracker.reset();
 
@@ -1207,23 +639,14 @@ export class ProtspaceLegend extends LitElement {
     this._annotationShapeSize = null;
 
     // Reset UI state
-    this._showSettingsDialog = false;
-    this._showOtherDialog = false;
-    this._colorPickerItem = null;
+    this._enableDuplicateStackUI = false;
+    this._sortMenu = null;
+    this._otherPopover.close();
     this._selectedPaletteId = DEFAULT_CATEGORICAL_PALETTE_ID;
     this._numericSettingsByAnnotation = {};
     this._numericManualOrderIdsByAnnotation = {};
-    this._eatCounts = null;
-    this._eatOverlayEnabled = true;
-    // A drag left in flight must not survive the switch: its debounced commit would
-    // emit the reset position against the NEW dataset, after the seed has already run.
-    this._cancelEatThresholdCommit();
-    // Reset the whole reliability position, not just the lower bound. A bundle
-    // restores the threshold only, so a mode left over from the previous dataset
-    // would reinterpret it: "hide below 60%" saved in this bundle would load as
-    // "hide above <the previous dataset's upper bound>" — the opposite filter.
-    this._setReliability(DEFAULT_EAT_RELIABILITY);
-    this._clearKeyboardReorderState();
+    this._eatPredicted = null;
+    this._reorder.clear();
 
     // Reset isolation state
     this.isolationMode = false;
@@ -1260,15 +683,6 @@ export class ProtspaceLegend extends LitElement {
   // ─────────────────────────────────────────────────────────────────
 
   /**
-   * Reliability slider position (0…1). The slider no longer dims points itself;
-   * it drives the shared `EAT_confidence >= x or N/A` query filter via the control
-   * bar. Exposed so bundle export can persist the saved slider position (#6b).
-   */
-  public get reliabilityThreshold(): number {
-    return this._reliability.min;
-  }
-
-  /**
    * Apply a bundle's dataset-level shape size. `datasetHash` is for when the
    * component's own hash is not computed from the new data yet.
    */
@@ -1289,499 +703,24 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /**
-   * Bundle restore: the saved overlay switch plus the saved reliability position.
-   *
-   * A bundle stores the LOWER bound only, so restoring it means "hide below x" — the
-   * mode has to come along with it. Writing the bound into whatever mode the control
-   * happens to be in loses it outright in `atMost` (normalization blanks the bound that
-   * mode ignores, so a saved 60% restores as no filter) and reinterprets it in `between`
-   * (a band against a stale upper bound). Both contradict the documented round trip,
-   * which is that a bundle reopens on "Hide below" at the saved value.
+   * Shows every category again: the status corner's "N categories hidden" ✕. Like the
+   * double-click that restores the full set, it syncs the plot, stores the settings and announces
+   * it, without a `legend-item-click`.
    */
-  public applyEatSettings(enabled: boolean, threshold: number): void {
-    // A discrete apply supersedes any pending debounced threshold commit — cancel it
-    // so it can't fire a stale late emit.
-    this._cancelEatThresholdCommit();
-    this._setReliability({ mode: 'atLeast', min: threshold, max: NEUTRAL_BOUND.max });
-    this._applyEatOverlayEnabled(enabled);
-  }
-
-  /**
-   * Publish the overlay switch. The switch still coalesces predictions into the base
-   * annotation on the scatter plot; the reliability position only feeds the query
-   * filter, so it rides the emit rather than being pushed onto the plot as a dimming
-   * input.
-   *
-   * Separate from `applyEatSettings` because the switch decides visibility and nothing
-   * else. Routing it through the restore path made every toggle a bundle restore too,
-   * which snapped the mode back to "Hide below" and dropped the bound with it — in
-   * `atMost` the lower bound it round-tripped is 0, so flipping the switch off and on
-   * silently cleared a "hide above 40%" filter.
-   */
-  private _applyEatOverlayEnabled(enabled: boolean): void {
-    this._eatOverlayEnabled = enabled;
-    const scatterplot = this._scatterplotController.scatterplot;
-    if (!this._hostDriven && scatterplot) {
-      scatterplot.eatOverlayEnabled = enabled;
-    }
-    this._emitEatOverlayChange();
-  }
-
-  /** The reliability filter as the control bar models it: a mode plus bounds. */
-  public get reliabilityState(): EatReliabilityState {
-    return this._reliability;
-  }
-
-  /**
-   * The one writer for the reliability position, so the control and the query it
-   * mirrors cannot disagree about what a state means. Every rule — clamping, blanking
-   * the bound the mode ignores, ordering a crossed band — lives in the shared
-   * `normalizeReliability`; the legend used to restate each of them by hand and had
-   * already drifted (a band dragged past itself stayed crossed on screen while the
-   * control bar filtered on the ordered one).
-   */
-  private _setReliability(state: EatReliabilityState): void {
-    this._reliability = normalizeReliability(state);
-  }
-
-  /**
-   * Reverse mirror: set the control's position from the query filter WITHOUT
-   * re-emitting `eat-overlay-change`, so the control-bar->legend direction does not
-   * loop back into the legend->control-bar direction (#6b).
-   *
-   * Cancels any pending drag commit first: a discrete update from the query side
-   * supersedes an in-flight drag, and leaving the timer armed let a stale late emit
-   * overwrite what the user had just typed into the Filter builder (#380).
-   */
-  public setReliabilityState(state: EatReliabilityState): void {
-    this._cancelEatThresholdCommit();
-    this._setReliability(state);
-  }
-
-  private _emitEatOverlayChange(): void {
-    this.dispatchEvent(
-      new CustomEvent('eat-overlay-change', {
-        detail: {
-          enabled: this._eatOverlayEnabled,
-          confidenceThreshold: this._reliability.min,
-          reliability: this._reliability,
-        },
-        bubbles: true,
-        composed: true,
-      }),
+  public showAllCategories(): void {
+    if (this._hiddenValues.length === 0) return;
+    this._legendItems = this._legendItems.map((item) =>
+      item.isVisible ? item : { ...item, isVisible: true },
     );
-  }
-
-  private _handleEatOverlayToggle(event: Event): void {
-    // A discrete decision, like a mode change: it supersedes any pending drag commit.
-    this._cancelEatThresholdCommit();
-    this._applyEatOverlayEnabled((event.currentTarget as HTMLInputElement).checked);
-  }
-
-  /** Which bounds the selected mode filters on, and therefore which controls exist. */
-  private get _activeBounds(): readonly EatBound[] {
-    return EAT_BOUNDS_FOR_MODE[this._reliability.mode];
-  }
-
-  private _reliabilityHelpText(): string {
-    const label = annotationLabel(this.selectedAnnotation);
-    const effect = EAT_RELIABILITY_EFFECT[this._reliability.mode];
-    return `${effect} Curated “${label}” annotations always stay visible. This mirrors a Filter condition on “${label} — EAT confidence”.`;
-  }
-
-  private _handleEatModeChange(event: Event): void {
-    const mode = (event.currentTarget as HTMLSelectElement).value as EatReliabilityMode;
-    // `normalizeReliability` blanks the bound the new mode does not use, so switching
-    // modes cannot leave a stale constraint applied from a side the user can no longer
-    // see or edit.
-    this._setReliability({ ...this._reliability, mode });
-    // A mode change is a discrete decision, not a drag — apply it immediately.
-    this._cancelEatThresholdCommit();
-    this._emitEatOverlayChange();
-  }
-
-  /**
-   * All three modes share ONE layout: the mode select and its bound(s) on a heading row,
-   * then a single track carrying one thumb per bound the mode actually filters on.
-   *
-   * The modes used to look like different controls. `atMost` rendered a dead, disabled
-   * lower slider above its real one plus a separate "Upper bound" label row — four rows
-   * against `atLeast`'s two — so switching modes reshuffled the panel and left widgets on
-   * screen that did nothing.
-   *
-   * The fill always marks what SURVIVES the filter, which a plain range input cannot do:
-   * it fills from the left, so `atLeast` (which keeps everything ABOVE the thumb) was
-   * colouring exactly the hidden half, while `atMost` happened to be right. Drawing the
-   * kept region explicitly makes the bar mean one thing in every mode.
-   */
-  private _renderReliabilityBand() {
-    const disabled = !this._eatOverlayEnabled;
-    const bounds = this._activeBounds;
-    const { min, max } = this._reliability;
-    // An absent bound does not clip the kept region: `atLeast` keeps up to the top,
-    // `atMost` from the bottom.
-    const fillLeft = bounds.includes('min') ? min : NEUTRAL_BOUND.min;
-    const fillRight = bounds.includes('max') ? NEUTRAL_BOUND.max - max : NEUTRAL_BOUND.min;
-
-    return html`
-      <div class="eat-threshold-heading">
-        ${this._renderReliabilityModeSelect()}
-        <span class="eat-threshold-value">
-          ${bounds.map(
-            (bound, index) => html`
-              ${index > 0
-                ? html`<span class="eat-threshold-sep" aria-hidden="true">–</span>`
-                : null}
-              ${this._renderReliabilityPercent(bound, disabled)}
-            `,
-          )}
-          <span aria-hidden="true">%</span>
-          ${this._renderReliabilityInfo()}
-        </span>
-      </div>
-      <div class="eat-threshold-band ${disabled ? 'is-disabled' : ''}">
-        <span class="eat-threshold-track" aria-hidden="true">
-          <span
-            class="eat-threshold-fill"
-            style=${`left:${bandPercent(fillLeft)}%;right:${bandPercent(fillRight)}%`}
-          ></span>
-        </span>
-        ${bounds.map((bound) => this._renderReliabilityRange(bound, disabled))}
-      </div>
-    `;
-  }
-
-  private _renderReliabilityRange(bound: EatBound, disabled: boolean) {
-    const ui = EAT_BOUND_UI[bound];
-    return html`
-      <input
-        id=${ui.id}
-        type="range"
-        min=${NEUTRAL_BOUND.min}
-        max=${NEUTRAL_BOUND.max}
-        step=${EAT_BAND_MIN_GAP}
-        .value=${String(this._reliability[bound])}
-        ?disabled=${disabled}
-        aria-label=${this._activeBounds.length > 1 ? ui.sliderLabel : ui.soloLabel}
-        @input=${(event: Event) => this._handleEatBoundInput(bound, event)}
-        @change=${this._flushEatThresholdCommit}
-      />
-    `;
-  }
-
-  private _renderReliabilityPercent(bound: EatBound, disabled: boolean) {
-    return html`
-      <input
-        class="eat-threshold-percent"
-        type="number"
-        min="0"
-        max="100"
-        step="1"
-        .value=${String(Math.round(this._reliability[bound] * 100))}
-        ?disabled=${disabled}
-        aria-label=${EAT_BOUND_UI[bound].percentLabel}
-        @input=${(event: Event) => this._handleEatBoundPercentInput(bound, event)}
-        @change=${this._flushEatThresholdCommit}
-      />
-    `;
-  }
-
-  private _renderReliabilityModeSelect() {
-    return html`
-      <select
-        class="eat-threshold-mode"
-        aria-label="EAT reliability filter mode"
-        .value=${this._reliability.mode}
-        ?disabled=${!this._eatOverlayEnabled}
-        @change=${this._handleEatModeChange}
-      >
-        <option value="atLeast">Hide below</option>
-        <option value="atMost">Hide above</option>
-        <option value="between">Keep between</option>
-      </select>
-    `;
-  }
-
-  private _renderReliabilityInfo() {
-    return html`
-      <protspace-info-popover
-        class="eat-threshold-info"
-        .description=${this._reliabilityHelpText()}
-        label="EAT reliability filter"
-        align="right"
-      ></protspace-info-popover>
-    `;
-  }
-
-  private _handleEatBoundInput(bound: EatBound, event: Event): void {
-    const slider = event.currentTarget as HTMLInputElement;
-    const applied = this._setEatBoundLive(bound, Number(slider.value));
-
-    // Re-pin the slider when a clamp moved the value, or the thumb sails past its
-    // neighbour on screen while the filter uses the clamped bound. Lit cannot do this
-    // for us: a `.value` binding dirty-checks against the value Lit last committed, not
-    // against the DOM, so once the clamp holds the state still the browser is free to
-    // keep driving the input and Lit sees nothing to write. (`live()` is the idiomatic
-    // fix, but this package externalizes only bare `lit`, so importing a directive
-    // bundles a second lit-html copy — which fails at runtime with
-    // `currentDirective._$initialize is not a function`.)
-    const pinned = String(applied);
-    if (slider.value !== pinned) slider.value = pinned;
-  }
-
-  private _handleEatBoundPercentInput(bound: EatBound, event: Event): void {
-    const input = event.currentTarget as HTMLInputElement;
-    const raw = input.value;
-    // An emptied box reads as "no constraint on this side" — but it cannot be routed
-    // through `clampReliabilityBound`'s non-finite fallback to say so, because a number
-    // input reports an empty (or unparseable) field as `''` and `Number('')` is 0, not
-    // NaN. On the UPPER bound that 0 is `confidence <= 0`, which hides every prediction:
-    // the exact opposite of clearing the field.
-    const empty = raw.trim() === '';
-    const requested = empty ? NEUTRAL_BOUND[bound] : Number(raw) / 100;
-    if (!Number.isFinite(requested)) return;
-
-    const applied = this._setEatBoundLive(bound, requested);
-    // Re-pin only when a clamp actually moved the value, for the reason the slider does:
-    // a clamp that holds the state still leaves Lit's `.value` dirty-check nothing to
-    // write, so the box would keep displaying a bound the filter is not using. A box the
-    // user is still typing a valid number into is left alone, and so is an emptied one —
-    // pinning that would type the neutral bound back in under them.
-    if (empty || applied === requested) return;
-    const pinned = String(Math.round(applied * 100));
-    if (input.value !== pinned) input.value = pinned;
-  }
-
-  /**
-   * Bound drag: update the slider's visual value immediately (thumb + percent
-   * readout stay live), but debounce the expensive downstream apply — the
-   * `eat-overlay-change` emit that re-runs the reliability query and rebuilds
-   * geometry — to a drag-pause/release.
-   */
-  private _setEatBoundLive(bound: EatBound, value: number): number {
-    // Each bound falls back to its own "constrains nothing" position, so a non-finite
-    // value reads as no constraint on that side.
-    const next = this._clampBandBound(bound, clampReliabilityBound(value, NEUTRAL_BOUND[bound]));
-    // Through the one writer, so a live drag lands in the same canonical form as every
-    // other path and what the thumbs settle on is the band the filter will apply.
-    this._setReliability({ ...this._reliability, [bound]: next });
-    this._debounceEatThresholdCommit();
-    // The bound the state actually settled on, so the caller pins its control onto the
-    // value the filter will use. Not `next`: normalization runs after the band clamp and
-    // can still move it (a band whose upper bound sits at 0 clamps the lower one to
-    // -0.01, which `normalizeReliability` then pulls back to 0).
-    return this._reliability[bound];
-  }
-
-  /**
-   * On the shared `between` track a thumb stops at its neighbour instead of passing it.
-   *
-   * Two independent bars could cross, and the crossed pair was only put back in order
-   * later, by `normalizeReliability` at commit time — so the bounds swapped under the
-   * user's thumb, and which band they ended up with depended on whether they happened
-   * to pause for the debounce mid-drag. On one track that would be visible nonsense:
-   * the fill would invert. Stopping at the neighbour is what a range control does, and
-   * it makes the crossed state unreachable rather than corrected after the fact.
-   *
-   * The bounds stop one step short of each other so the two thumbs can never land on
-   * the same pixel, where the one on top would be the only one you could grab.
-   */
-  private _clampBandBound(bound: EatBound, value: number): number {
-    const { mode, min, max } = this._reliability;
-    if (mode !== 'between') return value;
-    return bound === 'min'
-      ? Math.min(value, max - EAT_BAND_MIN_GAP)
-      : Math.max(value, min + EAT_BAND_MIN_GAP);
-  }
-
-  private _debounceEatThresholdCommit(): void {
-    if (this._eatThresholdCommitTimer !== null) {
-      clearTimeout(this._eatThresholdCommitTimer);
-    }
-    this._eatThresholdCommitTimer = setTimeout(() => {
-      this._eatThresholdCommitTimer = null;
-      this._emitEatOverlayChange();
-    }, EAT_THRESHOLD_COMMIT_DELAY_MS);
-  }
-
-  /** Slider release (@change): apply the pending threshold now, without waiting out the debounce. */
-  private _flushEatThresholdCommit(): void {
-    if (this._eatThresholdCommitTimer !== null) {
-      clearTimeout(this._eatThresholdCommitTimer);
-      this._eatThresholdCommitTimer = null;
-      this._emitEatOverlayChange();
-    }
-  }
-
-  /** Drop a pending threshold commit without emitting (an immediate apply supersedes it). */
-  private _cancelEatThresholdCommit(): void {
-    if (this._eatThresholdCommitTimer !== null) {
-      clearTimeout(this._eatThresholdCommitTimer);
-      this._eatThresholdCommitTimer = null;
-    }
-  }
-
-  private _handleScatterplotDataChange(
-    data: ScatterplotData,
-    selectedAnnotation: string,
-    selectedProjectionName: string,
-  ): void {
-    this._clearKeyboardReorderState();
-    const scatterplot = this._scatterplotController.scatterplot;
-    this._eatOverlayEnabled = scatterplot?.eatOverlayEnabled ?? true;
-    // The reliability slider position is legend-owned now (it drives the query
-    // filter, not scatter-plot dimming), so it is preserved across data-change
-    // rather than re-read from the scatter plot.
-    this.data = {
-      annotations: data.annotations,
-      protein_ids: data.protein_ids,
-      numeric_annotation_data: data.numeric_annotation_data,
-      annotation_predicted: data.annotation_predicted,
-    };
-    this.selectedAnnotation = selectedAnnotation;
-    this.annotationData = {
-      name: selectedAnnotation,
-      values: data.annotations[selectedAnnotation].values,
-      colors: data.annotations[selectedAnnotation].colors,
-      shapes: data.annotations[selectedAnnotation].shapes,
-      kind: data.annotations[selectedAnnotation].kind,
-      sourceKind: data.annotations[selectedAnnotation].sourceKind,
-      numericMetadata: data.annotations[selectedAnnotation].numericMetadata,
-      runtime: data.annotations[selectedAnnotation].runtime,
-    };
-    this._updateAnnotationValues(data, selectedAnnotation);
-    this._eatCounts = computeEatPopulationCounts(data, selectedAnnotation, this._eatOverlayEnabled);
-    // Taken from the unsliced element, not from the incoming payload.
-    // `sliceWith` in utils strips `statisticsRows` from a filtered or isolated
-    // view on purpose (a slice must not carry scores that describe the whole dataset), so
-    // reading them off `data` made every filter look identical to "this annotation was never
-    // scored" -- which is why this used to need a sticky per-annotation memory to tell the two
-    // apart. The scores are whole-dataset facts about the annotation, so the legend reads them
-    // from the whole dataset and decides separately whether to plot them (`_renderScoreStrips`).
-    // Same escape hatch the dataset hash in `updated()` already uses, and the same source the
-    // sibling projection-metadata panel is handed.
-    const statisticsRows = scatterplot?.data?.statisticsRows ?? data.statisticsRows;
-    this._categoryScores = annotationCategoryScores(
-      statisticsRows,
-      selectedAnnotation,
-      selectedProjectionName,
-    );
-    this._clusterCaveat = autoClusterScoreCaveat(statisticsRows, selectedAnnotation);
-    this.proteinIds = data.protein_ids;
-
-    // Sync isolation state
-    const { isolationMode, isolationHistory } = this._scatterplotController.getIsolationState();
-
-    // Save visible values before entering isolation so "Other" items stay grouped
-    if (isolationMode && !this.isolationMode) {
-      this._preIsolationVisibleValues = this._visibleValues;
-    }
-
-    this.isolationMode = isolationMode;
-    this.isolationHistory = isolationHistory;
-  }
-
-  private _handleAnnotationChange(annotation: string): void {
-    this._clearKeyboardReorderState();
-    this.selectedAnnotation = annotation;
     this._hiddenValues = [];
-    // Reset pre-isolation visible values so the new annotation uses maxVisibleValues
-    // instead of being constrained to the old annotation's visible set
-    if (this.isolationMode) {
-      this._preIsolationVisibleValues = new Set<string>();
-    }
-    this._scatterplotController.forceSync();
-  }
-
-  private _updateAnnotationDataFromData(): void {
-    const annotationInfo = this.data?.annotations?.[this.selectedAnnotation] ?? null;
-    this.annotationData = annotationInfo
-      ? {
-          name: this.selectedAnnotation,
-          values: annotationInfo.values,
-          colors: annotationInfo.colors,
-          shapes: annotationInfo.shapes,
-          kind: annotationInfo.kind,
-          sourceKind: annotationInfo.sourceKind,
-          numericMetadata: annotationInfo.numericMetadata,
-          runtime: annotationInfo.runtime,
-        }
-      : { name: '', values: [] };
-  }
-
-  private _updateAnnotationValues(data: ScatterplotData, selectedAnnotation: string): void {
-    this._countSource = {
-      colData: data.annotation_data[selectedAnnotation],
-      values: data.annotations[selectedAnnotation].values,
-      proteinCount: data.protein_ids.length,
-    };
-  }
-
-  /**
-   * Legend counts, isolation applied: from the synced storage, or from the public
-   * `annotationValues` array when there is none. Either way the processor only ever
-   * sees the counted map.
-   *
-   * Recomputed per rebuild rather than cached: the bincount is ~2 ms at 573K,
-   * cheaper than the array scan it replaces, and it depends on the isolation
-   * state, which changes independently of the storage.
-   */
-  private _computeAnnotationCounts(knownValues: string[]): ReadonlyMap<string, number> {
-    const isolating = this.isolationMode && this.isolationHistory?.length > 0;
-    const filteredIndices = isolating
-      ? LegendDataProcessor.getFilteredIndices(true, this.isolationHistory, this.proteinIds)
-      : null;
-    const source = this._countSource;
-    if (!source) {
-      // The array holds one value per protein in `proteinIds` order, so the filter's
-      // protein indices address it directly.
-      return LegendDataProcessor.countAnnotationFrequencies(
-        this.annotationValues,
-        filteredIndices,
-        knownValues,
-      );
-    }
-    // Protein order while host-driven, the order a per-protein `annotationValues` feed
-    // gives, so the legend comes out the same whether its host feeds it or it counts the
-    // synced storage. Tied counts keep this order, which settles their rows and colours.
-    return LegendDataProcessor.countFromStorage(
-      source.colData,
-      source.values,
-      source.proteinCount,
-      filteredIndices,
-      knownValues,
-      this._hostDriven,
-    );
-  }
-
-  private _hasSelectedEatAnnotation(): boolean {
-    const stableData = this._scatterplotController.scatterplot?.data ?? this.data;
-    return hasEatPredictionsForAnnotation(stableData, this.selectedAnnotation);
-  }
-
-  private _ensureSortModeDefaults(): void {
-    const annotationNames = this.data?.annotations ? Object.keys(this.data.annotations) : [];
-    if (annotationNames.length === 0) return;
-
-    const updated: Record<string, LegendSortMode> = { ...this._annotationSortModes };
-    for (const aname of annotationNames) {
-      updated[aname] = this._normalizeSortModeForAnnotation(aname, updated[aname]);
-    }
-    this._annotationSortModes = updated;
+    this._announceStatus('All items shown');
+    this._scatterplotController.syncHiddenValues();
+    this._persistenceController.saveSettings();
+    this.requestUpdate();
   }
 
   private _isMultilabelAnnotation(): boolean {
     return this._scatterplotController.isMultilabelAnnotation(this.selectedAnnotation);
-  }
-
-  private _isNumericAnnotation(): boolean {
-    return isNumericAnnotation(this.annotationData);
-  }
-
-  private _isCurrentAnnotationNumeric(): boolean {
-    const sourceAnnotation =
-      this._scatterplotController.scatterplot?.data?.annotations?.[this.selectedAnnotation];
-    return isNumericAnnotation(sourceAnnotation) || this._isNumericAnnotation();
   }
 
   private _hasSameProteinIds(left: readonly string[], right: readonly string[]): boolean {
@@ -1789,986 +728,6 @@ export class ProtspaceLegend extends LitElement {
     if (left.length !== right.length) return false;
 
     return left.every((proteinId, index) => proteinId === right[index]);
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Legend Item Processing
-  // ─────────────────────────────────────────────────────────────────
-
-  /**
-   * Rebuild legend items and apply persisted z-order.
-   * Use when forcing a full rebuild outside the updated() lifecycle.
-   */
-  private _rebuildLegendItems(): void {
-    if (perfCounters) perfCounters.legendRebuild++;
-    this._updateLegendItems();
-
-    if (!this._isNumericAnnotation() && this._persistenceController.hasPendingCategories()) {
-      this._legendItems = this._persistenceController.applyPendingZOrder(this._legendItems);
-    }
-  }
-
-  private _getPersistedCategoriesForProcessing(): Record<string, PersistedCategoryData> {
-    if (!this._isNumericAnnotation()) {
-      return this._persistenceController.pendingCategories;
-    }
-
-    return {};
-  }
-
-  private _getNumericDisplayLabelMap(): Map<string, string> {
-    return getNumericBinLabelMap(this.annotationData);
-  }
-
-  private _getNumericOrderValues(): Map<string, number> {
-    return getNumericBinLowerBoundMap(this.annotationData);
-  }
-
-  private _buildNumericManualOrderIds(annotationName: string): string[] | undefined {
-    if (!annotationName) return undefined;
-    const manualOrderIds = this._numericManualOrderIdsByAnnotation[annotationName];
-    if (manualOrderIds?.length) {
-      return manualOrderIds;
-    }
-
-    if (annotationName !== this.selectedAnnotation || !this._isNumericAnnotation()) {
-      return undefined;
-    }
-
-    const visibleIds = [...this._legendItems]
-      .filter((item) => item.value !== LEGEND_VALUES.OTHER && item.value !== NA_VALUE)
-      .sort((left, right) => left.zOrder - right.zOrder)
-      .map((item) => item.value);
-
-    return visibleIds.length > 0 ? visibleIds : undefined;
-  }
-
-  private _setNumericManualOrderIds(annotationName: string, orderIds: string[] | undefined): void {
-    if (!annotationName) return;
-
-    if (!orderIds || orderIds.length === 0) {
-      const rest = { ...this._numericManualOrderIdsByAnnotation };
-      delete rest[annotationName];
-      this._numericManualOrderIdsByAnnotation = rest;
-      return;
-    }
-
-    this._numericManualOrderIdsByAnnotation = {
-      ...this._numericManualOrderIdsByAnnotation,
-      [annotationName]: [...orderIds],
-    };
-  }
-
-  private _applyNumericDisplayLabels(): void {
-    if (!this._isNumericAnnotation()) return;
-
-    const labelMap = this._getNumericDisplayLabelMap();
-    this._legendItems = this._legendItems.map((item) =>
-      item.value === LEGEND_VALUES.OTHER || item.value === NA_VALUE
-        ? item
-        : { ...item, displayValue: labelMap.get(item.value) ?? item.displayValue ?? item.value },
-    );
-  }
-
-  private _applyDerivedNumericColors(): void {
-    if (!this._isNumericAnnotation()) return;
-
-    const derivedColors = new Map(
-      this.annotationData.values.map((value, index) => [
-        valueToKey(toInternalValue(value)),
-        this.annotationData.colors?.[index] ?? '',
-      ]),
-    );
-
-    this._legendItems = this._legendItems.map((item) => {
-      if (item.value === LEGEND_VALUES.OTHER || item.value === NA_VALUE) {
-        return item;
-      }
-      const derivedColor = derivedColors.get(item.value);
-      return derivedColor ? { ...item, color: derivedColor } : item;
-    });
-  }
-
-  private _updateLegendItems(): void {
-    if (perfCounters) perfCounters.legendUpdate++;
-    // Aligned with PersistenceController's isNumericAnnotation callback so the
-    // processor and the persistence layer agree on numeric-ness in transient states.
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    // Ahead of the bincount below, which is O(proteins) and has nothing to count for
-    // an annotation with no values at all.
-    if (!this.annotationData?.values?.length) {
-      this._legendItems = [];
-      return;
-    }
-    const knownValues = isNumericAnnotation
-      ? this.annotationData.values.map((value) => toInternalValue(value))
-      : [];
-    const frequencies = this._computeAnnotationCounts(knownValues);
-    if (!isNumericAnnotation && frequencies.size === 0) {
-      this._legendItems = [];
-      return;
-    }
-
-    try {
-      // Get persisted categories from persistence controller
-      const persistedCategories = this._getPersistedCategoriesForProcessing();
-
-      // Get pending values for extract/merge operations
-      // undefined = no pending operation, string = value (including '__NA__' for N/A)
-      const pendingExtract = this._pendingExtractValue;
-      const pendingMerge = this._pendingMergeValue;
-
-      // Use visibleValues to preserve the current visible set when:
-      // - There are persisted settings in localStorage
-      // - There are pending extract/merge operations
-      // - There are already legend items (e.g., switching sort mode before persistence)
-      // When none of these apply (true initial load), use empty set so maxVisibleValues is respected.
-      const hasPendingOps = pendingExtract !== undefined || pendingMerge !== undefined;
-      const hasExistingItems = this._legendItems.some((i) => i.value !== LEGEND_VALUES.OTHER);
-      const visibleValues = this.isolationMode
-        ? this._preIsolationVisibleValues
-        : this._persistenceController.hasPersistedSettings() || hasPendingOps || hasExistingItems
-          ? this._visibleValues
-          : new Set<string>();
-      const numericOrderValues = this._getNumericOrderValues();
-      const numericDisplayLabels = this._getNumericDisplayLabelMap();
-      const numericManualOrderIds = isNumericAnnotation
-        ? (this._buildNumericManualOrderIds(this.selectedAnnotation) ?? [])
-        : [];
-      const existingLegendItems =
-        isNumericAnnotation && this._currentSortMode.startsWith('manual')
-          ? getOrderedNumericBinIds(this.annotationData, 'manual', numericManualOrderIds).map(
-              (id, index) => ({
-                value: id,
-                displayValue: numericDisplayLabels.get(id) ?? id,
-                color: '',
-                shape: 'circle',
-                count: 0,
-                isVisible: true,
-                zOrder: index,
-              }),
-            )
-          : this._legendItems;
-
-      const { legendItems, otherItems } = LegendDataProcessor.processLegendItems(
-        this._processorContext,
-        this.annotationData.name || this.selectedAnnotation,
-        frequencies,
-        this.maxVisibleValues,
-        this.isolationMode,
-        existingLegendItems,
-        this._currentSortMode,
-        persistedCategories,
-        visibleValues,
-        numericOrderValues,
-        !isNumericAnnotation,
-        pendingExtract,
-        pendingMerge,
-        isNumericAnnotation,
-      );
-
-      // Apply hidden values
-      if (this._hiddenValues.length > 0) {
-        this._legendItems = legendItems.map((item: LegendItem) => ({
-          ...item,
-          isVisible: !this._hiddenValues.includes(valueToKey(item.value)),
-        }));
-      } else {
-        this._legendItems = legendItems;
-      }
-      this._otherItems = otherItems;
-
-      if (isNumericAnnotation) {
-        this._applyNumericDisplayLabels();
-        this._applyDerivedNumericColors();
-      } else if (this._selectedPaletteId !== DEFAULT_CATEGORICAL_PALETTE_ID) {
-        this._applyPaletteColors(this._selectedPaletteId);
-      }
-
-      // Clear pending extract/merge values after they've been applied
-      this._pendingExtractValue = undefined;
-      this._pendingMergeValue = undefined;
-      // Note: We do NOT clear pendingCategories here because subsequent update cycles
-      // (triggered by property changes in _applyPersistedSettings) may rebuild legend items
-      // and need the persisted colors/shapes. Categories are cleared when loadSettings()
-      // is called for a new annotation.
-
-      // Sync with scatterplot
-      this._scatterplotController.dispatchZOrderChange();
-      this._scatterplotController.dispatchColorMappingChange();
-      this._scatterplotController.syncOtherValues();
-      this._scatterplotController.syncHiddenValues();
-    } catch (error) {
-      this._dispatchError(
-        'Failed to process legend data',
-        'data-processing',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Settings Persistence
-  // ─────────────────────────────────────────────────────────────────
-
-  private _applyPersistedSettings(settings: LegendPersistedSettings): void {
-    try {
-      const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-      const { settings: resolvedNumericSettings } = resolveNumericAnnotationDisplaySettings({
-        persistedSettings: settings,
-        liveSettings: this._numericSettingsByAnnotation[this.selectedAnnotation],
-        defaultBinCount: LEGEND_DEFAULTS.maxVisibleValues,
-      });
-      const resolvedPaletteId = isNumericAnnotation
-        ? resolvedNumericSettings.paletteId
-        : this._normalizeCategoricalPaletteId(settings.selectedPaletteId);
-      const resolvedMaxVisibleValues = isNumericAnnotation
-        ? resolvedNumericSettings.binCount
-        : settings.maxVisibleValues;
-      const resolvedNumericStrategy = resolvedNumericSettings.strategy;
-      const resolvedReverseGradient = resolvedNumericSettings.reverseGradient ?? false;
-      const persistedNumericState =
-        isNumericAnnotation && settings.numericSettings
-          ? this._computeNumericSettingsSignatures(
-              resolvedMaxVisibleValues,
-              resolvedNumericStrategy,
-              resolvedPaletteId,
-              resolvedReverseGradient,
-            )
-          : null;
-      const hasMatchingNumericSignature =
-        !isNumericAnnotation ||
-        !settings.numericSettings ||
-        (persistedNumericState !== null &&
-          settings.numericSettings.signature === persistedNumericState.signature);
-      const hasMatchingNumericTopology =
-        !isNumericAnnotation ||
-        !settings.numericSettings ||
-        (persistedNumericState !== null &&
-          settings.numericSettings.topologySignature === persistedNumericState.topologySignature);
-
-      if (!hasMatchingNumericSignature) {
-        this._persistenceController.clearPendingCategories();
-      }
-
-      this.maxVisibleValues = resolvedMaxVisibleValues;
-      // Capped here, not only when resolved: the record and the export keep this value.
-      const ownShapeSize = explicitShapeSize(settings.shapeSize);
-      this._annotationShapeSize =
-        ownShapeSize === null ? null : Math.min(ownShapeSize, LEGEND_DEFAULTS.maxSymbolSize);
-      this.shapeSize = this._resolveShapeSize();
-      this._hiddenValues = hasMatchingNumericTopology ? settings.hiddenValues : [];
-      this._selectedPaletteId = resolvedPaletteId;
-      if (isNumericAnnotation) {
-        this._persistenceController.clearPendingCategories();
-      }
-
-      if (isNumericAnnotation) {
-        this._numericSettingsByAnnotation = {
-          ...this._numericSettingsByAnnotation,
-          [this.selectedAnnotation]: {
-            binCount: resolvedMaxVisibleValues,
-            strategy: resolvedNumericStrategy,
-            paletteId: resolvedPaletteId,
-            reverseGradient: resolvedReverseGradient,
-          },
-        };
-        this._setNumericManualOrderIds(
-          this.selectedAnnotation,
-          hasMatchingNumericTopology ? settings.numericSettings?.manualOrderIds : undefined,
-        );
-      }
-
-      this._annotationSortModes = {
-        ...this._annotationSortModes,
-        [this.selectedAnnotation]: this._normalizeSortModeForEffectiveType(
-          settings.sortMode,
-          isNumericAnnotation,
-        ),
-      };
-
-      this._scatterplotController.updateConfig({
-        pointSize: calculatePointSize(this.shapeSize),
-        enableDuplicateStackUI: settings.enableDuplicateStackUI,
-      });
-      this._scatterplotController.syncNumericAnnotationSettings();
-    } catch (error) {
-      this._dispatchError(
-        'Failed to apply persisted settings',
-        'persistence',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-  }
-
-  /**
-   * The dataset's stored size (picked, or a bundle's top-level size), else the annotation's own,
-   * else the default from the dataset's protein count; capped at the dialog's bound.
-   */
-  private _resolveShapeSize(): number {
-    return Math.min(
-      this._persistenceController.loadShapeSize() ??
-        this._annotationShapeSize ??
-        defaultShapeSize(this._datasetProteinCount),
-      LEGEND_DEFAULTS.maxSymbolSize,
-    );
-  }
-
-  /**
-   * Forget the dataset's picked size and every annotation's own, so the default from the
-   * protein count applies; that default is never stored.
-   */
-  private _clearShapeSize(): void {
-    this._persistenceController.clearShapeSize(Object.keys(this.data?.annotations ?? {}));
-    this._annotationShapeSize = null;
-    this.shapeSize = this._resolveShapeSize();
-  }
-
-  private _computeNumericSettingsSignatures(
-    binCount: number,
-    strategy: NumericBinningStrategy,
-    paletteId: string,
-    reverseGradient: boolean,
-  ): { signature: string | null; topologySignature: string | null } {
-    const rawNumericValues =
-      this._scatterplotController.scatterplot?.data?.numeric_annotation_data?.[
-        this.selectedAnnotation
-      ] ?? this.data?.numeric_annotation_data?.[this.selectedAnnotation];
-
-    if (!rawNumericValues) {
-      return {
-        signature: this.annotationData.numericMetadata?.signature ?? null,
-        topologySignature: this.annotationData.numericMetadata?.topologySignature ?? null,
-      };
-    }
-
-    const metadata = materializeNumericAnnotation(rawNumericValues, {
-      binCount,
-      strategy,
-      paletteId,
-      reverseGradient,
-    }).annotation.numericMetadata;
-    return {
-      signature: metadata?.signature ?? null,
-      topologySignature: metadata?.topologySignature ?? null,
-    };
-  }
-
-  private _normalizeSortModeForAnnotation(
-    annotationName: string,
-    sortMode: LegendSortMode | undefined,
-  ): LegendSortMode {
-    const annotation =
-      this.data?.annotations?.[annotationName] ??
-      (annotationName === this.selectedAnnotation ? this.annotationData : undefined);
-    const isNumeric = isNumericAnnotation(annotation);
-
-    return this._normalizeSortModeForEffectiveType(sortMode, isNumeric);
-  }
-
-  private _normalizeSortModeForEffectiveType(
-    sortMode: LegendSortMode | undefined,
-    isNumeric: boolean,
-  ): LegendSortMode {
-    if (isNumeric) {
-      if (
-        sortMode === 'alpha-asc' ||
-        sortMode === 'alpha-desc' ||
-        sortMode === 'manual' ||
-        sortMode === 'manual-reverse'
-      ) {
-        return sortMode;
-      }
-      return 'alpha-asc';
-    }
-
-    return sortMode ?? 'size-desc';
-  }
-
-  private _normalizeCategoricalPaletteId(paletteId: string | undefined | null): string {
-    if (!paletteId || isGradientPalette(paletteId)) {
-      return DEFAULT_CATEGORICAL_PALETTE_ID;
-    }
-    return paletteId;
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Item Interactions
-  // ─────────────────────────────────────────────────────────────────
-
-  /** Toggles, except on the second click of a double-click (`isSecondClickOfDouble`). */
-  private _handleItemMouseClick(value: string, event: MouseEvent): void {
-    const valueKey = valueToKey(value);
-    if (isSecondClickOfDouble(this._firstClick, valueKey, event)) return;
-
-    const itemsBefore = this._legendItems;
-    this._handleItemClick(value);
-    this._firstClick =
-      event.detail === 1 ? { valueKey, itemsBefore, itemsAfter: this._legendItems } : null;
-  }
-
-  private _handleItemMouseDoubleClick(value: string): void {
-    const first = this._firstClick;
-    this._firstClick = null;
-    this._handleItemDoubleClick(value, isolationBase(first, valueToKey(value), this._legendItems));
-  }
-
-  private _handleItemClick(value: string): void {
-    const valueKey = valueToKey(value);
-    const result = updateItemsVisibility(this._legendItems, this._hiddenValues, valueKey);
-
-    this._legendItems = result.items;
-    this._hiddenValues = result.hiddenValues;
-
-    const item = this._legendItems.find((i) => valueToKey(i.value) === valueKey);
-    this._announceStatus(`${toDisplayValue(value)} ${item?.isVisible ? 'shown' : 'hidden'}`);
-
-    this._scatterplotController.syncHiddenValues();
-    this._dispatchItemAction(value, 'toggle');
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  private _handleItemDoubleClick(value: string, items: LegendItem[] = this._legendItems): void {
-    const result = isolateItem(items, value);
-
-    this._legendItems = result.items;
-    this._hiddenValues = result.hiddenValues;
-
-    const visibleCount = result.items.filter((i) => i.isVisible).length;
-    this._announceStatus(
-      visibleCount === 1 ? `Isolated ${toDisplayValue(value)}` : 'All items shown',
-    );
-
-    this._scatterplotController.syncHiddenValues();
-    this._dispatchItemAction(value, 'isolate');
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  private _handleExtractFromOther(value: string): void {
-    // Set pending extract value - will be used by processor to add this item to visible set
-    this._pendingExtractValue = value;
-
-    // Increase maxVisibleValues to accommodate the extracted item
-    // This triggers updated() which calls _updateLegendItems() with pending value still set
-    this.maxVisibleValues = this.maxVisibleValues + 1;
-
-    // Don't call _updateLegendItems() explicitly - the maxVisibleValues change will trigger
-    // updated() which calls it. If we call it here, it will be called twice and the
-    // pending value will be cleared after the first call, causing the second call to not
-    // respect the extract operation.
-    this._closeOtherDialog();
-
-    this._announceStatus(`Extracted ${toDisplayValue(value)} from Other category`);
-    this._dispatchItemAction(value, 'extract');
-    // Save settings after the update cycle completes
-    this.updateComplete.then(() => {
-      this._persistenceController.saveSettings();
-    });
-  }
-
-  private _closeOtherDialog(): void {
-    this._showOtherDialog = false;
-    this._mouseDownOutsideOther = false;
-  }
-
-  private _handleExtractAllFromOther(): void {
-    const nonOtherCount = this._legendItems.filter((i) => i.value !== LEGEND_VALUES.OTHER).length;
-    const targetMaxVisibleValues = nonOtherCount + this._otherItems.length;
-
-    // Keep settings dialog in sync if it's open.
-    if (this._showSettingsDialog) {
-      this._dialogSettings = {
-        ...this._dialogSettings,
-        maxVisibleValues: targetMaxVisibleValues,
-      };
-    }
-
-    this._closeOtherDialog();
-
-    this._announceStatus('Extracted all items from Other category');
-    for (const item of this._otherItems) {
-      this._dispatchItemAction(item.value, 'extract');
-    }
-    this.maxVisibleValues = targetMaxVisibleValues;
-
-    this.updateComplete.then(() => {
-      this._persistenceController.saveSettings();
-    });
-  }
-
-  private _handleMergeToOther(value: string): void {
-    // Set pending merge value - will be used by processor to remove this item from visible set
-    this._pendingMergeValue = value;
-
-    // Decrease maxVisibleValues to remove space for the merged item
-    // This triggers updated() which calls _updateLegendItems() with pending value still set
-    this.maxVisibleValues = Math.max(1, this.maxVisibleValues - 1);
-
-    // Don't call _updateLegendItems() explicitly - the maxVisibleValues change will trigger
-    // updated() which calls it. If we call it here, it will be called twice and the
-    // pending value will be cleared after the first call, causing the second call to not
-    // respect the merge operation.
-
-    this._announceStatus(`Moved ${toDisplayValue(value)} to Other category`);
-    // Save settings after the update cycle completes
-    this.updateComplete.then(() => {
-      this._persistenceController.saveSettings();
-    });
-  }
-
-  private async _highlightDroppedItem(value: string): Promise<void> {
-    // Wait for Lit to complete rendering with the new item order.
-    // Two chained awaits: first for _legendItems update, second for _sortedLegendItems.
-    await this.updateComplete;
-    await this.updateComplete;
-
-    const items = this.shadowRoot?.querySelectorAll('.legend-item');
-    if (!items) return;
-
-    for (const el of items) {
-      const htmlEl = el as HTMLElement;
-      if (htmlEl.getAttribute('data-value') === value) {
-        htmlEl.classList.add('legend-item-just-dropped');
-        const focusTarget = htmlEl.querySelector(
-          '.drag-handle, .legend-item-main',
-        ) as HTMLElement | null;
-        focusTarget?.focus();
-        this._announceStatus(
-          this._announceManualPromotionOnNextReorder
-            ? `Moved ${htmlEl.dataset.displayValue ?? toDisplayValue(value)}. Switched ${this.selectedAnnotation} to Manual order.`
-            : `Moved ${htmlEl.dataset.displayValue ?? toDisplayValue(value)}.`,
-        );
-        this._announceManualPromotionOnNextReorder = false;
-        htmlEl.addEventListener(
-          'animationend',
-          () => {
-            htmlEl.classList.remove('legend-item-just-dropped');
-          },
-          { once: true },
-        );
-        break;
-      }
-    }
-  }
-
-  private _reverseZOrder(): void {
-    if (this._legendItems.length <= 1) return;
-
-    const currentMode = this._currentSortMode;
-    if (
-      this._isNumericAnnotation() &&
-      currentMode === 'manual' &&
-      !this._numericManualOrderIdsByAnnotation[this.selectedAnnotation]?.length
-    ) {
-      this._setNumericManualOrderIds(
-        this.selectedAnnotation,
-        [...this._sortedLegendItems]
-          .filter((item) => item.value !== LEGEND_VALUES.OTHER)
-          .map((item) => item.value),
-      );
-    }
-
-    // Toggle direction: asc <-> desc, or manual <-> manual-reverse
-    let newMode: LegendSortMode;
-    if (currentMode === 'manual') {
-      newMode = 'manual-reverse';
-    } else if (currentMode === 'manual-reverse') {
-      newMode = 'manual';
-    } else if (currentMode.endsWith('-asc')) {
-      newMode = currentMode.replace('-asc', '-desc') as LegendSortMode;
-    } else {
-      newMode = currentMode.replace('-desc', '-asc') as LegendSortMode;
-    }
-
-    // Update sort mode
-    this._annotationSortModes = {
-      ...this._annotationSortModes,
-      [this.selectedAnnotation]: newMode,
-    };
-
-    if (!this._isNumericAnnotation()) {
-      // Always reverse the visible items directly, keeping "Other" at the end.
-      const sorted = [...this._legendItems].sort((a, b) => a.zOrder - b.zOrder);
-      const otherItem = sorted.find((i) => i.value === LEGEND_VALUES.OTHER);
-      const nonOther = sorted.filter((i) => i.value !== LEGEND_VALUES.OTHER);
-      const reversed = nonOther.reverse();
-      const reordered = otherItem ? [...reversed, otherItem] : reversed;
-      this._legendItems = reordered.map((item, idx) => ({ ...item, zOrder: idx }));
-    } else {
-      this._updateLegendItems();
-    }
-
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.dispatchZOrderChange();
-    this._persistenceController.saveSettings();
-    this._dispatchLegendStateChange();
-    this.requestUpdate();
-  }
-
-  private _toggleLegendOrderDirection(): void {
-    if (this._legendItems.length <= 1) return;
-    this._clearKeyboardReorderState();
-
-    if (this._isNumericAnnotation() && !this._currentSortMode.startsWith('manual')) {
-      const nextMode: LegendSortMode =
-        this._currentSortMode === 'alpha-desc' ? 'alpha-asc' : 'alpha-desc';
-      this._annotationSortModes = {
-        ...this._annotationSortModes,
-        [this.selectedAnnotation]: nextMode,
-      };
-      this._updateLegendItems();
-      this._scatterplotController.syncNumericAnnotationSettings();
-      this._persistenceController.saveSettings();
-      this._dispatchLegendStateChange();
-      this.requestUpdate();
-      return;
-    }
-
-    this._reverseZOrder();
-  }
-
-  private _dispatchItemAction(value: string, action: 'toggle' | 'isolate' | 'extract'): void {
-    this.dispatchEvent(createItemActionEvent(LEGEND_EVENTS.ITEM_CLICK, value, action));
-  }
-
-  private _announceStatus(message: string): void {
-    this._statusMessage = message;
-    // Clear after announcement to allow repeated messages
-    setTimeout(() => {
-      this._statusMessage = '';
-    }, 1000);
-  }
-
-  private _dispatchError(message: string, source: LegendErrorSource, originalError?: Error): void {
-    const detail: LegendErrorEventDetail = createLegendErrorEventDetail(message, source, {
-      annotation: this.selectedAnnotation || undefined,
-      originalError,
-    });
-    this.dispatchEvent(
-      new CustomEvent(LEGEND_EVENTS.ERROR, {
-        detail,
-        bubbles: true,
-        composed: true,
-      }),
-    );
-    console.error(`[protspace-legend] ${source}: ${message}`, originalError);
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Settings Dialog
-  // ─────────────────────────────────────────────────────────────────
-
-  private async _handleCustomize(): Promise<void> {
-    this._clearKeyboardReorderState();
-    const scatterplot = this._scatterplotController.scatterplot;
-    const numericSettings = this._numericSettingsByAnnotation[this.selectedAnnotation];
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    const selectedPaletteId = isNumericAnnotation
-      ? normalizeNumericPaletteId(numericSettings?.paletteId ?? DEFAULT_NUMERIC_PALETTE_ID)
-      : this._normalizeCategoricalPaletteId(this._selectedPaletteId);
-    this._dialogSettings = {
-      maxVisibleValues: this.maxVisibleValues,
-      // `shapeSize` is a public property, so a host can set it past the dialog's bound.
-      shapeSize: Math.min(this.shapeSize, LEGEND_DEFAULTS.maxSymbolSize),
-      annotationSortModes: this._annotationSortModes,
-      enableDuplicateStackUI: Boolean(
-        scatterplot &&
-        'config' in scatterplot &&
-        (scatterplot as { config?: Record<string, unknown> }).config?.enableDuplicateStackUI,
-      ),
-      selectedPaletteId,
-      numericStrategy: numericSettings?.strategy ?? DEFAULT_NUMERIC_STRATEGY,
-      reverseGradient: numericSettings?.reverseGradient ?? false,
-    };
-
-    this._showSettingsDialog = true;
-    this.dispatchEvent(new CustomEvent(LEGEND_EVENTS.CUSTOMIZE, { bubbles: true, composed: true }));
-
-    this.requestUpdate();
-    await this.updateComplete;
-    this._settingsDialogEl?.focus();
-  }
-
-  private _handleSymbolClick(item: LegendItem, event: MouseEvent): void {
-    event.stopPropagation();
-
-    // Close if clicking the same item
-    if (this._colorPickerItem === item.value) {
-      this._flushColorChangeDebounce();
-      this._colorPickerItem = null;
-      this._showShapePicker = false;
-      return;
-    }
-
-    // Flush any pending changes when switching to a different item
-    this._flushColorChangeDebounce();
-
-    // Calculate position relative to the legend container
-    const container = this.shadowRoot?.querySelector('.legend-container');
-    if (!container) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const targetRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-
-    this._colorPickerPosition = {
-      x: targetRect.left - containerRect.left + targetRect.width + 8,
-      y: targetRect.top - containerRect.top,
-    };
-    this._colorPickerItem = item.value;
-    this._showShapePicker = false; // Reset shape picker when opening new item
-    this.requestUpdate();
-  }
-
-  private _handleSettingsSave(): void {
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    const nextSelectedPaletteId = isNumericAnnotation
-      ? normalizeNumericPaletteId(this._dialogSettings.selectedPaletteId)
-      : this._normalizeCategoricalPaletteId(this._dialogSettings.selectedPaletteId);
-    const nextAnnotationSortModes = {
-      ...this._dialogSettings.annotationSortModes,
-      [this.selectedAnnotation]: this._normalizeSortModeForEffectiveType(
-        this._dialogSettings.annotationSortModes[this.selectedAnnotation],
-        isNumericAnnotation,
-      ),
-    };
-
-    this.maxVisibleValues = this._dialogSettings.maxVisibleValues;
-    const dialogShapeSize = this._dialogSettings.shapeSize;
-    if (dialogShapeSize === null) {
-      // An emptied size field returns the dataset to its default, as Reset does for the size.
-      this._clearShapeSize();
-    } else if (dialogShapeSize !== this.shapeSize) {
-      this._persistenceController.saveShapeSize(dialogShapeSize);
-      this.shapeSize = dialogShapeSize;
-    }
-    this._annotationSortModes = nextAnnotationSortModes;
-    if (!nextAnnotationSortModes[this.selectedAnnotation]?.startsWith('manual')) {
-      this._keyboardDragValue = null;
-    }
-    this._selectedPaletteId = nextSelectedPaletteId;
-    if (isNumericAnnotation) {
-      this._numericSettingsByAnnotation = {
-        ...this._numericSettingsByAnnotation,
-        [this.selectedAnnotation]: {
-          binCount: this._dialogSettings.maxVisibleValues,
-          strategy: this._dialogSettings.numericStrategy,
-          paletteId: nextSelectedPaletteId,
-          reverseGradient: this._dialogSettings.reverseGradient,
-        },
-      };
-    }
-    this._showSettingsDialog = false;
-
-    // Don't clear _legendItems - we want to preserve current zOrders when switching sort modes.
-    // This ensures switching to manual mode keeps the current display order.
-    this._updateLegendItems();
-    this._syncLegendColorsToPersistence();
-    this._scatterplotController.syncHiddenValues();
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.updateConfig({
-      pointSize: calculatePointSize(this.shapeSize),
-      enableDuplicateStackUI: this._dialogSettings.enableDuplicateStackUI,
-    });
-    this._persistenceController.saveSettings();
-    this._dispatchLegendStateChange();
-    this.requestUpdate();
-  }
-
-  private _handleColorChange(value: string, newColor: string): void {
-    // Update the color immediately
-    this._legendItems = this._legendItems.map((item) =>
-      item.value === value ? { ...item, color: newColor } : item,
-    );
-
-    // Sync to persistence
-    this._syncLegendColorsToPersistence();
-
-    // Update scatterplot and save (color-only change, no z-order change)
-    this._scatterplotController.dispatchColorMappingChange(true);
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  private _handleColorChangeDebounced(value: string, newColor: string): void {
-    // Clear any pending debounce timer
-    this._cleanupColorChangeDebounce();
-
-    // Update the color in the UI immediately for visual feedback
-    const item = this._legendItems.find((i) => i.value === value);
-    if (item) {
-      item.color = newColor;
-      this.requestUpdate();
-    }
-
-    // Debounce the expensive operations (scatterplot update)
-    this._colorChangeDebounceTimer = setTimeout(() => {
-      this._handleColorChange(value, newColor);
-      this._colorChangeDebounceTimer = null;
-    }, 150);
-  }
-
-  private _handleShapeChange(value: string, newShape: PointShape): void {
-    // Update the shape immediately
-    this._legendItems = this._legendItems.map((item) =>
-      item.value === value ? { ...item, shape: newShape } : item,
-    );
-
-    // Close the shape picker dropdown
-    this._showShapePicker = false;
-
-    // Sync to persistence
-    this._syncLegendColorsToPersistence();
-
-    // Update scatterplot and save (shape change, no z-order change)
-    this._scatterplotController.dispatchColorMappingChange(true);
-    this._persistenceController.saveSettings();
-    this.requestUpdate();
-  }
-
-  private _handlePaletteChange(paletteId: string): void {
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    this._dialogSettings = {
-      ...this._dialogSettings,
-      selectedPaletteId: isNumericAnnotation
-        ? normalizeNumericPaletteId(paletteId)
-        : this._normalizeCategoricalPaletteId(paletteId),
-    };
-  }
-
-  private _handleSettingsClose(): void {
-    this._showSettingsDialog = false;
-    this._mouseDownOutsideSettings = false;
-  }
-
-  private _handleSettingsOverlayMouseDown(e: MouseEvent): void {
-    // Check if mousedown is on the overlay (not inside dialog content)
-    const dialogContent = this.shadowRoot?.querySelector('#legend-settings-dialog');
-    if (dialogContent && !dialogContent.contains(e.target as Node)) {
-      this._mouseDownOutsideSettings = true;
-    } else {
-      this._mouseDownOutsideSettings = false;
-    }
-  }
-
-  private _handleSettingsOverlayMouseUp(): void {
-    // Only close if mousedown also occurred outside the dialog content
-    if (this._mouseDownOutsideSettings) {
-      this._handleSettingsClose();
-    }
-  }
-
-  private _handleOtherOverlayMouseDown(e: MouseEvent): void {
-    // Check if mousedown is on the overlay (not inside dialog content)
-    const dialogContent = this.shadowRoot?.querySelector('#legend-other-dialog');
-    if (dialogContent && !dialogContent.contains(e.target as Node)) {
-      this._mouseDownOutsideOther = true;
-    } else {
-      this._mouseDownOutsideOther = false;
-    }
-  }
-
-  private _handleOtherOverlayMouseUp(): void {
-    // Only close if mousedown also occurred outside the dialog content
-    if (this._mouseDownOutsideOther) {
-      this._closeOtherDialog();
-    }
-  }
-
-  private _handleSettingsReset(): void {
-    // Remove localStorage and clear pending categories
-    this._persistenceController.removeSettings();
-    this._persistenceController.clearPendingCategories();
-
-    // Reset all settings to defaults. The shape size is the dataset's, so it is cleared for every
-    // annotation rather than stored, and the default from the protein count applies again.
-    this.maxVisibleValues = LEGEND_DEFAULTS.maxVisibleValues;
-    this._clearShapeSize();
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-
-    this._selectedPaletteId = isNumericAnnotation
-      ? DEFAULT_NUMERIC_PALETTE_ID
-      : DEFAULT_CATEGORICAL_PALETTE_ID;
-    if (isNumericAnnotation) {
-      this._numericSettingsByAnnotation = {
-        ...this._numericSettingsByAnnotation,
-        [this.selectedAnnotation]: {
-          binCount: LEGEND_DEFAULTS.maxVisibleValues,
-          strategy: DEFAULT_NUMERIC_STRATEGY,
-          paletteId: DEFAULT_NUMERIC_PALETTE_ID,
-          reverseGradient: false,
-        },
-      };
-      this._setNumericManualOrderIds(this.selectedAnnotation, undefined);
-    }
-
-    this._annotationSortModes = {
-      ...this._annotationSortModes,
-      [this.selectedAnnotation]: isNumericAnnotation
-        ? 'alpha-asc'
-        : getDefaultSortMode(this.selectedAnnotation),
-    };
-
-    this._hiddenValues = [];
-
-    // Reset slot tracker so colors are reassigned from scratch
-    this._processorContext.slotTracker.reset();
-
-    // Clear legend items so processor creates fresh ones with default colors
-    this._legendItems = [];
-
-    this._showSettingsDialog = false;
-
-    this._scatterplotController.updateConfig({
-      pointSize: calculatePointSize(this.shapeSize),
-      enableDuplicateStackUI: false,
-    });
-
-    this._updateLegendItems();
-    this._scatterplotController.syncNumericAnnotationSettings();
-    this._scatterplotController.dispatchColorMappingChange();
-    this.requestUpdate();
-  }
-
-  private _handleDialogKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Enter') {
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      this._handleSettingsSave();
-    }
-  }
-
-  private _applyPaletteColors(paletteId: string): void {
-    if (this._isNumericAnnotation()) {
-      return;
-    }
-    const palette = COLOR_SCHEMES[paletteId as keyof typeof COLOR_SCHEMES] || COLOR_SCHEMES.kellys;
-
-    // Apply palette colors to all legend items (excluding special categories like "Others" and "N/A")
-    this._legendItems = this._legendItems.map((item, index) => {
-      // Skip special categories (Other, N/A) as they have fixed colors
-      if (item.value === LEGEND_VALUES.OTHER || item.value === NA_VALUE) {
-        return item;
-      }
-
-      return { ...item, color: palette[index % palette.length] };
-    });
-  }
-
-  private _syncLegendColorsToPersistence(): void {
-    const categories: Record<string, PersistedCategoryData> = {};
-    const persistVisualEncodings = !this._isCurrentAnnotationNumeric();
-    this._legendItems.forEach((item) => {
-      if (item.value !== LEGEND_VALUES.OTHER) {
-        categories[item.value] = {
-          zOrder: item.zOrder,
-          color: persistVisualEncodings ? item.color : '',
-          shape: persistVisualEncodings ? item.shape : '',
-        };
-      }
-    });
-    this._persistenceController.setPendingCategories(categories);
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -2784,95 +743,66 @@ export class ProtspaceLegend extends LitElement {
     const predicted = activeName ? isPredictedAnnotation(activeName) : false;
     const meta = activeName ? getAnnotationMeta(activeName, activeAnnotation) : undefined;
     const hasDocs = !!meta && (meta.description.length > 0 || !!meta.docsUrl);
+    const info =
+      meta && hasDocs
+        ? html`<protspace-info-popover
+            .description=${meta.description}
+            docs-url=${meta.docsUrl ?? ''}
+            label=${title}
+          ></protspace-info-popover>`
+        : undefined;
 
     return html`
-      <div
-        class="legend-container"
-        part="container"
-        @click=${() => {
-          this._flushColorChangeDebounce();
-          this._colorPickerItem = null;
-          this._showShapePicker = false;
-        }}
-      >
+      <div class="legend-container" part="container">
         <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
           ${this._statusMessage}
         </div>
-        ${LegendRenderer.renderHeader(
-          title,
-          {
-            onReverse: () => this._toggleLegendOrderDirection(),
-            reverseLabel: this._isNumericAnnotation()
-              ? this._currentSortMode.startsWith('manual')
-                ? 'Reverse manual order'
-                : this._currentSortMode === 'alpha-desc'
-                  ? 'Show low to high'
-                  : 'Show high to low'
-              : 'Reverse z-order (keep Other last)',
-            onCustomize: () => this._handleCustomize(),
-          },
-          {
-            predicted,
-            predictedNote: predicted
-              ? 'Computationally predicted, not experimentally curated.'
-              : undefined,
-            info:
-              meta && hasDocs
-                ? html`<protspace-info-popover
-                    .description=${meta.description}
-                    docs-url=${meta.docsUrl ?? ''}
-                    label=${title}
-                  ></protspace-info-popover>`
-                : undefined,
-          },
-        )}
-        ${this._hasSelectedEatAnnotation()
-          ? html`
-              <section class="eat-legend" aria-label="Embedding Annotation Transfer">
-                <div class="eat-legend-header">
-                  <div class="eat-legend-title">Predicted (transferred)</div>
-                  <label class="eat-switch">
-                    <input
-                      type="checkbox"
-                      .checked=${this._eatOverlayEnabled}
-                      aria-label="Show EAT predictions"
-                      @change=${this._handleEatOverlayToggle}
-                    />
-                    <span>Show</span>
-                  </label>
-                </div>
-                <div class="eat-threshold">${this._renderReliabilityBand()}</div>
-                ${this._eatOverlayEnabled && this._eatCounts
-                  ? html`
-                      <div
-                        class="eat-legend-counts"
-                        role="region"
-                        aria-label="Transferred annotation counts"
-                      >
-                        <div class="eat-legend-row">
-                          <span class="eat-swatch observed" aria-hidden="true"></span>
-                          <span>Observed</span>
-                          <strong>${this._eatCounts.observed}</strong>
-                        </div>
-                        <div class="eat-legend-row">
-                          <span class="eat-swatch predicted" aria-hidden="true"></span>
-                          <span>Predicted by EAT</span>
-                          <strong>${this._eatCounts.predicted}</strong>
-                        </div>
-                      </div>
-                    `
-                  : ''}
-              </section>
-            `
-          : ''}
+        ${renderLegendHeader(this._headerModel(title, predicted, info), this._headerHandlers)}
         ${this._renderScoreStrips()}
-        ${LegendRenderer.renderLegendContent(this._sortedLegendItems, (item, index) =>
+        ${renderLegendList(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
         )}
-        ${this._renderColorPicker()}
+        ${this._colorPicker.render()} ${this._rowMenu.render()} ${this._nameTooltip.render()}
+        ${this._renderSortMenu()} ${this._otherPopover.render()} ${this._settings.render(title)}
       </div>
-      ${this._renderOtherDialog()} ${this._renderSettingsDialog()}
     `;
+  }
+
+  private _headerModel(
+    title: string,
+    predicted: boolean,
+    info: TemplateResult | undefined,
+  ): LegendHeaderModel {
+    return {
+      title,
+      predicted,
+      info,
+      sortMode: this._currentSortMode,
+      isNumeric: this._isNumericAnnotation(),
+      hasScores: this._categoryScores.length > 0,
+      canSort: this._legendItems.length > 1,
+      settingsOpen: this._settingsAnchor !== null,
+      eat:
+        this._eatPredicted === null
+          ? undefined
+          : {
+              predicted: this._eatPredicted,
+              reliability: this.eatReliability,
+              fade: this.eatFade,
+              off: this._eatOff,
+            },
+    };
+  }
+
+  private _renderSortMenu() {
+    const model: SortMenuModel = {
+      open: this._sortMenu !== null,
+      anchor: this._sortMenu,
+      sortMode: this._currentSortMode,
+      isNumeric: this._isNumericAnnotation(),
+      hasScores: this._categoryScores.length > 0,
+    };
+    return renderSortMenu(model, this._sortMenuHandlers);
   }
 
   private _setHoveredCategory(category: string | null): void {
@@ -2885,414 +815,109 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /**
-   * Dots for one metric, in the legend's own colours so the mapping to rows is legible
-   * before any hover happens. A category swept into the "Other" bucket still gets a dot,
-   * greyed: the scores are computed over the whole dataset regardless of what the legend
-   * chooses to show, and dropping those dots would misstate the distribution.
+   * Strip geometry, derived in `willUpdate` rather than in render: it depends only on the legend
+   * items and the scores, while the most frequent cause of a legend re-render is a hover, which
+   * changes neither. A plain field, not `@state`: it is computed before render from properties
+   * that are already reactive, so making it reactive would only add a second update cycle.
+   * Written in `willUpdate` and not `updated()` for the same reason -- after render it would
+   * paint one cycle stale.
    */
+  private _stripPoints: StripPoints = EMPTY_STRIP_POINTS;
+
   /**
-   * Strip geometry, derived in `willUpdate` rather than in render: it depends only on the
-   * legend items and the scores, while the most frequent cause of a legend re-render is a
-   * hover, which changes neither. Plain fields, not `@state`: they are computed before render
-   * from properties that are already reactive, so making them reactive would only add a
-   * second update cycle. Written in `willUpdate` and not `updated()` for the same reason --
-   * after render they would paint one cycle stale.
+   * A hover on a strip lights its row; a click on a dot toggles its category, but only one that
+   * is a legend row: a category grouped under Other has no row to hide.
    */
-  private _silhouettePoints: ScoreStripPoint[] = [];
-  private _daviesBouldinPoints: ScoreStripPoint[] = [];
-  private _daviesBouldinDomain: [number, number] = [0, 1];
+  private _scoreStripHandlers: ScoreStripsHandlers = {
+    onHover: (category) => this._setHoveredCategory(category),
+    onToggle: (category) => {
+      if (this._legendItems.some((item) => item.value === category)) {
+        this._actions.toggle(category);
+      }
+    },
+  };
 
   protected willUpdate(changedProperties: Map<string, unknown>): void {
+    // One row has nothing to order: the sort button hides, so its menu closes too.
+    if (this._sortMenu && this._legendItems.length <= 1) this._sortMenu = null;
+    // Derived before render, so a change to the items renders the rows once, in their new order.
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
-      this._deriveStripPoints();
+      this._sortedLegendItems = sortItemsForDisplay(
+        this._legendItems,
+        this._currentSortMode,
+        this._categoryScores,
+      );
+      this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
     }
-  }
-
-  private _deriveStripPoints(): void {
-    // One map for both strips: it is keyed by the same legend items either way.
-    const colorByValue = new Map(this._legendItems.map((item) => [item.value, item.color]));
-    // Davies-Bouldin has no embedding-space counterpart on CategoryScore, so only the
-    // silhouette strip's tooltip carries an embedding reference.
-    this._silhouettePoints = this._stripPoints(
-      colorByValue,
-      (score) => score.silhouette,
-      (score) => score.silhouetteEmbedding,
+    // Rows render by position, so after a re-sort the menu's anchor would be another row's "⋯".
+    if (changedProperties.has('_sortedLegendItems')) this._rowMenu.close();
+    this._otherPopover.willUpdate(
+      changedProperties.has('_otherItems'),
+      changedProperties.has('selectedAnnotation'),
     );
-    this._daviesBouldinPoints = this._stripPoints(colorByValue, (score) => score.daviesBouldin);
-    // Silhouette is bounded to [-1, 1], so its axis is fixed and comparable across datasets.
-    // Davies-Bouldin is unbounded above, so it scales to the data at hand. Folded rather than
-    // spread into Math.min/max: the argument list would grow with the category count, and a
-    // high-cardinality annotation would blow the call-argument limit.
-    let low = Infinity;
-    let high = -Infinity;
-    for (const point of this._daviesBouldinPoints) {
-      if (point.value < low) low = point.value;
-      if (point.value > high) high = point.value;
+    // Settings and the picker are the annotation's own: a new one closes them. The sync paths
+    // flushed first; set from outside, an edit for the old annotation is dropped, not moved.
+    if (changedProperties.has('selectedAnnotation')) {
+      this._settingsPopover?.cancel();
+      this._settingsAnchor = null;
+      this._colorPicker.dismiss();
     }
-    this._daviesBouldinDomain = this._daviesBouldinPoints.length > 0 ? [low, high] : [0, 1];
-  }
-
-  private _stripPoints(
-    colorByValue: Map<string, string>,
-    pick: (score: CategoryScore) => number | null,
-    pickEmbedding?: (score: CategoryScore) => number | null,
-  ): ScoreStripPoint[] {
-    const points: ScoreStripPoint[] = [];
-    for (const score of this._categoryScores) {
-      const value = pick(score);
-      if (value === null) continue;
-      points.push({
-        category: score.category,
-        value,
-        color: colorByValue.get(score.category) ?? '#888',
-        embedding: pickEmbedding?.(score) ?? null,
-      });
-    }
-    return points;
   }
 
   private _renderScoreStrips() {
-    // Nothing to plot: this annotation was never scored, or the bundle carries no statistics.
-    if (this._categoryScores.length === 0) return '';
-    // Scored, but the view is showing a subset. The numbers describe the whole dataset and do
-    // not recompute, so plotting them beside a narrowed legend would misdescribe what is on
-    // screen; the strips step aside and say so. Gated on the live filter/isolation state
-    // directly, which is the actual question -- the scores themselves are read from the
-    // unsliced dataset (see `_handleScatterplotDataChange`) and so stay available for sorting.
-    const scatterplot = this._scatterplotController.scatterplot;
-    if (this.isolationMode || scatterplot?.filtersActive) {
-      return html`<p class="score-strips-note">
-        Separation scores are hidden while the view is filtered.
-      </p>`;
-    }
-
-    const silhouette = this._silhouettePoints;
-    const daviesBouldin = this._daviesBouldinPoints;
-    const dbDomain = this._daviesBouldinDomain;
-
-    return html`
-      <section
-        class="score-strips"
-        aria-label="Separation by category"
-        @strip-hover=${(event: CustomEvent<{ category: string | null }>) =>
-          this._setHoveredCategory(event.detail.category)}
-        @strip-click=${(event: CustomEvent<{ category: string }>) => {
-          if (this._legendItems.some((item) => item.value === event.detail.category)) {
-            this._handleItemClick(event.detail.category);
-          }
-        }}
-      >
-        ${this._renderScoreStrip('silhouette', silhouette, [-1, 1])}
-        ${daviesBouldin.length > 0
-          ? this._renderScoreStrip('davies_bouldin', daviesBouldin, dbDomain)
-          : ''}
-        <!-- Stated here rather than only in the projection-metadata panel: this is where
-             the per-category numbers are actually read, and a user hovering rows may
-             never open that panel. -->
-        ${this._clusterCaveat
-          ? html`<p class="score-strips-caveat">${this._clusterCaveat}</p>`
-          : ''}
-      </section>
-    `;
-  }
-
-  /**
-   * One metric's strip. Name and optimisation direction come from `metricDisplay`, the same
-   * entry the metadata panel's rows read, so the two panels cannot name a metric differently
-   * and a metric added to that map arrives here already labelled.
-   */
-  private _renderScoreStrip(metric: string, points: ScoreStripPoint[], domain: [number, number]) {
-    const { label, higherIsBetter, description } = metricDisplay(metric);
-    return html`
-      <protspace-score-strip
-        label=${label}
-        .description=${description}
-        .higherIsBetter=${higherIsBetter}
-        .points=${points}
-        .domain=${domain}
-        .highlighted=${this._hoveredCategory}
-      ></protspace-score-strip>
-    `;
+    const view: ScoreStripsView = {
+      hasScores: this._categoryScores.length > 0,
+      // Gated on the live filter/isolation state directly, which is the actual question -- the
+      // scores themselves are read from the unsliced dataset (see `LegendDataController.onDataChange`)
+      // and so stay available for sorting.
+      filtered:
+        this.isolationMode || Boolean(this._scatterplotController.scatterplot?.filtersActive),
+      points: this._stripPoints,
+      highlighted: this._hoveredCategory,
+      clusterCaveat: this._clusterCaveat,
+    };
+    return renderScoreStrips(view, this._scoreStripHandlers);
   }
 
   private _renderLegendItem(item: LegendItem, sortedIndex: number) {
     const selected = isItemSelected(item, this.selectedItems);
-    const classes = `${getItemClasses(item, selected, false)}${
+    const picked = this._keyboard.pickedValue === item.value;
+    const isOther = item.value === LEGEND_VALUES.OTHER;
+    const classes = `${getItemClasses(item, selected, picked)}${
       this._categoryScores.length > 0 && item.value === this._hoveredCategory
         ? ' legend-item-score-hover'
         : ''
     }`;
-    const otherCount = item.value === LEGEND_VALUES.OTHER ? this._otherItems.length : undefined;
 
-    return LegendRenderer.renderLegendItem(
-      item,
+    const view: LegendRowView = {
       classes,
-      selected,
-      {
-        onClick: (e: MouseEvent) => this._handleItemMouseClick(item.value, e),
-        onDoubleClick: () => this._handleItemMouseDoubleClick(item.value),
-        onViewOther: (e: Event) => {
-          e.stopPropagation();
-          this._showOtherDialog = true;
-        },
-        onKeyDown: (e: KeyboardEvent) => this._handleItemKeyDown(e, item, sortedIndex),
-        onDragHandleKeyDown: (e: KeyboardEvent) => this._handleDragHandleKeyDown(e, item),
-        onHover: (category) => this._setHoveredCategory(category),
-        onSymbolClick:
-          item.value !== LEGEND_VALUES.OTHER && !this._isNumericAnnotation()
-            ? (e: MouseEvent) => this._handleSymbolClick(item, e)
-            : undefined,
-      },
-      LEGEND_STYLES.legendDisplaySize,
-      otherCount,
-      sortedIndex,
-      this._canDragLegendItem(item),
-    );
-  }
-
-  private _renderOtherDialog() {
-    if (!this._showOtherDialog) return html``;
-
-    return renderOtherDialog(
-      { otherItems: this._otherItems },
-      {
-        onExtract: (value) => this._handleExtractFromOther(value),
-        onExtractAll: () => this._handleExtractAllFromOther(),
-        onClose: () => this._closeOtherDialog(),
-        onOverlayMouseDown: (e) => this._handleOtherOverlayMouseDown(e),
-        onOverlayMouseUp: () => this._handleOtherOverlayMouseUp(),
-      },
-    );
-  }
-
-  private _renderSettingsDialog() {
-    if (!this._showSettingsDialog) return html``;
-
-    // Initialize sort mode for current annotation if needed
-    const initializedSortModes = initializeAnnotationSortMode(
-      this._dialogSettings.annotationSortModes,
-      this.selectedAnnotation,
-      this._annotationSortModes,
-    );
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    const annotationSortModes = this.selectedAnnotation
-      ? {
-          ...initializedSortModes,
-          [this.selectedAnnotation]: this._normalizeSortModeForEffectiveType(
-            initializedSortModes[this.selectedAnnotation],
-            isNumericAnnotation,
-          ),
-        }
-      : initializedSortModes;
-    this._dialogSettings = {
-      ...this._dialogSettings,
-      annotationSortModes,
+      symbolSize: LEGEND_STYLES.legendDisplaySize,
+      otherCount: isOther ? this._otherItems.length : undefined,
+      tabbable: this._keyboard.isTabbable(item.value),
+      draggable: this._canDragLegendItem(item),
+      picked,
+      hasMenu: !isOther,
+      otherExpanded: isOther && this._otherPopover.isOpen,
     };
-
-    const state: SettingsDialogState = {
-      maxVisibleValues: this._dialogSettings.maxVisibleValues,
-      shapeSize: this._dialogSettings.shapeSize,
-      defaultShapeSize: defaultShapeSize(this._datasetProteinCount),
-      enableDuplicateStackUI: this._dialogSettings.enableDuplicateStackUI,
-      selectedAnnotation: this.selectedAnnotation,
-      annotationSortModes: this._dialogSettings.annotationSortModes,
-      isNumericAnnotation,
-      selectedNumericStrategy: this._dialogSettings.numericStrategy,
-      reverseGradient: this._dialogSettings.reverseGradient,
-      logBinningAvailable: this.annotationData.numericMetadata?.logSupported ?? true,
-      hasPersistedSettings: this._persistenceController.hasPersistedSettings(),
-      selectedPaletteId: this._dialogSettings.selectedPaletteId,
-      hasCategoryScores: this._categoryScores.length > 0,
+    const handlers: LegendRowHandlers = {
+      onClick: (e: MouseEvent) => this._actions.rowClick(item.value, e),
+      onDoubleClick: () => this._actions.rowDoubleClick(item.value),
+      onKeyDown: (e: KeyboardEvent) => this._keyboard.onItemKeyDown(e, item, sortedIndex),
+      onHandleKeyDown: (e: KeyboardEvent) => this._keyboard.onHandleKeyDown(e, item),
+      onHover: (category) => this._setHoveredCategory(category),
+      onFocus: () => {
+        this._keyboard.focusValue = item.value;
+      },
+      onToggle: () => this._actions.toggle(item.value),
+      onMenu: (e: MouseEvent) => this._rowMenu.toggle(item.value, e.currentTarget as HTMLElement),
+      onViewOther: (e: Event) => this._otherPopover.toggle(e),
+      onNamePointerEnter: this._nameTooltip.onNamePointerEnter,
+      onPointerDown: (e: PointerEvent) => {
+        this._lastRowPointerDown = { pointerType: e.pointerType, time: e.timeStamp };
+        this._nameTooltip.onNamePointerDown(e);
+      },
     };
-
-    const callbacks: SettingsDialogCallbacks = {
-      onMaxVisibleValuesChange: (v) => {
-        this._dialogSettings = { ...this._dialogSettings, maxVisibleValues: v };
-      },
-      onShapeSizeChange: (v) => {
-        this._dialogSettings = { ...this._dialogSettings, shapeSize: v };
-      },
-      onEnableDuplicateStackUIChange: (v) => {
-        this._dialogSettings = { ...this._dialogSettings, enableDuplicateStackUI: v };
-      },
-      onSortModeChange: (annotation, mode) => {
-        this._clearKeyboardReorderState();
-        this._dialogSettings = {
-          ...this._dialogSettings,
-          annotationSortModes: { ...this._dialogSettings.annotationSortModes, [annotation]: mode },
-        };
-      },
-      onPaletteChange: (paletteId) => this._handlePaletteChange(paletteId),
-      onNumericStrategyChange: (strategy) => {
-        this._dialogSettings = { ...this._dialogSettings, numericStrategy: strategy };
-      },
-      onReverseGradientChange: (checked) => {
-        this._dialogSettings = { ...this._dialogSettings, reverseGradient: checked };
-      },
-      onSave: () => this._handleSettingsSave(),
-      onClose: () => this._handleSettingsClose(),
-      onReset: () => this._handleSettingsReset(),
-      onKeydown: (e) => this._handleDialogKeydown(e),
-      onOverlayMouseDown: (e) => this._handleSettingsOverlayMouseDown(e),
-      onOverlayMouseUp: () => this._handleSettingsOverlayMouseUp(),
-    };
-
-    return renderSettingsDialog(state, callbacks);
-  }
-
-  private _renderColorPicker() {
-    if (this._colorPickerItem === null || !this._colorPickerPosition) {
-      return html``;
-    }
-
-    const item = this._legendItems.find((i) => i.value === this._colorPickerItem);
-    if (!item) return html``;
-
-    const displayLabel = item.displayValue ?? toDisplayValue(item.value);
-    const isMultilabel = this._isMultilabelAnnotation();
-    const isNumeric = this._isNumericAnnotation();
-    const availableShapes: PointShape[] = [
-      'circle',
-      'square',
-      'diamond',
-      'triangle-up',
-      'triangle-down',
-      'plus',
-    ];
-
-    // Render shape swatch SVG (outline only, no fill)
-    const renderShapeSwatch = (shape: string, disabled: boolean = false) => {
-      const pathGenerator =
-        SHAPE_PATH_GENERATORS[shape as PointShape] || SHAPE_PATH_GENERATORS.circle;
-      const size = 20;
-      const canvasSize = 28;
-      const centerOffset = canvasSize / 2;
-      const path = pathGenerator(size);
-      const strokeColor = disabled ? '#999' : '#333';
-
-      return html`
-        <svg width="${canvasSize}" height="${canvasSize}" viewBox="0 0 ${canvasSize} ${canvasSize}">
-          <g transform="translate(${centerOffset}, ${centerOffset})">
-            <path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="1.5" />
-          </g>
-        </svg>
-      `;
-    };
-
-    return html`
-      <div
-        class="color-picker-popover"
-        style="left: ${this._colorPickerPosition.x}px; top: ${this._colorPickerPosition.y}px;"
-        @click=${(e: Event) => e.stopPropagation()}
-        @mousedown=${(e: Event) => e.stopPropagation()}
-      >
-        <div class="color-picker-header">${displayLabel}</div>
-        <div class="symbol-picker-sections">
-          <!-- Color Section -->
-          <div class="symbol-picker-section">
-            <div class="symbol-picker-section-label">Color</div>
-            <input
-              type="color"
-              class="color-picker-swatch"
-              .value=${item.color}
-              aria-label=${`Set color for ${displayLabel}`}
-              @input=${(e: Event) =>
-                this._handleColorChangeDebounced(item.value, (e.target as HTMLInputElement).value)}
-            />
-          </div>
-          <!-- Shape Section -->
-          <div class="symbol-picker-section">
-            <div class="symbol-picker-section-label">Shape</div>
-            <div class="shape-swatch-container">
-              ${isMultilabel || isNumeric
-                ? html`
-                    <button
-                      type="button"
-                      class="shape-picker-swatch disabled"
-                      aria-label="${isNumeric
-                        ? 'Shape selection disabled for numeric annotations'
-                        : 'Shape selection disabled for multilabel annotations'}"
-                      title="${isNumeric
-                        ? 'Shape selection disabled for numeric annotations'
-                        : 'Shape selection disabled for multilabel annotations'}"
-                      disabled
-                    >
-                      ${renderShapeSwatch(item.shape, true)}
-                    </button>
-                  `
-                : html`
-                    <button
-                      type="button"
-                      class="shape-picker-swatch ${this._showShapePicker ? 'active' : ''}"
-                      aria-label=${`Change shape for ${displayLabel}`}
-                      title="Click to change shape"
-                      @click=${(e: Event) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        this._showShapePicker = !this._showShapePicker;
-                      }}
-                    >
-                      ${renderShapeSwatch(item.shape)}
-                    </button>
-                    ${this._showShapePicker
-                      ? html`
-                          <div class="shape-picker-dropdown">
-                            <div class="shape-picker-grid">
-                              ${availableShapes.map((shape) => {
-                                const isSelected = item.shape === shape;
-                                const pathGenerator = SHAPE_PATH_GENERATORS[shape];
-                                const size = 14;
-                                const canvasSize = 20;
-                                const centerOffset = canvasSize / 2;
-                                const path = pathGenerator(size);
-                                const isOutlineOnly = shape === 'plus';
-
-                                return html`
-                                  <button
-                                    type="button"
-                                    class="shape-picker-item ${isSelected ? 'selected' : ''}"
-                                    aria-label=${`Use ${shape} shape for ${displayLabel}`}
-                                    title="${shape}"
-                                    @click=${(e: Event) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      this._handleShapeChange(item.value, shape);
-                                    }}
-                                  >
-                                    <svg
-                                      width="${canvasSize}"
-                                      height="${canvasSize}"
-                                      viewBox="0 0 ${canvasSize} ${canvasSize}"
-                                    >
-                                      <g transform="translate(${centerOffset}, ${centerOffset})">
-                                        <path
-                                          d="${path}"
-                                          fill="${isOutlineOnly ? 'none' : 'currentColor'}"
-                                          stroke="currentColor"
-                                          stroke-width="${isOutlineOnly ? 1.5 : 1}"
-                                        />
-                                      </g>
-                                    </svg>
-                                  </button>
-                                `;
-                              })}
-                            </div>
-                          </div>
-                        `
-                      : null}
-                  `}
-            </div>
-          </div>
-        </div>
-        ${isMultilabel || isNumeric
-          ? html`<div class="symbol-picker-note">
-              ${isNumeric
-                ? 'Shapes unavailable for numeric annotations'
-                : 'Shapes unavailable for multilabel annotations'}
-            </div>`
-          : null}
-      </div>
-    `;
+    return renderLegendRow(item, view, handlers);
   }
 }
 

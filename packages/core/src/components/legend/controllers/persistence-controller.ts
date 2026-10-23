@@ -379,8 +379,8 @@ export class PersistenceController
    * N/A items use '__NA__' as their value.
    *
    * Note: This method does NOT clear pendingCategories because subsequent update
-   * cycles (triggered by property changes in _applyPersistedSettings) need them
-   * for _visibleValues to work correctly. Categories are naturally overwritten
+   * cycles (triggered by property changes in `LegendDataController.applyPersistedSettings`)
+   * need them for _visibleValues to work correctly. Categories are naturally overwritten
    * when loadSettings() is called for a different annotation.
    */
   applyPendingZOrder(legendItems: LegendItem[]): LegendItem[] {
