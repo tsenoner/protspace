@@ -251,6 +251,40 @@ describe('scatterplot touch', () => {
     expect(tooltip(plot)).toBeNull();
   });
 
+  it('a tap on a spider node pins its tooltip', async () => {
+    const plot = await mountPlot([], true);
+    await vi.waitFor(() => expect(plot.getDuplicateStacks()).toHaveLength(1), { timeout: 3_000 });
+    tap(plot, at(plot, 'P1'));
+    await plot.updateComplete;
+    const node = await vi.waitFor(() => {
+      const found = plot.shadowRoot!.querySelectorAll<SVGGElement>('.dup-spiderfy-node')[1];
+      expect(found).toBeDefined();
+      return found;
+    });
+    const ids = clicks(plot);
+    const box = node.getBoundingClientRect();
+    const init: PointerEventInit = {
+      clientX: box.left + box.width / 2,
+      clientY: box.top + box.height / 2,
+      bubbles: true,
+      composed: true,
+      pointerType: 'touch',
+      pointerId: 4,
+      isPrimary: true,
+    };
+    // The node takes the press and release; the click that follows bubbles to the plot.
+    node.dispatchEvent(new PointerEvent('pointerdown', init));
+    node.dispatchEvent(new PointerEvent('pointerup', init));
+    node.dispatchEvent(new PointerEvent('click', init));
+    await plot.updateComplete;
+
+    expect(ids).toHaveLength(1);
+    const tip = pinned(plot)!;
+    expect(tip).not.toBeNull();
+    await tip.updateComplete;
+    expect(tip.shadowRoot!.textContent).toContain(ids[0]);
+  });
+
   it('a compat mousemove after a touch press shows no hover tooltip', async () => {
     const plot = await mountPlot();
     const p = at(plot, 'P3');

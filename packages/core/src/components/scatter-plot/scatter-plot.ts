@@ -1787,15 +1787,17 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _handleCanvasClick(event: MouseEvent, touch = false): void {
     if (!this._scales) return;
-    // Any click on the plot ends a pin; a plain click on a protein pins anew below.
-    this._unpinTooltip();
-
     // If the click originated from the spiderfy UI, let the spiderfy handlers deal with it.
     // This avoids collapsing the expanded stack (and early-returning) before a spiderfy node can be selected.
+    // It also comes before the unpin: a node pins its tooltip on pointerup, and this is that
+    // press's click arriving afterwards.
     const target = event.target as Element | null;
     if (target?.closest('.dup-spiderfy')) {
       return;
     }
+
+    // Any click on the plot ends a pin; a plain click on a protein pins anew below.
+    this._unpinTooltip();
 
     // Clicking anywhere outside the expanded stack collapses it.
     const hadExpanded = this._dupOverlay.collapseExpanded();
