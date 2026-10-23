@@ -909,6 +909,27 @@ describe('protspace-eat-panel', () => {
       expect(rankLine(el)).toBe(`Less reliable than 99${PCT} of the 200 predictions`);
     });
 
+    it('counts the rank share without float error: 58 of 100 is 58 %', async () => {
+      const predicted = Array.from({ length: 100 }, (_, i) => 0.0025 + i * 0.009);
+      const el = await mount({
+        data: labelData([{ label: 'A', curated: 0, predicted }]),
+        annotation: 'cls',
+        focusProtein: 58,
+      });
+      // 58 of the 100 are below it; (58 / 100) * 100 floors to 57 in floats.
+      expect(rankLine(el)).toBe(`More reliable than 58${PCT} of the 100 predictions`);
+    });
+
+    it('never shows a hidden prediction at the range end it misses', async () => {
+      const el = await mount({ focusProtein: at('P8') });
+      expect(text(el, '.eat-card-reliability')).toBe(`reliability 81${PCT}`);
+      // 0.81 rounds to the 81 % low end of the range that leaves it out.
+      el.setReliabilityState({ min: 0.814, max: 1 });
+      await el.updateComplete;
+      expect(text(el, '.eat-card-outside')).toContain('outside the');
+      expect(text(el, '.eat-card-reliability')).toBe(`reliability 81.0${PCT}`);
+    });
+
     it('says when the range hides or fades the prediction, and Show faded switches to Fade', async () => {
       const el = await mount({ focusProtein: at('P8') });
       const outsideLine = () => text(el, '.eat-card-outside');

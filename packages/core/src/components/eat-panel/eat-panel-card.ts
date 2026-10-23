@@ -7,7 +7,7 @@ import {
 } from '@protspace/utils';
 import '../kit/button';
 import '../kit/tooltip';
-import { formatPercent, rangeText } from '../query-builder/eat-reliability';
+import { formatPercent, formatReliabilityIn, rangeText } from '../query-builder/eat-reliability';
 import { swatchColor } from './eat-panel-breakdown';
 import { isKept, rankOf, type EatIndex } from './eat-summary';
 
@@ -97,7 +97,7 @@ function sourceLink(
  */
 function rankText(rank: { below: number; above: number; total: number }): string | null {
   const more = rank.below / rank.total >= 0.5;
-  const share = Math.floor(((more ? rank.below : rank.above) / rank.total) * 100);
+  const share = Math.floor(((more ? rank.below : rank.above) * 100) / rank.total);
   if (share === 0) return null;
   return `${more ? 'More' : 'Less'} reliable than ${share}\u202f% of the ${formatCount(rank.total)} predictions`;
 }
@@ -182,7 +182,11 @@ export function renderCard(view: EatCardView): TemplateResult | typeof nothing {
   const { rank, sourceIndex } = facts;
   const origin = sourceIndex === null ? 'not in this dataset' : originOf(view, sourceIndex);
   const sourceLent = index.lentCount.get(sourceId) ?? 0;
-  const reliability = `reliability ${formatPercent(cell.confidence)}`;
+  const reliability = `reliability ${
+    view.shown
+      ? formatReliabilityIn(cell.confidence, view.reliability)
+      : formatPercent(cell.confidence)
+  }`;
   const goToSource = html`<span class="eat-card-actions">
     <ps-button
       size="sm"

@@ -18,7 +18,12 @@ import '../kit/segmented';
 import '../kit/switch';
 import type { PsSegmented, SegmentedOption } from '../kit/segmented';
 import type { PsSwitch } from '../kit/switch';
-import { formatPercent, rangeText, reliabilityLabel } from '../query-builder/eat-reliability';
+import {
+  formatPercent,
+  formatReliabilityIn,
+  rangeText,
+  reliabilityLabel,
+} from '../query-builder/eat-reliability';
 import {
   DEFAULT_LABEL_SORT,
   renderBreakdown,
@@ -748,7 +753,9 @@ export class ProtspaceEatPanel extends LitElement {
       const confidence = index.confidence[k];
       const labels = labelsAt(index, k);
       const id = data.protein_ids[index.order[k]];
-      const reliability = formatPercent(confidence);
+      const reliability = hides
+        ? formatReliabilityIn(confidence, state)
+        : formatPercent(confidence);
       const hidden = hides && !isKept(state, confidence);
       const why =
         this._outcome === 'dim' ? 'Faded, outside the range' : 'Hidden, outside the range';

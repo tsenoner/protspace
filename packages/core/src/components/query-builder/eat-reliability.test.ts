@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EAT_RELIABILITY, NA_VALUE } from '@protspace/utils';
 import type { EatReliabilityState } from '@protspace/utils';
-import { conditionsForReliability, reliabilityFromConditions } from './eat-reliability';
+import {
+  conditionsForReliability,
+  formatReliabilityIn,
+  reliabilityFromConditions,
+} from './eat-reliability';
 import { createNumericCondition } from './query-types';
 
 const KEY = 'ec__eat_confidence';
@@ -113,5 +117,19 @@ describe('reliabilityFromConditions', () => {
     });
     expect(reliabilityFromConditions([negatedBand])).not.toEqual({ min: 0.3, max: 0.7 });
     expect(reliabilityFromConditions([negatedBand])).toEqual(DEFAULT_EAT_RELIABILITY);
+  });
+});
+
+describe('formatReliabilityIn', () => {
+  it('never rounds a prediction the range leaves out onto the end it misses', () => {
+    expect(formatReliabilityIn(0.496, { min: 0.5, max: 1 })).toBe('49.6\u202f%');
+    expect(formatReliabilityIn(0.4999, { min: 0.5, max: 1 })).toBe('49.9\u202f%');
+    expect(formatReliabilityIn(0.904, { min: 0, max: 0.9 })).toBe('90.4\u202f%');
+  });
+
+  it('keeps whole percents for a kept prediction or one well outside', () => {
+    expect(formatReliabilityIn(0.5, { min: 0.5, max: 1 })).toBe('50\u202f%');
+    expect(formatReliabilityIn(0.42, { min: 0.5, max: 1 })).toBe('42\u202f%');
+    expect(formatReliabilityIn(0.73, { min: 0.5, max: 0.8 })).toBe('73\u202f%');
   });
 });

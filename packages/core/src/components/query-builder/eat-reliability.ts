@@ -145,6 +145,23 @@ export function reliabilityFromConditions(
 /** A fraction as `50 %`, rounded, with the thin no-break space the EAT copy uses. */
 export const formatPercent = (fraction: number): string => `${Math.round(fraction * 100)}\u202f%`;
 
+/**
+ * `formatPercent` for a prediction judged against `state`: one the range leaves out never reads
+ * as a range end, so 0.496 outside `50\u2013100 %` is `49.6 %`, not `50 %` (cut toward the side it
+ * falls on).
+ */
+export function formatReliabilityIn(confidence: number, state: EatReliabilityInput): string {
+  const { min, max } = normalizeReliability(state);
+  const whole = Math.round(confidence * 100);
+  if (confidence < min && whole >= Math.round(min * 100)) {
+    return `${(Math.floor(confidence * 1000 + 1e-9) / 10).toFixed(1)}\u202f%`;
+  }
+  if (confidence > max && whole <= Math.round(max * 100)) {
+    return `${(Math.ceil(confidence * 1000 - 1e-9) / 10).toFixed(1)}\u202f%`;
+  }
+  return formatPercent(confidence);
+}
+
 /** `50–100 %`, the range with both ends, as the EAT panel, the legend and the plot chip say it. */
 export function rangeText(state: EatReliabilityInput): string {
   const { min, max } = normalizeReliability(state);
