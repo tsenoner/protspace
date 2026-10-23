@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     overlayController?: unknown;
   },
   loadData: vi.fn(),
+  readTooltipAnnotations: vi.fn((): string[] => []),
   markLastLoadStatus: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
   persisted: {
@@ -66,7 +67,7 @@ vi.mock('./opfs-dataset-store', () => ({
 }));
 
 vi.mock('./tooltip-annotations-store', () => ({
-  readTooltipAnnotations: (): string[] => [],
+  readTooltipAnnotations: mocks.readTooltipAnnotations,
   writeTooltipAnnotations: vi.fn(),
 }));
 
@@ -113,6 +114,7 @@ beforeEach(() => {
   mocks.markLastLoadStatus.mockResolvedValue(undefined);
   // `clearAllMocks` keeps implementations, and a test may leave this returning false.
   mocks.persisted.isCurrentRequest.mockReturnValue(true);
+  mocks.readTooltipAnnotations.mockReturnValue([]);
 });
 
 afterEach(() => {
@@ -620,6 +622,26 @@ describe('handleDataLoaded: curated default view', () => {
 
     expect(viewController.setDatasetDefaults).toHaveBeenCalledWith(null);
     expect(viewController.recordRequestedView).not.toHaveBeenCalled();
+  });
+
+  it.each(['menu', 'url', 'startup'] as const)(
+    'a %s example load ignores the tooltip saved for it and keeps the curated one',
+    async (source) => {
+      mocks.readTooltipAnnotations.mockReturnValue(['old']);
+      const viewController = await loadWith(exampleMeta(source));
+
+      expect(viewController.setRequestedView).not.toHaveBeenCalled();
+      expect(viewController.applyLatestViewForDatasetLoad).toHaveBeenCalled();
+    },
+  );
+
+  it('an OPFS restore with a silent URL still restores its saved tooltip', async () => {
+    mocks.readTooltipAnnotations.mockReturnValue(['old']);
+    const viewController = await loadWith({ sequence: 1, kind: 'opfs' });
+
+    expect(viewController.setRequestedView).toHaveBeenCalledWith(
+      expect.objectContaining({ requested: expect.objectContaining({ tooltip: ['old'] }) }),
+    );
   });
 
   it('a load superseded before render changes neither the defaults nor the request', async () => {
