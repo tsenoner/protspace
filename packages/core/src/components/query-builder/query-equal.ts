@@ -8,8 +8,12 @@ import { clearLeadingOpInList, isFilterGroup } from './query-types';
 import { toRange } from './query-numeric-helpers';
 import { hasConfiguredCondition } from './query-evaluate';
 
-const sameList = (a: readonly string[], b: readonly string[]): boolean =>
-  a.length === b.length && a.every((value, index) => value === b[index]);
+/** The same values in any order: a condition matches a set of values, so order is no change. */
+function sameValues(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((value) => right.has(value));
+}
 
 function sameItem(a: FilterQueryItem, b: FilterQueryItem): boolean {
   if (a === b) return true;
@@ -18,19 +22,20 @@ function sameItem(a: FilterQueryItem, b: FilterQueryItem): boolean {
   const bGroup = isFilterGroup(b);
   if (aGroup || bGroup) return aGroup && bGroup && sameQuery(a.conditions, b.conditions);
   if (a.kind !== b.kind || a.annotation !== b.annotation) return false;
-  if (a.kind === 'categorical') return sameList(a.values, (b as CategoricalCondition).values);
+  if (a.kind === 'categorical') return sameValues(a.values, (b as CategoricalCondition).values);
   const left = toRange(a);
   const right = toRange(b as NumericCondition);
   return (
     left.min === right.min &&
     left.max === right.max &&
-    sameList(left.presence ?? [], right.presence ?? [])
+    sameValues(left.presence ?? [], right.presence ?? [])
   );
 }
 
 /**
  * Whether two queries are the same tree: the same items in the same order, condition ids included
- * (an id is a row's identity in the builder, so a re-created row is a change). The filter
+ * (an id is a row's identity in the builder, so a re-created row is a change). A condition's own
+ * values and presence chips are compared as sets. The filter
  * controller compares its draft with the applied filter through this to know whether the draft is
  * dirty.
  */

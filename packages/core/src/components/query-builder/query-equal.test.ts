@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sameQuery } from './query-equal';
+import { queryChanges, sameQuery } from './query-equal';
 import type { FilterQuery } from './query-types';
 
 const organism = (values: string[], id = 'a'): FilterQuery[number] => ({
@@ -59,10 +59,25 @@ describe('sameQuery', () => {
     expect(sameQuery(grouped, [{ id: 'g', conditions: [organism(['Mouse'])] }])).toBe(false);
   });
 
-  it('treats order as meaningful', () => {
+  it('treats item order as meaningful', () => {
     expect(
       sameQuery([organism(['Human'], 'a'), length(5)], [length(5), organism(['Human'], 'a')]),
     ).toBe(false);
-    expect(sameQuery([organism(['Human', 'Mouse'])], [organism(['Mouse', 'Human'])])).toBe(false);
+  });
+
+  it('ignores the order of a condition’s values and presence chips', () => {
+    expect(sameQuery([organism(['Human', 'Mouse'])], [organism(['Mouse', 'Human'])])).toBe(true);
+    expect(sameQuery([organism(['Human', 'Human'])], [organism(['Human', 'Mouse'])])).toBe(false);
+    const withPresence = (presence: string[]) =>
+      ({ ...(length(5) as object), presence }) as FilterQuery[number];
+    expect(
+      sameQuery([withPresence(['__NA__', '__ANY__'])], [withPresence(['__ANY__', '__NA__'])]),
+    ).toBe(true);
+  });
+
+  it('counts no change after a value is unticked and ticked again', () => {
+    expect(queryChanges([organism(['Mouse', 'Human'])], [organism(['Human', 'Mouse'])]).count).toBe(
+      0,
+    );
   });
 });
