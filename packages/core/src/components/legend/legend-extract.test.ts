@@ -8,6 +8,7 @@ import { LEGEND_VALUES, NA_VALUE, LEGEND_EVENTS } from './config';
 // Import the component to register the custom element
 import './legend';
 import type { ProtspaceLegend } from './legend';
+import { LegendDataProcessor } from './legend-data-processor';
 
 type AnyLegend = HTMLElement & Record<string, unknown>;
 
@@ -53,6 +54,13 @@ describe('legend extract methods', () => {
     it('sets _pendingExtractValue to the given value', () => {
       actions(el).extractFromOther('cat1');
       expect(el._pendingExtractValue).toBe('cat1');
+    });
+
+    it('keeps a value extracted while isolated out of Other on later rebuilds', () => {
+      el.isolationMode = true;
+      el._preIsolationVisibleValues = new Set(['visible1']);
+      actions(el).extractFromOther('cat1');
+      expect([...(el._preIsolationVisibleValues as Set<string>)]).toEqual(['visible1', 'cat1']);
     });
 
     it('increments maxVisibleValues by 1', () => {
@@ -170,6 +178,38 @@ describe('legend extract methods', () => {
 
       await resolved;
       expect(el._persistenceController.saveSettings).toHaveBeenCalled();
+    });
+
+    it('moves every Other value into the visible set while a subset is isolated', () => {
+      el.isolationMode = true;
+      el._preIsolationVisibleValues = new Set(['visible1', 'visible2']);
+
+      actions(el).extractAllFromOther();
+
+      // Isolation keeps this set and fills no free slots, so the cap alone promotes nothing.
+      const visible = el._preIsolationVisibleValues as Set<string>;
+      const { otherItems: left } = LegendDataProcessor.sortAndLimitItems(
+        new Map([
+          ['visible1', 9],
+          ['visible2', 8],
+          ['cat1', 5],
+          ['cat2', 3],
+          [NA_VALUE, 2],
+        ]),
+        el.maxVisibleValues as number,
+        true,
+        'size-desc',
+        new Map(),
+        visible,
+      );
+      expect([...visible]).toEqual(['visible1', 'visible2', 'cat1', 'cat2', NA_VALUE]);
+      expect(left).toEqual([]);
+    });
+
+    it('keeps the visible set alone when not isolated', () => {
+      el._preIsolationVisibleValues = new Set(['visible1']);
+      actions(el).extractAllFromOther();
+      expect([...(el._preIsolationVisibleValues as Set<string>)]).toEqual(['visible1']);
     });
 
     it('handles empty otherItems gracefully', () => {

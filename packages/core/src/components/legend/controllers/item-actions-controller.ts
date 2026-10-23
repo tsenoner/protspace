@@ -108,6 +108,7 @@ export class ItemActionsController {
   extractFromOther(value: string): void {
     // Set pending extract value - will be used by processor to add this item to visible set
     this.host._pendingExtractValue = value;
+    this.keepVisibleWhileIsolated([value]);
 
     // Increase maxVisibleValues to accommodate the extracted item
     // This triggers updated() which calls _updateLegendItems() with pending value still set
@@ -134,6 +135,10 @@ export class ItemActionsController {
 
     this.host._otherPopover.close();
 
+    // Raising the cap alone promotes nothing while isolated: the processor then keeps the
+    // pre-isolation visible set and fills no free slots from Other.
+    this.keepVisibleWhileIsolated(this.host._otherItems.map((item) => item.value));
+
     this.host._announceStatus('Extracted all items from Other category');
     for (const item of this.host._otherItems) {
       this.host._dispatchItemAction(item.value, 'extract');
@@ -143,6 +148,19 @@ export class ItemActionsController {
     this.host.updateComplete.then(() => {
       this.host._persistenceController.saveSettings();
     });
+  }
+
+  /**
+   * While isolated, the legend's visible set is `_preIsolationVisibleValues` and isolation
+   * fills no free slots, so a value leaves Other only by joining that set — and stays out
+   * of it on later rebuilds the same way.
+   */
+  private keepVisibleWhileIsolated(values: readonly string[]): void {
+    if (!this.host.isolationMode || values.length === 0) return;
+    this.host._preIsolationVisibleValues = new Set([
+      ...this.host._preIsolationVisibleValues,
+      ...values,
+    ]);
   }
 
   mergeToOther(value: string): void {
