@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import type { VisualizationData } from '@protspace/utils';
 import { ESCAPE_ORDER, onEscapeFallback } from '../kit/layers';
 import type { ProtspaceScatterplot } from './scatter-plot';
@@ -7,6 +8,18 @@ import './scatter-plot';
 
 const VIEW_STRUCTURE: TooltipAction = { id: 'view-structure', label: 'View structure' };
 const cleanups: Array<() => void> = [];
+
+// These tests move the mouse with synthetic events, but the browser's real cursor stays wherever an
+// earlier test left it. A pinned tooltip that renders under it gets a real mouseenter, which holds
+// the pin as it should for a user, and the test reads that as a pin that never ends. Park the
+// cursor below the plot and its tooltips.
+beforeEach(async () => {
+  const park = document.createElement('div');
+  park.style.cssText = 'position: fixed; left: 0; bottom: 0; width: 4px; height: 4px';
+  document.body.append(park);
+  await userEvent.hover(park);
+  park.remove();
+});
 
 afterEach(() => {
   while (cleanups.length) cleanups.pop()!();
