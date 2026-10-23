@@ -177,6 +177,9 @@ importers:
         specifier: ^1.15.7
         version: 1.15.7
     devDependencies:
+      '@fontsource-variable/inter':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@types/d3':
         specifier: ^7.4.3
         version: 7.4.3
