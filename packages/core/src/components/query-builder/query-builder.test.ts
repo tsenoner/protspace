@@ -434,6 +434,15 @@ describe('query-builder value count bases', () => {
     ]);
   });
 
+  it('a group joined with "and" counts inside the rest of the query, not its own picks', async () => {
+    const group = createGroup({ logicalOp: 'AND', conditions: [human()] });
+    // Mouse = 1, 3, 4: the group's card counts there, so Human reads 0 rather than vanishing.
+    expect(await bases([mouse(), group])).toEqual([
+      [0, 2],
+      [1, 3, 4],
+    ]);
+  });
+
   it('"is none of" under "or" counts over the whole dataset', async () => {
     const negated = { ...mouse(), logicalOp: 'NOT' as const };
     const noneOf = createGroup({

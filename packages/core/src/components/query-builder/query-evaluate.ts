@@ -266,27 +266,30 @@ export function evaluateQueryExcluding(
 }
 
 /**
- * Return a shallow copy of the query with the item matching `id` removed.
- * Searches every depth; a group left empty goes with it.
+ * Return a shallow copy of the query with the item matching `id` removed — a condition or a whole
+ * group. Searches every depth; a group left empty goes with it.
  */
 function excludeItemById(items: FilterQueryItem[], id: string): FilterQueryItem[] {
   const result: FilterQueryItem[] = [];
   for (const item of items) {
+    if (item.id === id) continue;
     if (isFilterGroup(item)) {
       const filteredConditions = excludeItemById(item.conditions, id);
       if (filteredConditions.length > 0) {
         result.push({ ...item, conditions: filteredConditions });
       }
-    } else if (item.id !== id) {
+    } else {
       result.push(item);
     }
   }
   return result;
 }
 
-/** A categorical row with no value yet (or no annotation): it constrains nothing. */
+/** A row with no value or bound yet (or no annotation): it constrains nothing. */
 const isIncomplete = (condition: FilterCondition) =>
-  condition.kind !== 'numeric' && condition.values.length === 0;
+  condition.kind === 'numeric'
+    ? !isNumericConditionReady(condition)
+    : condition.values.length === 0;
 
 function evaluateItems(
   items: FilterQueryItem[],

@@ -351,7 +351,7 @@ describe('evaluateQuery', () => {
       expect(result).toEqual(new Set([0, 1, 2, 3, 4]));
     });
 
-    it('matches nothing when an unconfigured numeric condition is negated (symmetric with empty categorical)', () => {
+    it('skips an unconfigured numeric condition under NOT, like an empty categorical one', () => {
       const query: FilterQuery = [
         {
           id: '1',
@@ -364,7 +364,40 @@ describe('evaluateQuery', () => {
         },
       ];
       const result = evaluateQuery(query, createTestData());
-      expect(result).toEqual(new Set());
+      expect(result).toEqual(new Set([0, 1, 2, 3, 4]));
+    });
+
+    it('skips an unconfigured numeric condition joined with "or"', () => {
+      const human = {
+        id: 'h',
+        kind: 'categorical' as const,
+        annotation: 'organism',
+        values: ['Human'],
+      };
+      const empty = {
+        kind: 'numeric' as const,
+        annotation: 'length',
+        operator: 'between' as const,
+        min: null,
+        max: null,
+      };
+      const data = createTestData();
+      // Human = P1, P3. An empty numeric row must not widen that to every protein.
+      expect(evaluateQuery([human, { ...empty, id: 'n', logicalOp: 'OR' }], data)).toEqual(
+        new Set([0, 2]),
+      );
+      expect(
+        evaluateQuery(
+          [
+            { ...empty, id: 'n' },
+            { ...human, logicalOp: 'OR' },
+          ],
+          data,
+        ),
+      ).toEqual(new Set([0, 2]));
+      expect(evaluateQuery([human, { ...empty, id: 'n', logicalOp: 'AND' }], data)).toEqual(
+        new Set([0, 2]),
+      );
     });
 
     it('matches nothing for between with min > max', () => {
@@ -561,6 +594,20 @@ describe('hasConfiguredCondition', () => {
 });
 
 describe('evaluateQueryExcluding', () => {
+  it('excludes a whole group by its id', () => {
+    const data = createTestData();
+    const query: FilterQuery = [
+      { id: '1', kind: 'categorical', annotation: 'organism', values: ['Mouse'] },
+      {
+        id: 'g',
+        logicalOp: 'AND',
+        conditions: [{ id: '2', kind: 'categorical', annotation: 'organism', values: ['Human'] }],
+      },
+    ];
+    // Mouse = P2, P5; the group (Human) must not be left in.
+    expect(evaluateQueryExcluding(query, data, 'g')).toEqual(new Set([1, 4]));
+  });
+
   it('returns all indices when excluding single condition from single-condition query', () => {
     const data = createTestData();
     const query: FilterQuery = [
