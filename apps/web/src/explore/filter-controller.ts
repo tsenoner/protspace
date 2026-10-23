@@ -359,6 +359,16 @@ export function createFilterController({
       const draftWasClean = !isDirty();
       setApplied(NO_FILTER);
       if (draftWasClean) draft = seed;
+      else {
+        // A dirty draft keeps its rows, but not the reliability rows the clear took away: they
+        // only mirror the EAT slider, which goes back to the full range, and Apply would bring
+        // the cut back.
+        for (const [key, annotation] of Object.entries(snapshot?.annotations ?? {})) {
+          if (!isEatConfidenceAnnotation(annotation)) continue;
+          if (findConditionsForAnnotation(before.query, key).length === 0) continue;
+          draft = replaceConditionsForAnnotation(draft, key, null);
+        }
+      }
       mirrorToPanel();
       syncBuilder();
       onFilterCommitted?.({ before, after: applied, cause: 'clear' });

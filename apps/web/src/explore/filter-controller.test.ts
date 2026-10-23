@@ -560,6 +560,19 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
     expect(getWorkbenchStatus().unappliedFilterChanges).toBe(1);
   });
 
+  it('clear() drops the reliability row from a dirty draft, so Apply does not bring it back', () => {
+    threshold(m.controller, 'family', 0.5);
+    editQuery(m.queryBuilder, [...applied(m.controller), configured('a')]);
+
+    m.controller.clear();
+
+    expect(applied(m.controller)).toEqual([]);
+    expect(eatCondition(m.queryBuilder.query)).toBeUndefined();
+    expect(m.queryBuilder.query).toHaveLength(1);
+    expect(m.queryBuilder.query[0]).toMatchObject({ id: 'a' });
+    expect(m.queryBuilder.dirty).toBe(true);
+  });
+
   it('undo and redo of a filter step keep the reliability condition set after it', () => {
     const before = m.controller.getApplied();
     editQuery(m.queryBuilder, [configured('a')]);
