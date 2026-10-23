@@ -6,6 +6,7 @@ import {
   fileNamePart,
   formatCount,
   isSameReliability,
+  type EatOutcome,
   type EatReliabilityInput,
   type EatReliabilityState,
   type VisualizationData,
@@ -71,8 +72,6 @@ type LinesPerSource = 10 | 20 | 50;
 const DEFAULT_LINES_PER_SOURCE: LinesPerSource = 20;
 const LINES_OPTIONS: readonly LinesPerSource[] = [10, 20, 50];
 
-/** What happens to the predictions outside the range: filtered out, or faded (`dim`). */
-type EatOutcome = 'hide' | 'dim';
 const OUTCOME_OPTIONS: SegmentedOption[] = [
   { value: 'hide', label: 'Hide' },
   { value: 'dim', label: 'Fade' },
@@ -219,9 +218,12 @@ export class ProtspaceEatPanel extends LitElement {
     );
   }
 
-  /** Bundle restore: Show plus the range `threshold..100 %`, as a filter (Hide). Emits once. */
-  applyEatSettings(enabled: boolean, threshold: number): void {
-    this._outcome = 'hide';
+  /**
+   * Bundle restore: Show plus the range `threshold..100 %`, as a filter (Hide) or faded (Dim).
+   * Emits once.
+   */
+  applyEatSettings(enabled: boolean, threshold: number, outcome: EatOutcome = 'hide'): void {
+    this._outcome = outcome;
     this._eat.applySettings(enabled, threshold);
   }
 

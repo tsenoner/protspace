@@ -451,7 +451,11 @@ export function createDatasetController({
         const eatOverlayEnabled = settings.eatOverlayEnabled ?? true;
         const eatConfidenceThreshold =
           settings.eatConfidenceThreshold ?? DEFAULT_EAT_CONFIDENCE_THRESHOLD;
-        eatPanel.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);
+        eatPanel.applyEatSettings(
+          eatOverlayEnabled,
+          eatConfidenceThreshold,
+          settings.eatOutcome ?? 'hide',
+        );
       }
 
       controls.setHasFileSettings(
@@ -459,6 +463,7 @@ export function createDatasetController({
           (Object.keys(settings.legendSettings).length > 0 ||
             settings.eatOverlayEnabled !== undefined ||
             settings.eatConfidenceThreshold !== undefined ||
+            settings.eatOutcome !== undefined ||
             settings.shapeSize !== undefined),
       );
 

@@ -339,6 +339,18 @@ describe('settings-validation', () => {
     });
   });
 
+  describe('EAT outcome', () => {
+    it('keeps hide or dim and drops anything else', () => {
+      const base = { legendSettings: {}, exportOptions: {}, eatConfidenceThreshold: 0.5 };
+      expect(normalizeBundleSettings({ ...base, eatOutcome: 'dim' })?.eatOutcome).toBe('dim');
+      expect(normalizeBundleSettings({ ...base, eatOutcome: 'hide' })?.eatOutcome).toBe('hide');
+      expect(isNormalizedBundleSettings({ ...base, eatOutcome: 'fade' })).toBe(false);
+      const dropped = normalizeBundleSettings({ ...base, eatOutcome: 'fade' });
+      expect(dropped?.eatOutcome).toBeUndefined();
+      expect(dropped?.eatConfidenceThreshold).toBe(0.5);
+    });
+  });
+
   describe('dataset-level shape size', () => {
     it('keeps a positive size', () => {
       const result = normalizeBundleSettings({

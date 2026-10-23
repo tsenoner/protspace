@@ -173,9 +173,10 @@ export function createExportHandler(options: ExportHandlerOptions): void {
             exportOptions: {},
             publishState: loadPublishState() ?? undefined,
             eatOverlayEnabled: plotElement.eatOverlayEnabled,
-            // The EAT panel owns the reliability filter; a bundle stores its lower bound. Dim
-            // filters nothing, and a restore applies the threshold as Hide, so Dim stores none.
-            eatConfidenceThreshold: eatPanel.outcome === 'hide' ? eatPanel.reliabilityThreshold : 0,
+            // The EAT panel owns the reliability range; a bundle stores its lower bound and
+            // whether the range hides or fades what it leaves out.
+            eatConfidenceThreshold: eatPanel.reliabilityThreshold,
+            eatOutcome: eatPanel.outcome,
             // Only a picked size: the live one may be seeded from the current annotation, and as
             // a top-level size it would override every other one.
             shapeSize: legendElement.pickedShapeSize,

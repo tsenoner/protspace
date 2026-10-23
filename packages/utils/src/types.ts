@@ -399,6 +399,9 @@ export type LegendSettingsMap = Record<string, LegendPersistedSettings>;
 
 export type ExportOptionsMap = Record<string, PersistedExportOptions>;
 
+/** What the EAT reliability range does with a prediction outside it: hide it or fade it. */
+export type EatOutcome = 'hide' | 'dim';
+
 /**
  * Current bundle settings format.
  */
@@ -415,6 +418,11 @@ export interface BundleSettings {
    * above 0 — so an absent or `0` value means no reliability filter (#6b).
    */
   eatConfidenceThreshold?: number;
+  /**
+   * What the map does with a prediction below the threshold: `hide` filters it out (the
+   * default, and what an absent value means), `dim` fades it and filters nothing.
+   */
+  eatOutcome?: EatOutcome;
   /** The dataset-level legend shape size; per-annotation `shapeSize` is kept for old readers. */
   shapeSize?: number;
 }

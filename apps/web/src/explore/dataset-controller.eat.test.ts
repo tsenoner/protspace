@@ -81,7 +81,7 @@ describe('dataset controller EAT settings restore', () => {
     );
 
     expect(controls.resetForNewDataset).toHaveBeenCalledOnce();
-    expect(eatPanel.applyEatSettings).toHaveBeenCalledWith(false, 0.75);
+    expect(eatPanel.applyEatSettings).toHaveBeenCalledWith(false, 0.75, 'hide');
     expect(controls.setHasFileSettings).toHaveBeenLastCalledWith(true);
     expect(legendElement.setFileSettings).not.toHaveBeenCalled();
     expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
@@ -99,7 +99,21 @@ describe('dataset controller EAT settings restore', () => {
     expect(eatPanel.applyEatSettings).toHaveBeenLastCalledWith(
       true,
       DEFAULT_EAT_CONFIDENCE_THRESHOLD,
+      'hide',
     );
+
+    // A bundle saved in Fade reopens in Fade, with its range.
+    await controller.handleDataLoaded(
+      dataLoadedEvent({
+        settings: {
+          legendSettings: {},
+          exportOptions: {},
+          eatConfidenceThreshold: 0.5,
+          eatOutcome: 'dim',
+        },
+      }),
+    );
+    expect(eatPanel.applyEatSettings).toHaveBeenLastCalledWith(true, 0.5, 'dim');
   });
 
   it('applies a bundle shape size after the legend settings of a user import', async () => {

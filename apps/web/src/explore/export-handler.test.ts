@@ -126,12 +126,13 @@ describe('createExportHandler', () => {
     expect(options.settings.eatConfidenceThreshold).toBe(0.5);
   });
 
-  it('a bundle saved in Dim stores no reliability filter', async () => {
+  it('a bundle saved in Dim stores its range and that it fades', async () => {
     const { exportAs } = setup({ outcome: 'dim' });
     await exportAs({ type: 'parquet', includeLegendSettings: true });
 
     const [, , options] = bundle.exportParquetBundle.mock.calls[0];
-    expect(options.settings.eatConfidenceThreshold).toBe(0);
+    expect(options.settings.eatConfidenceThreshold).toBe(0.5);
+    expect(options.settings.eatOutcome).toBe('dim');
   });
 
   it('a null file name toasts the failure', async () => {

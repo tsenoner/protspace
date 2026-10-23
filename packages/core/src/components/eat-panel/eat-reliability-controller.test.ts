@@ -233,6 +233,15 @@ describe('EAT reliability controller: the range (#380)', () => {
     expect(panel.reliability).toEqual({ min: 0.6, max: 1 });
   });
 
+  it('restores a bundle saved in Fade as Fade, and one without an outcome as Hide', async () => {
+    const panel = await setupAt({ min: 0, max: 1 });
+    panel.applyEatSettings(true, 0.5, 'dim');
+    expect(panel.outcome).toBe('dim');
+    expect(panel.reliability).toEqual({ min: 0.5, max: 1 });
+    panel.applyEatSettings(true, 0.6);
+    expect(panel.outcome).toBe('hide');
+  });
+
   it('keeps both bounds when the switch is toggled', async () => {
     const panel = await setupAt({ min: 0, max: 0.4 });
     await toggle(panel, false);
