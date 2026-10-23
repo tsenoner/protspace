@@ -234,4 +234,14 @@ describe('interaction controller EAT provenance', () => {
     expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(2);
     expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].pairs).toHaveLength(24);
   });
+
+  it('keeps the source ring when lines per source redraws the lines', () => {
+    const { controller, plotElement } = setup(makeFanoutData());
+    expect(controller.traceProtein('source', 0, 'source', 'source')).toBe(true);
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].focusProteinId).toBe('source');
+
+    controller.setTracing({ trace: true, linesPerSource: 10 });
+    expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(2);
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].focusProteinId).toBe('source');
+  });
 });

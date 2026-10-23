@@ -172,7 +172,9 @@ export function createInteractionController({
       tracing = { ...options };
       const click = activeProvenanceClick;
       if (!options.trace) clearProvenance();
-      else if (linesChanged && click) trace(click.proteinId, click.originalIndex, click.mode);
+      else if (linesChanged && click) {
+        trace(click.proteinId, click.originalIndex, click.mode, click.focus);
+      }
     },
     handlePlotDataChange() {
       selectedProteins = plotElement.selectedProteinIds || [];
