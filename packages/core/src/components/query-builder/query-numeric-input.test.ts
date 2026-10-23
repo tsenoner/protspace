@@ -154,3 +154,62 @@ describe('query-numeric-input', () => {
     expect(removed?.presence).toEqual([]);
   });
 });
+
+describe('query-numeric-input: the slider on a log range of whole numbers', () => {
+  type SliderEl = HTMLElement & { low: number | null; high: number | null; steps: number };
+
+  // Skewed whole numbers from 1 to 10000: a log scale with 1000 positions.
+  const data = {
+    protein_ids: Array.from({ length: 10 }, (_, i) => `P${i}`),
+    annotations: { length: { kind: 'numeric', values: [] } },
+    numeric_annotation_data: {
+      length: new Float64Array([1, 1, 2, 3, 5, 8, 10, 20, 50, 10000]),
+    },
+  };
+
+  async function mountWithData(): Promise<NumericInputEl> {
+    document.body.innerHTML = '';
+    const el = document.createElement('protspace-query-numeric-input') as NumericInputEl;
+    el.condition = makeCondition({ operator: undefined });
+    el.data = data;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    return el;
+  }
+
+  const slider = (el: NumericInputEl) =>
+    el.shadowRoot!.querySelector('protspace-query-range-slider') as SliderEl;
+
+  /** Release the slider at `positions`, feeding the emitted condition back in. */
+  async function release(el: NumericInputEl, low: number, high: number) {
+    let emitted: NumericCondition | undefined;
+    el.addEventListener(
+      'numeric-changed',
+      (e) => (emitted = (e as CustomEvent<{ condition: NumericCondition }>).detail.condition),
+      { once: true },
+    );
+    slider(el).dispatchEvent(
+      new CustomEvent('range-change', { detail: { low, high }, bubbles: true, composed: true }),
+    );
+    if (emitted) el.condition = emitted;
+    await el.updateComplete;
+    return emitted;
+  }
+
+  it('keeps a released thumb where it was left rather than snapping it', async () => {
+    const el = await mountWithData();
+    expect(slider(el).steps).toBe(1000);
+    const emitted = await release(el, 60, 1000);
+    expect(emitted?.min).toBe(2);
+    expect(slider(el).low).toBe(60);
+  });
+
+  it('lets a thumb leave the low end even while its value is still the minimum', async () => {
+    const el = await mountWithData();
+    await release(el, 1, 1000);
+    expect(slider(el).low).toBe(1);
+    // The next keyboard step starts from there, not from 0 again.
+    await release(el, 2, 1000);
+    expect(slider(el).low).toBe(2);
+  });
+});

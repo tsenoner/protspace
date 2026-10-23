@@ -67,6 +67,13 @@ class ProtspaceQueryNumericInput extends LitElement {
   @state() private _maxText: string = '';
   /** The thumbs while a drag is under way, so rounding the shown value cannot nudge them. */
   @state() private _dragging: RangePositions | null = null;
+  /**
+   * Where the thumbs were last left. Rounding a position's value (to a whole number, say) and
+   * mapping it back does not give the position again, so a thumb would snap away on release, and
+   * one moved off the low end of a log range of whole numbers would jump back to 0 while the
+   * value stays the data's minimum; a value read back keeps the thumb that gave it.
+   */
+  @state() private _thumbs: RangePositions | null = null;
   /** A phone (upright or on its side): no histogram, the slider sits between the typed bounds. */
   @state() private _compact = false;
 
@@ -97,6 +104,7 @@ class ProtspaceQueryNumericInput extends LitElement {
 
   willUpdate(changed: Map<string, unknown>) {
     if (changed.has('condition') || changed.has('data')) this._countStale = true;
+    if (changed.has('data')) this._thumbs = null;
     if (!changed.has('condition')) return;
     this._dragging = null;
     const { min, max } = readRange(this.condition);
@@ -169,11 +177,22 @@ class ProtspaceQueryNumericInput extends LitElement {
 
   /** The thumbs as the typed ends show them; a thumb at its end of the track is no limit. */
   private _positions(h: NumericRange): RangePositions {
-    const min = this._parseFieldValue(this._minText);
-    const max = this._parseFieldValue(this._maxText);
+    return this._positionsOf(
+      h,
+      this._parseFieldValue(this._minText),
+      this._parseFieldValue(this._maxText),
+    );
+  }
+
+  /** The thumbs for the ends `min` and `max`: where they were left when that gives these ends. */
+  private _positionsOf(h: NumericRange, min: number | null, max: number | null): RangePositions {
+    const at = (value: number, kept: number | null | undefined) =>
+      kept != null && kept > 0 && kept < h.steps && valueAt(h, kept) === value
+        ? kept
+        : positionOf(h, value);
     return {
-      low: min === null ? 0 : positionOf(h, min),
-      high: max === null ? h.steps : positionOf(h, max),
+      low: min === null ? 0 : at(min, this._thumbs?.low),
+      high: max === null ? h.steps : at(max, this._thumbs?.high),
     };
   }
 
@@ -200,17 +219,16 @@ class ProtspaceQueryNumericInput extends LitElement {
     this._setTexts(this._endsAt(h, this._dragging ?? this._positions(h), e.detail));
     this._dragging = e.detail;
     this._countStale = true;
+    this._thumbs = e.detail;
   }
 
   private _handleRangeChange(h: NumericRange, e: CustomEvent<RangePositions>) {
     e.stopPropagation();
     // The texts follow the drag, so the ends are read against the condition, not the texts.
     const { min: from, max: to } = readRange(this.condition);
-    const before = {
-      low: from === null ? 0 : positionOf(h, from),
-      high: to === null ? h.steps : positionOf(h, to),
-    };
+    const before = this._positionsOf(h, from, to);
     const ends = this._endsAt(h, before, e.detail);
+    this._thumbs = e.detail;
     const min = ends.min === undefined ? from : ends.min;
     const max = ends.max === undefined ? to : ends.max;
     this._setTexts({ min, max });
