@@ -97,7 +97,7 @@ describe('DragController', () => {
     it('delays a drag only for touch, so a swipe over a handle scrolls the list', () => {
       controller.initialize(mockContainer);
       const sortable = controller.getInstance()!;
-      expect(sortable.option('handle')).toBe('.drag-handle');
+      expect(sortable.option('handle')).toBe('.drag-handle:not(:disabled)');
       expect(sortable.option('delay')).toBe(250);
       expect(sortable.option('delayOnTouchOnly')).toBe(true);
       // Sortable keeps 5 where it drags by touch itself (Chrome for Android, iOS); where it uses
