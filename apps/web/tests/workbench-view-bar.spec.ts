@@ -271,6 +271,8 @@ test.describe('view bar stages', () => {
     expect(filterOut).toBeLessThan(contoursOut);
     expect(await stageWhenNarrowedTo(page, filterOut)).toBe(3);
     await expect(filterButton(page)).toBeHidden();
+    // Filter's divider goes with it: no stray line between Color by and More.
+    await expect(viewBar(page).locator('.wb-view-sep')).toBeHidden();
     // Filter sits in its own group, not under the contour modes.
     await moreButton(page).click();
     await expect(

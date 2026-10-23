@@ -706,8 +706,8 @@
 
 /* ── View bar stages (Task 2.10) ──────────────────────────────────────────────
    use-view-bar-stage.ts measures the items and sets data-stage on the bar: 0 full; 1 the keys
-   hide (they stay in the accessible names); 2 Contours moves into More; 3 Filter does too. Items
-   never shrink, so a measured width is the width the stage needs. */
+   hide (they stay in the accessible names); 2 Contours moves into More; 3 Filter does too, with
+   its divider. Items never shrink, so a measured width is the width the stage needs. */
 [data-workbench='view-bar'] > * {
   flex: none;
 }
@@ -725,7 +725,7 @@
 }
 
 [data-workbench='view-bar']:is([data-stage='2'], [data-stage='3']) #myContoursMenu,
-[data-workbench='view-bar'][data-stage='3'] #myFilterButton,
+[data-workbench='view-bar'][data-stage='3'] :is(#myFilterButton, .wb-view-sep),
 [data-workbench='view-bar']:is([data-stage='0'], [data-stage='1']) .wb-more {
   display: none;
 }
