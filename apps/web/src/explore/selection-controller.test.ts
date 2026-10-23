@@ -716,6 +716,17 @@ describe('selection controller: undo history', () => {
     expect(m.history.canUndo()).toBe(false);
   });
 
+  it('a lasso over points already selected records no step', () => {
+    const m = setup();
+    fire(m.tools, 'plot-tool-change', { tool: 'lasso' });
+    fire(m.plot, 'brush-selection', { proteinIds: ['P1', 'P2'], idsUnique: true });
+    const lasso = m.history.peekUndo();
+    fire(m.plot, 'brush-selection', { proteinIds: ['P2'], idsUnique: true });
+    fire(m.plot, 'brush-selection', { proteinIds: ['P1'] });
+    expect(m.plot.selectedProteinIds).toEqual(['P1', 'P2']);
+    expect(m.history.peekUndo()).toBe(lasso);
+  });
+
   it('a search add records one step', async () => {
     const m = setup();
     fire(m.search, 'add-selection', { proteinId: 'P1' });

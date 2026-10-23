@@ -54,6 +54,10 @@ export function mergeProteinSelections(
   return merged;
 }
 
+/** The same ids in the same order. */
+const sameIds = (a: readonly string[], b: readonly string[]) =>
+  a === b || (a.length === b.length && a.every((id, i) => id === b[i]));
+
 interface SelectionControllerOptions {
   plotElement: ProtspaceScatterplot;
   plotTools: ProtspacePlotTools;
@@ -141,8 +145,9 @@ export function createSelectionController({
     } = {},
   ) => {
     // One undo step per change, recorded at commit time with the arrays as they are: every
-    // caller hands over a fresh array, and nothing mutates one afterwards.
-    if (record && ids !== selected && (ids.length > 0 || selected.length > 0)) {
+    // caller hands over a fresh array, and nothing mutates one afterwards. A fresh array with
+    // the same ids (a lasso over points already selected) changes nothing and records nothing.
+    if (record && !sameIds(ids, selected)) {
       history.record({ kind: 'selection', before: selected, after: ids });
     }
     pendingAfterLand = afterLand;
@@ -394,7 +399,7 @@ export function createSelectionController({
     selectProteins(ids, { zoom = false } = {}) {
       const next = [...ids];
       // Already selected: nothing to commit, and no empty undo step.
-      if (next.length === selected.length && next.every((id, i) => id === selected[i])) {
+      if (sameIds(next, selected)) {
         if (zoom) zoomTo(next);
         return;
       }
