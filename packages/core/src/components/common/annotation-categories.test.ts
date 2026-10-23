@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { annotationLabel } from '@protspace/utils';
 import {
   filterGroupedAnnotations,
   flattenGroupedAnnotations,
@@ -23,6 +24,14 @@ describe('annotation-categories', () => {
         'protein_families',
         'reviewed',
       ]);
+    });
+
+    it('sorts a section by the label each row shows, not by its column name', () => {
+      const result = groupAnnotations(['xref_pdb', 'cc_subcellular_location', 'ec']);
+      const uniprot = result.find((g) => g.category === 'UniProt')?.annotations ?? [];
+      const labels = uniprot.map((column) => annotationLabel(column));
+      expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
+      expect(uniprot.indexOf('ec')).toBeLessThan(uniprot.indexOf('cc_subcellular_location'));
     });
 
     it('groups Biocentral predictions under their source (not a separate Predicted group)', () => {

@@ -1,4 +1,5 @@
 import {
+  annotationLabel,
   annotationMatchesQuery,
   annotationSource,
   compareTaxonomyRank,
@@ -49,7 +50,7 @@ const CATEGORY_ORDER: CategoryName[] = [
  * keeps its own section. The "predicted" nature is orthogonal — it is surfaced as a per-row
  * sparkles mark (see {@link isPredictedAnnotation}), not by pulling predictions into a separate
  * group.
- * Within a section annotations are alphabetical, except Taxonomy, which is ordered by rank depth
+ * Within a section annotations are alphabetical by their displayed label, except Taxonomy, which is ordered by rank depth
  * (general → specific). Shared by annotation-select and query-condition-row.
  */
 export function groupAnnotations(
@@ -71,11 +72,16 @@ export function groupAnnotations(
     );
   }
 
+  // By the label the row shows, not the column behind it: "EC number" (`ec`) before
+  // "Subcellular location" (`cc_subcellular_location`). The column breaks a tie.
+  const byLabel = (a: string, b: string) =>
+    annotationLabel(a, definitions?.[a]).localeCompare(annotationLabel(b, definitions?.[b])) ||
+    a.localeCompare(b);
   for (const category of CATEGORY_ORDER) {
     if (category === 'Taxonomy') {
       categorized.Taxonomy.sort(compareTaxonomyRank);
     } else {
-      categorized[category].sort((a, b) => a.localeCompare(b));
+      categorized[category].sort(byLabel);
     }
   }
 
