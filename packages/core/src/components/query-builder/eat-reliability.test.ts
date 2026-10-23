@@ -92,15 +92,13 @@ describe('reliabilityFromConditions', () => {
     expect(reliabilityFromConditions([gt])).toEqual({ min: 0.5, max: 1 });
   });
 
-  it('does not read a negated condition as its positive form', () => {
-    // NOT(conf >= X) keeps confidences BELOW X, the opposite of the bare form.
-    const negated = createNumericCondition({
-      annotation: KEY,
-      operator: 'gte',
-      min: 0.5,
-      logicalOp: 'NOT',
-    });
-    expect(reliabilityFromConditions([negated])).toEqual({ min: 0, max: 0.5 });
+  it('does not read a negated one-sided condition as a range', () => {
+    // NOT(conf >= X) keeps confidences below X but drops the curated (N/A) proteins; the
+    // control's "0 to X" keeps them, so reading it as that range would misstate the filter.
+    for (const bound of [{ min: 0.5 }, { max: 0.5 }]) {
+      const negated = createNumericCondition({ annotation: KEY, ...bound, logicalOp: 'NOT' });
+      expect(reliabilityFromConditions([negated])).toEqual(DEFAULT_EAT_RELIABILITY);
+    }
   });
 
   it('does not read a negated band as the band itself', () => {

@@ -128,28 +128,15 @@ export function reliabilityFromConditions(
   conditions: readonly NumericCondition[],
 ): EatReliabilityState {
   for (const condition of conditions) {
-    // A negated condition inverts which side is kept, so it cannot be read as if
-    // it were the positive form.
-    const negated = condition.logicalOp === 'NOT';
+    // A negated condition cannot be read as a range of the control: NOT keeps only what has a
+    // value and misses the range, so even NOT(>= min) is "below min, without the curated N/A
+    // proteins", which the control (it keeps N/A) cannot express. Reading it as a range would
+    // show what the condition does not keep, and the next nudge would commit that reading back
+    // into the query. It is skipped, like any shape the control does not own.
+    if (condition.logicalOp === 'NOT') continue;
     const { min, max } = toRange(condition);
-
-    if (min !== null && max !== null) {
-      // A NEGATED band keeps everything OUTSIDE it, which one range cannot
-      // express — so it is skipped rather than read as its positive form. Reading it
-      // positively would show the user a band that keeps exactly what their condition
-      // hides, and the next nudge of the control would silently commit that inversion
-      // back into the query.
-      if (!negated) return normalizeReliability({ min, max });
-    } else if (min !== null) {
-      // ">= min" keeps everything above the bound; negated, everything below it.
-      return normalizeReliability(
-        negated ? { min: NEUTRAL_BOUND.min, max: min } : { min, max: NEUTRAL_BOUND.max },
-      );
-    } else if (max !== null) {
-      // "<= max" keeps everything below the bound; negated, everything above it.
-      return normalizeReliability(
-        negated ? { min: max, max: NEUTRAL_BOUND.max } : { min: NEUTRAL_BOUND.min, max },
-      );
+    if (min !== null || max !== null) {
+      return normalizeReliability({ min: min ?? NEUTRAL_BOUND.min, max: max ?? NEUTRAL_BOUND.max });
     }
   }
   return DEFAULT_EAT_RELIABILITY;
