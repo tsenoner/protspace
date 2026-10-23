@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { annotationLabel } from '@protspace/utils';
 import './legend';
 import type { ProtspaceLegend } from './legend';
-import { categoricalData, TWELVE } from './test-support/legend-fixtures';
+import { categoricalData, numericData, TWELVE } from './test-support/legend-fixtures';
 import {
   mountLegendWithScatterplot,
   settleLegend,
@@ -180,5 +180,30 @@ describe('legend keyboard reorder', () => {
     handleKey(legend, '__NA__', ' ');
     await settleLegend(legend);
     expect(status(legend)).toBe('Picked up N/A for reordering');
+  });
+
+  it('gives the N/A row of a numeric legend no grip, and keeps it out of a keyboard move', async () => {
+    const { legend } = await mountLegendWithScatterplot(
+      numericData([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, null]),
+      'length',
+    );
+    await settleLegend(legend);
+    const rows = order(legend);
+    expect(rows.at(-1)).toBe('__NA__');
+    const grip = (value: string) =>
+      legend.shadowRoot!.querySelector<HTMLButtonElement>(
+        `.legend-item[data-value="${value}"] .drag-handle`,
+      )!;
+    expect(grip('__NA__').disabled).toBe(true);
+
+    // The last bin moved down has nowhere to go: N/A stays pinned below it.
+    const lastBin = rows.at(-2)!;
+    expect(grip(lastBin).disabled).toBe(false);
+    handleKey(legend, lastBin, ' ');
+    await settleLegend(legend);
+    handleKey(legend, lastBin, 'ArrowDown');
+    await settleLegend(legend);
+    expect(order(legend)).toEqual(rows);
+    expect(JSON.stringify(legend.getAllPersistedSettings())).not.toContain('__NA__');
   });
 });

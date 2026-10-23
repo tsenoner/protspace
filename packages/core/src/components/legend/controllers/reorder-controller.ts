@@ -1,4 +1,3 @@
-import { LEGEND_VALUES } from '../config';
 import type { ProtspaceLegend } from '../legend';
 import type { LegendReorderSnapshot } from '../legend-list';
 import { numericOrderFromItems, reorderByValues } from '../legend-items-state';
@@ -93,8 +92,8 @@ export class ReorderController {
   }
 
   move(value: string, direction: -1 | 1): { moved: LegendItem; promoted: boolean } | null {
-    const orderedItems = this.host._sortedLegendItems.filter(
-      (item) => item.value !== LEGEND_VALUES.OTHER,
+    const orderedItems = this.host._sortedLegendItems.filter((item) =>
+      this.host._canDragLegendItem(item),
     );
     const currentIndex = orderedItems.findIndex((item) => item.value === value);
     if (currentIndex === -1) return null;

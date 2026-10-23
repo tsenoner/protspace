@@ -14,7 +14,7 @@ import {
 import type { AnnotationData, LegendSettingsMap } from '@protspace/utils';
 
 // Configuration and styles
-import { LEGEND_DEFAULTS, LEGEND_STYLES, LEGEND_VALUES, LEGEND_EVENTS } from './config';
+import { LEGEND_DEFAULTS, LEGEND_STYLES, LEGEND_VALUES, LEGEND_EVENTS, isNAValue } from './config';
 
 import { legendStyles } from './legend.styles';
 import '../common/info-popover';
@@ -446,8 +446,10 @@ export class ProtspaceLegend extends LitElement {
     focusFirstRow: () => this._keyboard.focusItem(0),
   });
 
-  private _canDragLegendItem(item: LegendItem): boolean {
-    return item.value !== LEGEND_VALUES.OTHER;
+  /** Other never moves, nor does a numeric legend's N/A row, pinned below its bins. */
+  _canDragLegendItem(item: LegendItem): boolean {
+    if (item.value === LEGEND_VALUES.OTHER) return false;
+    return !(isNAValue(item.value) && this._isNumericAnnotation());
   }
 
   // ─────────────────────────────────────────────────────────────────

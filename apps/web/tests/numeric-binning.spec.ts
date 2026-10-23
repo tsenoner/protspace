@@ -1068,8 +1068,14 @@ test('drag handles stay active outside manual mode and keep Other disabled', asy
   await loadDataset(page);
   await selectAnnotation(page, 'length');
   let numericHandles = await readLegendDragHandles(page);
+  const numericLegend = await readLegendDisplay(page);
   expect(numericHandles.total).toBeGreaterThan(0);
-  expect(numericHandles.enabled).toBe(numericHandles.total);
+  // A numeric legend's N/A row stays pinned below its bins.
+  expect(numericHandles.enabled).toBe(
+    numericLegend.items.some((item) => item.label === 'N/A')
+      ? numericHandles.total - 1
+      : numericHandles.total,
+  );
 
   await selectAnnotation(page, 'family');
   let categoricalHandles = await readLegendDragHandles(page);

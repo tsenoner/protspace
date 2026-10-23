@@ -87,7 +87,8 @@ export class DragController implements ReactiveController {
       ghostClass: 'legend-item-ghost',
       chosenClass: 'legend-item-chosen',
       dragClass: 'legend-item-drag',
-      handle: '.drag-handle',
+      // A disabled grip (a numeric legend's N/A row) lifts nothing.
+      handle: '.drag-handle:not(:disabled)',
       // On touch a row lifts only after the finger rests on its handle; a swipe that starts on a
       // handle moves past the threshold first, so it scrolls the list. Mouse drags start at once.
       delay: TOUCH_DRAG_DELAY_MS,
