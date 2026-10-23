@@ -54,9 +54,9 @@ export const Sidebar = memo(function Sidebar({
 });
 
 interface SidebarEdgeProps {
-  /** The width shown: the drag or key preview, else the committed width. */
+  /** The width shown: the drag or key preview, else the committed width, within `maxWidth`. */
   width: number;
-  /** The widest this window allows (the plot keeps 480 px), at most 480. */
+  /** The widest this window shows (the plot keeps 480 px), at most 480. */
   maxWidth: number;
   onPreview(width: number | null): void;
   onCollapse(): void;
@@ -68,8 +68,10 @@ const EDGE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End']);
  * The sidebar's draggable left edge (design decisions 2 and 4; the WAI-ARIA window splitter). A
  * drag or an arrow key previews the width through --wb-sidebar-live-width, which moves the sidebar
  * over the plot without resizing it; the width is written once, on release or keyup, and the plot
- * resizes once. Enter collapses the sidebar. Rendered by the workbench before the aside, as its
- * sibling: it is the sidebar's first Tab stop and paints above the structure section too.
+ * resizes once. Enter collapses the sidebar. The width stored is within 240–480 only: the
+ * window's cap applies at render, so a narrow window never saves its narrow width. Rendered by the
+ * workbench before the aside, as its sibling: it is the sidebar's first Tab stop and paints above
+ * the structure section too.
  */
 export function SidebarEdge({ width, maxWidth, onPreview, onCollapse }: SidebarEdgeProps) {
   const drag = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -96,7 +98,7 @@ export function SidebarEdge({ width, maxWidth, onPreview, onCollapse }: SidebarE
     const start = drag.current;
     if (!start) return;
     // The sidebar is on the right: moving its edge left widens it.
-    preview(clampSidebarWidth(start.startWidth + start.startX - event.clientX, maxWidth));
+    preview(clampSidebarWidth(start.startWidth + start.startX - event.clientX, SIDEBAR_WIDTH.max));
   };
   const onPointerEnd = () => {
     if (!drag.current) return;
@@ -111,9 +113,9 @@ export function SidebarEdge({ width, maxWidth, onPreview, onCollapse }: SidebarE
     }
     if (!EDGE_KEYS.has(event.key)) return;
     event.preventDefault();
-    preview(
-      clampSidebarWidth(sidebarStep(event.key, event.shiftKey, pending.current ?? width), maxWidth),
-    );
+    // Steps from the width shown, which a pending width past the window's cap is not.
+    const from = Math.min(pending.current ?? width, maxWidth);
+    preview(clampSidebarWidth(sidebarStep(event.key, event.shiftKey, from), SIDEBAR_WIDTH.max));
   };
   const onKeyUp = () => {
     if (!drag.current && pending.current !== null) commit();

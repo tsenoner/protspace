@@ -80,6 +80,11 @@ export function Workbench() {
   const [sidebarWidthPreview, setSidebarWidthPreview] = useState<number | null>(null);
   // The committed width this window can give the sidebar, so the plot keeps 480 px (render only).
   const sidebarWidth = clampSidebarWidth(layout.sidebarWidth, sidebarCap);
+  // The width on screen: the preview, which the store may hold wider, within the window's cap too.
+  const sidebarShownWidth =
+    sidebarWidthPreview === null
+      ? sidebarWidth
+      : clampSidebarWidth(sidebarWidthPreview, sidebarCap);
   const phase = useSidebarTransition(
     layout.sidebarOpen,
     {
@@ -124,7 +129,7 @@ export function Workbench() {
         style={
           {
             '--wb-sidebar-width': `${sidebarWidth}px`,
-            '--wb-sidebar-live-width': `${sidebarWidthPreview ?? sidebarWidth}px`,
+            '--wb-sidebar-live-width': `${sidebarShownWidth}px`,
             '--wb-plot-right': `${plotRightInset(phase, sidebarWidth)}px`,
             '--wb-legend-fraction': String(legendFraction),
             // The column's geometry, from layout-geometry.ts so the CSS clamp and splitSidebar agree.
@@ -142,7 +147,7 @@ export function Workbench() {
         {/* Before the aside: the edge sits at the sidebar's left, so it is the sidebar's first Tab
             stop. Its z-index keeps it painted over the aside and the structure. */}
         <SidebarEdge
-          width={sidebarWidthPreview ?? sidebarWidth}
+          width={sidebarShownWidth}
           maxWidth={sidebarCap}
           onPreview={setSidebarWidthPreview}
           onCollapse={() => {

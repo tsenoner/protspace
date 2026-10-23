@@ -297,6 +297,30 @@ test('a corrupt or oversized stored layout loads safely', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('on a narrow window, resizing past the cap stores the full width, not the capped one', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1000, height: 720 });
+  await openExplore(page);
+  await edge(page).focus();
+  await page.keyboard.press('End');
+  // 1000 px shows at most 476 px, but the store keeps 480 for a wider window.
+  await expect(edge(page)).toHaveAttribute('aria-valuenow', '476');
+  await expect.poll(async () => (await readLayout(page))?.sidebarWidth).toBe(480);
+  // One step narrower starts from the width shown.
+  await page.keyboard.press('ArrowRight');
+  await expect(edge(page)).toHaveAttribute('aria-valuenow', '460');
+  await expect.poll(async () => (await readLayout(page))?.sidebarWidth).toBe(460);
+
+  await dragSidebarEdge(page, -100);
+  await expect(edge(page)).toHaveAttribute('aria-valuenow', '476');
+  expectNear((await sidebar(page).boundingBox())!.width, 476);
+  await expect.poll(async () => (await readLayout(page))?.sidebarWidth).toBe(480);
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(edge(page)).toHaveAttribute('aria-valuenow', '480');
+});
+
 test('a window resize re-renders the workbench only when the sidebar cap changes', async ({
   page,
 }) => {
