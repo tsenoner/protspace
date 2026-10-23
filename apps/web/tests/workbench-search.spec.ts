@@ -81,7 +81,9 @@ test.describe('protein search feedback', () => {
     await expect(shown.getByRole('button', { name: 'Copied' })).toBeVisible();
   });
 
-  test('a single hit moves the protein to the plot centre ±2 px', async ({ page }) => {
+  test('a single hit moves the protein to the centre of the clear plot area ±2 px', async ({
+    page,
+  }) => {
     await openExplore(page);
     const [id] = await proteinIds(page, 1);
 
@@ -101,8 +103,19 @@ test.describe('protein search feedback', () => {
       id,
     );
     expect(at).not.toBeNull();
-    expect(Math.abs(at!.x - (plot.x + plot.width / 2))).toBeLessThanOrEqual(2);
-    expect(Math.abs(at!.y - (plot.y + plot.height / 2))).toBeLessThanOrEqual(2);
+    // The zoom centres in what the plot's edge chrome (tool strip, selection bar) leaves clear.
+    const insets = await page.locator('#myPlot').evaluate(
+      (element) =>
+        (
+          element as unknown as {
+            touchTooltipInsets: { top: number; right: number; bottom: number; left: number };
+          }
+        ).touchTooltipInsets,
+    );
+    const centreX = plot.x + (insets.left + plot.width - insets.right) / 2;
+    const centreY = plot.y + (insets.top + plot.height - insets.bottom) / 2;
+    expect(Math.abs(at!.x - centreX)).toBeLessThanOrEqual(2);
+    expect(Math.abs(at!.y - centreY)).toBeLessThanOrEqual(2);
   });
 
   test('a protein the filter hides is selected, and the report says it is hidden', async ({
