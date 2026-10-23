@@ -28,6 +28,7 @@ import {
   setJoinerForAll,
   setOperator,
   ungroup,
+  ungroupChangesResult,
   type ConditionOperator,
   type Joiner,
 } from './query-operators';
@@ -577,6 +578,8 @@ export class ProtspaceQueryBuilder extends LitElement {
     const negated = this._groupTarget
       ? this._findGroup(this._groupTarget.id)?.logicalOp === 'NOT'
       : false;
+    const changesResult =
+      !negated && !!this._groupTarget && ungroupChangesResult(this.query, this._groupTarget.id);
     return html`
       <ps-menu
         label="Joiner"
@@ -608,7 +611,11 @@ export class ProtspaceQueryBuilder extends LitElement {
           this._groupMenuOpen = false;
         }}
       >
-        <ps-menu-item value="ungroup" ?disabled=${negated}>Ungroup</ps-menu-item>
+        <ps-menu-item value="ungroup" ?disabled=${negated || changesResult}
+          >Ungroup${changesResult
+            ? html`<span slot="description">would change which proteins match</span>`
+            : nothing}</ps-menu-item
+        >
       </ps-menu>
     `;
   }

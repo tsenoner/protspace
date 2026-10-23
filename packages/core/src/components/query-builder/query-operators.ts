@@ -315,8 +315,30 @@ export function groupRun(query: FilterQuery, id: string, joiner: Joiner) {
   });
 }
 
-/** The query with the group `id` replaced by its items; the first takes the group's joiner. */
+/**
+ * Ungrouping the group `id` would change which proteins match. The list is read left to right,
+ * so the group's items keep their meaning only when the group is first or every one of them is
+ * joined the way the group is: "A or (B and C)" would become "(A or B) and C".
+ */
+export function ungroupChangesResult(query: FilterQuery, id: string): boolean {
+  let changes = false;
+  editList(query, id, (items, index) => {
+    const group = items[index];
+    if (index > 0 && isFilterGroup(group)) {
+      const joiner = itemJoiner(group, index);
+      changes = group.conditions.some((item, i) => i > 0 && itemJoiner(item, i) !== joiner);
+    }
+    return items;
+  });
+  return changes;
+}
+
+/**
+ * The query with the group `id` replaced by its items; the first takes the group's joiner. A
+ * negated group, or one whose ungrouping would change the result, stays as it is.
+ */
 export function ungroup(query: FilterQuery, id: string) {
+  if (ungroupChangesResult(query, id)) return query;
   return editList(query, id, (items, index) => {
     const group = items[index];
     if (!isUserGroup(group) || group.logicalOp === 'NOT') return items;
