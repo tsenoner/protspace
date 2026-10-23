@@ -1,10 +1,12 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
+import { layOutForMouse } from '../../test-support/mouse-media';
 import type { PsMenu } from '../kit/menu';
 import type { PsTooltip } from '../kit/tooltip';
 import type { ProtspaceLegend } from './legend';
 import { LEGEND_EVENTS, LEGEND_VALUES } from './config';
+import { legendStyles } from './legend.styles';
 import { NAME_TOOLTIP_DELAY_MS } from './legend-list';
 import { TWELVE, categoricalData } from './test-support/legend-fixtures';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
@@ -19,7 +21,13 @@ beforeAll(async () => {
   adoptTheme();
   await page.viewport(1280, 800);
 });
+// Every test but the coarse-pointer one lays out for a mouse, whatever pointer the host reports.
+let leaveMouse = () => {};
+beforeEach(() => {
+  leaveMouse = layOutForMouse(legendStyles);
+});
 afterEach(() => {
+  leaveMouse();
   document.body.replaceChildren();
   localStorage.clear();
 });
@@ -333,6 +341,7 @@ describe('legend rows in a browser', () => {
   });
 
   it('under a coarse pointer rows are 40 px and the actions always show', async () => {
+    leaveMouse();
     const session = cdp();
     await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
     try {
