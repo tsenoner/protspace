@@ -26,7 +26,16 @@ export default defineConfig({
           browser: {
             enabled: true,
             headless: true,
-            provider: playwright(),
+            // Headless Chromium on Linux finds no pointing device, so (hover: hover) and
+            // (pointer: fine) fail and the rows lay out for touch. Report a mouse, as macOS does.
+            // Touch tests still switch to a coarse pointer through Emulation.setTouchEmulationEnabled.
+            provider: playwright({
+              launchOptions: {
+                args: [
+                  '--blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2',
+                ],
+              },
+            }),
             instances: [{ browser: 'chromium' }],
           },
         },
