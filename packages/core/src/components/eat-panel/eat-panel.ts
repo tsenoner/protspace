@@ -29,6 +29,7 @@ import {
   renderBreakdown,
   renderEmptyColorBy,
   renderOtherAnnotations,
+  shownLabels,
   swatchColor,
   type EatLabelSort,
 } from './eat-panel-breakdown';
@@ -288,7 +289,7 @@ export class ProtspaceEatPanel extends LitElement {
 
   /**
    * A list whose bin emptied, or whose label left the view or has no prediction left in it (a
-   * context change), closes.
+   * context change), closes; so does a label's list whose row the sort moved past the rows shown.
    */
   private _dropStaleDrill(summary: EatSummary): void {
     const drill = this._drill;
@@ -296,7 +297,8 @@ export class ProtspaceEatPanel extends LitElement {
     const stale =
       'bin' in drill
         ? !summary.bins[drill.bin]
-        : !summary.rows.some((row) => row.label === drill.label && row.kept + row.outside > 0);
+        : !summary.rows.some((row) => row.label === drill.label && row.kept + row.outside > 0) ||
+          !shownLabels(summary.rows, this._labelSort, this._showAllLabels).includes(drill.label);
     if (stale) this._drill = null;
   }
 
@@ -413,7 +415,10 @@ export class ProtspaceEatPanel extends LitElement {
             list: drill && 'label' in drill ? this._renderDrill() : nothing,
             sortMenu: this._sortMenu,
             onSortMenu: (anchor) => (this._sortMenu = anchor),
-            onSort: (sort) => (this._labelSort = sort),
+            onSort: (sort) => {
+              this._labelSort = sort;
+              this._dropStaleDrill(summary);
+            },
             onShowAll: () => (this._showAllLabels = true),
             onRow: (label) => this._toggleDrill({ label }),
           })

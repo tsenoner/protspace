@@ -48,6 +48,18 @@ const MOSTLY_PREDICTED = 'Mostly predicted';
 const byName = (a: EatLabelRow, b: EatLabelRow) => a.label.localeCompare(b.label);
 
 /** The rows in `sort` order, ties by name. A label with no prediction sorts last by reliability. */
+const shownOf = (sorted: EatLabelRow[], showAll: boolean): EatLabelRow[] =>
+  showAll ? sorted : sorted.slice(0, COLLAPSED_ROWS);
+
+/** The labels the breakdown lists, in order: the first rows of `sort` until Show all. */
+export function shownLabels(
+  rows: readonly EatLabelRow[],
+  sort: EatLabelSort,
+  showAll: boolean,
+): string[] {
+  return shownOf(sortLabelRows(rows, sort), showAll).map((row) => row.label);
+}
+
 function sortLabelRows(rows: readonly EatLabelRow[], sort: EatLabelSort): EatLabelRow[] {
   const sorted = [...rows];
   if (sort === 'name') return sorted.sort(byName);
@@ -148,7 +160,7 @@ function rowName(row: EatLabelRow, mostly: boolean): string {
 export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof nothing {
   if (view.rows.length === 0) return nothing;
   const sorted = sortLabelRows(view.rows, view.sort);
-  const shown = view.showAll ? sorted : sorted.slice(0, COLLAPSED_ROWS);
+  const shown = shownOf(sorted, view.showAll);
   // Show off greys the section, but its rows, Sort and lists keep working: not aria-disabled.
   return html`<section
     class=${view.off ? 'eat-breakdown is-off' : 'eat-breakdown'}

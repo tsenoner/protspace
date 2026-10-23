@@ -787,6 +787,22 @@ describe('protspace-eat-panel', () => {
       expect(drills(el)).toHaveLength(0);
     });
 
+    it('closes a list whose row the sort moves past the rows shown', async () => {
+      const spec = [...'ABCDEFGH'].map((label) => ({ label, curated: 1, predicted: [0.5] }));
+      const el = await mount({
+        data: labelData([...spec, { label: 'Z', curated: 0, predicted: [0.6, 0.7] }]),
+        annotation: 'cls',
+      });
+      labelRow(el, 'Z').click();
+      await el.updateComplete;
+      await sortLabels(el, 'name');
+      // Not left open off screen: Show all brings the row back closed.
+      root(el).querySelector<HTMLButtonElement>('.eat-show-all')!.click();
+      await el.updateComplete;
+      expect(labelNames(el)).toContain('Z');
+      expect(drills(el)).toHaveLength(0);
+    });
+
     it('keeps one list open; a second click or Escape closes it', async () => {
       const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
       bars(el)[10].click();
