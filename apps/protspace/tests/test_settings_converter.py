@@ -367,6 +367,7 @@ def _frontend_settings() -> dict:
         "publishState": {"title": "demo"},
         "eatOverlayEnabled": False,
         "eatConfidenceThreshold": 0.5,
+        "eatOutcome": "dim",
     }
 
 
@@ -411,6 +412,7 @@ class TestFrontendSettingsShape:
         assert result["publishState"] == {"title": "demo"}
         assert result["eatOverlayEnabled"] is False
         assert result["eatConfidenceThreshold"] == 0.5
+        assert result["eatOutcome"] == "dim"
         # UI-only fields survive because existing_settings was unwrapped.
         organism = result["legendSettings"]["organism"]
         assert organism["shapeSize"] == 24
@@ -528,6 +530,7 @@ def test_is_frontend_envelope_needs_the_nested_shape_and_a_sibling():
     assert is_frontend_envelope(
         {"legendSettings": legends, "eatConfidenceThreshold": 0.5}
     )
+    assert is_frontend_envelope({"legendSettings": legends, "eatOutcome": "dim"})
     assert not is_frontend_envelope(legends)  # the flat Python shape
     assert not is_frontend_envelope({"legendSettings": legends})  # no sibling
     # A flat map whose columns are called legendSettings and exportOptions.

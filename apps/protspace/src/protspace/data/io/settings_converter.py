@@ -90,7 +90,13 @@ LEGEND_SETTINGS_KEY = "legendSettings"
 # required field of the frontend's BundleSettings, so a genuine envelope always
 # carries at least one of these.
 _ENVELOPE_SIBLING_KEYS = frozenset(
-    {"exportOptions", "publishState", "eatOverlayEnabled", "eatConfidenceThreshold"}
+    {
+        "exportOptions",
+        "publishState",
+        "eatOverlayEnabled",
+        "eatConfidenceThreshold",
+        "eatOutcome",
+    }
 )
 
 # Keys of a single annotation's settings entry. Their presence at the top level of
@@ -145,7 +151,7 @@ def unwrap_settings(settings: dict) -> dict:
       keyed directly by annotation name.
     * The web frontend writes a **nested** envelope,
       ``{"legendSettings": {<annotation>: ...}, "exportOptions": ..., "publishState": ...,
-      "eatOverlayEnabled": ..., "eatConfidenceThreshold": ...}``.
+      "eatOverlayEnabled": ..., "eatConfidenceThreshold": ..., "eatOutcome": ...}``.
 
     The frontend reader (``normalizeBundleSettings``) already accepts both, so
     this is the Python-side half of that contract. Without it, iterating a
