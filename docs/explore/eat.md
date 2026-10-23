@@ -232,9 +232,10 @@ Below 951 px the panel is the **EAT** tab of the panel under the plot, beside **
 **Export → Bundle** with settings included stores:
 
 - whether **Show predictions** is on;
-- the **low end of the range**, when you use **Hide**.
+- the **low end of the range**;
+- whether the range uses **Hide** or **Fade**.
 
-It does not store the high end, **Fade**, the label sort, or the Display options. A bundle saved at `50–80 %` reopens at `50–100 %`, and one saved in Fade reopens with the full range. The Display options last until you reload the page; they carry over when you open another dataset.
+It does not store the high end, the label sort, or the Display options. A bundle saved at `50–80 %` reopens at `50–100 %`. The Display options last until you reload the page; they carry over when you open another dataset.
 
 ## Which Unknowns Sit Near My References?
 
