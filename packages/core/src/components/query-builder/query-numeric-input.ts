@@ -6,6 +6,7 @@ import type { ProtspaceData } from './types';
 import type { NumericCondition } from './query-types';
 import {
   countNumericMatches,
+  formatBound,
   isNumericConditionReady,
   readRange,
   writeRange,
@@ -297,7 +298,7 @@ class ProtspaceQueryNumericInput extends LitElement {
   /** A typed end: empty is no limit, so the placeholder is the data's own end. */
   private _renderField(end: 'min' | 'max', range: NumericRange | null) {
     const min = end === 'min';
-    const extent = range ? formatValue(min ? range.min : range.max) : min ? 'min' : 'max';
+    const extent = range ? formatBound(min ? range.min : range.max) : min ? 'min' : 'max';
     return html`<input
       class="numeric-field input-base"
       type="number"
@@ -342,13 +343,8 @@ class ProtspaceQueryNumericInput extends LitElement {
   }
 }
 
-/** A bound as a placeholder or the slider shows it: grouped digits, at most 3 decimals. */
-function formatValue(v: number): string {
-  return v.toLocaleString('en-US', { maximumFractionDigits: 3 });
-}
-
 function withUnit(v: number, unit: string): string {
-  return unit ? `${formatValue(v)} ${unit}` : formatValue(v);
+  return unit ? `${formatBound(v)} ${unit}` : formatBound(v);
 }
 
 declare global {

@@ -6,6 +6,7 @@ import { ANY_VALUE } from './query-types';
 import { evaluateQuery } from './query-evaluate';
 import {
   countNumericMatches,
+  formatBound,
   isNumericConditionReady,
   matchesNumericValue,
   toRange,
@@ -169,5 +170,19 @@ describe('countNumericMatches', () => {
     // P2, P3 clear the bound; P4 is null and rides in on the N/A chip.
     expect(countNumericMatches(c, data)).toBe(3);
     expect(evaluateQuery([c], data).size).toBe(3);
+  });
+});
+
+describe('formatBound', () => {
+  it('keeps a small bound from rounding to 0', () => {
+    expect(formatBound(0.0004)).toBe('0.0004');
+    expect(formatBound(-0.000123456)).toBe('-0.000123');
+    expect(formatBound(0.5)).toBe('0.5');
+  });
+
+  it('groups digits and keeps at most 3 decimals from 1 up', () => {
+    expect(formatBound(0)).toBe('0');
+    expect(formatBound(1234567)).toBe('1,234,567');
+    expect(formatBound(12.34567)).toBe('12.346');
   });
 });

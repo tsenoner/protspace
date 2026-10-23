@@ -31,7 +31,7 @@ import {
 import { icon } from '../kit/icon';
 import { queryBuilderStyles } from './query-builder.styles';
 import { displayFilterValue, renderValueChip } from './query-presence';
-import { readRange } from './query-numeric-helpers';
+import { formatBound, readRange } from './query-numeric-helpers';
 import { reliabilityFromConditions, reliabilityLabel, reliabilityWords } from './eat-reliability';
 import '../kit/button';
 import '../kit/menu';
@@ -788,10 +788,10 @@ function numericSummary(c: NumericCondition): string {
   if (min === null && max === null) return na ? `${not}keeps every protein` : `${not}has any value`;
   const words =
     min !== null && max !== null
-      ? `is between ${formatCount(min)} and ${formatCount(max)}`
+      ? `is between ${formatBound(min)} and ${formatBound(max)}`
       : min !== null
-        ? `is at least ${formatCount(min)}`
-        : `is at most ${formatCount(max as number)}`;
+        ? `is at least ${formatBound(min)}`
+        : `is at most ${formatBound(max as number)}`;
   return `${not}${words}${na ? ', or has no value' : ''}`;
 }
 

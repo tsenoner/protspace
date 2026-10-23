@@ -534,6 +534,15 @@ describe('query-condition-row names', () => {
     document.body.innerHTML = '';
   });
 
+  it('reads a small numeric bound out as it is, not rounded to 0', async () => {
+    const el = await mount();
+    el.condition = { id: 'c1', kind: 'numeric', annotation: 'length', min: 0.0001, max: 0.0004 };
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.condition-row')!.getAttribute('aria-label')).toContain(
+      'is between 0.0001 and 0.0004',
+    );
+  });
+
   it('labels the row and its operator by number and shows a remove button', async () => {
     const el = await mount();
     el.number = 2;

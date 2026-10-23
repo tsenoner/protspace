@@ -130,3 +130,15 @@ export function countNumericMatches(condition: NumericCondition, data: Protspace
   }
   return count;
 }
+
+/**
+ * A numeric bound as the card says it: grouped digits and at most 3 decimals, except below 1,
+ * where 3 significant digits keep a small bound (0.0004) from reading as 0.
+ */
+export function formatBound(value: number): string {
+  const small = value !== 0 && Math.abs(value) < 1;
+  return value.toLocaleString(
+    'en-US',
+    small ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 3 },
+  );
+}
