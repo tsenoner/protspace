@@ -113,6 +113,10 @@ export function createSelectionController({
   /** The waiting or landing commit's `afterLand`; a newer commit replaces it. */
   let pendingAfterLand: (() => void) | undefined;
 
+  /** Fit `ids` clear of the plot's edge chrome (tool strip, selection bar, status corner). */
+  const zoomTo = (ids: readonly string[]) =>
+    plotElement.zoomToProteins(ids, { insets: plotElement.touchTooltipInsets });
+
   const show = (ids: readonly string[]) => {
     selected = ids;
     // The element only reads it; `readonly` lets the compiler guard the arrays history holds.
@@ -202,7 +206,7 @@ export function createSelectionController({
       // an isolation or a hidden category keeps out of view stays selected, and the search says
       // why nothing moved.
       afterLand: () => {
-        if (!plotElement.zoomToProteins([proteinId])) proteinSearch.reportNotInView(proteinId);
+        if (!zoomTo([proteinId])) proteinSearch.reportNotInView(proteinId);
       },
     });
   };
@@ -292,7 +296,7 @@ export function createSelectionController({
     // single-protein zoom, which this one replaces.
     pendingAfterLand = undefined;
     commit.flush();
-    plotElement.zoomToProteins(selected);
+    zoomTo(selected);
   };
 
   const onCopySelection = () => {
@@ -391,10 +395,10 @@ export function createSelectionController({
       const next = [...ids];
       // Already selected: nothing to commit, and no empty undo step.
       if (next.length === selected.length && next.every((id, i) => id === selected[i])) {
-        if (zoom) plotElement.zoomToProteins(next);
+        if (zoom) zoomTo(next);
         return;
       }
-      commitSelection(next, zoom ? { afterLand: () => plotElement.zoomToProteins(next) } : {});
+      commitSelection(next, zoom ? { afterLand: () => zoomTo(next) } : {});
     },
     applyHistory,
     dispose() {

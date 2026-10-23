@@ -62,6 +62,9 @@ const click = (proteinId: string, modifierKeys?: { ctrl?: boolean; meta?: boolea
   },
 });
 
+/** The plot's edge chrome; every zoom fits the points clear of it. */
+const INSETS = { top: 0, right: 0, bottom: 90, left: 48 };
+
 function setup() {
   const plot = Object.assign(new EventTarget(), {
     selectedProteinIds: [] as string[],
@@ -72,6 +75,7 @@ function setup() {
     resetIsolation: vi.fn(),
     resetZoom: vi.fn(),
     zoomToProteins: vi.fn(() => true),
+    touchTooltipInsets: INSETS,
     getIsolationHistory: vi.fn((): string[][] => []),
     popIsolation: vi.fn(),
   });
@@ -224,7 +228,7 @@ describe('selection controller: the search box', () => {
     await afterPaint();
 
     expect(m.plot.zoomToProteins).toHaveBeenCalledOnce();
-    expect(m.plot.zoomToProteins).toHaveBeenCalledWith(['P1']);
+    expect(m.plot.zoomToProteins).toHaveBeenCalledWith(['P1'], { insets: INSETS });
     expect(m.plot.selectedProteinIds).toEqual(['P1']);
     expect(m.search.reportNotInView).not.toHaveBeenCalled();
   });
@@ -237,7 +241,7 @@ describe('selection controller: the search box', () => {
     await afterPaint();
 
     expect(m.plot.zoomToProteins).toHaveBeenCalledOnce();
-    expect(m.plot.zoomToProteins).toHaveBeenCalledWith(['P2']);
+    expect(m.plot.zoomToProteins).toHaveBeenCalledWith(['P2'], { insets: INSETS });
   });
 
   it('a false zoom reports not in view', async () => {
@@ -311,7 +315,7 @@ describe('selection controller: the selection bar and the plot tools', () => {
 
     // Landed before the zoom: the plot frames what the bar counts.
     expect(m.plot.selectedProteinIds).toEqual(['P1']);
-    expect(m.plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P1']);
+    expect(m.plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P1'], { insets: INSETS });
   });
 
   it('copy-selection writes the ids one per line and notifies success', async () => {
@@ -358,7 +362,7 @@ describe('selection controller: the selection bar and the plot tools', () => {
     m.controller.selectProteins(['P2'], { zoom: true });
     expect(m.plot.selectedProteinIds).toEqual(['P2']);
     expect(m.interaction.handleSelectionChange).toHaveBeenLastCalledWith(['P2']);
-    expect(m.plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P2']);
+    expect(m.plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P2'], { insets: INSETS });
     expect(m.history.peekUndo()).toMatchObject({ before: ['P1'], after: ['P2'] });
 
     m.controller.selectProteins(['P3', 'P4']);
@@ -377,7 +381,7 @@ describe('selection controller: the selection bar and the plot tools', () => {
     expect(m.history.peekUndo()).toBe(first);
     m.history.undo();
     expect(m.history.canUndo()).toBe(false);
-    expect(m.plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P2']);
+    expect(m.plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P2'], { insets: INSETS });
   });
 
   it('selectProteins reports nothing when the protein is out of view', () => {
