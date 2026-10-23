@@ -49,7 +49,10 @@ function countMatchingSelected(selected: Iterable<string>, q: string, cap: numbe
  * Compute capped autocomplete suggestions with an early-exit scan.
  * - Empty query + focused: current selections plus the first selectable IDs.
  * - Empty query + not focused: none.
- * - Non-empty query: IDs that (case-insensitively) start with the query.
+ * - Non-empty query: IDs that (case-insensitively) start with the query. An ID equal to the
+ *   query comes first (its own spelling over another case), because a typed query seeds the
+ *   highlight on row 0 and Enter takes it: `P0059` must not pick `P00595` listed before it.
+ *   Only an exact match the scan emits can move, so one past the budgets is not found.
  *
  * Already-selected IDs are returned marked rather than dropped, so callers can render
  * them as removable rows instead of misreporting an empty result. Selected and
@@ -68,13 +71,15 @@ export function computeSearchSuggestions(
   limit: number = MAX_SEARCH_SUGGESTIONS,
   selectedLimit: number = MAX_SELECTED_SUGGESTIONS,
 ): SearchSuggestion[] {
-  const q = query.trim().toLowerCase();
+  const typed = query.trim();
+  const q = typed.toLowerCase();
   if (!q && !isInputFocused) return [];
   const selectedSet = selectedIds instanceof Set ? selectedIds : new Set(selectedIds);
   const selectedTarget = countMatchingSelected(selectedSet, q, selectedLimit);
   const out: SearchSuggestion[] = [];
   let selectableCount = 0;
   let selectedCount = 0;
+  let exactAt = -1;
 
   for (let i = 0; i < availableIds.length; i++) {
     if (selectableCount >= limit && selectedCount >= selectedTarget) break;
@@ -87,12 +92,17 @@ export function computeSearchSuggestions(
     // no further selected entry can qualify, so a duplicate occurrence of an already-emitted
     // ID is skipped rather than rendered twice.
     if (isSelected ? selectedCount >= selectedTarget : selectableCount >= limit) continue;
-    if (q && !id.toLowerCase().startsWith(q)) continue;
+    if (q) {
+      const lower = id.toLowerCase();
+      if (!lower.startsWith(q)) continue;
+      if (lower.length === q.length && (exactAt < 0 || id === typed)) exactAt = out.length;
+    }
 
     out.push({ id, isSelected });
     if (isSelected) selectedCount++;
     else selectableCount++;
   }
 
+  if (exactAt > 0) out.unshift(...out.splice(exactAt, 1));
   return out;
 }

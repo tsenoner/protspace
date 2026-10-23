@@ -138,6 +138,21 @@ describe('computeSearchSuggestions', () => {
       ]);
     });
 
+    it('puts an exact match first, ahead of longer IDs listed before it', () => {
+      const result = computeSearchSuggestions(['P00595', 'P0059', 'P00596'], [], 'P0059', true);
+      expect(idsOf(result)).toEqual(['P0059', 'P00595', 'P00596']);
+    });
+
+    it('puts a case-insensitive exact match first, preferring the typed spelling', () => {
+      expect(idsOf(computeSearchSuggestions(['p0059x', 'p0059'], [], 'P0059', true))).toEqual([
+        'p0059',
+        'p0059x',
+      ]);
+      expect(idsOf(computeSearchSuggestions(['p0059', 'P0059'], [], 'P0059', true))[0]).toBe(
+        'P0059',
+      );
+    });
+
     it('returns an empty array when nothing prefix-matches', () => {
       const ids = ['P12345', 'Q23456'];
       expect(computeSearchSuggestions(ids, ['P12345'], 'zzz', true)).toEqual([]);

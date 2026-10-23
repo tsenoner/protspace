@@ -389,6 +389,15 @@ describe('protspace-protein-search feedback', () => {
     expect(added).toEqual(['P00595']);
   });
 
+  it('adds the exact typed ID on Enter, not a longer ID listed before it', async () => {
+    const element = await setupSearch(['P00595', 'P0059'], []);
+    await typeQuery(element, 'P0059');
+    const added = captureIds(element, 'add-selection');
+
+    press(element, 'Enter');
+    expect(added).toEqual(['P0059']);
+  });
+
   it('resolves a typed ID case-insensitively when Enter has no highlighted row', async () => {
     const element = await setupSearch(['OLD1'], []);
     await typeQuery(element, 'new1');
