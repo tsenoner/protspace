@@ -7,11 +7,16 @@ refuses (v2 broke every released client at once), and a server that still answer
 no longer in the words the package reads (a renamed prediction model leaves every
 predicted_* column empty without an error).
 
+They also catch a server that answers with the wrong model: Biocentral once returned
+ESM-2 vectors for ESM-C, with the right shape and no error, so the ESM-C check compares the
+vector itself with one computed locally from the official weights.
+
 An unreachable server is a skip, not a failure: the canary is about version drift, and an
 outage has its own status page.
 """
 
 import os
+from pathlib import Path
 
 import h5py
 import numpy as np
@@ -50,6 +55,11 @@ BACTERIORHODOPSIN = (
 )
 
 
+# Ubiquitin embedded with esmc_300m by the local backend from biohub/ESMC-300M
+# (transformers 5.21.0, torch 2.14.1, CPU, float32), mean-pooled as the package pools.
+ESMC_300M_UBIQUITIN = Path(__file__).parent / "data" / "esmc_300m_ubiquitin.npy"
+
+
 def _usable_server():
     """The client, once the live server is one it can use.
 
@@ -82,6 +92,27 @@ def test_embedding_through_the_package(tmp_path):
         for name in h5:
             assert h5[name].shape == (1024,), name
             assert np.isfinite(h5[name][:]).all(), name
+
+
+def test_esmc_is_the_official_model(tmp_path):
+    """Shape and finiteness would have passed the old bug; only the vector tells.
+
+    Measured agreement with the local backend is about 1e-7 in cosine; the old
+    wrong-model answer scored about 0.02, so 0.999 leaves room for a precision
+    change on the server without letting another model through.
+    """
+    _usable_server()
+
+    h5_path = embed_sequences(
+        {"ubiquitin": UBIQUITIN}, resolve_embedder("esmc_300m"), tmp_path / "esmc.h5"
+    )
+
+    with h5py.File(h5_path) as h5:
+        served = h5["ubiquitin"][:].astype(np.float64)
+    reference = np.load(ESMC_300M_UBIQUITIN).astype(np.float64)
+    assert served.shape == reference.shape == (960,)
+    cosine = served @ reference / np.linalg.norm(served) / np.linalg.norm(reference)
+    assert cosine > 0.999, f"Biocentral's esmc_300m vector has cosine {cosine:.4f}"
 
 
 def test_annotation_predictions_through_the_package():

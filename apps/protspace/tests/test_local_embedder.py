@@ -57,13 +57,23 @@ def test_blocked_sets_name_real_short_keys():
     Each set is pinned to the registry it constrains, not to whichever one is
     handy: COLAB_OVERSIZED is a fact about local checkpoints, so a local-only
     model added later must not have to be a Biocentral shortcut to be gated.
+
+    BIOCENTRAL_INVALID may be empty (Biocentral serves every shortcut today);
+    COLAB_OVERSIZED may not, since esm2_3b cannot load on a free runtime.
     """
+    assert local.COLAB_OVERSIZED
     for blocked, registry in (
         (local.COLAB_OVERSIZED, local.LOCAL_CHECKPOINTS),
         (biocentral.BIOCENTRAL_INVALID, ALL_SHORT_KEYS),
     ):
-        assert blocked
         assert blocked <= set(registry)
+
+
+def test_both_backends_send_the_same_esmc_checkpoints():
+    """ESM-C is the one family where both backends name the very same
+    checkpoint, which is what makes their vectors interchangeable."""
+    for key in ("esmc_300m", "esmc_600m"):
+        assert ALL_SHORT_KEYS[key] == local.resolve_local_checkpoint(key)[0]
 
 
 # ---------------------------------------------------------------------------
