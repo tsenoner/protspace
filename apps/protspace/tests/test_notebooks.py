@@ -1899,3 +1899,109 @@ def test_clickthrough_says_when_the_example_cannot_be_fetched(monkeypatch, tmp_p
     with pytest.raises(SystemExit, match="UniProt could not be reached"):
         _run_clickthrough_choose(monkeypatch, tmp_path)
     assert not (tmp_path / "example_snake_venom.fasta").exists()
+
+
+def test_preparation_names_the_custom_csv_beside_generate(monkeypatch, tmp_path):
+    """The CSV field belongs to no tab: one filled in for the FASTA example
+    applied to the Snake Toxin example unseen."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    target = namespace["input_target"]
+    assert "Custom annotations" not in target.value
+
+    namespace["csv_path_field"].value = str(tmp_path / "families.csv")
+    assert "Custom annotations from families.csv" in target.value
+
+    namespace["csv_path_field"].value = ""
+    assert "Custom annotations" not in target.value
+
+
+def test_preparation_retells_routine_package_lines(monkeypatch, tmp_path, capsys):
+    import logging
+
+    import protspace
+
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    source = _string_constants(Path(protspace.__file__).parent)
+    pinned = [*namespace["_PANEL_RETOLD"], "Missing annotations: "]
+    for text in pinned:
+        assert any(text in s for s in source), f"no longer in the package: {text!r}"
+
+    log = logging.getLogger("protspace.data.annotations.cache")
+    log.warning(
+        "Annotation cache lacks %d of %d requested identifier(s); "
+        "fetching annotations for them",
+        4456,
+        5015,
+    )
+    log.info(f"Missing annotations: {set()}")
+    log.info(f"Missing annotations: { ({'pfam'}) }")
+
+    output = capsys.readouterr().out
+    assert "INFO: Fetching annotations for 4,456 of 5,015 proteins" in output
+    assert "WARNING" not in output
+    assert "set()" not in output
+    assert "Missing annotations: {'pfam'}" in output
+
+
+def _reviewed_bundle(tmp_path, *, with_reviewed=True):
+    import types
+
+    import numpy as np
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.data.io.bundle import write_bundle
+    from tests.bundle_v3_helpers import projection_tables
+
+    columns = {
+        "protein_id": ["p0", "p1", "p2", "p3"],
+        "protein_families": ["toxin", "lectin", "", ""],
+    }
+    if with_reviewed:
+        columns["reviewed"] = ["Swiss-Prot", "Swiss-Prot", "TrEMBL", "TrEMBL"]
+    bundle = tmp_path / "data.parquetbundle"
+    write_bundle(
+        [stamp_format_version(pa.table(columns)), *projection_tables(4, (2,))], bundle
+    )
+    emb_set = types.SimpleNamespace(
+        headers=["p0", "p1", "p2", "p3"],
+        data=np.array([[1, 0], [0, 1], [0.9, 0.1], [0.1, 0.9]], dtype=np.float32),
+    )
+    return bundle, emb_set
+
+
+def test_preparation_eat_example_filters_copy_swissprot_to_trembl(
+    tmp_path, monkeypatch
+):
+    from protspace.data.io.bundle import read_tables
+
+    bundle, emb_set = _reviewed_bundle(tmp_path)
+    downloads, ns = _run_preparation_eat_cell(
+        monkeypatch,
+        bundle,
+        emb_set,
+        None,
+        before_click=lambda ns: ns["eat_example_btn"].click(),
+        eat_cutoff="off",
+    )
+
+    assert ns["eat_q_where"].value == "reviewed~TrEMBL"
+    assert ns["eat_r_where"].value == "reviewed~Swiss-Prot"
+    assert ns["eat_col"].value == "protein_families"
+    out = tmp_path / "data.eat.parquetbundle"
+    assert downloads[0] == str(out)
+    predicted = read_tables(out)[0].column("protein_families__pred_value").to_pylist()
+    assert predicted == ["", "", "toxin", "lectin"]
+
+
+def test_preparation_eat_example_filters_need_a_reviewed_column(tmp_path, monkeypatch):
+    bundle, emb_set = _reviewed_bundle(tmp_path, with_reviewed=False)
+
+    def click(ns):
+        ns["eat_example_btn"].click()
+        assert "no <code>reviewed</code> column" in ns["eat_status"].value
+        assert ns["eat_q_where"].value == ns["eat_r_where"].value == ""
+
+    _run_preparation_eat_cell(
+        monkeypatch, bundle, emb_set, None, before_click=click, eat_cutoff="off"
+    )
