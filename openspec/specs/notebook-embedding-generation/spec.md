@@ -56,7 +56,8 @@ stopping the run.
 #### Scenario: A private model without a token
 
 - **WHEN** loading a model fails with an authorization error
-- **THEN** the message says it is gated or private and to put a token in the settings
+- **THEN** the message says it is gated or private and to add the token as the Colab secret
+  `HF_TOKEN`
 
 ### Requirement: The Embeddings notebook runs on an example FASTA by default
 
