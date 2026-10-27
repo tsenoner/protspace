@@ -293,27 +293,65 @@ describe('EAT reliability controller: a band’s two handles', () => {
   });
 });
 
+const commit = (box: HTMLInputElement) => box.dispatchEvent(new Event('change'));
+
 /**
  * A number input reports an empty field as `''`, and `Number('')` is 0, not NaN. On the upper
  * bound that 0 is `confidence <= 0`, which hides every prediction: the opposite of clearing it.
  */
 describe('EAT reliability controller: percent boxes', () => {
-  it('reads an emptied upper-bound box as "no upper constraint", not as 0 %', async () => {
+  it('leaves an emptied box empty while typing, so a new value can be typed', async () => {
     const panel = await setupAt({ min: 0, max: 0.5 });
-    drag(percents(panel)[1]!, '');
-    expect(panel.reliability).toEqual({ min: 0, max: 1 });
+    const box = percents(panel)[1]!;
+    drag(box, '');
+    await panel.updateComplete;
+    expect(box.value).toBe('');
+    expect(panel.reliability).toEqual({ min: 0, max: 0.5 });
+
+    drag(box, '80');
+    commit(box);
+    await panel.updateComplete;
+    expect(panel.reliability).toEqual({ min: 0, max: 0.8 });
+    expect(box.value).toBe('80');
   });
 
-  it('reads an emptied lower-bound box as "no lower constraint"', async () => {
+  it('does not clamp a first digit below the other bound while typing', async () => {
+    const panel = await setupAt({ min: 0.3, max: 1 });
+    const box = percents(panel)[1]!;
+    drag(box, '5');
+    await panel.updateComplete;
+    expect(box.value).toBe('5');
+    drag(box, '50');
+    commit(box);
+    await panel.updateComplete;
+    expect(panel.reliability).toEqual({ min: 0.3, max: 0.5 });
+  });
+
+  it('commits an emptied upper-bound box as "no upper constraint", not as 0 %', async () => {
+    const panel = await setupAt({ min: 0, max: 0.5 });
+    const box = percents(panel)[1]!;
+    drag(box, '');
+    commit(box);
+    await panel.updateComplete;
+    expect(panel.reliability).toEqual({ min: 0, max: 1 });
+    expect(box.value).toBe('100');
+  });
+
+  it('commits an emptied lower-bound box as "no lower constraint"', async () => {
     const panel = await setupAt({ min: 0.6, max: 1 });
-    drag(percents(panel)[0]!, '');
+    const box = percents(panel)[0]!;
+    drag(box, '');
+    commit(box);
+    await panel.updateComplete;
     expect(panel.reliability).toEqual({ min: 0, max: 1 });
+    expect(box.value).toBe('0');
   });
 
-  it('pins a band box back onto the clamped bound so it cannot show an unused value', async () => {
+  it('pins a band box back onto the clamped bound on commit', async () => {
     const panel = await setupAt({ min: 0.4, max: 0.6 });
     const box = percents(panel)[0]!;
     drag(box, '95');
+    commit(box);
     await panel.updateComplete;
     expect(panel.reliability.min).toBeCloseTo(0.59, 10);
     expect(box.value).toBe('59');

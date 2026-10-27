@@ -222,27 +222,42 @@ export class EatReliabilityController implements ReactiveController {
     this.flushCommit();
   }
 
+  /**
+   * Typing in a percent box applies a value the band can take as it is, live; anything else waits
+   * for the commit (`change`: Enter or leaving the box). Rewriting the box mid-typing would fight
+   * the user: an emptied box read as its neutral bound re-rendered as "100", and a first digit
+   * below the other bound was clamped up before the second could follow.
+   */
   onPercentInput(bound: EatBound, event: Event): void {
-    const input = event.currentTarget as HTMLInputElement;
-    const raw = input.value;
-    // An emptied box reads as "no constraint on this side" — but it cannot be routed
-    // through `clampReliabilityBound`'s non-finite fallback to say so, because a number
-    // input reports an empty (or unparseable) field as `''` and `Number('')` is 0, not
-    // NaN. On the UPPER bound that 0 is `confidence <= 0`, which hides every prediction:
-    // the exact opposite of clearing the field.
-    const empty = raw.trim() === '';
-    const requested = empty ? NEUTRAL_BOUND[bound] : Number(raw) / 100;
+    const raw = (event.currentTarget as HTMLInputElement).value;
+    // A number input reports an empty or unparseable field as `''`, and `Number('')` is 0.
+    if (raw.trim() === '') return;
+    const requested = Number(raw) / 100;
     if (!Number.isFinite(requested)) return;
+    const settled = this._clampBandBound(
+      bound,
+      clampReliabilityBound(requested, NEUTRAL_BOUND[bound]),
+    );
+    if (settled !== requested) return;
+    this._setBoundLive(bound, requested);
+  }
 
-    const applied = this._setBoundLive(bound, requested);
-    // Re-pin only when a clamp actually moved the value, for the reason the slider does:
-    // a clamp that holds the state still leaves Lit's `.value` dirty-check nothing to
-    // write, so the box would keep displaying a bound the filter is not using. A box the
-    // user is still typing a valid number into is left alone, and so is an emptied one —
-    // pinning that would type the neutral bound back in under them.
-    if (empty || applied === requested) return;
-    const pinned = String(Math.round(applied * 100));
-    if (input.value !== pinned) input.value = pinned;
+  /**
+   * The box's commit: an emptied box means no constraint on that side; any value is clamped
+   * onto the band, applied at once, and the box pinned to what the filter uses.
+   */
+  onPercentChange(bound: EatBound, event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    const raw = input.value.trim();
+    const parsed = raw === '' ? NaN : Number(raw) / 100;
+    const applied = this._setBoundLive(
+      bound,
+      Number.isFinite(parsed) ? parsed : NEUTRAL_BOUND[bound],
+    );
+    // Lit's `.value` dirty-check compares against what it last wrote, not the DOM, so a
+    // commit that leaves the state as it was would leave the box showing the typed value.
+    input.value = String(Math.round(applied * 100));
+    this.flushCommit();
   }
 
   /**
@@ -363,7 +378,7 @@ export function renderReliabilityPercent(
       ?disabled=${disabled}
       aria-label=${EAT_BOUND_UI[bound].percentLabel}
       @input=${(event: Event) => ctrl.onPercentInput(bound, event)}
-      @change=${ctrl.flushCommit}
+      @change=${(event: Event) => ctrl.onPercentChange(bound, event)}
     />
   `;
 }
