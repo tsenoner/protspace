@@ -97,26 +97,28 @@ protspace stats -i emb.h5 -p project_dir -o statistics.parquet -a annotations.pa
 protspace bundle -p project_dir -a annotations.parquet -s statistics.parquet --settings styles.json -o out.parquetbundle
 ```
 
-### Supported Embedders (via Biocentral API)
+### Supported Embedders
 
-| Shortcut | Model | Dim | License |
-|----------|-------|-----|---------|
-| `prot_t5` | Rostlab/prot_t5_xl_uniref50 | 1024 | MIT |
-| `prost_t5` | Rostlab/ProstT5 | 1024 | MIT |
-| `esm2_8m` | facebook/esm2_t6_8M_UR50D | 320 | MIT |
-| `esm2_35m` | facebook/esm2_t12_35M_UR50D | 480 | MIT |
-| `esm2_150m` | facebook/esm2_t30_150M_UR50D | 640 | MIT |
-| `esm2_650m` | facebook/esm2_t33_650M_UR50D | 1280 | MIT |
-| `esm2_3b` | facebook/esm2_t36_3B_UR50D | 2560 | MIT |
-| `ankh_base` | ElnaggarLab/ankh-base | 768 | CC-BY-NC-SA-4.0 |
-| `ankh_large` | ElnaggarLab/ankh-large | 1536 | CC-BY-NC-SA-4.0 |
-| `ankh3_large` | ElnaggarLab/ankh3-large | 1536 | CC-BY-NC-SA-4.0 |
-| `esmc_300m` | Synthyra/ESMplusplus_small | 960 | MIT |
-| `esmc_600m` | Synthyra/ESMplusplus_large | 1152 | MIT |
+`Biocentral` is the model id the Biocentral backend sends (`ALL_SHORT_KEYS` in `biocentral.py`); `Local` is the checkpoint `--backend local` loads (`LOCAL_CHECKPOINTS` in `local.py`).
+
+| Shortcut | Biocentral | Local | Dim | License |
+|----------|------------|-------|-----|---------|
+| `prot_t5` | Rostlab/prot_t5_xl_uniref50 | Rostlab/prot_t5_xl_half_uniref50-enc | 1024 | MIT |
+| `prost_t5` | Rostlab/ProstT5 | Rostlab/ProstT5_fp16 | 1024 | MIT |
+| `esm2_8m` | facebook/esm2_t6_8M_UR50D | same | 320 | MIT |
+| `esm2_35m` | facebook/esm2_t12_35M_UR50D | same | 480 | MIT |
+| `esm2_150m` | facebook/esm2_t30_150M_UR50D | same | 640 | MIT |
+| `esm2_650m` | facebook/esm2_t33_650M_UR50D | same | 1280 | MIT |
+| `esm2_3b` | facebook/esm2_t36_3B_UR50D | same | 2560 | MIT |
+| `ankh_base` | ElnaggarLab/ankh-base | same | 768 | CC-BY-NC-SA-4.0 |
+| `ankh_large` | ElnaggarLab/ankh-large | same | 1536 | CC-BY-NC-SA-4.0 |
+| `ankh3_large` | ElnaggarLab/ankh3-large | same | 1536 | CC-BY-NC-SA-4.0 |
+| `esmc_300m` | Synthyra/ESMplusplus_small | biohub/ESMC-300M | 960 | MIT |
+| `esmc_600m` | Synthyra/ESMplusplus_large | biohub/ESMC-600M | 1152 | MIT |
 
 Only the Ankh models (`ankh_base`, `ankh_large`, `ankh3_large`) are non-commercial. ESM-C was relicensed under MIT on 2026-05-27, retroactively covering the Dec-2024 checkpoints, when it moved to the Chan Zuckerberg Biohub, and Synthyra's derivatives passed that grant through on 2026-06-02 — `esmc_600m` is no longer Cambrian Non-Commercial, so do not re-add that warning.
 
-ESM-C still goes through Synthyra's HuggingFace-compatible reimplementation of EvolutionaryScale's ESM-C (near-identical embeddings, MSE ~7.74e-10) for a purely technical reason, not a licensing one: `transformers` has no `esmc` model type (the port, huggingface/transformers#46419, is still open) and the `biohub/ESMC-*` repos ship no remote code, so loading the official weights would require the `esm` SDK, which pins `transformers<4.48.2` and Python `<3.13`. Revisit if #46419 merges; dims already match exactly (960 / 1152).
+The local backend loads ESM-C from the official `biohub/ESMC-300M` / `-600M` repos through transformers' native `esmc` model (`AutoModel` → `EsmcModel`, `AutoTokenizer`; no `trust_remote_code`, no HF login). That model first shipped in transformers 5.16.0 (huggingface/transformers#46419), which is why it is the `[local]` floor. Until then the local backend used Synthyra's ESM++ reimplementation; the switch changed no vector (measured 2026-10-27 on 451 proteins — Pla2g2 plus 624–1705 aa sequences — on transformers 5.16.0 and 5.21.0, batch 8 and 1: cosine 1.0000000, relative L2 ≤ 1.6e-6 for 300M and ≤ 2.9e-6 for 600M, float32 noise; a Synthyra-written `.h5` resumed with the new code kept its 441 vectors and embedded the 10 missing ones identically), so `.h5` files from before keep their `backend=local, model=esmc_*` stamp and resume. Synthyra's ids now only appear in the Biocentral mapping, which Biocentral itself mishandles (`BIOCENTRAL_INVALID`, see the parity note below). The Colab Embeddings notebook loads the same `biohub` repos.
 
 The user-facing copy of this licensing note lives in `docs/guide/python-cli.md` and the `prepare`/`embed` CLI help; keep the three in step.
 
@@ -323,7 +325,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_biocentral_embedder.py` | Biocentral API client, embedding flow, completeness gate (reads the .h5, not a counter), `/`-in-header rejection, producer stamping, and a local-written cache refused before any API call; shortcut resolution that survives a renamed client enum member, and the shortcut ids pinned to the ids the client lists |
 | `test_embed_completeness.py` | Shared embed contract (`data/embedding/store.py`): `expected = requested - skipped`, skip-vs-fail, skip reporting, resume-covered runs, FASTA coverage direction + identifier normalisation; producer ownership (another backend or model is refused with the remedies and the file left byte-identical, an unstamped file is adopted then owned) and residue identity (a changed sequence is outstanding again and replaces its vector + digest, an unchanged one resumes, a digest-less protein is trusted, digests read in one file open) |
 | `test_backend_switch.py` | Embedding backend switch: `embed_fasta` refuses another backend's cache and resumes its own, and returns only the requested FASTA's proteins; `resolve_default_backend` (Colab+GPU→local), `embed_fasta` local/biocentral dispatch (short key vs resolved name), `protspace embed --backend` CLI wiring + enum validation + non-positive batch_size rejection |
-| `test_local_embedder.py` | Local embedding backend: producer/digest stamping, refusing a Biocentral cache before a checkpoint loads, re-embedding a changed sequence; checkpoint resolution (12 short keys, Synthyra ESM-C), the notebook-gating sets pinned to the registry each constrains (`COLAB_OVERSIZED`→`LOCAL_CHECKPOINTS`, `BIOCENTRAL_INVALID`→`ALL_SHORT_KEYS`), per-family preprocessing/residue pooling, `/`-in-header guard, LocalEmbedConfig validation, over-length + OOM skips reported not failed, non-skip shortfall fails, a resumed run adding a new protein, esm2_8m end-to-end (slow) |
+| `test_local_embedder.py` | Local embedding backend: producer/digest stamping, refusing a Biocentral cache before a checkpoint loads, re-embedding a changed sequence; checkpoint resolution (12 short keys, official `biohub` ESM-C), ESM-C loaded with `AutoModel`/`AutoTokenizer` and no remote code (fake `transformers`, no download), the notebook-gating sets pinned to the registry each constrains (`COLAB_OVERSIZED`→`LOCAL_CHECKPOINTS`, `BIOCENTRAL_INVALID`→`ALL_SHORT_KEYS`), per-family preprocessing/residue pooling, `/`-in-header guard, LocalEmbedConfig validation, over-length + OOM skips reported not failed, non-skip shortfall fails, a resumed run adding a new protein, esm2_8m end-to-end (slow) |
 | `test_fasta.py` | FASTA parsing, edge cases, CSV annotation loading |
 | `test_custom_annotations.py` | Custom annotation files: suffix recognition (any case, `.txt`, other suffixes refused), header-sniffed delimiter, the first column as the id and reserved later columns renamed (the guide's list and the Preparation notebook's hint pinned), the parquet id rule, empty cells, CRLF/CR/mixed endings, BOM, v2 encoding of plain text, several files merged and a shared column refused, unmatched-id warning, rows aligned to the input; `prepare`, `annotate`, `stats` (CSV left untouched, `<stem>.annotations.parquet` written, a `--no-bundled` directory's annotations kept) and `bundle` with a CSV, `stats`/`bundle` keying a parquet alike, a later `protein_id`/`identifier` column through `prepare`, `annotate` and `stats` → `bundle`, `project -a`/`--stats` usage errors, embedding-option warnings on `.h5` input, and an `.h5`-only `prepare` importing no embedding backend |
 | `test_query.py` | UniProt query FASTA download: a truncated download is never published, atomic cache publication, umask-derived permissions, and a retained FASTA owned by its query text (`prepare -q A` then `-q B` in one output directory) |
@@ -396,9 +398,9 @@ Located in `notebooks/`:
 
 The two reasons it was moved out of core are **fixed upstream as of pymmseqs 1.2.0** (2026-08-11): every release through 1.1.0 shipped cp310-only wheels, so on this package's `requires-python = ">=3.12"` it always compiled from sdist, and its `ipython<9` pin upgraded Colab's pinned ipython. 1.2.0 ships `py3-none-*` wheels for macOS/manylinux/musllinux and depends only on numpy/pandas/pyyaml — all already core. **The floor is `>=1.2.0` so that is guaranteed, not incidental.** It stays an extra anyway: it is reachable through one flag, and a smaller base install is worth keeping on its own. Revisit only if `-s` stops being niche.
 
-**Local embedding (optional, `[local]` extra):** torch, transformers, sentencepiece, protobuf, einops, enabling on-device embedding via `protspace.data.embedding.local` (issue #320; alternative to the Biocentral API). Install with `pip install "protspace[local]"`.
+**Local embedding (optional, `[local]` extra):** torch, transformers (`>=5.16.0`, the first with native ESM-C), sentencepiece, protobuf, einops, enabling on-device embedding via `protspace.data.embedding.local` (issue #320; alternative to the Biocentral API). Install with `pip install "protspace[local]"`.
 
-**Local↔Biocentral parity (verified 2026-07-16):** local embeddings match the Biocentral API at **cosine ≥ 0.9999** for ProtT5, ProstT5, ESM2, Ankh, and Ankh3 (25-seq Pla2g2 cross-check; small rel-L2 is half-vs-full precision drift). **Exception — ESM-C:** local ESM-C (Synthyra ESM++) is bit-identical to native EvolutionaryScale ESM-C but **orthogonal to Biocentral's ESM-C** (cosine ~0.02). Root cause is on Biocentral's side: its engine (`biotrainer`) has no dedicated ESM-C embedder and its generic loader substring-matches `"esm"` in `ESMplusplus`, loading the ESM-C checkpoint as a vanilla ESM-2 model (wrong architecture/tokenizer) — so it never runs the real ESM-C. Do **not** mix local and Biocentral `esmc_*` embeddings in one dataset until Biocentral is fixed.
+**Local↔Biocentral parity (verified 2026-07-16):** local embeddings match the Biocentral API at **cosine ≥ 0.9999** for ProtT5, ProstT5, ESM2, Ankh, and Ankh3 (25-seq Pla2g2 cross-check; small rel-L2 is half-vs-full precision drift). **Exception — ESM-C:** local ESM-C (the official `biohub/ESMC-*` weights; Synthyra ESM++ before, with the same vectors) is the real model but **orthogonal to Biocentral's ESM-C** (cosine ~0.02). Root cause is on Biocentral's side: its engine (`biotrainer`) has no dedicated ESM-C embedder and its generic loader substring-matches `"esm"` in `ESMplusplus`, loading the ESM-C checkpoint as a vanilla ESM-2 model (wrong architecture/tokenizer) — so it never runs the real ESM-C. Do **not** mix local and Biocentral `esmc_*` embeddings in one dataset until Biocentral is fixed.
 
 **Dev:** pytest, pytest-cov, ruff
 
