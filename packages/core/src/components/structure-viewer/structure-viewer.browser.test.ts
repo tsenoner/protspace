@@ -438,4 +438,27 @@ describe('protspace-structure-viewer Mol* canvas box', () => {
       expect(box.bottom - canvas.bottom, label).toBeLessThan(2);
     }
   });
+
+  it('keeps the canvas inside the mount while Mol* has yet to resize it', async () => {
+    const viewer = await mount();
+    const root = viewer.shadowRoot!;
+    const mountEl = document.createElement('div');
+    mountEl.className = 'molstar-mount';
+    const plugin = document.createElement('div');
+    plugin.style.cssText = 'position: absolute; inset: 0';
+    // Mol* writes its canvas size inline; this one is still the size before a shrink.
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'width: 300px; height: 400px';
+    plugin.append(canvas);
+    mountEl.append(plugin);
+    root.querySelector('.viewer-content')!.append(mountEl);
+    viewer.style.height = '300px';
+    (viewer as unknown as { _snapMount(): void })._snapMount();
+
+    const box = mountEl.getBoundingClientRect();
+    const drawn = canvas.getBoundingClientRect();
+    expect(drawn.top).toBe(box.top);
+    expect(drawn.bottom).toBe(box.bottom);
+    expect(drawn.width).toBe(box.width);
+  });
 });

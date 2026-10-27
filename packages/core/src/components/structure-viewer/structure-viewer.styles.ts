@@ -232,6 +232,15 @@ const structureViewerStylesCore = css`
     position: relative;
   }
 
+  /* Mol* sizes its canvas in px a frame after the mount resizes, so a shrinking viewer showed the
+     old, taller canvas cut off at the bottom. Filling the mount, the old frame is scaled to fit
+     until Mol* redraws at the new size. */
+  .molstar-mount canvas {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain;
+  }
+
   /* Mol*'s stylesheet stays outside this shadow root, so its viewport buttons render unstyled
      under the canvas and show through while a resize clears it. Mol* 3.44 has no option for the
      camera and screenshot buttons, so the whole block goes. */
