@@ -18,7 +18,9 @@ export const plotStatusStyles = [
       max-width: calc(100% - 2 * var(--ps-space-3));
       pointer-events: none;
     }
+    /* As tall as a chip, so the row is 24 px with or without one and the count never moves. */
     .status-count {
+      line-height: 24px;
       font-size: var(--ps-text-sm);
       font-variant-numeric: tabular-nums;
       color: var(--ps-text-muted);

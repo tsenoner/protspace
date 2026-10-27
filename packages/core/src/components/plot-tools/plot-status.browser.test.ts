@@ -228,4 +228,18 @@ describe('protspace-plot-status', () => {
     expect(Math.abs(box.bottom - host.bottom - 12)).toBeLessThanOrEqual(1);
     expect(Math.round(chips(el)[0].getBoundingClientRect().height)).toBe(24);
   });
+
+  it('the count stays put when a chip appears beside it', async () => {
+    const parent = document.createElement('div');
+    parent.style.cssText = 'position: relative; width: 800px; height: 400px';
+    document.body.append(parent);
+    const el = await mount({}, parent);
+    const count = () => el.shadowRoot!.querySelector('.status-count')!.getBoundingClientRect();
+    const before = count();
+    el.hiddenCategories = 1;
+    await el.updateComplete;
+    expect(chips(el)).toHaveLength(1);
+    expect(count().top).toBe(before.top);
+    expect(count().bottom).toBe(before.bottom);
+  });
 });
