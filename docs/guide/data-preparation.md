@@ -212,6 +212,10 @@ It fills blank annotation values on your query proteins from their nearest annot
 embedding space, with a reliability score attached. Its column list fills in after each Generate
 and offers only the columns with values to copy and gaps to fill, each with its counts (for
 example _family (2,544 set / 2,491 missing)_). A run shows its steps and elapsed time like Generate.
+Not sure what to fill in? On a bundle with UniProt annotations (the Snake Toxin example mixes both),
+**Load example filters: Swiss-Prot → TrEMBL** fills in `protein_families`, the query filter
+`reviewed~TrEMBL` and the reference filter `reviewed~Swiss-Prot`, so labels are copied only from
+reviewed entries.
 
 A label is copied however far the nearest reference is, so the panel sets a **distance cutoff**,
 calibrated on the references by default (the CLI's `--max-distance auto`), and marks each query
