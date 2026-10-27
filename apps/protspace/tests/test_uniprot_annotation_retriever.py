@@ -34,9 +34,13 @@ _SEARCH_UNIPARC_PATCH = (
 
 @pytest.fixture
 def no_bulk_answers():
-    """The bulk inactive-entry search answers nothing, so every inactive
-    entry goes through the per-entry lookup these tests mock."""
-    with patch(_SEARCH_INACTIVE_PATCH, return_value={}) as search:
+    """The bulk inactive-entry requests answer nothing, so every inactive
+    entry goes through the per-entry lookups these tests mock."""
+    with (
+        patch(_SEARCH_INACTIVE_PATCH, return_value={}) as search,
+        patch(_SEARCH_UNIPARC_PATCH, return_value={}),
+        patch(_FETCH_MANY_PATCH, return_value=[]),
+    ):
         yield search
 
 
@@ -572,7 +576,9 @@ class _FakeUniProt:
     return (a merged one is redirected to its target by the single lookup,
     as UniProt's 303 does); *uniparc* maps a UniParc ID to a sequence.
     *override* maps an endpoint name to a (status, body, headers) answer, or a
-    list of them consumed one per request.
+    list of them consumed one per request, after which the table answers.
+    ``timed`` lists every request as (endpoint, time sent), on the clock
+    :meth:`on_a_fake_clock` installs (0.0 without it).
     """
 
     def __init__(self, monkeypatch, *, active, inactive=None, uniparc=None):
@@ -584,18 +590,14 @@ class _FakeUniProt:
         self.uniparc = uniparc or {}
         self.override: dict = {}
         self.release: dict[str, str] = {}
-        self.sent: list[str] = []
         self.sessions: list = []
-        # (endpoint, time sent), filled once on_a_fake_clock is called.
         self.timed: list[tuple[str, float]] = []
-        self.clock = None
+        self.clock = {"now": 0.0}
 
         def fake_get(session, url, params=None, timeout=None):
             endpoint = _endpoint(url, params)
-            self.sent.append(endpoint)
+            self.timed.append((endpoint, self.clock["now"]))
             self.sessions.append(session)
-            if self.clock is not None:
-                self.timed.append((endpoint, self.clock["now"]))
             status, body, headers = self._answer(endpoint, url, params)
             response = requests.Response()
             response.url = url
@@ -614,10 +616,16 @@ class _FakeUniProt:
         monkeypatch.setattr(requests.Session, "get", fake_get)
         monkeypatch.setattr(requests, "get", forbidden)
 
+    @property
+    def sent(self) -> list[str]:
+        return [endpoint for endpoint, _ in self.timed]
+
     def _answer(self, endpoint, url, params):
-        if endpoint in self.override:
-            answer = self.override[endpoint]
-            return answer.pop(0) if isinstance(answer, list) else answer
+        answer = self.override.get(endpoint)
+        if isinstance(answer, list) and answer:
+            return answer.pop(0)
+        if isinstance(answer, tuple):
+            return answer
         if endpoint == "accessions":
             found = [self.active[a] for a in _queried(params) if a in self.active]
             return 200, {"results": found}, {}
@@ -653,11 +661,10 @@ class _FakeUniProt:
         return 200, stub, {}
 
     def on_a_fake_clock(self, monkeypatch):
-        """Take the retry backoff out and time each request on a fake clock;
-        ``timed`` then lists (endpoint, time sent)."""
+        """Take the retry backoff out: a wait advances ``clock`` instead."""
         from protspace.data.annotations.retrievers import http_utils
 
-        clock = {"now": 0.0}
+        clock = self.clock
 
         def advance(seconds, stop=None):
             clock["now"] += seconds
@@ -674,12 +681,11 @@ class _FakeUniProt:
 
         monkeypatch.setattr(http_utils, "time", _Time)
         monkeypatch.setattr(http_utils, "_sleep", advance)
-        self.clock = clock
         return self
 
 
 def _deleted(uniparc_id: str | None = None) -> dict:
-    stub = {
+    return {
         "entryType": "Inactive",
         "inactiveReason": {
             "inactiveReasonType": "DELETED",
@@ -687,7 +693,6 @@ def _deleted(uniparc_id: str | None = None) -> dict:
         },
         "extraAttributes": {"uniParcId": uniparc_id} if uniparc_id else {},
     }
-    return stub
 
 
 def _merged(target: str) -> dict:
@@ -735,9 +740,9 @@ class TestUniProtRelease:
         assert uniprot.sent == [
             "accessions",
             "search:accession",
-            "search:upi",
             "Q88888.json",
             "search:sec_acc",
+            "search:upi",
         ]
         assert retriever.releases == {
             "2026_01",
@@ -803,20 +808,22 @@ class TestUniProtRetryAfter:
         uniprot = _FakeUniProt(
             monkeypatch,
             active={"P01308": _make_mock_record("P01308")},
-            inactive={"P99999": _deleted("UPI0000000001")},
+            inactive={
+                "P99999": _deleted("UPI0000000001"),
+                "P99998": _deleted("UPI0000000002"),
+            },
         ).on_a_fake_clock(monkeypatch)
-        # The UniParc search does not know the id, so it is looked up alone.
+        # The UniParc search knows neither id, so each is looked up alone.
         uniprot.override["UPI0000000001.json"] = (429, None, {"Retry-After": "2"})
 
-        UniProtRetriever(headers=["P01308", "P99999", "Q88888"]).fetch_annotations()
+        UniProtRetriever(headers=["P01308", "P99999", "P99998"]).fetch_annotations()
 
         assert uniprot.timed == [
             ("accessions", 0.0),
             ("search:accession", 0.0),
             ("search:upi", 0.0),
             ("UPI0000000001.json", 0.0),
-            ("Q88888.json", 2.0),
-            ("search:sec_acc", 2.0),
+            ("UPI0000000002.json", 2.0),
         ]
 
     def test_a_retry_after_on_the_bulk_search_holds_and_retries_it(self, monkeypatch):
@@ -826,18 +833,7 @@ class TestUniProtRetryAfter:
             inactive={"P99999": _deleted("UPI0000000001")},
             uniparc={"UPI0000000001": "MKV"},
         ).on_a_fake_clock(monkeypatch)
-        uniprot.override["search:accession"] = [
-            (429, None, {"Retry-After": "2"}),
-            (
-                200,
-                {
-                    "results": [
-                        {"primaryAccession": "P99999", **_deleted("UPI0000000001")}
-                    ]
-                },
-                {},
-            ),
-        ]
+        uniprot.override["search:accession"] = [(429, None, {"Retry-After": "2"})]
 
         rows = UniProtRetriever(headers=["P01308", "P99999"]).fetch_annotations()
 
@@ -897,20 +893,21 @@ class TestBulkInactiveResolution:
         assert rows["A0A001"]["protein_name"] == ""
         assert set(rows["A0A003"].values()) == {""}
 
-    def test_unsettled_accessions_are_looked_up_one_by_one(self, monkeypatch):
-        """A merge into an entry that is gone too, and an accession the
-        search does not know, take the per-entry path; nothing else does."""
+    def test_only_what_the_bulk_requests_miss_is_looked_up_alone(self, monkeypatch):
+        """An accession the search does not know is looked up alone (then by
+        secondary accession), and so is a merge target the batch endpoint does
+        not return; nothing else is."""
         uniprot = self._serve(monkeypatch)
 
-        UniProtRetriever(headers=self.HEADERS).fetch_annotations()
+        rows = {
+            r.identifier: r.annotations
+            for r in UniProtRetriever(headers=self.HEADERS).fetch_annotations()
+        }
 
         singles = [e for e in uniprot.sent if e.endswith(".json") or "sec_acc" in e]
-        assert singles == [
-            "A0A004.json",
-            "Q99999.json",
-            "A0A005.json",
-            "search:sec_acc",
-        ]
+        assert singles == ["A0A005.json", "search:sec_acc", "Q99999.json"]
+        # Merged into an entry that is gone too: deleted, like A0A005.
+        assert set(rows["A0A004"].values()) == set(rows["A0A005"].values()) == {""}
 
     @pytest.mark.parametrize(
         "failing", ["search:accession", "accessions", "search:upi"]
@@ -918,9 +915,6 @@ class TestBulkInactiveResolution:
     def test_the_bulk_path_gives_the_per_entry_values(self, monkeypatch, failing):
         """Every value and count is the same whether the bulk requests answer
         or one of them fails and its accessions go one by one."""
-        from protspace.data.annotations.retrievers import http_utils
-
-        monkeypatch.setattr(http_utils, "_sleep", lambda seconds, stop=None: False)
         self._serve(monkeypatch)
         bulk = UniProtRetriever(headers=self.HEADERS)
         expected = {r.identifier: r.annotations for r in bulk.fetch_annotations()}
@@ -930,7 +924,7 @@ class TestBulkInactiveResolution:
         # the batch fails.
         if failing == "accessions":
             batch = (200, {"results": [self.ACTIVE["P01308"]]}, {})
-            uniprot.override["accessions"] = [batch] + [(400, None, {})] * 9
+            uniprot.override["accessions"] = [batch, (400, None, {})]
         else:
             uniprot.override[failing] = (400, None, {})
         fallback = UniProtRetriever(headers=self.HEADERS)

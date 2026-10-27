@@ -7,9 +7,9 @@
 
 - [x] 2.1 Add the bulk helpers: an `accession:` search for inactive records and a `upi:` UniParc
       search with `fields=upi,sequence`, both through `paginated_get` on the fetch's session
-- [x] 2.2 Move the per-entry logic into `_resolve_one`, unchanged
-- [x] 2.3 Rewrite `_resolve_inactive_entries` as bulk first, `_resolve_one` for every unsettled
-      accession, in input order, with the same counts
+- [x] 2.2 One classification of an inactive record (`_is_active`, `_merge_target`, UniParc id)
+- [x] 2.3 Rewrite `_resolve_inactive_entries` as bulk stages, each looking up alone what it missed
+      (in input order, with the same counts)
 - [x] 2.4 Show the nested progress bar only for the per-entry fallback
 
 ## 3. Tests

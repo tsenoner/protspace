@@ -43,14 +43,16 @@ UniProt answers the same questions in bulk (checked against the live API, releas
 
 ## Decisions
 
-- **Bulk first, per entry as the fallback.** The bulk path answers what it can; every accession it
-  cannot settle goes through the unchanged per-entry code (`_resolve_one`). Unsettled means: the
-  search did not return it, a merge target the accessions fetch did not return as active, a
-  deleted entry whose UniParc id the UniParc search did not return, or any bulk request that
-  raised. This keeps every rare case (a chain of merges, a merge into an inactive entry, an
-  unknown accession, an outage of the search endpoint) on the code that handles it today.
-  Alternative: reimplement every case in bulk. Rejected: more code for cases that are rare, and
-  each reimplementation is a chance for the values to drift.
+- **Each stage in bulk, then per entry for what it missed.** One classification decides what an
+  inactive record is (active after all, merged into a target, deleted with or without a UniParc
+  id), whichever request returned it. Each stage looks up alone only what its bulk request left
+  unanswered, with the request the old code used: a record the search did not return (the
+  single-entry endpoint, then a `sec_acc:` search), a merge target the accessions fetch did not
+  return (the single-entry endpoint, which follows a chain of merges), a UniParc id the UniParc
+  search did not return (the single UniParc lookup). A failed bulk request sends its whole stage
+  down that path, with a warning. A first version kept the old per-entry code whole as the
+  fallback; review replaced it because it was a second copy of the same classification, and it
+  fetched a missed merge target's record twice.
 - **Match search records by `primaryAccession`.** The search returns the stub keyed by the
   requested accession; a record for any other accession is ignored, so a record can never be
   filed under the wrong protein.
