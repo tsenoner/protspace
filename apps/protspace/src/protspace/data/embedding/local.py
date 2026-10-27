@@ -16,12 +16,14 @@ Torch and transformers are heavy and optional — they live in the ``[local]``
 extra (``pip install "protspace[local]"``) and are imported lazily inside the
 functions that need them, so importing this module stays cheap.
 
-Checkpoint choices are deliberately aligned with the Biocentral path for output
-consistency: ESM-C maps to Synthyra's ESM++ reimplementation (same weights as
-native, MSE ~1e-9, ungated, loads via plain transformers), and ProtT5/ProstT5
-use the fp16 encoder exports (T4-friendly, embedding-equivalent). The exact
-numerical parity of local vs. Biocentral pooling is validated separately (a
-cross-check script), not asserted here.
+ESM-C loads the official ``biohub/ESMC-*`` weights through transformers'
+native ``esmc`` model (transformers >= 5.16), with no remote code. Its pooled
+vectors equal those of Synthyra's ESM++ reimplementation, which this backend
+used before transformers had the model, so ``.h5`` files from either keep the
+same ``esmc_*`` producer stamp. ProtT5/ProstT5 use the fp16 encoder exports
+(T4-friendly, embedding-equivalent). The exact numerical parity of local vs.
+Biocentral pooling is validated separately (a cross-check script), not
+asserted here.
 """
 
 import logging
@@ -55,8 +57,8 @@ LOCAL_CHECKPOINTS: dict[str, tuple[str, str]] = {
     "ankh_base": ("ElnaggarLab/ankh-base", "ankh"),
     "ankh_large": ("ElnaggarLab/ankh-large", "ankh"),
     "ankh3_large": ("ElnaggarLab/ankh3-large", "ankh"),
-    "esmc_300m": ("Synthyra/ESMplusplus_small", "esmc"),
-    "esmc_600m": ("Synthyra/ESMplusplus_large", "esmc"),
+    "esmc_300m": ("biohub/ESMC-300M", "esmc"),
+    "esmc_600m": ("biohub/ESMC-600M", "esmc"),
 }
 
 # Checkpoints too large for a free Colab runtime; embed_sequences' warning below
@@ -181,7 +183,7 @@ def setup_model(checkpoint: str, mod_type: str):
     """Load ``(model, tokenizer, device)`` for *checkpoint* / *mod_type*."""
     import torch
     from transformers import (
-        AutoModelForMaskedLM,
+        AutoModel,
         AutoTokenizer,
         EsmModel,
         T5EncoderModel,
@@ -195,9 +197,10 @@ def setup_model(checkpoint: str, mod_type: str):
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
         model = EsmModel.from_pretrained(checkpoint)
     elif mod_type == "esmc":
-        # Synthyra ESM++: custom modeling code, tokenizer attached to model.
-        model = AutoModelForMaskedLM.from_pretrained(checkpoint, trust_remote_code=True)
-        tokenizer = model.tokenizer
+        # Native transformers model (EsmcModel), no remote code. Not EsmModel:
+        # ESM-C is a different architecture from ESM-2.
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+        model = AutoModel.from_pretrained(checkpoint)
     elif mod_type == "ankh":
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
         model = T5EncoderModel.from_pretrained(checkpoint)
@@ -221,18 +224,14 @@ def _embed_batch(
     """Embed a batch of pre-processed sequences → list of per-protein vectors."""
     import torch
 
-    if mod_type == "esmc":
-        # ESM++'s custom tokenizer takes only the basic call signature.
-        inputs = tokenizer(processed, return_tensors="pt", padding=True)
-    else:
-        inputs = tokenizer(
-            processed,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=max_length + 2,  # room for the special tokens
-            add_special_tokens=True,
-        )
+    inputs = tokenizer(
+        processed,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=max_length + 2,  # room for the special tokens
+        add_special_tokens=True,
+    )
     inputs = {k: v.to(device) for k, v in inputs.items()}
 
     with torch.inference_mode():
@@ -344,8 +343,10 @@ def embed_sequences(
             pbar.close()
         finally:
             # Release GPU memory. The `del` must run in this frame (not a
-            # helper) so the caller's references drop before empty_cache;
-            # gc.collect() breaks the esmc tokenizer<->model reference cycle.
+            # helper) so the caller's references drop before empty_cache.
+            # `del` alone is not enough: a model loaded by setup_model is still
+            # held by reference cycles until gc runs (measured for ESM-C model +
+            # tokenizer and the ESM-2 model), so collect before empty_cache.
             import gc
 
             del model, tokenizer

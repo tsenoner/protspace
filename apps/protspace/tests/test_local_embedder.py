@@ -24,10 +24,14 @@ def test_resolve_prot_t5_uses_half_encoder_checkpoint():
     assert mod_type == "prot_t5"
 
 
-def test_resolve_esmc_uses_synthyra_not_native():
-    checkpoint, mod_type = local.resolve_local_checkpoint("esmc_300m")
-    assert checkpoint == "Synthyra/ESMplusplus_small"
-    assert mod_type == "esmc"
+def test_resolve_esmc_uses_official_biohub_weights():
+    # Native transformers `esmc` model, not Synthyra's ESM++ reimplementation
+    # (which the Biocentral backend still names).
+    for key, checkpoint in (
+        ("esmc_300m", "biohub/ESMC-300M"),
+        ("esmc_600m", "biohub/ESMC-600M"),
+    ):
+        assert local.resolve_local_checkpoint(key) == (checkpoint, "esmc")
 
 
 def test_resolve_covers_every_cli_short_key():
@@ -167,6 +171,51 @@ def test_embed_sequences_raises_when_all_sequences_dropped(tmp_path):
             out,
             local.LocalEmbedConfig(max_length=3),
         )
+
+
+# ---------------------------------------------------------------------------
+# setup_model (fake transformers: no download, no [local] extra needed)
+# ---------------------------------------------------------------------------
+
+
+def test_setup_model_loads_esmc_natively_without_remote_code(monkeypatch):
+    """ESM-C goes through transformers' own `esmc` model: plain AutoModel and
+    AutoTokenizer, never trust_remote_code (the Synthyra path needed it)."""
+    import sys
+    import types
+
+    pytest.importorskip("torch")
+    calls = []
+
+    class FakeModel:
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+    def loader(name, result):
+        def from_pretrained(checkpoint, **kwargs):
+            calls.append((name, checkpoint, kwargs))
+            return result
+
+        return types.SimpleNamespace(from_pretrained=from_pretrained)
+
+    fake = types.ModuleType("transformers")
+    model, tokenizer = FakeModel(), object()
+    fake.AutoModel = loader("AutoModel", model)
+    fake.AutoTokenizer = loader("AutoTokenizer", tokenizer)
+    for unused in ("EsmModel", "T5EncoderModel", "T5Tokenizer"):
+        setattr(fake, unused, loader(unused, None))
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+
+    got_model, got_tokenizer, _ = local.setup_model("biohub/ESMC-300M", "esmc")
+
+    assert (got_model, got_tokenizer) == (model, tokenizer)
+    assert sorted(calls) == [
+        ("AutoModel", "biohub/ESMC-300M", {}),
+        ("AutoTokenizer", "biohub/ESMC-300M", {}),
+    ]
 
 
 # ---------------------------------------------------------------------------
