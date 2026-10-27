@@ -276,8 +276,16 @@ def test_cells_carry_ids_when_the_format_requires_them(path: Path):
 
 
 def _install_cell(path: Path) -> str:
-    """The install cell up to its import block, which needs Colab."""
+    """The install cell up to its import block, which needs Colab. The Embeddings
+    notebook installs only for ESM3, so its helper is run with that call."""
     (source,) = [src for _, src in _code_cells(path) if "_loaded_distributions" in src]
+    if "def _run(" in source:
+        marker = "# --- end of install helper ---"
+        start, end = (
+            source.index("# --- install helper:"),
+            source.index(marker) + len(marker),
+        )
+        return source[start:end] + '\n_install(["esm"])\n'
     return source.split("# A preloaded module")[0]
 
 
@@ -1530,15 +1538,34 @@ def test_clickthrough_stamps_the_model_name():
     assert stamped, "the Embeddings notebook writes no model_name attribute"
 
 
-def _clickthrough_cell(title: str) -> str:
+def _clickthrough_main() -> str:
+    """The Embeddings notebook's one cell: settings, helpers and `_run()`."""
     (source,) = [
         src
         for _, src in _code_cells(
             NOTEBOOK_DIR / "ClickThrough_GenerateEmbeddings.ipynb"
         )
-        if src.startswith(title)
+        if "def _run(" in src
     ]
     return source
+
+
+def _clickthrough_namespace(**settings) -> dict:
+    """The cell run as the tests import it: everything defined, nothing run."""
+    namespace = {"__name__": "__notebook__"}
+    exec(compile(_clickthrough_main(), "click:embed", "exec"), namespace)
+    namespace.update(settings)
+    return namespace
+
+
+def test_clickthrough_is_one_cell_and_offers_every_model_it_maps():
+    """Settings, setup and the run live in one cell: change a setting, run it once."""
+    cells = list(_code_cells(NOTEBOOK_DIR / "ClickThrough_GenerateEmbeddings.ipynb"))
+    assert len(cells) == 2  # the cell, and the optional download-again cell
+    source = _clickthrough_main()
+    (line,) = [ln for ln in source.splitlines() if ln.startswith("model_name = ")]
+    offered = ast.literal_eval(line.split("# @param")[1].strip())
+    assert offered == list(_clickthrough_namespace()["MODEL_SHORT_KEYS"])
 
 
 @pytest.mark.parametrize(
@@ -1546,74 +1573,124 @@ def _clickthrough_cell(title: str) -> str:
     [
         ("facebook/esm2_t6_8M_UR50D", False),
         ("Rostlab/prot_t5_xl_half_uniref50-enc", False),
-        ("EvolutionaryScale/esmc-300m-2024-12", True),
+        ("biohub/ESMC-300M", False),
+        ("biohub/esm3-sm-open-v1", True),
     ],
 )
-def test_clickthrough_installs_the_esm_sdk_only_for_its_models(
-    monkeypatch, model, with_sdk
-):
-    """The `esm` SDK pins transformers < 5: installed for every model, it replaced
-    Colab's transformers 5 and huggingface_hub 1, and made transformers 4 import
-    TensorFlow and JAX, whose start-up output was the warnings users saw."""
-    import subprocess
-    import types
+def test_clickthrough_installs_the_esm_package_only_for_esm3(model, with_sdk):
+    """The `esm` package pins transformers < 5: installed for every model, it replaced
+    Colab's transformers 5 and huggingface_hub 1. ESM C now runs on transformers'
+    own port, so only ESM3 needs it."""
+    pytest.importorskip("torch")
+    namespace = _clickthrough_namespace(model_name=model)
+    installs = []
+    namespace["_install"] = installs.append
 
-    settings = _clickthrough_cell("# @title 1. Settings").replace(
-        'model_name = "Rostlab/prot_t5_xl_half_uniref50-enc"', f'model_name = "{model}"'
-    )
-    namespace = {"__name__": "__notebook__"}
-    exec(compile(settings, "click:1", "exec"), namespace)
+    class Stop(Exception):
+        pass
 
-    calls = []
+    def stop():
+        raise Stop
 
-    def pip(cmd, *_a, **_k):
-        calls.append(cmd)
-        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", pip)
-    exec(
-        compile(_clickthrough_cell("# @title 2. Install"), "click:2", "exec"), namespace
-    )
-
-    cmd = calls[-1]
-    assert ("esm" in cmd) is with_sdk
-    assert "pyfaidx" in cmd
+    namespace["_choose_fasta"] = stop
+    with pytest.raises(Stop):
+        namespace["_run"]()
+    assert installs == ([["esm"]] if with_sdk else [])
 
 
-def test_clickthrough_imports_survive_huggingface_hub_1_and_skip_tensorflow():
-    """huggingface_hub 1.x (Colab's) has no HfFolder; and TensorFlow/JAX must be
-    switched off before transformers is first imported."""
-    tree = ast.parse(_clickthrough_cell("# @title 3. Import"))
-    hub_names = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module == "huggingface_hub"
-        for alias in node.names
-    }
-    assert hub_names and "HfFolder" not in hub_names
-
+def test_clickthrough_switches_off_tensorflow_and_the_second_download():
+    """Before transformers is first imported: TensorFlow/JAX off (transformers 4.x
+    imports them), and no background safetensors conversion, which downloaded
+    ProtT5's 2.4 GB a second time."""
+    tree = ast.parse(_clickthrough_main())
     statements = list(ast.walk(tree))
     first_transformers = min(
         n.lineno
         for n in statements
-        if isinstance(n, ast.ImportFrom) and n.module == "transformers"
+        if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("transformers")
     )
-    switched_off = {
+    set_before = {
         n.args[0].value
         for n in statements
         if isinstance(n, ast.Call)
         and getattr(n.func, "attr", None) == "setdefault"
         and n.lineno < first_transformers
+    } | {
+        n.targets[0].slice.value
+        for n in statements
+        if isinstance(n, ast.Assign)
+        and isinstance(n.targets[0], ast.Subscript)
+        and getattr(n.targets[0].value, "attr", None) == "environ"
+        and n.lineno < first_transformers
     }
-    assert {"USE_TF", "USE_FLAX", "USE_JAX"} <= switched_off
+    assert {
+        "USE_TF",
+        "USE_FLAX",
+        "USE_JAX",
+        "DISABLE_SAFETENSORS_CONVERSION",
+    } <= set_before
+    hub_names = {
+        alias.name
+        for n in statements
+        if isinstance(n, ast.ImportFrom) and n.module == "huggingface_hub"
+        for alias in n.names
+    }
+    assert hub_names and "HfFolder" not in hub_names
 
 
 def test_clickthrough_hub_imports_exist_in_the_installed_hub():
     hub = pytest.importorskip("huggingface_hub")
-    tree = ast.parse(_clickthrough_cell("# @title 3. Import"))
-    for node in ast.walk(tree):
+    for node in ast.walk(ast.parse(_clickthrough_main())):
         if isinstance(node, ast.ImportFrom) and node.module == "huggingface_hub":
             assert all(hasattr(hub, alias.name) for alias in node.names)
+
+
+def _fake_transformers(monkeypatch):
+    """A `transformers` that records what each loader was asked for."""
+    import sys
+    import types
+
+    calls = []
+
+    class Loaded:
+        def to(self, _device):
+            return self
+
+        def eval(self):
+            return self
+
+    def loader(name):
+        def from_pretrained(checkpoint, **kwargs):
+            calls.append((name, checkpoint, kwargs))
+            return Loaded()
+
+        return types.SimpleNamespace(from_pretrained=from_pretrained)
+
+    fake = types.ModuleType("transformers")
+    for name in (
+        "AutoModel",
+        "AutoTokenizer",
+        "EsmModel",
+        "T5EncoderModel",
+        "T5Tokenizer",
+    ):
+        setattr(fake, name, loader(name))
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    return calls
+
+
+def test_clickthrough_loads_the_official_esm_c_through_transformers(monkeypatch):
+    """ESM C ran through the `esm` package, gated behind a login; transformers has
+    its own port of the official MIT weights (biohub/ESMC-*) since 5.18."""
+    pytest.importorskip("torch")
+    calls = _fake_transformers(monkeypatch)
+    namespace = _clickthrough_namespace()
+
+    _model, _tokenizer, mod_type = namespace["_setup_model"]("biohub/ESMC-300M")
+
+    assert mod_type == "esmc"
+    assert ("AutoModel", "biohub/ESMC-300M", {}) in calls  # no remote code
+    assert namespace["MODEL_SHORT_KEYS"]["biohub/ESMC-300M"] == "esmc_300m"
 
 
 class _FakeBatch(dict):
@@ -1622,13 +1699,10 @@ class _FakeBatch(dict):
 
 
 def _clickthrough_functions(monkeypatch):
-    """The Functions cell with a fake 4-dim model behind setup_model."""
+    """The cell with a fake 4-dim model behind setup_model."""
     import types
 
     torch = pytest.importorskip("torch")
-    import h5py
-    import numpy as np
-    import pandas as pd
 
     def tokenizer(sequences, **_kwargs):
         longest = max(len(s) for s in sequences) + 2
@@ -1640,23 +1714,13 @@ def _clickthrough_functions(monkeypatch):
     class Model:
         device = "cpu"
 
-        def eval(self):
-            return self
-
         def __call__(self, input_ids, attention_mask):
             hidden = torch.arange(input_ids.numel() * 4, dtype=torch.float32)
             return types.SimpleNamespace(
                 last_hidden_state=hidden.reshape(*input_ids.shape, 4)
             )
 
-    namespace = {
-        "__name__": "__notebook__", "torch": torch, "h5py": h5py, "np": np, "pd": pd,
-        "tqdm": lambda *a, **k: types.SimpleNamespace(update=lambda n: None, close=lambda: None),
-    }  # fmt: skip
-    exec(
-        compile(_clickthrough_cell("# @title ### Functions"), "click:fn", "exec"),
-        namespace,
-    )
+    namespace = _clickthrough_namespace()
     namespace["setup_model"] = lambda checkpoint: (
         Model(),
         tokenizer,
@@ -1666,47 +1730,72 @@ def _clickthrough_functions(monkeypatch):
 
 
 def test_clickthrough_writes_named_embeddings_and_skips_long_sequences(
-    monkeypatch, tmp_path, capsys
+    monkeypatch, tmp_path
 ):
     import h5py
-    import pandas as pd
 
     namespace = _clickthrough_functions(monkeypatch)
-    df = pd.DataFrame(
-        {"header": ["a", "b", "long"], "sequence": ["MKV", "MKVL", "M" * 12]}
-    )
     out = tmp_path / "seqs_esm2_8m.h5"
-    namespace["create_embedding"](
-        "facebook/esm2_t6_8M_UR50D", df, output_file=str(out), max_len=10,
-        batch_size=2, model_key="esm2_8m",
+    written, too_long, oom = namespace["create_embedding"](
+        "facebook/esm2_t6_8M_UR50D", ["a", "b", "long"], ["MKV", "MKVL", "M" * 12],
+        output_file=str(out), max_len=10, batch_size=2, model_key="esm2_8m",
     )  # fmt: skip
 
+    assert (sorted(written), too_long, oom) == (["a", "b"], ["long"], [])
     with h5py.File(out) as f:
         assert sorted(f) == ["a", "b"] and f.attrs["model_name"] == "esm2_8m"
         assert f["a"].shape == (4,)
-    assert "longer than 10 residues (e.g. long)" in capsys.readouterr().out
+    # A re-run embeds only what the file lacks.
+    again = namespace["create_embedding"](
+        "x", ["a", "c"], ["MKV", "MK"], output_file=str(out), model_key="esm2_8m"
+    )
+    assert again == (["c"], [], [])
 
 
-def test_clickthrough_says_which_headers_hdf5_cannot_name(monkeypatch, tmp_path):
-    import pandas as pd
+def test_clickthrough_writes_per_residue_embeddings(monkeypatch, tmp_path):
+    import h5py
 
     namespace = _clickthrough_functions(monkeypatch)
-    df = pd.DataFrame({"header": ["sp/P1", "ok"], "sequence": ["MKV", "MKV"]})
-    with pytest.raises(SystemExit, match=r"(?s)1 FASTA header\(s\) contain '/'.*sp/P1"):
-        namespace["create_embedding"]("x", df, output_file=str(tmp_path / "x.h5"))
+    out = tmp_path / "res.h5"
+    namespace["create_embedding"](
+        "x", ["a"], ["MKVL"], emb_type="per_res", output_file=str(out)
+    )
+    with h5py.File(out) as f:
+        assert f["a"].shape == (4, 4)  # one 4-dim vector per residue
+
+
+def test_clickthrough_ids_are_accessions_and_never_hold_a_slash():
+    """'/' used to stop the run; an HDF5 name cannot hold it, so it is replaced."""
+    namespace = _clickthrough_namespace(should_extract_uniprot_id=True)
+    ids, note = namespace["_protein_ids"](["sp|P83302|3SX1_OPHHA", "contig/7"])
+    assert ids == ["P83302", "contig_7"]
+    assert "e.g. P83302" in note and "'/' replaced" in note
+
+    namespace["should_extract_uniprot_id"] = False
+    assert namespace["_protein_ids"](["sp|P83302|X"])[0] == ["sp|P83302|X"]
+
+
+def test_clickthrough_reads_fasta_without_pyfaidx(tmp_path):
+    fasta = tmp_path / "x.fasta"
+    fasta.write_text(">sp|P1|A desc\nMKV\nLL\n\n>b\nAC\n>empty\n")
+    namespace = _clickthrough_namespace()
+    assert namespace["read_fasta"](fasta) == (
+        ["sp|P1|A", "b", "empty"],
+        ["MKVLL", "AC", ""],
+    )
 
 
 @pytest.mark.parametrize(
     ("error", "advice"),
     [
-        (OSError("401 Client Error: Unauthorized"), "it is gated"),
+        (OSError("401 Client Error: Unauthorized"), "hf_token"),
         (ConnectionError("Max retries exceeded"), "did not answer"),
-        (ImportError("No module named 'esm'"), "installs the `esm` SDK"),
+        (ImportError("No module named 'esm'"), "Restart session"),
     ],
 )
-def test_clickthrough_load_failure_says_what_to_do(monkeypatch, error, advice):
-    namespace = _clickthrough_functions(monkeypatch)
-    stop = namespace["_load_failure"]("EvolutionaryScale/esm3-sm-open-v1", error)
+def test_clickthrough_load_failure_says_what_to_do(error, advice):
+    namespace = _clickthrough_namespace()
+    stop = namespace["_load_failure"]("biohub/esm3-sm-open-v1", error)
     assert isinstance(stop, SystemExit) and advice in str(stop)
 
 
@@ -1838,11 +1927,11 @@ def _example_constants(source: str) -> dict:
 
 def test_both_notebooks_fetch_the_same_example_fasta():
     panel = _preparation_cell("# @title 2.")
-    clickthrough = _clickthrough_cell("# @title 4. Choose the FASTA")
-    assert _example_constants(panel) == _example_constants(clickthrough)
+    assert _example_constants(panel) == _example_constants(_clickthrough_main())
 
 
-def _run_clickthrough_choose(monkeypatch, tmp_path, *, path="", upload=False):
+def _clickthrough_choose(monkeypatch, tmp_path, *, path="", upload=False):
+    import sys
     import types
 
     monkeypatch.chdir(tmp_path)
@@ -1853,22 +1942,18 @@ def _run_clickthrough_choose(monkeypatch, tmp_path, *, path="", upload=False):
         (tmp_path / "mine.fasta").write_text(">a\nMKV\n")
         return {"mine.fasta": b""}
 
-    namespace = {
-        "__name__": "__notebook__", "Path": Path, "fasta_filename": path,
-        "upload_fasta": upload, "files": types.SimpleNamespace(upload=upload_file),
-    }  # fmt: skip
-    exec(
-        compile(_clickthrough_cell("# @title 4. Choose the FASTA"), "click:4", "exec"),
-        namespace,
-    )
-    return namespace, uploads
+    colab = types.ModuleType("google.colab")
+    colab.files = types.SimpleNamespace(upload=upload_file)
+    monkeypatch.setitem(sys.modules, "google.colab", colab)
+    namespace = _clickthrough_namespace(fasta_filename=path, upload_fasta=upload)
+    return namespace["_choose_fasta"](), uploads
 
 
 def test_clickthrough_runs_on_the_example_fasta_by_default(monkeypatch, tmp_path):
     calls = _fake_example_servers(monkeypatch, tmp_path)
-    namespace, uploads = _run_clickthrough_choose(monkeypatch, tmp_path)
+    (path, about), uploads = _clickthrough_choose(monkeypatch, tmp_path)
 
-    assert namespace["fasta_path"] == Path("example_snake_venom.fasta")
+    assert path == Path("example_snake_venom.fasta") and "the example" in about
     text = (tmp_path / "example_snake_venom.fasta").read_text()
     assert text.count(">") == 4 and len(calls) == 3 and not uploads
 
@@ -1878,14 +1963,13 @@ def test_clickthrough_uses_the_users_own_fasta(monkeypatch, tmp_path, how):
     calls = _fake_example_servers(monkeypatch, tmp_path)
     own = tmp_path / "own.fasta"
     own.write_text(">a\nMKV\n")
-    namespace, uploads = _run_clickthrough_choose(
+    (path, about), uploads = _clickthrough_choose(
         monkeypatch,
         tmp_path,
         path=str(own) if how == "path" else "",
         upload=how == "upload",
     )
-    expected = own if how == "path" else Path("mine.fasta")
-    assert namespace["fasta_path"] == expected
+    assert path == (own if how == "path" else Path("mine.fasta")) and about == ""
     assert calls == [] and bool(uploads) == (how == "upload")
 
 
@@ -1897,7 +1981,7 @@ def test_clickthrough_says_when_the_example_cannot_be_fetched(monkeypatch, tmp_p
 
     monkeypatch.setattr(urllib.request, "urlopen", refuse)
     with pytest.raises(SystemExit, match="UniProt could not be reached"):
-        _run_clickthrough_choose(monkeypatch, tmp_path)
+        _clickthrough_choose(monkeypatch, tmp_path)
     assert not (tmp_path / "example_snake_venom.fasta").exists()
 
 
