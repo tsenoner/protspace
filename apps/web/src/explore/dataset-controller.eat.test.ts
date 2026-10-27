@@ -81,7 +81,7 @@ describe('dataset controller EAT settings restore', () => {
     );
 
     expect(controls.resetForNewDataset).toHaveBeenCalledOnce();
-    expect(eatPanel.applyEatSettings).toHaveBeenCalledWith(false, 0.75, 'hide');
+    expect(eatPanel.applyEatSettings).toHaveBeenCalledWith(false, { min: 0.75, max: 1 }, 'hide');
     expect(controls.setHasFileSettings).toHaveBeenLastCalledWith(true);
     expect(legendElement.setFileSettings).not.toHaveBeenCalled();
     expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
@@ -98,7 +98,7 @@ describe('dataset controller EAT settings restore', () => {
     );
     expect(eatPanel.applyEatSettings).toHaveBeenLastCalledWith(
       true,
-      DEFAULT_EAT_CONFIDENCE_THRESHOLD,
+      { min: DEFAULT_EAT_CONFIDENCE_THRESHOLD, max: 1 },
       'hide',
     );
 
@@ -109,11 +109,12 @@ describe('dataset controller EAT settings restore', () => {
           legendSettings: {},
           exportOptions: {},
           eatConfidenceThreshold: 0.5,
+          eatConfidenceMax: 0.8,
           eatOutcome: 'dim',
         },
       }),
     );
-    expect(eatPanel.applyEatSettings).toHaveBeenLastCalledWith(true, 0.5, 'dim');
+    expect(eatPanel.applyEatSettings).toHaveBeenLastCalledWith(true, { min: 0.5, max: 0.8 }, 'dim');
   });
 
   it('applies a bundle shape size after the legend settings of a user import', async () => {

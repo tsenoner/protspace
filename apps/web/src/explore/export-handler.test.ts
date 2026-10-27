@@ -50,7 +50,7 @@ function setup(options: { unplaced?: number; outcome?: 'hide' | 'dim' } = {}) {
     getSelectedProteins: () => [],
     getUnplacedProteinCount: () => options.unplaced ?? 0,
     legendElement: legendElement as never,
-    eatPanel: { reliabilityThreshold: 0.5, outcome: options.outcome ?? 'hide' },
+    eatPanel: { reliability: { min: 0.5, max: 0.8 }, outcome: options.outcome ?? 'hide' },
     plotElement: plotElement as never,
     notify,
   });
@@ -132,6 +132,8 @@ describe('createExportHandler', () => {
 
     const [, , options] = bundle.exportParquetBundle.mock.calls[0];
     expect(options.settings.eatConfidenceThreshold).toBe(0.5);
+    // Both bounds: a 50–80 % band must not reopen as 50–100 %.
+    expect(options.settings.eatConfidenceMax).toBe(0.8);
     expect(options.settings.eatOutcome).toBe('dim');
   });
 

@@ -115,17 +115,15 @@ export class EatReliabilityController implements ReactiveController {
   }
 
   /**
-   * Bundle restore: the saved overlay switch plus the saved reliability position.
-   *
-   * A bundle stores the LOWER bound only, so restoring it means the range `x..100 %`: the
-   * high end goes back to 100 % rather than keeping whatever the control held, which would
-   * restore a band the bundle never saved.
+   * Bundle restore: the saved overlay switch plus the saved reliability range. Both bounds are
+   * set, never one kept from whatever the control held, which would restore a band the bundle
+   * never saved.
    */
-  applySettings(enabled: boolean, threshold: number): void {
+  applySettings(enabled: boolean, reliability: EatReliabilityInput): void {
     // A discrete apply supersedes any pending debounced threshold commit — cancel it
     // so it can't fire a stale late emit.
     this.cancelCommit();
-    this._set({ min: threshold, max: NEUTRAL_BOUND.max });
+    this._set(reliability);
     this.setOverlayEnabled(enabled);
   }
 

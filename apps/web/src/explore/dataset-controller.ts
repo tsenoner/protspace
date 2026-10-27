@@ -7,7 +7,11 @@ import type {
   DataLoader as ProtspaceDataLoader,
 } from '@protspace/core';
 import type { VisualizationData } from '@protspace/utils';
-import { DEFAULT_EAT_CONFIDENCE_THRESHOLD, generateDatasetHash } from '@protspace/utils';
+import {
+  DEFAULT_EAT_CONFIDENCE_THRESHOLD,
+  NEUTRAL_BOUND,
+  generateDatasetHash,
+} from '@protspace/utils';
 import { notify } from '../lib/notify';
 import {
   getDataLoadFailureNotification,
@@ -449,11 +453,13 @@ export function createDatasetController({
       }
       if (settings) {
         const eatOverlayEnabled = settings.eatOverlayEnabled ?? true;
-        const eatConfidenceThreshold =
-          settings.eatConfidenceThreshold ?? DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+        // A bundle written before the upper bound was saved keeps everything above its threshold.
         eatPanel.applyEatSettings(
           eatOverlayEnabled,
-          eatConfidenceThreshold,
+          {
+            min: settings.eatConfidenceThreshold ?? DEFAULT_EAT_CONFIDENCE_THRESHOLD,
+            max: settings.eatConfidenceMax ?? NEUTRAL_BOUND.max,
+          },
           settings.eatOutcome ?? 'hide',
         );
       }
@@ -463,6 +469,7 @@ export function createDatasetController({
           (Object.keys(settings.legendSettings).length > 0 ||
             settings.eatOverlayEnabled !== undefined ||
             settings.eatConfidenceThreshold !== undefined ||
+            settings.eatConfidenceMax !== undefined ||
             settings.eatOutcome !== undefined ||
             settings.shapeSize !== undefined),
       );

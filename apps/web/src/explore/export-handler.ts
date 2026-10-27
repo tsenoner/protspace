@@ -31,7 +31,7 @@ interface ExportHandlerOptions {
   getUnplacedProteinCount(): number;
   legendElement: ProtspaceLegend;
   /** The EAT panel, whose reliability filter (Hide) a bundle stores. */
-  eatPanel: Pick<ProtspaceEatPanel, 'reliabilityThreshold' | 'outcome'>;
+  eatPanel: Pick<ProtspaceEatPanel, 'reliability' | 'outcome'>;
   plotElement: ProtspaceScatterplot;
   notify: Pick<typeof appNotify, 'success' | 'error'>;
 }
@@ -173,9 +173,10 @@ export function createExportHandler(options: ExportHandlerOptions): void {
             exportOptions: {},
             publishState: loadPublishState() ?? undefined,
             eatOverlayEnabled: plotElement.eatOverlayEnabled,
-            // The EAT panel owns the reliability range; a bundle stores its lower bound and
+            // The EAT panel owns the reliability range; a bundle stores both bounds and
             // whether the range hides or fades what it leaves out.
-            eatConfidenceThreshold: eatPanel.reliabilityThreshold,
+            eatConfidenceThreshold: eatPanel.reliability.min,
+            eatConfidenceMax: eatPanel.reliability.max,
             eatOutcome: eatPanel.outcome,
             // Only a picked size: the live one may be seeded from the current annotation, and as
             // a top-level size it would override every other one.

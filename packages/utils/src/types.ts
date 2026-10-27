@@ -419,6 +419,11 @@ export interface BundleSettings {
    */
   eatConfidenceThreshold?: number;
   /**
+   * The reliability range's upper bound (0…1). Absent means 1, no upper bound: bundles written
+   * before it existed reopen as `eatConfidenceThreshold..100 %`.
+   */
+  eatConfidenceMax?: number;
+  /**
    * What the map does with a prediction below the threshold: `hide` filters it out (the
    * default, and what an absent value means), `dim` fades it and filters nothing.
    */

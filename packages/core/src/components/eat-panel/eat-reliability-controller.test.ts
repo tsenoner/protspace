@@ -238,19 +238,20 @@ describe('EAT reliability controller: the range (#380)', () => {
     });
   });
 
-  it('restores a bundle threshold as the range threshold..100 %', async () => {
-    // A bundle stores the lower bound only; a high end left over would be a band it never saved.
+  it('restores the bundle range, not a high end left over from before', async () => {
     const panel = await setupAt({ min: 0, max: 0.4 });
-    panel.applyEatSettings(true, 0.6);
+    panel.applyEatSettings(true, { min: 0.6, max: 1 });
     expect(panel.reliability).toEqual({ min: 0.6, max: 1 });
+    panel.applyEatSettings(true, { min: 0, max: 0.5 });
+    expect(panel.reliability).toEqual({ min: 0, max: 0.5 });
   });
 
   it('restores a bundle saved in Fade as Fade, and one without an outcome as Hide', async () => {
     const panel = await setupAt({ min: 0, max: 1 });
-    panel.applyEatSettings(true, 0.5, 'dim');
+    panel.applyEatSettings(true, { min: 0.5, max: 1 }, 'dim');
     expect(panel.outcome).toBe('dim');
     expect(panel.reliability).toEqual({ min: 0.5, max: 1 });
-    panel.applyEatSettings(true, 0.6);
+    panel.applyEatSettings(true, { min: 0.6, max: 1 });
     expect(panel.outcome).toBe('hide');
   });
 

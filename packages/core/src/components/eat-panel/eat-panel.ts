@@ -200,7 +200,7 @@ export class ProtspaceEatPanel extends LitElement {
     return this._outcome;
   }
 
-  /** The lower bound, which is what a bundle stores. */
+  /** The lower bound. */
   get reliabilityThreshold(): number {
     return this._eat.reliability.min;
   }
@@ -220,12 +220,15 @@ export class ProtspaceEatPanel extends LitElement {
   }
 
   /**
-   * Bundle restore: Show plus the range `threshold..100 %`, as a filter (Hide) or faded (Dim).
-   * Emits once.
+   * Bundle restore: Show plus the saved range, as a filter (Hide) or faded (Dim). Emits once.
    */
-  applyEatSettings(enabled: boolean, threshold: number, outcome: EatOutcome = 'hide'): void {
+  applyEatSettings(
+    enabled: boolean,
+    reliability: EatReliabilityInput,
+    outcome: EatOutcome = 'hide',
+  ): void {
     this._outcome = outcome;
-    this._eat.applySettings(enabled, threshold);
+    this._eat.applySettings(enabled, reliability);
   }
 
   /**
