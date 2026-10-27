@@ -153,8 +153,12 @@ again, two levels deep; whatever still fails loses only its own proteins, and Bi
 of the cache, so the next run requests them again. Biocentral only predicts sequences of 7 to 5,000
 residues and refuses a whole request holding any other, so shorter or longer sequences (short
 venom peptides, titin) are never sent: their prediction columns stay empty, a warning gives how
-many, and the rest of the source is cached as usual. UniProt's extra lookups for an inactive
-accession (its replacement entry, or its sequence from UniParc) are single attempts too.
+many, and the rest of the source is cached as usual. UniProt settles the inactive accessions
+(deleted or merged entries) of each batch of 100 with three more requests, retried like the batch
+itself: one search for their records, one fetch of the entries they were merged into, and one
+UniParc search for the deleted ones' sequences. An accession those leave unsettled is looked up on
+its own: its entry and its UniParc sequence in a single attempt each, then, if the entry lookup
+fails, a search by secondary accession with the full retry budget.
 
 ### Requests run in parallel, within limits
 
