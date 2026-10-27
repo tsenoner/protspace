@@ -2005,3 +2005,194 @@ def test_preparation_eat_example_filters_need_a_reviewed_column(tmp_path, monkey
     _run_preparation_eat_cell(
         monkeypatch, bundle, emb_set, None, before_click=click, eat_cutoff="off"
     )
+
+
+# --- Example runs take their annotations from the example's bundle ---
+
+_EXAMPLE_IDS = [f"prot{i:03d}" for i in range(40)]
+_DEFAULT_COLUMNS = [
+    "ec",
+    "keyword",
+    "length",
+    "protein_families",
+    "reviewed",
+    "gene_name",
+    "protein_name",
+    "uniprot_kb_id",
+]
+
+
+def _example_bundle(path: Path, columns) -> Path:
+    """A v3 bundle of the example proteins holding *columns*, each cell
+    `<column>-from-bundle`."""
+    import numpy as np
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.data.io.bundle import write_bundle
+    from protspace.data.processors.base_processor import BaseProcessor
+
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": _EXAMPLE_IDS,
+                **{c: [f"{c}-from-bundle"] * len(_EXAMPLE_IDS) for c in columns},
+            }
+        )
+    )
+    reductions = [
+        {
+            "name": "PCA 2",
+            "dimensions": 2,
+            "info": {},
+            "data": np.zeros((len(_EXAMPLE_IDS), 2), dtype=np.float32),
+        }
+    ]
+    processor = BaseProcessor({}, {})
+    write_bundle(
+        [
+            annotations,
+            processor._create_projections_metadata_table(reductions),
+            processor._create_projections_data_table(reductions, _EXAMPLE_IDS),
+        ],
+        path,
+    )
+    return path
+
+
+def _example_run(monkeypatch, tmp_path, *, bundle_columns, bundle_served=True):
+    """The panel with a fake examples release (the selected example's HDF5 and,
+    when *bundle_served*, its `_v3` bundle holding *bundle_columns*) and a spy
+    on the annotation fetch, which answers `<column>-fetched` for every column
+    it is asked for and reads a custom CSV for real (files alone fetch nothing).
+    Returns (namespace, downloads, release URLs asked for, fetch requests)."""
+    import io
+    import urllib.request
+
+    import pandas as pd
+
+    from protspace.data.annotations.configuration import AnnotationConfiguration
+    from protspace.data.processors.pipeline import ReductionPipeline
+
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    h5 = _clickthrough_h5(tmp_path / "release.h5")
+    bundle = _example_bundle(tmp_path / "release.parquetbundle", bundle_columns)
+    calls, asked = [], []
+
+    def urlopen(url, timeout=None):
+        calls.append(url)
+        if url.endswith("_prot_t5.h5"):
+            return io.BytesIO(h5.read_bytes())
+        if url.endswith("_v3.parquetbundle") and bundle_served:
+            return io.BytesIO(bundle.read_bytes())
+        raise OSError(f"404 for {url}")
+
+    real_fetch = ReductionPipeline._fetch_annotations
+
+    def fetch(self, headers, embedding_sets):
+        requested = list(self.config.annotations)
+        asked.append(requested)
+        names = [a for a in requested if not str(a).endswith(".csv")]
+        if not names:
+            return real_fetch(self, headers, embedding_sets)
+        names = AnnotationConfiguration(names).user_annotations
+        return pd.DataFrame(
+            {"protein_id": headers, **{n: f"{n}-fetched" for n in names}}
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(ReductionPipeline, "_fetch_annotations", fetch)
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method == "PCA"
+    return namespace, downloads, calls, asked
+
+
+def _bundle_cells(bundle) -> dict[str, set[str]]:
+    from protspace.data.io.bundle import read_tables
+
+    table = read_tables(bundle)[0]
+    return {c: set(table.column(c).to_pylist()) for c in table.column_names[1:]}
+
+
+def test_preparation_example_takes_default_annotations_from_its_bundle(
+    monkeypatch, tmp_path, capsys
+):
+    """The Snake Toxin example spent about 20 minutes on Colab fetching
+    annotations its release bundle already holds."""
+    namespace, downloads, calls, asked = _example_run(
+        monkeypatch, tmp_path, bundle_columns=_DEFAULT_COLUMNS
+    )
+
+    namespace["_on_gen"](None)
+
+    assert asked == []
+    assert calls == [
+        namespace["_RELEASE_URL"] + "three_finger_toxin_prot_t5.h5",
+        namespace["_RELEASE_URL"] + "three_finger_toxin_v3.parquetbundle",
+    ]
+    (bundle,) = downloads
+    assert _bundle_cells(bundle) == {c: {f"{c}-from-bundle"} for c in _DEFAULT_COLUMNS}
+    assert "8 annotation columns came from the example's ready-made bundle" in (
+        capsys.readouterr().out
+    )
+
+
+def test_preparation_example_fetches_only_what_its_bundle_lacks(monkeypatch, tmp_path):
+    held = [c for c in _DEFAULT_COLUMNS if c != "ec"]
+    namespace, downloads, _, asked = _example_run(
+        monkeypatch, tmp_path, bundle_columns=held
+    )
+
+    namespace["_on_gen"](None)
+
+    assert asked == [["ec"]]
+    (bundle,) = downloads
+    cells = _bundle_cells(bundle)
+    assert cells["ec"] == {"ec-fetched"}
+    assert all(cells[c] == {f"{c}-from-bundle"} for c in held)
+
+
+def test_preparation_example_adds_a_custom_csv_to_its_bundle(monkeypatch, tmp_path):
+    namespace, downloads, _, asked = _example_run(
+        monkeypatch, tmp_path, bundle_columns=_DEFAULT_COLUMNS
+    )
+    csv = tmp_path / "groups.csv"
+    csv.write_text("id,group\n" + "".join(f"{i},g1\n" for i in _EXAMPLE_IDS))
+    namespace["csv_path_field"].value = str(csv)
+
+    namespace["_on_gen"](None)
+
+    assert asked == [[str(csv)]]
+    (bundle,) = downloads
+    cells = _bundle_cells(bundle)
+    assert cells["group"] == {"g1"}
+    assert cells["keyword"] == {"keyword-from-bundle"}
+
+
+def test_preparation_example_refetch_ignores_its_bundle(monkeypatch, tmp_path):
+    namespace, downloads, calls, asked = _example_run(
+        monkeypatch, tmp_path, bundle_columns=_DEFAULT_COLUMNS
+    )
+    namespace["refetch_cb"].value = True
+
+    namespace["_on_gen"](None)
+
+    assert asked == [["default"]]
+    assert not [url for url in calls if url.endswith(".parquetbundle")]
+    (bundle,) = downloads
+    assert _bundle_cells(bundle)["ec"] == {"ec-fetched"}
+
+
+def test_preparation_example_fetches_all_when_its_bundle_is_missing(
+    monkeypatch, tmp_path, capsys
+):
+    namespace, downloads, _, asked = _example_run(
+        monkeypatch, tmp_path, bundle_columns=_DEFAULT_COLUMNS, bundle_served=False
+    )
+
+    namespace["_on_gen"](None)
+
+    assert asked == [["default"]]
+    assert len(downloads) == 1
+    assert "could not be read" in capsys.readouterr().out
+    assert not list(tmp_path.glob("*.part"))

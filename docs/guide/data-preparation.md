@@ -114,7 +114,9 @@ label comes out wrong. The same rules apply in the [CLI](/guide/python-cli#model
    through a widget, because widget uploads of about 10 MB and up fail without an error.
 
 4. In the panel's **1 · Input data** section, open the tab you want:
-   - **Example dataset**: one of the pre-computed ProtT5 datasets
+   - **Example dataset**: one of the pre-computed ProtT5 datasets. Its annotations come with it:
+     every one you request that the example's ready-made bundle holds is taken from there
+     instead of fetched (tick **Fetch annotations again** for current values)
    - **Embeddings (.h5)**: enter the file's path (it loads when you press Enter or click
      **Load**) and check the **Ready** line, which shows the protein count, the dimensions and
      the embedding name
