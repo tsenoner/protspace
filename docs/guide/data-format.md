@@ -84,12 +84,21 @@ The optional settings section is stored as `settings.parquet`, a one-row Parquet
 
 The Python CLI writes `settings_json` as a map keyed by annotation name, and keeps the web app's
 envelope when it restyles a bundle that has one. The web app wraps that map as `legendSettings` in
-an envelope, next to `exportOptions` and the optional `publishState` (Figure Editor state),
-`eatOverlayEnabled`, `eatConfidenceThreshold` and `shapeSize`. `shapeSize` is the dataset-wide shape
-size, written only once the user picked one or loaded one from a bundle; on load it overrides every
-annotation's own `shapeSize`. A per-annotation `10` or `30` reads as unset, and the web app then
-sizes dots by the dataset's protein count. The web app caps either value at 64. Both readers accept
-both shapes.
+an envelope, next to `exportOptions` and these optional keys:
+
+| Key                      | Value                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| `publishState`           | Figure Editor state                                                             |
+| `eatOverlayEnabled`      | whether EAT predictions are shown (default `true`)                              |
+| `eatConfidenceThreshold` | the EAT reliability range's lower bound, 0–1 (default `0`)                      |
+| `eatConfidenceMax`       | its upper bound, 0–1 (default `1`: no upper bound)                              |
+| `eatOutcome`             | what happens outside the range: `hide` filters it out (default), `dim` fades it |
+| `shapeSize`              | the dataset-wide shape size                                                     |
+
+`shapeSize` is written only once the user picked one or loaded one from a bundle; on load it
+overrides every annotation's own `shapeSize`. A per-annotation `10` or `30` reads as unset, and the
+web app then sizes dots by the dataset's protein count. The web app caps either value at 64. Both
+readers accept both shapes.
 
 ## Tables
 
