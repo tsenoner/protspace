@@ -2318,3 +2318,16 @@ def test_preparation_hides_the_package_lines_the_card_repeats(
     log.warning("Inactive UniProt entries: 3 deleted")
     output = capsys.readouterr().out
     assert output.strip() == "WARNING: Inactive UniProt entries: 3 deleted"
+
+
+def test_clickthrough_links_every_model_it_offers():
+    """The dropdown cannot hold links, so the text above it links each model's page."""
+    import re
+
+    form_text = "\n".join(
+        line
+        for line in _clickthrough_main().splitlines()
+        if line.startswith("# @markdown")
+    )
+    linked = re.findall(r"\(https://huggingface\.co/([^)\s]+)\)", form_text)
+    assert sorted(linked) == sorted(_clickthrough_namespace()["MODEL_SHORT_KEYS"])
