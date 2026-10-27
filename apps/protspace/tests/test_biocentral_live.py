@@ -55,9 +55,13 @@ BACTERIORHODOPSIN = (
 )
 
 
-# Ubiquitin embedded with esmc_300m by the local backend from biohub/ESMC-300M
+# Ubiquitin embedded by the local backend from biohub/ESMC-300M / -600M
 # (transformers 5.21.0, torch 2.14.1, CPU, float32), mean-pooled as the package pools.
-ESMC_300M_UBIQUITIN = Path(__file__).parent / "data" / "esmc_300m_ubiquitin.npy"
+# One per size: the server maps each id to a model separately.
+ESMC_UBIQUITIN = {
+    "esmc_300m": (Path(__file__).parent / "data" / "esmc_300m_ubiquitin.npy", 960),
+    "esmc_600m": (Path(__file__).parent / "data" / "esmc_600m_ubiquitin.npy", 1152),
+}
 
 
 def _usable_server():
@@ -94,7 +98,8 @@ def test_embedding_through_the_package(tmp_path):
             assert np.isfinite(h5[name][:]).all(), name
 
 
-def test_esmc_is_the_official_model(tmp_path):
+@pytest.mark.parametrize("key", sorted(ESMC_UBIQUITIN))
+def test_esmc_is_the_official_model(tmp_path, key):
     """Shape and finiteness would have passed the old bug; only the vector tells.
 
     Measured agreement with the local backend is about 1e-7 in cosine; the old
@@ -103,16 +108,17 @@ def test_esmc_is_the_official_model(tmp_path):
     """
     _usable_server()
 
+    reference_path, dim = ESMC_UBIQUITIN[key]
     h5_path = embed_sequences(
-        {"ubiquitin": UBIQUITIN}, resolve_embedder("esmc_300m"), tmp_path / "esmc.h5"
+        {"ubiquitin": UBIQUITIN}, resolve_embedder(key), tmp_path / f"{key}.h5"
     )
 
     with h5py.File(h5_path) as h5:
         served = h5["ubiquitin"][:].astype(np.float64)
-    reference = np.load(ESMC_300M_UBIQUITIN).astype(np.float64)
-    assert served.shape == reference.shape == (960,)
+    reference = np.load(reference_path).astype(np.float64)
+    assert served.shape == reference.shape == (dim,)
     cosine = served @ reference / np.linalg.norm(served) / np.linalg.norm(reference)
-    assert cosine > 0.999, f"Biocentral's esmc_300m vector has cosine {cosine:.4f}"
+    assert cosine > 0.999, f"Biocentral's {key} vector has cosine {cosine:.4f}"
 
 
 def test_annotation_predictions_through_the_package():

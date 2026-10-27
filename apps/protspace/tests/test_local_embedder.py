@@ -25,8 +25,7 @@ def test_resolve_prot_t5_uses_half_encoder_checkpoint():
 
 
 def test_resolve_esmc_uses_official_biohub_weights():
-    # Native transformers `esmc` model, not Synthyra's ESM++ reimplementation
-    # (which the Biocentral backend still names).
+    # Native transformers `esmc` model, not Synthyra's ESM++ reimplementation.
     for key, checkpoint in (
         ("esmc_300m", "biohub/ESMC-300M"),
         ("esmc_600m", "biohub/ESMC-600M"),
@@ -69,11 +68,20 @@ def test_blocked_sets_name_real_short_keys():
         assert blocked <= set(registry)
 
 
-def test_both_backends_send_the_same_esmc_checkpoints():
-    """ESM-C is the one family where both backends name the very same
-    checkpoint, which is what makes their vectors interchangeable."""
-    for key in ("esmc_300m", "esmc_600m"):
-        assert ALL_SHORT_KEYS[key] == local.resolve_local_checkpoint(key)[0]
+# The only shortcuts whose local checkpoint is not the id Biocentral is sent: fp16
+# encoder exports of the same weights (T4-friendly, embedding-equivalent).
+_LOCAL_FP16_EXPORTS = {
+    "prot_t5": "Rostlab/prot_t5_xl_half_uniref50-enc",
+    "prost_t5": "Rostlab/ProstT5_fp16",
+}
+
+
+def test_both_backends_send_the_same_checkpoints():
+    """A shortcut names the same weights on either backend, which is what makes
+    their vectors interchangeable; a one-sided id change must be deliberate."""
+    for key, biocentral_id in ALL_SHORT_KEYS.items():
+        expected = _LOCAL_FP16_EXPORTS.get(key, biocentral_id)
+        assert local.resolve_local_checkpoint(key)[0] == expected, key
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +223,7 @@ def test_setup_model_loads_esmc_natively_without_remote_code(monkeypatch):
     model, tokenizer = FakeModel(), object()
     fake.AutoModel = loader("AutoModel", model)
     fake.AutoTokenizer = loader("AutoTokenizer", tokenizer)
-    for unused in ("EsmModel", "T5EncoderModel", "T5Tokenizer"):
+    for unused in ("T5EncoderModel", "T5Tokenizer"):
         setattr(fake, unused, loader(unused, None))
     monkeypatch.setitem(sys.modules, "transformers", fake)
 

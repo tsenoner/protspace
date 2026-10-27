@@ -185,7 +185,6 @@ def setup_model(checkpoint: str, mod_type: str):
     from transformers import (
         AutoModel,
         AutoTokenizer,
-        EsmModel,
         T5EncoderModel,
         T5Tokenizer,
     )
@@ -193,12 +192,9 @@ def setup_model(checkpoint: str, mod_type: str):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info("Loading %s (%s) on %s", checkpoint, mod_type, device)
 
-    if mod_type == "esm":
-        tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-        model = EsmModel.from_pretrained(checkpoint)
-    elif mod_type == "esmc":
-        # Native transformers model (EsmcModel), no remote code. Not EsmModel:
-        # ESM-C is a different architecture from ESM-2.
+    if mod_type in ("esm", "esmc"):
+        # AutoModel resolves the config: EsmModel for ESM-2, transformers' own
+        # EsmcModel for ESM-C (a different architecture; no remote code).
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
         model = AutoModel.from_pretrained(checkpoint)
     elif mod_type == "ankh":

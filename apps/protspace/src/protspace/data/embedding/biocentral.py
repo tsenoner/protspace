@@ -57,14 +57,11 @@ EXTRA_SHORT_KEYS: dict[str, str] = {
 # Combined lookup for help text and error messages.
 ALL_SHORT_KEYS: dict[str, str] = {**MODEL_SHORT_KEYS, **EXTRA_SHORT_KEYS}
 
-# Shortcuts this API accepts but does not actually serve: the Colab notebook
-# disables them on the Biocentral backend. Declared, not enforced: the CLI still
-# accepts every combination. Empty since Biocentral serves ESM-C correctly, but
-# kept by name: the notebook imports it from the *released* package, so a release
-# that still sends Synthyra's ESM++ ids (refused by the server since biotrainer
-# 2.1; before that silently loaded as ESM-2) keeps blocking ESM-C, and the next
-# release lifts the block. Put a shortcut back here if the live canary
-# (tests/test_biocentral_live.py) shows the server answering with the wrong model.
+# Shortcuts this API accepts but serves with the wrong model; the Colab notebook
+# disables them on the Biocentral backend (the CLI still accepts them). Empty, but
+# kept by name: the notebook imports it from the *released* package, whose 4.17.1
+# still needs it for ESM-C (removal: #559). Re-add a shortcut here if the live
+# canary (tests/test_biocentral_live.py) catches the server serving another model.
 BIOCENTRAL_INVALID: frozenset[str] = frozenset()
 
 DEFAULT_EMBEDDER = "prot_t5"
