@@ -273,8 +273,12 @@ export class LegendDataController {
     if (perfCounters) perfCounters.legendRebuild++;
     this.host._updateLegendItems();
 
+    // Stored zOrders are an order only in "Your order": under any other sort they are the rows
+    // as that sort last left them, and put back after a filter or isolation changed the counts
+    // they would leave the rows out of the order the header names.
     if (
       !this.host._isNumericAnnotation() &&
+      this.host._currentSortMode.startsWith('manual') &&
       this.host._persistenceController.hasPendingCategories()
     ) {
       this.host._legendItems = this.host._persistenceController.applyPendingZOrder(

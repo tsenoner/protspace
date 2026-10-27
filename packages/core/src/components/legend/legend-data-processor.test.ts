@@ -380,6 +380,25 @@ describe('legend-data-processor', () => {
       expect(result.topItems[2][0]).toBe('small');
     });
 
+    it('lists rows promoted from Other in the sort order, not after the visible ones', () => {
+      // A visible set smaller than the cap (a bundle saved with fewer rows): the slots left go
+      // to the largest of the rest, and By count must still list the largest first.
+      const freq = new Map<string, number>([
+        ['big', 20],
+        ['kept', 2],
+        ['mid', 10],
+      ]);
+      const result = LegendDataProcessor.sortAndLimitItems(
+        freq,
+        3,
+        false,
+        'size-desc',
+        new Map(),
+        new Set(['kept']),
+      );
+      expect(result.topItems.map(([value]) => value)).toEqual(['big', 'mid', 'kept']);
+    });
+
     it('limits items to maxVisibleValues', () => {
       const freq = new Map<string, number>([
         ['a', 10],

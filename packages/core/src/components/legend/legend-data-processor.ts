@@ -323,6 +323,9 @@ export class LegendDataProcessor {
         ...sortedVisible.slice(0, maxVisibleValues),
         ...sortedNonVisible.slice(0, remainingSlots),
       ].slice(0, maxVisibleValues);
+      // The visible set decides which rows show, not their order: a sort lists them all in its
+      // own order. "Your order" keeps the promoted rows after the ones the user placed.
+      if (sortMode !== 'manual' && sortMode !== 'manual-reverse') topItems.sort(sortFn);
     } else {
       // Initial load: sort all and take top N
       const sorted = [...entries].sort(sortFn);
