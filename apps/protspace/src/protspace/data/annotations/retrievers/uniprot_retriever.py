@@ -114,6 +114,71 @@ def _fetch_many_accessions(
     )
 
 
+def _search_inactive_records(
+    accessions: list[str],
+    *,
+    on_response: OnResponse | None = None,
+    session: requests.Session | None = None,
+) -> dict[str, dict]:
+    """The records of *accessions*, inactive ones included, by primary accession.
+
+    The batch endpoint leaves inactive entries out; an ``accession:`` search
+    returns them as the stub a single-entry lookup gets (a merged one as a
+    ``MERGED`` stub naming its target, not redirected to it). Records for any
+    other accession are dropped, so none is filed under the wrong protein.
+    """
+    wanted = set(accessions)
+    records = paginated_get(
+        "https://rest.uniprot.org/uniprotkb/search",
+        params={
+            "query": " OR ".join(f"accession:{acc}" for acc in accessions),
+            "format": "json",
+            "size": "500",
+        },
+        on_response=on_response,
+        session=session,
+    )
+    return {
+        record["primaryAccession"]: record
+        for record in records
+        if record.get("primaryAccession") in wanted
+    }
+
+
+def _search_uniparc_sequences(
+    uniparc_ids: list[str],
+    *,
+    on_response: OnResponse | None = None,
+    session: requests.Session | None = None,
+) -> dict[str, tuple[str, int]]:
+    """Sequence and length of each UniParc entry the search returns, by id.
+
+    Asks for the id and sequence only: the full records carry every
+    cross-reference and are several times larger.
+    """
+    records = paginated_get(
+        "https://rest.uniprot.org/uniparc/search",
+        params={
+            "query": " OR ".join(f"upi:{upi}" for upi in uniparc_ids),
+            "fields": "upi,sequence",
+            "format": "json",
+            "size": "500",
+        },
+        on_response=on_response,
+        session=session,
+    )
+    sequences = {}
+    for record in records:
+        seq_info = record.get("sequence", {})
+        sequence = seq_info.get("value", "")
+        if record.get("uniParcId") and sequence:
+            sequences[record["uniParcId"]] = (
+                sequence,
+                seq_info.get("length", len(sequence)),
+            )
+    return sequences
+
+
 def _search_sec_acc(
     accession: str,
     *,
@@ -176,148 +241,232 @@ class UniProtRetriever(BaseAnnotationRetriever):
                 annotations_dict[prop] = ""
         return annotations_dict
 
+    @staticmethod
+    def _deleted_annotations(sequence: str, length: int) -> dict:
+        """The values of a deleted entry: its UniParc sequence, if any, alone."""
+        annotations = dict.fromkeys(UNIPROT_ANNOTATIONS, "")
+        if sequence:
+            annotations["sequence"] = sequence
+            annotations["length"] = str(length)
+        return annotations
+
+    def _resolve_one(
+        self,
+        accession: str,
+        session: requests.Session | None = None,
+    ) -> tuple[ProteinAnnotations, bool]:
+        """Resolve one inactive entry with its own requests.
+
+        Uses fetch_one() as primary resolution (returns inactive entry details
+        including reason and UniParc ID), with sec_acc: search as fallback.
+
+        Returns:
+            The entry's annotations, and whether it resolved to an active
+            entry (merged) rather than counting as deleted.
+        """
+        try:
+            result = _fetch_one_with_timeout(
+                accession, on_response=self._record_release, session=session
+            )
+            entry_type = str(result.get("entryType", ""))
+
+            if "Inactive" not in entry_type:
+                # Merged transparently — fetch_one returned active replacement
+                entry = UniProtEntry(result)
+                logger.debug(f"Resolved inactive entry {accession} → {entry.entry}")
+                return (
+                    ProteinAnnotations(
+                        identifier=accession,
+                        annotations=self._extract_annotations(entry),
+                    ),
+                    True,
+                )
+
+            # Inactive entry — check reason
+            reason = result.get("inactiveReason", {})
+            reason_type = reason.get("inactiveReasonType", "UNKNOWN")
+            uniparc = result.get("extraAttributes", {}).get("uniParcId", "")
+
+            if reason_type == "MERGED" and reason.get("mergeDemergeTo"):
+                target = reason["mergeDemergeTo"][0]
+                try:
+                    target_result = _fetch_one_with_timeout(
+                        target, on_response=self._record_release, session=session
+                    )
+                    if "Inactive" not in str(target_result.get("entryType", "")):
+                        entry = UniProtEntry(target_result)
+                        logger.debug(f"Resolved inactive entry {accession} → {target}")
+                        return (
+                            ProteinAnnotations(
+                                identifier=accession,
+                                annotations=self._extract_annotations(entry),
+                            ),
+                            True,
+                        )
+                except Exception:
+                    pass  # Fall through to deleted handling
+
+            # Deleted / unresolvable — try to recover sequence from UniParc
+            sequence, length = "", 0
+            if uniparc:
+                sequence, length = _fetch_uniparc_sequence(
+                    uniparc, on_response=self._record_release, session=session
+                )
+            deleted_reason = reason.get("deletedReason", reason_type)
+            seq_status = "sequence from UniParc" if sequence else "no sequence"
+            logger.debug(f"Deleted entry {accession}: {deleted_reason} ({seq_status})")
+            return (
+                ProteinAnnotations(
+                    identifier=accession,
+                    annotations=self._deleted_annotations(sequence, length),
+                ),
+                False,
+            )
+
+        except Exception:
+            # fetch_one failed — fall back to sec_acc: search
+            try:
+                records = _search_sec_acc(
+                    accession, on_response=self._record_release, session=session
+                )
+                if records:
+                    entry = UniProtEntry(records[0])
+                    logger.debug(
+                        f"Resolved inactive entry {accession}"
+                        f" → {entry.entry} (via sec_acc search)"
+                    )
+                    return (
+                        ProteinAnnotations(
+                            identifier=accession,
+                            annotations=self._extract_annotations(entry),
+                        ),
+                        True,
+                    )
+                logger.debug(
+                    f"Deleted entry {accession}: unresolvable"
+                    f" (no secondary accession match)"
+                )
+            except Exception as e2:
+                logger.warning(f"Failed to resolve inactive entry {accession}: {e2}")
+            return (
+                ProteinAnnotations(
+                    identifier=accession,
+                    annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
+                ),
+                False,
+            )
+
     def _resolve_inactive_entries(
         self,
         missing_accessions: list[str],
         session: requests.Session | None = None,
     ) -> tuple[list[ProteinAnnotations], int, int]:
-        """Resolve inactive/obsolete UniProt entries.
+        """Resolve inactive/obsolete UniProt entries, a batch's worth at a time.
 
-        Uses fetch_one() as primary resolution (returns inactive entry details
-        including reason and UniParc ID), with sec_acc: search as fallback.
-        Requests go through *session* when one is given.
+        Settles as many as it can with three requests for the whole list: an
+        ``accession:`` search for their records (reason, merge target, UniParc
+        ID), one fetch of the active entries they were merged into, and one
+        UniParc search for the deleted entries' sequences. Each accession
+        those leave unsettled goes through :meth:`_resolve_one`, the lookup
+        every inactive entry used to get (two requests each, which made a
+        TrEMBL-heavy run spend most of its time here). Either way an accession
+        gets the same values. Requests go through *session* when one is given.
 
         Returns:
             Tuple of (resolved annotations, resolved_count, deleted_count)
         """
-        resolved = []
-        resolved_count = 0
-        deleted_count = 0
+        record = self._record_release
+        try:
+            stubs = _search_inactive_records(
+                missing_accessions, on_response=record, session=session
+            )
+        except Exception as e:
+            logger.debug(f"Bulk inactive-entry search failed: {e}")
+            stubs = {}
 
-        for accession in tqdm(
-            missing_accessions,
-            desc="Resolving inactive entries",
-            unit="seq",
-            leave=False,
-        ):
+        active: dict[str, dict] = {}  # returned active after all
+        merged_into: dict[str, str] = {}  # accession → merge target
+        uniparc_of: dict[str, str] = {}  # deleted accession → UniParc ID ("" none)
+        for accession in missing_accessions:
+            stub = stubs.get(accession)
+            if stub is None:
+                continue
+            if "Inactive" not in str(stub.get("entryType", "")):
+                active[accession] = stub
+                continue
+            reason = stub.get("inactiveReason", {})
+            if reason.get("inactiveReasonType") == "MERGED" and reason.get(
+                "mergeDemergeTo"
+            ):
+                merged_into[accession] = reason["mergeDemergeTo"][0]
+            else:
+                uniparc_of[accession] = stub.get("extraAttributes", {}).get(
+                    "uniParcId", ""
+                )
+
+        targets: dict[str, dict] = {}
+        if merged_into:
             try:
-                result = _fetch_one_with_timeout(
-                    accession, on_response=self._record_release, session=session
+                # The batch endpoint returns active entries only.
+                for target in _fetch_many_accessions(
+                    sorted(set(merged_into.values())),
+                    on_response=record,
+                    session=session,
+                ):
+                    targets[target.get("primaryAccession")] = target
+            except Exception as e:
+                logger.debug(f"Bulk merge-target fetch failed: {e}")
+
+        sequences: dict[str, tuple[str, int]] = {}
+        uniparc_ids = sorted({upi for upi in uniparc_of.values() if upi})
+        if uniparc_ids:
+            try:
+                sequences = _search_uniparc_sequences(
+                    uniparc_ids, on_response=record, session=session
                 )
-                entry_type = str(result.get("entryType", ""))
+            except Exception as e:
+                logger.debug(f"Bulk UniParc search failed: {e}")
 
-                if "Inactive" not in entry_type:
-                    # Merged transparently — fetch_one returned active replacement
-                    entry = UniProtEntry(result)
-                    annotations_dict = self._extract_annotations(entry)
-                    resolved.append(
-                        ProteinAnnotations(
-                            identifier=accession, annotations=annotations_dict
-                        )
-                    )
-                    resolved_count += 1
-                    logger.debug(f"Resolved inactive entry {accession} → {entry.entry}")
-                    continue
-
-                # Inactive entry — check reason
-                reason = result.get("inactiveReason", {})
-                reason_type = reason.get("inactiveReasonType", "UNKNOWN")
-                uniparc = result.get("extraAttributes", {}).get("uniParcId", "")
-
-                if reason_type == "MERGED" and reason.get("mergeDemergeTo"):
-                    target = reason["mergeDemergeTo"][0]
-                    try:
-                        target_result = _fetch_one_with_timeout(
-                            target, on_response=self._record_release, session=session
-                        )
-                        if "Inactive" not in str(target_result.get("entryType", "")):
-                            entry = UniProtEntry(target_result)
-                            annotations_dict = self._extract_annotations(entry)
-                            resolved.append(
-                                ProteinAnnotations(
-                                    identifier=accession,
-                                    annotations=annotations_dict,
-                                )
-                            )
-                            resolved_count += 1
-                            logger.debug(
-                                f"Resolved inactive entry {accession} → {target}"
-                            )
-                            continue
-                    except Exception:
-                        pass  # Fall through to deleted handling
-
-                # Deleted / unresolvable — try to recover sequence from UniParc
-                annotations = dict.fromkeys(UNIPROT_ANNOTATIONS, "")
-                if uniparc:
+        outcome: dict[str, tuple[ProteinAnnotations, bool]] = {}
+        unsettled = []
+        for accession in missing_accessions:
+            if accession in active:
+                entry = UniProtEntry(active[accession])
+                annotations = self._extract_annotations(entry)
+                outcome[accession] = (ProteinAnnotations(accession, annotations), True)
+            elif merged_into.get(accession) in targets:
+                entry = UniProtEntry(targets[merged_into[accession]])
+                annotations = self._extract_annotations(entry)
+                outcome[accession] = (ProteinAnnotations(accession, annotations), True)
+                logger.debug(f"Resolved inactive entry {accession} → {entry.entry}")
+            elif accession in uniparc_of:
+                upi = uniparc_of[accession]
+                if upi in sequences:
+                    sequence, length = sequences[upi]
+                elif upi:
+                    # Not in the search's answer: the single lookup, as before.
                     sequence, length = _fetch_uniparc_sequence(
-                        uniparc, on_response=self._record_release, session=session
+                        upi, on_response=record, session=session
                     )
-                    if sequence:
-                        annotations["sequence"] = sequence
-                        annotations["length"] = str(length)
-                resolved.append(
-                    ProteinAnnotations(
-                        identifier=accession,
-                        annotations=annotations,
-                    )
-                )
-                deleted_count += 1
-                deleted_reason = reason.get("deletedReason", reason_type)
-                seq_status = (
-                    "sequence from UniParc"
-                    if annotations["sequence"]
-                    else "no sequence"
-                )
-                logger.debug(
-                    f"Deleted entry {accession}: {deleted_reason} ({seq_status})"
-                )
+                else:
+                    sequence, length = "", 0
+                annotations = self._deleted_annotations(sequence, length)
+                outcome[accession] = (ProteinAnnotations(accession, annotations), False)
+            else:
+                unsettled.append(accession)
 
-            except Exception:
-                # fetch_one failed — fall back to sec_acc: search
-                try:
-                    records = _search_sec_acc(
-                        accession, on_response=self._record_release, session=session
-                    )
-                    if records:
-                        entry = UniProtEntry(records[0])
-                        annotations_dict = self._extract_annotations(entry)
-                        resolved.append(
-                            ProteinAnnotations(
-                                identifier=accession,
-                                annotations=annotations_dict,
-                            )
-                        )
-                        resolved_count += 1
-                        logger.debug(
-                            f"Resolved inactive entry {accession}"
-                            f" → {entry.entry} (via sec_acc search)"
-                        )
-                    else:
-                        resolved.append(
-                            ProteinAnnotations(
-                                identifier=accession,
-                                annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
-                            )
-                        )
-                        deleted_count += 1
-                        logger.debug(
-                            f"Deleted entry {accession}: unresolvable"
-                            f" (no secondary accession match)"
-                        )
-                except Exception as e2:
-                    resolved.append(
-                        ProteinAnnotations(
-                            identifier=accession,
-                            annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
-                        )
-                    )
-                    deleted_count += 1
-                    logger.warning(
-                        f"Failed to resolve inactive entry {accession}: {e2}"
-                    )
+        if unsettled:
+            for accession in tqdm(
+                unsettled,
+                desc="Resolving inactive entries",
+                unit="seq",
+                leave=False,
+            ):
+                outcome[accession] = self._resolve_one(accession, session=session)
 
-        return resolved, resolved_count, deleted_count
+        resolved = [outcome[accession][0] for accession in missing_accessions]
+        resolved_count = sum(outcome[accession][1] for accession in missing_accessions)
+        return resolved, resolved_count, len(resolved) - resolved_count
 
     def fetch_annotations(self) -> list[ProteinAnnotations]:
         """
