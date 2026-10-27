@@ -26,7 +26,8 @@ import { setWorkbenchStatus } from './workbench-status';
 
 /**
  * A filter as the plot holds it: the query that produced it and the protein ids it keeps, by
- * reference. `matchedIds` null: nothing is filtered (no query, or one that matches nothing, #380).
+ * reference. `matchedIds` null: nothing is filtered (no configured query); `[]`: a query that
+ * matches nothing, which shows no proteins.
  */
 export interface FilterSnapshot {
   query: FilterQuery;
@@ -186,15 +187,15 @@ export function createFilterController({
     publish();
   };
 
-  /** The ids at `indices` in the snapshot; null for none (#380: the plot stays unfiltered). */
-  const idsAt = (indices: Iterable<number>, proteinIds: readonly string[]): string[] | null => {
+  /** The ids at `indices` in the snapshot; empty when the query matches nothing. */
+  const idsAt = (indices: Iterable<number>, proteinIds: readonly string[]): string[] => {
     // One pass, no intermediates: this runs on every slider commit at Swiss-Prot scale.
     const matched: string[] = [];
     for (const index of indices) {
       const id = proteinIds[index];
       if (id !== undefined) matched.push(id);
     }
-    return matched.length > 0 ? matched : null;
+    return matched;
   };
 
   /** Evaluates `query` on the snapshot and makes it the applied filter. */

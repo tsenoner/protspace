@@ -312,19 +312,19 @@ describe('filter controller: the Filter panel and its draft', () => {
     expect(m.plot.filteredProteinIds).toEqual(ids(12));
   });
 
-  it('does not blank the plot when the query matches nothing', () => {
+  it('shows no proteins when the query matches nothing, and keeps the filter', () => {
     editQuery(m.queryBuilder, [configured('a')]);
     apply(m.queryBuilder, [5, 6, 7]);
     expect(m.plot.filtersActive).toBe(true);
 
-    // An active-but-empty channel reads as "hide everything", with no way back (#380).
+    // An empty match is still a filter: 0 proteins shown, and the chip's ✕ removes it.
     editQuery(m.queryBuilder, [configured('b')]);
     apply(m.queryBuilder, []);
 
-    expect(m.plot.filtersActive).toBe(false);
+    expect(m.plot.filtersActive).toBe(true);
     expect(m.plot.filteredProteinIds).toHaveLength(0);
-    expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
-    expect(m.controller.getApplied()).toEqual({ query: [configured('b')], matchedIds: null });
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
+    expect(m.controller.getApplied()).toEqual({ query: [configured('b')], matchedIds: [] });
   });
 
   it('Cancel restores the applied query, or the seed when nothing is applied', () => {
@@ -830,6 +830,17 @@ describe('filter controller: every reliability range (#380)', () => {
       m.controller.setEatReliability('family', state);
       for (const id of curated) expect(m.plot.filteredProteinIds).toContain(id);
     }
+  });
+
+  it('keeps the filter when the filter and the range together match nothing', () => {
+    // A family value no protein has: with the range, nothing passes.
+    editQuery(m.queryBuilder, [configured('a')]);
+    apply(m.queryBuilder, range(3));
+    m.controller.setEatReliability('family', { min: 0.5, max: 1 });
+
+    expect(m.plot.filtersActive).toBe(true);
+    expect(m.plot.filteredProteinIds).toEqual([]);
+    expect(m.controller.getApplied().matchedIds).toEqual([]);
   });
 
   it('applies an upper bound that actually removes the high-confidence points', () => {
