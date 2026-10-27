@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v4.17.1 (2026-10-27)
+
+### Bug Fixes
+
+- **annotate**: Keep a batch when one inactive-entry record cannot be read
+  ([`a00ccbb`](https://github.com/tsenoner/protspace/commit/a00ccbb15dc1686f794b06ea937fde312fecf301))
+
+### Performance Improvements
+
+- **annotate**: Resolve inactive UniProt entries per batch, not per entry
+  ([`6511f34`](https://github.com/tsenoner/protspace/commit/6511f348cf3ff783c2d39f1ac8d0cbcd36a4099d))
+
+### Refactoring
+
+- **annotate**: One classification for bulk and per-entry inactive lookups
+  ([`d772095`](https://github.com/tsenoner/protspace/commit/d7720958c755b96e531ab2cc4196f61095046b64))
+
+
 ## v4.17.0 (2026-10-16)
 
 ### Bug Fixes
