@@ -273,10 +273,12 @@ when you are working offline. It needs the extra: `pip install "protspace[local]
 protspace prepare -i sequences.fasta -e prot_t5 --backend local -m pca2 -o output
 ```
 
-For `esmc_300m` and `esmc_600m` the local backend loads the official `biohub/ESMC-300M` and
-`biohub/ESMC-600M` weights through the ESM-C model built into `transformers` (5.16 or later, which
-the extra installs), with no extra login or remote code. Embed ESM-C with the local backend: the
-Biocentral API currently returns ESM-C embeddings that do not match the model.
+For `esmc_300m` and `esmc_600m` both backends use the official `biohub/ESMC-300M` and
+`biohub/ESMC-600M` weights, so their vectors agree to float32 precision. Locally they load through
+the ESM-C model built into `transformers` (5.16 or later, which the extra installs), with no extra
+login or remote code. ESM-C embeddings from Biocentral made with protspace 4.17.1 or earlier came
+from a different model; a run that finds one of those files refuses to resume from it, and
+`--refetch embed` replaces it.
 
 ## Annotations
 
