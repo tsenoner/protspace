@@ -1788,7 +1788,7 @@ def test_clickthrough_reads_fasta_without_pyfaidx(tmp_path):
 @pytest.mark.parametrize(
     ("error", "advice"),
     [
-        (OSError("401 Client Error: Unauthorized"), "hf_token"),
+        (OSError("401 Client Error: Unauthorized"), "Colab secret HF_TOKEN"),
         (ConnectionError("Max retries exceeded"), "did not answer"),
         (ImportError("No module named 'esm'"), "Restart session"),
     ],
