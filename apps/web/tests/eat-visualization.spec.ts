@@ -884,10 +884,11 @@ test('keeps curated points visible while the reliability filter hides low-confid
     });
   await expect(plotStatus(page).locator('.status-count')).toHaveText('738 proteins');
 
-  // 100% in the low box: it stops one step short of the high end (100 %), so the range is
-  // 99–100 % and only the 5 transfers at 99 % or more survive — still no curated point is
-  // dropped, which is the whole point of the filter.
+  // 100% in the low box, committed: it stops one step short of the high end (100 %), so the
+  // range is 99–100 % and only the 5 transfers at 99 % or more survive — still no curated point
+  // is dropped, which is the whole point of the filter.
   await thresholdPercent.fill('100');
+  await thresholdPercent.press('Enter');
   await expect(thresholdPercent).toHaveValue('99');
   await expect
     .poll(() => visibility(0.99), { timeout: 15_000 })
