@@ -1708,3 +1708,194 @@ def test_clickthrough_load_failure_says_what_to_do(monkeypatch, error, advice):
     namespace = _clickthrough_functions(monkeypatch)
     stop = namespace["_load_failure"]("EvolutionaryScale/esm3-sm-open-v1", error)
     assert isinstance(stop, SystemExit) and advice in str(stop)
+
+
+# --- Ready examples: every input field can be tried without the user's own file ---
+
+_VENOM = {
+    "three-finger toxin": ["P83302", "U3FAE1"],
+    "phospholipase A2": ["P0DJN6"],
+    "venom Kunitz-type": ["B7S4N9"],
+}
+
+
+def _fake_example_servers(monkeypatch, tmp_path):
+    """urlopen answering UniProt searches with the families above and the
+    examples release with a small HDF5; returns the URLs asked for."""
+    import io
+    import urllib.parse
+    import urllib.request
+
+    h5 = _clickthrough_h5(tmp_path / "release.h5")
+    calls = []
+
+    def urlopen(url, timeout=None):
+        calls.append(url)
+        if url.startswith("https://rest.uniprot.org/uniprotkb/search?"):
+            (query,) = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["query"]
+            (family,) = [f for f in _VENOM if f'"{f}"' in query]
+            return io.BytesIO(
+                "".join(
+                    f">sp|{acc}|X_{acc} {family} OS=Snake\nMKTLLLTLVVVTIVCLDLG\n"
+                    for acc in _VENOM[family]
+                ).encode()
+            )
+        if url.endswith(".h5"):
+            return io.BytesIO(h5.read_bytes())
+        raise OSError(f"unexpected URL {url}")
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    return calls
+
+
+def test_preparation_h5_example_fills_the_path_and_loads(monkeypatch, tmp_path):
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    calls = _fake_example_servers(monkeypatch, tmp_path)
+
+    namespace["h5_example_btn"].click()
+
+    example = namespace["_H5_EXAMPLE"]
+    assert calls == [namespace["_RELEASE_URL"] + example]
+    assert namespace["h5_path_field"].value == str(tmp_path / example)
+    assert namespace["input_args"][1]["n"] == 40
+    assert namespace["input_args"][1]["name"] == "prot_t5"
+    assert "Ready" in namespace["h5_status"].value
+    # A second click loads the file already there, without fetching it again.
+    namespace["_set_input"](1, None)
+    namespace["h5_example_btn"].click()
+    assert len(calls) == 1 and namespace["input_args"][1]["n"] == 40
+
+
+def test_preparation_fasta_example_and_its_csv(monkeypatch, tmp_path):
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    calls = _fake_example_servers(monkeypatch, tmp_path)
+
+    namespace["fasta_example_btn"].click()
+
+    fasta = tmp_path / namespace["_FASTA_EXAMPLE"]
+    assert len(calls) == len(namespace["_FASTA_EXAMPLE_FAMILIES"])
+    assert all("size=20" in url for url in calls)
+    assert namespace["fasta_path_field"].value == str(fasta)
+    assert namespace["input_args"][2]["n"] == 4
+    status = namespace["fasta_status"].value
+    assert "read as protein ID <code>P83302</code>" in status
+
+    namespace["csv_example_btn"].click()
+
+    csv = tmp_path / namespace["_CSV_EXAMPLE"]
+    assert namespace["csv_path_field"].value == str(csv)
+    assert csv.read_text().splitlines() == [
+        "identifier,venom_family",
+        "P83302,three-finger toxin",
+        "U3FAE1,three-finger toxin",
+        "P0DJN6,phospholipase A2",
+        "B7S4N9,Kunitz-type",
+    ]
+    assert len(calls) == 3, "the CSV comes with the FASTA, not from a second fetch"
+    # The panel's own CSV reader accepts it.
+    ok, path = namespace["_csv_file"]()
+    assert ok and path == str(csv)
+
+
+def test_preparation_examples_fill_nothing_without_a_connection(monkeypatch, tmp_path):
+    namespace, _, network = _run_preparation_panel(monkeypatch, tmp_path)
+
+    namespace["h5_example_btn"].click()
+    namespace["fasta_example_btn"].click()
+    namespace["csv_example_btn"].click()
+
+    assert len(network) == 3
+    assert "could not be fetched" in namespace["h5_status"].value
+    assert "could not be reached" in namespace["fasta_status"].value
+    assert "could not be reached" in namespace["csv_example_status"].value
+    for field in ("h5_path_field", "fasta_path_field", "csv_path_field"):
+        assert namespace[field].value == ""
+    assert sorted(p.name for p in tmp_path.iterdir()) == []
+
+
+def test_preparation_example_query_is_filled_in_and_set(monkeypatch, tmp_path):
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    query = namespace["_QUERY_EXAMPLES"][1]
+
+    namespace["query_examples"].value = query
+
+    assert namespace["query_input"].value == query
+    assert namespace["input_args"][3]["query"] == query
+    assert "Query set" in namespace["query_status"].value
+
+
+def _example_constants(source: str) -> dict:
+    names = {"_FASTA_EXAMPLE", "_FASTA_EXAMPLE_FAMILIES", "_FASTA_EXAMPLE_SIZE"}
+    found = {}
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name) and target.id in names:
+                found[target.id] = ast.literal_eval(node.value)
+    assert set(found) == names
+    return found
+
+
+def test_both_notebooks_fetch_the_same_example_fasta():
+    panel = _preparation_cell("# @title 2.")
+    clickthrough = _clickthrough_cell("# @title 4. Choose the FASTA")
+    assert _example_constants(panel) == _example_constants(clickthrough)
+
+
+def _run_clickthrough_choose(monkeypatch, tmp_path, *, path="", upload=False):
+    import types
+
+    monkeypatch.chdir(tmp_path)
+    uploads = []
+
+    def upload_file():
+        uploads.append(True)
+        (tmp_path / "mine.fasta").write_text(">a\nMKV\n")
+        return {"mine.fasta": b""}
+
+    namespace = {
+        "__name__": "__notebook__", "Path": Path, "fasta_filename": path,
+        "upload_fasta": upload, "files": types.SimpleNamespace(upload=upload_file),
+    }  # fmt: skip
+    exec(
+        compile(_clickthrough_cell("# @title 4. Choose the FASTA"), "click:4", "exec"),
+        namespace,
+    )
+    return namespace, uploads
+
+
+def test_clickthrough_runs_on_the_example_fasta_by_default(monkeypatch, tmp_path):
+    calls = _fake_example_servers(monkeypatch, tmp_path)
+    namespace, uploads = _run_clickthrough_choose(monkeypatch, tmp_path)
+
+    assert namespace["fasta_path"] == Path("example_snake_venom.fasta")
+    text = (tmp_path / "example_snake_venom.fasta").read_text()
+    assert text.count(">") == 4 and len(calls) == 3 and not uploads
+
+
+@pytest.mark.parametrize("how", ["path", "upload"])
+def test_clickthrough_uses_the_users_own_fasta(monkeypatch, tmp_path, how):
+    calls = _fake_example_servers(monkeypatch, tmp_path)
+    own = tmp_path / "own.fasta"
+    own.write_text(">a\nMKV\n")
+    namespace, uploads = _run_clickthrough_choose(
+        monkeypatch,
+        tmp_path,
+        path=str(own) if how == "path" else "",
+        upload=how == "upload",
+    )
+    expected = own if how == "path" else Path("mine.fasta")
+    assert namespace["fasta_path"] == expected
+    assert calls == [] and bool(uploads) == (how == "upload")
+
+
+def test_clickthrough_says_when_the_example_cannot_be_fetched(monkeypatch, tmp_path):
+    import urllib.request
+
+    def refuse(*_a, **_k):
+        raise OSError("offline")
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    with pytest.raises(SystemExit, match="UniProt could not be reached"):
+        _run_clickthrough_choose(monkeypatch, tmp_path)
+    assert not (tmp_path / "example_snake_venom.fasta").exists()
