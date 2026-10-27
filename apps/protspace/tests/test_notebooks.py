@@ -1082,7 +1082,7 @@ def test_preparation_refuses_an_empty_tab_instead_of_the_example(
 
     namespace["_on_gen"](None)
 
-    assert "Embeddings (.h5) tab has no file loaded" in capsys.readouterr().out
+    assert "No .h5 loaded" in capsys.readouterr().out
     assert downloads == [] and network == []
 
 
@@ -1906,13 +1906,13 @@ def test_preparation_names_the_custom_csv_beside_generate(monkeypatch, tmp_path)
     applied to the Snake Toxin example unseen."""
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
     target = namespace["input_target"]
-    assert "Custom annotations" not in target.value
+    assert "custom annotations" not in target.value
 
     namespace["csv_path_field"].value = str(tmp_path / "families.csv")
-    assert "Custom annotations from families.csv" in target.value
+    assert "custom annotations from families.csv" in target.value
 
     namespace["csv_path_field"].value = ""
-    assert "Custom annotations" not in target.value
+    assert "custom annotations" not in target.value
 
 
 def test_preparation_retells_routine_package_lines(monkeypatch, tmp_path, capsys):
@@ -2196,3 +2196,41 @@ def test_preparation_example_fetches_all_when_its_bundle_is_missing(
     assert len(downloads) == 1
     assert "could not be read" in capsys.readouterr().out
     assert not list(tmp_path.glob("*.part"))
+
+
+def test_preparation_hides_transient_progress_bars(monkeypatch, tmp_path):
+    """Colab keeps an empty slot for each closed widget: a bar opened and
+    closed per batch left a screen of blank space under the panel."""
+    import tqdm
+
+    _run_preparation_panel(monkeypatch, tmp_path)
+    bar_class = tqdm.tqdm
+    try:
+        assert bar_class(range(3), leave=False).disable
+        assert not bar_class(range(3)).disable
+    finally:
+        import tqdm.std
+
+        tqdm.tqdm = tqdm.std.tqdm
+
+
+def test_preparation_hides_the_package_lines_the_card_repeats(
+    monkeypatch, tmp_path, capsys
+):
+    import logging
+
+    import protspace
+
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    source = _string_constants(Path(protspace.__file__).parent)
+    for hidden in namespace["_PANEL_HIDDEN"]:
+        stem = hidden.split("set()")[0].split("https://")[0]
+        assert any(stem in s for s in source), f"no longer in the package: {stem!r}"
+
+    log = logging.getLogger("protspace.data.io.bundle")
+    log.info("Saved bundled output to: output/x.parquetbundle")
+    log.info("Applying UMAP 2 to 'prot_t5'")
+    log.info("Downloading https://ftp.expasy.org/databases/enzyme/enzyme.dat ...")
+    log.warning("Inactive UniProt entries: 3 deleted")
+    output = capsys.readouterr().out
+    assert output.strip() == "WARNING: Inactive UniProt entries: 3 deleted"
