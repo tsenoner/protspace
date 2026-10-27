@@ -932,3 +932,46 @@ class TestBulkInactiveResolution:
 
         assert got == expected
         assert set(got) == set(self.HEADERS)
+
+    def test_an_unreadable_record_does_not_fail_the_batch(self, monkeypatch):
+        """Parsing ran inside each entry's own try before; one record that
+        cannot be read must not mark the batch failed and append its proteins
+        a second time, empty."""
+        self._serve(monkeypatch)
+        extract = UniProtRetriever._extract_annotations
+
+        def picky(entry):
+            if entry.entry == "Q076D1":
+                raise TypeError("unexpected shape")
+            return extract(entry)
+
+        monkeypatch.setattr(
+            UniProtRetriever, "_extract_annotations", staticmethod(picky)
+        )
+        retriever = UniProtRetriever(headers=self.HEADERS[:3])
+
+        rows = retriever.fetch_annotations()
+
+        assert [r.identifier for r in rows] == ["P01308", "A0A001", "A0A002"]
+        assert retriever.failed_batch_count == 0
+        assert rows[0].annotations["protein_name"] == "Insulin"
+        # Merged into the unreadable entry: left unresolved, like a deleted one.
+        assert set(rows[2].annotations.values()) == {""}
+
+    def test_failed_bulk_requests_warn_once(self, monkeypatch, caplog):
+        uniprot = self._serve(monkeypatch)
+        batch = (200, {"results": [self.ACTIVE["P01308"]]}, {})
+        uniprot.override["accessions"] = [batch, (400, None, {})]
+        uniprot.override["search:accession"] = (400, None, {})
+        uniprot.override["search:upi"] = (400, None, {})
+        retriever = UniProtRetriever(headers=self.HEADERS)
+
+        with caplog.at_level("WARNING"):
+            retriever.fetch_annotations()
+
+        bulk = [r for r in caplog.records if "bulk UniProt" in r.getMessage()]
+        assert retriever.bulk_fallbacks == 3
+        assert [r.getMessage() for r in bulk] == [
+            "3 bulk UniProt lookups for inactive entries failed; those entries "
+            "were looked up one by one"
+        ]

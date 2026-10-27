@@ -234,6 +234,9 @@ class UniProtRetriever(BaseAnnotationRetriever):
         # How many identifiers the last fetch sent to UniProt: the ones that
         # are UniProt accessions. None until a fetch has run.
         self.queried_accessions: int | None = None
+        # Bulk inactive-entry requests that failed, sending their entries
+        # down the per-entry lookups; summarised once per fetch.
+        self.bulk_fallbacks = 0
 
     def _record_release(self, response: requests.Response) -> None:
         """Note the UniProtKB release a response reports, if any."""
@@ -262,9 +265,22 @@ class UniProtRetriever(BaseAnnotationRetriever):
                 annotations_dict[prop] = ""
         return annotations_dict
 
-    def _annotations_of(self, record: dict) -> dict:
-        """UNIPROT_ANNOTATIONS of an active entry's record."""
-        return self._extract_annotations(UniProtEntry(record))
+    def _annotations_of(self, record: dict) -> dict | None:
+        """UNIPROT_ANNOTATIONS of an active entry's record; None if unreadable.
+
+        An unreadable record leaves its accession unresolved instead of
+        failing the whole batch, whose other rows are already in the result.
+        """
+        try:
+            return self._extract_annotations(UniProtEntry(record))
+        except Exception as e:
+            accession = record.get("primaryAccession")
+            logger.warning(f"Could not read UniProt entry {accession}: {e}")
+            return None
+
+    def _bulk_failed(self, what: str, error: Exception) -> None:
+        self.bulk_fallbacks += 1
+        logger.debug(f"Bulk {what} failed, looking its entries up one by one: {error}")
 
     @staticmethod
     def _deleted_annotations(sequence: str = "", length: int = 0) -> dict:
@@ -334,20 +350,23 @@ class UniProtRetriever(BaseAnnotationRetriever):
                 missing_accessions, on_response=record_release, session=session
             )
         except Exception as e:
-            logger.warning(f"Bulk inactive-entry search failed, one by one: {e}")
+            self._bulk_failed("inactive-entry search", e)
             records = {}
         unanswered = [acc for acc in missing_accessions if acc not in records]
-        for accession in tqdm(
-            unanswered, desc="Resolving inactive entries", unit="seq", leave=False
-        ):
-            records[accession] = self._lookup_record(accession, session=session)
+        if unanswered:  # no empty bar per batch (Colab keeps its blank line)
+            for accession in tqdm(
+                unanswered, desc="Resolving inactive entries", unit="seq", leave=False
+            ):
+                records[accession] = self._lookup_record(accession, session=session)
 
         annotations: dict[str, dict] = {}  # resolved to an active entry
         merged_into = {}
         for accession in missing_accessions:
             record = records[accession]
             if _is_active(record):
-                annotations[accession] = self._annotations_of(record)
+                values = self._annotations_of(record)
+                if values is not None:
+                    annotations[accession] = values
             elif target := _merge_target(record):
                 merged_into[accession] = target
 
@@ -363,7 +382,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     )
                 }
             except Exception as e:
-                logger.warning(f"Bulk merge-target fetch failed, one by one: {e}")
+                self._bulk_failed("merge-target fetch", e)
                 found = {}
             for accession, target in merged_into.items():
                 if target not in found:
@@ -374,8 +393,10 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     except Exception:
                         found[target] = None
                 if _is_active(found[target]):
-                    annotations[accession] = self._annotations_of(found[target])
-                    logger.debug(f"Resolved inactive entry {accession} → {target}")
+                    values = self._annotations_of(found[target])
+                    if values is not None:
+                        annotations[accession] = values
+                        logger.debug(f"Resolved inactive entry {accession} → {target}")
         resolved_ids = set(annotations)
 
         deleted = [acc for acc in missing_accessions if acc not in resolved_ids]
@@ -391,7 +412,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     uniparc_ids, on_response=record_release, session=session
                 )
             except Exception as e:
-                logger.warning(f"Bulk UniParc search failed, one by one: {e}")
+                self._bulk_failed("UniParc search", e)
         for accession in deleted:
             upi = uniparc_of[accession]
             if upi and upi not in sequences:
@@ -401,10 +422,12 @@ class UniProtRetriever(BaseAnnotationRetriever):
             annotations[accession] = self._deleted_annotations(
                 *sequences.get(upi, ("", 0))
             )
+            reason = (records[accession] or {}).get("inactiveReason", {})
             found_sequence = bool(annotations[accession]["sequence"])
             logger.debug(
-                f"Deleted entry {accession} "
-                f"({'sequence from UniParc' if found_sequence else 'no sequence'})"
+                f"Deleted entry {accession}: "
+                f"{reason.get('deletedReason', reason.get('inactiveReasonType', 'unknown'))}"
+                f" ({'sequence from UniParc' if found_sequence else 'no sequence'})"
             )
 
         resolved = [
@@ -434,6 +457,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
         total_failed_proteins = 0
         # Reset so a re-fetch does not accumulate.
         self.failed_batch_count = 0
+        self.bulk_fallbacks = 0
         self.releases.clear()
 
         # Separate valid UniProt accessions from non-UniProt identifiers
@@ -539,6 +563,13 @@ class UniProtRetriever(BaseAnnotationRetriever):
             else:
                 msg += f" {seq_count} sequences retrieved."
             logger.warning(msg)
+
+        if self.bulk_fallbacks:
+            logger.warning(
+                f"{self.bulk_fallbacks} bulk UniProt "
+                f"{'lookup' if self.bulk_fallbacks == 1 else 'lookups'} for inactive "
+                "entries failed; those entries were looked up one by one"
+            )
 
         if total_resolved or total_deleted:
             parts = []

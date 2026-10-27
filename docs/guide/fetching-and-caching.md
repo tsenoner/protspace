@@ -157,7 +157,8 @@ many, and the rest of the source is cached as usual. UniProt settles the inactiv
 (deleted or merged entries) of each batch of 100 with three more requests, retried like the batch
 itself: one search for their records, one fetch of the entries they were merged into, and one
 UniParc search for the deleted ones' sequences. An accession those leave unsettled is looked up on
-its own, and those single lookups are single attempts too.
+its own: its entry and its UniParc sequence in a single attempt each, then, if the entry lookup
+fails, a search by secondary accession with the full retry budget.
 
 ### Requests run in parallel, within limits
 
