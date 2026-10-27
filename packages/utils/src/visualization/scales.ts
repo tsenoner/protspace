@@ -125,27 +125,3 @@ export function fitScales(
       .range([rect.top + rect.height, rect.top]),
   };
 }
-
-export class ScaleManager {
-  static createColorScale(
-    values: (string | null)[],
-    colors?: string[],
-  ): d3.ScaleOrdinal<string, string> {
-    const uniqueValues = Array.from(new Set(values.filter((v) => v != null))) as string[];
-
-    return d3
-      .scaleOrdinal<string, string>()
-      .domain(uniqueValues)
-      .range(colors || d3.schemeCategory10);
-  }
-
-  static createSizeScale(
-    values: number[],
-    range: [number, number] = [20, 200],
-  ): d3.ScaleLinear<number, number> {
-    return d3
-      .scaleLinear()
-      .domain(d3.extent(values) as [number, number])
-      .range(range);
-  }
-}

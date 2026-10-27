@@ -69,7 +69,6 @@ const EAT_BOUND_UI: Record<EatBound, { id: string; sliderLabel: string; percentL
 /** The `eat-overlay-change` detail the EAT panel dispatches. */
 export interface EatOverlayChangeDetail {
   enabled: boolean;
-  confidenceThreshold: number;
   reliability: EatReliabilityState;
 }
 
@@ -268,7 +267,6 @@ export class EatReliabilityController implements ReactiveController {
   private _emit(): void {
     this.options.emit({
       enabled: this._overlayEnabled,
-      confidenceThreshold: this._reliability.min,
       reliability: this._reliability,
     });
   }

@@ -91,11 +91,6 @@ describe('reliabilityFromConditions', () => {
     expect(reliabilityFromConditions([])).toEqual(DEFAULT_EAT_RELIABILITY);
   });
 
-  it('reads a hand-built exclusive operator too', () => {
-    const gt = createNumericCondition({ annotation: KEY, operator: 'gt', min: 0.5 });
-    expect(reliabilityFromConditions([gt])).toEqual({ min: 0.5, max: 1 });
-  });
-
   it('does not read a negated one-sided condition as a range', () => {
     // NOT(conf >= X) keeps confidences below X but drops the curated (N/A) proteins; the
     // control's "0 to X" keeps them, so reading it as that range would misstate the filter.

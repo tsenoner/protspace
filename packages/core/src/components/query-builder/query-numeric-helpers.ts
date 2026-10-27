@@ -4,19 +4,6 @@ import { ANY_VALUE } from './query-types';
 import { NA_VALUE, readNumericValue } from '@protspace/utils';
 
 /**
- * The condition as a range. One saved with a one-sided operator (see `LegacyNumericOperator`)
- * keeps only the bound that operator read, inclusive; the operator goes. Returns the condition
- * itself when it is already a range.
- */
-export function toRange(condition: NumericCondition): NumericCondition {
-  if (condition.operator === undefined) return condition;
-  const { operator, ...range } = condition;
-  if (operator === 'gt' || operator === 'gte') return { ...range, max: null };
-  if (operator === 'lt' || operator === 'lte') return { ...range, min: null };
-  return range;
-}
-
-/**
  * Shared empty result for `presenceOf`, which runs once per protein row.
  * Frozen because it is handed out to every chip-less condition: one stray
  * mutation through a cast would give them all a presence chip.
@@ -30,8 +17,7 @@ export function presenceOf(condition: NumericCondition): readonly string[] {
 
 /** True when the range has at least one end; the other may be open. */
 function hasNumericBounds(condition: NumericCondition): boolean {
-  const { min, max } = toRange(condition);
-  return min !== null || max !== null;
+  return condition.min !== null || condition.max !== null;
 }
 
 /**
@@ -61,24 +47,24 @@ export function readRange(condition: NumericCondition): NumericRangeEdit {
   const presence = presenceOf(condition);
   if (presence.includes(ANY_VALUE))
     return { min: null, max: null, na: presence.includes(NA_VALUE) };
-  const { min, max } = toRange(condition);
+  const { min, max } = condition;
   return { min, max, na: presence.includes(NA_VALUE) || (min === null && max === null) };
 }
 
 /**
  * The condition holding `edit`, in its one stored form: the full range with N/A kept stores no
  * presence (the untouched no-op), without N/A stores `ANY_VALUE`; a narrowed range stores
- * `NA_VALUE` when it keeps N/A. An older query's operator goes.
+ * `NA_VALUE` when it keeps N/A.
  */
 export function writeRange(condition: NumericCondition, edit: NumericRangeEdit): NumericCondition {
   const full = edit.min === null && edit.max === null;
   const presence = full ? (edit.na ? [] : [ANY_VALUE]) : edit.na ? [NA_VALUE] : [];
-  return { ...toRange(condition), min: edit.min, max: edit.max, presence };
+  return { ...condition, min: edit.min, max: edit.max, presence };
 }
 
 /**
  * Test a single raw numeric value against the condition's range, `min <= value <= max`, a null
- * end open. Callers pass `toRange(condition)` for a query that may be an older one.
+ * end open.
  *
  * Null (missing) values are matched ONLY by an explicit `NA_VALUE` presence
  * chip — no range ever matches a null, since a missing value sits outside the
@@ -120,13 +106,12 @@ export function matchesNumericValue(value: number | null, condition: NumericCond
  */
 export function countNumericMatches(condition: NumericCondition, data: ProtspaceData): number {
   if (!isNumericConditionReady(condition)) return 0;
-  const range = toRange(condition);
   const values = data.numeric_annotation_data?.[condition.annotation];
   if (!values) return 0;
   const numProteins = data.protein_ids?.length ?? 0;
   let count = 0;
   for (let i = 0; i < numProteins; i++) {
-    if (matchesNumericValue(readNumericValue(values, i), range)) count++;
+    if (matchesNumericValue(readNumericValue(values, i), condition)) count++;
   }
   return count;
 }

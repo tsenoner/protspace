@@ -76,7 +76,8 @@ export function parseLayout(raw: unknown): LayoutState {
   };
 }
 
-function sameRect(a: FloatingRect | null, b: FloatingRect | null): boolean {
+/** The same floating rect, or both none. */
+export function sameRect(a: FloatingRect | null, b: FloatingRect | null): boolean {
   if (a === null || b === null) return a === b;
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }

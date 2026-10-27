@@ -1,9 +1,4 @@
 export type LogicalOp = 'AND' | 'OR' | 'NOT';
-/**
- * The comparisons a numeric condition offered before it became one inclusive range. A query saved
- * with one still loads: `toRange` keeps the bound it read, and `>` / `<` become `>=` / `<=`.
- */
-export type LegacyNumericOperator = 'gt' | 'gte' | 'lt' | 'lte' | 'between';
 
 /**
  * Presence sentinel meaning "this annotation has a value at all".
@@ -38,8 +33,6 @@ export interface NumericCondition extends BaseCondition {
    */
   min: number | null;
   max: number | null;
-  /** Read only when loading an older query (see `toRange`); never written. */
-  operator?: LegacyNumericOperator;
   /**
    * Presence sentinels (`NA_VALUE` / `ANY_VALUE`) unioned with the range,
    * mirroring how a categorical condition carries them among its `values`.

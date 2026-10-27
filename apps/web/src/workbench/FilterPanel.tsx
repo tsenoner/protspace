@@ -1,4 +1,5 @@
 import type { ProtspaceQueryBuilder, PsMenu } from '@protspace/core';
+import { countNoun } from '@protspace/utils';
 import { useEffect, useRef } from 'react';
 import type { SidebarPanel } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
@@ -69,7 +70,7 @@ export function FilterPanel({
 
   const state =
     unapplied > 0
-      ? `${unapplied} unapplied ${unapplied === 1 ? 'change' : 'changes'}`
+      ? countNoun(unapplied, 'unapplied change', 'unapplied changes')
       : applied > 0
         ? 'Applied'
         : null;

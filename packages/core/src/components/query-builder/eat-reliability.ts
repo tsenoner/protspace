@@ -1,6 +1,6 @@
 import { createNumericCondition } from './query-types';
 import type { NumericCondition } from './query-types';
-import { presenceOf, toRange } from './query-numeric-helpers';
+import { presenceOf } from './query-numeric-helpers';
 import {
   DEFAULT_EAT_RELIABILITY,
   NA_VALUE,
@@ -99,9 +99,8 @@ export function sameConditions(
 ): boolean {
   return (
     a.length === b.length &&
-    a.every((leftCondition, index) => {
-      const left = toRange(leftCondition);
-      const right = toRange(b[index]);
+    a.every((left, index) => {
+      const right = b[index];
       return (
         left.annotation === right.annotation &&
         left.min === right.min &&
@@ -118,9 +117,7 @@ export function sameConditions(
  * A shape it does not recognise degrades to whichever bound is present rather than
  * silently resetting to 0, which is what made a hand-built condition invisible.
  *
- * The range follows from which ends the condition has (an older query's operator read
- * through `toRange`, as the builder and the evaluator read it); an open end is the
- * neutral bound. Falling through to `DEFAULT_EAT_RELIABILITY` for a shape with a bound
+ * The range follows from which ends the condition has; an open end is the neutral bound. Falling through to `DEFAULT_EAT_RELIABILITY` for a shape with a bound
  * would leave the user's own condition invisible and snap the control back to the full
  * range, which is the #380 symptom this file exists to fix.
  */
@@ -134,7 +131,7 @@ export function reliabilityFromConditions(
     // show what the condition does not keep, and the next nudge would commit that reading back
     // into the query. It is skipped, like any shape the control does not own.
     if (condition.logicalOp === 'NOT') continue;
-    const { min, max } = toRange(condition);
+    const { min, max } = condition;
     if (min !== null || max !== null) {
       return normalizeReliability({ min: min ?? NEUTRAL_BOUND.min, max: max ?? NEUTRAL_BOUND.max });
     }

@@ -62,7 +62,9 @@ const chord = (ctx: TourContext, key: string): string =>
 const modifier = (ctx: TourContext): string =>
   ctx.mac ? '<kbd><span class="mod-key">⌘</span></kbd>' : '<kbd>Ctrl</kbd>';
 
-const shift = (ctx: TourContext): string => (ctx.mac ? '<kbd>⇧</kbd>' : '<kbd>Shift</kbd>');
+/** ⇧⌘Z on a Mac, Ctrl+Shift+Z elsewhere: redo, as one key cap. */
+const redoChord = (ctx: TourContext): string =>
+  ctx.mac ? '<kbd><span class="mod-key">⇧⌘</span>Z</kbd>' : '<kbd>Ctrl+Shift+Z</kbd>';
 
 /** "Click" on a mouse, "Tap" on a touch screen. */
 const press = (ctx: TourContext): string => (ctx.coarse ? 'Tap' : 'Click');
@@ -153,9 +155,10 @@ const STEPS: Record<TourStepId, StepBuilder> = {
   }),
 
   selection: (ctx, kind) => {
+    // Its own line, with both shortcuts in full: undo is new, and "add Shift" was easy to miss.
     const undo = ctx.coarse
       ? ''
-      : ` ${chord(ctx, 'Z')} undoes the last step (add ${shift(ctx)} to redo).`;
+      : `<br><br><strong>Undo</strong> ${chord(ctx, 'Z')} and <strong>redo</strong> ${redoChord(ctx)} a selection, <strong>Show only these</strong> or a filter change.`;
     return {
       id: 'selection',
       title: 'Selection Tools',

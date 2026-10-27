@@ -5,7 +5,6 @@ import type {
   NumericCondition,
 } from './query-types';
 import { clearLeadingOpInList, isFilterGroup } from './query-types';
-import { toRange } from './query-numeric-helpers';
 import { hasConfiguredCondition } from './query-evaluate';
 
 /** The same values in any order: a condition matches a set of values, so order is no change. */
@@ -23,8 +22,8 @@ function sameItem(a: FilterQueryItem, b: FilterQueryItem): boolean {
   if (aGroup || bGroup) return aGroup && bGroup && sameQuery(a.conditions, b.conditions);
   if (a.kind !== b.kind || a.annotation !== b.annotation) return false;
   if (a.kind === 'categorical') return sameValues(a.values, (b as CategoricalCondition).values);
-  const left = toRange(a);
-  const right = toRange(b as NumericCondition);
+  const left = a;
+  const right = b as NumericCondition;
   return (
     left.min === right.min &&
     left.max === right.max &&

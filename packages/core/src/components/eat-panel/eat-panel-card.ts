@@ -1,5 +1,6 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import {
+  countNoun,
   formatCount,
   getPredictedCellValues,
   type EatReliabilityState,
@@ -70,8 +71,7 @@ function curatedLabels(index: EatIndex, protein: number): string[] {
   return labels;
 }
 
-const sourceOf = (count: number) =>
-  `source of ${formatCount(count)} ${count === 1 ? 'prediction' : 'predictions'}`;
+const sourceOf = (count: number) => `source of ${countNoun(count, 'prediction', 'predictions')}`;
 
 /** `source of 9 predictions`: draws the source's lines without selecting it. */
 function sourceLink(

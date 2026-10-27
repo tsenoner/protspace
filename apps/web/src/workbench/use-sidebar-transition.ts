@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
+import { prefersReducedMotion } from '../landing/motion';
 import type { SidebarPhase } from './layout-geometry';
 
 interface SlideTargets {
@@ -17,8 +18,6 @@ function slideTiming(): KeyframeAnimationOptions {
     easing: style.getPropertyValue('--ps-ease').trim(),
   };
 }
-
-const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
  * The sidebar's slide (design decision 4). Opening reports 'opening' (the sidebar shows over the

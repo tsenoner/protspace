@@ -12,7 +12,6 @@ const KEY = 'ec__eat_confidence';
 function onKey(overrides: Partial<NumericCondition> = {}): NumericCondition {
   return createNumericCondition({
     annotation: KEY,
-    operator: 'lt',
     max: 0.5,
     logicalOp: 'NOT',
     ...overrides,
@@ -26,10 +25,7 @@ describe('findConditionsForAnnotation', () => {
   });
 
   it('finds every condition when the column carries a two-sided band', () => {
-    const query: FilterQuery = [
-      onKey({ operator: 'lt', max: 0.3 }),
-      onKey({ operator: 'gt', min: 0.9 }),
-    ];
+    const query: FilterQuery = [onKey({ max: 0.3 }), onKey({ min: 0.9, max: null })];
     expect(findConditionsForAnnotation(query, KEY)).toHaveLength(2);
   });
 
@@ -37,13 +33,17 @@ describe('findConditionsForAnnotation', () => {
     // This is the heart of #380: the eat-confidence column exists only to drive the
     // reliability filter, so a condition the user hand-built in the query builder IS
     // that filter — the slider must recognise it rather than append a second,
-    // contradictory condition beside it. `gt` matters most: it is what the query
-    // builder produces by default when an eat-confidence column is picked. Negation is
-    // part of the shape the predecessor matched on, so it must not gate the match now.
-    for (const operator of ['gt', 'lt', 'between'] as const) {
+    // contradictory condition beside it, whichever range it holds. Negation is part of the
+    // shape the predecessor matched on, so it must not gate the match now.
+    const ranges = [
+      { min: 0.5, max: null },
+      { min: null, max: 0.5 },
+      { min: 0.2, max: 0.8 },
+    ];
+    for (const range of ranges) {
       for (const logicalOp of [undefined, 'NOT'] as const) {
         const query: FilterQuery = [
-          createNumericCondition({ annotation: KEY, operator, min: 0.5, logicalOp }),
+          createNumericCondition({ annotation: KEY, ...range, logicalOp }),
         ];
         expect(findConditionsForAnnotation(query, KEY)).toHaveLength(1);
       }
@@ -58,15 +58,15 @@ describe('findConditionsForAnnotation', () => {
 
 describe('replaceConditionsForAnnotation', () => {
   it('replaces conditions at any depth', () => {
-    const untouched = createNumericCondition({ annotation: 'length', operator: 'gt', min: 10 });
+    const untouched = createNumericCondition({ annotation: 'length', min: 10 });
     const query: FilterQuery = [untouched, createGroup({ conditions: [onKey()] })];
 
-    const next = replaceConditionsForAnnotation(query, KEY, onKey({ operator: 'gt', min: 0.8 }));
+    const next = replaceConditionsForAnnotation(query, KEY, onKey({ min: 0.8, max: null }));
 
     const flat = next.filter((i): i is NumericCondition => !isFilterGroup(i));
     expect(flat.some((c) => c.annotation === 'length')).toBe(true);
     expect(findConditionsForAnnotation(next, KEY)).toHaveLength(1);
-    expect(findConditionsForAnnotation(next, KEY)[0]?.operator).toBe('gt');
+    expect(findConditionsForAnnotation(next, KEY)[0]?.min).toBe(0.8);
   });
 
   it('drops the column’s conditions entirely when given none', () => {
@@ -84,11 +84,11 @@ describe('replaceConditionsForAnnotation', () => {
     const next = replaceConditionsForAnnotation(
       query,
       KEY,
-      onKey({ operator: 'gte', min: 0.6, logicalOp: undefined }),
+      onKey({ min: 0.6, max: null, logicalOp: undefined }),
     );
 
     expect(findConditionsForAnnotation(next, KEY)).toHaveLength(1);
-    expect(findConditionsForAnnotation(next, KEY)[0]?.operator).toBe('gte');
+    expect(findConditionsForAnnotation(next, KEY)[0]?.min).toBe(0.6);
   });
 
   it('leaves another base annotation’s condition alone', () => {
@@ -107,18 +107,18 @@ describe('replaceConditionsForAnnotation', () => {
   // `A AND <cond>`: with the condition removed, `A` became first, and a first
   // item's leading operator is ignored, so the user's OR was silently dropped.
   it('keeps the connector of the condition it replaces', () => {
-    const first = createNumericCondition({ annotation: 'length', operator: 'gt', min: 10 });
+    const first = createNumericCondition({ annotation: 'length', min: 10 });
     const query: FilterQuery = [first, onKey({ logicalOp: 'OR' })];
 
     const next = replaceConditionsForAnnotation(
       query,
       KEY,
-      onKey({ operator: 'gte', min: 0.6, logicalOp: undefined }),
+      onKey({ min: 0.6, max: null, logicalOp: undefined }),
     );
 
     expect(next).toHaveLength(2);
     expect((next[1] as NumericCondition).logicalOp).toBe('OR');
-    expect((next[1] as NumericCondition).operator).toBe('gte');
+    expect((next[1] as NumericCondition).min).toBe(0.6);
   });
 
   it('replaces a nested condition inside its group rather than hoisting it', () => {
@@ -127,7 +127,7 @@ describe('replaceConditionsForAnnotation', () => {
     const next = replaceConditionsForAnnotation(
       query,
       KEY,
-      onKey({ operator: 'gte', min: 0.6, logicalOp: undefined }),
+      onKey({ min: 0.6, max: null, logicalOp: undefined }),
     );
 
     const groups = next.filter(isFilterGroup);
@@ -144,7 +144,7 @@ describe('replaceConditionsForAnnotation', () => {
     const next = replaceConditionsForAnnotation(
       query,
       KEY,
-      onKey({ operator: 'gte', min: 0.6, logicalOp: undefined }),
+      onKey({ min: 0.6, max: null, logicalOp: undefined }),
     );
 
     expect((next[0] as NumericCondition).logicalOp).toBeUndefined();

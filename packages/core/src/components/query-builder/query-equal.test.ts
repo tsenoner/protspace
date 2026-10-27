@@ -12,7 +12,6 @@ const length = (min: number | null, id = 'n'): FilterQuery[number] => ({
   id,
   kind: 'numeric',
   annotation: 'length',
-  operator: 'gt',
   min,
   max: null,
   presence: [],
@@ -26,7 +25,7 @@ describe('sameQuery', () => {
     expect(sameQuery([], [])).toBe(true);
   });
 
-  it('sees a changed value, bound or presence, and reads an older operator as its range', () => {
+  it('sees a changed value, bound or presence', () => {
     expect(sameQuery([organism(['Human'])], [organism(['Mouse'])])).toBe(false);
     expect(sameQuery([length(5)], [length(6)])).toBe(false);
     expect(
@@ -35,12 +34,6 @@ describe('sameQuery', () => {
         [{ ...(length(5) as object), presence: ['__NA__'] } as FilterQuery[number]],
       ),
     ).toBe(false);
-    expect(
-      sameQuery(
-        [length(5)],
-        [{ ...(length(5) as object), operator: 'gte' } as FilterQuery[number]],
-      ),
-    ).toBe(true);
   });
 
   it('sees a changed id or logical operator', () => {

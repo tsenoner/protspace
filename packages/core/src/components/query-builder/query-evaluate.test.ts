@@ -317,17 +317,9 @@ describe('evaluateQuery', () => {
       expect(result).toEqual(new Set([0, 1, 2]));
     });
 
-    it('loads an older strict operator as the inclusive bound it read', () => {
-      // A query saved as `> 250` with a stale max keeps only its min, now inclusive.
-      const query: FilterQuery = [
-        { id: '1', kind: 'numeric', annotation: 'length', operator: 'gt', min: 250, max: 300 },
-      ];
-      expect(evaluateQuery(query, createTestData())).toEqual(new Set([1, 2, 3]));
-    });
-
     it('matches proteins within an inclusive interval', () => {
       const query: FilterQuery = [
-        { id: '1', kind: 'numeric', annotation: 'length', operator: 'between', min: 250, max: 400 },
+        { id: '1', kind: 'numeric', annotation: 'length', min: 250, max: 400 },
       ];
       const result = evaluateQuery(query, createTestData());
       // between 250 and 400 inclusive → P2(250), P3(400)
@@ -336,7 +328,7 @@ describe('evaluateQuery', () => {
 
     it('never matches a protein with a null numeric value', () => {
       const query: FilterQuery = [
-        { id: '1', kind: 'numeric', annotation: 'length', operator: 'gt', min: 0, max: null },
+        { id: '1', kind: 'numeric', annotation: 'length', min: 0, max: null },
       ];
       const result = evaluateQuery(query, createTestData());
       // P5 has null length → excluded even though 0 is below every real value
@@ -345,7 +337,7 @@ describe('evaluateQuery', () => {
 
     it('is a no-op (matches all) when a required bound is missing, like an empty categorical condition', () => {
       const query: FilterQuery = [
-        { id: '1', kind: 'numeric', annotation: 'length', operator: 'gt', min: null, max: null },
+        { id: '1', kind: 'numeric', annotation: 'length', min: null, max: null },
       ];
       const result = evaluateQuery(query, createTestData());
       expect(result).toEqual(new Set([0, 1, 2, 3, 4]));
@@ -358,7 +350,6 @@ describe('evaluateQuery', () => {
           logicalOp: 'NOT',
           kind: 'numeric',
           annotation: 'length',
-          operator: 'gt',
           min: null,
           max: null,
         },
@@ -377,7 +368,6 @@ describe('evaluateQuery', () => {
       const empty = {
         kind: 'numeric' as const,
         annotation: 'length',
-        operator: 'between' as const,
         min: null,
         max: null,
       };
@@ -402,7 +392,7 @@ describe('evaluateQuery', () => {
 
     it('matches nothing for between with min > max', () => {
       const query: FilterQuery = [
-        { id: '1', kind: 'numeric', annotation: 'length', operator: 'between', min: 500, max: 200 },
+        { id: '1', kind: 'numeric', annotation: 'length', min: 500, max: 200 },
       ];
       const result = evaluateQuery(query, createTestData());
       expect(result).toEqual(new Set());
@@ -416,7 +406,6 @@ describe('evaluateQuery', () => {
           logicalOp: 'AND',
           kind: 'numeric',
           annotation: 'length',
-          operator: 'gt',
           min: 250,
           max: null,
         },
@@ -434,7 +423,6 @@ describe('evaluateQuery', () => {
           logicalOp: 'OR',
           kind: 'numeric',
           annotation: 'length',
-          operator: 'lt',
           min: null,
           max: 200,
         },
@@ -451,7 +439,6 @@ describe('evaluateQuery', () => {
           logicalOp: 'NOT',
           kind: 'numeric',
           annotation: 'length',
-          operator: 'gt',
           min: 250,
           max: null,
         },
@@ -482,7 +469,6 @@ describe('evaluateQuery', () => {
         const query: FilterQuery = [
           createNumericCondition({
             annotation: 'conf',
-            operator: 'lt',
             max: 0.5,
             logicalOp: 'NOT',
           }),
@@ -495,9 +481,7 @@ describe('evaluateQuery', () => {
 
       it('mirror without NOT: x < 0.5 matches only the sub-threshold prediction', () => {
         const data = createNullableNumericData();
-        const query: FilterQuery = [
-          createNumericCondition({ annotation: 'conf', operator: 'lt', max: 0.5 }),
-        ];
+        const query: FilterQuery = [createNumericCondition({ annotation: 'conf', max: 0.5 })];
         const result = evaluateQuery(query, data);
         expect(result).toEqual(new Set([0]));
       });
@@ -511,7 +495,6 @@ describe('evaluateQuery', () => {
         const query: FilterQuery = [
           createNumericCondition({
             annotation: 'conf',
-            operator: 'gte',
             min: 0.5,
             presence: [NA_VALUE],
           }),
@@ -549,14 +532,14 @@ describe('hasConfiguredCondition', () => {
 
   it('is false for a numeric condition missing its required bound', () => {
     const query: FilterQuery = [
-      { id: '1', kind: 'numeric', annotation: 'length', operator: 'gt', min: null, max: null },
+      { id: '1', kind: 'numeric', annotation: 'length', min: null, max: null },
     ];
     expect(hasConfiguredCondition(query)).toBe(false);
   });
 
   it('is true for a numeric condition with its required bound set', () => {
     const query: FilterQuery = [
-      { id: '1', kind: 'numeric', annotation: 'length', operator: 'gt', min: 250, max: null },
+      { id: '1', kind: 'numeric', annotation: 'length', min: 250, max: null },
     ];
     expect(hasConfiguredCondition(query)).toBe(true);
   });
@@ -667,7 +650,6 @@ describe('evaluateQueryExcluding', () => {
         logicalOp: 'AND',
         kind: 'numeric',
         annotation: 'length',
-        operator: 'gt',
         min: 250,
         max: null,
       },
@@ -788,10 +770,7 @@ describe('inclusive numeric operators (gte / lte)', () => {
   // length: P1=100, P2=250, P3=400, P4=550, P5=null
   it('an older lt loads as lte: the boundary value is included', () => {
     const data = createTestData();
-    const lt = evaluateQuery(
-      [createNumericCondition({ annotation: 'length', operator: 'lt', max: 250 })],
-      data,
-    );
+    const lt = evaluateQuery([createNumericCondition({ annotation: 'length', max: 250 })], data);
     expect(lt).toEqual(new Set([0, 1]));
   });
 
@@ -799,7 +778,7 @@ describe('inclusive numeric operators (gte / lte)', () => {
     const data = createTestData();
     // P5 has a null length and must not match gte/lte regardless of bound.
     const result = evaluateQuery(
-      [createNumericCondition({ annotation: 'length', operator: 'gte', min: -Infinity })],
+      [createNumericCondition({ annotation: 'length', min: -Infinity })],
       data,
     );
     expect(result.has(4)).toBe(false);
@@ -880,7 +859,6 @@ describe('presence chips', () => {
       const query: FilterQuery = [
         createNumericCondition({
           annotation: 'length',
-          operator: 'gte',
           min: 400,
           presence: [NA_VALUE],
         }),

@@ -652,7 +652,6 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
         id: 'x',
         kind: 'numeric',
         annotation: EAT_KEY,
-        operator: 'gte',
         min: 0.6,
         max: null,
         presence: [NA_VALUE],
@@ -693,7 +692,7 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
     m.eatPanel.setReliabilityState.mockClear();
 
     editQuery(m.queryBuilder, [
-      { id: 'other', kind: 'numeric', annotation: 'length', operator: 'gt', min: 10 },
+      { id: 'other', kind: 'numeric', annotation: 'length', min: 10 },
     ] as FilterQuery);
     apply(m.queryBuilder, range(4));
 
@@ -709,7 +708,6 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
         id: 'x',
         kind: 'numeric',
         annotation: EAT_KEY,
-        operator: 'gte',
         min: 0.5,
         max: null,
         presence: [NA_VALUE],
@@ -805,11 +803,11 @@ describe('filter controller: every reliability range (#380)', () => {
   });
 
   // A hand-built condition on the eat-confidence column IS the reliability filter, whatever its
-  // operator, so the slider must replace it rather than AND a contradictory one beside it.
+  // range, so the slider must replace it rather than AND a contradictory one beside it.
   it.each([
-    ['greater than', { operator: 'gt' as const, min: 0.5, max: null }],
-    ['between', { operator: 'between' as const, min: 0.4, max: 0.9 }],
-    ['non-negated less than', { operator: 'lt' as const, min: null, max: 0.5 }],
+    ['at least', { min: 0.5, max: null }],
+    ['between', { min: 0.4, max: 0.9 }],
+    ['at most', { min: null, max: 0.5 }],
   ])('replaces an applied hand-built "%s" rather than appending beside it', (_name, seed) => {
     editQuery(m.queryBuilder, [{ id: 'x', kind: 'numeric', annotation: EAT_KEY, ...seed }]);
     apply(m.queryBuilder, range(10));
@@ -856,7 +854,6 @@ describe('filter controller: every reliability range (#380)', () => {
             id: 'x',
             kind: 'numeric',
             annotation: EAT_KEY,
-            operator: 'lt',
             min: null,
             max: 0.2,
             logicalOp: 'NOT',

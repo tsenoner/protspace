@@ -62,7 +62,10 @@ describe('EAT reliability controller: switch, handles and boxes', () => {
     const listener = listen(panel);
 
     await toggle(panel, false);
-    expect(detail(listener)).toMatchObject({ enabled: false, confidenceThreshold: 0 });
+    expect(detail(listener)).toMatchObject({
+      enabled: false,
+      reliability: expect.objectContaining({ min: 0 }),
+    });
     expect(lower(panel).disabled).toBe(true);
 
     await toggle(panel, true);
@@ -73,14 +76,20 @@ describe('EAT reliability controller: switch, handles and boxes', () => {
     expect(percents(panel)[0]!.value).toBe('73');
     // A screen reader hears the percentage the box shows, not the 0–1 fraction.
     expect(lower(panel).getAttribute('aria-valuetext')).toBe('73\u202f%');
-    expect(detail(listener)).toMatchObject({ enabled: true, confidenceThreshold: 0.73 });
+    expect(detail(listener)).toMatchObject({
+      enabled: true,
+      reliability: expect.objectContaining({ min: 0.73 }),
+    });
 
     const box = percents(panel)[0]!;
     box.value = '34';
     box.dispatchEvent(new Event('input'));
     box.dispatchEvent(new Event('change'));
     await panel.updateComplete;
-    expect(detail(listener)).toMatchObject({ enabled: true, confidenceThreshold: 0.34 });
+    expect(detail(listener)).toMatchObject({
+      enabled: true,
+      reliability: expect.objectContaining({ min: 0.34 }),
+    });
     expect(lower(panel).value).toBe('0.34');
   });
 
@@ -97,7 +106,10 @@ describe('EAT reliability controller: switch, handles and boxes', () => {
 
     vi.advanceTimersByTime(150);
     expect(listener).toHaveBeenCalledOnce();
-    expect(detail(listener)).toMatchObject({ enabled: true, confidenceThreshold: 0.62 });
+    expect(detail(listener)).toMatchObject({
+      enabled: true,
+      reliability: expect.objectContaining({ min: 0.62 }),
+    });
   });
 
   it('commits exactly EAT_THRESHOLD_COMMIT_DELAY_MS after the last tick, not before', async () => {
@@ -123,7 +135,7 @@ describe('EAT reliability controller: switch, handles and boxes', () => {
 
     vi.advanceTimersByTime(150);
     expect(listener).toHaveBeenCalledOnce();
-    expect(detail(listener)).toMatchObject({ confidenceThreshold: 0.45 });
+    expect(detail(listener)).toMatchObject({ reliability: expect.objectContaining({ min: 0.45 }) });
   });
 
   it('flushes the pending apply immediately on release (@change), once', async () => {
@@ -135,7 +147,7 @@ describe('EAT reliability controller: switch, handles and boxes', () => {
     expect(listener).not.toHaveBeenCalled();
     lower(panel).dispatchEvent(new Event('change'));
     expect(listener).toHaveBeenCalledOnce();
-    expect(detail(listener)).toMatchObject({ confidenceThreshold: 0.4 });
+    expect(detail(listener)).toMatchObject({ reliability: expect.objectContaining({ min: 0.4 }) });
 
     vi.advanceTimersByTime(150);
     expect(listener).toHaveBeenCalledOnce();

@@ -22,7 +22,6 @@ function makeCondition(overrides: Partial<NumericCondition> = {}): NumericCondit
     id: 'n1',
     kind: 'numeric',
     annotation: 'length',
-    operator: 'gt',
     min: null,
     max: null,
     ...overrides,
@@ -72,7 +71,7 @@ describe('query-numeric-input', () => {
   });
 
   it('renders accessible names for the bound controls', async () => {
-    const el = await mount(makeCondition({ operator: 'between', min: 1, max: 2 }));
+    const el = await mount(makeCondition({ min: 1, max: 2 }));
     const { inputs } = fields(el);
     expect(inputs.map((i) => i.getAttribute('aria-label'))).toEqual([
       'Minimum value',
@@ -83,7 +82,7 @@ describe('query-numeric-input', () => {
   it('counts the matching proteins in plural-aware words', async () => {
     vi.useFakeTimers();
     try {
-      const el = await mount(makeCondition({ operator: 'gt', min: 150 }));
+      const el = await mount(makeCondition({ min: 150 }));
       el.data = {
         protein_ids: ['P1', 'P2', 'P3'],
         annotations: { length: { kind: 'numeric', values: [] } },
@@ -99,7 +98,7 @@ describe('query-numeric-input', () => {
           .replace(/\s+/g, ' ');
       expect(count()).toBe('2 proteins match');
 
-      el.condition = makeCondition({ operator: 'gt', min: 250 });
+      el.condition = makeCondition({ min: 250 });
       await el.updateComplete;
       vi.advanceTimersByTime(750);
       await el.updateComplete;
@@ -109,16 +108,16 @@ describe('query-numeric-input', () => {
     }
   });
 
-  it('shows both ends of the range, an older one-sided operator too', async () => {
-    const gt = await mount(makeCondition({ operator: 'gt', min: 5, max: 9 }));
+  it('shows both ends of the range', async () => {
+    const gt = await mount(makeCondition({ min: 5, max: null }));
     expect(fields(gt).inputs.map((input) => input.value)).toEqual(['5', '']);
 
-    const between = await mount(makeCondition({ operator: 'between', min: 1, max: 9 }));
+    const between = await mount(makeCondition({ min: 1, max: 9 }));
     expect(fields(between).inputs).toHaveLength(2);
   });
 
   it('keeps the displayed value across a controlled prop round-trip and clears on external reset', async () => {
-    const el = await mount(makeCondition({ operator: 'gt', min: null }));
+    const el = await mount(makeCondition({ min: null }));
     const input = fields(el).inputs[0];
 
     let emitted!: NumericCondition;
@@ -142,7 +141,7 @@ describe('query-numeric-input', () => {
   });
 
   it('ticks and unticks N/A alongside the comparison', async () => {
-    const el = await mount(makeCondition({ operator: 'gte', min: 0.5 }));
+    const el = await mount(makeCondition({ min: 0.5 }));
 
     const added = await toggleNa(el);
     expect(added?.presence).toEqual([NA_VALUE]);

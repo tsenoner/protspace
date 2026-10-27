@@ -6,7 +6,7 @@ import type {
   NumericCondition,
 } from './query-types';
 import { isFilterGroup, ANY_VALUE } from './query-types';
-import { isNumericConditionReady, matchesNumericValue, toRange } from './query-numeric-helpers';
+import { isNumericConditionReady, matchesNumericValue } from './query-numeric-helpers';
 import { toInternalValue } from '../legend/config';
 import {
   getFirstAnnotationIndex,
@@ -211,10 +211,9 @@ function evaluateNumericCondition(
   const values = data.numeric_annotation_data?.[condition.annotation];
   if (!values) return new Set();
 
-  const range = toRange(condition);
   const matches = new Set<number>();
   for (let i = 0; i < numProteins; i++) {
-    if (matchesNumericValue(readNumericValue(values, i), range)) {
+    if (matchesNumericValue(readNumericValue(values, i), condition)) {
       matches.add(i);
     }
   }

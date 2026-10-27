@@ -108,13 +108,14 @@ export class ProtspaceQueryBuilder extends LitElement {
   @state() private _matchedIndices: Set<number> = new Set();
   /** Each card's count base, by condition id (see `countBases`). */
   @state() private _excludedMatchMap: Map<string, Set<number> | null> = new Map();
-  @state() private _totalCount: number = 0;
   /** A count is pending (the 300 ms debounce): Apply waits, with no reason text. */
   @state() private _counting = true;
   /** How the count moved with the last edit; null before a second count on the same data. */
   @state() private _delta: number | null = null;
   /** The data the last count ran on, so a dataset swap is not read as an edit. */
   private _countedData: ProtspaceData | undefined = undefined;
+  /** The query the last count ran on: Apply reuses its matches while it is still the query. */
+  private _countedQuery: FilterQuery | undefined = undefined;
 
   /** The joiner menu is open, for the item `_joinerTarget`. */
   @state() private _joinerMenuOpen = false;
@@ -215,8 +216,8 @@ export class ProtspaceQueryBuilder extends LitElement {
       this._delta =
         this._countedData === this.data ? matched.size - this._matchedIndices.size : null;
       this._countedData = this.data;
+      this._countedQuery = query;
       this._matchedIndices = matched;
-      this._totalCount = this.data.protein_ids?.length ?? 0;
 
       const map = countBases(query, this.data);
       this._excludedMatchMap = map;
@@ -364,10 +365,13 @@ export class ProtspaceQueryBuilder extends LitElement {
 
   private _handleApply() {
     if (!this.data) return;
-    // Evaluated afresh, so a click inside the debounce window applies what the rows say. The same
-    // gate as the button, for callers that bypass the click: an unconfigured or unchanged query,
-    // or one that keeps no protein or every protein, applies nothing.
-    const result = evaluateQuery(this.query, this.data);
+    // The finished count when it is for this query and data; else evaluated afresh, so a click
+    // inside the debounce window applies what the rows say. The same gate as the button, for
+    // callers that bypass the click: an unconfigured or unchanged query, or one that keeps no
+    // protein or every protein, applies nothing.
+    const counted =
+      !this._counting && this._countedQuery === this.query && this._countedData === this.data;
+    const result = counted ? this._matchedIndices : evaluateQuery(this.query, this.data);
     const total = this.data.protein_ids?.length ?? 0;
     if (applyBlock({ query: this.query, matched: result.size, total, dirty: this.dirty })) return;
     this._dispatch('query-apply', { matchedIndices: result });
@@ -634,7 +638,8 @@ export class ProtspaceQueryBuilder extends LitElement {
   }
 
   render() {
-    const total = this._totalCount;
+    // The protein count of the data the last count ran on, so it agrees with the matches.
+    const total = this._countedData?.protein_ids?.length ?? 0;
     const block = applyBlock({
       query: this.query,
       matched: this._counting ? null : this._matchedIndices.size,

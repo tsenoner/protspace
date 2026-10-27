@@ -1,6 +1,6 @@
 import { useLayoutEffect, type RefObject } from 'react';
 import type { FloatingRect } from '../explore/layout-defaults';
-import { updateLayout } from '../explore/layout-state';
+import { sameRect, updateLayout } from '../explore/layout-state';
 import { clampFloatRect, floatStep, moveFloatRect, resizeFloatRect } from './layout-geometry';
 import { useLayout } from './use-layout';
 import { useLayoutMode } from './use-layout-mode';
@@ -22,9 +22,6 @@ interface Gesture {
   startY: number;
   start: FloatingRect;
 }
-
-const sameRect = (a: FloatingRect, b: FloatingRect) =>
-  a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
 const FLOAT_PROPERTIES = ['--wb-float-x', '--wb-float-y', '--wb-float-w', '--wb-float-h'];
 

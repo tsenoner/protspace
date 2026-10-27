@@ -2,6 +2,7 @@ import { LitElement, html, nothing, type TemplateResult } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import {
   annotationLabel,
+  countNoun,
   DEFAULT_EAT_RELIABILITY,
   fileNamePart,
   formatCount,
@@ -752,7 +753,7 @@ export class ProtspaceEatPanel extends LitElement {
     const heading =
       'bin' in open
         ? `${weakest.length} least reliable in ${binRange(open.bin)}`
-        : `${weakest.length} least reliable ${weakest.length === 1 ? 'prediction' : 'predictions'}`;
+        : countNoun(weakest.length, 'least reliable prediction', 'least reliable predictions');
     const predicted = data.annotation_predicted?.[this.annotation];
     const { total, kept } = countIn(index, drill, this.context, state);
     const hides = this._eat.overlayEnabled;

@@ -114,7 +114,7 @@ function setup(shown: { value: boolean }) {
     panel.isAtDefaults = false;
     panel.dispatchEvent(
       new CustomEvent('eat-overlay-change', {
-        detail: { enabled, confidenceThreshold: reliability.min, reliability },
+        detail: { enabled, reliability },
       }),
     );
   };

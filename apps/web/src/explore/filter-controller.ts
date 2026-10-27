@@ -21,7 +21,7 @@ import {
   type EatReliabilityState,
   type VisualizationData,
 } from '@protspace/utils';
-import { TOOLTIP_ONLY_ANNOTATIONS } from './view-bar-controller';
+import { pickableAnnotations } from './view-bar-controller';
 import { setWorkbenchStatus } from './workbench-status';
 
 /**
@@ -138,15 +138,6 @@ export function createFilterController({
   const readSnapshot = (): VisualizationData | undefined =>
     plotElement.getMaterializedData() ?? plotElement.getCurrentData() ?? snapshot;
 
-  /** The picker's annotations: no tooltip-only ones, and no EAT confidence, which the EAT panel edits. */
-  const filterableAnnotations = (data: VisualizationData | undefined): string[] =>
-    Object.entries(data?.annotations ?? {})
-      .filter(
-        ([key, annotation]) =>
-          !TOOLTIP_ONLY_ANNOTATIONS.has(key) && !isEatConfidenceAnnotation(annotation),
-      )
-      .map(([key]) => key);
-
   /** What a clean draft equals: the applied query, or the seed while none is applied. */
   const baseline = (): FilterQuery => (applied.query.length > 0 ? applied.query : seed);
   /** Incomplete rows do not count: an empty condition added or removed leaves the draft clean. */
@@ -166,7 +157,7 @@ export function createFilterController({
     publish();
     if (!isPanelShown()) return;
     if (queryBuilder.data !== snapshot) {
-      queryBuilder.annotations = filterableAnnotations(snapshot);
+      queryBuilder.annotations = pickableAnnotations(snapshot);
       queryBuilder.data = snapshot;
     }
     queryBuilder.query = draft;
@@ -216,15 +207,15 @@ export function createFilterController({
     setApplied({ query, matchedIds: idsAt(evaluateQuery(query, snapshot), proteinIds) });
   };
 
+  /** The snapshot's eat-confidence columns, each with the annotation it rates. */
+  const eatColumns = (): { key: string; base: string | undefined }[] =>
+    Object.entries(snapshot?.annotations ?? {})
+      .filter(([, annotation]) => isEatConfidenceAnnotation(annotation))
+      .map(([key, annotation]) => ({ key, base: annotation.runtime?.baseAnnotation }));
+
   /** The eat-confidence column whose runtime base is `baseKey`, if any. */
-  const findEatKey = (baseKey: string): string | undefined => {
-    for (const [key, annotation] of Object.entries(snapshot?.annotations ?? {})) {
-      if (isEatConfidenceAnnotation(annotation) && annotation.runtime?.baseAnnotation === baseKey) {
-        return key;
-      }
-    }
-    return undefined;
-  };
+  const findEatKey = (baseKey: string): string | undefined =>
+    eatColumns().find((column) => column.base === baseKey)?.key;
 
   /**
    * Reverse mirror: tells the EAT panel what the applied filter says for the selected base. `force`
@@ -293,7 +284,7 @@ export function createFilterController({
   const onDataChange = (event: Event) => {
     const data = (event as CustomEvent<{ data?: VisualizationData | null }>).detail?.data;
     if (!data) return;
-    snapshot = plotElement.getMaterializedData() ?? plotElement.getCurrentData() ?? undefined;
+    snapshot = readSnapshot();
     syncBuilder();
   };
 
@@ -363,8 +354,7 @@ export function createFilterController({
         // A dirty draft keeps its rows, but not the reliability rows the clear took away: they
         // only mirror the EAT slider, which goes back to the full range, and Apply would bring
         // the cut back.
-        for (const [key, annotation] of Object.entries(snapshot?.annotations ?? {})) {
-          if (!isEatConfidenceAnnotation(annotation)) continue;
+        for (const { key } of eatColumns()) {
           if (findConditionsForAnnotation(before.query, key).length === 0) continue;
           draft = replaceConditionsForAnnotation(draft, key, null);
         }
@@ -377,8 +367,7 @@ export function createFilterController({
       const draftWasClean = !isDirty();
       // The EAT slider is not an undo step: the reliability conditions stay as they are now.
       let query = next.query;
-      for (const [key, annotation] of Object.entries(snapshot?.annotations ?? {})) {
-        if (!isEatConfidenceAnnotation(annotation)) continue;
+      for (const { key } of eatColumns()) {
         const current = findConditionsForAnnotation(applied.query, key);
         if (sameConditions(findConditionsForAnnotation(query, key), current)) continue;
         query = replaceConditionsForAnnotation(query, key, current[0] ?? null);
@@ -409,10 +398,8 @@ export function createFilterController({
     },
     getOtherEatReliabilities() {
       const others: { annotation: string; reliability: EatReliabilityState }[] = [];
-      for (const [key, annotation] of Object.entries(snapshot?.annotations ?? {})) {
-        const base = annotation.runtime?.baseAnnotation;
-        if (!isEatConfidenceAnnotation(annotation) || !base || base === selectedAnnotation)
-          continue;
+      for (const { key, base } of eatColumns()) {
+        if (!base || base === selectedAnnotation) continue;
         const conditions = findConditionsForAnnotation(applied.query, key);
         if (conditions.length === 0) continue;
         const reliability = reliabilityFromConditions(conditions);
@@ -433,7 +420,6 @@ export function createFilterController({
       // A hidden panel's builder still holds the dataset it last showed; let it go.
       if (!isPanelShown()) queryBuilder.data = undefined;
       syncBuilder();
-      publish();
     },
     dispose() {
       queryBuilder.removeEventListener('query-changed', onQueryChanged);

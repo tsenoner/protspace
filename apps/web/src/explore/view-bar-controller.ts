@@ -52,6 +52,17 @@ interface ViewBarController extends ViewPickers {
 }
 
 /**
+ * The annotations a user can pick (Color by, the Filter panel): every column except the
+ * tooltip-only ones and the EAT confidence columns, which the EAT panel edits.
+ */
+export function pickableAnnotations(data: VisualizationData | undefined): string[] {
+  const annotations = data?.annotations ?? {};
+  return Object.keys(annotations).filter(
+    (key) => !TOOLTIP_ONLY_ANNOTATIONS.has(key) && !isEatConfidenceAnnotation(annotations[key]),
+  );
+}
+
+/**
  * What the view bar offers for `data`: every projection, and Color by's annotations without the
  * tooltip-only and EAT-confidence columns. `capabilityData` (the plot's full data) says which
  * annotations carry EAT predictions; the shown data can be a subset without them.
@@ -61,10 +72,7 @@ export function deriveViewOptions(
   capabilityData: VisualizationData = data,
 ): { projections: string[]; annotations: string[]; eatAnnotations: string[] } {
   const projections = (data.projections ?? []).map((projection) => projection.name);
-  const annotations = Object.keys(data.annotations ?? {}).filter(
-    (key) =>
-      !TOOLTIP_ONLY_ANNOTATIONS.has(key) && !isEatConfidenceAnnotation(data.annotations[key]),
-  );
+  const annotations = pickableAnnotations(data);
   const eatAnnotations = Object.entries(capabilityData.annotation_predicted ?? {})
     .filter(([, cells]) => cells.some(Boolean))
     .map(([annotation]) => annotation);
