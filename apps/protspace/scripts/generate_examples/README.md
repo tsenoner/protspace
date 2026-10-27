@@ -16,8 +16,31 @@ published next to them in the same release as `<id>_2026_03_v3.parquetbundle`
 
 `write_manifest.py` writes the web app's example manifest
 (`apps/web/src/explore/example-manifest.ts`) from the bundle files, of any container
-version; `build_showcase.py stage-release` calls it. `generate.py` and `datasets.toml` in
-this directory are unrelated: they build the Colab notebooks' `examples` release.
+version; `build_showcase.py stage-release` calls it. `generate.py`, `datasets.toml` and
+`refresh_colab_examples.py` in this directory are unrelated: they serve the Colab notebooks'
+`examples` release (below).
+
+## The Colab notebooks' `examples` release
+
+The release holds, for each dataset in `datasets.toml`, the ProtT5 embeddings
+`<name>_prot_t5.h5` the Preparation notebook's Example tab runs on and a ready-made bundle.
+The `<name>.parquetbundle` files are the legacy v1 bundles mirrored from the pre-monorepo
+release and are kept as they are. `<name>_v3.parquetbundle` are the ones the notebooks read:
+the Example tab takes the requested annotations from them instead of fetching them, and the
+Transfer notebook runs EAT on `snake_toxin_v3`. `refresh_colab_examples.py` builds them:
+each old bundle's projections, kept (beta-lactamase's ESM2 and globin's MMseqs2 projections
+have no published input to recompute them from), with the same proteins annotated again by
+the installed protspace (`protspace annotate`, the dataset's set from `datasets.toml`).
+
+```bash
+gh release download examples --repo tsenoner/protspace -D /tmp/examples-in
+uv run python apps/protspace/scripts/generate_examples/refresh_colab_examples.py \
+    --input-dir /tmp/examples-in --output-dir /tmp/examples-v3
+gh release upload examples /tmp/examples-v3/*_v3.parquetbundle --repo tsenoner/protspace
+```
+
+Rebuilding a `_v3` file under its published name gives that name new bytes: a fresh
+annotation release is a new name (`_v4`, and the notebooks updated to it).
 
 ## What the build does (strategy R)
 
@@ -72,7 +95,7 @@ venom-gland transcripts, carry none. The steps:
    pin the result; `embed.input` may name a copy of the pinned file (the Zenodo one),
    which a rebuild then uses instead of embedding again.
 4. **fetch.** Staged `protspace prepare -i <mature H5> -f full_length.fasta -m umap2,pca2
-   --n-neighbors 25 --min-dist 0.1 --random-state 42 -a …`: the projections are kept, and
+--n-neighbors 25 --min-dist 0.1 --random-state 42 -a …`: the projections are kept, and
    InterPro (with Phobius), TED and Biocentral read the full-length sequences.
 5. **assemble.** `toxin_class` (8 classes) and `toxin_subfamily` (3) from the similarity
    text (`[labels]` rules, first match wins); TrEMBL's automatic rule label goes to
