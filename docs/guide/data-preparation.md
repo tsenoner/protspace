@@ -122,7 +122,7 @@ label comes out wrong. The same rules apply in the [CLI](/guide/python-cli#model
      embedding backend below the tabs
    - **UniProt query**: type a query and click **Set query**, then select the model(s)
 
-   No file at hand? The `.h5` and FASTA tabs each have a **Use the example** button that puts an
+   No file at hand? The `.h5` and FASTA tabs each have a **Load an example** button that puts an
    example file into the runtime and fills in its path: 536 three-finger toxins embedded with
    ProtT5, and 60 snake-venom proteins from Swiss-Prot. A FASTA's **Ready** line shows its first
    header and the protein ID read from it. The UniProt tab's **Examples** list fills in and sets a
@@ -147,7 +147,7 @@ To add your own columns, give a CSV or TSV (gzipped is fine) with the protein ID
 column, whatever that column is called (the full rules are under
 [Custom annotation files](/guide/python-cli#custom-annotation-files)): enter its path, or choose it
 with **Choose CSV/TSV**. Pick **CSV only (no UniProt fetch)** to use just those columns, for example
-when your IDs are not UniProt accessions. Its **Use the example** button fills in a CSV with a
+when your IDs are not UniProt accessions. Its **Load an example** button fills in a CSV with a
 `venom_family` column for the FASTA tab's example proteins. When none of an `.h5` file's IDs is a UniProt
 accession, the panel fetches nothing from UniProt anyway and uses the CSV alone (or makes a bundle
 without annotations), and says so. Tick **Fetch annotations again** to replace annotations an earlier

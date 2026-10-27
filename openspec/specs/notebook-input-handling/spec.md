@@ -266,13 +266,13 @@ FASTA. An example that cannot be fetched SHALL be reported in its tab, with noth
 
 #### Scenario: Trying the FASTA tab without a file
 
-- **WHEN** the user clicks Use the example in the Sequences (FASTA) tab
+- **WHEN** the user clicks Load an example in the Sequences (FASTA) tab
 - **THEN** a FASTA of snake-venom proteins is written to the runtime, its path fills the field, the
   tab reports it ready with its record count and first protein ID, and Generate runs on it
 
 #### Scenario: Custom annotations for the FASTA example
 
-- **WHEN** the user then clicks Use the example under the custom-annotations field
+- **WHEN** the user then clicks Load an example under the custom-annotations field
 - **THEN** the field holds the path of a CSV with `venom_family` for each protein of that FASTA
 
 #### Scenario: An example query
