@@ -262,6 +262,11 @@ licensed, including the ESM-C models: `esmc_300m` and `esmc_600m` were relicense
 2026, retroactively, when ESM-C moved to the Chan Zuckerberg Biohub.
 :::
 
+No GPU or local install? The
+[Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
+embeds a FASTA with the same models on a free Colab GPU and writes an `.h5` that `prepare -i`
+reads, per protein or per residue.
+
 ### Local backend
 
 `--backend local` computes embeddings on a local GPU/CPU via HuggingFace `transformers` instead of

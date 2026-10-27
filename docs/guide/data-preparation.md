@@ -64,23 +64,22 @@ You need an HDF5 file (.h5) containing protein embeddings. There are three ways 
 
 ### Option B: Generate from FASTA
 
-Use the dedicated embedding generation notebook:
+Use the Embeddings notebook, a simple embedding tool in its own right:
 
 [![Open Embedding Generator](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
 
-This notebook:
+It embeds a FASTA with ProtT5, ProstT5, Ankh, ESM2, ESM C or ESM3 and writes an `.h5` with one
+vector per protein (or per residue), named so ProtSpace recognises the model. Attach a GPU
+(**Runtime → Change runtime type → T4 GPU**), set the model and the FASTA in its one cell, and run
+it; it downloads the `.h5` when done. Run it again after changing a setting: the model stays
+loaded, and proteins already in the file are skipped.
 
-- Takes a FASTA file as input
-- Generates embeddings using various protein language models (ProtT5, ESM2, etc.)
-- Outputs an HDF5 file ready for ProtSpace
-
-Pick the model in its **1. Settings** step and attach a GPU (**Runtime → Change runtime type → T4
-GPU**) before **Run all**. The EvolutionaryScale models (ESM3, ESM C) need the `esm` SDK, which the
-notebook installs only for them: it replaces Colab's transformers with an older one, and the models
-are gated, so they also need a Hugging Face login. Every other model runs on Colab's own packages.
-With no FASTA path in **1. Settings**, the notebook runs on an example: 60 snake-venom proteins
-from Swiss-Prot (20 each of three-finger toxins, phospholipase A2 and Kunitz-type), fetched from
-UniProt. Tick its upload box to upload your own FASTA instead.
+- No login for any of the models. ESM C runs on transformers' own port of the official weights
+  (`biohub/ESMC-300M`, `-600M`); only ESM3 installs the `esm` package, which replaces Colab's
+  transformers with an older one.
+- Leave the FASTA path empty to try an example: 60 snake-venom proteins from Swiss-Prot (20 each of
+  three-finger toxins, phospholipase A2 and Kunitz-type), fetched from UniProt. Tick its upload box
+  for your own FASTA, or give a `/content/drive/...` path to read it from Google Drive.
 
 ### Option C: Use Your Own Embeddings
 
