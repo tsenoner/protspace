@@ -16,7 +16,6 @@ outage has its own status page.
 """
 
 import os
-from pathlib import Path
 
 import h5py
 import numpy as np
@@ -33,6 +32,7 @@ from protspace.data.biocentral_connection import (
     wait_for_server,
 )
 from protspace.data.embedding.biocentral import embed_sequences, resolve_embedder
+from tests.esmc_reference import ESMC_UBIQUITIN, UBIQUITIN, cosine_to_reference
 
 pytestmark = [
     pytest.mark.integration,
@@ -44,24 +44,12 @@ pytestmark = [
 
 # Ubiquitin: a small soluble protein. Bacteriorhodopsin: a textbook seven-helix membrane
 # protein. Both are well inside the server's 7-5000 residue limits.
-UBIQUITIN = (
-    "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
-)
 BACTERIORHODOPSIN = (
     "MLELLPTAVEGVSQAQITGRPEWIWLALGTALMGLGTLYFLVKGMGVSDPDAKKFYAITTLVPAIAFTMYLSMLLGYGLTM"
     "VPFGGEQNPIYWARYADWLFTTPLLLLDLALLVDADQGTILALVGADGIMIGTGLVGALTKVYSYRFVWWAISTAAMLYIL"
     "YVLFFGFTSKAESMRPEVASTFKVLRNVTVVLWSAYPVVWLIGSEGAGIVPLNIETLLFMVLDVSAKVGFGLILLRSRAIF"
     "GEAEAPEPSAGDGAAATSD"
 )
-
-
-# Ubiquitin embedded by the local backend from biohub/ESMC-300M / -600M
-# (transformers 5.21.0, torch 2.14.1, CPU, float32), mean-pooled as the package pools.
-# One per size: the server maps each id to a model separately.
-ESMC_UBIQUITIN = {
-    "esmc_300m": (Path(__file__).parent / "data" / "esmc_300m_ubiquitin.npy", 960),
-    "esmc_600m": (Path(__file__).parent / "data" / "esmc_600m_ubiquitin.npy", 1152),
-}
 
 
 def _usable_server():
@@ -108,16 +96,12 @@ def test_esmc_is_the_official_model(tmp_path, key):
     """
     _usable_server()
 
-    reference_path, dim = ESMC_UBIQUITIN[key]
     h5_path = embed_sequences(
         {"ubiquitin": UBIQUITIN}, resolve_embedder(key), tmp_path / f"{key}.h5"
     )
 
     with h5py.File(h5_path) as h5:
-        served = h5["ubiquitin"][:].astype(np.float64)
-    reference = np.load(reference_path).astype(np.float64)
-    assert served.shape == reference.shape == (dim,)
-    cosine = served @ reference / np.linalg.norm(served) / np.linalg.norm(reference)
+        cosine = cosine_to_reference(key, h5["ubiquitin"][:])
     assert cosine > 0.999, f"Biocentral's {key} vector has cosine {cosine:.4f}"
 
 

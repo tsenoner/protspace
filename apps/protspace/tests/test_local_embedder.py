@@ -2,8 +2,9 @@
 
 The pure helpers (checkpoint resolution, sequence preprocessing, residue
 pooling, header validation) are torch-free and always run. The end-to-end
-``embed_sequences`` test needs the optional ``[local]`` extra (torch +
-transformers) and downloads a small ESM2 model, so it is marked ``slow``.
+``embed_sequences`` tests need the optional ``[local]`` extra (torch +
+transformers) and download checkpoints (ESM2 8M, ESM-C 300M), so they are marked
+``slow`` and run weekly in protspace-slow.yml.
 """
 
 import h5py
@@ -259,6 +260,25 @@ def test_embed_sequences_esm2_8m_end_to_end(tmp_path):
         assert vec.shape == (320,)  # esm2_8m hidden dim
         assert vec.dtype == np.float32
         assert np.isfinite(vec).all()
+
+
+@pytest.mark.slow
+def test_embed_sequences_esmc_matches_the_committed_reference(tmp_path):
+    """The real ESM-C path (native EsmcModel, both-ends stripping, mean pooling)
+    against the vector the Biocentral canary also checks: a transformers release
+    that changes ESM-C's output fails here before users mix it with older files.
+    Downloads biohub/ESMC-300M (~1.3 GB)."""
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    from tests.esmc_reference import UBIQUITIN, cosine_to_reference
+
+    out = local.embed_sequences(
+        {"ubiquitin": UBIQUITIN}, "esmc_300m", tmp_path / "e.h5"
+    )
+
+    with h5py.File(out) as f:
+        cosine = cosine_to_reference("esmc_300m", f["ubiquitin"][:])
+    assert cosine > 0.99999, f"local esmc_300m vector has cosine {cosine:.7f}"
 
 
 # ---------------------------------------------------------------------------

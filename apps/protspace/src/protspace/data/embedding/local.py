@@ -21,9 +21,9 @@ native ``esmc`` model (transformers >= 5.16), with no remote code. Its pooled
 vectors equal those of Synthyra's ESM++ reimplementation, which this backend
 used before transformers had the model, so ``.h5`` files from either keep the
 same ``esmc_*`` producer stamp. ProtT5/ProstT5 use the fp16 encoder exports
-(T4-friendly, embedding-equivalent). The exact numerical parity of local vs.
-Biocentral pooling is validated separately (a cross-check script), not
-asserted here.
+(T4-friendly, embedding-equivalent). Local and Biocentral ESM-C vectors are both
+checked against the same committed references (``tests/esmc_reference.py``); the
+other families' parity was measured once (cosine >= 0.9999), not asserted here.
 """
 
 import logging
