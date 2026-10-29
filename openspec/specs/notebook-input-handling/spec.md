@@ -199,9 +199,11 @@ instead.
 
 ### Requirement: The panel skips a UniProt fetch no identifier can match
 
-Before fetching annotations, the panel SHALL check the identifiers against the UniProt accession
-format. When none matches, it SHALL fetch nothing from UniProt, use the custom CSV alone when one
-is given, and say so in either case.
+Before fetching annotations for an `.h5` input, the panel SHALL check the identifiers against the
+UniProt accession format. When none matches, it SHALL fetch nothing from UniProt, use the custom
+CSV alone when one is given, and say so in either case. An `.h5` carries no sequences, so no source
+but a custom CSV could annotate it; a FASTA input keeps its sequence-based sources and is fetched as
+usual.
 
 #### Scenario: TRINITY identifiers with a CSV
 
