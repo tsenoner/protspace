@@ -397,11 +397,14 @@ def test_install_holds_what_the_session_loaded(monkeypatch):
         ["uv", "pip", "install"],
     ]
     assert calls[-1][-1] == "protspace[local]"
+    override = Path(calls[1][calls[1].index("--override") + 1])
+    assert not override.exists()  # the held-versions file is not left in /tmp
 
 
 def test_install_falls_back_to_pip_when_uv_cannot_hold(monkeypatch):
     calls, _ = _run_install_helper(monkeypatch, uv_fails=True)
     assert calls[-1][2:4] == ["pip", "install"] and calls[-1][-1] == "protspace[local]"
+    assert not Path(calls[1][calls[1].index("--override") + 1]).exists()
 
 
 def _run_preparation_eat_cell(
