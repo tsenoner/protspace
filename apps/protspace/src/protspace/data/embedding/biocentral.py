@@ -111,8 +111,8 @@ def resolve_embedder(name: str) -> str:
 
     if name in LOCAL_CHECKPOINTS:
         print(
-            f"Embedder '{name}' is served only by the local backend; Biocentral "
-            "cannot compute it yet. Use --backend local.",
+            f"Embedder '{name}' is served only by the local backend "
+            "(--backend local); Biocentral cannot compute it yet.",
             file=sys.stderr,
         )
         sys.exit(1)

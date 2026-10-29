@@ -36,13 +36,9 @@ def test_resolve_esmc_uses_official_biohub_weights():
 
 
 def test_resolve_covers_every_cli_short_key():
-    """The local backend serves every CLI shortcut: each one Biocentral serves,
-    plus the local-only ones (esmc_6b)."""
-    from protspace.cli.common_options import EMBEDDER_MODELS
-
-    assert set(ALL_SHORT_KEYS) <= set(local.LOCAL_CHECKPOINTS)
-    assert set(EMBEDDER_MODELS) == set(local.LOCAL_CHECKPOINTS)
-    for key in EMBEDDER_MODELS:
+    """Every local checkpoint resolves to a known family. That the registry
+    equals the CLI's list is pinned in test_cli_no_similarity.py."""
+    for key in local.LOCAL_CHECKPOINTS:
         checkpoint, mod_type = local.resolve_local_checkpoint(key)
         assert checkpoint, f"no checkpoint for {key}"
         assert mod_type in {"prot_t5", "prost_t5", "esm", "ankh", "esmc"}
@@ -250,41 +246,34 @@ def test_setup_model_loads_esmc_natively_without_remote_code(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("cuda", "bf16", "expected"),
+    ("checkpoint", "cuda", "native_bf16", "expected"),
     [
-        (True, True, "bfloat16"),  # ESM-C's training precision
-        (True, False, "float16"),  # T4 / V100: no bf16
-        (False, False, None),  # CPU stays fp32 (no dtype passed)
+        ("biohub/ESMC-6B", True, True, "bfloat16"),  # Ampere+: training dtype
+        ("biohub/ESMC-6B", True, False, "float16"),  # T4/V100: bf16 is emulated
+        ("biohub/ESMC-6B", False, False, None),  # CPU stays fp32
+        ("biohub/ESMC-600M", True, True, None),  # smaller models keep fp32
     ],
 )
 def test_setup_model_loads_esmc_6b_in_half_precision_on_gpu(
-    monkeypatch, cuda, bf16, expected
+    monkeypatch, checkpoint, cuda, native_bf16, expected
 ):
-    """25.4 GB of fp32 weights leave no room for activations on a 24-40 GB GPU;
-    half precision needs 12.7 GB. bf16 where the GPU has it, fp16 otherwise."""
+    """The fake answers like torch: emulated bf16 counts unless the caller
+    passes including_emulation=False, so a T4 asked the default way says True."""
     torch = pytest.importorskip("torch")
     calls, _, _ = _fake_transformers(monkeypatch)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
-    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda *a, **k: bf16)
+    monkeypatch.setattr(
+        torch.cuda,
+        "is_bf16_supported",
+        lambda including_emulation=True: native_bf16 or including_emulation,
+    )
 
-    _, _, device = local.setup_model("biohub/ESMC-6B", "esmc")
+    _, _, device = local.setup_model(checkpoint, "esmc")
 
     assert device.type == ("cuda" if cuda else "cpu")
     model_kwargs = next(kw for name, _, kw in calls if name == "AutoModel")
     want = {} if expected is None else {"dtype": getattr(torch, expected)}
     assert model_kwargs == want
-
-
-def test_setup_model_keeps_smaller_esmc_in_fp32_on_gpu(monkeypatch):
-    """Half precision is for 6B only; the other models keep their vectors."""
-    torch = pytest.importorskip("torch")
-    calls, _, _ = _fake_transformers(monkeypatch)
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda *a, **k: True)
-
-    local.setup_model("biohub/ESMC-600M", "esmc")
-
-    assert next(kw for name, _, kw in calls if name == "AutoModel") == {}
 
 
 # ---------------------------------------------------------------------------
