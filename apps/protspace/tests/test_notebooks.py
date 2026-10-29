@@ -2289,6 +2289,19 @@ def test_clickthrough_ids_are_accessions_and_never_hold_a_slash():
     assert namespace["_protein_ids"](["sp|P83302|X"])[0] == ["sp|P83302|X"]
 
 
+def test_clickthrough_takes_accessions_only_from_uniprot_headers():
+    """A search inside other IDs cut Ensembl and Arabidopsis IDs to accession-shaped
+    pieces (ENSP00000354587 -> P00000), which then clashed as duplicates or were
+    looked up in UniProt as unrelated proteins."""
+    namespace = _clickthrough_namespace(should_extract_uniprot_id=True)
+    others = ["ENSP00000354587", "ENSP00000269305", "AT1G01010.1", "GRMZM2G000014_P01"]
+    ids, note = namespace["_protein_ids"](
+        [*others, "Q8N158-2", "P12345", "tr|A0A0B4J2F0|X_HUMAN"]
+    )
+    assert ids == [*others, "Q8N158-2", "P12345", "A0A0B4J2F0"]
+    assert "e.g. P12345" in note and "5 headers without one" in note
+
+
 def test_clickthrough_reads_fasta_without_pyfaidx(tmp_path):
     fasta = tmp_path / "x.fasta"
     fasta.write_text(">sp|P1|A desc\nMKV\nLL\n\n>b\nAC\n>empty\n")
