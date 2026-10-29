@@ -1302,6 +1302,13 @@ def test_preparation_skips_uniprot_when_no_id_is_an_accession(
     columns = read_tables(bundle)[0].column_names
     assert ("group" in columns) is with_csv
     assert network == []
+    if not with_csv:
+        # annotations=[] means the default group to the pipeline: nothing may
+        # be fetched, cached or bundled behind the card's "no annotations".
+        from protspace.data.annotations.cache import CACHE_FILENAME
+
+        assert columns == ["protein_id"]
+        assert not (tmp_path / "output" / "tmp" / CACHE_FILENAME).exists()
 
 
 def test_preparation_restores_its_settings_after_a_restart(monkeypatch, tmp_path):
