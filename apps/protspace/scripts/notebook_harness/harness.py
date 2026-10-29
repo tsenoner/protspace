@@ -216,6 +216,8 @@ def main() -> int:
         server, base = start_voila(work, widgets, out / f"voila-w{widgets}.log")
         try:
             result_file = out / f"w{widgets}.json"
+            # A report left in a reused --out must not stand in for this run's.
+            result_file.unlink(missing_ok=True)
             sweep = [
                 "node", str(HERE / "sweep.mjs"),
                 "--panel", f"{base}/voila/render/{panel}",
@@ -227,12 +229,13 @@ def main() -> int:
                 sweep += ["--progress", f"{base}/voila/render/{progress}"]
             if args.skip_sweep:
                 sweep += ["--sweep", "0"]
-            subprocess.run(sweep, check=False)
-            result = (
-                json.loads(result_file.read_text())
-                if result_file.exists()
-                else {"error": "no report"}
-            )
+            proc = subprocess.run(sweep, check=False)
+            if result_file.exists():
+                result = json.loads(result_file.read_text())
+            else:
+                result = {"error": f"no report (sweep exited {proc.returncode})"}
+            if proc.returncode and "error" not in result:
+                result["error"] = f"sweep exited {proc.returncode}"
         finally:
             server.terminate()
             server.wait(timeout=30)
@@ -244,6 +247,8 @@ def main() -> int:
     for name, result in report.items():
         states = result.get("states", 0)
         print(f"{name}: {states} states, {len(result.get('failures', []))} failure(s)")
+        if "error" in result:
+            print("    error:", result["error"])
         for failure in result.get("failures", [])[:15]:
             print("   ", failure)
     print(f"Screenshots and report.json in {out}")

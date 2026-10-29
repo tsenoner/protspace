@@ -254,14 +254,15 @@ async function progress(browser) {
   return { generate, transfer };
 }
 
-const browser = await chromium.launch();
+let browser = null;
 let steps = null;
 try {
+  browser = await chromium.launch();
   if (args.sweep !== '0') await sweep(browser);
   if (args.progress) steps = await progress(browser);
 } catch (error) {
   failures.push(`harness error: ${error.message.split('\n')[0]}`);
 } finally {
-  await browser.close();
+  await browser?.close();
 }
 writeFileSync(args.report, JSON.stringify({ states, failures, steps }, null, 1));
