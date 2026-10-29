@@ -97,6 +97,24 @@ def refuse_local_only_on_biocentral(embedders: list[str], backend: Backend) -> N
         )
 
 
+def refuse_unsupported_method_params(method_specs, reducer_params, n_proteins: int):
+    """Usage error for a method parameter *n_proteins* proteins cannot support.
+
+    It names the option the value came from: ``-m/--methods`` for a per-method
+    override, or when the proteins are too few for t-SNE at all; otherwise
+    ``--perplexity``.
+    """
+    from protspace.data.processors.pipeline import check_method_params
+
+    for spec in method_specs:
+        try:
+            check_method_params([spec], reducer_params, n_proteins)
+        except ValueError as e:
+            from_methods = n_proteins <= 5 or "perplexity" in spec.overrides_dict
+            hint = "'-m/--methods'" if from_methods else "'--perplexity'"
+            raise typer.BadParameter(str(e), param_hint=hint) from e
+
+
 # ---------------------------------------------------------------------------
 # --refetch stages, shared by prepare and annotate
 # ---------------------------------------------------------------------------

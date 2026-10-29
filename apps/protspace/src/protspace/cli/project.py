@@ -23,6 +23,7 @@ from protspace.cli.common_options import (
     Opt_RandomState,
     Opt_Similarity,
     Opt_Verbose,
+    refuse_unsupported_method_params,
     require_similarity_extra,
 )
 
@@ -125,7 +126,6 @@ def project(
     from protspace.data.processors.pipeline import (
         ReducerParams,
         _run_with_overridden_config,
-        check_method_params,
         disambiguation_suffix,
         parse_methods_arg,
     )
@@ -191,12 +191,9 @@ def project(
     method_counts = Counter((s.method, s.dims) for s in method_specs)
 
     # Before any reduction runs: a perplexity the smallest set cannot support.
-    try:
-        check_method_params(
-            method_specs, reducer_params, min(len(s.headers) for s in embedding_sets)
-        )
-    except ValueError as e:
-        raise typer.BadParameter(str(e), param_hint="'--perplexity'") from e
+    refuse_unsupported_method_params(
+        method_specs, reducer_params, min(len(s.headers) for s in embedding_sets)
+    )
 
     all_reductions = []
     headers = embedding_sets[0].headers

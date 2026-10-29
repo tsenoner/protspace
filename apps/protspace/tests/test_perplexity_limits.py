@@ -104,18 +104,35 @@ def test_a_per_method_override_is_checked_too():
     )
 
 
-def test_project_says_so_as_a_usage_error(tmp_path):
+@pytest.mark.parametrize(
+    ("n", "methods", "expected", "option"),
+    [
+        (
+            20,
+            "tsne2",
+            "perplexity 30 is not below the number of proteins (20)",
+            "--perplexity",
+        ),
+        # The value came from -m, so --perplexity is not what to change.
+        (20, "tsne2:perplexity=25", "perplexity 25 is not below", "-m/--methods"),
+        (20, "tsne2:perplexity=10,tsne2", "perplexity 30 is not below", "--perplexity"),
+        # No perplexity fits; t-SNE has to leave the methods.
+        (4, "tsne2", "t-SNE needs more than 5 proteins", "-m/--methods"),
+    ],
+)
+def test_project_says_so_as_a_usage_error(tmp_path, n, methods, expected, option):
     import h5py
 
     h5 = tmp_path / "small.h5"
     with h5py.File(h5, "w") as f:
-        for i, row in enumerate(_embeddings(20).data):
+        for i, row in enumerate(_embeddings(n).data):
             f.create_dataset(f"P{i:05d}", data=row)
     # Wide, so Rich does not wrap the message inside its error box.
     result = CliRunner().invoke(
         app,
-        ["project", "-i", f"{h5}:prot_t5", "-m", "tsne2", "-o", str(tmp_path / "out")],
+        ["project", "-i", f"{h5}:prot_t5", "-m", methods, "-o", str(tmp_path / "out")],
         env={"COLUMNS": "1000"},
     )
     assert result.exit_code == 2
-    assert "perplexity 30 is not below the number of proteins (20)" in result.output
+    assert expected in result.output
+    assert f"Invalid value for '{option}'" in result.output
