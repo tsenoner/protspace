@@ -1343,6 +1343,35 @@ def test_preparation_loads_the_newest_upload_after_a_restart(monkeypatch, tmp_pa
     assert restarted["input_args"][1]["name"] == "prot_t5"
 
 
+def test_preparation_rerun_keeps_settings_newer_than_an_upload(monkeypatch, tmp_path):
+    """The upload cell remembers its files across a Run all, and the panel put
+    them back over the settings it had just restored: the next Generate ran on
+    the old upload. Only an upload made after the last Generate wins."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    data = _clickthrough_h5(tmp_path / "source.h5").read_bytes()
+    _run_upload_cell(namespace, {"old_prot_t5.h5": data})
+    assert namespace["h5_path_field"].value.endswith("old_prot_t5.h5")
+
+    csv = tmp_path / "custom.csv"
+    csv.write_text("identifier,group\nprot000,a\n")
+    later = _clickthrough_h5(tmp_path / "later_esm2_650m.h5")
+    namespace["h5_path_field"].value = str(later)
+    _generate_pca_from_csv(namespace, csv)
+
+    def run_all():  # the same session: the upload cell unticked, then the panel
+        for marker in ("# @title Optional: upload", "# @title 2."):
+            exec(compile(_preparation_cell(marker), "prep:rerun", "exec"), namespace)
+
+    run_all()
+    assert namespace["tabs"].selected_index == 1
+    assert namespace["h5_path_field"].value == str(later)
+    assert namespace["input_args"][1]["name"] == "esm2_650m"
+
+    _run_upload_cell(namespace, {"new_prot_t5.h5": data})
+    run_all()
+    assert namespace["h5_path_field"].value.endswith("new_prot_t5.h5")
+
+
 @pytest.mark.parametrize(
     ("error", "advice"),
     [

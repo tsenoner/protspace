@@ -212,14 +212,21 @@ is given, and say so in either case.
 ### Requirement: The panel keeps its settings across a session restart
 
 Generate SHALL save the panel's settings in the runtime, and building the panel SHALL restore
-them, loading a saved path that still holds a file. With nothing saved, the panel SHALL load the
-newest file the upload cell left in the runtime. A path field's change SHALL clear the status the
-previous path left.
+them, loading a saved path that still holds a file. It SHALL then load each file the upload cell
+received after the saved Generate, and with nothing saved the newest file of each kind the upload
+cell left in the runtime; an upload older than the saved settings SHALL NOT replace them. A path
+field's change SHALL clear the status the previous path left.
 
 #### Scenario: Restart after a run
 
 - **WHEN** the user generated a bundle from an `.h5` and a CSV, restarted the session and ran all
 - **THEN** the panel shows the same tab, paths, methods and annotation choice, with the `.h5` loaded
+
+#### Scenario: Run all again after generating from another file
+
+- **WHEN** the user uploaded `old.h5`, generated from another `.h5`, and ran all cells again without
+  a restart
+- **THEN** the panel keeps the other `.h5` it restored, not the earlier upload
 
 #### Scenario: A new path after a failed load
 
