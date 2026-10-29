@@ -26,24 +26,20 @@ Usage (from apps/protspace; the inputs are the release's files):
 """
 
 import argparse
-import io
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
 import h5py
-import pyarrow.parquet as pq
 
-from protspace.data.io.bundle import extract_bundle_to_dir, read_tables
+from protspace.data.io.bundle import extract_bundle_to_dir, read_bundle_contents
 
 SCRIPT_DIR = Path(__file__).parent
 TOML_PATH = SCRIPT_DIR / "datasets.toml"
 # The CLI of the interpreter running this script, so the bundles come from the
 # protspace checked out here, not whichever is first on PATH.
 PROTSPACE = str(Path(sys.executable).with_name("protspace"))
-# Part 1 of a v3 bundle carries this footer key; a legacy one does not.
-V3_KEY = b"protspace_container_version"
 
 
 def _run(*args: str) -> None:
@@ -85,17 +81,16 @@ def refresh(name: str, annotations: str, input_dir: Path, output_dir: Path) -> P
         str(out),
     )
 
-    annotation_table, metadata, _ = read_tables(out)
+    contents = read_bundle_contents(out)
+    if contents.container_version is None:
+        raise SystemExit(f"{out.name} is not a v3 bundle")
+    annotation_table, metadata = contents.annotations, contents.metadata
     bundled = set(annotation_table.column("protein_id").to_pylist())
     if bundled != proteins:
         raise SystemExit(
             f"{out.name}: {len(bundled)} proteins, the embeddings hold "
             f"{len(proteins)}; they must be the same set"
         )
-    part1 = out.read_bytes().split(b"---PARQUET_DELIMITER---", 1)[0]
-    footer = pq.read_schema(io.BytesIO(part1)).metadata or {}
-    if V3_KEY not in footer:
-        raise SystemExit(f"{out.name} is not a v3 bundle")
     names = metadata.column("projection_name").to_pylist()
     columns = [c for c in annotation_table.column_names if c != "protein_id"]
     print(
