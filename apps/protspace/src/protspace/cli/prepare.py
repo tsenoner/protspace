@@ -47,6 +47,7 @@ from protspace.cli.common_options import (
     build_embed_config,
     parse_refetch,
     refuse_local_only_on_biocentral,
+    refuse_unsupported_method_params,
     require_similarity_extra,
     warn_unused_embed_options,
 )
@@ -209,6 +210,22 @@ def _file_stamp(path: Path | None) -> tuple[int, int] | None:
         return None
     stat = path.stat()
     return stat.st_mtime_ns, stat.st_size
+
+
+def _refuse_before_embedding(method_specs, reducer_params, count_proteins) -> None:
+    """Refuse a perplexity that not even every protein to embed could support.
+
+    The embedding comes first and can take long, so this runs before it.
+    ``count_proteins()`` is an upper bound on the proteins the run projects:
+    skipped sequences and intersections only lower it, so refusing here is
+    never wrong, and the pipeline checks the exact count again. It is called
+    only when a t-SNE method is requested, so other runs never read the FASTA
+    twice.
+    """
+    from protspace.utils.constants import TSNE_NAME
+
+    if any(spec.method == TSNE_NAME for spec in method_specs):
+        refuse_unsupported_method_params(method_specs, reducer_params, count_proteins())
 
 
 def _embed_all(
@@ -420,12 +437,25 @@ def prepare(
     # --- Parse methods ---
     # Before embedding too: a FASTA or -q input is embedded first, so a malformed
     # -m spec, and the 3-D deprecation warning, would otherwise come only after it.
-    from protspace.data.processors.pipeline import parse_methods_arg
+    from protspace.data.processors.pipeline import ReducerParams, parse_methods_arg
 
     try:
         method_specs = parse_methods_arg(methods or ["pca2"])
     except ValueError as e:
         raise typer.BadParameter(str(e), param_hint="'-m/--methods'") from e
+    reducer_params = ReducerParams(
+        metric=metric.value,
+        random_state=random_state,
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        perplexity=perplexity,
+        learning_rate=learning_rate,
+        mn_ratio=mn_ratio,
+        fp_ratio=fp_ratio,
+        n_init=n_init,
+        max_iter=max_iter,
+        eps=eps,
+    )
 
     # --- Build embedding sets ---
     from protspace.data.cache_hits import record_cache_hits
@@ -451,6 +481,7 @@ def prepare(
             headers, fasta_path = resolve_query_fasta(query, cache_dir, refetch_stages)
             if not headers:
                 raise typer.BadParameter(f"No sequences for query: '{query}'")
+            _refuse_before_embedding(method_specs, reducer_params, lambda: len(headers))
 
             if not embedders:
                 from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
@@ -470,6 +501,24 @@ def prepare(
 
         elif input_specs:
             named_inputs = resolve_input_names(input_specs, command="prepare")
+            # Only an all-FASTA run: counting HDF5 inputs too would mean reading
+            # them twice, so a mixed run is left to the pipeline's check. All
+            # FASTA inputs count together, as inputs of the same name are merged.
+            fasta_inputs = [
+                path
+                for path, _, _ in named_inputs
+                if not path.is_dir() and is_fasta_file(path)
+            ]
+            if fasta_inputs and len(fasta_inputs) == len(named_inputs):
+                from protspace.data.loaders.fasta import parse_fasta_normalized
+
+                _refuse_before_embedding(
+                    method_specs,
+                    reducer_params,
+                    lambda: len(
+                        set().union(*(parse_fasta_normalized(p) for p in fasta_inputs))
+                    ),
+                )
             for path, name_override, _ in named_inputs:
                 if path.is_dir():
                     h5s = embedding_files(path)
@@ -479,7 +528,7 @@ def prepare(
                     emb_set = load_h5(h5s, name_override=name_override)
                 elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
                     emb_set = load_h5([path], name_override=name_override)
-                elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
+                elif is_fasta_file(path):
                     _embed_all(
                         embedders,
                         path,
@@ -533,23 +582,9 @@ def prepare(
         # --- Run pipeline ---
         from protspace.data.processors.pipeline import (
             PipelineConfig,
-            ReducerParams,
             ReductionPipeline,
         )
 
-        reducer_params = ReducerParams(
-            metric=metric.value,
-            random_state=random_state,
-            n_neighbors=n_neighbors,
-            min_dist=min_dist,
-            perplexity=perplexity,
-            learning_rate=learning_rate,
-            mn_ratio=mn_ratio,
-            fp_ratio=fp_ratio,
-            n_init=n_init,
-            max_iter=max_iter,
-            eps=eps,
-        )
         config = PipelineConfig(
             methods=method_specs,
             output_path=output_path,

@@ -136,3 +136,48 @@ def test_project_says_so_as_a_usage_error(tmp_path, n, methods, expected, option
     assert result.exit_code == 2
     assert expected in result.output
     assert f"Invalid value for '{option}'" in result.output
+
+
+class _Embedded(Exception):
+    """embed_fasta was reached."""
+
+
+def _fasta(path: Path, ids) -> Path:
+    path.write_text("".join(f">{pid}\nMKVLAAGIVG\n" for pid in ids))
+    return path
+
+
+def _prepare(tmp_path, monkeypatch, fastas):
+    from protspace.data.loaders import fasta as fasta_loader
+
+    def embed_fasta(*_a, **_kw):
+        raise _Embedded
+
+    monkeypatch.setattr(fasta_loader, "embed_fasta", embed_fasta)
+    inputs = [arg for path in fastas for arg in ("-i", str(path))]
+    return CliRunner().invoke(
+        app,
+        ["prepare", *inputs, "-m", "tsne2", "-o", str(tmp_path / "out")],
+        env={"COLUMNS": "1000"},
+    )
+
+
+def test_prepare_refuses_it_before_embedding_a_fasta(tmp_path, monkeypatch):
+    fasta = _fasta(tmp_path / "small.fasta", [f"P{i:05d}" for i in range(20)])
+
+    result = _prepare(tmp_path, monkeypatch, [fasta])
+
+    assert not isinstance(result.exception, _Embedded)
+    assert result.exit_code == 2
+    assert "perplexity 30 is not below the number of proteins (20)" in result.output
+
+
+def test_prepare_counts_every_fasta_before_refusing(tmp_path, monkeypatch):
+    """Inputs of one name are merged, so two FASTAs of 20 project 40 proteins,
+    which perplexity 30 suits: no single file's count may refuse the run."""
+    first = _fasta(tmp_path / "a.fasta", [f"P{i:05d}" for i in range(20)])
+    second = _fasta(tmp_path / "b.fasta", [f"Q{i:05d}" for i in range(20)])
+
+    result = _prepare(tmp_path, monkeypatch, [first, second])
+
+    assert isinstance(result.exception, _Embedded)
