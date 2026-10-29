@@ -1693,6 +1693,99 @@ def test_clickthrough_loads_the_official_esm_c_through_transformers(monkeypatch)
     assert namespace["MODEL_SHORT_KEYS"]["biohub/ESMC-300M"] == "esmc_300m"
 
 
+@pytest.mark.parametrize(
+    ("checkpoint", "cuda", "native_bf16", "dtype"),
+    [
+        ("biohub/ESMC-6B", True, True, "bfloat16"),  # Ampere and newer
+        ("biohub/ESMC-6B", True, False, "float16"),  # T4 / V100
+        ("biohub/ESMC-6B", False, False, None),  # CPU: full precision
+        ("biohub/ESMC-300M", True, True, None),  # only 6B is halved
+    ],
+)
+def test_clickthrough_loads_esm_c_6b_in_half_precision_on_a_gpu(
+    monkeypatch, checkpoint, cuda, native_bf16, dtype
+):
+    """As the package's local backend does: 25.4 GB of fp32 weights would fill a
+    24-40 GB GPU. Native bf16 only: torch's default also counts emulated bf16."""
+    torch = pytest.importorskip("torch")
+    calls = _fake_transformers(monkeypatch)
+    asked = []
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(
+        torch.cuda,
+        "is_bf16_supported",
+        lambda **kw: asked.append(kw) or native_bf16,
+    )
+    namespace = _clickthrough_namespace()
+
+    namespace["_setup_model"](checkpoint)
+
+    (kwargs,) = [kw for name, _, kw in calls if name == "AutoModel"]
+    assert kwargs == ({"dtype": getattr(torch, dtype)} if dtype else {})
+    if dtype:
+        assert asked == [{"including_emulation": False}]
+    assert namespace["MODEL_SHORT_KEYS"]["biohub/ESMC-6B"] == "esmc_6b"
+
+
+def _run_until_the_fasta(namespace):
+    """Run the cell up to choosing the FASTA, which is after the model checks."""
+
+    class Stop(Exception):
+        pass
+
+    def stop():
+        raise Stop
+
+    namespace["_install"] = lambda _packages: None
+    namespace["_choose_fasta"] = stop
+    with pytest.raises(Stop):
+        namespace["_run"]()
+
+
+@pytest.mark.parametrize(("cuda", "need"), [(True, 16), (False, 32)])
+def test_clickthrough_stops_esm_c_6b_where_ram_is_short(monkeypatch, cuda, need):
+    """Free Colab's 12.7 GB of host RAM: transformers builds the model there first,
+    and running out kills the kernel without an error, so stop before the download."""
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda _i: "Tesla T4")
+    namespace = _clickthrough_namespace(model_name="biohub/ESMC-6B")
+    namespace["_ram_below_gb"] = lambda gb: gb == need
+    namespace["_choose_fasta"] = lambda: pytest.fail("read the FASTA first")
+
+    with pytest.raises(SystemExit, match=f"at least {need} GB of RAM"):
+        namespace["_run"]()
+
+    # Every other model ignores the runtime's size.
+    namespace["model_name"] = "biohub/ESMC-600M"
+    namespace["_ram_below_gb"] = lambda _gb: True
+    _run_until_the_fasta(namespace)
+
+
+@pytest.mark.parametrize(("gpu_gb", "warned"), [(15.8, True), (40.0, False)])
+def test_clickthrough_warns_when_esm_c_6b_may_not_fit_the_gpu(
+    monkeypatch, capsys, gpu_gb, warned
+):
+    """A T4 holds the 12.7 GB of weights, so 6B runs there, with long sequences
+    skipped on out-of-memory; say so rather than refuse."""
+    import types
+
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda _i: "a GPU")
+    monkeypatch.setattr(
+        torch.cuda,
+        "get_device_properties",
+        lambda _i: types.SimpleNamespace(total_memory=gpu_gb * 1e9),
+    )
+    namespace = _clickthrough_namespace(model_name="biohub/ESMC-6B")
+    namespace["_ram_below_gb"] = lambda _gb: False
+
+    _run_until_the_fasta(namespace)
+
+    assert ("leaving little for long sequences" in capsys.readouterr().out) is warned
+
+
 class _FakeBatch(dict):
     def to(self, _device):
         return self

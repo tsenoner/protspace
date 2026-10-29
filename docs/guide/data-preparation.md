@@ -72,7 +72,8 @@ It embeds a FASTA with ProtT5, ProstT5, Ankh, ESM2, ESM C or ESM3 and writes an 
 vector per protein (or per residue), named so ProtSpace recognises the model. Attach a GPU
 (**Runtime → Change runtime type → T4 GPU**), set the model and the FASTA in its one cell, and run
 it; it downloads the `.h5` when done. Run it again after changing a setting: the model stays
-loaded, and proteins already in the file are skipped.
+loaded, and proteins already in the file are skipped. ESM C 6B does not fit a free runtime: pick
+a High-RAM one, ideally with an L4 or A100 GPU.
 
 - No login for any of the models. ESM C runs on transformers' own port of the official weights
   (`biohub/ESMC-300M`, `-600M`); only ESM3 installs the `esm` package, which replaces Colab's

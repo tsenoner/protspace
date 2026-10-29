@@ -264,8 +264,8 @@ licensed, including the ESM-C models: `esmc_300m` and `esmc_600m` were relicense
 
 No GPU or local install? The
 [Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
-embeds a FASTA with the same models on a free Colab GPU and writes an `.h5` that `prepare -i`
-reads, per protein or per residue.
+embeds a FASTA with the same models on a free Colab GPU (`esmc_6b` needs a High-RAM runtime)
+and writes an `.h5` that `prepare -i` reads, per protein or per residue.
 
 ### Local backend
 
