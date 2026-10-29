@@ -194,40 +194,27 @@ def pool_residues(hidden: np.ndarray, seq_len: int, mod_type: str) -> np.ndarray
 # ---------------------------------------------------------------------------
 
 
-# transformers refuses a device_map below this accelerate (its
-# ACCELERATE_MIN_VERSION; a test keeps this at least as high), so an older one
-# keeps the host-RAM path rather than failing every GPU load.
-_ACCELERATE_MIN = (1, 1, 0)
-
-
 def _accelerate_available() -> bool:
-    """accelerate installed at a version transformers accepts for device_map."""
-    from importlib.metadata import PackageNotFoundError, version
+    """accelerate at a version transformers accepts for device_map.
 
+    Asked of transformers itself: from_pretrained refuses a device_map exactly
+    when this is False, so an older accelerate keeps the host-RAM path rather
+    than failing every GPU load. No (or a broken) transformers counts as False.
+    """
     try:
-        installed = version("accelerate")
-    except PackageNotFoundError:
+        from transformers.utils import is_accelerate_available
+
+        return bool(is_accelerate_available())
+    except Exception:
         return False
-    return _release(installed) >= _ACCELERATE_MIN
-
-
-def _release(version: str) -> tuple[int, ...]:
-    """(1, 13, 0) from "1.13.0" or "1.13.0rc1"; parts after a non-digit drop."""
-    parts = []
-    for part in version.split(".")[:3]:
-        digits = re.match(r"\d+", part)
-        if digits is None:
-            break
-        parts.append(int(digits.group()))
-    return tuple(parts)
 
 
 def stages_in_host_ram() -> bool:
     """True where ``setup_model`` builds the whole model in host RAM before the GPU.
 
-    That is no CUDA GPU (or a failed probe), or no ``accelerate``. Otherwise each
-    weight is placed on the GPU as it is read. The Colab notebook gates
-    ``COLAB_OVERSIZED`` on this.
+    That is no CUDA GPU (or a failed probe), or no ``accelerate`` as new as
+    transformers needs for device_map. Otherwise each weight is placed on the
+    GPU as it is read. The Colab notebook gates ``COLAB_OVERSIZED`` on this.
     """
     return not (_cuda_available() and _accelerate_available())
 

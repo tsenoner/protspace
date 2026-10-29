@@ -1835,10 +1835,20 @@ def test_clickthrough_size_rules_match_the_package():
     namespace = _clickthrough_namespace()
     keys = namespace["MODEL_SHORT_KEYS"]
     assert namespace["_HALF_ON_GPU"] == set(local._HALF_ON_GPU)
-    assert namespace["_ACCELERATE_MIN"] == local._ACCELERATE_MIN
     assert {keys[c] for c in namespace["_OVERSIZED"]} == local.COLAB_OVERSIZED & set(
         keys.values()
     )
+
+
+def test_clickthrough_accelerate_floor_covers_what_transformers_requires():
+    """The notebook copies transformers' device_map floor for accelerate (the
+    package asks transformers directly); if transformers raises it, the copy must
+    follow, or the notebook would pass device_map where transformers refuses it."""
+    pytest.importorskip("transformers")
+    from transformers.utils.import_utils import ACCELERATE_MIN_VERSION
+
+    floor = tuple(int(part) for part in ACCELERATE_MIN_VERSION.split("."))
+    assert _clickthrough_namespace()["_ACCELERATE_MIN"] >= floor
 
 
 def _function(source: str, name: str) -> str:
