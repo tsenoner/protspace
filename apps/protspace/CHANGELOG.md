@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.18.0 (2026-10-29)
+
+### Features
+
+- **embed**: Add local-only esmc_6b shortcut for ESM-C 6B
+  ([`9f32e9b`](https://github.com/tsenoner/protspace/commit/9f32e9b34d2db691710f5a407e2a02720bd6b562))
+
+
 ## v4.17.2 (2026-10-29)
 
 ### Bug Fixes
