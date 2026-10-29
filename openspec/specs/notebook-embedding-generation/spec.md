@@ -76,8 +76,9 @@ The Embeddings notebook SHALL offer `biohub/ESMC-6B` as `esmc_6b`, SHALL load it
 GPU with native bf16, in fp16 on any other GPU and in fp32 on a CPU, and SHALL load every model on
 a GPU by placing each weight on the device as it is read, when the runtime has the library for it.
 It SHALL stop before downloading ESM C 6B only where the model would be built in host RAM, on a
-runtime with less than 16 GB of host RAM (32 GB without a GPU), naming the fix. On a GPU with less
-than 16 GB of memory it SHALL warn and continue.
+runtime with less than 16 GB of host RAM (32 GB without a GPU), naming the fix. On a GPU that
+reports less than 90% of 16 GB (14.4 GB, smaller than a T4, which reports about 15.6) it SHALL warn
+and continue.
 
 #### Scenario: Free Colab with a T4
 
