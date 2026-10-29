@@ -27,6 +27,7 @@ checked against the same committed references (``tests/esmc_reference.py``); the
 other families' parity was measured once (cosine >= 0.9999), not asserted here.
 """
 
+import importlib.util
 import logging
 import re
 from dataclasses import dataclass
@@ -188,6 +189,29 @@ def pool_residues(hidden: np.ndarray, seq_len: int, mod_type: str) -> np.ndarray
 # ---------------------------------------------------------------------------
 
 
+def _accelerate_available() -> bool:
+    return importlib.util.find_spec("accelerate") is not None
+
+
+def _gpu_direct_placement(device) -> dict:
+    """``from_pretrained`` kwargs that stream the weights straight onto a GPU.
+
+    Without a ``device_map`` transformers builds the whole model in host RAM and
+    ``.to(device)`` copies it over afterwards, so loading peaks at the model's
+    size plus the checkpoint tensors still being cast. That kills a free Colab
+    kernel (12.7 GB RAM) on ESM-C 6B, whose half-precision weights are 12.7 GB.
+    With one device, ``device_map`` places each tensor as it is read and adds no
+    dispatch hooks. It needs ``accelerate`` (in the ``[local]`` extra); an
+    install without it keeps the old path. Off a GPU there is nothing to save.
+    """
+    if device.type != "cuda":
+        return {}
+    if not _accelerate_available():
+        logger.info("accelerate not installed: loading in host RAM, then copying")
+        return {}
+    return {"device_map": device}
+
+
 def setup_model(checkpoint: str, mod_type: str):
     """Load ``(model, tokenizer, device)`` for *checkpoint* / *mod_type*."""
     import torch
@@ -200,12 +224,13 @@ def setup_model(checkpoint: str, mod_type: str):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info("Loading %s (%s) on %s", checkpoint, mod_type, device)
+    placement = _gpu_direct_placement(device)
 
     if mod_type in ("esm", "esmc"):
         # AutoModel resolves the config: EsmModel for ESM-2, transformers' own
         # EsmcModel for ESM-C (a different architecture; no remote code).
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-        kwargs = {}
+        kwargs = dict(placement)
         if checkpoint in _HALF_ON_GPU and device.type == "cuda":
             # Native bf16 only (Ampere+): torch's default also counts emulated
             # bf16, which would put a T4/V100 on a slow software path, not fp16.
@@ -214,7 +239,7 @@ def setup_model(checkpoint: str, mod_type: str):
         model = AutoModel.from_pretrained(checkpoint, **kwargs)
     elif mod_type == "ankh":
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-        model = T5EncoderModel.from_pretrained(checkpoint)
+        model = T5EncoderModel.from_pretrained(checkpoint, **placement)
     elif mod_type in ("prot_t5", "prost_t5"):
         # fp16 on GPU (matches the half-precision checkpoints); fp32 on CPU,
         # where half-precision matmul is unsupported/slow.
@@ -222,7 +247,7 @@ def setup_model(checkpoint: str, mod_type: str):
         tokenizer = T5Tokenizer.from_pretrained(
             checkpoint, do_lower_case=(mod_type == "prot_t5")
         )
-        model = T5EncoderModel.from_pretrained(checkpoint, dtype=dtype)
+        model = T5EncoderModel.from_pretrained(checkpoint, dtype=dtype, **placement)
     else:  # pragma: no cover - guarded by resolve_local_checkpoint
         raise ValueError(f"Unknown model family: {mod_type}")
 

@@ -224,8 +224,8 @@ def _fake_transformers(monkeypatch):
     model, tokenizer = FakeModel(), object()
     fake.AutoModel = loader("AutoModel", model)
     fake.AutoTokenizer = loader("AutoTokenizer", tokenizer)
-    for unused in ("T5EncoderModel", "T5Tokenizer"):
-        setattr(fake, unused, loader(unused, None))
+    fake.T5EncoderModel = loader("T5EncoderModel", model)
+    fake.T5Tokenizer = loader("T5Tokenizer", tokenizer)
     monkeypatch.setitem(sys.modules, "transformers", fake)
     return calls, model, tokenizer
 
@@ -262,6 +262,7 @@ def test_setup_model_loads_esmc_6b_in_half_precision_on_gpu(
     torch = pytest.importorskip("torch")
     calls, _, _ = _fake_transformers(monkeypatch)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(local, "_accelerate_available", lambda: True)
     monkeypatch.setattr(
         torch.cuda,
         "is_bf16_supported",
@@ -272,8 +273,48 @@ def test_setup_model_loads_esmc_6b_in_half_precision_on_gpu(
 
     assert device.type == ("cuda" if cuda else "cpu")
     model_kwargs = next(kw for name, _, kw in calls if name == "AutoModel")
-    want = {} if expected is None else {"dtype": getattr(torch, expected)}
+    want = {"device_map": device} if cuda else {}
+    if expected is not None:
+        want["dtype"] = getattr(torch, expected)
     assert model_kwargs == want
+
+
+@pytest.mark.parametrize(
+    ("checkpoint", "mod_type", "loader"),
+    [
+        ("biohub/ESMC-6B", "esmc", "AutoModel"),
+        ("facebook/esm2_t36_3B_UR50D", "esm", "AutoModel"),
+        ("ElnaggarLab/ankh-base", "ankh", "T5EncoderModel"),
+        ("Rostlab/prot_t5_xl_half_uniref50-enc", "prot_t5", "T5EncoderModel"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("cuda", "accelerate", "direct"),
+    [
+        (True, True, True),  # weights stream onto the GPU, never all in host RAM
+        (True, False, False),  # no accelerate: the old host-RAM path, not an error
+        (False, True, False),  # CPU: nothing to save, loading unchanged
+    ],
+)
+def test_setup_model_loads_straight_onto_the_gpu(
+    monkeypatch, checkpoint, mod_type, loader, cuda, accelerate, direct
+):
+    """On CUDA every family loads with device_map=<the GPU>, so a checkpoint
+    larger than host RAM (ESM-C 6B on free Colab) is never built there whole."""
+    torch = pytest.importorskip("torch")
+    calls, _, _ = _fake_transformers(monkeypatch)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda **_: True)
+    monkeypatch.setattr(local, "_accelerate_available", lambda: accelerate)
+
+    _, _, device = local.setup_model(checkpoint, mod_type)
+
+    model_kwargs = next(kw for name, _, kw in calls if name == loader)
+    if direct:
+        assert model_kwargs["device_map"] == device
+        assert device.type == "cuda"
+    else:
+        assert "device_map" not in model_kwargs
 
 
 # ---------------------------------------------------------------------------
