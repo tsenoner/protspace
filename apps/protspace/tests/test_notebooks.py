@@ -415,12 +415,14 @@ def _run_preparation_eat_cell(
     (``eat_k=3``, ``eat_skip=True``). Returns (downloads, namespace).
     """
     import html
+    import time
     import types
 
     pytest.importorskip("ipywidgets")
     downloads = []
     namespace = {
         "__name__": "__notebook__",
+        "_time": time,
         "Path": Path,
         "display": lambda *_a, **_k: None,
         "clear_output": lambda *_a, **_k: None,
@@ -432,6 +434,14 @@ def _run_preparation_eat_cell(
         "_eat_bundle_path": str(bundle_path),
         "_eat_emb_set": emb_set,
     }
+    # The panel cell's own elapsed-time helper, which the EAT cell shares.
+    panel = _preparation_cell("# @title 2.")
+    (elapsed,) = [
+        ast.get_source_segment(panel, node)
+        for node in ast.parse(panel).body
+        if isinstance(node, ast.FunctionDef) and node.name == "_elapsed"
+    ]
+    exec(compile(elapsed, "ProtSpace_Preparation.ipynb:_elapsed", "exec"), namespace)
     (source,) = [
         source
         for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb")
