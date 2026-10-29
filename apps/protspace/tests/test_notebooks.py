@@ -2088,8 +2088,6 @@ def test_clickthrough_size_rules_match_the_package():
     the Preparation notebook gates the same models with."""
     from protspace.data.embedding import local
 
-    if "esmc_6b" not in local.LOCAL_CHECKPOINTS:
-        pytest.skip("the package predates esmc_6b (#560)")
     namespace = _clickthrough_namespace()
     keys = namespace["MODEL_SHORT_KEYS"]
     assert namespace["_HALF_ON_GPU"] == set(local._HALF_ON_GPU)
