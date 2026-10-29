@@ -2,43 +2,16 @@
 
 ## Purpose
 
-How the Embeddings notebook (`ClickThrough_GenerateEmbeddings.ipynb`) installs what a chosen model needs without replacing Colab's own packages, imports quietly, and says what each step did or why it stopped.
+How the Embeddings notebook (`ClickThrough_GenerateEmbeddings.ipynb`) runs every model it offers on Colab's own packages, imports quietly, and says what each step did or why it stopped.
 
 ## Requirements
 
-### Requirement: The Embeddings notebook installs the esm SDK only for its models
-
-`ClickThrough_GenerateEmbeddings.ipynb` SHALL install the `esm` package only when ESM3 is
-selected, and before transformers is first imported, so that every other model, ESM C included,
-runs on Colab's own transformers and huggingface_hub with nothing installed.
-
-#### Scenario: ESM2 on stock Colab
-
-- **WHEN** the user selects `facebook/esm2_t33_650M_UR50D` and runs the cell
-- **THEN** nothing is installed, and Colab's transformers stays installed
-
-#### Scenario: ESM C
-
-- **WHEN** the user selects `biohub/ESMC-300M`
-- **THEN** nothing is installed, and transformers' own `esmc` model loads the official weights
-  without a login
-
-#### Scenario: ESM3
-
-- **WHEN** the user selects `biohub/esm3-sm-open-v1`
-- **THEN** the `esm` package is installed first
-
 ### Requirement: The Embeddings notebook imports without other frameworks' start-up output
 
-The Embeddings notebook SHALL switch off TensorFlow and JAX for transformers and transformers'
-background safetensors conversion before its first transformers import, SHALL import only names
-huggingface_hub 1.x still has, and SHALL keep Hugging Face's download bars and transformers'
-report of checkpoint weights an encoder-only load leaves out from printing.
-
-#### Scenario: Colab with transformers 4 after the esm package
-
-- **WHEN** the esm package replaced transformers 5 with 4.x on a runtime that has TensorFlow and JAX
-- **THEN** importing the libraries loads neither, and prints no warning
+The Embeddings notebook SHALL switch off transformers' background safetensors conversion before
+its first transformers import, SHALL import only names huggingface_hub 1.x still has, and SHALL
+keep Hugging Face's download bars and transformers' report of checkpoint weights an encoder-only
+load leaves out from printing.
 
 #### Scenario: A checkpoint published only as pytorch_model.bin
 
@@ -50,14 +23,19 @@ report of checkpoint weights an encoder-only load leaves out from printing.
 The Embeddings notebook SHALL print one line per stage (model and device, proteins, IDs, weights
 with the time taken, the saved file) and SHALL stop with a message naming the cause and the fix for
 a cancelled upload, a missing path, an unreadable FASTA, a FASTA without records, duplicate IDs, a
-gated or unreachable model, and a missing package. A '/' in an ID SHALL become '\_' instead of
-stopping the run.
+gated or unreachable model, a missing package, and a transformers too old for ESM C. A '/' in an
+ID SHALL become '\_' instead of stopping the run.
 
 #### Scenario: A private model without a token
 
 - **WHEN** loading a model fails with an authorization error
 - **THEN** the message says it is gated or private and to add the token as the Colab secret
   `HF_TOKEN`
+
+#### Scenario: ESM C on transformers before 5.16
+
+- **WHEN** loading ESM C fails because transformers has no `esmc` model and asks for remote code
+- **THEN** the message says ESM C needs transformers 5.16 or newer
 
 ### Requirement: The Embeddings notebook runs on an example FASTA by default
 
@@ -113,3 +91,20 @@ larger runtime as the fix. On a GPU with less than 24 GB of memory it SHALL warn
 
 - **WHEN** the user selects `biohub/ESMC-6B` on an A100 runtime
 - **THEN** it loads in bf16, and each protein's vector has 2560 dimensions
+
+### Requirement: The Embeddings notebook installs nothing
+
+`ClickThrough_GenerateEmbeddings.ipynb` SHALL run every model it offers on the runtime's own
+torch, transformers and huggingface_hub, and SHALL install no package. It SHALL NOT offer ESM3,
+whose `esm` package pins transformers < 5.
+
+#### Scenario: ESM2 on stock Colab
+
+- **WHEN** the user selects `facebook/esm2_t33_650M_UR50D` and runs the cell
+- **THEN** nothing is installed, and Colab's transformers stays installed
+
+#### Scenario: ESM C
+
+- **WHEN** the user selects `biohub/ESMC-300M`
+- **THEN** nothing is installed, and transformers' own `esmc` model loads the official weights
+  without a login
