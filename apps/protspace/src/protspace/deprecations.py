@@ -144,8 +144,8 @@ _REGISTRY = (
             "apps/protspace/tests/test_convert.py: drop the legacy-read tests",
             "apps/web/src/explore/notifications.ts: drop the legacy-format "
             "notice (the web side is not gated; parquetbundle-v3 task 6.3)",
-            "packages/core/src/components/data-loader/utils/bundle.ts: drop the "
-            "v1/v2 decode path",
+            "packages/core/src/components/data-loader/legacy: drop the v1/v2 "
+            "decode path (and its dispatch in utils/bundle.ts)",
         ),
     ),
     Deprecation(
@@ -170,7 +170,7 @@ _REGISTRY = (
             "automatic (convert keeps reading z to flatten it)",
             "packages/core/src/components/data-loader/utils/bundle-v3.ts: drop "
             "dimension 3 and the __z interleave",
-            "packages/core/src/components/data-loader/utils/conversion.ts: drop "
+            "packages/core/src/components/data-loader/legacy/conversion.ts: drop "
             "the z column and dimension 3",
             "packages/utils/src/visualization/data-processor.ts: drop "
             "projectionPlane and the 3-D paths (scatter-plot.ts with it)",

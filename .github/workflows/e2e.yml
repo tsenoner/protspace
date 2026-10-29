@@ -133,6 +133,19 @@ jobs:
         env:
           E2E_BROWSERS: chromium
 
+      # The counts gate runs alone, on its own server (perf/README.md), on one shard only. Its own
+      # output and report folders keep it from overwriting the e2e run's. Its import-no-settings
+      # segment imports phosphatase, a dataset of the public perf-datasets release.
+      - name: Fetch the perf counts dataset
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        run: pnpm perf:fetch --only phosphatase
+
+      - name: Run perf counts
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: apps/web/playwright-report/perf-counts
+        run: pnpm perf:counts --output=apps/web/test-results/perf-counts
+
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

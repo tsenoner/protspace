@@ -122,7 +122,6 @@ async function syncLegendState(
     setTimeout(
       () => {
         legendElement.autoSync = true;
-        legendElement.autoHide = true;
         interactionController.updateLegend();
         resolve();
       },
@@ -154,30 +153,11 @@ export function createDataRenderer({
       return null;
     }
 
-    console.log('Loading new data:', newData);
     const startTime = performance.now();
     const dataSize = newData.protein_ids.length;
     const isLargeDataset = dataSize > 1000;
     const initialView = resolveInitialView(newData);
     const resolvedInitialView = resolveRenderableView(newData, initialView);
-
-    console.log('Dataset analysis:', {
-      size: dataSize.toLocaleString(),
-      willUseProgressiveLoading: isLargeDataset,
-    });
-
-    if (isLargeDataset) {
-      console.log(
-        `Large dataset detected (${dataSize.toLocaleString()} proteins) - using optimized loading pipeline`,
-      );
-      updateOverlayForStep(
-        overlayController,
-        true,
-        20,
-        'Preparing visualization...',
-        `Found ${dataSize.toLocaleString()} proteins`,
-      );
-    }
 
     updateOverlayForStep(
       overlayController,
@@ -191,6 +171,9 @@ export function createDataRenderer({
 
     console.log('Updating scatterplot with new data...');
     controlBar.autoSync = false;
+    // Only `syncLegendState` turns this back on. Until then the legend counts in protein
+    // order (its `_computeAnnotationCounts`), which picks the rows and colours of tied
+    // categories, and `updateLegend` leaves the legend to its own sync.
     legendElement.autoSync = false;
 
     applyPlotState(plotElement, newData, resolvedInitialView);
@@ -218,17 +201,10 @@ export function createDataRenderer({
     );
 
     await yieldToBrowser();
+    // The legend sync pushes the colour and z-order mappings into the plot, so
+    // the plot is final here and needs no further frame before the caller
+    // dismisses the overlay.
     await syncLegendState(legendElement, interactionController, isLargeDataset);
-
-    updateOverlayForStep(
-      overlayController,
-      isLargeDataset,
-      95,
-      'Finalizing view...',
-      `Visualizing ${dataSize.toLocaleString()} proteins`,
-    );
-
-    await yieldToBrowser();
 
     if (structureViewer.style.display !== 'none') {
       structureViewer.style.display = 'none';

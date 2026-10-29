@@ -1,4 +1,36 @@
+import type { PlotDataPoint, TooltipView } from '@protspace/utils';
 import type { HostMessageEventDetail } from '../../events';
+
+/**
+ * `brush-selection`: a rectangle or lasso selection was committed. The plot dispatches it,
+ * and the control bar merges it into the selection.
+ */
+export interface BrushSelectionDetail {
+  /** The selected interactive protein ids, one per selected point, in slot order. */
+  proteinIds: string[];
+  /** Always true: a brush or lasso selects a set. */
+  isMultiple: boolean;
+  /**
+   * True when no protein id repeats in the dataset, so `proteinIds` holds each id once and
+   * a merge can skip de-duplicating it. The plot always sets it; an embedder's event may
+   * leave it out, which reads as false.
+   */
+  idsUnique?: boolean;
+}
+
+/** `protein-click`: a point was clicked. The control bar and the structure viewer listen. */
+export interface ProteinClickDetail {
+  proteinId: string;
+  /** The bare plot point. */
+  point: PlotDataPoint;
+  /** The tooltip-friendly projection of the protein's annotations; null without data. */
+  view: TooltipView | null;
+  /**
+   * The modifier keys held during the click. The plot always sets it; an embedder's event
+   * may leave it out, which reads as none held.
+   */
+  modifierKeys?: { ctrl: boolean; meta: boolean; shift: boolean; alt: boolean };
+}
 
 /**
  * Why the renderer is running below full capability.
@@ -17,6 +49,8 @@ export type RendererDegradedReason =
   | 'label-atlas-out-of-memory'
   /** An allocating vertex-buffer upload failed; the atlas is released to retry smaller. */
   | 'point-buffer-allocation-failed'
+  /** The dataset has more points than the renderer can draw, so it draws none. */
+  | 'point-limit-exceeded'
   /** The gamma-correct pipeline is unavailable, so blending happens in sRGB. */
   | 'gamma-pipeline-unavailable'
   /** Contours were requested, but the density layer cannot run on this context. */
@@ -60,6 +94,9 @@ const MESSAGES: Record<RendererDegradedReason, (c: RendererDegradedContext) => s
   'point-buffer-allocation-failed': (c) =>
     `The graphics driver refused to allocate memory for ${c.pointCount.toLocaleString()} points. ` +
     `Multi-value markers now show a single dominant colour to free memory, and rendering will retry.`,
+  'point-limit-exceeded': (c) =>
+    'Nothing is drawn: this dataset has more points than the renderer can draw' +
+    (c.detail ? ` (${c.detail}).` : '.'),
   'gamma-pipeline-unavailable': (c) =>
     'Colour blending is running in sRGB rather than linear light, so overlapping points may look slightly darker than intended.' +
     // The cause is the only actionable part of this one — without it the message

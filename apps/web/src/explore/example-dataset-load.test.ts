@@ -27,6 +27,12 @@ const notifyMock = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
+// The OPFS copy of a user import (`beginSaveImportedFile`), kept by `commit`.
+const importSave = vi.hoisted(() => ({
+  commit: vi.fn(async () => {}),
+  abort: vi.fn(async () => {}),
+}));
+
 const mocks = vi.hoisted(() => ({
   loadData: vi.fn(),
 }));
@@ -49,7 +55,7 @@ vi.mock('./opfs-dataset-store', () => ({
   loadLastImportedFile: vi.fn().mockResolvedValue(null),
   markLastLoadStatus: vi.fn().mockResolvedValue(undefined),
   readLastLoadStatus: vi.fn().mockResolvedValue(null),
-  saveLastImportedFile: vi.fn().mockResolvedValue(undefined),
+  beginSaveImportedFile: vi.fn(() => importSave),
 }));
 
 vi.mock('./tooltip-annotations-store', () => ({
@@ -63,8 +69,8 @@ import {
   clearLastImportedFile,
   loadLastImportedFile,
   markLastLoadStatus,
+  beginSaveImportedFile,
   readLastLoadStatus,
-  saveLastImportedFile,
 } from './opfs-dataset-store';
 
 const DEMO = TEST_DEMO;
@@ -403,7 +409,7 @@ describe('a load a newer user request supersedes after it has started', () => {
 
   it('a user import superseded while it is saved still renders and records its success', async () => {
     const { controller, dataLoader, loadQueue } = createRealController(async (file, ctrl) => {
-      vi.mocked(saveLastImportedFile).mockImplementationOnce(async () => {
+      importSave.commit.mockImplementationOnce(async () => {
         ctrl.beginUserRequest();
       });
       await ctrl.handleDataLoaded(dataLoadedEvent({ settings: null, source: 'user', file }));
@@ -416,7 +422,8 @@ describe('a load a newer user request supersedes after it has started', () => {
 
     // Saved, it is the stored import: shown and marked loaded, never left
     // 'pending' for the next visit to offer recovery for.
-    expect(saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(beginSaveImportedFile).toHaveBeenCalledWith(file);
+    expect(importSave.commit).toHaveBeenCalledOnce();
     expect(mocks.loadData).toHaveBeenCalledTimes(1);
     expect(changes).toEqual([[null, 'superseded']]);
     expect(lastStatusMark()).toEqual(['success']);
@@ -434,7 +441,7 @@ describe('a load a newer user request supersedes after it has started', () => {
     loadQueue.registerFileLoad(file, 'user', undefined, controller.beginUserRequest());
     await dataLoader.loadFromFile(file, { source: 'user' });
 
-    expect(saveLastImportedFile).not.toHaveBeenCalled();
+    expect(beginSaveImportedFile).not.toHaveBeenCalled();
     expect(mocks.loadData).not.toHaveBeenCalled();
     expect(changes).toEqual([]);
   });
@@ -449,7 +456,8 @@ describe('a load a newer user request supersedes after it has started', () => {
     loadQueue.registerFileLoad(file, 'user', undefined, controller.beginUserRequest());
     await dataLoader.loadFromFile(file, { source: 'user' });
 
-    expect(saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(beginSaveImportedFile).toHaveBeenCalledWith(file);
+    expect(importSave.commit).toHaveBeenCalledOnce();
     expect(mocks.loadData).toHaveBeenCalledTimes(1);
     expect(changes).toEqual([[null, 'user']]);
   });

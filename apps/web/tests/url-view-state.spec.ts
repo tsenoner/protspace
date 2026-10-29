@@ -9,6 +9,8 @@ import {
   getFirstLegendItemValue,
   isLegendItemHidden,
   openExplore,
+  selectAnnotation,
+  selectProjection,
   supportsExplorePersistedDataset,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
@@ -123,26 +125,6 @@ function expectViewNotReloaded(
   expect(stability.loadStarts).toBe(0);
   expect(stability.overlayShows).toBe(0);
   expect(stability.overlayPresent).toBe(false);
-}
-
-async function selectAnnotation(page: Page, annotation: string): Promise<void> {
-  await waitForExploreInteractionReady(page);
-
-  const annotationSelect = page
-    .locator('protspace-control-bar')
-    .locator('protspace-annotation-select');
-
-  await annotationSelect.locator('.dropdown-trigger').click();
-  // Items are labelled with the friendly display name (e.g. "EC number"), but
-  // carry the raw annotation key on data-annotation — click by key so the helper
-  // stays label-agnostic.
-  await annotationSelect.locator(`.dropdown-item[data-annotation="${annotation}"]`).click();
-}
-
-async function selectProjection(page: Page, projection: string): Promise<void> {
-  await waitForExploreInteractionReady(page);
-  await page.locator('protspace-control-bar').locator('#projection-trigger').click();
-  await page.getByRole('option', { name: projection, exact: true }).click();
 }
 
 async function loadBundleFromPath(page: Page, filePath: string, fileName: string): Promise<void> {

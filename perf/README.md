@@ -1,4 +1,352 @@
-## Performance benchmarking & plotting
+# Performance checks
+
+Three Playwright modes drive the real Explore UI: annotation switch, projection switch (a glide,
+then the same switch under reduced motion, which is instant), legend isolate, camera drag and
+wheel, resize, search, import. A separate tool, the cross-browser WebGL suite (`pnpm perf:webgl`),
+measures render passes per dataset in Chrome, Firefox and Safari; see its section at the end.
+
+| Command            | What it measures            | Browser                   | Gated                  | Time                |
+| ------------------ | --------------------------- | ------------------------- | ---------------------- | ------------------- |
+| `pnpm perf:counts` | work counts per interaction | headless Chromium         | yes, by `budgets.json` | about 20 s          |
+| `pnpm perf`        | timings per interaction     | headed Chromium, real GPU | no                     | about 50 s          |
+| `pnpm perf:scale`  | timings and memory over N   | headed Chrome, real GPU   | no                     | minutes per dataset |
+| `pnpm perf:webgl`  | render passes per dataset   | Chrome, Firefox, Safari   | no                     | minutes             |
+
+Counts do not depend on the machine, so they gate CI. Timings swing about 2× with the power state
+(battery, Low Power Mode), so they are only reported, as medians or as ratios between two builds
+measured in the same session.
+
+## How it works
+
+Load Explore with `?perfCounters=1`. Core then exposes `window.__protspacePerfCounters`
+(`packages/core/src/utils/perf-counters.ts`). Without the flag the counters are `null` and each
+call site costs one null check. They count:
+
+| Counter                                 | What                                                            |
+| --------------------------------------- | --------------------------------------------------------------- |
+| `restage`, `restagePos`, `restageStyle` | full GPU buffer re-stages (`populateBuffers`), with their parts |
+| `restageMs`                             | time spent in those re-stages                                   |
+| `render`, `drawn`                       | renderer frames, and the points drawn by the last one           |
+| `morphFrame`                            | renders drawn while a projection glide moves the points         |
+| `processData`, `gridRebuild`            | scatter-plot data processing, point-grid rebuilds               |
+| `legendUpdate`, `legendRebuild`         | legend item updates and rebuilds                                |
+
+`apps/web/tests/helpers/perf/probes.ts` lists these names once, in `CORE_KEYS`.
+
+An init script (`apps/web/tests/helpers/perf/probes.ts`) wraps the public
+`WebGL2RenderingContext.prototype`, so these need no app code and survive renames:
+
+- `glIs`: `gl.is{Program,Buffer,Texture,VertexArray,Framebuffer}` calls, reported per render;
+- `glSync`: `getError`, `getProgramParameter`, `getShaderParameter`, `readPixels`;
+- `bufferBytes`: bytes passed to `bufferData` and `bufferSubData`; texture uploads are not counted.
+
+Each segment runs settle → snapshot → act → settle → snapshot → reset → settle. Settling waits
+until the counters and buffer bytes stay unchanged for two animation frames and 200 ms, and never
+sleeps a fixed time. It fails at 3 s (60 s in timing mode): a page that keeps working with no input
+has a render loop or leaked work. Segments that change the view reset it through the UI, and the
+plot's pixels before the segment must equal the pixels after the reset.
+
+The segments are listed once, in `apps/web/tests/helpers/perf/scenarios.ts`, with what the checks
+need to know about each: whether timing mode can repeat it, which counts follow the number of
+frames it spans, and its role in the checks below. Both modes and `pnpm perf --scenarios` use that
+list.
+
+## `pnpm perf:counts`
+
+```sh
+pnpm perf:counts                                             # builds, then serves this checkout on 8310
+PLAYWRIGHT_PORT=8312 pnpm perf:counts                        # the same, on another port
+PLAYWRIGHT_BASE_URL=http://localhost:8303 pnpm perf:counts   # against a server you started
+```
+
+`pnpm perf:counts` builds this checkout's packages and starts its own Vite server on 8310 (or
+`PLAYWRIGHT_PORT`). It never reuses a server, so a dev server from another checkout cannot be
+measured by mistake; if the port is taken, the run stops. `pnpm test:e2e` instead starts or reuses
+`pnpm dev:app` on 8080, which may be another checkout's server, so it leaves the counts out: the
+project is opt-in (`PERF_COUNTS=1`, which the script sets) and refuses a run without its own
+server or `PLAYWRIGHT_BASE_URL`.
+
+It runs `apps/web/tests/perf-counts.spec.ts` on the demo bundle
+(`apps/web/public/data.parquetbundle`), then imports `perf/datasets/phosphatase.parquetbundle`,
+which has no legend settings (`import-no-settings`); fetch it first with
+`pnpm perf:fetch --only phosphatase`. The e2e CI workflow fetches it and runs the counts as their
+own step on its first shard, after the parallel suite. It prints one table, value/budget per cell, with `!` on a cell over
+budget:
+
+```
+segment            restage  pos  style  render  glIs/r  sync  proc  legU  legR  grid  upload   pixels
+annotation-switch  1/1      1/1  1/1    1/1     0/0     0/0   0/0   2/2   2/2   0/0   367.1KB  same
+camera             0/0      0/0  0/0    27      0/0     0     0/0   0/0   0/0   0/0   0B/0B    same
+```
+
+It fails when:
+
+- a count is above its budget;
+- the pixels after a reset differ (both screenshots are attached to the report);
+- the camera segment draws fewer points than the dataset has;
+- the projection switch draws no glide frame (`morphFrame`), renders during the second after it
+  settled, or ends on other pixels than the instant switch; or another segment draws a glide frame;
+- a `load` counter reads 0, which means a probe got disconnected;
+- core's counters object has a key `probes.ts` does not list, or lacks one it lists;
+- the page does not settle.
+
+A count below its budget passes, and the report lists it under "tighten".
+
+### Budgets
+
+`apps/web/tests/perf/budgets.json` is the only place budgets live. `null` means report only. Counts
+that follow how many frames a segment spans are `null`: renders, GL sync calls, grid rebuilds and
+`gl.is*` calls per render during load and import, renders and GL sync calls during camera moves,
+and the renders of the projection glide, one per frame. `scenarios.ts` lists them per segment. Any
+count that differed between the three recordings is `null` too, and so is any count the previous
+file set to `null`, so a hand-set `null` survives a re-record. Bytes are budgeted only at 0: any
+other byte count is a property of the dataset.
+
+To update after a change that lowers, or knowingly raises, a count:
+
+```sh
+PERF_UPDATE_BUDGETS=1 pnpm perf:counts   # runs the segments 3 times, writes the max of each count
+git diff apps/web/tests/perf/budgets.json
+```
+
+Commit the new numbers with the change that caused them. A perf fix lowers its budgets in the same
+commit.
+
+## `pnpm perf` (timing mode)
+
+```sh
+pnpm perf                                  # build, `vite preview` on 8301, demo bundle, 5 runs
+pnpm perf --datasets 40K,7K_toxprot
+pnpm perf --datasets 573K_swissprot --runs 3
+pnpm perf --datasets /abs/path/other.parquetbundle
+pnpm perf --scenarios annotation,camera --cpu 4
+```
+
+| Flag                | Default    | Meaning                                                                            |
+| ------------------- | ---------- | ---------------------------------------------------------------------------------- |
+| `--datasets a,b`    | `default`  | `default` (the demo bundle), a fetched perf dataset id, or a path                  |
+| `--scenarios a,b`   | all        | `annotation`, `projection` (both switches), `legend`, `camera`, `resize`, `search` |
+| `--runs N`          | 5          | runs per segment; the first is a warm-up and is dropped                            |
+| `--cpu N`           | 1          | CPU throttling; 4 makes the demo bundle cost about what a 100K one does            |
+| `--url URL`         | own server | measure this server instead of building and serving the app                        |
+| `--no-build`        |            | serve the existing `apps/web/dist` without rebuilding                              |
+| `--compare URL`     |            | a second build, measured interleaved with the first                                |
+| `--save-baseline`   |            | write the medians to `perf/baselines/<dataset>.local.json`                         |
+| `--baseline [file]` |            | report against that file, or against `perf/baselines/<dataset>.local.json`         |
+| `--trace`           |            | record a DevTools trace per segment under `perf/results/<stamp>-traces/`           |
+
+Without `--url`, `perf/perf.mjs` builds the app and serves it with `vite preview --port 8301
+--strictPort`, and stops that server on exit, on failure and on Ctrl-C. It never uses or stops
+ports 8080 and 8091.
+
+Per dataset, it imports the bundle through the import control (that import is timed once), then
+repeats the segments. It prints one table per dataset and writes every sample to
+`perf/results/<stamp>-<dataset>.json` (gitignored):
+
+```
+default  runs 4 (+1 warm-up)  cpu 1x  A=:8301  heap 9MB     median
+segment            INP ms  LoAF ms  top script   busy ms  restage ms  p95 frame  pixels A=B
+annotation-switch  88      58       DIV.onclick  75       46          -          -
+camera             40      0        -            87       0           18         -
+```
+
+- **INP ms**: the longest Event Timing duration of any interaction in the segment.
+- **LoAF ms / top script**: the longest long animation frame, and the script that took most of it.
+- **busy ms**: main-thread task time (CDP `TaskDuration`).
+- **restage ms**: time inside GPU re-stages, from the counters.
+- **p95 frame**: 95th percentile gap between frames: every frame of the camera segment, and the
+  frames of the projection glide (while the plot has `data-morphing`), the switch frame included.
+- **heap**: JS heap after a forced GC, once the runs are done.
+
+Event Timing and Long Animation Frames exist only in Chromium, so timing mode runs only there.
+
+### 573K example
+
+`pnpm perf --url http://localhost:8473 --datasets 573K_swissprot` takes about 3 minutes, most of
+it in the 4 + 1 runs of each segment. On an M4 MacBook on power (2026-10-05, 3b3ca462):
+
+```
+573K_swissprot  runs 4 (+1 warm-up)  cpu 1x  A=:8473  heap 29MB     median
+segment                    INP ms  LoAF ms  top script            busy ms  restage ms  p95 frame
+import                     88      79       FrameRequestCallback  304      56          -
+annotation-switch          40      56       FrameRequestCallback  73       38          -
+projection-switch          40      70       FrameRequestCallback  116      35          17
+projection-switch-instant  40      68       FrameRequestCallback  91       33          -
+legend-isolate             56      0        -                     34       0           -
+camera                     56      0        -                     63       0           17
+resize                     0       0        -                     95       0           -
+search-select              36      0        -                     28       0           -
+```
+
+A switch of annotation or projection re-stages the GPU buffers once, about half of its
+main-thread time; legend, camera, resize and search no longer re-stage. Before the perf work
+(2026-10-04) each of these took 1 to 3 s at this size, nearly all of it in re-stages.
+
+### Comparing two builds
+
+Serve each build on its own port, then pass one as `--url` and the other as `--compare`. For
+example, `main` from a second worktree against this branch:
+
+```sh
+git worktree add ../protspace-main origin/main && (cd ../protspace-main && pnpm install)
+(cd ../protspace-main && pnpm turbo run build --filter=@protspace/app \
+  && pnpm --filter @protspace/app exec vite preview --port 8302 --strictPort) &
+pnpm turbo run build --filter=@protspace/app \
+  && (pnpm --filter @protspace/app exec vite preview --port 8301 --strictPort &)
+pnpm perf --url http://localhost:8302 --compare http://localhost:8301 --datasets default,40K
+```
+
+The runs alternate A, B, A, B in one browser session, so a change in power state hits both builds.
+Cells read `A→B ratio`, for example `412→118 .29`. `pixels A=B` compares the plot after each
+segment between the two builds; on `DIFF`, both images go to `perf/results/<stamp>-pixels/`.
+Compare two production builds (`vite build` + `vite preview`), not a dev server with a build.
+A build from before the counters, such as `main` before this tooling, still gets its timings, but
+its `restage ms` cells read `-` with no ratio, for example `-→4`.
+
+### Baselines
+
+To compare against an earlier run on the same machine, see `baselines/README.md`.
+
+## Scaling datasets
+
+`perf/scale/generate.py` writes synthetic v3 bundles of any size for the scaling benchmark. It
+needs only [uv](https://docs.astral.sh/uv/); its dependencies (pyarrow, numpy) are declared
+inline. `DATA` is an absolute directory outside the repo:
+
+```sh
+uv run perf/scale/generate.py swissprot --source perf/datasets/573K_swissprot.parquetbundle \
+  --n 5000000 --out $DATA/swissprot-5M.parquetbundle
+uv run perf/scale/generate.py lean --n 67108864 --out $DATA/lean-67108864.parquetbundle
+pnpm perf --datasets "$DATA/swissprot-5M.parquetbundle" --runs 2
+```
+
+| Profile     | Rows                                                                                                                                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `swissprot` | the source rows resampled with replacement, all 23 annotations kept (scores too), new UniProt-like accessions, both projections jittered by a Gaussian of sigma half the source row's 5th-neighbour distance |
+| `lean`      | one categorical column (50 categories), one multi-valued column (300 labels, 2 hits each), sorted accessions, a clustered projection and a rotated, noisy copy of it                                         |
+
+Flags: `--seed` (default 0), `--chunk` (rows per row group, default 1M), `--tmp` (temporary
+files, about the size of parts 3 and 6). The same seed and chunk size give the same file. It
+prints rows, file size, time and peak RSS.
+
+Rows are written a chunk at a time by `perf/scale/bundle_writer.py`, a generic chunked v3 writer
+(ids, categorical, multi-valued with optional scores and numeric columns, any number of 2-D or
+3-D projections) that a real dataset can reuse. Streaming holds about one chunk in memory; the
+end, which writes each CSR payload as one parquet value, needs about 3.5x the largest payload.
+The writer refuses what the reader would: a payload over 2 GiB (about 536M hits in one
+multi-valued column, or about 268M float64 scores) or a part that compresses more than 32x. It
+warns, without refusing, when the file passes 2 GiB, the app's file-size limit
+(`MAX_FILE_SIZE_BYTES` in `validation.ts`). swissprot takes about 79.5 bytes per protein
+(5M = 397,348,241 bytes), so the largest swissprot bundle the app opens is about 27.0M rows;
+swissprot 30M is over the limit.
+
+On an M-series MacBook (2026-10-06):
+
+| Bundle        | File   | Time | Peak RSS |
+| ------------- | ------ | ---- | -------- |
+| swissprot 1M  | 77 MB  | 14 s | 1.2 GB   |
+| swissprot 5M  | 379 MB | 14 s | 1.4 GB   |
+| swissprot 30M | 2.3 GB | 25 s | 2.2 GB   |
+| lean 5M       | 131 MB | 1 s  | 0.7 GB   |
+| lean 2^26     | 1.8 GB | 14 s | 2.3 GB   |
+
+About 12 s of every swissprot run is the 5th-neighbour search on the source.
+
+## `pnpm perf:scale` (scaling benchmark)
+
+How far Explore scales with the number of points N, for papers and capacity planning. Per
+dataset it imports the bundle cold several times, then times each interaction, counts its work,
+and samples the browser's memory. Wrap it in caffeinate, and run nothing else on the GPU
+meanwhile:
+
+```sh
+caffeinate -dims pnpm perf:scale \
+  --datasets 573K=perf/datasets/573K_swissprot.parquetbundle,5M=/abs/synth-5M.parquetbundle
+pnpm perf:scale --datasets 573K_swissprot --cold 2 --reps 5        # a quick check, about 3 min
+pnpm perf:scale --url http://localhost:8302 --datasets 40K           # an already served build
+```
+
+| Flag                  | Default                       | Meaning                                                                    |
+| --------------------- | ----------------------------- | -------------------------------------------------------------------------- |
+| `--datasets a=path,…` | required                      | `name=path`, a path, or a fetched perf dataset id                          |
+| `--cold N`            | 10                            | cold imports per dataset, each in a fresh context                          |
+| `--reps N`            | 20                            | measured reps per interaction, after 2 warm-ups; 0 measures loads only     |
+| `--rounds N`          | 1                             | repeat all datasets N times, interleaved                                   |
+| `--browser B`         | `chrome`                      | `chrome` (stable; falls back to Chromium), `chromium`, `firefox`, `webkit` |
+| `--url URL`           | own server                    | measure this server instead of building and serving                        |
+| `--port P`            | 8520                          | port of the own `vite preview` server                                      |
+| `--no-build`          |                               | serve the existing `apps/web/dist`                                         |
+| `--out DIR`           | `perf/results/scale-<stamp>/` | where the run and aggregate files go                                       |
+| `--guard-gb G`        | 3                             | kill the browser below G GB of free plus inactive memory (polled at 5 Hz)  |
+| `--timeout-min M`     | 60 + 1 per 10 MB of bundle    | kill a dataset's run after M minutes (5M SwissProt: 100; raise it at 20M+) |
+
+Each dataset and round is one browser run of the `perf-scale` Playwright project
+(`apps/web/tests/perf-scale.spec.ts`): headed, on the real GPU, 1600 × 1000 at DPR 2, with
+`?perfCounters`. It measures:
+
+- **Cold loads** (`--cold`): Explore opens on the demo dataset, then the bundle is imported
+  through the import control. In the page: file chosen → `data-loaded` → first frame drawn
+  after it → last counter change before the page settled (`load.chosenTo*Ms`). Also the points
+  drawn, the JS heap after a forced GC before and after, toasts and `renderer-degraded` events.
+- **Interactions**, on the last loaded page, 2 warm-ups then `--reps`: annotation switch, legend
+  hide and isolate, click select, search select, a lasso over 15% of the points (sized with the
+  plot's own polygon query), the projection switch under reduced motion and with its glide, a
+  2000 × 1500 export with a blank-image check, and a scripted 5 s pan and zoom. Each rep reports
+  INP (null when the step had no input event, as for the scripted export), LoAF, busy and
+  re-stage ms as in timing mode, `settledMs` (act to settled, including the 200 ms quiet
+  window), frame gaps p50/p95 and `drawsPerSec` (glide and pan-zoom; the gaps time animation
+  frames, the draws count plot renders, which at millions of points come far less often), and
+  the work counts `restage`,
+  `render` and `uploadedBytesTotal` (buffer bytes uploaded). The lasso adds `upToRenderMs`, from
+  pointerup to the next frame drawn; the export adds `captureMs` and `blank`. An interaction
+  that throws (a settle over its 120 s cap, say) is recorded in `interactionFailures` with its
+  status and message, and the next one runs.
+- **Memory**: `perf/scale.mjs` finds the browser's processes with `ps`, classed by
+  `--type=renderer` and `--type=gpu-process`, and samples their physical footprint with macOS
+  `footprint` once a second (`memory`, with `source: footprint`). RSS leaves out the Metal and
+  IOSurface memory of the GPU process (216 MB RSS vs 753 MB footprint at 573K) and overstates
+  the renderer, so it is only kept as `rssMemory`, sampled every 100 ms (and used as `memory`
+  off macOS). Each reports the peak over the run and per load, the value once each load
+  settled, and bytes per point (settled minus the value before the import, over N; also for the
+  JS heap).
+- **Status**: `ok`, `crash`, `timeout`, `oom-guard` (the free-memory guard fired), `refused`
+  (the app refused the dataset, over its drawable-point limit or with a load error; `refused`
+  holds the toast or error text, and the run stops there), `load-failed` (the import logged
+  an error and the plot kept the old dataset, as at lean 2^26: building the dataset hash
+  joins the ids past V8's string limit; `loadFailed` holds it) or `error`;
+  whether every load drew N points, and the degradation notices. `pmset -g therm` is logged
+  before and after each dataset.
+
+Output: one `<stamp>-r<round>-<name>.json` per run, with every sample and the raw memory
+samples, then `aggregate.json` and `aggregate.csv` with the median, quartiles, IQR and sample
+count (`samples`) of each metric per dataset, across rounds. A build without the counters (main) still
+gets its timings, load phases and memory; its drawn counts, work counts and draws/s are
+null, and so is `drawnEqualsN`. Only runs with status `ok` are
+pooled (`okRuns`); a stopped run's partial numbers stay in its own JSON. Keep generated bundles and results out of the repo.
+
+## Files
+
+```
+packages/core/src/utils/perf-counters.ts   the flag-gated counters
+apps/web/tests/perf-counts.spec.ts         counts gate (opt-in project, PERF_COUNTS=1)
+apps/web/tests/perf-timing.spec.ts         timing mode (opt-in project, PERF_TIMING=1)
+apps/web/tests/helpers/perf/probes.ts      init script, settle(), segment()
+apps/web/tests/helpers/perf/scenarios.ts   the segments
+apps/web/tests/helpers/perf/report.ts      budgets and tables
+apps/web/tests/perf/budgets.json           budgets
+perf/perf.mjs                              `pnpm perf`: flags to PERF_* env, server, Playwright
+perf/webgl-perf.spec.ts                    `pnpm perf:webgl`: the cross-browser WebGL suite
+perf/playwright.config.ts                  its Playwright config
+apps/web/src/perf/webgl-perf-suite.ts      its in-page runner, loaded on `?webglPerf=1`
+perf/datasets.manifest.json                the datasets `pnpm perf:fetch` downloads
+perf/plot_perf_results.py                  plots of its results
+perf/scale/generate.py                     synthetic scaling bundles (`uv run`)
+perf/scale/bundle_writer.py                chunked v3 bundle writer
+apps/web/tests/perf-scale.spec.ts          scaling benchmark (opt-in project, PERF_SCALE=1)
+perf/scale.mjs                             `pnpm perf:scale`: server, memory, guard, aggregation
+```
+
+## `pnpm perf:webgl` (cross-browser WebGL suite)
 
 ### 1. Fetch the datasets
 
@@ -26,9 +374,14 @@ owner's step.
 From the **repo root**, run the Playwright-based WebGL performance suite:
 
 ```sh
-pnpm perf                        # 10 iterations per scenario (default)
-PERF_ITERATIONS=5 pnpm perf      # override iteration count
+pnpm perf:webgl                        # 10 iterations per scenario (default)
+PERF_ITERATIONS=5 pnpm perf:webgl      # override iteration count
+PERF_WEBGL_PORT=8713 pnpm perf:webgl   # serve on another port than 8080
 ```
+
+The suite starts its own `pnpm dev:app` and never reuses a running server: when the port is
+taken, the run stops. Its default port is 8080, the usual dev port, so set `PERF_WEBGL_PORT` while
+another checkout's dev server runs there.
 
 This launches Chrome, Firefox and Safari headless, so no window takes focus
 while it runs; each still renders on the hardware GPU (Chrome through its
@@ -58,14 +411,14 @@ include in every full suite run:
 
 ```sh
 # Benchmark only the 573K SwissProt dataset, Chrome only
-PERF_DATASETS=573K_swissprot pnpm perf --project=chrome
+PERF_DATASETS=573K_swissprot pnpm perf:webgl --project=chrome
 
 # Multiple datasets
-PERF_DATASETS=573K_swissprot,127K_beta_lactamase pnpm perf --project=chrome
+PERF_DATASETS=573K_swissprot,127K_beta_lactamase pnpm perf:webgl --project=chrome
 ```
 
 Pass `--project=chrome` directly, with no `--` in front of it. pnpm 10 forwards a
-`--` to the script verbatim, so `pnpm perf -- --project=chrome` reaches Playwright
+`--` to the script verbatim, so `pnpm perf:webgl -- --project=chrome` reaches Playwright
 as a positional test filter instead of a project filter and every browser project
 runs.
 
@@ -92,7 +445,7 @@ results file naming what broke instead of an opaque Playwright timeout:
 | `webglPerfBudgetMs`        | 40 min  | Whole run. The results file is emitted when this expires, wherever the sweep has got to; datasets not reached are recorded under `skipped`. |
 | `webglPerfDatasetBudgetMs` | 6 min   | One dataset's load path and readiness gate, shared by every wait in it and capped by the run budget.                                        |
 
-`pnpm perf` derives `webglPerfBudgetMs` from the spec's own download wait, so
+`pnpm perf:webgl` derives `webglPerfBudgetMs` from the spec's own download wait, so
 the two cannot drift; the defaults above apply only to a hand-typed
 `?webglPerf=1` in a browser. Raise both, and `SUITE_TIMEOUT_MS` in
 `perf/webgl-perf.spec.ts`, if a legitimately slow sweep needs longer.
@@ -141,7 +494,7 @@ perf/test-results/
 
 The per-browser split matters: Playwright deletes the output directory of every
 _selected_ project when a run starts, so with one shared directory
-`pnpm perf -- --project=chrome` used to delete the Firefox and Safari results
+`pnpm perf:webgl -- --project=chrome` used to delete the Firefox and Safari results
 from the previous full run, and the plotter would then quietly draw
 single-browser charts. The plotter searches recursively, so it needs no change.
 

@@ -1,18 +1,18 @@
 /**
- * Canonical typed details for the legend → scatter-plot mapping transport (INV-06/07).
+ * Canonical typed details for the legend → scatter-plot mapping transport.
  * color/shape + z-order travel as events; the scatter-plot consumes them here, the
  * legend's scatterplot-sync-controller produces them. One shape, two ends.
  */
 
-/** INV-07: legend-colormapping-change.detail */
+/** legend-colormapping-change.detail */
 export interface LegendColorMappingDetail {
   colorMapping: Record<string, string>;
   shapeMapping: Record<string, string>;
-  /** INV-08 contract: true skips the depth re-sort. */
+  /** Behavioral contract: true skips the depth re-sort. */
   colorOnly: boolean;
 }
 
-/** INV-07: legend-zorder-change.detail (keyed by annotation value). */
+/** legend-zorder-change.detail (keyed by annotation value). */
 export interface LegendZOrderDetail {
   zOrderMapping: Record<string, number>;
 }

@@ -70,7 +70,7 @@ CONTAINER_VERSION_KEY = b"protspace_container_version"
 V3_MANIFEST_KEY = b"protspace_v3_manifest"
 CONTAINER_VERSION = 3
 
-# Mirrors the web reader (packages/core/src/components/data-loader/utils/conversion.ts):
+# Mirrors the web reader (packages/core/src/components/data-loader/legacy/conversion.ts):
 # the protein-id column is the first of these present, else the first column, and
 # none of ID_COLUMNS is ever an annotation.
 ID_CANDIDATES = ("identifier", "protein_id", "id", "protein", "uniprot")

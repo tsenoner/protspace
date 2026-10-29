@@ -13,7 +13,7 @@ beforeAll(() => {
 });
 import './scatter-plot';
 
-// F-06 moved the chunked-compute state into DuplicateStackOverlayController.
+// The extraction moved the chunked-compute state into DuplicateStackOverlayController.
 // ensureForViewport, stacks and cacheKey are TS-private at compile time but
 // reachable at runtime; the probes assert the SAME contracts (a cancelled job
 // commits nothing, viewKey cache hit) without reading the job id itself.
@@ -29,7 +29,7 @@ type Internals = HTMLElement & {
   selectedAnnotation: string;
   config: { enableDuplicateStackUI: boolean };
   _processData(): void;
-  _buildPointGridIndex(): void;
+  _pointGrid: { rebuildNow(): void };
   _dupOverlay: DupOverlay;
 };
 
@@ -65,13 +65,13 @@ function prime(): Internals {
   sp._processData(); // builds _plotData
   // The point index builds lazily on render (RAF-scheduled). Build it directly here so
   // _ensureDuplicateStacksForViewport's queryByPixels has a populated index to scan.
-  // Called directly (not via _schedulePointGridIndexRebuild) so it doesn't enqueue into the
+  // Called directly (not via scheduleRebuild) so it doesn't enqueue into the
   // stubbed RAF queue installed by the test's beforeEach.
-  sp._buildPointGridIndex();
+  sp._pointGrid.rebuildNow();
   return sp;
 }
 
-describe('duplicate-stack chunked compute (F-24 characterization lock)', () => {
+describe('duplicate-stack chunked compute (characterization lock)', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
     rafQueue = [];

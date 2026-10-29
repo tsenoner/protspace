@@ -3,8 +3,8 @@
  *
  * Lasso / brush selection: the slot→id resolution is shared by both paths via
  * the `_slotsToInteractiveIds` helper. The lasso cases drive the live
- * PlotInteractionController (via the element's `_interactionHost()` bridge) and
- * the brush case drives the `_handleBrushEnd` host shim; both assert the
+ * PlotInteractionController (via the element's `_interactionHost()` bridge), and
+ * so do the brush cases, through its brush-end handler; both assert the
  * dispatched `brush-selection` event carries ONLY the interactive ids, in slot
  * order, resolving originalIndex → proteinId correctly in both the identity
  * (originalIndices === null) and explicit-mapping cases.
@@ -15,70 +15,14 @@
  * directly through the host bridge.
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
-import type { PlotData, VisualizationData } from '@protspace/utils';
+import type { PlotData } from '@protspace/utils';
+import { PlotInteractionController } from './interaction/plot-interaction-controller';
 import {
-  PlotInteractionController,
-  type PlotInteractionHost,
-} from './interaction/plot-interaction-controller';
-
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-const RED = '#ff0000';
-const GREEN = '#00ff00';
-
-/**
- * Six proteins: p0–p2 family "A" (red), p3–p5 family "B" (green). Hiding "B"
- * drives p3–p5 to opacity 0 → non-interactive.
- */
-function makeFamilyData(): VisualizationData {
-  const families = ['A', 'A', 'A', 'B', 'B', 'B'];
-  const colorFor = (v: string) => (v === 'A' ? RED : GREEN);
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
-    coords[i * 2] = i;
-    coords[i * 2 + 1] = i;
-  });
-  return {
-    protein_ids: families.map((_, i) => `p${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      fam: families.map((v) => [families.indexOf(v)]),
-    },
-  } as unknown as VisualizationData;
-}
-
-type PointIndexStub = {
-  queryByPolygon: (vertices: ReadonlyArray<[number, number]>) => number[];
-  queryByPixels: (minX: number, minY: number, maxX: number, maxY: number) => number[];
-};
-
-type SelectionInternals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  hiddenAnnotationValues: string[];
-  selectedProteinIds: string[];
-  _plotData: PlotData;
-  _pointGridIndex: PointIndexStub;
-  _interactionHost(): PlotInteractionHost;
-  _handleBrushEnd(event: { selection: [[number, number], [number, number]] | null }): void;
-};
+  createPlot,
+  fakeFrames,
+  makeFamilyData,
+  type PlotInternals,
+} from './test-support/plot-fixture';
 
 /**
  * Drive the live lasso path through the controller using the element's real
@@ -87,7 +31,7 @@ type SelectionInternals = HTMLElement & {
  * through host.onSelect (_commitSelection). The controller is not initialize()'d,
  * so no SVG groups exist and the lasso path stays null (endLasso handles that).
  */
-function runLassoSelection(sp: SelectionInternals) {
+function runLassoSelection(sp: PlotInternals) {
   const controller = new PlotInteractionController(sp._interactionHost());
   controller.beginLasso([0, 0]);
   controller.extendLasso([10, 0]);
@@ -96,13 +40,28 @@ function runLassoSelection(sp: SelectionInternals) {
 }
 
 /**
+ * The live brush path the same way: the controller's brush-end handler, which the d3
+ * brush calls when a drag ends, resolves the rectangle's slots → ids via
+ * host.queryByPixels/resolveSlotsToIds and dispatches through host.onSelect.
+ */
+function runBrushSelection(sp: PlotInternals) {
+  const controller = new PlotInteractionController(sp._interactionHost()) as unknown as {
+    _handleBrushEnd(event: { selection: [[number, number], [number, number]] }): void;
+  };
+  controller._handleBrushEnd({
+    selection: [
+      [0, 0],
+      [10, 10],
+    ],
+  });
+}
+
+/**
  * Build a scatter element with a 6-point SoA `_plotData`. `originalIndices`
  * controls the slot→originalIndex mapping (null = identity).
  */
-function makeSelectionScatter(originalIndices: Int32Array | null): SelectionInternals {
-  const sp = document.createElement('protspace-scatterplot') as SelectionInternals;
-  sp.data = makeFamilyData();
-  sp.selectedAnnotation = 'fam';
+function makeSelectionScatter(originalIndices: Int32Array | null): PlotInternals {
+  const sp = createPlot({ data: makeFamilyData(), selectedAnnotation: 'fam' });
   const n = 6;
   const xs = new Float32Array(n);
   const ys = new Float32Array(n);
@@ -116,17 +75,9 @@ function makeSelectionScatter(originalIndices: Int32Array | null): SelectionInte
     ys,
     zs: null,
     originalIndices,
-    proteinIds: sp.data.protein_ids,
+    proteinIds: sp.data!.protein_ids,
   } as unknown as PlotData;
   return sp;
-}
-
-/** Run both nested rAFs that `_commitSelection` defers through. */
-function stubSyncRaf() {
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-    cb(0);
-    return 0;
-  });
 }
 
 describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
@@ -143,12 +94,32 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     const events: CustomEvent[] = [];
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
 
-    stubSyncRaf();
+    const frames = fakeFrames();
     runLassoSelection(sp);
+    frames.flush();
 
     expect(events).toHaveLength(1);
     expect(events[0].detail.proteinIds).toEqual(['p0', 'p1', 'p2']);
     expect(events[0].detail.isMultiple).toBe(true);
+  });
+
+  it('flags the lassoed ids unique only while no protein id repeats', () => {
+    const unique = makeSelectionScatter(null);
+    const repeated = makeSelectionScatter(null);
+    repeated.data!.protein_ids[2] = 'p0';
+    const events: CustomEvent[] = [];
+    for (const sp of [unique, repeated]) {
+      sp._pointGridIndex.queryByPolygon = () => [0, 1, 2];
+      sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
+    }
+
+    const frames = fakeFrames();
+    runLassoSelection(unique);
+    runLassoSelection(repeated);
+    frames.flush();
+
+    expect(events.map((e) => e.detail.idsUnique)).toEqual([true, false]);
+    expect(events[1].detail.proteinIds).toEqual(['p0', 'p1', 'p0']);
   });
 
   it('brush selection excludes non-interactive (hidden) points, in slot order', () => {
@@ -159,13 +130,9 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     const events: CustomEvent[] = [];
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
 
-    stubSyncRaf();
-    sp._handleBrushEnd({
-      selection: [
-        [0, 0],
-        [10, 10],
-      ],
-    });
+    const frames = fakeFrames();
+    runBrushSelection(sp);
+    frames.flush();
 
     expect(events).toHaveLength(1);
     expect(events[0].detail.proteinIds).toEqual(['p0', 'p1', 'p2']);
@@ -185,13 +152,41 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     const events: CustomEvent[] = [];
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
 
-    stubSyncRaf();
+    const frames = fakeFrames();
     runLassoSelection(sp);
+    frames.flush();
 
     expect(events).toHaveLength(1);
     // Interactive (family B) at slots 0,1,2 → originalIndex 5,4,3 → p5,p4,p3,
     // emitted in slot order.
     expect(events[0].detail.proteinIds).toEqual(['p5', 'p4', 'p3']);
+  });
+
+  it('marks a lassoed selection from its slots once its ids come back', () => {
+    const originalIndices = new Int32Array([5, 4, 3, 2, 1, 0]);
+    const sp = makeSelectionScatter(originalIndices);
+    sp.hiddenAnnotationValues = ['A'];
+    sp._pointGridIndex.queryByPolygon = () => [0, 1, 2, 3, 4, 5];
+
+    const events: CustomEvent[] = [];
+    sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
+
+    const frames = fakeFrames();
+    runLassoSelection(sp);
+    frames.flush();
+
+    // p5, p4, p3 by protein index. Claiming p0 too shows the mask stands in for lookups.
+    const lasso = sp._style._slotSelection!;
+    expect(lasso.ids).toBe(events[0].detail.proteinIds);
+    expect(Array.from(lasso.mask)).toEqual([0, 0, 0, 1, 1, 1]);
+    lasso.mask[0] = 1;
+    // The control bar sets the selection back as a copy.
+    sp.selectedProteinIds = [...events[0].detail.proteinIds];
+    const marks = sp._style.model().markedSlots(sp.data!.protein_ids, originalIndices, 6);
+    expect(Array.from(marks)).toEqual([1, 1, 1, 0, 0, 1]);
+    sp.selectedProteinIds = ['p5', 'p4'];
+    const fewer = sp._style.model().markedSlots(sp.data!.protein_ids, originalIndices, 6);
+    expect(Array.from(fewer)).toEqual([1, 1, 0, 0, 0, 0]);
   });
 
   it('emits no event and clears the visual when every hit is non-interactive', () => {
@@ -205,32 +200,59 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     const events: CustomEvent[] = [];
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
 
-    stubSyncRaf();
-    sp._handleBrushEnd({
-      selection: [
-        [0, 0],
-        [10, 10],
-      ],
-    });
+    const frames = fakeFrames();
+    runBrushSelection(sp);
+    frames.flush();
 
     expect(events).toHaveLength(0);
     expect(sp.selectedProteinIds).toEqual([]);
   });
 });
 
-describe('scatter-plot WebGL context-loss recovery (detached guard)', () => {
+describe('scatter-plot id index', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('builds the id index while idle, for the models that follow', () => {
+    const idle: Array<() => void> = [];
+    vi.stubGlobal('requestIdleCallback', (task: () => void) => idle.push(task));
+    const sp = makeSelectionScatter(null);
+    sp._style.scheduleIdIndex();
+    expect(idle).toHaveLength(1);
+    idle[0]();
+    // An id repeated in place afterwards is not in the index built before it.
+    sp.data!.protein_ids[2] = 'p0';
+    sp.selectedProteinIds = ['p0'];
+    const marks = sp._style.model().markedSlots(sp.data!.protein_ids, null, 6);
+    expect(Array.from(marks)).toEqual([1, 0, 0, 0, 0, 0]);
+  });
+});
+
+describe('scatter-plot WebGL context-loss recovery', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  it('F-10: recovery microtask does not rebuild renderer after disconnect', async () => {
-    type RecoveryInternals = HTMLElement & {
-      updateComplete: Promise<boolean>;
-      _updateSizeAndRender(): void;
-      _handleWebglContextLost(): void;
-    };
-    const sp = document.createElement('protspace-scatterplot') as RecoveryInternals;
+  it('rebuilds the renderer with the selection, so an export draws it as before the loss', async () => {
+    const sp = createPlot();
+    document.body.appendChild(sp);
+    sp.selectedProteinIds = ['p1'];
+    await sp.updateComplete;
+    const lost = sp._webglRenderer;
+    sp._handleWebglContextLost();
+    await sp.updateComplete;
+    await Promise.resolve();
+    expect(sp._webglRenderer).not.toBe(lost);
+    expect(
+      (sp._webglRenderer as unknown as { selectionActive: boolean } | null)?.selectionActive,
+    ).toBe(true);
+    sp.remove();
+  });
+
+  it('recovery microtask does not rebuild renderer after disconnect', async () => {
+    const sp = createPlot();
     // Connect so Lit's update lifecycle (and updateComplete) actually runs,
     // then disconnect synchronously after firing the loss event but BEFORE the
     // recovery microtask resolves. This is the exact route-change / GPU-recycle

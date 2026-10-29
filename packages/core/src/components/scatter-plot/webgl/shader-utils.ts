@@ -2,40 +2,52 @@
 // WebGL Shader Utilities
 // ============================================================================
 
+type GL = WebGL2RenderingContext | WebGLRenderingContext;
+
 /**
- * Creates and compiles a WebGL shader.
+ * Creates a shader and starts compiling it. The result is not read here: with
+ * KHR_parallel_shader_compile enabled the driver compiles in the background, and asking for
+ * COMPILE_STATUS blocks until it is done.
  */
-function createShader(
-  gl: WebGL2RenderingContext | WebGLRenderingContext,
-  type: number,
-  source: string,
-): WebGLShader | null {
+function startShader(gl: GL, type: number, source: string): WebGLShader | null {
   const shader = gl.createShader(type);
   if (!shader) return null;
 
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
-
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
-    gl.deleteShader(shader);
-    return null;
-  }
-
   return shader;
 }
 
 /**
- * Creates and links a WebGL program from vertex and fragment shaders.
+ * A program whose shaders have been handed to the driver but whose compile and link results
+ * have not been read yet.
  */
-function createProgram(
-  gl: WebGL2RenderingContext | WebGLRenderingContext,
-  vertexShader: WebGLShader,
-  fragmentShader: WebGLShader,
+export interface PendingProgram {
+  program: WebGLProgram;
+  vertexShader: WebGLShader;
+  fragmentShader: WebGLShader;
+}
+
+/**
+ * Starts compiling and linking a program without waiting for the result, so several programs
+ * (and the caller's own work) overlap. Pair with {@link finishProgram}. Enable
+ * `KHR_parallel_shader_compile` on the context first for the overlap to be real.
+ */
+export function beginProgramFromSources(
+  gl: GL,
+  vertexSource: string,
+  fragmentSource: string,
   attribLocations?: Record<string, number>,
-): WebGLProgram | null {
-  const program = gl.createProgram();
-  if (!program) return null;
+): PendingProgram | null {
+  const vertexShader = startShader(gl, gl.VERTEX_SHADER, vertexSource);
+  const fragmentShader = startShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+  const program = vertexShader && fragmentShader ? gl.createProgram() : null;
+
+  if (!vertexShader || !fragmentShader || !program) {
+    if (vertexShader) gl.deleteShader(vertexShader);
+    if (fragmentShader) gl.deleteShader(fragmentShader);
+    return null;
+  }
 
   gl.attachShader(program, vertexShader);
   gl.attachShader(program, fragmentShader);
@@ -48,9 +60,33 @@ function createProgram(
   }
   gl.linkProgram(program);
 
+  return { program, vertexShader, fragmentShader };
+}
+
+/**
+ * Reads the result of {@link beginProgramFromSources}, waiting for the driver if it is still
+ * working. Returns null, with the same console errors as a synchronous build, when either
+ * shader failed to compile or the link failed.
+ */
+export function finishProgram(gl: GL, pending: PendingProgram): WebGLProgram | null {
+  const { program, vertexShader, fragmentShader } = pending;
+
+  // A link is only worth reporting on shaders that compiled; both compile errors are reported.
+  let compiled = true;
+  for (const shader of [vertexShader, fragmentShader]) {
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+      compiled = false;
+    }
+  }
+  if (!compiled) {
+    discardProgram(gl, pending);
+    return null;
+  }
+
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
     console.error('Program link error:', gl.getProgramInfoLog(program));
-    gl.deleteProgram(program);
+    discardProgram(gl, pending);
     return null;
   }
 
@@ -61,23 +97,22 @@ function createProgram(
   return program;
 }
 
+/** Releases a pending program that will not be used. */
+export function discardProgram(gl: GL, pending: PendingProgram): void {
+  gl.deleteShader(pending.vertexShader);
+  gl.deleteShader(pending.fragmentShader);
+  gl.deleteProgram(pending.program);
+}
+
 /**
  * Creates a WebGL program from shader source strings.
  */
 export function createProgramFromSources(
-  gl: WebGL2RenderingContext | WebGLRenderingContext,
+  gl: GL,
   vertexSource: string,
   fragmentSource: string,
   attribLocations?: Record<string, number>,
 ): WebGLProgram | null {
-  const vs = createShader(gl, gl.VERTEX_SHADER, vertexSource);
-  const fs = createShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-
-  if (!vs || !fs) {
-    if (vs) gl.deleteShader(vs);
-    if (fs) gl.deleteShader(fs);
-    return null;
-  }
-
-  return createProgram(gl, vs, fs, attribLocations);
+  const pending = beginProgramFromSources(gl, vertexSource, fragmentSource, attribLocations);
+  return pending ? finishProgram(gl, pending) : null;
 }

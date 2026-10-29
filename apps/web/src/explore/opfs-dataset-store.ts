@@ -144,17 +144,6 @@ async function writeTextFile(
   await writable.close();
 }
 
-async function writeBlobFile(
-  directory: FileSystemDirectoryHandle,
-  filename: string,
-  content: Blob,
-): Promise<void> {
-  const handle = await directory.getFileHandle(filename, { create: true });
-  const writable = await handle.createWritable();
-  await writable.write(content);
-  await writable.close();
-}
-
 async function clearStoreDirectory(): Promise<void> {
   const root = await getRootDirectory();
   if (!root) {
@@ -176,34 +165,68 @@ export function isSupported(): boolean {
   return typeof navigator !== 'undefined' && hasStorageDirectoryApi(navigator.storage);
 }
 
-export async function saveLastImportedFile(file: File): Promise<void> {
-  if (!isSupported()) {
-    throw buildSupportError();
-  }
+/** A copy of an imported file into OPFS, kept only once the file has loaded. */
+export interface PendingImportedFileSave {
+  /** Stores the copy as the last import; on failure clears the store and rejects. */
+  commit(): Promise<void>;
+  /** Drops the copy, leaving the stored dataset as it was. */
+  abort(): Promise<void>;
+}
 
-  const directory = await getStoreDirectory(true);
-  if (!directory) {
-    throw new Error('Unable to access the Origin Private File System.');
-  }
+/**
+ * Starts copying `file` into OPFS at once, so the copy runs while the file decodes. The
+ * bytes go to the writable's swap file, which replaces the stored dataset only on commit.
+ */
+export function beginSaveImportedFile(file: File): PendingImportedFileSave {
+  const directory = (async () => {
+    if (!isSupported()) {
+      throw buildSupportError();
+    }
+    const opened = await getStoreDirectory(true);
+    if (!opened) {
+      throw new Error('Unable to access the Origin Private File System.');
+    }
+    return opened;
+  })();
+  const copy = directory.then(async (opened) => {
+    const handle = await opened.getFileHandle(DATA_FILENAME, { create: true });
+    const writable = await handle.createWritable();
+    await writable.write(file);
+    return writable;
+  });
+  // commit() or abort() reports the outcome; until then a failure is not unhandled.
+  copy.catch(() => {});
 
-  const metadata: StoredDatasetMetadata = {
-    schemaVersion: SCHEMA_VERSION,
-    name: file.name,
-    type: file.type,
-    size: file.size,
-    lastModified: file.lastModified,
-    storedAt: new Date().toISOString(),
-    lastLoadStatus: 'pending',
-    failedAttempts: 0,
+  return {
+    async commit() {
+      const opened = await directory;
+      const metadata: StoredDatasetMetadata = {
+        schemaVersion: SCHEMA_VERSION,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        lastModified: file.lastModified,
+        storedAt: new Date().toISOString(),
+        lastLoadStatus: 'pending',
+        failedAttempts: 0,
+      };
+
+      try {
+        await (await copy).close();
+        await writeMetadata(opened, metadata);
+      } catch (error) {
+        await clearStoreDirectory();
+        throw error instanceof Error ? error : new Error('Failed to save imported dataset.');
+      }
+    },
+    async abort() {
+      try {
+        await (await copy).abort();
+      } catch {
+        // The copy failed or never started: nothing to drop.
+      }
+    },
   };
-
-  try {
-    await writeBlobFile(directory, DATA_FILENAME, file);
-    await writeMetadata(directory, metadata);
-  } catch (error) {
-    await clearStoreDirectory();
-    throw error instanceof Error ? error : new Error('Failed to save imported dataset.');
-  }
 }
 
 export async function loadLastImportedFile(): Promise<File | null> {

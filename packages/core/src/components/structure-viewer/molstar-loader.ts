@@ -228,6 +228,34 @@ async function ensureMolstarResourcesLoaded(): Promise<void> {
   }
 }
 
+let prefetched = false;
+
+/**
+ * Ask the browser to download Mol* in the background so the first structure opens from the HTTP
+ * cache instead of waiting on ~1.3 MB from the CDN. A resource hint only: nothing is parsed or
+ * executed and the normal load path above is untouched, so a failed or skipped prefetch costs
+ * nothing (it is silent and `createMolstarViewer` simply downloads as before). Runs at most once,
+ * and not when Mol* is already loading or the user has asked to save data.
+ */
+export function prefetchMolstar(): void {
+  if (prefetched || typeof document === 'undefined') return;
+  prefetched = true;
+  if (document.getElementById('molstar-script')) return;
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+  if (connection?.saveData) return;
+
+  for (const [href, as] of [
+    [MOLSTAR_SCRIPT_URL, 'script'],
+    [MOLSTAR_CSS_URL, 'style'],
+  ]) {
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.as = as;
+    link.href = href;
+    document.head.appendChild(link);
+  }
+}
+
 // Install a global fetch interceptor once to silently block Molstar validation server requests.
 // Molstar tries to fetch validation data from localhost:9000 by default, which doesn't exist
 // in our setup. This interceptor prevents console errors without affecting functionality.

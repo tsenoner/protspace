@@ -166,7 +166,10 @@ export function getProteinAnnotationIndexAt(
  * Slice an AnnotationData by the given array of original indices (e.g. keptIndices).
  * Returns the same storage shape as the input.
  */
-export function sliceAnnotationData(data: AnnotationData, indices: number[]): AnnotationData {
+export function sliceAnnotationData(
+  data: AnnotationData,
+  indices: readonly number[],
+): AnnotationData {
   if (isSparseMultiValueAnnotationData(data)) {
     const base = sliceAnnotationData(data.base, indices) as Int32Array;
     const overrides = new Map<number, readonly number[]>();

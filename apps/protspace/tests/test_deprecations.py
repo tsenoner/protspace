@@ -163,6 +163,9 @@ WEB_LEGACY_SOURCES = (
     "apps/web/src/explore/notifications.ts",
     "packages/core/src/components/data-loader/utils/bundle.ts",
     "packages/core/src/components/data-loader/data-loader.ts",
+    "packages/core/src/components/data-loader/legacy/index.ts",
+    "packages/core/src/components/data-loader/legacy/bundle.ts",
+    "packages/core/src/components/data-loader/legacy/conversion.ts",
 )
 _WEB_REMOVAL_VERSION = re.compile(
     r"(?:protspace|ends in|until)\s+(\d+\.\d+\.\d+)", re.IGNORECASE

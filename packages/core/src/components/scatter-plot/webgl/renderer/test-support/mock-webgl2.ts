@@ -1,15 +1,15 @@
 // Minimal WebGL2 stub: enough surface for WebGLRenderer.ensureGL()/render() to run in jsdom.
-// Toggles let tests force the failure exits the audit cites (F-03) and gamma fallbacks (F-09).
+// Toggles let tests force the init failure exits and the gamma fallbacks.
 import { vi } from 'vitest';
 
 export interface MockGLOptions {
-  /** getContext('webgl2') returns null (F-03 no-context exit). */
+  /** getContext('webgl2') returns null (no-context exit). */
   contextUnavailable?: boolean;
-  /** linkProgram succeeds but getProgramParameter(LINK_STATUS) reports false → createProgram null (F-03). */
+  /** linkProgram succeeds but getProgramParameter(LINK_STATUS) reports false → createProgram null. */
   failProgramLink?: boolean;
-  /** getExtension(EXT_color_buffer_float|EXT_float_blend) returns null → gamma unavailable (F-09). */
+  /** getExtension(EXT_color_buffer_float|EXT_float_blend) returns null → gamma unavailable. */
   missingFloatExtensions?: boolean;
-  /** checkFramebufferStatus returns a non-COMPLETE value (F-09 framebuffer-incomplete fallback). */
+  /** checkFramebufferStatus returns a non-COMPLETE value (framebuffer-incomplete fallback). */
   framebufferIncomplete?: boolean;
   /** Value reported for getParameter(MAX_TEXTURE_SIZE). Defaults to 8192 — the tier ~97% of
    *  WebGL2 devices report, so existing suites keep the geometry they always had. */
@@ -86,6 +86,8 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     ONE_MINUS_SRC_ALPHA: 0x0303,
     FUNC_ADD: 0x8006,
     RGBA: 0x1908,
+    R8: 0x8229,
+    RED: 0x1903,
     UNSIGNED_BYTE: 0x1401,
     RGBA32F: 0x8814,
     RGBA16F: 0x881a,
@@ -229,6 +231,8 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     uniform2f: noop,
     uniform3f: noop,
     uniform3fv: vi.fn(),
+    // Recording: u_transform carries the zoom and the resize rescale together.
+    uniform4f: vi.fn(),
     uniformMatrix3fv: noop,
     uniform4fv: noop,
     pixelStorei: noop,

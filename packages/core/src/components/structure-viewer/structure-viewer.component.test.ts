@@ -56,3 +56,33 @@ describe('protspace-structure-viewer resource links', () => {
     expect(root.querySelector('.title')?.tagName).toBe('SPAN');
   });
 });
+
+describe('protspace-structure-viewer protein-click', () => {
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+  });
+
+  it('opens on a click whose detail has no modifierKeys, as on an unmodified click', async () => {
+    const viewer = document.createElement('protspace-structure-viewer') as HTMLElement & {
+      autoSync: boolean;
+      proteinId: string | null;
+      updateComplete: Promise<unknown>;
+      _handleProteinClick(event: Event): void;
+    };
+    viewer.autoSync = false;
+    document.body.appendChild(viewer);
+    await viewer.updateComplete;
+
+    viewer._handleProteinClick(
+      new CustomEvent('protein-click', { detail: { proteinId: PROTEIN_ID } }),
+    );
+
+    expect(viewer.proteinId).toBe(PROTEIN_ID);
+    expect(viewer.style.display).toBe('flex');
+  });
+});

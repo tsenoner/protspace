@@ -18,9 +18,10 @@ import {
   type BundleSettings,
   type VisualizationData,
 } from '@protspace/utils';
-import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
+import { decodeParquetBundle } from './bundle';
+import { extractRowsFromParquetBundle } from '../legacy/bundle';
 import { splitBundleParts } from './bundle-parts';
-import { convertParquetToVisualizationData } from './conversion';
+import { convertParquetToVisualizationData } from '../legacy/conversion';
 
 const repoFile = (path: string): ArrayBuffer => {
   const file = readFileSync(resolve(__dirname, '../../../../../..', path));

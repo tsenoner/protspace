@@ -13,6 +13,7 @@ import type { RendererDegradedDetail } from '../../../scatter-plot.events';
 import { WebGLRenderer } from '../webgl-renderer';
 import { ATLAS_WIDTHS } from '../label-atlas-plan';
 import { createMockCanvas, type MockGLOptions } from './mock-webgl2';
+import { referenceStylePass } from './reference-staging';
 
 /**
  * A PlotData of `length` points backed by tiny arrays. The renderer only reads
@@ -51,14 +52,6 @@ const scales = (): ScalePair => ({
   y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
 });
 
-/** What a suite can swap into the renderer the fixture builds. */
-interface RendererOverrides {
-  getConfig?: () => ScatterplotConfig;
-  getTransform?: () => d3.ZoomTransform;
-  getScales?: () => ScalePair | null;
-  onContextLost?: () => void;
-}
-
 /**
  * The canonical `WebGLStyleGetters` stub.
  *
@@ -77,47 +70,58 @@ export function styleGetters(colors: string[] = ['#f00']): WebGLStyleGetters {
     isPredicted: () => false,
     // Storage-shaped in production; here, "does this fixture render pies".
     isMultilabel: () => colors.length > 1,
+    // A method, so a suite that spreads this stub and overrides a getter stages
+    // through its override.
+    createStylePass() {
+      return referenceStylePass(this);
+    },
   };
 }
 
 type MockGL = Record<string, ReturnType<typeof vi.fn>>;
 
+/** The mock device's toggles, plus what the scatter plot would hand the renderer. */
+interface RendererSetup extends MockGLOptions {
+  /** Getters that change mid-session; otherwise `styleGetters(colors)`. */
+  style?: WebGLStyleGetters;
+  colors?: string[];
+  getConfig?: () => ScatterplotConfig;
+  getTransform?: () => d3.ZoomTransform;
+  getScales?: () => ScalePair;
+  onContextLost?: () => void;
+}
+
 /**
- * A renderer over a mock GL context, with the style getters supplied by the
- * caller — for suites whose getters change mid-session. `overrides` swaps in a
- * live config, camera, scales or context-loss callback.
+ * A renderer over a mock GL context: an 800x600 viewport over unit scales at
+ * the identity camera, unless `setup` swaps in a live config, camera or scales.
  */
-export function makeRendererWithStyle(
-  styleGetters: WebGLStyleGetters,
-  opts: MockGLOptions = {},
-  overrides: RendererOverrides = {},
-) {
-  const { canvas, gl, setContextLost } = createMockCanvas(opts);
+export function makeRenderer(setup: RendererSetup = {}) {
+  const { style, colors, getConfig, getTransform, getScales, onContextLost, ...device } = setup;
+  const { canvas, gl, setContextLost } = createMockCanvas(device);
   const degraded: RendererDegradedDetail[] = [];
-  const renderer = new WebGLRenderer(
-    canvas,
-    overrides.getScales ?? scales,
-    overrides.getTransform ?? (() => d3.zoomIdentity),
-    overrides.getConfig ?? (() => ({ width: 800, height: 600 })),
-    styleGetters,
-    overrides.onContextLost,
-    () => [1, 1, 1],
-    (detail) => degraded.push(detail),
-  );
+  const renderer = new WebGLRenderer(canvas, {
+    getScales: getScales ?? scales,
+    getTransform: getTransform ?? (() => d3.zoomIdentity),
+    getConfig: getConfig ?? (() => ({ width: 800, height: 600 })),
+    style: style ?? styleGetters(colors),
+    onContextLost,
+    onDegraded: (detail) => degraded.push(detail),
+  });
   return { renderer, canvas, gl: gl as unknown as MockGL, degraded, setContextLost };
 }
 
-export function makeRenderer(
-  opts: MockGLOptions = {},
-  colors?: string[],
-  overrides: RendererOverrides = {},
-) {
-  return makeRendererWithStyle(styleGetters(colors), opts, overrides);
+function sizes(texImageCalls: unknown[][]): Array<[number, number]> {
+  return texImageCalls.map((c) => [c[3] as number, c[4] as number]);
 }
 
 /** Arguments of every texImage2D call, as [width, height] pairs. */
 export function texImageSizes(gl: MockGL): Array<[number, number]> {
-  return gl.texImage2D.mock.calls.map((c) => [c[3] as number, c[4] as number]);
+  return sizes(gl.texImage2D.mock.calls);
+}
+
+/** Allocations of the mark texture, the only R8 one, as [width, height] pairs. */
+export function markAllocations(gl: MockGL): Array<[number, number]> {
+  return sizes(gl.texImage2D.mock.calls.filter((c) => c[2] === gl.R8));
 }
 
 /**
@@ -131,11 +135,13 @@ const ATLAS_ALLOCATION_WIDTHS = new Set<number>([1, ...ATLAS_WIDTHS]);
 
 /**
  * Atlas allocations only. The gamma pipeline allocates its own linear
- * framebuffer texture at canvas size, which is not what these assertions are
- * about.
+ * framebuffer texture at canvas size, and the mark texture rows as wide as the
+ * device allows, which is not what these assertions are about.
  */
 export function atlasAllocations(gl: MockGL): Array<[number, number]> {
-  return texImageSizes(gl).filter(([width]) => ATLAS_ALLOCATION_WIDTHS.has(width));
+  return sizes(
+    gl.texImage2D.mock.calls.filter((c) => c[2] !== gl.R8 && ATLAS_ALLOCATION_WIDTHS.has(c[3])),
+  );
 }
 
 /** Atlas allocations that reserve real storage, i.e. not the 1x1 placeholder. */

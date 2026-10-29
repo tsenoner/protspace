@@ -39,6 +39,13 @@ its drawn radius, or within 4 px of its centre when it is smaller than that.
 To see where categories concentrate when their points overlap, turn on
 [Contours](/explore/control-bar#_10-contours).
 
+## Point count
+
+The bottom-left corner of the plot shows how many points you can see, as `N points`, followed by
+`· Zoomed in` while you are zoomed in. Points of hidden legend values are not counted, and in an
+isolated or filtered view only the proteins in that view count. Each protein id counts once, so a
+protein that appears on more than one point is not counted twice.
+
 ## Selection
 
 ### Single & Multi-Select

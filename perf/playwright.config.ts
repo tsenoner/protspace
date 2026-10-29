@@ -2,7 +2,10 @@ import { defineConfig, devices } from '@playwright/test';
 import * as path from 'path';
 import { tourCompletedStorageState } from '../apps/web/tests/helpers/tour-storage-state';
 
-const BASE_URL = 'http://localhost:8080';
+// PERF_WEBGL_PORT moves the suite's own dev server off 8080, the default dev port, which
+// another checkout's server may hold.
+const PORT = Number(process.env.PERF_WEBGL_PORT ?? 8080);
+const BASE_URL = `http://localhost:${PORT}`;
 const REPO_ROOT = path.resolve(__dirname, '..');
 
 export default defineConfig({
@@ -96,7 +99,7 @@ export default defineConfig({
     // `concurrently "pnpm dev:app" "pnpm dev:docs"`, so it also boots the
     // VitePress docs server on :5174 — a second node process competing for CPU
     // inside the window this suite measures, for a server /explore never touches.
-    command: 'pnpm dev:app',
+    command: PORT === 8080 ? 'pnpm dev:app' : `pnpm dev:app -- --port ${PORT} --strictPort`,
     // Playwright defaults a webServer's cwd to the config's directory, and perf/
     // has no package.json; pin it like the e2e config does.
     cwd: REPO_ROOT,

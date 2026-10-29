@@ -3,7 +3,7 @@
  *
  * Characterization lock for the duplicate-stack overlay subsystem.
  *
- * Guards the contract the F-06 controller-extraction move must preserve: the
+ * Guards the contract the move into DuplicateStackOverlayController must preserve: the
  * feature is gated off by default (enableDuplicateStackUI === false). What the
  * gate does once an overlay group exists (layers removed, no badges, no
  * spiderfy) is tested on the controller directly in

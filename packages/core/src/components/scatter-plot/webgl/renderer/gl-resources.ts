@@ -5,13 +5,13 @@ import { destroyDensityResources, type DensityResources } from './density-pass';
 /**
  * Holder for the GPU handles a WebGLRenderer owns. Centralizes the resource
  * inventory that was previously enumerated independently in ensureGL (create*),
- * isRendererStateValid (is*), dispose (delete*), and resetRendererState (null).
+ * dispose (delete*), and resetRendererState (null).
  *
  * Dirty-flag / signature / cache state is intentionally NOT held here — those
  * stay on WebGLRenderer (labelTextureInitialized, gammaPipelineAvailable,
  * warnedGammaFallback, buffersInitialized, currentPointCount, positionsDirty,
- * stylesDirty, lastDataSignature, lastStyleSignature, renderedPointIds,
- * sortedDataRef, and the WebGL2 context itself).
+ * stylesDirty, lastDataSignature, lastStyleSignature, sortedDataRef, and the
+ * WebGL2 context itself).
  */
 export class GLResources {
   pointProgram: WebGLProgram | null = null;
@@ -25,6 +25,9 @@ export class GLResources {
   labelCountBuffer: WebGLBuffer | null = null;
   shapeBuffer: WebGLBuffer | null = null;
   predictedBuffer: WebGLBuffer | null = null;
+  recordBuffer: WebGLBuffer | null = null;
+  /** The positions a projection glide starts from; holds no storage outside one. */
+  prevPositionBuffer: WebGLBuffer | null = null;
   quadBuffer: WebGLBuffer | null = null;
 
   labelColorTexture: WebGLTexture | null = null;
@@ -41,6 +44,8 @@ export class GLResources {
       this.labelCountBuffer,
       this.shapeBuffer,
       this.predictedBuffer,
+      this.recordBuffer,
+      this.prevPositionBuffer,
       this.quadBuffer,
     ].filter((b): b is WebGLBuffer => b !== null);
   }
@@ -58,30 +63,10 @@ export class GLResources {
     this.labelCountBuffer = gl.createBuffer();
     this.shapeBuffer = gl.createBuffer();
     this.predictedBuffer = gl.createBuffer();
+    this.recordBuffer = gl.createBuffer();
+    this.prevPositionBuffer = gl.createBuffer();
     this.quadBuffer = gl.createBuffer();
     this.labelColorTexture = gl.createTexture();
-  }
-
-  /**
-   * Byte-faithful mirror of the original `isRendererStateValid` resource checks.
-   * IMPORTANT (behavior-preserving): the original deliberately did NOT validate
-   * `quadBuffer` or `linearFramebuffer` — `ensureGL` reuses the context unless one
-   * of these specific handles is dead. Do not add checks here: that would change
-   * when `resetRendererState()` fires (an observable behavior change, out of scope
-   * for the F-61 extraction).
-   */
-  validate(gl: WebGL2RenderingContext): boolean {
-    if (!this.pointProgram || !gl.isProgram(this.pointProgram)) return false;
-    if (this.pointVao && !gl.isVertexArray(this.pointVao)) return false;
-    if (this.dataPositionBuffer && !gl.isBuffer(this.dataPositionBuffer)) return false;
-    if (this.sizeBuffer && !gl.isBuffer(this.sizeBuffer)) return false;
-    if (this.colorBuffer && !gl.isBuffer(this.colorBuffer)) return false;
-    if (this.depthBuffer && !gl.isBuffer(this.depthBuffer)) return false;
-    if (this.labelCountBuffer && !gl.isBuffer(this.labelCountBuffer)) return false;
-    if (this.shapeBuffer && !gl.isBuffer(this.shapeBuffer)) return false;
-    if (this.predictedBuffer && !gl.isBuffer(this.predictedBuffer)) return false;
-    if (this.labelColorTexture && !gl.isTexture(this.labelColorTexture)) return false;
-    return true;
   }
 
   /**
@@ -126,6 +111,8 @@ export class GLResources {
     this.labelCountBuffer = null;
     this.shapeBuffer = null;
     this.predictedBuffer = null;
+    this.recordBuffer = null;
+    this.prevPositionBuffer = null;
     this.quadBuffer = null;
     this.labelColorTexture = null;
     this.linearFramebuffer = null;
