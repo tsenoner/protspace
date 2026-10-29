@@ -36,13 +36,6 @@ def _embeddings(n: int) -> EmbeddingSet:
     return EmbeddingSet("prot_t5", data, [f"P{i:05d}" for i in range(n)])
 
 
-def test_a_perplexity_above_50_is_accepted():
-    DimensionReductionConfig(perplexity=51)
-    DimensionReductionConfig(perplexity=500)
-    with pytest.raises(ValueError, match="perplexity"):
-        DimensionReductionConfig(perplexity=4)
-
-
 def test_the_guide_states_the_configs_range():
     (meta,) = [
         f.metadata for f in fields(DimensionReductionConfig) if f.name == "perplexity"
@@ -56,18 +49,22 @@ def test_the_guide_states_the_configs_range():
 
 
 @pytest.mark.parametrize(
-    ("perplexity", "n", "expected"),
+    ("perplexity", "n", "expected", "hint"),
     [
-        (30, 20, "perplexity 30 is not below the number of proteins (20)"),
-        (20, 20, "perplexity 20 is not below the number of proteins (20)"),
-        (30, 5, "t-SNE needs more than 5 proteins"),
+        (30, 20, "perplexity 30 is not below the number of proteins (20)", "(here 6)"),
+        (20, 20, "perplexity 20 is not below the number of proteins (20)", "(here 6)"),
+        # No perplexity fits, so there is no value to suggest.
+        (30, 5, "t-SNE needs more than 5 proteins", None),
     ],
 )
-def test_the_message_names_both_numbers(perplexity, n, expected):
+def test_the_message_names_both_numbers(perplexity, n, expected, hint):
     problem = tsne_perplexity_problem(perplexity, n)
     assert expected in problem
-    if n > 5:
-        assert f"(here {max(5, n // 3)})" in problem
+    if hint is not None:
+        assert hint in problem
+
+
+def test_a_perplexity_below_the_count_passes():
     assert tsne_perplexity_problem(19, 20) is None
 
 
