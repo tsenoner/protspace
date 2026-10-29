@@ -1493,6 +1493,26 @@ def test_preparation_refuses_a_perplexity_the_input_cannot_support(
     assert namespace["param_check"].value == ""
 
 
+@pytest.mark.parametrize("n_proteins", [5, 20, 100])
+def test_preparation_perplexity_fallback_words_it_as_the_package(
+    monkeypatch, tmp_path, n_proteins
+):
+    """protspace 4.18.0 has no check_method_params, so Colab runs the panel's
+    fallback: it refuses what the package refuses, in the package's words. On 5
+    proteins it told the user to lower a slider already at its minimum."""
+    import protspace.data.processors.pipeline as pipeline
+    from protspace.utils.reducers import tsne_perplexity_problem
+
+    monkeypatch.delattr(pipeline, "check_method_params")
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    assert namespace["check_method_params"].__module__ == "__notebook__"
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method == "t-SNE"
+    perplexity = namespace["pw"]["perplexity"].value
+    expected = tsne_perplexity_problem(perplexity, n_proteins)
+    assert namespace["_param_problem"](n_proteins) == expected
+
+
 def test_preparation_eat_lists_only_columns_it_can_fill(tmp_path, monkeypatch):
     """After Generate the target preselected `ec`, empty for every protein of a
     non-UniProt dataset; a transfer on it could do nothing."""
