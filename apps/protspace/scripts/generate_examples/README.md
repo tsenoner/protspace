@@ -39,6 +39,9 @@ uv run python apps/protspace/scripts/generate_examples/refresh_colab_examples.py
 gh release upload examples /tmp/examples-v3/*_v3.parquetbundle --repo tsenoner/protspace
 ```
 
+Every run fetches the annotations again: the cache under `<out>/work/<name>/cache` only lets
+`--resume` pick up an interrupted run, and is cleared otherwise.
+
 Rebuilding a `_v3` file under its published name gives that name new bytes: a fresh
 annotation release is a new name (`_v4`, and the notebooks updated to it).
 

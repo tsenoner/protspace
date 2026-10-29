@@ -17,15 +17,21 @@ proteins with the installed protspace (the dataset's ``annotations`` set from
 deleted since keeps its row, with the values a fresh fetch gives it: its
 UniParc ``length`` and nothing else.
 
+Every run fetches the annotations again. The per-dataset cache under
+``<out>/work/<name>/cache`` only lets ``--resume`` pick up an interrupted run;
+without it the cache is cleared first, so a reused ``--output-dir`` never hands
+back an earlier run's UniProt values.
+
 Usage (from apps/protspace; the inputs are the release's files):
 
     gh release download examples --repo tsenoner/protspace -D <in>
     uv run python scripts/generate_examples/refresh_colab_examples.py \\
-        --input-dir <in> --output-dir <out> [--dataset snake_toxin ...]
+        --input-dir <in> --output-dir <out> [--dataset snake_toxin ...] [--resume]
     gh release upload examples <out>/*_v3.parquetbundle --repo tsenoner/protspace
 """
 
 import argparse
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -47,8 +53,19 @@ def _run(*args: str) -> None:
     subprocess.run([PROTSPACE, *args], check=True)
 
 
-def refresh(name: str, annotations: str, input_dir: Path, output_dir: Path) -> Path:
-    """Write ``<name>_v3.parquetbundle`` in *output_dir*; return its path."""
+def refresh(
+    name: str,
+    annotations: str,
+    input_dir: Path,
+    output_dir: Path,
+    *,
+    resume: bool = False,
+) -> Path:
+    """Write ``<name>_v3.parquetbundle`` in *output_dir*; return its path.
+
+    ``resume`` keeps the annotation cache an interrupted run left in
+    *output_dir*; otherwise it is cleared and every annotation fetched again.
+    """
     old_bundle = input_dir / f"{name}.parquetbundle"
     h5 = input_dir / f"{name}_prot_t5.h5"
     work = output_dir / "work" / name
@@ -60,6 +77,8 @@ def refresh(name: str, annotations: str, input_dir: Path, output_dir: Path) -> P
         proteins = set(f.keys())
 
     extract_bundle_to_dir(old_bundle, projections)
+    if not resume:
+        shutil.rmtree(work / "cache", ignore_errors=True)
     _run(
         "annotate",
         "-i",
@@ -114,12 +133,24 @@ def main() -> None:
         choices=sorted(datasets),
         help="Refresh only these (repeatable); default: every dataset.",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Reuse the annotation cache an interrupted run left in "
+            "--output-dir/work; by default every annotation is fetched again."
+        ),
+    )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for name in args.dataset or list(datasets):
         cfg = datasets[name]
         refresh(
-            name, cfg.get("annotations", "default"), args.input_dir, args.output_dir
+            name,
+            cfg.get("annotations", "default"),
+            args.input_dir,
+            args.output_dir,
+            resume=args.resume,
         )
 
 
