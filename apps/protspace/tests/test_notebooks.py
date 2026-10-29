@@ -1835,6 +1835,7 @@ def test_clickthrough_size_rules_match_the_package():
     namespace = _clickthrough_namespace()
     keys = namespace["MODEL_SHORT_KEYS"]
     assert namespace["_HALF_ON_GPU"] == set(local._HALF_ON_GPU)
+    assert namespace["_ACCELERATE_MIN"] == local._ACCELERATE_MIN
     assert {keys[c] for c in namespace["_OVERSIZED"]} == local.COLAB_OVERSIZED & set(
         keys.values()
     )
@@ -1909,6 +1910,25 @@ def test_clickthrough_stops_esm_c_6b_where_ram_is_short(monkeypatch, gpu_gb, nee
     namespace["model_name"] = "biohub/ESMC-600M"
     namespace["_ram_below_gb"] = lambda _gb: True
     _run_until_the_fasta(namespace)
+
+
+@pytest.mark.parametrize(
+    ("installed", "usable"), [("1.15.0", True), ("1.0.1", False), (None, False)]
+)
+def test_clickthrough_keeps_the_ram_path_below_the_accelerate_minimum(
+    monkeypatch, installed, usable
+):
+    """transformers refuses device_map with an older accelerate, which would fail
+    every GPU load; the notebook then loads through RAM, as the package does."""
+    import importlib.metadata as metadata
+
+    def version(name):
+        if installed is None:
+            raise metadata.PackageNotFoundError(name)
+        return installed
+
+    monkeypatch.setattr(metadata, "version", version)
+    assert _clickthrough_namespace()["_accelerate_available"]() is usable
 
 
 def test_clickthrough_runs_esm_c_6b_on_a_free_t4(monkeypatch, capsys):
