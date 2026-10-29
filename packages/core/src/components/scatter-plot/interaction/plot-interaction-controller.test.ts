@@ -43,11 +43,36 @@ function makeHostBridge(svg: SVGSVGElement) {
       onHover: () => {},
       onHoverEnd: () => {},
       onClick: () => {},
+      onSelectStart: () => {},
       renderWebGL: () => {},
       updateSelectionOverlays: () => {},
     },
     calls,
   };
+}
+
+const pointer = (type: string, pointerType: string) =>
+  new PointerEvent(type, { pointerType, bubbles: true });
+
+type ZoomWithEvent = (
+  selection: unknown,
+  transform: d3.ZoomTransform,
+  point: undefined,
+  event: unknown,
+) => void;
+
+/** A zoom gesture as d3 runs it for `sourceType`: d3-zoom 3 takes the source event as a fourth
+ *  argument of `transform`, which its typings leave out. */
+function zoomFrom(c: PlotInteractionController, svg: SVGSVGElement, k: number, sourceType: string) {
+  const zoom = (c as unknown as { _zoom: d3.ZoomBehavior<SVGSVGElement, unknown> })._zoom;
+  (zoom.transform as unknown as ZoomWithEvent)(
+    d3.select(svg),
+    d3.zoomIdentity.scale(k),
+    undefined,
+    {
+      type: sourceType,
+    },
+  );
 }
 
 describe('PlotInteractionController', () => {
@@ -230,5 +255,94 @@ describe('PlotInteractionController', () => {
     c.setTransform(d3.zoomIdentity.scale(3));
     c.teardown();
     expect(calls.transforms.at(-1)?.k).toBe(3);
+  });
+
+  it("syncTransform updates d3's stored transform and the host without scheduling a draw", () => {
+    const raf = vi.fn(() => 1);
+    vi.stubGlobal('requestAnimationFrame', raf);
+    const { bridge, calls } = makeHostBridge(svg);
+    const renderSpy = vi.fn();
+    const c = new PlotInteractionController({ ...bridge, renderWebGL: renderSpy });
+    c.initialize();
+    const t = d3.zoomIdentity.translate(-120, 40).scale(2.5);
+
+    c.syncTransform(t);
+
+    expect(d3.zoomTransform(svg)).toBe(t);
+    expect(calls.transforms.at(-1)).toBe(t);
+    expect(svg.querySelector('g.scatter-plot-container')?.getAttribute('transform')).toBe(
+      t.toString(),
+    );
+    expect(raf).not.toHaveBeenCalled();
+    expect(renderSpy).not.toHaveBeenCalled();
+    // The next gesture starts from t, not from the transform d3 last applied.
+    c.zoomBy(2);
+    expect(calls.transforms.at(-1)?.k).toBe(5);
+  });
+
+  it('a touch pointerdown then a compat mousemove does not call onHover', () => {
+    const { bridge } = makeHostBridge(svg);
+    const onHover = vi.fn();
+    const c = new PlotInteractionController({ ...bridge, onHover });
+    c.initialize();
+    c.setupCanvasEventHandling();
+    expect(c.touchInput).toBe(false);
+
+    svg.dispatchEvent(pointer('pointerdown', 'touch'));
+    // The mouse events a browser sends after a tap: touch has no mouseleave to end their hover.
+    svg.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+
+    expect(c.touchInput).toBe(true);
+    expect(onHover).not.toHaveBeenCalled();
+  });
+
+  it('a mouse pointermove re-enables hover', () => {
+    const { bridge } = makeHostBridge(svg);
+    const onHover = vi.fn();
+    const c = new PlotInteractionController({ ...bridge, onHover });
+    c.initialize();
+    c.setupCanvasEventHandling();
+    svg.dispatchEvent(pointer('pointerdown', 'touch'));
+    // A touch move keeps the gate shut.
+    svg.dispatchEvent(pointer('pointermove', 'touch'));
+    expect(c.touchInput).toBe(true);
+
+    svg.dispatchEvent(pointer('pointermove', 'mouse'));
+    svg.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+
+    expect(c.touchInput).toBe(false);
+    expect(onHover).toHaveBeenCalledOnce();
+  });
+
+  it('onClick reports touch for a click after a touch pointerdown', () => {
+    const { bridge } = makeHostBridge(svg);
+    const onClick = vi.fn();
+    const c = new PlotInteractionController({ ...bridge, onClick });
+    c.initialize();
+    c.setupCanvasEventHandling();
+
+    svg.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onClick).toHaveBeenLastCalledWith(expect.any(MouseEvent), false);
+
+    svg.dispatchEvent(pointer('pointerdown', 'touch'));
+    svg.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onClick).toHaveBeenLastCalledWith(expect.any(MouseEvent), true);
+
+    // A click that names its pointer (Chromium's clicks are PointerEvents) wins over the last press.
+    svg.dispatchEvent(pointer('click', 'mouse'));
+    expect(onClick).toHaveBeenLastCalledWith(expect.any(MouseEvent), false);
+  });
+
+  it('a touch zoom start calls onHoverEnd', () => {
+    const { bridge } = makeHostBridge(svg);
+    const onHoverEnd = vi.fn();
+    const c = new PlotInteractionController({ ...bridge, onHoverEnd });
+    c.initialize();
+
+    zoomFrom(c, svg, 2, 'wheel');
+    expect(onHoverEnd).not.toHaveBeenCalled();
+
+    zoomFrom(c, svg, 3, 'touchstart');
+    expect(onHoverEnd).toHaveBeenCalledOnce();
   });
 });

@@ -1,6 +1,7 @@
 import { DEFAULT_CATEGORICAL_PALETTE_ID } from '../generated/shared-constants';
 import type {
   BundleSettings,
+  EatOutcome,
   ExportOptionsMap,
   LegacyBundleSettings,
   LegendPersistedSettings,
@@ -163,6 +164,11 @@ export function isLegacyBundleSettings(obj: unknown): obj is LegacyBundleSetting
   return isValidLegendSettingsMap(obj);
 }
 
+const isEatOutcome = (value: unknown): value is EatOutcome => value === 'hide' || value === 'dim';
+/** A reliability bound: a finite number in 0…1. */
+const isUnitFraction = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+
 /**
  * Validates the current normalized bundle settings object.
  */
@@ -187,12 +193,13 @@ export function isNormalizedBundleSettings(obj: unknown): obj is BundleSettings 
     return false;
   }
   if (
-    settings.eatConfidenceThreshold !== undefined &&
-    (typeof settings.eatConfidenceThreshold !== 'number' ||
-      !Number.isFinite(settings.eatConfidenceThreshold) ||
-      settings.eatConfidenceThreshold < 0 ||
-      settings.eatConfidenceThreshold > 1)
+    (settings.eatConfidenceThreshold !== undefined &&
+      !isUnitFraction(settings.eatConfidenceThreshold)) ||
+    (settings.eatConfidenceMax !== undefined && !isUnitFraction(settings.eatConfidenceMax))
   ) {
+    return false;
+  }
+  if (settings.eatOutcome !== undefined && !isEatOutcome(settings.eatOutcome)) {
     return false;
   }
 
@@ -335,6 +342,8 @@ export function normalizeBundleSettings(
           : obj.publishState,
       eatOverlayEnabled: obj.eatOverlayEnabled,
       eatConfidenceThreshold: obj.eatConfidenceThreshold,
+      eatConfidenceMax: obj.eatConfidenceMax,
+      eatOutcome: obj.eatOutcome,
       shapeSize: positiveOrUndefined(obj.shapeSize),
     };
   }
@@ -369,13 +378,13 @@ export function normalizeBundleSettings(
         publishState,
         eatOverlayEnabled:
           typeof settings.eatOverlayEnabled === 'boolean' ? settings.eatOverlayEnabled : undefined,
-        eatConfidenceThreshold:
-          typeof settings.eatConfidenceThreshold === 'number' &&
-          Number.isFinite(settings.eatConfidenceThreshold) &&
-          settings.eatConfidenceThreshold >= 0 &&
-          settings.eatConfidenceThreshold <= 1
-            ? settings.eatConfidenceThreshold
-            : undefined,
+        eatConfidenceThreshold: isUnitFraction(settings.eatConfidenceThreshold)
+          ? settings.eatConfidenceThreshold
+          : undefined,
+        eatConfidenceMax: isUnitFraction(settings.eatConfidenceMax)
+          ? settings.eatConfidenceMax
+          : undefined,
+        eatOutcome: isEatOutcome(settings.eatOutcome) ? settings.eatOutcome : undefined,
         shapeSize: positiveOrUndefined(settings.shapeSize),
       };
     }

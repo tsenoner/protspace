@@ -417,7 +417,9 @@ describe('v3 export: round trip through decodeParquetBundle', () => {
     const settings: BundleSettings = {
       legendSettings: {},
       exportOptions: {},
-      eatConfidenceThreshold: 0.75,
+      eatConfidenceThreshold: 0.25,
+      eatConfidenceMax: 0.75,
+      eatOutcome: 'dim',
       shapeSize: 12,
     };
     const original = { ...handBuilt(), statistics: statistics.slice().buffer as ArrayBuffer };

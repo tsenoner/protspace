@@ -1,30 +1,21 @@
-import { css } from 'lit';
-import { tokens } from '../../styles/tokens';
-import { overlayMixins } from '../../styles/overlay-mixins';
-import { segmentedControlMixin } from '../../styles/mixins';
+import { css, unsafeCSS } from 'lit';
+import { BELOW_DESKTOP_MEDIA } from '../../utils/breakpoints';
 
 const structureViewerStylesCore = css`
   :host {
-    --protspace-viewer-width: 100%;
-    --protspace-viewer-height: 100%;
-    --protspace-viewer-bg: var(--surface);
-    --protspace-viewer-border: var(--border);
-    --protspace-viewer-border-radius: 6px;
-    --protspace-viewer-header-bg: var(--disabled-bg);
-    --protspace-viewer-text: var(--text-primary);
-    --protspace-viewer-text-muted: var(--text-secondary);
-    --protspace-viewer-error: #c53030;
-    --protspace-viewer-loading: var(--primary);
-
+    /* Every colour comes from a --ps-* token (theme.ts), so an embedder restyles the viewer in both
+       themes by setting those on :root. The frame is the panel's surface, the colour the Mol*
+       canvas also takes, so frame and canvas meet without a seam. */
     display: flex;
     flex-direction: column;
     width: 100%;
+    font-family: var(--ps-font-sans);
 
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--ps-shadow-md);
     box-sizing: border-box;
     position: relative;
-    background: var(--protspace-viewer-bg);
-    border: 1px solid var(--protspace-viewer-border);
+    background: var(--ps-surface);
+    border: 1px solid var(--ps-border);
     flex-shrink: 1;
     flex-grow: 1;
     min-height: 150px;
@@ -35,22 +26,26 @@ const structureViewerStylesCore = css`
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
     padding: 0.4rem 0.4rem 0.4rem 1.2rem;
-    background: var(--protspace-viewer-header-bg);
-    border-bottom: 1px solid var(--protspace-viewer-border);
+    background: var(--ps-surface-muted);
     border-radius: 6px 6px 0 0;
   }
 
   .header-actions {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 0.25rem;
   }
 
   .title {
-    font-size: 1rem;
-    font-weight: 500;
-    color: var(--protspace-viewer-text);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ps-space-2);
+    font-size: var(--ps-text-base);
+    font-weight: var(--ps-weight-semibold);
+    color: var(--ps-text);
     margin: 0;
   }
 
@@ -64,110 +59,74 @@ const structureViewerStylesCore = css`
 
   .header-title-row {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
   }
 
   .protein-id {
-    font-size: 0.875rem;
-    color: var(--protspace-viewer-text-muted);
+    font-size: var(--ps-text-base);
+    color: var(--ps-text-muted);
   }
 
-  .header-links {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    column-gap: 0.35rem;
-    row-gap: 0.1rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    font-size: 0.75rem;
-  }
-
-  .header-links-item {
+  /* With several selected proteins the id is a ghost button that opens the menu of them. */
+  .protein-pick {
     display: inline-flex;
-    align-items: baseline;
-  }
-
-  .header-link {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.1rem;
-    color: var(--protspace-viewer-text-muted);
-    text-decoration: none;
+    align-items: center;
+    gap: var(--ps-space-1);
+    min-height: var(--ps-control-sm);
+    padding: 0 var(--ps-space-1-5);
+    border: 0;
+    border-radius: var(--ps-radius);
+    background: transparent;
+    color: var(--ps-text-muted);
+    font-family: inherit;
+    font-size: var(--ps-text-base);
     cursor: pointer;
-    transition: color 0.2s;
   }
 
-  /*
-   * Underline the label only. A text-decoration set on the anchor propagates
-   * into its descendants and cannot be cancelled there, so underlining the
-   * anchor would drag the arrow under the same line.
-   */
-  .header-link-label {
-    text-decoration: underline;
-    text-decoration-style: dotted;
-    text-decoration-color: color-mix(in srgb, var(--protspace-viewer-text-muted) 45%, transparent);
-    text-underline-offset: 2px;
-    transition: text-decoration-color 0.2s;
+  .protein-pick:hover,
+  .protein-pick[aria-expanded='true'] {
+    background: var(--ps-surface-hover);
+    color: var(--ps-text);
   }
 
-  /*
-   * The separator is a CSS rule rather than a hand-placed element, so adding a
-   * resource cannot forget one or misplace it. It hangs off the list item, not
-   * the link, so it stays out of the link's name, click area and focus ring,
-   * and it trails its own item so a wrapped row starts on a label. The empty
-   * alt text keeps screen readers from announcing it; the first declaration is
-   * the fallback for engines without that syntax.
-   */
-  .header-links-item:not(:last-child)::after {
-    content: '·';
-    content: '·' / '';
-    margin-left: 0.35rem;
-    color: var(--protspace-viewer-text-muted);
-    opacity: 0.5;
+  .protein-pick:focus-visible {
+    outline: var(--ps-focus-width) solid var(--ps-focus);
+    outline-offset: var(--ps-focus-offset);
   }
 
-  .header-link-external {
-    font-size: 0.85em;
-    line-height: 1;
-    opacity: 0.7;
-  }
-
-  .header-link:hover,
-  .header-link:focus-visible {
-    color: var(--protspace-viewer-text);
-  }
-
-  .header-link:hover .header-link-label,
-  .header-link:focus-visible .header-link-label {
-    text-decoration-style: solid;
-    text-decoration-color: currentColor;
-  }
-
-  .header-link:focus-visible {
-    outline: 2px solid var(--protspace-viewer-loading);
-    outline-offset: 2px;
-    border-radius: 2px;
+  /* The links row continues the header's band and ends it with the header's line. */
+  .resource-links {
+    background: var(--ps-surface-muted);
+    border-bottom: 1px solid var(--ps-border);
   }
 
   .close-button {
     background: none;
     border: none;
-    font-size: 1.25rem;
-    color: var(--protspace-viewer-text-muted);
+    display: inline-grid;
+    place-items: center;
+    color: var(--ps-text-muted);
     cursor: pointer;
-    padding: 0.5rem 0.7rem;
-    line-height: 1;
+    padding: 6px;
     border-radius: 0.25rem;
     transition: color 0.2s;
   }
 
   .close-button:hover {
-    color: var(--protspace-viewer-text);
-    background: rgba(0, 0, 0, 0.04);
+    color: var(--ps-text);
+    background: var(--ps-surface-hover);
+  }
+
+  /* Touch: the close and protein-pick buttons are 40 px targets (the app's header is 44 px). The
+     colour control is ps-segmented, which sizes itself for touch. */
+  @media (pointer: coarse) {
+    .close-button,
+    .protein-pick {
+      min-width: var(--ps-touch-target);
+      min-height: var(--ps-touch-target);
+    }
   }
 
   .viewer-container {
@@ -176,20 +135,43 @@ const structureViewerStylesCore = css`
     /* Take only the height the header and footer leave, so the footer never overflows */
     flex: 1 1 0;
     min-height: 0;
-    background: var(--protspace-viewer-bg);
+    background: var(--ps-surface);
     border-radius: 0 0 6px 6px;
   }
 
-  /* Base loading overlay styles provided by overlayMixins */
+  /* The veil over the viewer while a structure loads. */
   .loading-overlay {
-    /* Extend with column layout for text */
+    position: absolute;
+    inset: 0;
+    display: flex;
     flex-direction: column;
-    background: rgba(255, 255, 255, 0.9);
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    background: color-mix(in srgb, var(--ps-surface) 90%, transparent);
+  }
+
+  .loading-spinner {
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 2px solid var(--ps-border);
+    border-top: 2px solid var(--ps-accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
   }
 
   .loading-text {
-    color: var(--protspace-viewer-text-muted);
-    font-size: 0.875rem;
+    color: var(--ps-text-muted);
+    font-size: var(--ps-text-md);
     margin-top: 1rem;
   }
 
@@ -200,15 +182,15 @@ const structureViewerStylesCore = css`
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: var(--protspace-viewer-bg);
-    z-index: var(--z-overlay);
+    background: var(--ps-surface);
+    z-index: 10;
     padding: 2rem;
     border-radius: 0 0 6px 6px;
     text-align: center;
   }
 
   .error-title {
-    color: var(--protspace-viewer-error);
+    color: var(--ps-danger);
     font-weight: 600;
     margin-bottom: 0.5rem;
   }
@@ -220,21 +202,21 @@ const structureViewerStylesCore = css`
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: var(--protspace-viewer-bg);
-    z-index: var(--z-canvas);
+    background: var(--ps-surface);
+    z-index: 1;
     padding: 2rem;
     text-align: center;
   }
 
   .empty-title {
-    color: var(--protspace-viewer-text);
+    color: var(--ps-text);
     font-weight: 600;
     margin-bottom: 0.5rem;
   }
 
   .empty-message {
-    color: var(--protspace-viewer-text-muted);
-    font-size: 0.875rem;
+    color: var(--ps-text-muted);
+    font-size: var(--ps-text-md);
   }
 
   .viewer-content,
@@ -244,15 +226,37 @@ const structureViewerStylesCore = css`
     border-radius: 0 0 6px 6px;
   }
 
+  /* Mol*'s layout is absolutely positioned: the mount holds it, so the canvas follows the mount's
+     whole-pixel box (_snapMount). */
+  .molstar-mount {
+    position: relative;
+  }
+
+  /* Mol* sizes its canvas in px a frame after the mount resizes, so a shrinking viewer showed the
+     old, taller canvas cut off at the bottom. Filling the mount, the old frame is scaled to fit
+     until Mol* redraws at the new size. */
+  .molstar-mount canvas {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain;
+  }
+
+  /* Mol*'s stylesheet stays outside this shadow root, so its viewport buttons render unstyled
+     under the canvas and show through while a resize clears it. Mol* 3.44 has no option for the
+     camera and screenshot buttons, so the whole block goes. */
+  .molstar-mount .msp-viewport-controls {
+    display: none;
+  }
+
   .color-toolbar,
   .tips {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--disabled-bg);
-    border-top: 1px solid var(--protspace-viewer-border);
-    color: var(--protspace-viewer-text-muted);
-    font-size: 0.75rem;
+    background: var(--ps-surface-muted);
+    border-top: 1px solid var(--ps-border);
+    color: var(--ps-text-muted);
+    font-size: var(--ps-text-sm);
   }
 
   .color-toolbar {
@@ -269,19 +273,6 @@ const structureViewerStylesCore = css`
     font-weight: 600;
   }
 
-  /* Bridge the viewer's theming hooks into the shared segmented control */
-  .color-mode-group {
-    --segmented-border: var(--protspace-viewer-border);
-    --segmented-bg: var(--protspace-viewer-bg);
-    --segmented-text: var(--protspace-viewer-text-muted);
-    --segmented-hover-bg: color-mix(
-      in srgb,
-      var(--protspace-viewer-text) 8%,
-      var(--protspace-viewer-bg)
-    );
-    --segmented-hover-text: var(--protspace-viewer-text);
-  }
-
   .tips {
     flex-direction: column;
     padding: 0.2rem 0.5rem;
@@ -292,33 +283,20 @@ const structureViewerStylesCore = css`
     font-weight: 600;
   }
 
-  /* Spin animation provided by overlayMixins */
+  /* The body part only groups the rows for a host; it adds no box. */
+  .body {
+    display: contents;
+  }
 
   /* ----------------------------- Responsive ------------------------------------ */
 
-  @media (max-width: 950px) {
-    /* --breakpoint-lg */
-    :host {
-      width: calc(50% - 6px);
-    }
-
-    /* The stacked layout leaves the panel short and half-width; keep only the color legend */
+  /* Below desktop the viewer has half a panel row: keep only the colour legend. The host's size
+     is the shell's to set (the workbench fills its structure section). */
+  @media ${unsafeCSS(BELOW_DESKTOP_MEDIA)} {
     .interaction-tip {
       display: none;
     }
   }
-
-  @media (max-width: 550px) {
-    /* --breakpoint-xs */
-    :host {
-      width: 100%;
-    }
-  }
 `;
 
-export const structureViewerStyles = [
-  tokens,
-  overlayMixins,
-  segmentedControlMixin,
-  structureViewerStylesCore,
-];
+export const structureViewerStyles = [structureViewerStylesCore];

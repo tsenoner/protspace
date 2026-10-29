@@ -339,6 +339,31 @@ describe('settings-validation', () => {
     });
   });
 
+  describe('EAT outcome', () => {
+    it('keeps hide or dim and drops anything else', () => {
+      const base = { legendSettings: {}, exportOptions: {}, eatConfidenceThreshold: 0.5 };
+      expect(normalizeBundleSettings({ ...base, eatOutcome: 'dim' })?.eatOutcome).toBe('dim');
+      expect(normalizeBundleSettings({ ...base, eatOutcome: 'hide' })?.eatOutcome).toBe('hide');
+      expect(isNormalizedBundleSettings({ ...base, eatOutcome: 'fade' })).toBe(false);
+      const dropped = normalizeBundleSettings({ ...base, eatOutcome: 'fade' });
+      expect(dropped?.eatOutcome).toBeUndefined();
+      expect(dropped?.eatConfidenceThreshold).toBe(0.5);
+    });
+  });
+
+  describe('EAT upper bound', () => {
+    it('keeps an upper bound in 0…1 and drops anything else', () => {
+      const base = { legendSettings: {}, exportOptions: {}, eatConfidenceThreshold: 0 };
+      expect(normalizeBundleSettings({ ...base, eatConfidenceMax: 0.5 })?.eatConfidenceMax).toBe(
+        0.5,
+      );
+      expect(isNormalizedBundleSettings({ ...base, eatConfidenceMax: 1.5 })).toBe(false);
+      const dropped = normalizeBundleSettings({ ...base, eatConfidenceMax: 1.5 });
+      expect(dropped?.eatConfidenceMax).toBeUndefined();
+      expect(dropped?.eatConfidenceThreshold).toBe(0);
+    });
+  });
+
   describe('dataset-level shape size', () => {
     it('keeps a positive size', () => {
       const result = normalizeBundleSettings({

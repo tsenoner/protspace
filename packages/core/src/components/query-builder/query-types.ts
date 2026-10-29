@@ -1,0 +1,123 @@
+export type LogicalOp = 'AND' | 'OR' | 'NOT';
+
+/**
+ * Presence sentinel meaning "this annotation has a value at all".
+ *
+ * Companion to `NA_VALUE` ('__NA__') from @protspace/utils, and its exact
+ * complement over a given annotation: NA_VALUE selects the proteins missing a
+ * value, ANY_VALUE selects precisely the rest. Kept here rather than in
+ * missing-values.ts because it is a filter-query concept, not an ingestion one
+ * — nothing in the data pipeline ever produces it.
+ *
+ * Categorical conditions carry it in `values` alongside real values; numeric
+ * conditions carry it in `presence`. Both kinds evaluate it identically.
+ */
+export const ANY_VALUE = '__ANY__';
+
+interface BaseCondition {
+  id: string;
+  logicalOp?: LogicalOp;
+  annotation: string;
+}
+
+export interface CategoricalCondition extends BaseCondition {
+  kind: 'categorical';
+  values: string[];
+}
+
+export interface NumericCondition extends BaseCondition {
+  kind: 'numeric';
+  /**
+   * The range `min <= x <= max`, both ends included; a null end is no limit on that side, so
+   * `min` alone reads "at least min". Both null: no bound.
+   */
+  min: number | null;
+  max: number | null;
+  /**
+   * Presence sentinels (`NA_VALUE` / `ANY_VALUE`) unioned with the range,
+   * mirroring how a categorical condition carries them among its `values`.
+   * `min: 0.5` with `[NA_VALUE]` reads "at least 0.5, or no value at all".
+   * A condition is configured when it has bounds OR a presence chip.
+   */
+  presence?: string[];
+}
+
+export type FilterCondition = CategoricalCondition | NumericCondition;
+
+export interface FilterGroup {
+  id: string;
+  logicalOp?: LogicalOp;
+  conditions: FilterQueryItem[];
+}
+
+export type FilterQueryItem = FilterCondition | FilterGroup;
+export type FilterQuery = FilterQueryItem[];
+
+let nextId = 0;
+
+function generateId(): string {
+  return `q-${Date.now()}-${nextId++}`;
+}
+
+export function createCondition(overrides?: Partial<CategoricalCondition>): CategoricalCondition {
+  return {
+    id: generateId(),
+    kind: 'categorical',
+    annotation: '',
+    values: [],
+    ...overrides,
+  };
+}
+
+export function createNumericCondition(overrides?: Partial<NumericCondition>): NumericCondition {
+  return {
+    id: generateId(),
+    kind: 'numeric',
+    annotation: '',
+    min: null,
+    max: null,
+    presence: [],
+    ...overrides,
+  };
+}
+
+export function createGroup(overrides?: Partial<FilterGroup>): FilterGroup {
+  return {
+    id: generateId(),
+    // No leading logicalOp by default, mirroring createCondition — the builder
+    // sets one only for a group that is not first (query-builder._addGroup).
+    conditions: [createCondition()],
+    ...overrides,
+  };
+}
+
+export function isFilterGroup(item: FilterQueryItem): item is FilterGroup {
+  return 'conditions' in item;
+}
+
+/**
+ * Clears a leftover leading 'AND'/'OR' from an item that has become the new first
+ * item (top-level, or first condition of a group). The first-row operator `<select>`
+ * offers only blank/NOT, so a stale 'AND'/'OR' would render blank while the data
+ * disagrees. 'NOT' stays (it is displayable and meaningfully complements the first
+ * item); 'undefined' is already correct.
+ *
+ * Pure: returns a new object only when a change is needed.
+ */
+function clearLeadingOp(item: FilterQueryItem): FilterQueryItem {
+  if (item.logicalOp === 'AND' || item.logicalOp === 'OR') {
+    return { ...item, logicalOp: undefined };
+  }
+  return item;
+}
+
+/**
+ * `clearLeadingOp` applied to a list's first item, if it has one — the only form the
+ * callers need. Stated once here so the query builder (removing a row) and the
+ * annotation-condition rewrite (replacing one) cannot drift on what a first item may
+ * carry.
+ */
+export function clearLeadingOpInList<T extends FilterQueryItem>(items: T[]): T[] {
+  const first = items[0];
+  return first ? [clearLeadingOp(first) as T, ...items.slice(1)] : items;
+}

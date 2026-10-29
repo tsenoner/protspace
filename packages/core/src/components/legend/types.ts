@@ -2,6 +2,7 @@ import type { LegendErrorEventDetail, LegendErrorSource } from './legend.events'
 import type {
   AnnotationData,
   AnnotationPredictedData,
+  NumericBinningStrategy,
   ProjectionStatisticRow,
 } from '@protspace/utils';
 
@@ -28,6 +29,21 @@ export interface OtherItem {
   /** Category value. N/A items use '__NA__' */
   value: string;
   count: number;
+}
+
+/**
+ * The settings the legend settings popover edits, one control each. Live state, not a draft: the
+ * legend applies each edit as it arrives and stores it in its usual record.
+ */
+export interface LegendDisplaySettings {
+  /** Max legend items; for a numeric annotation, the number of bins. */
+  maxVisibleValues: number;
+  /** The size field: a size, or null for the dataset's default. */
+  shapeSize: number | null;
+  enableDuplicateStackUI: boolean;
+  paletteId: string;
+  numericStrategy: NumericBinningStrategy;
+  reverseGradient: boolean;
 }
 
 export interface ScatterplotData {

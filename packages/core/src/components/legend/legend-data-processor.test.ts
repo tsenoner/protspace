@@ -8,7 +8,7 @@ import {
 } from './legend-data-processor';
 import { getVisualEncoding } from './visual-encoding';
 import type { LegendItem } from './types';
-import { NA_VALUE, NA_DEFAULT_COLOR, toInternalValue } from './config';
+import { LEGEND_VALUES, NA_VALUE, NA_DEFAULT_COLOR, toInternalValue } from './config';
 
 /**
  * The pre-bincount path, kept here as the equality reference: materialise a flat
@@ -378,6 +378,25 @@ describe('legend-data-processor', () => {
       expect(result.topItems[0][0]).toBe('large');
       expect(result.topItems[1][0]).toBe('medium');
       expect(result.topItems[2][0]).toBe('small');
+    });
+
+    it('lists rows promoted from Other in the sort order, not after the visible ones', () => {
+      // A visible set smaller than the cap (a bundle saved with fewer rows): the slots left go
+      // to the largest of the rest, and By count must still list the largest first.
+      const freq = new Map<string, number>([
+        ['big', 20],
+        ['kept', 2],
+        ['mid', 10],
+      ]);
+      const result = LegendDataProcessor.sortAndLimitItems(
+        freq,
+        3,
+        false,
+        'size-desc',
+        new Map(),
+        new Set(['kept']),
+      );
+      expect(result.topItems.map(([value]) => value)).toEqual(['big', 'mid', 'kept']);
     });
 
     it('limits items to maxVisibleValues', () => {
@@ -995,7 +1014,7 @@ describe('legend-data-processor', () => {
       expect(cat2?.zOrder).toBe(1); // Second in sorted order
     });
 
-    it('reassigns z-order based on reversed position in manual-reverse mode', () => {
+    it('reassigns z-order based on reversed position in numeric manual-reverse mode', () => {
       // Items are passed in reverse order (as sortAndLimitItems would sort them)
       const topItems: Array<[string, number]> = [
         ['category2', 5], // Was at zOrder 1, now first
@@ -1019,13 +1038,16 @@ describe('legend-data-processor', () => {
           zOrder: 1,
         },
       ];
-      // In manual-reverse mode, zOrder should be based on sorted index (reversed position)
+      // Numeric manual-reverse orders from the manual bin ids each pass: zOrder is the reversed position
       const items = LegendDataProcessor.createLegendItems(
         ctx,
         topItems,
         0,
         existing,
         'manual-reverse',
+        new Map(),
+        {},
+        true,
       );
       const cat1 = items.find((i) => i.value === 'category1');
       const cat2 = items.find((i) => i.value === 'category2');
@@ -1284,6 +1306,84 @@ describe('legend-data-processor', () => {
   });
 
   describe('processLegendItems', () => {
+    it('keeps z-order in categorical manual-reverse mode, which the reverse already wrote', () => {
+      // The legend's reverse renumbers the rows itself; renumbering again would flip them back.
+      const existing: LegendItem[] = [
+        {
+          value: 'category1',
+          color: '#000',
+          shape: 'circle',
+          count: 10,
+          isVisible: true,
+          zOrder: 0,
+        },
+        {
+          value: 'category2',
+          color: '#000',
+          shape: 'circle',
+          count: 5,
+          isVisible: true,
+          zOrder: 1,
+        },
+      ];
+      const { legendItems } = LegendDataProcessor.processLegendItems(
+        ctx,
+        'f',
+        new Map([
+          ['category1', 10],
+          ['category2', 5],
+        ]),
+        10,
+        false,
+        existing,
+        'manual-reverse',
+      );
+      expect(legendItems.find((i) => i.value === 'category1')?.zOrder).toBe(0);
+      expect(legendItems.find((i) => i.value === 'category2')?.zOrder).toBe(1);
+    });
+
+    it('categorical manual-reverse keeps the top rows and Other last when the cap shrinks and grows', () => {
+      const freq = new Map([...'ABCDEFGHI'].map((v, i) => [v, 100 - i] as [string, number]));
+      const shown: LegendItem[] = [...'HGFEDCBA'].map((value, zOrder) => ({
+        value,
+        color: '#000',
+        shape: 'circle',
+        count: 1,
+        isVisible: true,
+        zOrder,
+      }));
+      const order = (items: LegendItem[]) =>
+        [...items].sort((a, b) => a.zOrder - b.zOrder).map((i) => i.value);
+      const five = LegendDataProcessor.processLegendItems(
+        ctx,
+        'f',
+        freq,
+        5,
+        false,
+        shown,
+        'manual-reverse',
+        {},
+        new Set('ABCDEFGH'),
+      );
+      expect(order(five.legendItems)).toEqual(['H', 'G', 'F', 'E', 'D', LEGEND_VALUES.OTHER]);
+      const eight = LegendDataProcessor.processLegendItems(
+        ctx,
+        'f',
+        freq,
+        8,
+        false,
+        five.legendItems,
+        'manual-reverse',
+        {},
+        new Set('HGFED'),
+      );
+      const z = eight.legendItems.map((i) => i.zOrder);
+      expect(new Set(z).size).toBe(z.length);
+      const eightOrder = order(eight.legendItems);
+      expect(eightOrder.slice(0, 5)).toEqual(['H', 'G', 'F', 'E', 'D']);
+      expect(eightOrder.at(-1)).toBe(LEGEND_VALUES.OTHER);
+    });
+
     it('processes basic annotation values', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,

@@ -139,3 +139,6 @@ export function buildBugContext({
     `Browser: ${userAgent ?? ''}`,
   ].join('\n');
 }
+
+/** The app bar's and the More sheet's Feedback link: a mail to the support inbox. */
+export const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });

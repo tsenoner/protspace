@@ -175,7 +175,7 @@ _REGISTRY = (
             "packages/utils/src/visualization/data-processor.ts: drop "
             "projectionPlane and the 3-D paths (scatter-plot.ts with it)",
             "apps/web/src/explore/notifications.ts: drop the 3-D projection notice",
-            "docs/explore/control-bar.md: drop the 3D projections tip",
+            "docs/explore/controls.md: drop the 3D projections warning (Projection)",
         ),
     ),
     Deprecation(

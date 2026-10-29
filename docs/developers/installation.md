@@ -60,9 +60,9 @@ Then import the components for their side effect of registering the custom eleme
 import '@protspace/core';
 ```
 
-This defines `protspace-scatterplot`, `protspace-legend`, `protspace-control-bar` and
-`protspace-structure-viewer`, among others. See [Embedding Components](/developers/embedding) for
-how to wire them together.
+This defines `protspace-scatterplot`, `protspace-legend`, `protspace-structure-viewer` and the view
+controls such as `protspace-projection-select`, among others. See
+[Embedding Components](/developers/embedding) for how to wire them together.
 
 ## Requirements
 

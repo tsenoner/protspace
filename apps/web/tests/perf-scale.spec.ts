@@ -8,7 +8,9 @@ import {
   plotBackground,
   readExploreState,
 } from './helpers/perf/scenarios';
-import { tourCompletedStorageState } from './helpers/tour-storage-state';
+import { DEFAULT_LAYOUT } from '../src/explore/layout-defaults';
+import { exploreStorageState } from './helpers/tour-storage-state';
+import { chooseTool, clearSelection, openImportMenu } from './helpers/explore';
 
 /**
  * Scaling benchmark for one dataset, started by `pnpm perf:scale` (perf/scale.mjs), which
@@ -145,7 +147,8 @@ async function openPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession
   const context = await browser.newContext({
     viewport: VIEWPORT,
     deviceScaleFactor: DPR,
-    storageState: tourCompletedStorageState(BASE_URL),
+    colorScheme: 'light',
+    storageState: exploreStorageState(BASE_URL, { layout: DEFAULT_LAYOUT, theme: 'light' }),
   });
   const page = await context.newPage();
   page.on('console', (m) => {
@@ -187,7 +190,7 @@ async function coldLoad(
   await page.waitForTimeout(FOOTPRINT_GAP_MS);
   const heapBefore = await heapMB(cdp);
   const busyBefore = await taskDuration(cdp);
-  await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
+  await openImportMenu(page);
   const t0 = await page.evaluate(() => {
     const c = window.__protspacePerfCounters;
     // A build without the counters (main) checks its GL handles on every render.
@@ -342,9 +345,8 @@ async function lassoPolygon(page: Page, n: number): Promise<number[][]> {
   return band(f).map(([x, y]) => [rect.left + x * t.k + t.x, rect.top + y * t.k + t.y]);
 }
 
-async function clearSelection(page: Page): Promise<void> {
-  const clear = page.locator('protspace-control-bar .right-controls-clear');
-  if (await clear.isEnabled()) await clear.click();
+async function clearSelectionAndViewer(page: Page): Promise<void> {
+  await clearSelection(page);
   // Selecting a protein opens its structure viewer; clearing leaves it open.
   const viewer = page.locator('#myStructureViewer');
   if (await viewer.isVisible()) await viewer.locator('.close-button').click();
@@ -391,7 +393,7 @@ async function interactions(page: Page, n: number): Promise<Interaction[]> {
         await page.mouse.click(target.x, target.y);
       },
       reset: async () => {
-        await clearSelection(page);
+        await clearSelectionAndViewer(page);
         await page.mouse.move(0, 0);
       },
       extra: async () => ({
@@ -402,10 +404,7 @@ async function interactions(page: Page, n: number): Promise<Interaction[]> {
     {
       name: 'lasso',
       before: async () => {
-        await plot.evaluate((p: PlotHost) => {
-          p.selectionTool = 'lasso';
-        });
-        await page.locator('protspace-control-bar .right-controls-select').click();
+        await chooseTool(page, 'Lasso select');
       },
       act: async () => {
         const [first, ...rest] = lasso;
@@ -434,8 +433,8 @@ async function interactions(page: Page, n: number): Promise<Interaction[]> {
         await page.mouse.up();
       },
       reset: async () => {
-        await clearSelection(page);
-        await page.locator('protspace-control-bar .right-controls-select').click();
+        await clearSelectionAndViewer(page);
+        await chooseTool(page, 'Move and zoom');
       },
       extra: async () =>
         page.evaluate((n) => {

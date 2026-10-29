@@ -1,4 +1,4 @@
-import type { ProtspaceControlBar, ProtspaceScatterplot } from '@protspace/core';
+import type { ProtspaceScatterplot } from '@protspace/core';
 import { DENSITY_DEFAULT, type DensityLayerMode, type VisualizationData } from '@protspace/utils';
 import type {
   EffectiveExploreView,
@@ -15,9 +15,24 @@ import {
 } from './url-state';
 import type { ExploreViewChange } from './types';
 
+/**
+ * The view bar's pickers as the view controller drives them (the view-bar controller). Each
+ * `apply*Selection` changes the plot at once and dispatches its change event synchronously,
+ * which the app routes back here as a user change; `applyDensityLayerSelection` dispatches nothing.
+ */
+export interface ViewPickers {
+  readonly selectedProjection: string;
+  readonly selectedAnnotation: string;
+  readonly tooltipAnnotations: readonly string[];
+  applyProjectionSelection(projection: string): void;
+  applyAnnotationSelection(annotation: string): void;
+  applyTooltipAnnotationsSelection(names: string[]): void;
+  applyDensityLayerSelection(mode: DensityLayerMode): void;
+}
+
 interface ViewControllerOptions {
   plotElement: ProtspaceScatterplot;
-  controlBar: ProtspaceControlBar;
+  pickers: ViewPickers;
 }
 
 export interface ViewController {
@@ -66,7 +81,7 @@ export interface ViewController {
 
 export function createViewController({
   plotElement,
-  controlBar,
+  pickers,
 }: ViewControllerOptions): ViewController {
   let latestViewRequest = createEmptyExploreViewRequest();
   let datasetDefaults: ExploreViewDefaults = {};
@@ -95,23 +110,22 @@ export function createViewController({
     const projectionIndex =
       typeof plotElement.selectedProjectionIndex === 'number'
         ? plotElement.selectedProjectionIndex
-        : availableProjections.indexOf(controlBar.selectedProjection);
-    const validControlBarProjection =
-      controlBar.selectedProjection && availableProjections.includes(controlBar.selectedProjection)
-        ? controlBar.selectedProjection
+        : availableProjections.indexOf(pickers.selectedProjection);
+    const validPickerProjection =
+      pickers.selectedProjection && availableProjections.includes(pickers.selectedProjection)
+        ? pickers.selectedProjection
         : null;
     const projection =
-      availableProjections[projectionIndex] ?? validControlBarProjection ?? availableProjections[0];
+      availableProjections[projectionIndex] ?? validPickerProjection ?? availableProjections[0];
     const annotation =
       plotElement.selectedAnnotation &&
       availableAnnotations.includes(plotElement.selectedAnnotation)
         ? plotElement.selectedAnnotation
-        : controlBar.selectedAnnotation &&
-            availableAnnotations.includes(controlBar.selectedAnnotation)
-          ? controlBar.selectedAnnotation
+        : pickers.selectedAnnotation && availableAnnotations.includes(pickers.selectedAnnotation)
+          ? pickers.selectedAnnotation
           : availableAnnotations[0];
 
-    const rawTooltip = plotElement.tooltipAnnotations ?? controlBar.tooltipAnnotations ?? [];
+    const rawTooltip = plotElement.tooltipAnnotations ?? pickers.tooltipAnnotations ?? [];
     const tooltipSeen = new Set<string>();
     const tooltip: string[] = [];
     for (const name of rawTooltip) {
@@ -131,19 +145,19 @@ export function createViewController({
   };
 
   const selectProjection = (projection: string) => {
-    controlBar.applyProjectionSelection(projection);
+    pickers.applyProjectionSelection(projection);
   };
 
   const selectAnnotation = (annotation: string) => {
-    controlBar.applyAnnotationSelection(annotation);
+    pickers.applyAnnotationSelection(annotation);
   };
 
   const selectTooltipAnnotations = (tooltipAnnotations: string[]) => {
-    controlBar.applyTooltipAnnotationsSelection?.(tooltipAnnotations);
+    pickers.applyTooltipAnnotationsSelection(tooltipAnnotations);
   };
 
   const selectDensityLayer = (density: DensityLayerMode) => {
-    controlBar.applyDensityLayerSelection(density);
+    pickers.applyDensityLayerSelection(density);
     plotElement.config = { ...(plotElement.config ?? {}), densityLayer: density };
   };
 
@@ -194,7 +208,7 @@ export function createViewController({
     const tooltipChanged = !arraysEqual(currentView?.tooltip ?? [], effective.tooltip);
     const densityChanged = currentView?.density !== effective.density;
 
-    // The control bar dispatches its change events synchronously from these
+    // The pickers dispatch their change events synchronously from these
     // apply* calls, and the app routes them back here as user changes. Guard
     // only that synchronous window: anything arriving later is a real user
     // interaction, not an echo of what we just applied.

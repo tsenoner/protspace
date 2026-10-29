@@ -1,14 +1,40 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { dismissTourIfPresent, waitForProteinCount } from './helpers/explore';
+import {
+  annotationSelect,
+  clearSelection,
+  colorByTrigger,
+  dismissTourIfPresent,
+  draftFilterCondition,
+  exportAction,
+  filterButton,
+  isolateSelection,
+  plotStatus,
+  projectionTrigger,
+  queryBuilder,
+  resetIsolation,
+  searchInput,
+  selectAnnotation,
+  selectProjection,
+  viewBar,
+  waitForProteinCount,
+} from './helpers/explore';
+import { eatPanel, eatThresholdBox, openEatPanel } from './helpers/eat';
 import { STARTUP_URL_GLOB } from './helpers/fixtures';
+import { getFirstLegendItemValue } from './helpers/legend';
+import { proteinScreenPosition } from './helpers/plot';
+import { seedTourSeen } from './helpers/tour-storage-state';
 
 const EAT_FIXTURE = fileURLToPath(
   new URL('./fixtures/phosphatase_eat.parquetbundle', import.meta.url),
 );
 // Exact asset from issue #277 comment 4902936797. Bundle SHA-256:
 // 06bacd7a1f862bdea4a9bf2e81037a4a7d772636704c74e3f2806958f3b9ba33.
+
+test.beforeEach(async ({ page }) => {
+  await seedTourSeen(page);
+});
 
 async function loadEatFixture(page: Page): Promise<void> {
   await page.route(STARTUP_URL_GLOB, (route) => route.abort());
@@ -23,22 +49,6 @@ async function loadEatFixture(page: Page): Promise<void> {
 
   await page.locator('protspace-data-loader input[type="file"]').setInputFiles(EAT_FIXTURE);
   await waitForProteinCount(page, 832);
-}
-
-async function selectEcAnnotation(page: Page): Promise<void> {
-  const controlBar = page.locator('protspace-control-bar');
-  await controlBar.locator('protspace-annotation-select .dropdown-trigger').click();
-  await controlBar.locator('.dropdown-item[data-annotation="ec"]').click();
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const plot = document.querySelector('protspace-scatterplot') as
-          | (Element & { selectedAnnotation?: string })
-          | null;
-        return plot?.selectedAnnotation;
-      }),
-    )
-    .toBe('ec');
 }
 
 /**
@@ -105,24 +115,6 @@ async function readRenderedProteinIds(page: Page): Promise<string[]> {
   });
 }
 
-async function getProteinScreenPosition(
-  page: Page,
-  proteinId: string,
-): Promise<{ x: number; y: number }> {
-  return page.evaluate((id) => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
-        })
-      | null;
-    const position = plot?.getProteinClientPosition(id);
-    if (!position) {
-      throw new Error(`Protein ${id} is not plotted, or the scatter plot has no geometry yet`);
-    }
-    return position;
-  }, proteinId);
-}
-
 async function sampleEncodedExportMarkers(
   page: Page,
   pointSize = 240,
@@ -130,6 +122,7 @@ async function sampleEncodedExportMarkers(
 ): Promise<{
   predicted: number[];
   predictedRing: number[][];
+  predictedRingSamples: number;
   densePredicted: number[];
   densePredictedNearestNeighbor: number;
   observed: number[];
@@ -180,8 +173,10 @@ async function sampleEncodedExportMarkers(
       const plotData = plot?._plotData;
       const predictedCells = plot?.data?.annotation_predicted?.ec;
       const extent = plot?.getDataExtent?.({ padded: true });
-      const width = 800;
-      const height = 600;
+      // Portrait, like the phosphatase projection: one scale for both axes fits the data to its own
+      // shape, so a landscape frame would leave its markers crowded in a narrow column.
+      const width = 600;
+      const height = 800;
       const margins = plot?.getRenderInfo?.(width, height);
       if (!plotData || !predictedCells || !extent || !margins || !plot?.captureAtResolution) {
         throw new Error('Export geometry is not ready');
@@ -258,22 +253,28 @@ async function sampleEncodedExportMarkers(
         plot._webglRenderer!.pointScale() *
         Math.sqrt((width * height) / (live.width * live.height));
       const ringOffset = Math.max(1, Math.round(0.75 * exportRadius));
-      const diagonalOffset = Math.max(1, Math.round(ringOffset / Math.SQRT2));
-      const predictedRingOffsets = [
-        [-ringOffset, 0],
-        [ringOffset, 0],
-        [0, -ringOffset],
-        [0, ringOffset],
-        [-diagonalOffset, -diagonalOffset],
-        [diagonalOffset, -diagonalOffset],
-        [-diagonalOffset, diagonalOffset],
-        [diagonalOffset, diagonalOffset],
-      ];
+      // Sixteen directions: at large point sizes neighbours cover much of the ring, and only
+      // samples clear of them count (below).
+      const predictedRingOffsets = Array.from({ length: 16 }, (_, i) => [
+        Math.round(ringOffset * Math.cos((i * Math.PI) / 8)),
+        Math.round(ringOffset * Math.sin((i * Math.PI) / 8)),
+      ]);
+      // Only ring samples clear of every other marker: one inside a neighbour's marker reads that
+      // marker's colour, and would pass for the ring when the ring is lost.
+      const clear = ([dx, dy]: number[]) =>
+        positions.every(
+          (other) =>
+            other.slot === predictedPoint.slot ||
+            Math.hypot(other.x - predictedPoint.x - dx, other.y - predictedPoint.y - dy) >
+              exportRadius + 1,
+        );
+      const ringOffsets = predictedRingOffsets.filter(clear);
       const result = {
         predicted: sample(predictedPoint),
-        predictedRing: predictedRingOffsets.map(([dx, dy]) =>
+        predictedRing: ringOffsets.map(([dx, dy]) =>
           sample({ x: predictedPoint.x + dx, y: predictedPoint.y + dy }),
         ),
+        predictedRingSamples: ringOffsets.length,
         densePredicted: sample(densePredictedPoint),
         densePredictedNearestNeighbor: densePredictedPoint.nearestNeighbor,
         observed: sample(observedPoint),
@@ -291,20 +292,25 @@ async function sampleEncodedExportMarkers(
 
 test('renders and explores EAT transfers from the real phosphatase bundle', async ({ page }) => {
   await loadEatFixture(page);
-  await selectEcAnnotation(page);
+  await selectAnnotation(page, 'ec');
 
-  const controlBar = page.locator('protspace-control-bar');
   const plot = page.locator('protspace-scatterplot');
-  const legend = page.locator('protspace-legend');
-  const eatGroup = legend.getByRole('region', { name: 'Embedding Annotation Transfer' });
-  const eatToggle = eatGroup.getByRole('checkbox', { name: 'Show EAT predictions' });
-  const threshold = eatGroup.getByRole('slider', {
-    name: 'EAT reliability filter threshold',
+  await openEatPanel(page);
+  const panel = eatPanel(page);
+  const eatToggle = panel.getByRole('switch', { name: 'Show predictions' });
+  const threshold = panel.getByRole('slider', {
+    name: 'Lowest reliability in range',
   });
-  const thresholdPercent = eatGroup.getByRole('spinbutton', {
-    name: 'EAT reliability filter percentage',
-  });
-  const filterButton = controlBar.locator('.filter-container .dropdown-trigger');
+  const thresholdPercent = eatThresholdBox(page);
+  // The overview's key: curated, predicted and no-value proteins in view.
+  const counts = panel.locator('.eat-counts');
+  // The plot's filter channel, which the Filter button's badge reflects.
+  const plotFiltersActive = () =>
+    page.evaluate(
+      () =>
+        (document.querySelector('#myPlot') as (Element & { filtersActive?: boolean }) | null)
+          ?.filtersActive ?? false,
+    );
   const predictedVisibleCount = () =>
     page.evaluate(() => {
       const renderer = (
@@ -324,50 +330,50 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
         : -1;
     });
 
-  await expect(eatGroup).toBeVisible();
   await expect(eatToggle).toBeChecked();
   await expect(eatToggle).toBeEnabled();
   // Default position 0: every prediction visible, filter box clean.
   await expect(threshold).toHaveValue('0');
   await expect(thresholdPercent).toHaveValue('0');
-  await expect(filterButton).not.toHaveClass(/filter-active/);
+  await expect.poll(plotFiltersActive).toBe(false);
+  await expect(filterButton(page)).toHaveAccessibleName('Filter');
   await expect.poll(predictedVisibleCount).toBe(213);
   // Raising the threshold (hiding, the filter-active button, exact survivor counts)
   // is checked by "keeps curated points visible while the reliability filter…".
 
-  // The info popover explains predictions are filtered out while curated stays.
-  await eatGroup.getByRole('button', { name: 'Information about EAT reliability filter' }).click();
-  await expect(eatGroup.getByRole('dialog')).toContainText(
-    'Predictions below this reliability are hidden',
-  );
-  await expect(eatGroup.getByRole('dialog')).toContainText('EC number — EAT confidence');
+  // The header's info explains what a prediction and its reliability are.
+  const eatSection = page.locator('#wb-eat-panel');
+  await eatSection.getByRole('button', { name: 'Information about EAT' }).click();
+  const eatInfo = eatSection.locator('protspace-info-popover .popover');
+  await expect(eatInfo).toContainText('nearest curated protein');
+  await expect(eatInfo).toContainText('not a probability');
+  await page.keyboard.press('Escape');
 
-  const legendSummary = eatGroup.getByRole('region', {
-    name: 'Transferred annotation counts',
-  });
-  await eatToggle.uncheck();
-  await expect(eatGroup).toBeVisible();
-  await expect(legendSummary).toBeHidden();
+  // Showing predictions off: the counts say they are off, shown as N/A, and the threshold turns off.
+  await eatToggle.click();
+  await expect(eatToggle).not.toBeChecked();
+  await expect(counts).toContainText('213 predicted (off, shown as N/A)');
   await expect(threshold).toBeDisabled();
-  await eatToggle.check();
-  await expect(legendSummary).toBeVisible();
+  await eatToggle.click();
+  await expect(counts).toHaveText('535 curated 213 predicted 84 with no value');
 
-  const annotationSelect = controlBar.locator('protspace-annotation-select');
-  await annotationSelect.locator('.dropdown-trigger').click();
-  const ecRow = annotationSelect.locator('.dropdown-item[data-annotation="ec"]');
+  const colorBy = annotationSelect(page);
+  await colorByTrigger(page).click();
+  const ecRow = colorBy.locator('.dropdown-item[data-annotation="ec"]');
   await expect(ecRow.locator('.eat-badge')).toHaveText('EAT');
-  const ordinaryRow = annotationSelect
+  const ordinaryRow = colorBy
     .locator('.dropdown-item:not(:has(.eat-badge))')
-    .filter({ hasNot: annotationSelect.locator('.annotation-section-header') })
+    .filter({ hasNot: colorBy.locator('.annotation-section-header') })
     .first();
   await ordinaryRow.click();
-  await expect(eatGroup).toBeHidden();
-  await annotationSelect.locator('.dropdown-trigger').click();
-  await annotationSelect.locator('.dropdown-item[data-annotation="ec"]').click();
-  await expect(eatGroup).toBeVisible();
+  await expect(panel).toContainText('has no predicted values.');
+  await expect(threshold).toHaveCount(0);
+  await colorByTrigger(page).click();
+  await colorBy.locator('.dropdown-item[data-annotation="ec"]').click();
+  await expect(threshold).toBeVisible();
 
-  await expect(legendSummary).toContainText(/Observed\s*535/);
-  await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
+  // 832 proteins: 535 curated with an EC number, 213 predicted, 84 with neither.
+  await expect(counts).toHaveText('535 curated 213 predicted 84 with no value');
 
   const noAnnotationExample = await page.evaluate(() => {
     const plotElement = document.querySelector('protspace-scatterplot') as unknown as
@@ -395,12 +401,11 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     prediction: null,
   });
 
-  const proteinSearch = controlBar.locator('protspace-protein-search');
-  await proteinSearch.locator('#protein-search-input').fill('A0JMF6');
-  await proteinSearch.locator('#protein-search-input').press('Enter');
-  await controlBar.getByRole('button', { name: 'Isolate' }).click();
-  await expect(legendSummary).toContainText(/Observed\s*0/);
-  await expect(legendSummary).toContainText(/Predicted by EAT\s*0/);
+  await searchInput(page).fill('A0JMF6');
+  await searchInput(page).press('Enter');
+  await isolateSelection(page);
+  // The panel counts what the filter keeps, not the isolation (EAT plan, Decision 9).
+  await expect(counts).toHaveText('535 curated 213 predicted 84 with no value');
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -426,22 +431,42 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       }),
     )
     .toEqual({ length: 1, ids: ['A0JMF6'] });
-  const isolatedPosition = await getProteinScreenPosition(page, 'A0JMF6');
+  // The search zoomed in on A0JMF6; isolating fits the view again over a transition. Read the
+  // position once it has settled.
+  await expect
+    .poll(() =>
+      page.locator('#myPlot').evaluate((element) => {
+        const { k, x, y } = (
+          element as unknown as Element & { _transform: { k: number; x: number; y: number } }
+        )._transform;
+        return [k, x, y];
+      }),
+    )
+    .toEqual([1, 0, 0]);
+  // The aborted demo's error toast and the others stack up over the plot's centre, where the
+  // isolated protein sits; close them so the hover reaches the plot.
+  const dismiss = page
+    .locator('[data-sonner-toast]:not([data-removed="true"])')
+    .getByRole('button', {
+      name: 'Dismiss notification',
+    });
+  while ((await dismiss.count()) > 0) await dismiss.first().click();
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+  const isolatedPosition = await proteinScreenPosition(page, 'A0JMF6');
   await page.mouse.move(isolatedPosition.x, isolatedPosition.y);
   const isolatedTooltip = plot.locator('protspace-protein-tooltip');
   await expect(isolatedTooltip).toContainText('A0JMF6');
   await expect(isolatedTooltip).not.toContainText('Predicted (transferred)');
-  await controlBar.getByRole('button', { name: 'Reset' }).click();
-  await expect(legendSummary).toContainText(/Observed\s*535/);
-  await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
+  await resetIsolation(page);
+  await expect(counts).toHaveText('535 curated 213 predicted 84 with no value');
 
   await expect.poll(predictedVisibleCount).toBe(213);
 
-  await eatToggle.uncheck();
+  await eatToggle.click();
   await expect(threshold).toBeDisabled();
   await expect(thresholdPercent).toBeDisabled();
-  await expect(legendSummary).toBeHidden();
-  await eatToggle.check();
+  await expect(counts).toContainText('(off, shown as N/A)');
+  await eatToggle.click();
   await expect(threshold).toBeEnabled();
 
   const exactMultiValueTransfer = await page.evaluate(() => {
@@ -469,7 +494,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     ],
   });
 
-  const o88488Position = await getProteinScreenPosition(page, 'O88488');
+  const o88488Position = await proteinScreenPosition(page, 'O88488');
   await page.mouse.move(o88488Position.x, o88488Position.y);
   const tooltip = plot.locator('protspace-protein-tooltip');
   const transferredLabels = tooltip.locator('.eat-transferred-label');
@@ -493,8 +518,10 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   for (const width of [320, 360]) {
     await page.setViewportSize({ width, height: 844 });
     await plot.scrollIntoViewIfNeeded();
-    const responsivePosition = await getProteinScreenPosition(page, 'O88488');
-    await page.mouse.move(responsivePosition.x, responsivePosition.y);
+    const responsivePosition = await proteinScreenPosition(page, 'O88488');
+    // Whole pixels: Chrome truncates the mouse event's coordinates, and at this size O88488 sits
+    // 1.5 px from P0C5E4, so a truncated fractional probe can land nearer the neighbour.
+    await page.mouse.move(Math.round(responsivePosition.x), Math.round(responsivePosition.y));
     await expect(transferredLabels).toHaveCount(4);
     const tooltipBounds = await tooltip.boundingBox();
     expect(tooltipBounds).not.toBeNull();
@@ -537,7 +564,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     };
   });
 
-  const targetPosition = await getProteinScreenPosition(page, transfer.target);
+  const targetPosition = await proteinScreenPosition(page, transfer.target);
   await page.mouse.move(targetPosition.x, targetPosition.y);
   await expect(tooltip).toContainText('Predicted (transferred)');
   await expect(tooltip).toContainText('Reliability index');
@@ -607,8 +634,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     .first()
     .getAttribute('x1');
 
-  await controlBar.getByRole('button', { name: 'Projection:' }).click();
-  await controlBar.locator('.projection-container .dropdown-item').nth(1).click();
+  await selectProjection(page, 1);
   await expect
     .poll(() => plot.locator('line.eat-provenance-connector').first().getAttribute('x1'))
     .not.toBe(firstConnectorX);
@@ -630,79 +656,55 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(0);
   // The point clicks above also selected a protein, as a real click does. Clear it so the
   // export markers below are sampled without the selection dimming the other points.
-  await controlBar.getByRole('button', { name: 'Clear', exact: true }).click();
-  await expect(controlBar.getByRole('button', { name: 'Clear', exact: true })).toBeDisabled();
+  await clearSelection(page);
 
+  // At 601 px the Projection and Color by pickers still sit side by side on screen, and the EAT
+  // reliability controls stay in the EAT panel, not in the view bar.
+  // The view bar settles on its stage in the frame after the resize, so the layout is polled.
   await page.setViewportSize({ width: 601, height: 844 });
-  const compactControlBar = await controlBar.evaluate((element) => {
-    const root = element.shadowRoot!;
-    const [projectionElement, annotationElement] = root.querySelectorAll<HTMLElement>(
-      '.left-controls > .control-group',
-    );
-    const projection = projectionElement.getBoundingClientRect();
-    const annotation = annotationElement.getBoundingClientRect();
-    return {
-      projectionRight: projection.right,
-      projectionClientWidth: projectionElement.clientWidth,
-      projectionScrollWidth: projectionElement.scrollWidth,
-      annotationLeft: annotation.left,
-      annotationClientWidth: annotationElement.clientWidth,
-      annotationScrollWidth: annotationElement.scrollWidth,
-      eatControlCount: root.querySelectorAll('.eat-controls').length,
-    };
-  });
-  expect(compactControlBar.projectionRight).toBeLessThanOrEqual(compactControlBar.annotationLeft);
-  expect(compactControlBar.projectionScrollWidth).toBeLessThanOrEqual(
-    compactControlBar.projectionClientWidth,
-  );
-  expect(compactControlBar.annotationScrollWidth).toBeLessThanOrEqual(
-    compactControlBar.annotationClientWidth,
-  );
-  expect(compactControlBar.eatControlCount).toBe(0);
+  await expect(async () => {
+    const projectionBox = await projectionTrigger(page).boundingBox();
+    const colorByBox = await colorByTrigger(page).boundingBox();
+    expect(projectionBox).not.toBeNull();
+    expect(colorByBox).not.toBeNull();
+    expect(projectionBox!.x + projectionBox!.width).toBeLessThanOrEqual(colorByBox!.x);
+    expect(projectionBox!.x).toBeGreaterThanOrEqual(0);
+    expect(colorByBox!.x + colorByBox!.width).toBeLessThanOrEqual(601);
+    expect(await viewBar(page).evaluate((bar) => bar.scrollWidth <= bar.clientWidth)).toBe(true);
+  }).toPass({ timeout: 5_000 });
+  await expect(
+    viewBar(page).getByRole('slider', { name: 'Lowest reliability in range' }),
+  ).toHaveCount(0);
 
+  // The panel's reliability controls fit inside it, and the panel inside the screen, at every
+  // width (below 951 px the panel is the EAT tab, kept open from the layout).
   for (const width of [320, 390, 601, 800]) {
     await page.setViewportSize({ width, height: 844 });
-    const legendControlLayout = await eatGroup.evaluate((element) => {
-      const group = element as HTMLElement;
-      const host = (group.getRootNode() as ShadowRoot).host.getBoundingClientRect();
-      const groupBounds = group.getBoundingClientRect();
-      const thresholdElement = group.querySelector<HTMLElement>('.eat-threshold')!;
-      const thresholdBounds = thresholdElement.getBoundingClientRect();
-      const percentBounds = group
-        .querySelector<HTMLElement>('.eat-threshold-percent')!
-        .getBoundingClientRect();
-      const helpBounds = group
-        .querySelector<HTMLElement>('.eat-threshold-info')!
-        .getBoundingClientRect();
+    await expect(panel).toBeVisible();
+    const layout = await panel.evaluate((element) => {
+      const root = element.shadowRoot!;
+      const box = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
+      const host = element.getBoundingClientRect();
+      const section = root.querySelector<HTMLElement>('.eat-reliability')!;
+      const range = root.querySelector<HTMLElement>('#eat-reliability-threshold')!;
       return {
         viewportWidth: window.innerWidth,
-        hostLeft: host.left,
-        hostRight: host.right,
-        groupLeft: groupBounds.left,
-        groupRight: groupBounds.right,
-        helpLeft: helpBounds.left,
-        helpRight: helpBounds.right,
-        thresholdLeft: thresholdBounds.left,
-        thresholdRight: thresholdBounds.right,
-        thresholdClientWidth: thresholdElement.clientWidth,
-        thresholdScrollWidth: thresholdElement.scrollWidth,
-        percentLeft: percentBounds.left,
-        percentRight: percentBounds.right,
+        host: [host.left, host.right],
+        section: [box('.eat-reliability').left, box('.eat-reliability').right],
+        range: [box('#eat-reliability-threshold').left, box('#eat-reliability-threshold').right],
+        bounds: [box('.eat-bounds').left, box('.eat-bounds').right],
+        sectionFits: section.scrollWidth <= section.clientWidth,
+        rangeFits: range.scrollWidth <= range.clientWidth,
       };
     });
-    expect(legendControlLayout.groupLeft).toBeGreaterThanOrEqual(legendControlLayout.hostLeft);
-    expect(legendControlLayout.groupRight).toBeLessThanOrEqual(legendControlLayout.hostRight);
-    expect(legendControlLayout.groupLeft).toBeGreaterThanOrEqual(0);
-    expect(legendControlLayout.groupRight).toBeLessThanOrEqual(legendControlLayout.viewportWidth);
-    expect(legendControlLayout.helpLeft).toBeGreaterThanOrEqual(legendControlLayout.groupLeft);
-    expect(legendControlLayout.helpRight).toBeLessThanOrEqual(legendControlLayout.groupRight);
-    expect(legendControlLayout.thresholdLeft).toBeGreaterThanOrEqual(legendControlLayout.groupLeft);
-    expect(legendControlLayout.thresholdRight).toBeLessThanOrEqual(legendControlLayout.groupRight);
-    expect(legendControlLayout.thresholdScrollWidth).toBeLessThanOrEqual(
-      legendControlLayout.thresholdClientWidth,
-    );
-    expect(legendControlLayout.percentLeft).toBeGreaterThanOrEqual(legendControlLayout.groupLeft);
-    expect(legendControlLayout.percentRight).toBeLessThanOrEqual(legendControlLayout.groupRight);
+    expect(layout.host[0]).toBeGreaterThanOrEqual(0);
+    expect(layout.host[1]).toBeLessThanOrEqual(layout.viewportWidth);
+    for (const [left, right] of [layout.section, layout.range, layout.bounds]) {
+      expect(left).toBeGreaterThanOrEqual(layout.host[0]);
+      expect(right).toBeLessThanOrEqual(layout.host[1]);
+    }
+    expect(layout.sectionFits).toBe(true);
+    expect(layout.rangeFits).toBe(true);
   }
   await page.setViewportSize({ width: 1280, height: 720 });
 
@@ -713,6 +715,12 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const exportMarkers = markerProfiles[1];
   const distanceFromWhite = ([red, green, blue]: number[]) =>
     Math.abs(255 - red) + Math.abs(255 - green) + Math.abs(255 - blue);
+  // Measured at a 1280x720 window: predicted nearest neighbour 8.36 px, observed 10.93 px, export
+  // radius 5.36 px, ring offset 4 px. The ring sample that faces the predicted point's nearest
+  // neighbour lands 4.36 px from that neighbour's centre, 1 px inside its marker, so the stricter
+  // `> exportRadius + ringOffset` does not hold for this data; the sampler drops such samples and
+  // keeps the ones clear of every other marker. The predicted centre (the hollow check) is 3 px
+  // clear of every neighbour's marker and the observed centre 5.6 px.
   expect(exportMarkers.predictedNearestNeighbor).toBeGreaterThan(8);
   expect(exportMarkers.observedNearestNeighbor).toBeGreaterThan(8);
   // Predicted interiors are hollow (Task 3: #3+#4) — `captureAtResolution` fills the export
@@ -723,6 +731,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(exportMarkers.predicted[3]).toBe(255);
   expect(exportMarkers.observed[3]).toBe(255);
   expect(distanceFromWhite(exportMarkers.predicted)).toBeLessThan(20);
+  expect(exportMarkers.predictedRingSamples).toBeGreaterThanOrEqual(3);
   expect(Math.max(...exportMarkers.predictedRing.map(distanceFromWhite))).toBeGreaterThan(60);
   expect(distanceFromWhite(exportMarkers.observed)).toBeGreaterThan(60);
   expect(exportMarkers.densePredictedNearestNeighbor).toBeLessThan(0.5);
@@ -739,6 +748,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   // size instead — near-white over the white bg (above), the dark bg (below), and alpha 0 over a
   // transparent bg (below).
   for (const profile of markerProfiles) {
+    expect(profile.predictedRingSamples).toBeGreaterThanOrEqual(3);
     expect(Math.max(...profile.predictedRing.map(distanceFromWhite))).toBeGreaterThan(60);
   }
   const darkExport = await sampleEncodedExportMarkers(page, 240, '#102030');
@@ -755,14 +765,49 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(transparentExport.predicted[3]).toBe(0);
   expect(transparentExport.corner[3]).toBe(0);
 
-  await controlBar.getByRole('button', { name: 'Export' }).click();
   const downloadPromise = page.waitForEvent('download');
-  await controlBar.getByRole('button', { name: 'Quick Export PNG' }).click();
+  await exportAction(page, 'Quick PNG');
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.png$/);
   const downloadPath = await download.path();
   expect(downloadPath).not.toBeNull();
   expect(fs.statSync(downloadPath!).size).toBeGreaterThan(10_000);
+});
+
+test('with a dirty draft, moving the threshold in the EAT panel updates the draft’s reliability row and keeps the other edit', async ({
+  page,
+}) => {
+  await loadEatFixture(page);
+  await selectAnnotation(page, 'ec');
+  const value = await getFirstLegendItemValue(page);
+  type Draft = Array<{ kind?: string; annotation?: string; min?: number | null }>;
+  const draft = () =>
+    queryBuilder(page).evaluate((builder) => (builder as unknown as { query: Draft }).query);
+
+  // A dirty draft: the seeded row picks EC number and one value, unapplied.
+  await draftFilterCondition(page, 0, 'ec', [value]);
+  const cancel = queryBuilder(page).getByRole('button', { name: 'Cancel', exact: true });
+  await expect(cancel).toBeEnabled();
+
+  // To the EAT panel, move the threshold, back to the Filter panel.
+  await openEatPanel(page);
+  await eatThresholdBox(page).fill('50');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (document.querySelector('#myPlot') as (Element & { filtersActive?: boolean }) | null)
+            ?.filtersActive ?? false,
+      ),
+    )
+    .toBe(true);
+  await filterButton(page).click();
+
+  const rows = await draft();
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toMatchObject({ annotation: 'ec' });
+  expect(rows[1]).toMatchObject({ kind: 'numeric', min: 0.5 });
+  await expect(cancel).toBeEnabled();
 });
 
 /**
@@ -783,15 +828,10 @@ test('keeps curated points visible while the reliability filter hides low-confid
   page,
 }) => {
   await loadEatFixture(page);
-  await selectEcAnnotation(page);
+  await selectAnnotation(page, 'ec');
 
-  const plot = page.locator('protspace-scatterplot');
-  const legend = page.locator('protspace-legend');
-  const eatGroup = legend.getByRole('region', { name: 'Embedding Annotation Transfer' });
-  const thresholdPercent = eatGroup.getByRole('spinbutton', {
-    name: 'EAT reliability filter percentage',
-  });
-  const filterButton = page.locator('protspace-control-bar .filter-container .dropdown-trigger');
+  await openEatPanel(page);
+  const thresholdPercent = eatThresholdBox(page);
 
   const confidences = await readEcEatConfidences(page);
   const curated = confidences.filter(({ confidence }) => confidence === null).map(({ id }) => id);
@@ -832,8 +872,8 @@ test('keeps curated points visible while the reliability filter hides low-confid
   // 60%: 94 of the 213 transfers fall below the threshold and are hidden; all
   // 619 curated points stay, so 619 + 119 = 738 points remain rendered.
   await thresholdPercent.fill('60');
-  // The threshold drives the shared filter, so the Filter button shows it as active.
-  await expect(filterButton).toHaveClass(/filter-active/);
+  // The threshold drives the shared filter, so the Filter button counts it.
+  await expect(filterButton(page)).toHaveAccessibleName('Filter, 1 condition applied');
   await expect
     .poll(() => visibility(0.6), { timeout: 15_000 })
     .toEqual({
@@ -842,24 +882,27 @@ test('keeps curated points visible while the reliability filter hides low-confid
       predictedVisible: 119,
       predictedExpectedVisible: 119,
     });
-  await expect(plot.locator('.plot-indicator').first()).toHaveText('738 points');
+  await expect(plotStatus(page).locator('.status-count')).toHaveText('738 proteins');
 
-  // 100%: only the 4 transfers at full reliability survive — still no curated
-  // point is dropped, which is the whole point of the filter.
+  // 100% in the low box, committed: it stops one step short of the high end (100 %), so the
+  // range is 99–100 % and only the 5 transfers at 99 % or more survive — still no curated point
+  // is dropped, which is the whole point of the filter.
   await thresholdPercent.fill('100');
+  await thresholdPercent.press('Enter');
+  await expect(thresholdPercent).toHaveValue('99');
   await expect
-    .poll(() => visibility(1), { timeout: 15_000 })
+    .poll(() => visibility(0.99), { timeout: 15_000 })
     .toEqual({
-      renderedTotal: 623,
+      renderedTotal: 624,
       curatedHidden: [],
-      predictedVisible: 4,
-      predictedExpectedVisible: 4,
+      predictedVisible: 5,
+      predictedExpectedVisible: 5,
     });
 
   // Back to 0: the condition is removed and every prediction returns, so the
   // filter hid rather than dropped them.
   await thresholdPercent.fill('0');
-  await expect(filterButton).not.toHaveClass(/filter-active/);
+  await expect(filterButton(page)).toHaveAccessibleName('Filter');
   await expect
     .poll(() => visibility(0), { timeout: 15_000 })
     .toEqual({
@@ -877,30 +920,22 @@ test('keeps curated points visible while the reliability filter hides low-confid
  */
 test('exports the visible proteins as a table, the same set as the ID export', async ({ page }) => {
   await loadEatFixture(page);
-  await selectEcAnnotation(page);
+  await selectAnnotation(page, 'ec');
 
-  const legend = page.locator('protspace-legend');
-  await legend
-    .getByRole('region', { name: 'Embedding Annotation Transfer' })
-    .getByRole('spinbutton', { name: 'EAT reliability filter percentage' })
-    .fill('60');
+  await openEatPanel(page);
+  await eatThresholdBox(page).fill('60');
   // 619 curated + the 119 transfers at or above 0.6 (see the reliability filter test).
   await expect.poll(async () => (await readRenderedProteinIds(page)).length).toBe(738);
 
-  const controlBar = page.locator('protspace-control-bar');
-  const download = async (format: 'IDs' | 'Table', action: string) => {
-    if (!(await controlBar.locator('.export-menu').isVisible())) {
-      await controlBar.getByRole('button', { name: 'Export', exact: true }).click();
-    }
-    await controlBar.getByRole('button', { name: format, exact: true }).click();
+  const download = async (item: 'Protein IDs (.txt)' | 'Table (.tsv)') => {
     const downloadPromise = page.waitForEvent('download');
-    await controlBar.getByRole('button', { name: action, exact: true }).click();
+    await exportAction(page, item);
     const file = await downloadPromise;
     return { name: file.suggestedFilename(), text: fs.readFileSync((await file.path())!, 'utf8') };
   };
 
-  const ids = (await download('IDs', 'Export IDS')).text.split('\n');
-  const table = await download('Table', 'Export TSV');
+  const ids = (await download('Protein IDs (.txt)')).text.split('\n');
+  const table = await download('Table (.tsv)');
   expect(table.name).toMatch(/\.tsv$/);
 
   const [header, ...rows] = table.text

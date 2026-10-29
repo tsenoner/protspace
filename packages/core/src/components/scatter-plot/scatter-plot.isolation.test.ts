@@ -272,6 +272,102 @@ describe('scatter-plot isolateSelection (layers)', () => {
   });
 });
 
+describe('scatter-plot popIsolation', () => {
+  type PopInternals = HTMLElement & {
+    data: VisualizationData;
+    selectedProteinIds: string[];
+    _isolationHistory: string[][];
+    _isolationMode: boolean;
+    _plotData: PlotData;
+    _plotDataBuild: unknown;
+    _processData(): void;
+    _pointGrid: { rebuildNow(): void };
+    isolateSelection(): void;
+    popIsolation(): void;
+    resetZoom(): void;
+    getCurrentData(): VisualizationData | null;
+  };
+
+  function makeEl(): PopInternals {
+    const ids = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'];
+    const el = document.createElement('protspace-scatterplot') as PopInternals;
+    el.data = {
+      protein_ids: ids,
+      projections: [{ name: 'proj', dimension: 2, data: new Float32Array(12) }],
+      annotations: {
+        cat: { kind: 'categorical', values: ['A'], colors: ['#000000'], shapes: ['circle'] },
+      },
+      annotation_data: { cat: new Int32Array(6) },
+    };
+    el._plotData = {
+      length: 6,
+      xs: new Float32Array(6),
+      ys: new Float32Array(6),
+      zs: null,
+      originalIndices: null,
+      proteinIds: ids,
+    };
+    vi.spyOn(el, '_processData').mockImplementation(() => {});
+    vi.spyOn(el._pointGrid, 'rebuildNow').mockImplementation(() => {});
+    return el;
+  }
+
+  /** The isolation events the plot dispatches from here on, in order. */
+  function listen(el: HTMLElement) {
+    const seen: Array<{ type: string; detail: Record<string, unknown> }> = [];
+    for (const type of ['data-isolation', 'data-isolation-reset', 'data-change']) {
+      el.addEventListener(type, (event) =>
+        seen.push({ type, detail: (event as CustomEvent<Record<string, unknown>>).detail }),
+      );
+    }
+    return seen;
+  }
+
+  it('popIsolation pops one step and emits data-isolation with the shorter history', () => {
+    const el = makeEl();
+    el.selectedProteinIds = ['p0', 'p1', 'p2'];
+    el.isolateSelection();
+    el.selectedProteinIds = ['p0', 'p1'];
+    el.isolateSelection();
+    const seen = listen(el);
+    const resetZoom = vi.spyOn(el, 'resetZoom');
+
+    el.popIsolation();
+
+    expect(el._isolationHistory).toEqual([['p0', 'p1', 'p2']]);
+    expect(el._isolationMode).toBe(true);
+    expect(el.getCurrentData()?.protein_ids).toEqual(['p0', 'p1', 'p2']);
+    expect(seen.map((event) => event.type)).toEqual(['data-isolation', 'data-change']);
+    expect(seen[0].detail).toMatchObject({ isolationMode: true, dataSize: 3 });
+    expect(seen[0].detail.isolationHistory).toEqual([['p0', 'p1', 'p2']]);
+    expect(el._plotDataBuild).toBeNull();
+    expect(resetZoom).toHaveBeenCalledOnce();
+  });
+
+  it('the last pop resets', () => {
+    const el = makeEl();
+    el.selectedProteinIds = ['p0', 'p1'];
+    el.isolateSelection();
+    const seen = listen(el);
+
+    el.popIsolation();
+
+    expect(el._isolationHistory).toEqual([]);
+    expect(el._isolationMode).toBe(false);
+    expect(seen.map((event) => event.type)).toEqual(['data-isolation-reset', 'data-change']);
+    expect(el.getCurrentData()?.protein_ids).toHaveLength(6);
+  });
+
+  it('with no isolation it does nothing', () => {
+    const el = makeEl();
+    const seen = listen(el);
+    const resetZoom = vi.spyOn(el, 'resetZoom');
+    el.popIsolation();
+    expect(seen).toEqual([]);
+    expect(resetZoom).not.toHaveBeenCalled();
+  });
+});
+
 describe('scatter-plot isolation render-refresh sequence', () => {
   type RefreshInternals = HTMLElement & {
     data: VisualizationData;

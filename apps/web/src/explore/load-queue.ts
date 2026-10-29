@@ -70,6 +70,7 @@ export function createLoadQueue({ isDisposed, skipLoad }: LoadQueueOptions): Loa
       sequence: nextLoadSequence + 1,
       kind,
       example,
+      fileName: file.name,
       ...(epoch !== undefined && { epoch }),
     };
     nextLoadSequence = nextMeta.sequence;

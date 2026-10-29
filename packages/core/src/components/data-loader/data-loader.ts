@@ -59,10 +59,6 @@ export class DataLoader extends LitElement {
   @property({ type: Boolean, attribute: 'auto-load' })
   autoLoad = false;
 
-  /** Accept drag and drop */
-  @property({ type: Boolean, attribute: 'allow-drop' })
-  allowDrop = true;
-
   /** Required column mappings for Arrow data */
   @property({ type: Object, attribute: 'column-mappings' })
   columnMappings: {
@@ -104,6 +100,14 @@ export class DataLoader extends LitElement {
         style="display:none"
       />
     `;
+  }
+
+  /**
+   * Opens the browser's file picker on the loader's own file input. Browsers open it only inside a
+   * user gesture, so call it from the click or key press that asked for it.
+   */
+  openFilePicker(): void {
+    this.renderRoot.querySelector<HTMLInputElement>('input[type="file"]')?.click();
   }
 
   private handleFileSelect(e: Event) {

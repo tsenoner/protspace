@@ -37,7 +37,12 @@ export default defineConfig({
   // of the user-facing docs site.
   srcExclude: ['superpowers/**', '**/README.md'],
 
-  head: [['link', { rel: 'icon', href: '/docs/favicon.svg' }]],
+  head: [
+    ['link', { rel: 'icon', href: '/docs/favicon.svg' }],
+    // Docs images come in light/dark pairs ({.light-only} then {.dark-only}, the dark twin lazy);
+    // VitePress's appearance toggle puts .dark on <html>, so only one of each pair shows.
+    ['style', {}, 'html.dark img.light-only,html:not(.dark) img.dark-only{display:none}'],
+  ],
 
   themeConfig: {
     logo: {
@@ -108,7 +113,8 @@ export default defineConfig({
           { text: 'Using the Legend', link: '/explore/legend' },
           { text: 'Separation Scores', link: '/explore/separation-scores' },
           { text: 'Transferred Annotations (EAT)', link: '/explore/eat' },
-          { text: 'Control Bar Features', link: '/explore/control-bar' },
+          { text: 'Bars and Tools', link: '/explore/controls' },
+          { text: 'Filtering', link: '/explore/filter' },
           { text: 'Viewing 3D Structures', link: '/explore/structures' },
           { text: 'Exporting Results', link: '/explore/exporting' },
           { text: 'Figure Editor', link: '/explore/figure-editor' },

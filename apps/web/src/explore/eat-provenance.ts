@@ -9,7 +9,8 @@ interface SourceCandidate {
 
 type SourceIndex = ReadonlyMap<string, readonly SourceCandidate[]>;
 
-const MAX_PROVENANCE_CONNECTORS = 20;
+/** A source's lines when no limit is given: the panel's default "Most lines from one source". */
+const DEFAULT_LINES_PER_SOURCE = 20;
 
 function compareSourceCandidates(left: SourceCandidate, right: SourceCandidate): number {
   const confidenceOrder = right.confidence - left.confidence;
@@ -94,11 +95,16 @@ export class EatProvenanceResolver {
     clickedProteinIndex: number,
     isLegendEligible: (proteinId: string, proteinIndex: number) => boolean,
     isInCurrentView: (proteinIndex: number) => boolean = () => true,
+    mode: 'auto' | 'source' = 'auto',
+    limit: number = DEFAULT_LINES_PER_SOURCE,
   ): ProvenanceConnectorRequest | null {
     if (!isLegendEligible(clickedProteinId, clickedProteinIndex)) return null;
 
+    // 'source' reads the clicked protein as a source even when it is a prediction itself.
     const predictedCell: PredictedCell | null =
-      data.annotation_predicted?.[annotation]?.[clickedProteinIndex] ?? null;
+      mode === 'source'
+        ? null
+        : (data.annotation_predicted?.[annotation]?.[clickedProteinIndex] ?? null);
     if (predictedCell) {
       const sourceProteinIndex =
         predictedCell.sourceIndex ??
@@ -138,7 +144,7 @@ export class EatProvenanceResolver {
         unavailableCandidates++;
         continue;
       }
-      if (pairs.length < MAX_PROVENANCE_CONNECTORS) {
+      if (pairs.length < limit) {
         pairs.push({
           sourceProteinId: clickedProteinId,
           targetProteinId: candidate.targetProteinId,

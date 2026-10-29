@@ -25,6 +25,11 @@ export interface MolstarViewer {
     options?: Record<string, unknown>,
   ) => Promise<void>;
   setColorTheme: (mode: StructureColorMode) => Promise<void>;
+  /** Paints the canvas behind the structure (a `0xRRGGBB` number); a no-op without a canvas. */
+  /** False when Mol* has no canvas to paint, so nothing was applied. */
+  setBackground: (color: number) => boolean;
+  /** Returns the camera to the view the structure loaded with; a double-click does it too. */
+  resetCamera: () => void;
   dispose: () => void;
 }
 
@@ -125,6 +130,12 @@ interface MolstarPlugin {
       };
     };
   };
+  /** The 3D canvas. Absent when WebGL failed to start, and in the e2e stub. */
+  canvas3d?: {
+    setProps(props: { renderer: { backgroundColor: number } }): void;
+    requestCameraReset(options?: { snapshot?: unknown; durationMs?: number }): void;
+    camera?: { getSnapshot(): unknown };
+  };
 }
 
 interface RawMolstarViewer {
@@ -149,6 +160,9 @@ declare global {
             viewportShowExpand?: boolean;
             viewportShowSelectionMode?: boolean;
             viewportShowAnimation?: boolean;
+            viewportShowControls?: boolean;
+            viewportShowSettings?: boolean;
+            viewportShowTrajectoryControls?: boolean;
             pdbProvider?: string;
             emdbProvider?: string;
             validationProvider?: string;
@@ -293,6 +307,27 @@ function installValidationInterceptor(): void {
   validationInterceptorInstalled = true;
 }
 
+/**
+ * A CSS colour as Mol*'s `Color` (a `0xRRGGBB` number): `#rrggbb`, `#rgb`, `rgb(r g b)` or
+ * `rgb(r, g, b)`. Anything else (a keyword, an alpha, a colour function) is `null`.
+ */
+export function molstarColor(css: string): number | null {
+  const value = css.trim().toLowerCase();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(value);
+  if (hex) {
+    const digits =
+      hex[1].length === 3 ? [...hex[1]].map((digit) => digit + digit).join('') : hex[1];
+    return parseInt(digits, 16);
+  }
+  const rgb = /^rgb\(\s*(\d{1,3})(?:\s*,\s*|\s+)(\d{1,3})(?:\s*,\s*|\s+)(\d{1,3})\s*\)$/.exec(
+    value,
+  );
+  if (!rgb) return null;
+  const [r, g, b] = rgb.slice(1, 4).map(Number);
+  if (r > 255 || g > 255 || b > 255) return null;
+  return (r << 16) | (g << 8) | b;
+}
+
 export async function createMolstarViewer(
   container: HTMLElement,
   tedDomains: TedDomain[],
@@ -312,6 +347,9 @@ export async function createMolstarViewer(
     viewportShowExpand: false,
     viewportShowSelectionMode: false,
     viewportShowAnimation: false,
+    viewportShowControls: false,
+    viewportShowSettings: false,
+    viewportShowTrajectoryControls: false,
   });
 
   if (!viewer) {
@@ -416,6 +454,24 @@ export async function createMolstarViewer(
   // Theme updates are serialized so the most recently requested mode is applied last
   let colorThemeQueue: Promise<void> = Promise.resolve();
 
+  // Mol*'s own reset keeps the camera's turn, so Reset returns to the camera as it was at the
+  // first press on the model: the view the structure loaded with. Mol* binds no double-click,
+  // and its viewport buttons are hidden, so a double-click on the model resets.
+  let loadedView: unknown;
+  const resetCamera = () => {
+    plugin.canvas3d?.requestCameraReset(
+      loadedView === undefined ? undefined : { snapshot: loadedView, durationMs: 250 },
+    );
+  };
+  container.addEventListener(
+    'pointerdown',
+    () => {
+      loadedView ??= plugin.canvas3d?.camera?.getSnapshot();
+    },
+    { capture: true },
+  );
+  container.addEventListener('dblclick', resetCamera, { capture: true });
+
   return {
     loadStructureFromUrl: (...args) => viewer.loadStructureFromUrl(...args),
     setColorTheme: (mode) => {
@@ -423,6 +479,12 @@ export async function createMolstarViewer(
       colorThemeQueue = colorThemeQueue.then(apply, apply);
       return colorThemeQueue;
     },
+    setBackground: (color) => {
+      if (!plugin.canvas3d) return false;
+      plugin.canvas3d.setProps({ renderer: { backgroundColor: color } });
+      return true;
+    },
+    resetCamera,
     dispose: () => viewer.dispose(),
   };
 }

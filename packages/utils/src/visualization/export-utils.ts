@@ -5,6 +5,7 @@
 import { SHAPE_PATH_GENERATORS, renderPathOnCanvas, toDisplayValue } from './shapes';
 import { isNAValue, NA_VALUE } from './missing-values';
 import type { Annotation, AnnotationData, AnnotationPredictedData, Projection } from '../types.js';
+import { annotationLabel } from './annotation-metadata.js';
 import {
   getProteinAnnotationCount,
   getProteinAnnotationIndexAt,
@@ -18,6 +19,10 @@ import { isNumericAnnotation } from './numeric-binning.js';
 import { readNumericValue } from './plot-data-accessors.js';
 import { PROTEIN_ID_COLUMN } from '../generated/shared-constants';
 
+// How long a download's Blob URL outlives the click. Firefox and Safari can abort a download
+// whose URL is revoked before it starts, and the start can lag (a slow machine, a save prompt).
+const DOWNLOAD_URL_TTL_MS = 60_000;
+
 // PDF generation libraries are imported dynamically for better browser compatibility
 declare const window: Window & typeof globalThis;
 
@@ -29,12 +34,12 @@ export interface ExportableData {
       values: (string | null)[];
       colors: string[];
       shapes: string[];
+      runtime?: Annotation['runtime'];
       numericMetadata?: {
         bins?: Array<{ id: string; label: string }>;
       };
       kind?: Annotation['kind'];
       sourceKind?: Annotation['sourceKind'];
-      runtime?: Annotation['runtime'];
     }
   >;
   annotation_data: Record<string, AnnotationData>;
@@ -191,9 +196,8 @@ export class ProtSpaceExporter {
     const projection = data?.projections?.[this.element.selectedProjectionIndex]?.name || 'unknown';
     const annotation = this.element.selectedAnnotation || 'unknown';
 
-    // Sanitize names (remove spaces, special chars, convert to lowercase)
-    let cleanProjection = projection.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-    const cleanAnnotation = annotation.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+    let cleanProjection = fileNamePart(projection);
+    const cleanAnnotation = fileNamePart(annotation);
 
     // Remove dimension suffix after sanitization (e.g., "pca_2" -> "pca", "umap_3" -> "umap")
     cleanProjection = cleanProjection.replace(/_[23]$/, '');
@@ -233,13 +237,16 @@ export class ProtSpaceExporter {
     // If legendWidthPercent is 25%, then legend takes 25% and scatterplot takes 75%
     const legendPercent = (options.legendWidthPercent || 25) / 100;
     const legendWidth = Math.round(scatterCanvas.width * (legendPercent / (1 - legendPercent)));
+    // Titled like the figure editor's legend: the display name, not the column key.
+    const annotation = annotationNameFromLegend || this.element.selectedAnnotation;
+    const definition = this.element.getCurrentData()?.annotations?.[annotation];
 
     return this.renderLegendToCanvas(
       legendItems,
       legendWidth,
       scatterCanvas.height,
       options,
-      annotationNameFromLegend || this.element.selectedAnnotation,
+      annotation ? annotationLabel(annotation, definition) : annotation,
       options.legendScaleFactor,
     );
   }
@@ -486,19 +493,19 @@ export class ProtSpaceExporter {
   /**
    * Export protein IDs as text file
    */
-  exportProteinIds(_options: ExportOptions = {}): void {
+  exportProteinIds(_options: ExportOptions = {}): string | null {
     const data = this.element.getCurrentData();
     if (!data) {
       console.error('No data available for export');
-      return;
+      return null;
     }
 
-    const visibleIds = this.visibleProteinIndices(data).map((i) => data.protein_ids[i]);
-    const idsStr = visibleIds.join('\n');
-    const idsUri = `data:text/plain;charset=utf-8,${encodeURIComponent(idsStr)}`;
     const fileName = 'protein_ids.txt';
-
-    this.downloadFile(idsUri, fileName);
+    downloadProteinIds(
+      this.visibleProteinIndices(data).map((i) => data.protein_ids[i]),
+      fileName,
+    );
+    return fileName;
   }
 
   /**
@@ -506,11 +513,11 @@ export class ProtSpaceExporter {
    * the selected projection's coordinates, then one column per annotation. Column names and cell
    * values match `protspace export`, so a script reads either file.
    */
-  exportTable(_options: ExportOptions = {}): void {
+  exportTable(_options: ExportOptions = {}): string | null {
     const data = this.element.getCurrentData();
     if (!data) {
       console.error('No data available for export');
-      return;
+      return null;
     }
 
     const tsv = buildProteinTable(
@@ -518,22 +525,25 @@ export class ProtSpaceExporter {
       this.visibleProteinIndices(data),
       this.element.selectedProjectionIndex,
     );
+    const fileName = this.generateExportFileName('tsv');
     // A Blob, not a data: URI as for the IDs: a table can be megabytes, past some browsers'
     // URI length limit.
     const url = URL.createObjectURL(new Blob([tsv], { type: 'text/tab-separated-values' }));
     try {
-      this.downloadFile(url, this.generateExportFileName('tsv'));
+      this.downloadFile(url, fileName);
     } finally {
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL_MS);
     }
+    return fileName;
   }
 
   /**
    * Export visualization as a single PNG with a programmatic legend on the right (legend width = 1/5 of total)
    */
-  async exportPNG(options: ExportOptions = {}): Promise<void> {
+  /** Resolves with the file name it downloaded, or null when there was nothing to export. */
+  async exportPNG(options: ExportOptions = {}): Promise<string | null> {
     try {
-      await this.exportCombinedPNG(options);
+      return await this.exportCombinedPNG(options);
     } catch (error) {
       console.error('PNG export failed:', error);
       throw error;
@@ -543,9 +553,13 @@ export class ProtSpaceExporter {
   /**
    * Create a combined PNG with scatterplot and legend side-by-side
    */
-  private async exportCombinedPNG(options: ExportOptions = {}): Promise<void> {
+  private async exportCombinedPNG(options: ExportOptions = {}): Promise<string | null> {
+    if (!this.element.getCurrentData()) {
+      console.error('No data available for export');
+      return null;
+    }
     const scatterplotElement = this.getScatterplotElement();
-    if (!scatterplotElement) return;
+    if (!scatterplotElement) return null;
 
     const opts = this.getOptionsWithDefaults(options);
 
@@ -572,7 +586,7 @@ export class ProtSpaceExporter {
       const ctx = outCanvas.getContext('2d');
       if (!ctx) {
         console.error('Could not get 2D context for output canvas');
-        return;
+        return null;
       }
 
       ctx.fillStyle = opts.backgroundColor;
@@ -588,6 +602,7 @@ export class ProtSpaceExporter {
     const dataUrl = outCanvas.toDataURL('image/png');
     const fileName = opts.exportName || this.generateExportFileName('png');
     this.downloadFile(dataUrl, fileName);
+    return fileName;
   }
 
   /**
@@ -862,9 +877,10 @@ export class ProtSpaceExporter {
   /**
    * Export visualization as a single PDF file (scatterplot on first page, legend on second if present)
    */
-  async exportPDF(options: ExportOptions = {}): Promise<void> {
+  /** Resolves with the file name it saved, or null when there was nothing to export. */
+  async exportPDF(options: ExportOptions = {}): Promise<string | null> {
     try {
-      await this.exportCombinedPDF(options);
+      return await this.exportCombinedPDF(options);
     } catch (error) {
       console.error('PDF export failed:', error);
       throw error;
@@ -874,9 +890,13 @@ export class ProtSpaceExporter {
   /**
    * Create a single-page PDF with scatterplot and legend side-by-side
    */
-  private async exportCombinedPDF(options: ExportOptions = {}): Promise<void> {
+  private async exportCombinedPDF(options: ExportOptions = {}): Promise<string | null> {
+    if (!this.element.getCurrentData()) {
+      console.error('No data available for export');
+      return null;
+    }
     const scatterplotElement = this.getScatterplotElement();
-    if (!scatterplotElement) return;
+    if (!scatterplotElement) return null;
 
     const opts = this.getOptionsWithDefaults(options);
     const { default: jsPDF } = await import('jspdf');
@@ -926,7 +946,7 @@ export class ProtSpaceExporter {
       pdf.addImage(scatterImg, 'PNG', xScatter, margin, scatterTargetW, scatterTargetH);
       pdf.addImage(legendImg, 'PNG', xLegend, margin, legendTargetW, legendTargetH);
 
-      this.savePdf(pdf, opts.exportName);
+      return this.savePdf(pdf, opts.exportName);
     } else {
       // Export scatterplot only (no legend)
       const scatterTargetW = maxWidth;
@@ -939,7 +959,7 @@ export class ProtSpaceExporter {
 
       pdf.addImage(scatterImg, 'PNG', margin, margin, scatterTargetW, scatterTargetH);
 
-      this.savePdf(pdf, opts.exportName);
+      return this.savePdf(pdf, opts.exportName);
     }
   }
 
@@ -961,19 +981,42 @@ export class ProtSpaceExporter {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private savePdf(pdf: any, exportName?: string): void {
+  private savePdf(pdf: any, exportName?: string): string {
     const fileName = exportName || this.generateExportFileName('pdf');
     pdf.save(fileName);
+    return fileName;
   }
 
   /**
    * Download file helper
    */
   private downloadFile(url: string, filename: string): void {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
+    clickDownload(url, filename);
+  }
+}
+
+function clickDownload(url: string, filename: string): void {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+}
+
+/** A name made safe for a file name: letters, digits, `_` and `-` only, lower case. */
+export function fileNamePart(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+}
+
+/** Downloads `ids` as `fileName`, one ID per line. */
+export function downloadProteinIds(ids: readonly string[], fileName: string): void {
+  // A Blob, not a data: URI: hundreds of thousands of IDs URI-encoded into one string cost
+  // several megabytes of string building before the download even starts.
+  const blob = new Blob([ids.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  try {
+    clickDownload(url, fileName);
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL_MS);
   }
 }
 
@@ -1114,7 +1157,7 @@ export const exportUtils = {
     options?: ExportOptions,
   ) => {
     const exporter = createExporter(element, selectedProteins);
-    exporter.exportProteinIds(options);
+    return exporter.exportProteinIds(options);
   },
 
   /**

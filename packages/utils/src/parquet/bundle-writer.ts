@@ -630,6 +630,8 @@ function hasBundleSettings(settings: BundleSettings | undefined): settings is Bu
     settings.publishState !== undefined ||
     settings.eatOverlayEnabled !== undefined ||
     settings.eatConfidenceThreshold !== undefined ||
+    settings.eatConfidenceMax !== undefined ||
+    settings.eatOutcome !== undefined ||
     settings.shapeSize !== undefined
   );
 }

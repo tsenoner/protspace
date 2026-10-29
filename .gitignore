@@ -61,6 +61,9 @@ docs/superpowers/
 /temp-videos
 **/playwright-report
 .playwright-mcp
+# Vitest browser mode: failure screenshots and attachments
+packages/core/src/**/__screenshots__/
+packages/core/.vitest-attachments/
 
 # Anchored on purpose: Claude Code and Codex put worktrees inside these dirs, and
 # knip matches ignores against absolute paths, so a bare `.claude` would ignore

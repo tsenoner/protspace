@@ -1,34 +1,27 @@
-import { tokens } from '../../styles/tokens';
-import { buttonMixin } from '../../styles/mixins';
-import { overlayMixins } from '../../styles/overlay-mixins';
-import { themeStyles } from './styles/theme';
+import { focusRing, kitHost, reducedMotion, srOnly } from '../kit/kit-shared.styles';
 import { layoutStyles } from './styles/layout';
-import { itemStyles } from './styles/item';
-import { modalStyles } from './styles/modal';
-import { responsiveStyles } from './styles/responsive';
+import { headerStyles } from './styles/header';
+import { rowStyles } from './styles/row';
+import { pickerStyles } from './styles/picker';
+import { eatStyles } from './styles/eat';
+import { stripStyles } from './styles/strips';
 
 /**
- * Legend Styles
+ * The legend's one stylesheet, on `--ps-*` tokens only: the kit's shared sheets (host font and
+ * colour, the focus ring, reduced motion, the visually-hidden class), then one module per piece
+ * of the element. The Other and settings popovers are child elements with their own sheets.
  *
- * Modular style composition following the unified ProtSpace style architecture.
- * Styles are imported in order: tokens → mixins → theme → features → responsive
- *
- * @see /docs/developers/style-architecture.md for organization standards
+ * @see /docs/developers/style-architecture.md
  */
 export const legendStyles = [
-  // 1. Foundation
-  tokens,
-
-  // 2. Shared mixins
-  buttonMixin,
-  overlayMixins,
-
-  // 3. Component-specific (modular)
-  themeStyles,
+  kitHost,
+  focusRing,
+  reducedMotion,
+  srOnly,
   layoutStyles,
-  itemStyles,
-  modalStyles,
-
-  // 4. Responsive (ALWAYS LAST)
-  responsiveStyles,
+  headerStyles,
+  rowStyles,
+  pickerStyles,
+  eatStyles,
+  stripStyles,
 ];

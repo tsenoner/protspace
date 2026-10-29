@@ -14,7 +14,12 @@ export interface ProvenanceConnectorRequest {
   totalCandidates: number;
   /** Unavailable candidates not already represented by retained id pairs. */
   unavailableCandidates?: number;
+  /** The endpoint to draw with the wider highlight ring: the one the user went to. */
+  focusProteinId?: string;
 }
+
+/** How much wider the focused endpoint's ring is than the others, in drawn px. */
+const FOCUS_RING_EXTRA_PX = 3;
 
 export interface ProvenanceConnectorStatus {
   shown: number;
@@ -99,7 +104,9 @@ export class ConnectorOverlayController {
     const overlay = this.deps.getOverlayGroup();
     overlay
       ?.selectAll<SVGCircleElement, unknown>('circle.eat-provenance-endpoint')
-      .attr('r', this.endpointBaseRadiusPx() / this.zoomScale);
+      .attr('r', (_d, index, nodes) =>
+        this.endpointRadius(nodes[index].classList.contains('is-focus')),
+      );
     overlay
       ?.selectAll<SVGLineElement, unknown>('line.eat-provenance-connector')
       .attr('stroke-width', this.connectorStrokeWidthPx() / this.zoomScale)
@@ -118,6 +125,11 @@ export class ConnectorOverlayController {
 
   private endpointBaseRadiusPx(): number {
     return Math.max(4, this.deps.getPointRadiusPx() + 2);
+  }
+
+  /** An endpoint ring's radius in the zoomed group's units; the focused one is wider. */
+  private endpointRadius(focus: boolean): number {
+    return (this.endpointBaseRadiusPx() + (focus ? FOCUS_RING_EXTRA_PX : 0)) / this.zoomScale;
   }
 
   private connectorStrokeWidthPx(): number {
@@ -246,9 +258,10 @@ export class ConnectorOverlayController {
       .data([...endpoints.values()], (endpoint) => endpoint.id)
       .join('circle')
       .attr('class', 'eat-provenance-endpoint')
+      .classed('is-focus', (endpoint) => endpoint.id === request.focusProteinId)
       .attr('cx', (endpoint) => endpoint.x)
       .attr('cy', (endpoint) => endpoint.y)
-      .attr('r', this.endpointBaseRadiusPx() / this.zoomScale);
+      .attr('r', (endpoint) => this.endpointRadius(endpoint.id === request.focusProteinId));
 
     this.deps.onStatusChange(getProvenanceConnectorStatus(request, resolved.length));
   }

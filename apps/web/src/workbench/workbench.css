@@ -1,0 +1,2046 @@
+/*
+ * The explore workbench (design decision 1). The runtime's elements render once, in a fixed tree;
+ * every layout state is a data attribute or a --wb-* custom property read here. Colours, type,
+ * radii and shadows come from the --ps-* tokens; shell sizes are literals or --wb-* properties.
+ * No transform, filter, contain or container-type sits on an ancestor of the legend or the bars:
+ * their position: fixed popovers would be trapped. The bars get no overflow: hidden and no
+ * z-index; the plot area isolates its own stacking.
+ */
+
+.workbench {
+  --wb-app-bar-height: 48px;
+  --wb-view-bar-height: 44px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--ps-surface);
+  color: var(--ps-text);
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-base);
+  line-height: var(--ps-leading-tight);
+}
+
+/* The page behind the workbench (overscroll, landscape scrolling). The explore page sets
+   data-theme on <html> only while it is mounted; index.css's white body would show otherwise. */
+:root[data-theme] body {
+  background: var(--ps-surface);
+}
+
+/* Desktop: the window is the workbench, and the page never scrolls. */
+.workbench[data-layout='desktop'] {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ── App bar ─────────────────────────────────────────────────────────────── */
+
+[data-workbench='app-bar'] {
+  flex: none;
+  height: var(--wb-app-bar-height);
+  /* 16 px on the left, as in the mockup: the scale has no 16 px step. */
+  padding: 0 var(--ps-space-3) 0 16px;
+  border-bottom: 1px solid var(--ps-border);
+  background: var(--ps-surface);
+}
+
+[data-workbench='home'] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border-radius: var(--ps-radius);
+}
+
+[data-workbench='home'] img {
+  display: block;
+  width: auto;
+  height: 22px;
+  /* Dark: invert the dark ink, then turn the hues back (the mockup's treatment). */
+  filter: var(--ps-logo-filter);
+}
+
+.wb-separator {
+  flex: none;
+  width: 1px;
+  /* With the row's gap: 12 px from the wordmark, 20 px to the dataset icon, as in the mockup. */
+  margin-inline: var(--ps-space-1) var(--ps-space-3);
+  height: 20px;
+  background: var(--ps-border);
+}
+
+/* The dataset name is the dataset switcher: it opens the Import panel (design decision 1). */
+.wb-dataset {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ps-space-1-5);
+  min-width: 0;
+  /* The padding is the hover area (about 32 px tall); the negative margin keeps the icon where the
+     mockup has it. No fixed height: a baseline-aligned flex row sits at the top of a taller box. */
+  margin-inline-start: calc(-1 * var(--ps-space-2));
+  padding: var(--ps-space-1-5) var(--ps-space-2);
+  border: 0;
+  border-radius: var(--ps-radius);
+  background: transparent;
+  color: var(--ps-text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ps-duration-fast) var(--ps-ease);
+}
+
+.wb-dataset[hidden] {
+  display: none;
+}
+
+.wb-dataset:hover,
+.wb-dataset[aria-expanded='true'] {
+  background: var(--ps-surface-hover);
+}
+
+.wb-dataset:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+}
+
+.wb-dataset-chevron {
+  flex: none;
+  align-self: center;
+  color: var(--ps-text-muted);
+}
+
+/* The row stays baseline-aligned for the name and count; the icon centres itself. */
+.wb-dataset-icon {
+  flex: none;
+  align-self: center;
+  margin-right: var(--ps-space-1);
+  color: var(--ps-text-muted);
+}
+
+.wb-dataset-name {
+  min-width: 0;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--ps-weight-semibold);
+}
+
+.wb-dataset-count {
+  flex: none;
+  color: var(--ps-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-workbench='app-bar-actions'] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ps-space-1-5);
+}
+
+.wb-icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ps-control-md);
+  height: var(--ps-control-md);
+  border-radius: var(--ps-radius);
+  color: var(--ps-text-muted);
+  /* As the kit's ghost icon button beside them: the background changes, the colour stays. */
+  transition: background-color var(--ps-duration-fast) var(--ps-ease);
+}
+
+.wb-icon-link:hover {
+  background: var(--ps-surface-hover);
+}
+
+[data-workbench='home']:focus-visible,
+.wb-icon-link:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+}
+
+/* ── View bar ────────────────────────────────────────────────────────────── */
+
+/* One 44 px row that never wraps (border included). Items start at the left, 4 px apart, as in
+   the mockup; the scale has no 10 px step. */
+[data-workbench='view-bar'] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ps-space-1);
+  height: var(--wb-view-bar-height);
+  padding: 0 var(--ps-space-2) 0 10px;
+  border-bottom: 1px solid var(--ps-border);
+  background: var(--ps-surface);
+}
+
+/* ── Body: the plot beside the sidebar ───────────────────────────────────── */
+
+.wb-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+[data-workbench='plot'] {
+  position: absolute;
+  inset: 0 var(--wb-plot-right) 0 0;
+  isolation: isolate;
+  background: var(--ps-surface);
+}
+
+/* The selection bar's height: 38 px, 50 px with its finger-sized buttons under a coarse pointer.
+   The status corner and the phone's toasts stand above it. */
+.workbench {
+  --wb-selection-bar-height: 38px;
+}
+
+@media (pointer: coarse) {
+  .workbench {
+    --wb-selection-bar-height: 50px;
+  }
+}
+
+/* The most the status corner and the selection bar take of the plot's bottom edge, less the
+   status corner's own height: the bar above the status corner, as selection-bar-placement.ts puts
+   it on a plot too narrow for both side by side. Registered as a length so its computed value is
+   in px: touch-tooltip-insets.ts reads it to keep a tap-pinned card clear of both. */
+@property --wb-status-lift {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+[data-workbench='plot'] {
+  --wb-status-lift: calc(var(--ps-space-3) + var(--wb-selection-bar-height) + var(--ps-space-2));
+}
+
+/* The status corner never moves for the selection bar: the bar sits beside its count, and its
+   chips wrap upwards above the count (selection-bar-placement.ts sizes both). */
+[data-workbench='plot'] > protspace-plot-status {
+  flex-wrap: wrap-reverse;
+}
+
+[data-workbench='plot'] > protspace-selection-bar {
+  width: max-content;
+}
+
+#myPlot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  isolation: isolate;
+}
+
+/* No z-index: the aside paints over the plot by DOM order. A z-index would make it a stacking
+   context that traps the legend's position: fixed dialogs under the structure, the edge and the
+   rail (Task 2.12 lifts it only while it slides or its edge is dragged). */
+[data-workbench='sidebar'] {
+  position: absolute;
+  top: 0;
+  right: var(--wb-rail-width, 0px);
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: var(--wb-sidebar-live-width);
+  border-left: 1px solid var(--ps-border);
+  background: var(--ps-surface);
+}
+
+/* The legend, the Filter or the EAT panel fills the column; the sidebar draws the edges (none has
+   a card of its own). Only one shows: data-panel on the workbench picks it. */
+:is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.workbench:not([data-panel='filter']) #wb-filter-panel,
+.workbench:not([data-panel='eat']) #wb-eat-panel,
+.workbench:is([data-panel='filter'], [data-panel='eat']) #myLegend {
+  display: none;
+}
+
+/* No transform, contain or z-index: the query builder's pickers are position: fixed. */
+:is(#wb-filter-panel, #wb-eat-panel) {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.wb-panel-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ps-space-2);
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 var(--ps-space-2) 0 var(--ps-space-3);
+  border-bottom: 1px solid var(--ps-border);
+}
+
+.wb-panel-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--ps-text);
+  font-size: var(--ps-text-md);
+  font-weight: var(--ps-weight-semibold);
+}
+
+/* The Filter heading sits with its state label; the ⋯ menu and Close stand at the right. */
+#wb-filter-title {
+  flex: 0 1 auto;
+}
+
+.wb-filter-state {
+  overflow: hidden;
+  padding: 2px var(--ps-space-2);
+  border-radius: var(--ps-radius-full);
+  color: var(--ps-text-muted);
+  background: var(--ps-surface-muted);
+  font-size: var(--ps-text-xs);
+  font-weight: var(--ps-weight-medium);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.wb-filter-state[data-state='draft'] {
+  color: var(--ps-accent-text);
+  background: var(--ps-accent-tint);
+}
+
+.wb-filter-more {
+  margin-left: auto;
+}
+
+.workbench[data-layout='phone']
+  :is(#wb-filter-panel, #wb-eat-panel)
+  .wb-panel-header
+  > .wb-panel-fold {
+  margin-left: 0;
+}
+
+.wb-panel-title:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+}
+
+.wb-filter-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--ps-space-3);
+}
+
+#myQueryBuilder {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The EAT panel fills the column: it scrolls its own sections, over the selected-protein strip. */
+.wb-eat-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wb-eat-body > #myEatPanel {
+  flex: 1 1 auto;
+}
+
+/* One header row, as Filter's: the heading with its annotation and ⓘ, then Reset and Close at the
+   right. A long annotation name gives way first. */
+#wb-eat-title {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-eat-annotation {
+  color: var(--ps-text-muted);
+  font-weight: var(--ps-weight-medium);
+}
+
+.wb-eat-info {
+  flex: none;
+}
+
+.wb-eat-reset {
+  flex: none;
+  margin-left: auto;
+}
+
+/* ── Below 951 px (design decision 17): a fixed screen, the plot over a panel row ─────
+   The tablet layout; the phone (Task 5.6) and landscape (Task 5.9) layouts specialise it. The
+   plot takes 3/5 of the height; under it the legend (or Filter) and the structure share the row,
+   half each, with or without a protein, so a first tap never resizes the plot. Fr tracks: a
+   mode change moves the plot's box once. */
+.workbench:not([data-layout='desktop']) {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.workbench:not([data-layout='desktop']) .wb-body {
+  display: grid;
+  grid-template:
+    'plot plot' minmax(0, 3fr)
+    'side struct' minmax(0, 2fr)
+    / minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.workbench:not([data-layout='desktop']) [data-workbench='plot'] {
+  grid-area: plot;
+  position: relative;
+  inset: auto;
+  min-height: 0;
+}
+
+/* Static and without a width: no slide, no z-index, nothing on the legend's ancestors. */
+.workbench:not([data-layout='desktop']) [data-workbench='sidebar'] {
+  grid-area: side;
+  position: static;
+  width: auto;
+  min-height: 0;
+  border-top: 1px solid var(--ps-border);
+  border-left: 0;
+}
+
+/* The legend or the Filter panel fills its half; a long list scrolls inside it. */
+.workbench:not([data-layout='desktop']) :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
+  flex: none;
+  height: 100%;
+}
+
+/* ── Panel tabs below 951 px: Legend and Filter, where the desktop rail switches them ── */
+
+.wb-panel-tabs {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ps-space-0-5);
+  padding: var(--ps-space-0-5);
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-lg);
+  background: var(--ps-surface-muted);
+}
+
+.workbench[data-layout='desktop'] .wb-panel-tabs {
+  display: none;
+}
+
+.wb-panel-tabs [role='tab'] {
+  min-height: var(--ps-control-sm);
+  padding: 0 var(--ps-space-3);
+  border: 0;
+  border-radius: var(--ps-radius);
+  background: transparent;
+  color: var(--ps-text-muted);
+  font: inherit;
+  font-size: var(--ps-text-sm);
+  font-weight: var(--ps-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wb-panel-tabs [role='tab'][aria-selected='true'] {
+  background: var(--ps-surface);
+  color: var(--ps-text);
+  box-shadow: var(--ps-shadow-sm);
+}
+
+.wb-panel-tabs [role='tab'][aria-disabled='true'] {
+  color: var(--ps-text-faint);
+  cursor: default;
+}
+
+/* The EAT tab's dot: its settings differ from their defaults, as the rail item's dot says. */
+.wb-tab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: var(--ps-space-1);
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-accent);
+  vertical-align: middle;
+}
+
+.wb-panel-tabs [role='tab']:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+}
+
+/* Finger-sized tabs, still inside the 44 px header: the group drops its inner padding. */
+@media (pointer: coarse) {
+  .wb-panel-tabs {
+    padding: 0;
+  }
+
+  .wb-panel-tabs [role='tab'] {
+    min-height: var(--ps-touch-target);
+  }
+}
+
+/* The tabs switch panels below 951 px, so the Filter panel's Close is desktop-only. */
+.workbench:not([data-layout='desktop']) .wb-panel-close {
+  display: none;
+}
+
+.workbench:not([data-layout='desktop']) .wb-panel-title {
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-sm);
+}
+
+/* The selected Filter or EAT tab already names the panel, so its heading stays for screen readers and
+   for the focus moved to it (layout-state.ts), and shows only to a keyboard's focus. */
+.workbench:not([data-layout='desktop']) :is(#wb-filter-title, #wb-eat-title):not(:focus-visible) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Keyboard shortcuts dialog (light DOM slotted into ps-dialog) ─────────── */
+
+.wb-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--ps-space-5) var(--ps-space-6);
+}
+
+.wb-shortcuts h3 {
+  margin: 0 0 var(--ps-space-2);
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-xs);
+  font-weight: var(--ps-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wb-shortcuts dl {
+  display: grid;
+  gap: var(--ps-space-1-5);
+  margin: 0;
+}
+
+.wb-shortcut {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ps-space-3);
+}
+
+.wb-shortcut dd {
+  flex: none;
+  margin: 0;
+}
+
+.wb-shortcut kbd {
+  padding: 0 5px;
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-sm);
+  background: var(--ps-surface-muted);
+  color: var(--ps-text-muted);
+  font: inherit;
+  font-size: var(--ps-text-xs);
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* Import and Export, the tour's "data actions". */
+.wb-data-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-1-5);
+}
+
+/* Between Import/Export and Help: even space on both sides, unlike the wordmark's separator. */
+[data-workbench='app-bar-actions'] > .wb-separator {
+  margin-inline: var(--ps-space-1);
+}
+
+/* Filter (Task 2.6): the count of applied conditions beside the label. */
+.wb-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-accent-tint);
+  color: var(--ps-accent-text);
+  font-size: var(--ps-text-xs);
+  font-weight: var(--ps-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.wb-icon {
+  display: inline-flex;
+}
+
+/* View bar pickers (Task 2.8): Projection, its details and Color by stay together. */
+.wb-view-group {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ps-space-1);
+}
+
+.wb-view-sep {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 var(--ps-space-1);
+  background: var(--ps-border);
+}
+
+/* App bar (Task 2.9): three columns, so search stays centred while both sides fit. A side
+   column never shrinks below its content, so the dataset name (truncated only past 200 px) keeps
+   its width and search narrows toward 200 px first. A plain 1fr would size search to 420 px before
+   the sides and cut the name instead. Search also leaves room for two columns as wide as the wider
+   side (`--wb-app-bar-side`, from use-app-bar-sides.ts), so the sides come out equal and search
+   centred; only once search is down to 200 px does the wider side push it off centre. */
+.workbench header[data-workbench='app-bar'] {
+  display: grid;
+  grid-template-columns:
+    minmax(max-content, 1fr)
+    minmax(
+      200px,
+      clamp(200px, calc(100% - 2 * var(--wb-app-bar-side, 0px) - 2 * var(--ps-space-3)), 420px)
+    )
+    minmax(max-content, 1fr);
+  align-items: center;
+  column-gap: var(--ps-space-3);
+}
+
+/* Sized to its content, not stretched to its column, so use-app-bar-sides.ts can measure it. */
+.wb-app-bar-start {
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-2);
+  min-width: 0;
+}
+
+.workbench [data-workbench='app-bar-center'] {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.workbench [data-workbench='app-bar-actions'] {
+  justify-self: end;
+}
+
+#myProteinSearch {
+  display: block;
+  width: 100%;
+}
+
+/* Import and Export keep their names but show only their icons. */
+@media (max-width: 1099.98px) {
+  #myImportMenu::part(trigger-label),
+  #myExportMenu::part(trigger-label) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .wb-dataset-count {
+    display: none;
+  }
+}
+
+/* Below 951 px: search gives way entirely before anything leaves the window. */
+.workbench:not([data-layout='desktop']) header[data-workbench='app-bar'] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+/* A tablet's dataset name fits "Venom toxins (demo)"; search takes a shorter placeholder for it. */
+.workbench:not([data-layout='desktop']) .wb-dataset-name {
+  max-width: 160px;
+}
+
+/* The Theme button's room on a tablet: the actions drop their separator, so search keeps it. */
+.workbench[data-layout='tablet'] [data-workbench='app-bar-actions'] > .wb-separator {
+  display: none;
+}
+
+/* Touch icon buttons are 8 px wider each, which the separator alone does not pay for: the actions
+   close their gaps (the 40 px targets keep the glyphs apart) and the bar narrows its own. */
+@media (pointer: coarse) {
+  .workbench[data-layout='tablet'] header[data-workbench='app-bar'] {
+    column-gap: var(--ps-space-2);
+  }
+
+  .workbench[data-layout='tablet'] [data-workbench='app-bar-actions'] {
+    gap: 0;
+  }
+}
+
+/* The plot's tool strip: over the plot's top-left corner, never part of the plot's box. */
+#myPlotTools {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
+}
+
+/* ── View bar stages (Task 2.10) ──────────────────────────────────────────────
+   use-view-bar-stage.ts measures the items and sets data-stage on the bar: 0 full; 1 the keys
+   hide (they stay in the accessible names); 2 Contours moves into More; 3 Filter does too, with
+   its divider. Items never shrink, so a measured width is the width the stage needs. */
+[data-workbench='view-bar'] > * {
+  flex: none;
+}
+
+[data-workbench='view-bar']:not([data-stage='0']) #myProjectionSelect::part(key),
+[data-workbench='view-bar']:not([data-stage='0']) #myAnnotationSelect::part(key),
+[data-workbench='view-bar']:not([data-stage='0']) #myContoursMenu::part(key) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+[data-workbench='view-bar']:is([data-stage='2'], [data-stage='3']) #myContoursMenu,
+[data-workbench='view-bar'][data-stage='3'] :is(#myFilterButton, .wb-view-sep),
+[data-workbench='view-bar']:is([data-stage='0'], [data-stage='1']) .wb-more {
+  display: none;
+}
+
+/* The dot sits over the button's corner, so showing it never changes the bar's width. */
+.wb-more {
+  position: relative;
+}
+
+.wb-more-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-accent);
+}
+
+/* ── Sidebar column: the legend over the structure (Task 2.11) ───────────── */
+
+.workbench[data-layout='desktop'] [data-workbench='body'] {
+  /* The legend's height: the stored or previewed fraction of what the divider leaves, at least
+     the legend's minimum, and at most what leaves the structure its own. splitSidebar in
+     layout-geometry.ts is the same rule; the workbench sets these properties from its constants. */
+  --wb-legend-height: clamp(
+    var(--wb-legend-min),
+    calc((100% - var(--wb-divider-height)) * var(--wb-legend-fraction, 0.5)),
+    calc(100% - var(--wb-divider-height) - var(--wb-structure-min))
+  );
+}
+
+.workbench[data-layout='desktop'] :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
+  flex: none;
+  height: calc(100% - 44px);
+}
+
+.workbench[data-layout='desktop'][data-structure='docked']
+  :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
+  height: var(--wb-legend-height);
+}
+
+/* Collapsed (a pick from the EAT panel): the docked structure keeps to its header row, under a
+   border of its own, and the panel above takes the rest of the column. */
+.workbench[data-layout='desktop'][data-structure='docked'][data-structure-collapsed]
+  :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
+  height: calc(100% - 45px);
+}
+
+.wb-structure {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--ps-surface);
+}
+
+/* View structure from the keyboard focuses the section. */
+.wb-structure:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: calc(-1 * var(--ps-focus-width));
+}
+
+.workbench[data-layout='desktop'] .wb-structure {
+  position: absolute;
+  right: var(--wb-rail-width, 0px);
+  bottom: 0;
+  width: var(--wb-sidebar-live-width, var(--wb-sidebar-width));
+  z-index: 3;
+  border-left: 1px solid var(--ps-border);
+}
+
+.workbench[data-layout='desktop'][data-structure='none'] .wb-structure {
+  height: 44px;
+}
+
+.workbench[data-layout='desktop'][data-structure='docked'] .wb-structure {
+  top: var(--wb-legend-height);
+}
+
+.workbench[data-layout='desktop'][data-structure='docked'][data-structure-collapsed] .wb-structure {
+  top: auto;
+  height: 45px;
+  border-top: 1px solid var(--ps-border);
+}
+
+.workbench[data-structure-collapsed] #myStructureViewer::part(header) {
+  cursor: pointer;
+}
+
+.workbench[data-structure-collapsed] .wb-divider,
+.workbench[data-structure-collapsed] #myStructureViewer::part(body),
+.workbench[data-structure-collapsed] #myStructureViewer::part(links) {
+  display: none;
+}
+
+/* The right half of the panel row: the empty footer at its top, or the docked viewer. */
+.workbench:not([data-layout='desktop']) .wb-structure {
+  grid-area: struct;
+  min-height: 0;
+  border-top: 1px solid var(--ps-border);
+  border-left: 1px solid var(--ps-border);
+}
+
+.wb-divider {
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: var(--wb-divider-height);
+  box-sizing: border-box;
+  border-top: 1px solid var(--ps-border);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.wb-divider::before {
+  content: '';
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ps-border-strong);
+}
+
+.wb-divider:hover::before,
+.wb-divider:focus-visible::before {
+  background: var(--ps-text-muted);
+}
+
+.wb-divider:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: calc(-1 * var(--ps-focus-width));
+}
+
+.workbench:not([data-layout='desktop']) .wb-divider,
+.workbench:not([data-structure='docked']) .wb-divider {
+  display: none;
+}
+
+.wb-structure-empty {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-2);
+  height: 44px;
+  box-sizing: border-box;
+  padding: 0 var(--ps-space-2) 0 var(--ps-space-3);
+  color: var(--ps-text-muted);
+}
+
+.workbench[data-layout='desktop'] .wb-structure-empty {
+  border-top: 1px solid var(--ps-border);
+}
+
+.wb-structure-empty-title {
+  color: var(--ps-text);
+  font-weight: var(--ps-weight-semibold);
+}
+
+.wb-structure-empty-hint {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--ps-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench:not([data-structure='none']) .wb-structure-empty {
+  display: none;
+}
+
+/* Outer rules beat the viewer's :host rules: no card chrome, and it fills the section. */
+.workbench #myStructureViewer {
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.workbench[data-structure='none'] #myStructureViewer {
+  display: none;
+}
+
+/* One 44 px header row, docked and floating; the resource links wrap in their own row below. */
+.workbench #myStructureViewer::part(header) {
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+  border-radius: 0;
+}
+
+/* The links row lines up with the header's 12 px start. */
+.workbench #myStructureViewer::part(links) {
+  padding-inline: var(--ps-space-3) var(--ps-space-1);
+}
+
+/* ── Structure sheet on phones (Task 5.8, design decision 17) ───────────────
+   The structure rises from the bottom edge, folded to its grip and header (56 px) so the plot and
+   a pinned tooltip stay in view; expanded it takes half the screen at most. It folds by transform,
+   never by height or display: on phones the viewer keeps its box, so Mol* never draws into an
+   empty canvas and a fold costs no resize, and the plot's box never changes (decision 4). The
+   transform sits on .wb-structure, no ancestor of the legend or the bars. On its side (Task 5.9)
+   the folded body is 0 px tall and Mol* resizes on expand. */
+.workbench:is([data-layout='phone'], [data-layout='landscape']) {
+  --wb-sheet-folded: 56px;
+}
+
+.wb-sheet-grip {
+  display: none;
+}
+
+.workbench:is([data-layout='phone'], [data-layout='landscape']) .wb-sheet-grip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  height: 12px;
+  cursor: pointer;
+}
+
+.wb-sheet-grip::before {
+  content: '';
+  width: 36px;
+  height: 4px;
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-border-strong);
+}
+
+/* Folded, only the grip and the header are on screen: the rest leaves the Tab order and the
+   accessibility tree, with no change to the viewer's box. */
+.workbench:is([data-layout='phone'], [data-layout='landscape'])[data-sheet='folded']
+  #myStructureViewer::part(body),
+.workbench:is([data-layout='phone'], [data-layout='landscape'])[data-sheet='folded']
+  #myStructureViewer::part(links) {
+  visibility: hidden;
+}
+
+/* Over the plot and the panel, under the kit's top layer and the toasts. No border: the folded
+   56 px are exactly the grip and the header. */
+.workbench[data-layout='phone'] .wb-structure {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 6;
+  height: min(50svh, 416px);
+  padding-bottom: env(safe-area-inset-bottom);
+  border: 0;
+  border-radius: var(--ps-radius-lg) var(--ps-radius-lg) 0 0;
+  box-shadow: var(--ps-shadow-lg);
+  transform: translateY(calc(100% - var(--wb-sheet-folded)));
+  transition: transform var(--ps-duration) var(--ps-ease);
+}
+
+.workbench[data-layout='phone'][data-structure='none'] .wb-structure {
+  display: none;
+}
+
+.workbench[data-layout='phone'][data-sheet='expanded'] .wb-structure {
+  transform: none;
+}
+
+/* Expanded, the sheet covers the whole panel (on its side, the whole legend column): its tabs
+   and fold leave the Tab order (no box change, so no plot resize). */
+.workbench:is([data-layout='phone'], [data-layout='landscape'])[data-sheet='expanded'] #wb-sidebar {
+  visibility: hidden;
+}
+
+/* The sheet rules above outrank the reduced-motion rule further down (its comment says why the
+   transition goes): keyed as specifically, the sheet moves at once. */
+@media (prefers-reduced-motion: reduce) {
+  .workbench:is([data-layout='phone'], [data-layout='landscape']) .wb-structure {
+    transition-property: none;
+  }
+}
+
+/* The folded sheet covers the panel's last 56 px, so the panel keeps them free: the tabs and the
+   last rows stay reachable. Unfolded that is padding inside the same height (the phone sidebar is
+   border-box, no plot resize); folded the panel grows by the sheet's height, one plot resize. */
+.workbench[data-layout='phone']:not([data-structure='none']) #wb-sidebar {
+  padding-bottom: var(--wb-sheet-folded);
+}
+
+/* Folded with a structure: the header and the sheet's 56 px. Through the variable, so the toasts
+   (Task 5.6) stay above the folded sheet; 5.6's #wb-sidebar { height: var(--wb-panel-height) }
+   applies it. */
+.workbench[data-layout='phone'][data-panel-folded]:not([data-structure='none']) {
+  --wb-panel-height: calc(45px + var(--wb-sheet-folded));
+}
+
+/* ── Phone on its side (Task 5.9, design decision 17, mockup frame 7) ───────
+   A landscape phone (≤ 500 px tall, ≤ 950 px wide) has one 44 px bar: the app bar and the view
+   bar side by side, in DOM and Tab order. Below it the body is exactly one screen tall, so the page
+   scrolls once, past the bar, to the plot beside the legend column. */
+.workbench[data-layout='landscape'] {
+  --wb-app-bar-height: 44px;
+  --wb-view-bar-height: 44px;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: var(--wb-app-bar-height) 100dvh;
+  height: auto;
+  min-height: 100dvh;
+  /* The page scrolls down, never sideways: a closed card laid out past the right edge (the
+     projection details) would otherwise widen a phone's layout viewport. */
+  overflow: clip visible;
+}
+
+/* The app bar holds the wordmark, the dataset and the search button; Import, Export, Help and
+   the count are in the More sheet or the dataset's label. */
+.workbench[data-layout='landscape'] header[data-workbench='app-bar'] {
+  grid-column: 1;
+  grid-row: 1;
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-1);
+  min-width: 0;
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+}
+
+/* As on phones (Task 5.4): the actions leave the bar but stay rendered, because a popover inside
+   a display: none ancestor never shows. The dataset name opens Import, the More sheet Export, and
+   the Help and Theme menus' ps-menus stay for the same reason. */
+.workbench[data-layout='landscape'] [data-workbench='app-bar-actions'] {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.workbench[data-layout='landscape']
+  [data-workbench='app-bar-actions']
+  > :not(.wb-data-actions, ps-menu),
+.workbench[data-layout='landscape'] #myImportMenu::part(trigger),
+.workbench[data-layout='landscape'] #myExportMenu::part(trigger),
+.workbench[data-layout='landscape'] .wb-dataset-count {
+  display: none;
+}
+
+/* The search button opens search over the whole row; Close search ends it (Task 5.4's controls). */
+.workbench[data-layout='landscape'] :is(.wb-search-toggle, .wb-search-close) {
+  display: inline-flex;
+}
+
+.workbench[data-layout='landscape'] header[data-search-open] #myProteinSearch {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.workbench[data-layout='landscape'] .wb-dataset-name {
+  max-width: 16vw;
+}
+
+/* Search opens over the whole row, wordmark to More; the root is its containing block. Its
+   z-index lifts it over the view bar's positioned More button. */
+.workbench[data-layout='landscape']
+  header:not([data-search-open])
+  [data-workbench='app-bar-center'] {
+  display: none;
+}
+
+.workbench[data-layout='landscape'] header[data-search-open] [data-workbench='app-bar-center'] {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-2);
+  height: var(--wb-app-bar-height);
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+  border-bottom: 1px solid var(--ps-border);
+  background: var(--ps-surface);
+}
+
+/* The view bar holds Projection, its details, Color by and More (stage 3: Contours and Filter are
+   in More); it never wraps, and the pickers give up width first. */
+.workbench[data-layout='landscape'] [data-workbench='view-bar'] {
+  grid-column: 2;
+  grid-row: 1;
+  flex-wrap: nowrap;
+  height: var(--wb-view-bar-height);
+  min-width: 0;
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-2);
+}
+
+/* The pickers shrink with an ellipsis, as on phones (the Phone bars section). */
+.workbench[data-layout='landscape'] .wb-view-group {
+  flex-wrap: nowrap;
+}
+
+.workbench[data-layout='landscape'] .wb-view-sep {
+  display: none;
+}
+
+.workbench[data-layout='landscape'] .wb-more {
+  margin-left: auto;
+}
+
+/* One screen: the plot on the left over both rows, the legend column on the right with the
+   folded structure as its last row. */
+.workbench[data-layout='landscape'] .wb-body {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: grid;
+  grid-template-areas:
+    'plot side'
+    'plot struct';
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 32%);
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.workbench[data-layout='landscape'] [data-workbench='plot'] {
+  grid-area: plot;
+}
+
+/* The legend header fits the column: three tabs, the info, sort and settings buttons in 240 px. */
+.workbench[data-layout='landscape'] .wb-panel-tabs [role='tab'] {
+  padding: 0 var(--ps-space-1);
+}
+
+.workbench[data-layout='landscape'] #myLegend::part(header) {
+  padding-left: var(--ps-space-1);
+}
+
+/* Mockup frame 7: the column is for reading the names. The header drops the title (Color by in
+   the bar names the annotation), and a row keeps only its eye: with the handle and "⋯" at 40 px
+   each a 240 px row left 3 to 9 characters of name. Reorder and colour and shape stay upright. */
+.workbench[data-layout='landscape'] #myLegend::part(title),
+.workbench[data-layout='landscape'] #myLegend::part(row-handle),
+.workbench[data-layout='landscape'] #myLegend::part(row-menu) {
+  display: none;
+}
+
+.workbench[data-layout='landscape'] #wb-sidebar {
+  grid-area: side;
+  min-height: 0;
+  border-top: 0;
+  border-left: 1px solid var(--ps-border);
+}
+
+.workbench[data-layout='landscape'] .wb-structure {
+  grid-area: struct;
+  border-top: 1px solid var(--ps-border);
+  border-left: 1px solid var(--ps-border);
+}
+
+.workbench[data-layout='landscape'][data-structure='none'] .wb-structure {
+  display: none;
+}
+
+/* Folded: the grip and the header (5.8 hides the rest), plus the 1 px top border (border-box). */
+.workbench[data-layout='landscape'][data-sheet='folded'] .wb-structure {
+  height: calc(var(--wb-sheet-folded) + 1px);
+}
+
+/* Expanded: the right half of the one-screen body under the bar, over the plot's right part. It
+   leaves the grid (grid-area auto, so .wb-body is its containing block, not its grid area), so the
+   legend takes the row back; the plot's box does not change. Mol* resizes here, which is fine.
+   Absolute, not fixed: at scroll 0 a fixed sheet would cover the bar's More and Color by. */
+.workbench[data-layout='landscape'][data-sheet='expanded'] .wb-structure {
+  grid-area: auto;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  width: 50vw;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 0;
+  box-shadow: var(--ps-shadow-lg);
+}
+
+/* ── Rail, collapse and the sidebar edge (Task 2.12) ──────────────────────── */
+
+/* The sidebar slides out past the rail; nothing may scroll it into view. */
+.workbench[data-layout='desktop'] [data-workbench='body'] {
+  overflow: clip;
+}
+
+/* A z-index would make the sidebar a stacking context and trap the legend's position: fixed
+   dialogs under the structure, the edge and the rail. It is lifted over a floating card only while
+   it slides or its edge is dragged, when no legend dialog is open. */
+.workbench[data-sidebar='opening'] #wb-sidebar,
+.workbench[data-sidebar='closing'] #wb-sidebar,
+.workbench[data-sidebar-resizing] #wb-sidebar {
+  z-index: 2;
+}
+
+/* Collapsed: laid out at full size (the legend and Mol* keep theirs), hidden and inert. A floating
+   card stays over the plot. */
+.workbench[data-layout='desktop'][data-sidebar='collapsed'] #wb-sidebar,
+.workbench[data-layout='desktop'][data-sidebar='collapsed']:not([data-structure='floating'])
+  .wb-structure {
+  visibility: hidden;
+}
+
+.wb-sidebar-edge {
+  display: none;
+}
+
+.workbench[data-layout='desktop'][data-sidebar='open'] .wb-sidebar-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(var(--wb-rail-width) + var(--wb-sidebar-live-width) - 4px);
+  z-index: 4;
+  display: block;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.wb-sidebar-edge::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 1px;
+  width: 5px;
+  height: 36px;
+  margin-top: -18px;
+  border-radius: 3px;
+  background: var(--ps-border-strong);
+}
+
+.wb-sidebar-edge:hover::before,
+.wb-sidebar-edge:focus-visible::before {
+  background: var(--ps-text-muted);
+}
+
+.wb-sidebar-edge:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+}
+
+.wb-rail {
+  display: none;
+}
+
+.workbench[data-layout='desktop'] .wb-rail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ps-space-1);
+  width: var(--wb-rail-width);
+  box-sizing: border-box;
+  padding: var(--ps-space-2) 0;
+  border-left: 1px solid var(--ps-border);
+  background: var(--ps-surface-muted);
+}
+
+.wb-rail-item {
+  position: relative;
+  display: inline-flex;
+}
+
+.wb-rail-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-accent);
+  box-shadow: 0 0 0 2px var(--ps-surface-muted);
+  pointer-events: none;
+}
+
+.wb-rail-divider {
+  flex: none;
+  width: 20px;
+  height: 1px;
+  margin-block: var(--ps-space-1);
+  background: var(--ps-border);
+}
+
+/* ── The floating structure card (Task 2.13) ──────────────────────────────── */
+
+.workbench[data-layout='desktop'][data-structure='floating']
+  :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
+  height: 100%;
+}
+
+/* Above the plot; under the sidebar while it slides or is resized over the plot area (Task 2.12
+   lifts it then), and under the kit's top layer. */
+.workbench[data-layout='desktop'][data-structure='floating'] .wb-structure {
+  top: var(--wb-float-y);
+  right: auto;
+  bottom: auto;
+  left: var(--wb-float-x);
+  z-index: 1;
+  width: var(--wb-float-w);
+  height: var(--wb-float-h);
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-lg);
+  background: var(--ps-surface-raised);
+  box-shadow: var(--ps-shadow-lg);
+}
+
+/* Hidden by the rail's Structure button: laid out as before (Mol* keeps its size), not painted
+   and inert; a docked section leaves its room to the legend or the Filter panel. */
+.workbench[data-layout='desktop'][data-structure-hidden]
+  :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
+  height: 100%;
+}
+
+.workbench[data-layout='desktop'][data-structure-hidden] .wb-structure {
+  visibility: hidden;
+}
+
+.workbench[data-structure='floating'] #myStructureViewer::part(header) {
+  cursor: grab;
+  /* A touch drag moves the card instead of panning the page. */
+  touch-action: none;
+  user-select: none;
+}
+
+.wb-float-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.wb-float-grip::before {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border-right: 2px solid var(--ps-border-strong);
+  border-bottom: 2px solid var(--ps-border-strong);
+  border-bottom-right-radius: 2px;
+}
+
+.wb-float-grip:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: calc(-1 * var(--ps-focus-width));
+}
+
+/* A finger needs a 40 px target on the drag handles too, e.g. an iPad in landscape (design
+   decision 17). The divider keeps its 9 px of layout (DIVIDER_HEIGHT) and takes the presses
+   15 px above and below it through a ::after; the sidebar edge reaches further over the plot than over the
+   sidebar, so the legend's left edge stays tappable. */
+@media (pointer: coarse) {
+  .wb-divider {
+    position: relative;
+    z-index: 1;
+  }
+
+  .wb-divider::after {
+    content: '';
+    position: absolute;
+    inset: calc((var(--wb-divider-height) - var(--ps-touch-target)) / 2) 0;
+  }
+
+  /* The docked section would clip the half that reaches up over the legend. */
+  .workbench[data-layout='desktop'][data-structure='docked'] .wb-structure {
+    overflow: clip visible;
+  }
+
+  .workbench[data-layout='desktop'][data-sidebar='open'] .wb-sidebar-edge {
+    right: calc(var(--wb-rail-width) + var(--wb-sidebar-live-width) - 12px);
+    width: var(--ps-touch-target);
+  }
+
+  /* The pill stays where it was, on the sidebar's border. */
+  .wb-sidebar-edge::before {
+    left: auto;
+    right: 10px;
+  }
+
+  .wb-float-grip {
+    width: var(--ps-touch-target);
+    height: var(--ps-touch-target);
+  }
+}
+
+/* index.css answers reduced motion with a 0.01 ms transition-duration on every element, which
+   makes any property change a transition: the plot's box would follow its inset a frame late.
+   The boxes that move with the sidebar change at once instead (still one resize per change). */
+@media (prefers-reduced-motion: reduce) {
+  [data-workbench='plot'],
+  #wb-sidebar,
+  .wb-structure,
+  .wb-sidebar-edge {
+    transition-property: none;
+  }
+}
+
+/* ── Notifications (Task 4.8, decision 15) ───────────────────────────────── */
+
+/* Sonner's palette, from the tokens. WorkbenchToaster keeps Sonner on theme="light"; the tokens
+   carry the page's theme, so this rule matches any Sonner theme, and outranks Sonner's own theme
+   rule (0,3,0 against 0,2,0) whatever order the sheets load in. */
+.wb-body [data-sonner-toaster][data-sonner-theme] {
+  --normal-bg: var(--ps-surface-raised);
+  --normal-bg-hover: var(--ps-surface-hover);
+  --normal-border: var(--ps-border);
+  --normal-border-hover: var(--ps-border-strong);
+  --normal-text: var(--ps-text);
+  --border-radius: var(--ps-radius-lg);
+  font-family: var(--ps-font-sans);
+}
+
+/* Centred over the plot, not the window: the plot ends where the sidebar and its rail begin
+   (--wb-plot-right holds both). Below 951 px the plot is as wide as the window. */
+.workbench[data-layout='desktop'] .wb-body [data-sonner-toaster][data-x-position='center'] {
+  left: calc((100vw - var(--wb-plot-right)) / 2);
+}
+
+/* Above the selection bar while it shows: its 38 px and a 12 px gap. */
+.wb-body:has(#mySelectionBar:not([hidden])) [data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--offset-bottom) + 50px);
+}
+
+.wb-body [data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
+  box-shadow: var(--ps-shadow-md);
+  font-size: var(--ps-text-sm);
+}
+
+.wb-body [data-sonner-toaster] [data-sonner-toast] [data-title] {
+  font-weight: var(--ps-weight-semibold);
+}
+
+.wb-body [data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: var(--ps-text-muted);
+}
+
+/* Actions look like the kit's secondary button. */
+.wb-body [data-sonner-toaster] [data-sonner-toast] :is([data-button], [data-cancel]) {
+  height: var(--ps-control-sm);
+  padding: 0 var(--ps-space-2);
+  border: 1px solid var(--ps-border-control);
+  border-radius: var(--ps-radius);
+  background: var(--ps-surface);
+  color: var(--ps-text);
+  font-size: var(--ps-text-sm);
+  font-weight: var(--ps-weight-medium);
+}
+
+.wb-body [data-sonner-toaster] [data-sonner-toast] :is([data-button], [data-cancel]):hover {
+  background: var(--ps-surface-hover);
+}
+
+.wb-body
+  [data-sonner-toaster]
+  [data-sonner-toast]
+  :is([data-button], [data-cancel], [data-close-button]):focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+  box-shadow: none;
+}
+
+/* The close button in the top-right corner. */
+.wb-body [data-sonner-toaster][dir='ltr'] {
+  --toast-close-button-start: unset;
+  --toast-close-button-end: 0;
+  --toast-close-button-transform: translate(35%, -35%);
+}
+
+.wb-body [data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  border-color: var(--ps-border);
+  background: var(--ps-surface-raised);
+  color: var(--ps-text-muted);
+}
+
+/* Sonner's own hover (its light --gray2 and --gray5) sits at 0,5,0; this one at 0,6,0. */
+.wb-body [data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-close-button]:hover {
+  border-color: var(--ps-border-strong);
+  background: var(--ps-surface-hover);
+  color: var(--ps-text);
+}
+
+/* ── The recovery banner (Task 4.8) ──────────────────────────────────────── */
+
+/* In the plot area, top-centre under the tool strip's row; it never takes focus. Over the empty
+   state (4), which shows with it after a failed reopen: its buttons are the way out. */
+#protspace-recovery-banner {
+  position: absolute;
+  z-index: 5;
+  top: 56px;
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ps-space-2);
+  box-sizing: border-box;
+  width: min(560px, calc(100% - 2 * var(--ps-space-3)));
+  padding: var(--ps-space-3);
+  border: 1px solid var(--ps-border);
+  border-left: 3px solid var(--ps-warning);
+  border-radius: var(--ps-radius-lg);
+  background: var(--ps-surface-raised);
+  box-shadow: var(--ps-shadow-md);
+  color: var(--ps-text);
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-sm);
+  line-height: var(--ps-leading-normal);
+}
+
+.wb-recovery-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ps-space-2);
+}
+
+.wb-recovery-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--ps-text);
+  font-size: var(--ps-text-base);
+  font-weight: var(--ps-weight-semibold);
+}
+
+.wb-recovery-body {
+  margin: 0;
+  color: var(--ps-text-muted);
+}
+
+.wb-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ps-space-2);
+}
+
+/* ── The confirmation dialog's text (confirm-dialog.ts) ──────────────────── */
+
+.wb-confirm-body {
+  margin: 0;
+  color: var(--ps-text);
+  font-size: var(--ps-text-base);
+  line-height: var(--ps-leading-normal);
+}
+
+/* ── Loading, the empty plot and the drop area (Task 4.12) ─────────────────── */
+
+/* The overlay is appended to <body>, outside the workbench; it reads the same tokens. It stays at
+   9999, over every shell z-index. */
+.ps-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--ps-scrim);
+  color: var(--ps-text);
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-base);
+  line-height: var(--ps-leading-tight);
+}
+
+.ps-loading__card {
+  box-sizing: border-box;
+  width: min(360px, 100%);
+  padding: var(--ps-space-5) var(--ps-space-6);
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-lg);
+  background: var(--ps-surface-raised);
+  box-shadow: var(--ps-shadow-lg);
+  text-align: center;
+}
+
+.ps-loading__title {
+  margin: 0;
+  font-size: var(--ps-text-md);
+  font-weight: var(--ps-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ps-loading__bar {
+  height: 4px;
+  margin: var(--ps-space-3) 0;
+  overflow: hidden;
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-surface-muted);
+}
+
+.ps-loading__fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ps-accent);
+  transition: width var(--ps-duration-fast) var(--ps-ease);
+}
+
+.ps-loading__detail {
+  min-height: 1lh;
+  margin: 0;
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-sm);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ps-loading__note {
+  margin-top: var(--ps-space-3);
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-sm);
+  line-height: var(--ps-leading-normal);
+}
+
+.ps-loading__note a {
+  margin-inline-start: var(--ps-space-1);
+  border-radius: var(--ps-radius-sm);
+  color: var(--ps-accent-text);
+}
+
+/* As ps-button secondary: a native button, so the e2e and the FASTA flow keep its id. */
+.ps-loading__cancel {
+  height: var(--ps-control-md);
+  margin-top: var(--ps-space-5);
+  padding: 0 var(--ps-space-3);
+  border: 1px solid var(--ps-border-strong);
+  border-radius: var(--ps-radius);
+  background: var(--ps-surface);
+  color: var(--ps-text);
+  font: inherit;
+  font-weight: var(--ps-weight-medium);
+  cursor: pointer;
+  transition: background-color var(--ps-duration-fast) var(--ps-ease);
+}
+
+.ps-loading__cancel:hover {
+  background: var(--ps-surface-hover);
+}
+
+.ps-loading__cancel:focus-visible,
+.ps-loading__note a:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-loading__fill,
+  .ps-loading__cancel {
+    transition: none;
+  }
+}
+
+/* Over the plot, under its tool strip (5); it never changes #myPlot's box. The plot under it
+   stays reachable: only the text and buttons take the pointer. */
+.wb-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ps-space-2);
+  padding: var(--ps-space-6);
+  text-align: center;
+  pointer-events: none;
+}
+
+.wb-empty[hidden] {
+  display: none;
+}
+
+/* With the recovery banner up, the invitation sits at the bottom rather than under the banner. */
+.wb-plot:has(> #protspace-recovery-banner) > .wb-empty {
+  justify-content: flex-end;
+}
+
+.wb-empty > * {
+  pointer-events: auto;
+}
+
+.wb-empty-title {
+  margin: 0;
+  color: var(--ps-text);
+  font-size: var(--ps-text-lg);
+  font-weight: var(--ps-weight-semibold);
+}
+
+.wb-empty-note {
+  max-width: 360px;
+  margin: 0;
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-sm);
+  line-height: var(--ps-leading-normal);
+}
+
+.wb-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--ps-space-2);
+  margin-top: var(--ps-space-2);
+}
+
+/* Over the plot and the sidebar while a file is dragged over the workbench. It takes no pointer
+   events, so the drop lands on what is under it and the workbench's capture listener takes it. */
+.wb-drop-area {
+  position: absolute;
+  inset: var(--ps-space-2);
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--ps-accent);
+  border-radius: var(--ps-radius-lg);
+  background: color-mix(in srgb, var(--ps-accent-tint) 85%, transparent);
+  color: var(--ps-accent-text);
+  font-size: var(--ps-text-lg);
+  font-weight: var(--ps-weight-semibold);
+  pointer-events: none;
+}
+
+.workbench[data-dragging] .wb-drop-area {
+  display: flex;
+}
+
+/* ── Phone bars (≤ 640 px, Task 5.4, decision 17) ────────────────────────────
+   The app bar keeps the wordmark, the dataset and a search button; search shows over the bar
+   while it is open (data-search-open). The actions leave the bar: the More sheet reaches them.
+   Their element stays rendered, only out of the grid and empty: a popover inside a display: none
+   ancestor never shows, and the Import and Export menus open from the dataset name and More. The
+   view bar is fixed at stage 3: Projection, its details, Color by and an icon-only More. */
+.workbench[data-layout='phone'] {
+  --wb-view-bar-height: 48px;
+}
+
+.workbench[data-layout='phone'] header[data-workbench='app-bar'] {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--ps-space-2);
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+}
+
+.workbench[data-layout='phone'] [data-workbench='app-bar-actions'] {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* The Help and Theme menus' ps-menus stay: a popover host never gets a display: none ancestor. */
+.workbench[data-layout='phone']
+  [data-workbench='app-bar-actions']
+  > :not(.wb-data-actions, ps-menu),
+.workbench[data-layout='phone'] #myImportMenu::part(trigger),
+.workbench[data-layout='phone'] #myExportMenu::part(trigger),
+.workbench[data-layout='phone'] .wb-app-bar-start > .wb-separator {
+  display: none;
+}
+
+.workbench[data-layout='phone'] [data-workbench='home'] img {
+  height: 18px;
+}
+
+/* The name ends in an ellipsis before anything leaves the bar, and keeps a word of itself. */
+.workbench[data-layout='phone'] .wb-dataset-name {
+  min-width: 48px;
+  max-width: 45vw;
+}
+
+.workbench[data-layout='phone'] [data-workbench='app-bar-center'] {
+  display: none;
+}
+
+.workbench[data-layout='phone'] header[data-search-open] [data-workbench='app-bar-center'] {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-1);
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+  background: var(--ps-surface);
+}
+
+.workbench[data-layout='phone'] header[data-search-open] #myProteinSearch {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wb-search-toggle,
+.wb-search-close {
+  display: none;
+}
+
+.workbench[data-layout='phone'] :is(.wb-search-toggle, .wb-search-close) {
+  display: inline-flex;
+}
+
+.workbench[data-layout='phone'] [data-workbench='view-bar'][data-stage] {
+  flex-wrap: nowrap;
+  height: var(--wb-view-bar-height);
+  min-height: 0;
+  padding: 0 var(--ps-space-2);
+}
+
+.workbench[data-layout='phone']
+  [data-workbench='view-bar']
+  :is(#myContoursMenu, .wb-view-sep, #myFilterButton) {
+  display: none;
+}
+
+/* Projection and Color by shrink, ending in an ellipsis, so the bar never overflows. */
+.workbench:is([data-layout='phone'], [data-layout='landscape'])
+  [data-workbench='view-bar']
+  .wb-view-group,
+.workbench:is([data-layout='phone'], [data-layout='landscape'])
+  :is(#myProjectionSelect, #myAnnotationSelect) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.workbench[data-layout='phone'] [data-workbench='view-bar'] .wb-more {
+  margin-left: auto;
+}
+
+/* Icon-only: the button keeps its name, "More view options". */
+.workbench[data-layout='phone'] .wb-more-label {
+  display: none;
+}
+
+/* Finger-sized app-bar targets wherever the pointer is coarse (design decision 17). */
+@media (pointer: coarse) {
+  [data-workbench='home'],
+  .wb-dataset {
+    min-height: var(--ps-touch-target);
+  }
+
+  .wb-dataset {
+    align-items: center;
+  }
+
+  .wb-icon-link {
+    width: var(--ps-touch-target);
+    height: var(--ps-touch-target);
+  }
+
+  /* As tall as the icon buttons beside it; the trigger is control-md (32 px) on its own. */
+  protspace-import-menu::part(trigger) {
+    height: var(--ps-touch-target);
+  }
+}
+
+/* ── The More sheet (Task 5.5, decision 17; light DOM in a ps-dialog size="sheet") ──
+   Rows of 48 px, edge to edge: a 16 px icon, the label, then a value or a chevron. Help &
+   shortcuts unfolds its three entries below itself, indented to the labels. */
+.wb-sheet-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.wb-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-3);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  /* 16 px on the left, as in the mockup: the scale has no 16 px step. */
+  padding: 0 var(--ps-space-3) 0 16px;
+  border: 0;
+  border-top: 1px solid var(--ps-border);
+  background: transparent;
+  color: var(--ps-text);
+  font: inherit;
+  font-weight: var(--ps-weight-medium);
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.wb-sheet-rows > .wb-sheet-row:first-child {
+  border-top: 0;
+}
+
+.wb-sheet-row-static {
+  cursor: default;
+}
+
+:is(button, a).wb-sheet-row:hover {
+  background: var(--ps-surface-hover);
+}
+
+.wb-sheet-row:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: calc(-1 * var(--ps-focus-width));
+}
+
+.wb-sheet-icon,
+.wb-sheet-chevron {
+  flex: none;
+  color: var(--ps-text-muted);
+}
+
+.wb-sheet-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wb-sheet-value {
+  flex: none;
+  color: var(--ps-text-muted);
+  font-weight: 400;
+}
+
+.wb-sheet-row ps-segmented {
+  flex: none;
+}
+
+/* The entries under Help & shortcuts line up with the labels above: 16 + 16 icon + 12 gap. */
+.wb-sheet-subrow {
+  padding-left: 44px;
+  font-weight: 400;
+}
+
+/* ── Phone body (≤ 640 px, Task 5.6, decision 17) ────────────────────────────
+   One screen that never scrolls: the plot fills what the bars and the bottom panel leave. The
+   panel holds the Legend and Filter tabs, the same height for both (a tab switch never resizes
+   the plot), and folds to its 44 px header (one plot resize, not animated). --wb-panel-height is
+   its height, which the toasts stand on. */
+.workbench[data-layout='phone'] {
+  --wb-panel-height: clamp(144px, 32svh, 288px);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* The header and the panel's top border. */
+.workbench[data-layout='phone'][data-panel-folded] {
+  --wb-panel-height: 45px;
+}
+
+.workbench[data-layout='phone'] .wb-body {
+  display: grid;
+  grid-template: 'plot' minmax(0, 1fr) 'side' auto / minmax(0, 1fr);
+}
+
+.workbench[data-layout='phone'] [data-workbench='plot'] {
+  grid-area: plot;
+  position: relative;
+  inset: auto;
+}
+
+.workbench[data-layout='phone'] #wb-sidebar {
+  grid-area: side;
+  position: static;
+  width: auto;
+  height: var(--wb-panel-height);
+  box-sizing: border-box;
+  border-left: 0;
+  border-top: 1px solid var(--ps-border);
+}
+
+.workbench[data-layout='phone'] :is(#myLegend, #wb-filter-panel, #wb-eat-panel) {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+
+/* Folded: the header only. The list and the builder leave the tab order; the rest is clipped. */
+.workbench[data-layout='phone'][data-panel-folded] #wb-sidebar {
+  overflow: hidden;
+}
+
+.workbench[data-layout='phone'][data-panel-folded] #myLegend::part(items),
+.workbench[data-layout='phone'][data-panel-folded] .wb-filter-body,
+.workbench[data-layout='phone'][data-panel-folded] .wb-eat-body {
+  display: none;
+}
+
+/* The Filter cards get what the short panel has: a slimmer frame round them. */
+.workbench[data-layout='phone'] .wb-filter-body {
+  padding: var(--ps-space-2) var(--ps-space-3);
+}
+
+/* The tabs lead the header; the annotation's name follows them, small and muted. */
+.workbench[data-layout='phone'] #myLegend::part(title) {
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-xs);
+  font-weight: 400;
+}
+
+.wb-panel-fold {
+  display: none;
+}
+
+.workbench[data-layout='phone'] .wb-panel-fold {
+  display: inline-flex;
+}
+
+.workbench[data-layout='phone'] .wb-panel-header > .wb-panel-fold {
+  margin-left: auto;
+}
+
+/* Toasts stand 12 px above the panel (and the folded structure sheet, which --wb-panel-height
+   carries), and 12 px above the selection bar (12 px margin, the bar, 12 px gap) while it shows.
+   Sonner's toaster is position: fixed to the window. */
+.workbench[data-layout='phone'] .wb-body [data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--wb-panel-height) + 12px);
+}
+
+.workbench[data-layout='phone']
+  .wb-body:has(#mySelectionBar:not([hidden]))
+  [data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--wb-panel-height) + 24px + var(--wb-selection-bar-height));
+}

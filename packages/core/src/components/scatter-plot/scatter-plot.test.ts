@@ -180,7 +180,7 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     expect(lasso.ids).toBe(events[0].detail.proteinIds);
     expect(Array.from(lasso.mask)).toEqual([0, 0, 0, 1, 1, 1]);
     lasso.mask[0] = 1;
-    // The control bar sets the selection back as a copy.
+    // The selection controller sets the selection back as a copy.
     sp.selectedProteinIds = [...events[0].detail.proteinIds];
     const marks = sp._style.model().markedSlots(sp.data!.protein_ids, originalIndices, 6);
     expect(Array.from(marks)).toEqual([1, 1, 1, 0, 0, 1]);

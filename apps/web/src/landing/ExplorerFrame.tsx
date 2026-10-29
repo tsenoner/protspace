@@ -8,7 +8,10 @@ import { cn } from '@/lib/utils';
 import type { Category } from './landing-data';
 import { NEUTRAL_COLOR } from './ScatterCanvas';
 
-/** Surface tokens copied from packages/core/src/styles/tokens.ts. */
+/**
+ * The explorer's light surface colours as plain values: the landing page never imports core, whose
+ * tokens live in packages/core/src/styles/theme.ts.
+ */
 const UI = {
   page: '#f4f4f4',
   border: '#d9e2ec',

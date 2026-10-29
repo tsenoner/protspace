@@ -53,7 +53,8 @@ function setup(data = makeData()) {
   const controller = createInteractionController({
     plotElement: plotElement as never,
     legendElement: { autoSync: true, forceSync: vi.fn() } as never,
-    structureViewer: { loadProtein: vi.fn() } as never,
+    requestStructure: vi.fn(),
+    showSelection: vi.fn(),
   });
   return { controller, currentView, plotElement };
 }
@@ -167,5 +168,80 @@ describe('interaction controller EAT provenance', () => {
     controller.handlePlotDataChange();
 
     expect(plotElement.setProvenanceConnectors).not.toHaveBeenCalled();
+  });
+
+  it('traceProtein draws without a click, keeps the lines across a data change, and reads a source in source mode', () => {
+    const { controller, currentView, plotElement } = setup(makeFanoutData());
+
+    expect(controller.traceProtein('query-3', 4)).toBe(true);
+    expect(plotElement.setProvenanceConnectors).toHaveBeenLastCalledWith({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'query-3', confidence: 1 - 3 / 25 }],
+      totalCandidates: 1,
+      unavailableCandidates: 0,
+    });
+
+    expect(controller.traceProtein('source', 0, 'source')).toBe(true);
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].totalCandidates).toBe(24);
+    currentView.delete(5);
+    controller.handlePlotDataChange();
+    // The traced source is re-resolved against the narrowed view.
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toMatchObject({
+      totalCandidates: 24,
+      unavailableCandidates: 1,
+    });
+  });
+
+  it('traceProtein draws nothing with EAT off or without provenance', () => {
+    const { controller, plotElement } = setup();
+    plotElement.eatOverlayEnabled = false;
+    expect(controller.traceProtein('query', 1)).toBe(false);
+    expect(plotElement.setProvenanceConnectors).not.toHaveBeenCalled();
+    plotElement.eatOverlayEnabled = true;
+    // `query` lent nothing: as a source it has no lines.
+    expect(controller.traceProtein('query', 1, 'source')).toBe(false);
+    expect(plotElement.clearProvenanceConnectors).toHaveBeenCalledTimes(2);
+  });
+
+  it('trace off clears the lines and a click only selects; traceProtein still draws', () => {
+    const { controller, plotElement } = setup(makeFanoutData());
+    const clickSource = () =>
+      controller.handleProteinClick({
+        detail: { proteinId: 'source', point: { originalIndex: 0 } },
+      } as unknown as Event);
+    clickSource();
+    expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(1);
+
+    controller.setTracing({ trace: false, linesPerSource: 20 });
+    expect(plotElement.clearProvenanceConnectors).toHaveBeenCalledTimes(1);
+    clickSource();
+    expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(1);
+    expect(plotElement.clearProvenanceConnectors).toHaveBeenCalledTimes(2);
+
+    // Go to source and the card's lent link are explicit: they draw with trace off.
+    expect(controller.traceProtein('source', 0, 'source')).toBe(true);
+    expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(2);
+  });
+
+  it('lines per source caps a click and redraws the active lines', () => {
+    const { controller, plotElement } = setup(makeFanoutData());
+    controller.setTracing({ trace: true, linesPerSource: 10 });
+    controller.handleProteinClick({
+      detail: { proteinId: 'source', point: { originalIndex: 0 } },
+    } as unknown as Event);
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].pairs).toHaveLength(10);
+
+    controller.setTracing({ trace: true, linesPerSource: 50 });
+    expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(2);
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].pairs).toHaveLength(24);
+  });
+
+  it('keeps the source ring when lines per source redraws the lines', () => {
+    const { controller, plotElement } = setup(makeFanoutData());
+    expect(controller.traceProtein('source', 0, 'source', 'source')).toBe(true);
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].focusProteinId).toBe('source');
+
+    controller.setTracing({ trace: true, linesPerSource: 10 });
+    expect(plotElement.setProvenanceConnectors).toHaveBeenCalledTimes(2);
+    expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0].focusProteinId).toBe('source');
   });
 });

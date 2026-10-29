@@ -1,7 +1,23 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["**/*.ts", "**/*.mts", "../apps/web/src/vite-env.d.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.mts",
+    "../apps/web/src/vite-env.d.ts",
+    "../apps/web/tests/helpers/explore.ts",
+    "../apps/web/tests/helpers/legend.ts",
+    "../apps/web/tests/helpers/workbench.ts",
+    "../apps/web/tests/helpers/mobile.ts",
+    "../apps/web/tests/helpers/theme.ts",
+    "../apps/web/tests/helpers/tour-storage-state.ts",
+    "../apps/web/tests/helpers/perf/probes.ts",
+    "../apps/web/tests/helpers/plot.ts",
+    "../apps/web/tests/helpers/structure.ts",
+    "../apps/web/tests/helpers/figure.ts",
+    "../apps/web/tests/helpers/examples.ts"
+  ]
 }

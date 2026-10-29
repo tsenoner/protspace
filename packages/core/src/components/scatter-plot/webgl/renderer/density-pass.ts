@@ -24,13 +24,26 @@ import {
 } from './texture-units';
 import type { StagedRecords } from './record-style-table';
 import { IDENTITY_RESCALE } from './rescale';
+import { resolveColor } from '../color-utils';
 
 // The grid spans the plot, so the rings depend on data and view, not on dpr or window size.
 const DENSITY_GRID_LONG_SIDE = 512;
 
 const QUAD_ATTRIB_INDEX = 0;
 
-const NEUTRAL_KEY = parseInt(NEUTRAL_VALUE_COLOR.slice(1), 16);
+/**
+ * The density key of `color`: its 24-bit RGB, as `colorKey` reads a staged colour. The palette
+ * pools the colours past the cap into the neutral grey's slot, so this must be the key of the grey
+ * the points are staged with (the theme's Other grey), or Other gets a contour of its own.
+ */
+export function neutralKeyOf(color: string): number {
+  const hex = /^#([0-9a-f]{6})$/i.exec(color.trim());
+  if (hex) return parseInt(hex[1], 16);
+  const [r, g, b] = resolveColor(color);
+  return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+}
+
+const DEFAULT_NEUTRAL_KEY = neutralKeyOf(NEUTRAL_VALUE_COLOR);
 
 export interface ColorTarget {
   framebuffer: WebGLFramebuffer;
@@ -115,13 +128,15 @@ function colorKey(colors: Float32Array, o: number): number {
 /**
  * The density slots of the `count` staged points, ordered by the first point of
  * each colour to draw. With `marked` (by draw index), marked points draw after
- * every other point, as staging orders a selection.
+ * every other point, as staging orders a selection. Past the cap, the colours
+ * left over pool into the slot keyed `neutralKey` (see {@link neutralKeyOf}).
  */
 export function buildSlotPalette(
   colors: Float32Array,
   count: number,
   gamma: number,
   marked: Uint8Array | null = null,
+  neutralKey: number = DEFAULT_NEUTRAL_KEY,
 ): SlotPalette {
   const entries: SlotEntries = new Map();
   let prevKey = -1;
@@ -139,7 +154,7 @@ export function buildSlotPalette(
     prev!.n++;
     if (rank < prev!.first) prev!.first = rank;
   }
-  return paletteFromEntries(entries, gamma);
+  return paletteFromEntries(entries, gamma, neutralKey);
 }
 
 /**
@@ -151,6 +166,7 @@ export function buildRecordSlotPalette(
   staged: StagedRecords,
   gamma: number,
   firstDrawn: ArrayLike<number> = staged.firstDrawn,
+  neutralKey: number = DEFAULT_NEUTRAL_KEY,
 ): SlotPalette {
   const entries: SlotEntries = new Map();
   for (let r = 0; r < staged.codes.count; r++) {
@@ -163,10 +179,10 @@ export function buildRecordSlotPalette(
       entry.first = Math.min(entry.first, firstDrawn[r]);
     }
   }
-  return paletteFromEntries(entries, gamma);
+  return paletteFromEntries(entries, gamma, neutralKey);
 }
 
-function paletteFromEntries(entries: SlotEntries, gamma: number): SlotPalette {
+function paletteFromEntries(entries: SlotEntries, gamma: number, neutralKey: number): SlotPalette {
   const byFirst = (a: [number, { first: number }], b: [number, { first: number }]) =>
     a[1].first - b[1].first;
   let slots: number[];
@@ -175,11 +191,11 @@ function paletteFromEntries(entries: SlotEntries, gamma: number): SlotPalette {
     slots = [...entries].sort(byFirst).map(([key]) => key);
   } else {
     const own = [...entries]
-      .filter(([key]) => key !== NEUTRAL_KEY)
+      .filter(([key]) => key !== neutralKey)
       .sort((a, b) => b[1].n - a[1].n || a[1].first - b[1].first)
       .slice(0, DENSITY_CATEGORY_CAP - 1)
       .sort(byFirst);
-    slots = [NEUTRAL_KEY, ...own.map(([key]) => key)];
+    slots = [neutralKey, ...own.map(([key]) => key)];
     tailSlot = 0;
   }
 

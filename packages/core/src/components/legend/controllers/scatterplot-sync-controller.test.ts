@@ -93,18 +93,14 @@ describe('ScatterplotSyncController', () => {
       );
     });
 
-    it('removes the control bar listeners, including projection-change, on disconnect', () => {
-      // The scatterplot-listener spy above cannot see this: the control bar is a separate
-      // element, discovered and listened to independently (`_onScatterplotDiscovered`).
-      // Never removing `PROJECTION_CHANGE` here would leak a listener on every legend
-      // disconnect/reconnect cycle.
+    it('removes the root listeners, including projection-change, on disconnect', () => {
+      // The view pickers' events reach the legend on its root node. Never removing
+      // PROJECTION_CHANGE there would leak a listener on every disconnect/reconnect cycle.
       document.body.appendChild(mockScatterplot as unknown as Node);
-      const controlBar = document.createElement('protspace-control-bar');
-      document.body.appendChild(controlBar);
       controller = new ScatterplotSyncController(mockHost, mockCallbacks);
       controller.hostConnected();
 
-      const removeEventListenerSpy = vi.spyOn(controlBar, 'removeEventListener');
+      const removeEventListenerSpy = vi.spyOn(document, 'removeEventListener');
       controller.hostDisconnected();
 
       expect(removeEventListenerSpy).toHaveBeenCalledWith(
@@ -115,6 +111,7 @@ describe('ScatterplotSyncController', () => {
         LEGEND_EVENTS.PROJECTION_CHANGE,
         expect.any(Function),
       );
+      removeEventListenerSpy.mockRestore();
     });
 
     it('stops discovery retries', () => {
@@ -616,20 +613,28 @@ describe('ScatterplotSyncController', () => {
       expect(mockCallbacks.onDataChange).toHaveBeenCalled();
     });
 
-    it('handles annotation-change events from control bar', () => {
-      const controlBar = document.createElement('protspace-control-bar');
-      document.body.appendChild(controlBar);
+    it('re-syncs on annotation-change and projection-change dispatched anywhere in the document', () => {
+      const picker = document.createElement('div');
+      document.body.appendChild(picker);
 
-      // Reconnect to pick up the control bar
-      controller.hostDisconnected();
-      controller.hostConnected();
-
-      const event = new CustomEvent(LEGEND_EVENTS.ANNOTATION_CHANGE, {
-        detail: { annotation: 'new-annotation' },
-      });
-      controlBar.dispatchEvent(event);
-
+      picker.dispatchEvent(
+        new CustomEvent(LEGEND_EVENTS.ANNOTATION_CHANGE, {
+          detail: { annotation: 'new-annotation' },
+          bubbles: true,
+          composed: true,
+        }),
+      );
       expect(mockCallbacks.onAnnotationChange).toHaveBeenCalledWith('new-annotation');
+
+      vi.mocked(mockCallbacks.onDataChange).mockClear();
+      picker.dispatchEvent(
+        new CustomEvent(LEGEND_EVENTS.PROJECTION_CHANGE, {
+          detail: { projection: 'PCA' },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      expect(mockCallbacks.onDataChange).toHaveBeenCalled();
     });
   });
 

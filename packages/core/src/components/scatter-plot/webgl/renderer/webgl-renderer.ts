@@ -14,7 +14,9 @@
 import * as d3 from 'd3';
 import {
   DENSITY_DEFAULT,
+  formatCount,
   plotDataOriginalIndex,
+  type DataDomain,
   type PlotData,
   type PlotDataPoint,
   type ScatterplotConfig,
@@ -66,6 +68,7 @@ import {
   densityFieldsKey,
   buildSlotPalette,
   buildRecordSlotPalette,
+  neutralKeyOf,
   type DensityFrame,
   type DensityResources,
   type SlotPalette,
@@ -97,6 +100,7 @@ import {
 import { ContextLossController } from './context-loss-controller';
 import { ExportRenderer } from './export-renderer';
 import { perfCounters } from '../../../../utils/perf-counters';
+import { NEUTRAL_VALUE_COLOR } from '../../config';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
@@ -161,6 +165,8 @@ interface WebGLRendererOptions {
   exportStyle?: WebGLStyleGetters;
   /** White unless given. */
   getKnockoutColor?: () => readonly [number, number, number];
+  /** The grey Other points are staged with, which keys the contours' tail slot. `NEUTRAL_VALUE_COLOR` unless given. */
+  getNeutralColor?: () => string;
   onContextLost?: () => void;
   onDegraded?: (detail: RendererDegradedDetail) => void;
 }
@@ -317,6 +323,7 @@ export class WebGLRenderer {
   private readonly style: WebGLStyleGetters;
   private readonly exportStyle: WebGLStyleGetters;
   private readonly getKnockoutColor: () => readonly [number, number, number];
+  private readonly getNeutralColor: () => string;
   private readonly onContextLost?: () => void;
   private readonly onDegraded?: (detail: RendererDegradedDetail) => void;
 
@@ -330,6 +337,7 @@ export class WebGLRenderer {
     this.style = options.style;
     this.exportStyle = options.exportStyle ?? options.style;
     this.getKnockoutColor = options.getKnockoutColor ?? (() => [1, 1, 1]);
+    this.getNeutralColor = options.getNeutralColor ?? (() => NEUTRAL_VALUE_COLOR);
     this.onContextLost = options.onContextLost;
     this.onDegraded = options.onDegraded;
     this.lossController = new ContextLossController(this.canvas, () => {
@@ -827,13 +835,18 @@ export class WebGLRenderer {
     const count = this.currentPointCount;
     const { colors } = this.stageArrays;
     const { staged, ids } = this.recordTable;
-    this.contourPalette ??= staged
-      ? buildRecordSlotPalette(
-          staged,
-          this.gamma,
-          marked ? markedFirstDrawn(staged, ids, colors, marked, count) : undefined,
-        )
-      : buildSlotPalette(colors, count, this.gamma, marked);
+    if (!this.contourPalette) {
+      // Other's grey pools the colours past the cap, so it never gets a contour of its own.
+      const neutralKey = neutralKeyOf(this.getNeutralColor());
+      this.contourPalette = staged
+        ? buildRecordSlotPalette(
+            staged,
+            this.gamma,
+            marked ? markedFirstDrawn(staged, ids, colors, marked, count) : undefined,
+            neutralKey,
+          )
+        : buildSlotPalette(colors, count, this.gamma, marked, neutralKey);
+    }
     if (this.contourPalette.count === 0) return null;
 
     const res = this.ensureDensityResources();
@@ -994,18 +1007,20 @@ export class WebGLRenderer {
   }
 
   /**
-   * Display configuration the renderer would apply to a render at the given
-   * export dimensions. Returned values are in *export pixel space* (i.e.
-   * `marginLeft` is the pixel offset of the data area's left edge inside an
-   * `exportWidth × exportHeight` canvas). Used by the publish modal to
-   * translate inset source rects (canvas-norm) into data-coord viewports
-   * with margin-aware accuracy.
+   * Where the data area of a reset-view export of the given size sits, as margins in export
+   * pixels (the fitted rectangle's edges, from the last-rendered data). The publish modal inverts
+   * inset source rects (canvas-norm) into data-coord viewports with it.
    */
   public getRenderInfo(
     exportWidth: number,
     exportHeight: number,
   ): { marginLeft: number; marginRight: number; marginTop: number; marginBottom: number } {
-    return ExportRenderer.getRenderInfo(this.getConfig(), exportWidth, exportHeight);
+    return ExportRenderer.getRenderInfo(
+      this.getConfig(),
+      this.lastRenderedData,
+      exportWidth,
+      exportHeight,
+    );
   }
 
   /**
@@ -1013,7 +1028,7 @@ export class WebGLRenderer {
    * has been rendered yet. Used by the publish modal to translate inset
    * source rects (in normalized canvas coords) into data-coordinate viewports.
    */
-  public getDataExtent(): { xMin: number; xMax: number; yMin: number; yMax: number } | null {
+  public getDataExtent(): DataDomain | null {
     return this.exportRenderer.getDataExtent(this.lastRenderedData);
   }
 
@@ -1373,7 +1388,7 @@ export class WebGLRenderer {
       this.sortedDataRef = null;
       this.reportDegraded(
         'point-limit-exceeded',
-        `${pd.length.toLocaleString()} points, at most ${MAX_DRAWABLE_POINTS.toLocaleString()}`,
+        `${formatCount(pd.length)} points, at most ${formatCount(MAX_DRAWABLE_POINTS)}`,
       );
       return;
     }

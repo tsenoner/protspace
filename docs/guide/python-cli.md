@@ -862,8 +862,8 @@ protspace transfer \
 | `--skip-distant`        | Leave distant queries unpredicted (needs `--max-distance`).             | label every query            |
 | `--report`              | Also write a TSV of each query's neighbours, see below.                 | -                            |
 
-A bundle carrying these columns renders the transferred proteins as ringed markers with their own
-legend section, see [Transferred Annotations (EAT)](/explore/eat).
+A bundle carrying these columns renders the transferred proteins as ringed markers, with their
+controls in the EAT panel, see [Transferred Annotations (EAT)](/explore/eat).
 
 The output is always a format v3 bundle. A v1 or v2 input is read the way
 [`protspace convert`](#protspace-convert) reads it, protein IDs included, so the transfer runs

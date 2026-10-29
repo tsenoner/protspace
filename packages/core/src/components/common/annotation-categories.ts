@@ -1,0 +1,126 @@
+import {
+  annotationLabel,
+  annotationMatchesQuery,
+  annotationSource,
+  compareTaxonomyRank,
+  type Annotation,
+  type AnnotationSource,
+} from '@protspace/utils';
+
+/** Dropdown section names — one per annotation source (the predicted flag is shown per-row, not as a group). */
+export type CategoryName = 'Biocentral' | 'InterPro' | 'TED' | 'Taxonomy' | 'UniProt' | 'Other';
+
+export interface GroupedAnnotation {
+  category: CategoryName;
+  annotations: string[];
+}
+
+/** Map an annotation's source to its dropdown section. */
+function categoryForSource(source: AnnotationSource): CategoryName {
+  switch (source) {
+    case 'Biocentral':
+      return 'Biocentral';
+    case 'InterPro':
+      return 'InterPro';
+    case 'TED':
+      return 'TED';
+    case 'Taxonomy':
+      return 'Taxonomy';
+    case 'UniProt':
+      return 'UniProt';
+    default:
+      return 'Other';
+  }
+}
+
+// Display order of the dropdown sections (predicted sources first, then the rest).
+const CATEGORY_ORDER: CategoryName[] = [
+  'Biocentral',
+  'InterPro',
+  'TED',
+  'Taxonomy',
+  'UniProt',
+  'Other',
+];
+
+/**
+ * Categorize and sort annotations into grouped sections for the dropdown.
+ *
+ * Grouping is by annotation source (from the shared `@protspace/utils` registry), so each source
+ * keeps its own section. The "predicted" nature is orthogonal — it is surfaced as a per-row
+ * sparkles mark (see {@link isPredictedAnnotation}), not by pulling predictions into a separate
+ * group.
+ * Within a section annotations are alphabetical by their displayed label, except Taxonomy, which is ordered by rank depth
+ * (general → specific). Shared by annotation-select and query-condition-row.
+ */
+export function groupAnnotations(
+  annotations: string[],
+  definitions?: Readonly<Record<string, Pick<Annotation, 'runtime'>>>,
+): GroupedAnnotation[] {
+  const categorized: Record<CategoryName, string[]> = {
+    Biocentral: [],
+    InterPro: [],
+    TED: [],
+    Taxonomy: [],
+    UniProt: [],
+    Other: [],
+  };
+
+  for (const annotation of annotations) {
+    categorized[categoryForSource(annotationSource(annotation, definitions?.[annotation]))].push(
+      annotation,
+    );
+  }
+
+  // By the label the row shows, not the column behind it: "EC number" (`ec`) before
+  // "Subcellular location" (`cc_subcellular_location`). The column breaks a tie.
+  const byLabel = (a: string, b: string) =>
+    annotationLabel(a, definitions?.[a]).localeCompare(annotationLabel(b, definitions?.[b])) ||
+    a.localeCompare(b);
+  for (const category of CATEGORY_ORDER) {
+    if (category === 'Taxonomy') {
+      categorized.Taxonomy.sort(compareTaxonomyRank);
+    } else {
+      categorized[category].sort(byLabel);
+    }
+  }
+
+  const groups: GroupedAnnotation[] = [];
+  for (const category of CATEGORY_ORDER) {
+    if (categorized[category].length > 0) {
+      groups.push({ category, annotations: categorized[category] });
+    }
+  }
+
+  return groups;
+}
+
+/**
+ * Group annotations and keep only those matching a search query, dropping any
+ * section left empty.
+ *
+ * Both pickers filter through here, so "the dropdown and the query builder
+ * agree" is structural rather than a convention each has to keep honouring.
+ */
+export function filterGroupedAnnotations(
+  annotations: string[],
+  query: string,
+  definitions?: Readonly<Record<string, Pick<Annotation, 'runtime'>>>,
+): GroupedAnnotation[] {
+  const grouped = groupAnnotations(annotations, definitions);
+  if (!query.trim()) return grouped;
+
+  return grouped
+    .map((group) => ({
+      ...group,
+      annotations: group.annotations.filter((annotation) =>
+        annotationMatchesQuery(annotation, query, definitions?.[annotation]),
+      ),
+    }))
+    .filter((group) => group.annotations.length > 0);
+}
+
+/** Flatten grouped annotations into the order keyboard navigation walks. */
+export function flattenGroupedAnnotations(grouped: GroupedAnnotation[]): string[] {
+  return grouped.flatMap((group) => group.annotations);
+}

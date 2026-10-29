@@ -56,7 +56,7 @@ The practical effect shows up most on deep taxonomic ranks. Scoring a venom data
 
 Scores are computed once, during preparation, over every protein. Hiding legend values or filtering the view does not recompute them, so the panel states it once in a footer: `All scores are for the full dataset.`, which becomes `All scores are for the full dataset, not this view.` while the view is narrowed. It sits at the panel's foot rather than inside Separation because it governs Faithfulness to the embedding just as much. The Separation section's own scope line reports coverage instead, as in `5 categories · 1,427 proteins scored`.
 
-Because a filtered view and a whole-dataset score would contradict each other on screen, the strips are replaced by "Separation scores are hidden while the view is filtered" whenever a filter is active. This includes the EAT reliability slider. Clear the filter and the strips return.
+Because a filtered view and a whole-dataset score would contradict each other on screen, the strips are replaced by "Separation scores are hidden while the view is filtered" whenever a filter is active. This includes the EAT panel's reliability range in **Hide**; **Fade** filters nothing, so the strips stay. Clear the filter and the strips return.
 
 Sorting is not affected. The scores are read from the unsliced dataset, so **By separation** stays available in the legend's sort options and keeps ordering rows correctly while the strips themselves are hidden.
 

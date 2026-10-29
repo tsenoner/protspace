@@ -1,10 +1,16 @@
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router';
 import Index from './pages/Index';
-import Explore from './pages/Explore';
 import NotFound from './pages/NotFound';
 import Privacy from './pages/Privacy';
+
+// The explore page loads on demand: its kit, tokens, shell and runtime never reach the landing page.
+const Explore = lazy(() => import('./pages/Explore'));
+
+// Development-only review page for the kit; production builds drop the import entirely.
+const KitGallery = import.meta.env.DEV ? lazy(() => import('./dev/KitGallery')) : null;
 
 const App = () => (
   <TooltipProvider>
@@ -12,8 +18,25 @@ const App = () => (
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <Routes>
         <Route path="/" element={<Index />} />
-        <Route path="/explore" element={<Explore />} />
+        <Route
+          path="/explore"
+          element={
+            <Suspense fallback={null}>
+              <Explore />
+            </Suspense>
+          }
+        />
         <Route path="/privacy" element={<Privacy />} />
+        {KitGallery && (
+          <Route
+            path="/dev/kit"
+            element={
+              <Suspense fallback={null}>
+                <KitGallery />
+              </Suspense>
+            }
+          />
+        )}
         {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
         <Route path="*" element={<NotFound />} />
       </Routes>

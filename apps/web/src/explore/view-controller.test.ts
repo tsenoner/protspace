@@ -22,33 +22,33 @@ function createMockElements() {
     }),
   };
 
-  const controlBar = {
+  const pickers = {
     selectedProjection: 'UMAP',
     selectedAnnotation: 'ec',
     tooltipAnnotations: [] as string[],
     densityLayer: 'off' as DensityLayerMode,
     applyProjectionSelection: vi.fn((projection: string) => {
-      controlBar.selectedProjection = projection;
-      // Simulate the real control-bar updating the plot
+      pickers.selectedProjection = projection;
+      // Simulate the view-bar controller updating the plot
       const index = plotElement
         .getCurrentData()
         .projections.findIndex((p) => p.name === projection);
       if (index >= 0) plotElement.selectedProjectionIndex = index;
     }),
     applyAnnotationSelection: vi.fn((annotation: string) => {
-      controlBar.selectedAnnotation = annotation;
+      pickers.selectedAnnotation = annotation;
       plotElement.selectedAnnotation = annotation;
     }),
     applyTooltipAnnotationsSelection: vi.fn((tooltip: string[]) => {
-      controlBar.tooltipAnnotations = [...tooltip];
+      pickers.tooltipAnnotations = [...tooltip];
       plotElement.tooltipAnnotations = [...tooltip];
     }),
     applyDensityLayerSelection: vi.fn((density: DensityLayerMode) => {
-      controlBar.densityLayer = density;
+      pickers.densityLayer = density;
     }),
   };
 
-  return { plotElement, controlBar };
+  return { plotElement, pickers };
 }
 
 function makeRequest(
@@ -70,12 +70,12 @@ function makeRequest(
 }
 
 function setup() {
-  const { plotElement, controlBar } = createMockElements();
+  const { plotElement, pickers } = createMockElements();
   const viewController = createViewController({
     plotElement: plotElement as never,
-    controlBar: controlBar as never,
+    pickers: pickers as never,
   });
-  return { plotElement, controlBar, viewController };
+  return { plotElement, pickers, viewController };
 }
 
 describe('createViewController', () => {
@@ -92,21 +92,21 @@ describe('createViewController', () => {
   });
 
   it('returns null when no data is available', () => {
-    const { plotElement, controlBar } = createMockElements();
+    const { plotElement, pickers } = createMockElements();
     plotElement.getCurrentData = () =>
       ({ annotations: {}, projections: [], protein_ids: [] }) as ReturnType<
         typeof plotElement.getCurrentData
       >;
     const vc = createViewController({
       plotElement: plotElement as never,
-      controlBar: controlBar as never,
+      pickers: pickers as never,
     });
 
     expect(vc.getCurrentEffectiveView()).toBeNull();
   });
 
   it('applies a valid view request and updates elements', () => {
-    const { controlBar, viewController } = setup();
+    const { pickers, viewController } = setup();
     const request = makeRequest('pfam', 'PCA');
     const result = viewController.applyViewSelection(request, 'url');
 
@@ -116,8 +116,8 @@ describe('createViewController', () => {
       tooltip: [],
       density: 'off',
     });
-    expect(controlBar.applyProjectionSelection).toHaveBeenCalledWith('PCA');
-    expect(controlBar.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
+    expect(pickers.applyProjectionSelection).toHaveBeenCalledWith('PCA');
+    expect(pickers.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
   });
 
   it('falls back to first available when requested values are invalid', () => {
@@ -134,14 +134,14 @@ describe('createViewController', () => {
   });
 
   it('returns null from applyViewSelection when dataset has no options', () => {
-    const { plotElement, controlBar } = createMockElements();
+    const { plotElement, pickers } = createMockElements();
     plotElement.getCurrentData = () =>
       ({ annotations: {}, projections: [], protein_ids: [] }) as ReturnType<
         typeof plotElement.getCurrentData
       >;
     const vc = createViewController({
       plotElement: plotElement as never,
-      controlBar: controlBar as never,
+      pickers: pickers as never,
     });
 
     const result = vc.applyViewSelection(makeRequest('ec', 'UMAP'), 'url');
@@ -179,13 +179,13 @@ describe('createViewController', () => {
   });
 
   it('does not call applyProjectionSelection when projection is unchanged', () => {
-    const { controlBar, viewController } = setup();
+    const { pickers, viewController } = setup();
     // Current state is already UMAP + ec
     const request = makeRequest('pfam', 'UMAP');
     viewController.applyViewSelection(request, 'url');
 
-    expect(controlBar.applyProjectionSelection).not.toHaveBeenCalled();
-    expect(controlBar.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
+    expect(pickers.applyProjectionSelection).not.toHaveBeenCalled();
+    expect(pickers.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
   });
 
   it('resolveLatestView uses the last setRequestedView', () => {
@@ -239,15 +239,15 @@ describe('createViewController', () => {
     expect(fresh.requested.annotation).toBe('pfam');
   });
 
-  it('suppresses the control-bar echo of an applied view', () => {
-    const { controlBar, viewController } = setup();
+  it('suppresses the pickers’ echo of an applied view', () => {
+    const { pickers, viewController } = setup();
     const changes: ExploreViewChange[] = [];
     viewController.subscribeToViewChanges((change) => changes.push(change));
 
-    // The real control bar dispatches annotation-change synchronously, which the
+    // The real annotation picker dispatches annotation-change synchronously, which the
     // app forwards back into the view controller as a user change.
-    const applyAnnotation = controlBar.applyAnnotationSelection;
-    controlBar.applyAnnotationSelection = vi.fn((annotation: string) => {
+    const applyAnnotation = pickers.applyAnnotationSelection;
+    pickers.applyAnnotationSelection = vi.fn((annotation: string) => {
       applyAnnotation(annotation);
       viewController.handleUserAnnotationChange();
     });
@@ -259,7 +259,7 @@ describe('createViewController', () => {
   });
 
   it('emits a user change that lands right after a url-applied view', () => {
-    const { controlBar, plotElement, viewController } = setup();
+    const { pickers, plotElement, viewController } = setup();
     const changes: ExploreViewChange[] = [];
     viewController.subscribeToViewChanges((change) => changes.push(change));
 
@@ -267,7 +267,7 @@ describe('createViewController', () => {
     changes.length = 0;
 
     // User toggles the extra tooltip annotation back off before the next frame.
-    controlBar.tooltipAnnotations = [];
+    pickers.tooltipAnnotations = [];
     plotElement.tooltipAnnotations = [];
     viewController.handleUserTooltipAnnotationsChange();
 
@@ -280,16 +280,16 @@ describe('createViewController', () => {
     const defaults = { annotation: 'pfam', projection: 'PCA', tooltip: ['go'] };
 
     it('applies the defaults to an empty request, with no normalization (Back to a bare entry)', () => {
-      const { controlBar, viewController } = setup();
+      const { pickers, viewController } = setup();
       const changes: ExploreViewChange[] = [];
       viewController.subscribeToViewChanges((change) => changes.push(change));
 
       viewController.setDatasetDefaults(defaults);
       viewController.setRequestedView(createEmptyExploreViewRequest());
 
-      expect(controlBar.applyProjectionSelection).toHaveBeenCalledWith('PCA');
-      expect(controlBar.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
-      expect(controlBar.applyTooltipAnnotationsSelection).toHaveBeenCalledWith(['go']);
+      expect(pickers.applyProjectionSelection).toHaveBeenCalledWith('PCA');
+      expect(pickers.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
+      expect(pickers.applyTooltipAnnotationsSelection).toHaveBeenCalledWith(['go']);
       expect(changes).toHaveLength(1);
       expect(changes[0].effective).toEqual({
         annotation: 'pfam',
@@ -339,7 +339,7 @@ describe('createViewController', () => {
   });
 
   it('recordCurrentView replaces a recorded request with the view on screen, without applying it', () => {
-    const { viewController, controlBar } = setup();
+    const { viewController, pickers } = setup();
     // A failed Back recorded the entry's parameters for a load that never
     // happened; the view on screen is ec on UMAP.
     viewController.recordRequestedView(makeRequest('pfam', 'PCA', ['go']));
@@ -357,7 +357,7 @@ describe('createViewController', () => {
       tooltip: [],
       density: 'off',
     });
-    expect(controlBar.applyAnnotationSelection).not.toHaveBeenCalled();
+    expect(pickers.applyAnnotationSelection).not.toHaveBeenCalled();
   });
 
   it('dispose clears subscribers', () => {
@@ -371,8 +371,8 @@ describe('createViewController', () => {
     expect(changes).toHaveLength(0);
   });
 
-  it('applies a requested density mode to the plot config and the control bar', () => {
-    const { plotElement, controlBar, viewController } = setup();
+  it('applies a requested density mode to the plot config and the contours picker', () => {
+    const { plotElement, pickers, viewController } = setup();
 
     const effective = viewController.applyViewSelection(
       makeRequest('ec', 'UMAP', [], 'auto'),
@@ -380,8 +380,8 @@ describe('createViewController', () => {
     );
 
     expect(effective?.density).toBe('auto');
-    expect(controlBar.applyDensityLayerSelection).toHaveBeenCalledWith('auto');
-    expect(controlBar.densityLayer).toBe('auto');
+    expect(pickers.applyDensityLayerSelection).toHaveBeenCalledWith('auto');
+    expect(pickers.densityLayer).toBe('auto');
     expect(plotElement.config).toEqual({
       pointSize: 240,
       densityLayer: 'auto',
@@ -394,14 +394,14 @@ describe('createViewController', () => {
   // (use-url-state-sync.ts, 'apply-view'). Both name the same view, so the
   // contour layer is set once, not switched Off and back On.
   it('sets contours once on a menu switch from density=on', () => {
-    const { controlBar, viewController } = setup();
+    const { pickers, viewController } = setup();
     const previous = new URLSearchParams('annotation=pfam&density=on');
     viewController.setRequestedView(parseExploreViewRequest(previous));
-    expect(controlBar.densityLayer).toBe('on');
+    expect(pickers.densityLayer).toBe('on');
 
     const densityWrites: DensityLayerMode[] = [];
-    let densityLayer = controlBar.densityLayer;
-    Object.defineProperty(controlBar, 'densityLayer', {
+    let densityLayer = pickers.densityLayer;
+    Object.defineProperty(pickers, 'densityLayer', {
       get: () => densityLayer,
       set: (mode: DensityLayerMode) => {
         densityWrites.push(mode);

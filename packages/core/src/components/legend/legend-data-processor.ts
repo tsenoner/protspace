@@ -323,6 +323,9 @@ export class LegendDataProcessor {
         ...sortedVisible.slice(0, maxVisibleValues),
         ...sortedNonVisible.slice(0, remainingSlots),
       ].slice(0, maxVisibleValues);
+      // The visible set decides which rows show, not their order: a sort lists them all in its
+      // own order. "Your order" keeps the promoted rows after the ones the user placed.
+      if (sortMode !== 'manual' && sortMode !== 'manual-reverse') topItems.sort(sortFn);
     } else {
       // Initial load: sort all and take top N
       const sorted = [...entries].sort(sortFn);
@@ -413,7 +416,7 @@ export class LegendDataProcessor {
           }
         });
 
-        newItems.sort((a, b) => b.targetIndex - a.targetIndex);
+        newItems.sort((a, b) => a.targetIndex - b.targetIndex);
         for (const newItem of newItems) {
           existingZOrders.forEach((zOrder, key) => {
             if (zOrder >= newItem.targetIndex) {
@@ -435,9 +438,10 @@ export class LegendDataProcessor {
       claimedColors.add((persisted?.color || existing?.color) ?? '');
     }
 
+    const keepsZOrder = sortMode === 'manual';
     const items: LegendItem[] = topItems.map(([value, count], index) => {
       const displayName = toDisplayValue(value);
-      const zOrder = sortMode === 'manual' ? (existingZOrders.get(value) ?? index) : index;
+      const zOrder = keepsZOrder ? (existingZOrders.get(value) ?? index) : index;
       const slot = ctx.slotTracker.getSlot(displayName);
 
       let encoding = getVisualEncoding(slot, displayName);
@@ -500,8 +504,7 @@ export class LegendDataProcessor {
     // Add "Other" if there are items beyond the cap
     if (otherCount > 0) {
       const encoding = getVisualEncoding(-1, LEGEND_VALUES.OTHER);
-      const otherZOrder =
-        sortMode === 'manual' ? (existingOtherZOrder ?? items.length) : items.length;
+      const otherZOrder = keepsZOrder ? (existingOtherZOrder ?? items.length) : items.length;
 
       items.push({
         value: LEGEND_VALUES.OTHER,
@@ -552,11 +555,17 @@ export class LegendDataProcessor {
       }
     });
 
+    // A categorical "Your order, reversed" holds its zOrders in display order (the legend's
+    // `ItemActionsController.reverseZOrder` writes them so): it buckets and numbers exactly as
+    // "Your order". A numeric one re-derives from its manual bin ids each pass.
+    const orderMode: LegendSortMode =
+      sortMode === 'manual-reverse' && !isNumericSource ? 'manual' : sortMode;
+
     const { topItems, otherItems, otherCount } = this.sortAndLimitItems(
       frequencyMap,
       maxVisibleValues,
       isolationMode,
-      sortMode,
+      orderMode,
       existingZOrders,
       visibleValues,
       numericOrderValues,
@@ -571,11 +580,18 @@ export class LegendDataProcessor {
       topItems,
       otherCount,
       existingLegendItems,
-      sortMode,
+      orderMode,
       new Map(existingZOrders),
       persistedCategories,
       isNumericSource,
     );
+
+    // The palette colours rows by list position: list a reversed order bottom-up, as its sort
+    // did before, so each row keeps the colour it had in "Your order". Other stays last.
+    if (orderMode !== sortMode) {
+      const isOther = (item: LegendItem) => Number(item.value === LEGEND_VALUES.OTHER);
+      items.sort((a, b) => isOther(a) - isOther(b) || b.zOrder - a.zOrder);
+    }
 
     // Filter "Other" items to exclude any that are already shown
     const shownValues = new Set(items.map((i) => i.value).filter((v) => v !== LEGEND_VALUES.OTHER));

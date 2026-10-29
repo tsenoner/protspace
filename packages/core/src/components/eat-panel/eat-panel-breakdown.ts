@@ -1,0 +1,391 @@
+import { html, nothing, type TemplateResult } from 'lit';
+import {
+  annotationLabel,
+  countNoun,
+  formatCount,
+  getEatNeighborBaseKey,
+  hasEatPredictionsForAnnotation,
+  LEGEND_VALUES,
+  type VisualizationData,
+} from '@protspace/utils';
+import '../kit/button';
+import { icon } from '../kit/icon';
+import '../kit/menu';
+import { formatPercent } from '../query-builder/eat-reliability';
+import { getEatIndex, type EatIndex, type EatLabelRow } from './eat-summary';
+
+export type EatLabelSort = 'share' | 'most-predicted' | 'least-reliable' | 'name';
+
+/** The default follows the heading: the labels that rely most on predictions first. */
+export const DEFAULT_LABEL_SORT: EatLabelSort = 'share';
+
+const SORT_OPTIONS: ReadonlyArray<{ value: EatLabelSort; label: string }> = [
+  { value: 'share', label: 'Highest share predicted' },
+  { value: 'most-predicted', label: 'Most predictions' },
+  { value: 'least-reliable', label: 'Least reliable' },
+  { value: 'name', label: 'A–Z' },
+];
+
+/** A label's swatch colour; a label folded into the legend's Other bucket takes Other's. */
+export function swatchColor(
+  colors: ReadonlyMap<string, string>,
+  label: string,
+): string | undefined {
+  return colors.get(label) ?? colors.get(LEGEND_VALUES.OTHER);
+}
+
+/** A label row's hint when every member in view is curated. */
+const NO_PREDICTIONS = 'No predictions in view';
+
+const BREAKDOWN_HEADING = 'Which labels rely on predictions?';
+
+/** Rows shown before "Show all". */
+const COLLAPSED_ROWS = 8;
+/** Above this share of predicted members a label is mostly borrowed, and says so in a tag. */
+const MOSTLY_PREDICTED_SHARE = 0.8;
+const MOSTLY_PREDICTED = 'Mostly predicted';
+
+const byName = (a: EatLabelRow, b: EatLabelRow) => a.label.localeCompare(b.label);
+
+/** The rows in `sort` order, ties by name. A label with no prediction sorts last by reliability. */
+const shownOf = (sorted: EatLabelRow[], showAll: boolean): EatLabelRow[] =>
+  showAll ? sorted : sorted.slice(0, COLLAPSED_ROWS);
+
+/** The labels the breakdown lists, in order: the first rows of `sort` until Show all. */
+export function shownLabels(
+  rows: readonly EatLabelRow[],
+  sort: EatLabelSort,
+  showAll: boolean,
+): string[] {
+  return shownOf(sortLabelRows(rows, sort), showAll).map((row) => row.label);
+}
+
+function sortLabelRows(rows: readonly EatLabelRow[], sort: EatLabelSort): EatLabelRow[] {
+  const sorted = [...rows];
+  if (sort === 'name') return sorted.sort(byName);
+  if (sort === 'least-reliable') {
+    return sorted.sort((a, b) => {
+      const am = a.medianReliability ?? Infinity;
+      const bm = b.medianReliability ?? Infinity;
+      return am !== bm ? am - bm : byName(a, b);
+    });
+  }
+  if (sort === 'share') {
+    return sorted.sort((a, b) => b.predictedShare - a.predictedShare || byName(a, b));
+  }
+  return sorted.sort((a, b) => b.kept + b.outside - (a.kept + a.outside) || byName(a, b));
+}
+
+interface EatBreakdownView {
+  rows: readonly EatLabelRow[];
+  sort: EatLabelSort;
+  showAll: boolean;
+  labelColors: ReadonlyMap<string, string>;
+  /** The median reliability over every prediction in the view, named once in the helper line. */
+  overallMedian: number | null;
+  /** Show off: the section is greyed; its rows and lists keep working. */
+  off: boolean;
+  /** The label whose drill-down list is open, and that list, rendered under its row. */
+  openLabel: string | null;
+  list: TemplateResult | typeof nothing;
+  /** The Sort trigger while its menu is open, else null. */
+  sortMenu: HTMLElement | null;
+  /** Open the Sort menu at its trigger, or close it (null). */
+  onSortMenu(anchor: HTMLElement | null): void;
+  onSort(sort: EatLabelSort): void;
+  onShowAll(): void;
+  /** A row was clicked: open its list, or close it when it is the open one. */
+  onRow(label: string): void;
+}
+
+/** The label's own make-up at full width: curated solid, in range hollow, outside dashed. */
+function labelBar(row: EatLabelRow, color: string | undefined): TemplateResult {
+  const part = (name: string, count: number) =>
+    count > 0
+      ? html`<span class="eat-segment" data-part=${name} style=${`flex-grow:${count}`}></span>`
+      : nothing;
+  return html`<span
+    class="eat-label-bar"
+    style=${color ? `--eat-ink:${color}` : nothing}
+    aria-hidden="true"
+  >
+    ${part('curated', row.curated)} ${part('kept', row.kept)} ${part('outside', row.outside)}
+  </span>`;
+}
+
+/**
+ * Line two's facts, each kept whole: `212 predicted (79 %)`, `40 outside` while the range leaves
+ * some out, and `typical 51 %`; the helper line gives the overall figure once. Empty for a label
+ * with no prediction.
+ */
+function rowFacts(row: EatLabelRow): string[] {
+  const predicted = row.kept + row.outside;
+  if (predicted === 0) return [];
+  const facts = [`${formatCount(predicted)} predicted (${formatPercent(row.predictedShare)})`];
+  if (row.outside > 0) facts.push(`${formatCount(row.outside)} outside`);
+  if (row.medianReliability !== null) facts.push(`typical ${formatPercent(row.medianReliability)}`);
+  return facts;
+}
+
+/** The section's helper line, with the overall typical reliability once when there is one. */
+function breakdownHelp(overallMedian: number | null): string {
+  const help = 'Click a label to check its least reliable predictions.';
+  return overallMedian === null
+    ? help
+    : `${help} Typical reliability across all predictions: ${formatPercent(overallMedian)}.`;
+}
+
+/** The row's accessible name: the facts in words, with commas for the middle dots. */
+function rowName(row: EatLabelRow, mostly: boolean): string {
+  const predicted = row.kept + row.outside;
+  const parts = [`${row.label}: ${countNoun(row.total, 'protein', 'proteins')}`];
+  if (predicted === 0) parts.push(NO_PREDICTIONS.toLowerCase());
+  else {
+    parts.push(`${formatCount(predicted)} predicted (${formatPercent(row.predictedShare)})`);
+    if (row.outside > 0) parts.push(`${formatCount(row.outside)} outside the range`);
+    if (row.medianReliability !== null) {
+      parts.push(`typical reliability ${formatPercent(row.medianReliability)}`);
+    }
+  }
+  if (mostly) parts.push(MOSTLY_PREDICTED.toLowerCase());
+  return parts.join(', ');
+}
+
+/**
+ * `Which labels rely on predictions?` (U21): one two-line row per label in the view. Line one: its
+ * swatch, full name, a `Mostly predicted` tag above 80 % and its protein count; line two: its
+ * own make-up as a bar, then its predicted count and share and its predictions' median
+ * reliability. A row click opens the label's drill-down list under it.
+ */
+export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof nothing {
+  if (view.rows.length === 0) return nothing;
+  const sorted = sortLabelRows(view.rows, view.sort);
+  const shown = shownOf(sorted, view.showAll);
+  // Show off greys the section, but its rows, Sort and lists keep working: not aria-disabled.
+  return html`<section
+    class=${view.off ? 'eat-breakdown is-off' : 'eat-breakdown'}
+    aria-label=${BREAKDOWN_HEADING}
+  >
+    <h3 class="eat-heading">${BREAKDOWN_HEADING}</h3>
+    <p class="eat-help">${breakdownHelp(view.overallMedian)}</p>
+    <div class="eat-sort-row">
+      <ps-button
+        class="eat-sort"
+        variant="ghost"
+        size="sm"
+        @click=${(event: Event) =>
+          view.onSortMenu(view.sortMenu ? null : (event.currentTarget as HTMLElement))}
+      >
+        <span class="eat-sort-key">Sort</span>
+        <span class="eat-sort-value"
+          >${SORT_OPTIONS.find((option) => option.value === view.sort)?.label}</span
+        >
+        <span slot="end" class="eat-sort-chevron">${icon('chevron-down', 14)}</span>
+      </ps-button>
+      <ps-menu
+        label="Sort labels"
+        placement="bottom-end"
+        .anchor=${view.sortMenu}
+        .open=${view.sortMenu !== null}
+        @ps-select=${(event: Event) => {
+          event.stopPropagation();
+          view.onSort((event as CustomEvent<{ value: EatLabelSort }>).detail.value);
+        }}
+        @ps-close=${(event: Event) => {
+          event.stopPropagation();
+          view.onSortMenu(null);
+        }}
+      >
+        ${SORT_OPTIONS.map(
+          (option) =>
+            html`<ps-menu-item
+              type="radio"
+              value=${option.value}
+              .checked=${option.value === view.sort}
+              >${option.label}</ps-menu-item
+            >`,
+        )}
+      </ps-menu>
+    </div>
+    <ul class="eat-label-list">
+      ${shown.map((row) => {
+        const color = swatchColor(view.labelColors, row.label);
+        const open = view.openLabel === row.label;
+        // Only curated members in view: nothing to list, so the row opens nothing.
+        const noPredictions = row.kept + row.outside === 0;
+        const mostly = row.predictedShare > MOSTLY_PREDICTED_SHARE;
+        const facts = rowFacts(row);
+        const name = rowName(row, mostly);
+        return html`<li>
+          <button
+            type="button"
+            class="eat-label-row"
+            data-label=${row.label}
+            ?disabled=${noPredictions}
+            aria-expanded=${noPredictions ? nothing : String(open)}
+            aria-controls=${open ? 'eat-drill' : nothing}
+            @click=${() => view.onRow(row.label)}
+            aria-label=${name}
+          >
+            <span class="eat-label-line">
+              <span
+                class="eat-swatch"
+                style=${color ? `background:${color}` : nothing}
+                aria-hidden="true"
+              ></span>
+              <span class="eat-label-name">${row.label}</span>
+              ${mostly ? html`<span class="eat-label-tag">${MOSTLY_PREDICTED}</span>` : nothing}
+              <span class="eat-label-total">${formatCount(row.total)}</span>
+            </span>
+            <span class="eat-label-line eat-label-facts">
+              ${labelBar(row, color)}
+              <span class="eat-label-share"
+                >${noPredictions
+                  ? NO_PREDICTIONS
+                  : facts.map(
+                      // The dot holds on to the fact before it, so a wrap never leaves it alone.
+                      (fact, i) =>
+                        html`${i > 0 ? ' ' : ''}<span class="eat-label-fact"
+                            >${fact}${i < facts.length - 1 ? '\u00a0·' : ''}</span
+                          >`,
+                    )}</span
+              >
+            </span>
+          </button>
+          ${open ? view.list : nothing}
+        </li>`;
+      })}
+    </ul>
+    ${!view.showAll && sorted.length > COLLAPSED_ROWS
+      ? html`<button type="button" class="eat-show-all" @click=${view.onShowAll}>
+          Show all ${formatCount(sorted.length)} labels
+        </button>`
+      : nothing}
+  </section>`;
+}
+
+const curatedCounts = new WeakMap<EatIndex, number>();
+
+/** Predicted proteins among those with a value (curated or predicted), over the whole dataset. */
+function predictedShareOf(index: EatIndex): number {
+  let curated = curatedCounts.get(index);
+  if (curated === undefined) {
+    curated = 0;
+    for (let p = 0; p < index.total; p++) curated += index.curated[p];
+    curatedCounts.set(index, curated);
+  }
+  const predicted = index.order.length;
+  return predicted / (predicted + curated);
+}
+
+/**
+ * The categorical annotations other than `annotation` that carry predictions. Stops at each
+ * column's first predicted cell, so listing them builds no index.
+ */
+function otherEatAnnotations(data: VisualizationData, annotation: string): string[] {
+  return Object.keys(data.annotation_predicted ?? {}).filter(
+    (key) =>
+      key !== annotation &&
+      data.annotations[key]?.kind === 'categorical' &&
+      hasEatPredictionsForAnnotation(data, key),
+  );
+}
+
+/** The `<annotation>__neighbor` column describing `annotation`, if the dataset has one. */
+function neighbourColumn(data: VisualizationData, annotation: string): string | null {
+  return (
+    Object.keys(data.annotations).find((key) => getEatNeighborBaseKey(key) === annotation) ?? null
+  );
+}
+
+/**
+ * One row that switches Color by to `key`, with its predicted share: `Toxin family · 58 %
+ * predicted` in the disclosure, `Color by Toxin family  58 %` in the empty state.
+ */
+function colorByRow(
+  data: VisualizationData,
+  key: string,
+  onColorBy: (annotation: string) => void,
+  inEmptyState: boolean,
+): TemplateResult {
+  const label = annotationLabel(key, data.annotations[key]);
+  const index = getEatIndex(data, key);
+  const share = index ? formatPercent(predictedShareOf(index)) : null;
+  return html`<li>
+    <button
+      type="button"
+      class="eat-color-by"
+      data-annotation=${key}
+      aria-label=${`Color by ${label}${share ? `, ${share} predicted` : ''}`}
+      @click=${() => onColorBy(key)}
+    >
+      <span class="eat-color-by-name">${inEmptyState ? `Color by ${label}` : label}</span>
+      ${share
+        ? html`<span class="eat-color-by-share"
+            >${inEmptyState ? share : `· ${share} predicted`}</span
+          >`
+        : nothing}
+      <span class="eat-chevron" aria-hidden="true">›</span>
+    </button>
+  </li>`;
+}
+
+interface EatOthersView {
+  data: VisualizationData;
+  annotation: string;
+  open: boolean;
+  onToggle(open: boolean): void;
+  onColorBy(annotation: string): void;
+}
+
+/**
+ * `Other annotations with predictions (2)` (proposal B §4.7), collapsed; its rows build their
+ * annotations' indices only once it opens. The `<annotation> — EAT neighbourhood` link sits under
+ * it whenever that column exists, even with no other annotation to list.
+ */
+export function renderOtherAnnotations(view: EatOthersView): TemplateResult | typeof nothing {
+  const { data, annotation, onColorBy } = view;
+  const others = otherEatAnnotations(data, annotation);
+  const neighbour = neighbourColumn(data, annotation);
+  if (others.length === 0 && !neighbour) return nothing;
+  const neighbourLabel = neighbour ? annotationLabel(neighbour, data.annotations[neighbour]) : '';
+  return html`${others.length > 0
+    ? html`<details
+        class="eat-others"
+        ?open=${view.open}
+        @toggle=${(event: Event) => view.onToggle((event.currentTarget as HTMLDetailsElement).open)}
+      >
+        <summary>Other annotations with predictions (${others.length})</summary>
+        ${view.open
+          ? html`<ul class="eat-color-by-list">
+              ${others.map((key) => colorByRow(data, key, onColorBy, false))}
+            </ul>`
+          : nothing}
+      </details>`
+    : nothing}
+  ${neighbour
+    ? html`<button
+        type="button"
+        class="eat-color-by eat-neighbour"
+        data-annotation=${neighbour}
+        aria-label=${`Color by ${neighbourLabel}`}
+        @click=${() => onColorBy(neighbour)}
+      >
+        <span class="eat-color-by-name">Color by ${neighbourLabel}</span>
+        <span class="eat-chevron" aria-hidden="true">›</span>
+      </button>`
+    : nothing}`;
+}
+
+/** The empty state's list: every annotation with predictions, as `Color by <label>  61 % ›`. */
+export function renderEmptyColorBy(
+  data: VisualizationData,
+  annotation: string,
+  onColorBy: (annotation: string) => void,
+): TemplateResult | typeof nothing {
+  const others = otherEatAnnotations(data, annotation);
+  if (others.length === 0) return nothing;
+  return html`<ul class="eat-color-by-list">
+    ${others.map((key) => colorByRow(data, key, onColorBy, true))}
+  </ul>`;
+}

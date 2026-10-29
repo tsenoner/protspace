@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getProteinAnnotationIndices, type VisualizationData } from '@protspace/utils';
-import type { ProtspaceLegend } from './legend';
 import type { OtherItem } from './types';
 import { getVisualEncoding } from './visual-encoding';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  settleLegend,
+} from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 
 vi.stubGlobal('localStorage', createLocalStorageMock());
@@ -32,10 +34,6 @@ function makeData(): VisualizationData {
 }
 
 /** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 /**
  * A dataset load as `data-renderer.ts` runs it: auto-sync off while the plot takes the data,
  * then back on and a forced sync. `feed` also hands the legend the per-protein
@@ -44,7 +42,7 @@ async function settle(legend: ProtspaceLegend): Promise<void> {
 async function load(feed: boolean) {
   const data = makeData();
   const { legend, plot } = await mountLegendWithScatterplot(data, 'family');
-  await settle(legend);
+  await settleLegend(legend);
 
   legend.clearForNewDataset('dataset');
   legend.autoSync = false;
@@ -55,10 +53,10 @@ async function load(feed: boolean) {
       getProteinAnnotationIndices(rows, i).map((code) => data.annotations.family.values[code]),
     );
   }
-  await settle(legend);
+  await settleLegend(legend);
   legend.autoSync = true;
   legend.forceSync();
-  await settle(legend);
+  await settleLegend(legend);
 
   return {
     items: legend.getLegendExportData().items,
