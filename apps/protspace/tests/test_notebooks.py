@@ -1809,7 +1809,10 @@ def test_clickthrough_stops_esm_c_6b_where_ram_is_short(monkeypatch, gpu_gb, nee
     _run_until_the_fasta(namespace)
 
 
-@pytest.mark.parametrize(("gpu_gb", "warned"), [(15.8, True), (40.0, False)])
+# 15.8: a T4. 23.6: what a 24 GB L4 reports. 40: an A100.
+@pytest.mark.parametrize(
+    ("gpu_gb", "warned"), [(15.8, True), (23.6, False), (40.0, False)]
+)
 def test_clickthrough_warns_when_esm_c_6b_may_not_fit_the_gpu(
     monkeypatch, capsys, gpu_gb, warned
 ):
@@ -1822,6 +1825,37 @@ def test_clickthrough_warns_when_esm_c_6b_may_not_fit_the_gpu(
     _run_until_the_fasta(namespace)
 
     assert ("little room for long sequences" in capsys.readouterr().out) is warned
+
+
+def test_clickthrough_stops_the_weights_clock_when_loading_fails(monkeypatch, tmp_path):
+    """The weights line counts in a thread of its own until done(): a failed load
+    (a gated model, a transformers without ESM C, Ctrl-C) left it ticking under the
+    error."""
+    _fake_gpu(monkeypatch)
+    fasta = tmp_path / "x.fasta"
+    fasta.write_text(">a\nMKV\n")
+    ended = []
+
+    class Live:
+        def __init__(self, _label, _text):
+            pass
+
+        def done(self, text):
+            ended.append(text)
+
+    def fail(_checkpoint):
+        raise SystemExit("Could not load biohub/ESMC-300M")
+
+    namespace = _clickthrough_namespace(model_name="biohub/ESMC-300M")
+    namespace.update(
+        _Live=Live,
+        _weights_size=lambda _checkpoint: "",
+        _choose_fasta=lambda: (fasta, ""),
+        setup_model=fail,
+    )
+    with pytest.raises(SystemExit, match="Could not load"):
+        namespace["_run"]()
+    assert ended == ["did not load ({time})"]
 
 
 class _FakeBatch(dict):
