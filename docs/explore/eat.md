@@ -145,6 +145,8 @@ A common question for a set of unknown proteins and a curated reference set: whi
 
    Transfer reads only the vectors, so `-e` needs no `:name` suffix. `predictions.tsv` lists every unknown with its nearest reference, the raw distance and whether it is near or distant; sort it by `distance` for a candidate list. With `--k 5` it lists the five nearest references of each. See the [neighbour report](/guide/python-cli#neighbour-report).
 
+   No command line? The EAT panel of the [Preparation notebook](/guide/data-preparation#optional-fill-missing-annotations-eat) does the same: its distance cutoff is automatic by default, its status box counts the near and distant unknowns, and **Download neighbour report** saves the same TSV.
+
 3. **Open the bundle here** and colour by **Toxin family — EAT neighbourhood** to see the near and distant unknowns, or colour by **Toxin family** and use the reliability filter's **Hide below** to keep only the confident transfers. Curated references stay visible either way: they are `N/A` in the neighbourhood column and carry no confidence.
 4. **Export the proteins you kept.** Coloured by the neighbourhood column, hide its `distant` legend value (or `near`) and `N/A` (the references), then **Export → Protein IDs**, or **Export → Table** for the same proteins with their coordinates and annotations, the `__pred_*` columns included: either export holds exactly the proteins still visible. See [Exporting](/explore/exporting#what-gets-exported). For everything at once, `protspace export space_eat.parquetbundle space.tsv` writes every protein with every annotation, the `__pred_*` and `__neighbor` columns included, as one table (see [`protspace export`](/guide/python-cli#protspace-export)).
 

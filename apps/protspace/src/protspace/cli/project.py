@@ -23,6 +23,7 @@ from protspace.cli.common_options import (
     Opt_RandomState,
     Opt_Similarity,
     Opt_Verbose,
+    refuse_unsupported_method_params,
     require_similarity_extra,
 )
 
@@ -188,6 +189,11 @@ def project(
 
     # Pre-compute which (method, dims) pairs appear multiple times
     method_counts = Counter((s.method, s.dims) for s in method_specs)
+
+    # Before any reduction runs: a perplexity the smallest set cannot support.
+    refuse_unsupported_method_params(
+        method_specs, reducer_params, min(len(s.headers) for s in embedding_sets)
+    )
 
     all_reductions = []
     headers = embedding_sets[0].headers

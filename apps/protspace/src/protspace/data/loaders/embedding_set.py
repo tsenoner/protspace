@@ -19,6 +19,7 @@ MODEL_DISPLAY_NAMES: dict[str, str] = {
     "esm2_150m": "ESM2-150M",
     "esm2_650m": "ESM2-650M",
     "esm2_3b": "ESM2-3B",
+    # Not embedded any more: names .h5 files the Embeddings notebook wrote with ESM3.
     "esm3_open": "ESM3-Open",
     "ankh_base": "Ankh-Base",
     "ankh_large": "Ankh-Large",

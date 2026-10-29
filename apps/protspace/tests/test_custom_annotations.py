@@ -113,7 +113,7 @@ def test_the_guide_and_the_notebook_state_the_first_column_rule():
     notebook = (
         REPO_ROOT / "apps/protspace/notebooks/ProtSpace_Preparation.ipynb"
     ).read_text()
-    hint = notebook.split("Optional: a CSV/TSV with custom annotations")[1][:80]
+    hint = notebook.split("Optional custom annotations:")[1][:100]
     assert "first column, whatever its name" in hint
 
 

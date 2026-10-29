@@ -2,7 +2,7 @@
 
 ## Purpose
 
-How the Preparation notebook gets an input into the Colab runtime, names an HDF5 input, and decides which input Generate runs on, without blocking Run all or failing silently.
+How the Preparation notebook gets an input into the Colab runtime, names an HDF5 input, decides which input Generate runs on, and configures, runs and reports a run (annotations, sliders, saved settings, progress, failure advice, compact output, rendering harness), and how the Colab notebooks' install cell guards against pip replacing loaded packages, without blocking Run all or failing silently.
 
 ## Requirements
 
@@ -133,3 +133,237 @@ SHALL do the same.
 
 - **WHEN** the installed protspace has no `align_annotations` and reads empty CSV cells as nulls
 - **THEN** the bundle the panel writes is the same as with the current package
+
+### Requirement: The install cell stops when pip changed a loaded package
+
+The install cell of the Preparation and Transfer notebooks SHALL install without replacing a
+distribution this session has already imported, holding each such distribution at its loaded
+version, and SHALL use a plain install only when that cannot be resolved. As a safety net, it SHALL stop with a message
+naming every loaded distribution whose installed version changed anyway, and telling the user to
+restart the session and run the cell again. Once it has stopped, it SHALL stop again on every
+re-run in the same session, and SHALL pass after a restart when nothing changes.
+
+#### Scenario: Colab had numpy loaded and protspace's dependencies ask for a newer one
+
+- **WHEN** numpy 2.1.3 is imported before the install, and a dependency of protspace declares
+  numpy >= 2.4.1
+- **THEN** the install keeps numpy 2.1.3, and the cell completes without asking for a restart
+
+#### Scenario: A loaded package changed all the same
+
+- **WHEN** the installed version of a loaded distribution changed during the install
+- **THEN** the cell stops, naming it with both versions and _Runtime → Restart session_
+
+#### Scenario: Re-running without a restart
+
+- **WHEN** the cell stopped once and the user runs it again in the same session
+- **THEN** it stops again with the same names
+
+### Requirement: The Methods sliders stay within the accepted ranges
+
+Every Methods slider SHALL offer only values the installed protspace accepts for its parameter,
+with its default on the slider's step grid. Perplexity SHALL be an integer slider from 5 up to the
+installed protspace's ceiling (500 when it has none). Before Generate does any work, the panel
+SHALL check the selected methods' parameters against the input's protein count. It SHALL say so
+under the sliders while they change, and refuse at Generate. Every visible slider SHALL keep a
+track at least 120 px wide at any panel width, the parameter groups wrapping to new rows.
+
+#### Scenario: Perplexity 30 on 20 proteins
+
+- **WHEN** t-SNE is selected with perplexity 30 for an `.h5` of 20 proteins
+- **THEN** the Methods section says the perplexity is not below 20 proteins, and Generate stops
+  before loading anything
+
+#### Scenario: Every method at 1440 px
+
+- **WHEN** all six methods are selected and the panel is 1,440 px wide
+- **THEN** every slider track is at least 120 px wide
+
+### Requirement: The panel says what failed and what to do about it
+
+When Generate fails, the panel SHALL name the step that failed and the error, and SHALL give the
+advice that matches the error when it recognises it, the general troubleshooting list only
+otherwise. Log lines and errors that tell a CLI user to pass a flag SHALL name the panel's control
+instead.
+
+#### Scenario: A stale package after the install
+
+- **WHEN** Generate fails on an error raised by a package loaded before the install
+- **THEN** the panel tells the user to restart the session and run all cells again
+- **AND** does not list the UniProt, Biocentral or annotation advice
+
+#### Scenario: A cache warning that names a CLI flag
+
+- **WHEN** protspace logs that the cached annotations are all empty and names `--refetch`
+- **THEN** the panel's line names _Fetch annotations again_ under Annotations instead of the flag
+
+### Requirement: The panel skips a UniProt fetch no identifier can match
+
+Before fetching annotations for an `.h5` input, the panel SHALL check the identifiers against the
+UniProt accession format. When none matches, it SHALL fetch nothing from UniProt, use the custom
+CSV alone when one is given, and say so in either case. An `.h5` carries no sequences, so no source
+but a custom CSV could annotate it; a FASTA input keeps its sequence-based sources and is fetched as
+usual.
+
+#### Scenario: TRINITY identifiers with a CSV
+
+- **WHEN** Generate runs on an `.h5` whose identifiers are `TRINITY_…` with the Default annotations
+  and a custom CSV
+- **THEN** the panel says no identifier is a UniProt accession and uses the CSV alone
+
+### Requirement: The panel keeps its settings across a session restart
+
+Generate SHALL save the panel's settings in the runtime, and building the panel SHALL restore
+them, loading a saved path that still holds a file. It SHALL then load each file the upload cell
+received after the saved Generate, and with nothing saved the newest file of each kind the upload
+cell left in the runtime; an upload older than the saved settings SHALL NOT replace them. A path
+field's change SHALL clear the status the previous path left.
+
+#### Scenario: Restart after a run
+
+- **WHEN** the user generated a bundle from an `.h5` and a CSV, restarted the session and ran all
+- **THEN** the panel shows the same tab, paths, methods and annotation choice, with the `.h5` loaded
+
+#### Scenario: Run all again after generating from another file
+
+- **WHEN** the user uploaded `old.h5`, generated from another `.h5`, and ran all cells again without
+  a restart
+- **THEN** the panel keeps the other `.h5` it restored, not the earlier upload
+
+#### Scenario: A new path after a failed load
+
+- **WHEN** a load said no file was received and the path field then changes
+- **THEN** that message is gone
+
+### Requirement: Generate shows where the run stands until the download starts
+
+Generate SHALL show the step it is on as "Step k of n" with the step's name, a progress bar, and
+the time since the click, refreshed while a step runs. The reduction step SHALL count its
+projections. The last step SHALL show the bundle's size while the download is prepared. The final
+state SHALL say that the download started and that the browser saves the file when the transfer
+ends, and the panel SHALL offer every bundle in the runtime's `output/` folder for download by a
+button.
+
+#### Scenario: A run on an .h5 with PCA and UMAP
+
+- **WHEN** Generate runs on an `.h5` with PCA and UMAP selected
+- **THEN** the panel shows steps 1 to 5, including "Reducing dimensions (UMAP 2, 2 of 2)" and
+  "Preparing the download", and ends with a full bar and "Download started"
+- **AND** the bundle is listed for a Download bundle click
+
+### Requirement: The panel is checked by a rendering harness
+
+The repository SHALL contain a harness that renders the Preparation panel with ipywidgets 7.7.1
+and 8 in a headless browser. It SHALL go through panel widths, light and dark themes, method
+selections and accordion sections. In each state it SHALL check slider track widths, horizontal
+overflow, text contrast and the visibility of Generate, and it SHALL fail when a check fails.
+
+#### Scenario: A regression in the dark-mode headers
+
+- **WHEN** the harness runs on a notebook whose collapsed section titles are near-black in Colab's
+  dark mode
+- **THEN** it reports their contrast for each state and exits with failure
+
+### Requirement: Every input field of the panel has an example
+
+The Preparation panel SHALL offer a ready example for each field that takes the user's own input,
+so a user can see what the field takes without bringing a file: the `.h5` and FASTA tabs and the
+custom-annotations field SHALL each have a button that puts an example file into the runtime and
+fills the field with its path, and the UniProt tab SHALL offer example queries that fill in and
+set the query. The FASTA example's custom-annotations CSV SHALL hold one row per protein of that
+FASTA. An example that cannot be fetched SHALL be reported in its tab, with nothing filled in.
+
+#### Scenario: Trying the FASTA tab without a file
+
+- **WHEN** the user clicks Load an example in the Sequences (FASTA) tab
+- **THEN** a FASTA of snake-venom proteins is written to the runtime, its path fills the field, the
+  tab reports it ready with its record count and first protein ID, and Generate runs on it
+
+#### Scenario: Custom annotations for the FASTA example
+
+- **WHEN** the user then clicks Load an example under the custom-annotations field
+- **THEN** the field holds the path of a CSV with `venom_family` for each protein of that FASTA
+
+#### Scenario: An example query
+
+- **WHEN** the user picks an example in the UniProt query tab
+- **THEN** the query field shows it and it is set for Generate
+
+#### Scenario: No connection
+
+- **WHEN** the example cannot be fetched
+- **THEN** the tab says so and its path field stays empty
+
+### Requirement: The panel says when a custom CSV applies and keeps routine lines quiet
+
+The line beside Generate SHALL name the custom-annotations file whenever that field holds one,
+whatever tab is selected, and SHALL say how to leave it out. The panel SHALL print the annotation
+cache's fill-in of proteins it lacks as an INFO line with both counts, and SHALL leave out the
+package's `Missing annotations: set()` line.
+
+#### Scenario: The FASTA example's CSV left in place
+
+- **WHEN** the custom-annotations field holds `example_snake_venom_families.csv` and the Example
+  tab is selected
+- **THEN** the line beside Generate names that file and says to empty the field to leave it out
+
+#### Scenario: Earlier runs fetched some of the proteins
+
+- **WHEN** the cache holds 559 of 5,015 requested proteins
+- **THEN** the panel prints "INFO: Fetching annotations for 4,456 of 5,015 proteins; the others
+  were fetched by an earlier run in this runtime", and no WARNING
+
+### Requirement: An Example-tab run takes its annotations from the example's bundle
+
+When Generate runs on the Example tab, the Preparation panel SHALL take every annotation column the
+request names from the example's `<name>_v3.parquetbundle` in the `examples` release, when that
+bundle holds it, and SHALL fetch only the requested columns it lacks, together with a custom CSV
+when one is given. Those bundles hold the annotations fetched for exactly the example's proteins,
+so fetching them again on each run only costs time: about 20 minutes for the Snake Toxin example
+on Colab before tsenoner/protspace#557. With "Fetch annotations again" ticked, or when the bundle
+cannot be fetched or read, the panel SHALL fetch every requested column as for any other input.
+The run SHALL say how many columns came from the bundle.
+
+#### Scenario: The default annotations of an example
+
+- **WHEN** the user generates from an example with the default annotations
+- **THEN** every default column comes from the example's bundle and no annotation is fetched
+- **AND** the run says how many columns came from the bundle
+
+#### Scenario: A column the bundle lacks
+
+- **WHEN** the request names a column the example's bundle does not hold
+- **THEN** that column is fetched, and the columns the bundle holds still come from it
+
+#### Scenario: A custom CSV with an example
+
+- **WHEN** the user generates from an example with the default annotations and a custom CSV
+- **THEN** the default columns come from the bundle and the CSV's columns are added to them
+
+#### Scenario: Fetch annotations again
+
+- **WHEN** "Fetch annotations again" is ticked
+- **THEN** the bundle is not read and every requested column is fetched
+
+#### Scenario: The bundle cannot be fetched
+
+- **WHEN** the example's bundle cannot be downloaded or read
+- **THEN** the run says so and fetches every requested column instead
+
+### Requirement: The panel's output stays compact
+
+The Preparation notebook SHALL NOT draw a transient (`leave=False`) progress bar, so that no closed
+bar leaves an empty slot in Colab's output, and the panel SHALL leave out package log lines that
+its status card or progress bar already show (the bundle saved, each projection applied, a
+reference file downloaded), while warnings still show.
+
+#### Scenario: Many batches with inactive UniProt entries
+
+- **WHEN** the UniProt fetch resolves inactive entries in dozens of batches
+- **THEN** only the overall "Fetching UniProt annotations" bar shows, with no blank space below it
+
+#### Scenario: A finished run
+
+- **WHEN** Generate finishes
+- **THEN** the log shows no "Saved bundled output", "Applying …" or "Bundle written" line, and the
+  status card names the bundle and its size

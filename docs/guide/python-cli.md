@@ -131,21 +131,21 @@ never needed there; given anyway, these flags make `prepare` warn that they have
 
 ### Projection
 
-| Flag               | Description                                                                               | Default     |
-| ------------------ | ----------------------------------------------------------------------------------------- | ----------- |
-| `-m, --methods`    | DR methods, comma-separated or repeated. See [Projection methods](#projection-methods).   | `pca2`      |
-| `-s, --similarity` | Also compute a sequence-similarity projection via MMseqs2. Needs `protspace[similarity]`. | off         |
-| `--metric`         | Distance metric: `euclidean`, `cosine`, `manhattan`.                                      | `euclidean` |
-| `--random-state`   | Random seed.                                                                              | `42`        |
-| `--n-neighbors`    | UMAP/PaCMAP/LocalMAP neighbors (≥ 2). Larger = more global structure.                     | `25`        |
-| `--min-dist`       | UMAP minimum distance (0.0–0.99).                                                         | `0.1`       |
-| `--perplexity`     | t-SNE perplexity (≥ 5). Should be below `n_samples / 3`.                                  | `30.0`      |
-| `--learning-rate`  | t-SNE learning rate (≥ 1).                                                                | `200.0`     |
-| `--mn-ratio`       | PaCMAP/LocalMAP mid-near ratio (0.0–1.0).                                                 | `0.5`       |
-| `--fp-ratio`       | PaCMAP/LocalMAP further ratio.                                                            | `2.0`       |
-| `--n-init`         | MDS initializations.                                                                      | `4`         |
-| `--max-iter`       | MDS maximum iterations.                                                                   | `300`       |
-| `--eps`            | MDS convergence tolerance.                                                                | `0.001`     |
+| Flag               | Description                                                                                    | Default     |
+| ------------------ | ---------------------------------------------------------------------------------------------- | ----------- |
+| `-m, --methods`    | DR methods, comma-separated or repeated. See [Projection methods](#projection-methods).        | `pca2`      |
+| `-s, --similarity` | Also compute a sequence-similarity projection via MMseqs2. Needs `protspace[similarity]`.      | off         |
+| `--metric`         | Distance metric: `euclidean`, `cosine`, `manhattan`.                                           | `euclidean` |
+| `--random-state`   | Random seed.                                                                                   | `42`        |
+| `--n-neighbors`    | UMAP/PaCMAP/LocalMAP neighbors (≥ 2). Larger = more global structure.                          | `25`        |
+| `--min-dist`       | UMAP minimum distance (0.0–0.99).                                                              | `0.1`       |
+| `--perplexity`     | t-SNE perplexity (≥ 5; must be below the number of proteins, ideally at most `n_samples / 3`). | `30.0`      |
+| `--learning-rate`  | t-SNE learning rate (≥ 1).                                                                     | `200.0`     |
+| `--mn-ratio`       | PaCMAP/LocalMAP mid-near ratio (0.0–1.0).                                                      | `0.5`       |
+| `--fp-ratio`       | PaCMAP/LocalMAP further ratio.                                                                 | `2.0`       |
+| `--n-init`         | MDS initializations.                                                                           | `4`         |
+| `--max-iter`       | MDS maximum iterations.                                                                        | `300`       |
+| `--eps`            | MDS convergence tolerance.                                                                     | `0.001`     |
 
 ### Annotations
 
@@ -265,6 +265,11 @@ MIT in May 2026, retroactively, when ESM-C moved to the Chan Zuckerberg Biohub, 
 weights (`biohub/ESMC-300M`, `biohub/ESMC-600M`, `biohub/ESMC-6B`).
 :::
 
+No GPU or local install? The
+[Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
+embeds a FASTA with any of these models except `esm2_3b` on a free Colab GPU (`esmc_6b` included)
+and writes an `.h5` that `prepare -i` reads, per protein or per residue.
+
 ### Local backend
 
 `--backend local` computes embeddings on a local GPU/CPU via HuggingFace `transformers` instead of
@@ -285,9 +290,17 @@ from a different model; a run that finds one of those files refuses to resume fr
 `esmc_6b` (ESM-C 6B, 2560-dimensional vectors) is available only on this backend: Biocentral accepts
 the model but fails to compute it, so `--backend biocentral -e esmc_6b` stops with a usage error. Its
 weights are 25.4 GB in float32. On a GPU they load in half precision (bfloat16 where the GPU
-supports it, float16 otherwise), which needs about 13 GB of GPU memory plus room for the sequences,
-so a 24 GB or larger card is the practical minimum. On the CPU they stay float32 and need over
-26 GB of RAM.
+supports it, float16 otherwise), about 12 GB of GPU memory, so a 16 GB card such as the T4 on free
+Colab is enough: there it peaks at 12.5 GB with sequences up to 2,000 residues, and takes about
+5.5 minutes per 1,000 proteins of typical length (plus about 4 minutes to download the weights and
+2 to load them). On the CPU they stay float32 and need over 26 GB of RAM.
+
+On a GPU the local backend loads every model straight into GPU memory, so a model larger than the
+machine's RAM still loads: on free Colab (12.7 GB of RAM) both `esmc_6b` and `esm2_3b` peak below
+1 GB of RAM while loading. This uses the `accelerate` package, which the `[local]` extra installs;
+without it the model is first built in RAM. In the Colab Preparation notebook, `esm2_3b` and
+`esmc_6b` are disabled only where the model would be built in RAM first (no GPU, or no
+`accelerate`) and the runtime has under 16 GB of RAM.
 
 ## Annotations
 
@@ -443,7 +456,8 @@ this order:
    [Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
 3. **File name**, a model key the file name ends in: `seqs_esm2_650m.h5`, `Ss_mSCR_esm2_650m.h5`
    and `esm2_650m.h5` are all `esm2_650m`. The keys are the [embedder models](#embedder-models)
-   (plus `esm3_open`); the longest match wins, and only the end of the name counts. A directory
+   (plus `esm3_open`, which older Embeddings-notebook files carry); the longest match wins, and
+   only the end of the name counts. A directory
    input takes the key its files share; files from different models in one directory are an
    error, so give each model's files their own `-i`
 4. **File stem**, only when the file is the command's only input: `results.h5` is named `results`
