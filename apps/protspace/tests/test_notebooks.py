@@ -1480,12 +1480,19 @@ def test_preparation_shows_each_step_and_ends_full(monkeypatch, tmp_path):
     assert ("1", "5", "Loading the embeddings") in steps
     assert ("3", "5", "Reducing dimensions (PCA 2, 1 of 2)") in steps
     assert ("3", "5", "Reducing dimensions (UMAP 2, 2 of 2)") in steps
-    assert any(label.startswith("Preparing the download") for *_, label in steps)
+    preparing = [label for *_, label in steps if label.startswith("Preparing")]
+    assert preparing and all(label.endswith(" KB)") for label in preparing)
     bar = namespace["gen_progress"]
     assert (bar.value, bar.bar_style) == (bar.max, "success")
     assert "Download started" in namespace["gen_status"].value
     (bundle,) = downloads
     assert Path(bundle).parent.name == "output"
+
+    # A click that stops before running leaves no full bar from this run.
+    for toggle in namespace["method_toggles"].values():
+        toggle.value = False
+    namespace["_on_gen"](None)
+    assert bar.layout.display == "none"
 
 
 def test_preparation_offers_every_bundle_for_download(monkeypatch, tmp_path):
