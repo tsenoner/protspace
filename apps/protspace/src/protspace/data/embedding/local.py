@@ -27,7 +27,6 @@ checked against the same committed references (``tests/esmc_reference.py``); the
 other families' parity was measured once (cosine >= 0.9999), not asserted here.
 """
 
-import importlib.util
 import logging
 import re
 from dataclasses import dataclass
@@ -195,8 +194,32 @@ def pool_residues(hidden: np.ndarray, seq_len: int, mod_type: str) -> np.ndarray
 # ---------------------------------------------------------------------------
 
 
+# transformers refuses a device_map below this accelerate (its
+# ACCELERATE_MIN_VERSION; a test keeps this at least as high), so an older one
+# keeps the host-RAM path rather than failing every GPU load.
+_ACCELERATE_MIN = (1, 1, 0)
+
+
 def _accelerate_available() -> bool:
-    return importlib.util.find_spec("accelerate") is not None
+    """accelerate installed at a version transformers accepts for device_map."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        installed = version("accelerate")
+    except PackageNotFoundError:
+        return False
+    return _release(installed) >= _ACCELERATE_MIN
+
+
+def _release(version: str) -> tuple[int, ...]:
+    """(1, 13, 0) from "1.13.0" or "1.13.0rc1"; parts after a non-digit drop."""
+    parts = []
+    for part in version.split(".")[:3]:
+        digits = re.match(r"\d+", part)
+        if digits is None:
+            break
+        parts.append(int(digits.group()))
+    return tuple(parts)
 
 
 def stages_in_host_ram() -> bool:

@@ -3413,7 +3413,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "accelerate", marker = "extra == 'local'", specifier = ">=1.0" },
+    { name = "accelerate", marker = "extra == 'local'", specifier = ">=1.1.0" },
     { name = "biocentral-api", specifier = ">=2.0.0,<3" },
     { name = "dash", marker = "extra == 'frontend'", specifier = ">=3" },
     { name = "dash-bootstrap-components", marker = "extra == 'frontend'", specifier = ">=1.6.0" },

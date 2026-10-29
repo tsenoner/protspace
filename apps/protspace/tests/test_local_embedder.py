@@ -320,6 +320,42 @@ def test_stages_in_host_ram(monkeypatch, cuda, accelerate, staged):
     assert local.stages_in_host_ram() is staged
 
 
+@pytest.mark.parametrize(
+    ("installed", "usable"),
+    [
+        ("1.15.0", True),
+        ("1.1.0", True),
+        ("1.0.1", False),
+        ("0.34.2", False),
+        (None, False),
+    ],
+)
+def test_accelerate_below_transformers_minimum_keeps_the_old_path(
+    monkeypatch, installed, usable
+):
+    """transformers raises on device_map with an accelerate it considers too old,
+    which would fail every GPU load; such an install loads through host RAM."""
+    import importlib.metadata as metadata
+
+    def version(name):
+        if installed is None:
+            raise metadata.PackageNotFoundError(name)
+        return installed
+
+    monkeypatch.setattr(metadata, "version", version)
+    assert local._accelerate_available() is usable
+
+
+def test_accelerate_minimum_covers_what_transformers_requires():
+    """If transformers raises its floor, ours must follow, or the probe would
+    report direct loading where transformers then refuses it."""
+    pytest.importorskip("transformers")
+    from transformers.utils.import_utils import ACCELERATE_MIN_VERSION
+
+    assert local._ACCELERATE_MIN >= local._release(ACCELERATE_MIN_VERSION)
+    assert local._release("1.13.0rc1") == (1, 13, 0)
+
+
 def test_stages_in_host_ram_when_the_probe_fails(monkeypatch):
     """No torch (or a broken CUDA probe) counts as staging: a false block beats a
     killed kernel."""
