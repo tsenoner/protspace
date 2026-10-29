@@ -198,7 +198,8 @@ def test_embed_fasta_returns_only_the_fastas_proteins(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_embed_cli_backend_local_dispatches_to_local(tmp_path, monkeypatch):
+@pytest.mark.parametrize("key", ["prot_t5", "esmc_6b"])  # esmc_6b: local-only
+def test_embed_cli_backend_local_dispatches_to_local(tmp_path, monkeypatch, key):
     fasta = tmp_path / "s.fasta"
     fasta.write_text(">P12345\nMKVLAAG\n")
     captured = {}
@@ -214,7 +215,7 @@ def test_embed_cli_backend_local_dispatches_to_local(tmp_path, monkeypatch):
             "-i",
             str(fasta),
             "-e",
-            "prot_t5",
+            key,
             "-o",
             str(tmp_path / "out"),
             "--backend",
@@ -223,7 +224,7 @@ def test_embed_cli_backend_local_dispatches_to_local(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 0, result.output
-    assert captured["embedder"] == "prot_t5"  # local gets the short key
+    assert captured["embedder"] == key  # local gets the short key
     # local backend must build a LocalEmbedConfig, not a Biocentral EmbedConfig
     assert type(captured["config"]).__name__ == "LocalEmbedConfig"
 
@@ -494,3 +495,53 @@ def test_embed_cli_rejects_nonpositive_max_length(tmp_path):
     )
 
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# Local-only shortcuts (esmc_6b): refused on Biocentral before any work
+# ---------------------------------------------------------------------------
+
+
+def _refuse_work(monkeypatch):
+    """Fail the test if anything is fetched or embedded."""
+
+    def boom(*args, **kwargs):
+        raise AssertionError("work started for a refused embedder")
+
+    for target in (
+        "protspace.data.embedding.biocentral.embed_sequences",
+        "protspace.data.embedding.local.embed_sequences",
+        "protspace.data.loaders.query.query_uniprot",
+        "protspace.data.loaders.query.resolve_query_fasta",
+    ):
+        monkeypatch.setattr(target, boom)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["embed", "-i", "{fasta}", "-o", "{out}"],
+        ["prepare", "-i", "{fasta}", "-m", "pca2", "-o", "{out}"],
+        ["prepare", "-q", "(family:globin)", "-m", "pca2", "-o", "{out}"],
+    ],
+    ids=["embed", "prepare-fasta", "prepare-query"],
+)
+def test_cli_refuses_a_local_only_embedder_on_biocentral(tmp_path, monkeypatch, args):
+    fasta = tmp_path / "s.fasta"
+    fasta.write_text(">P12345\nMKVLAAG\n")
+    _refuse_work(monkeypatch)
+    argv = [a.format(fasta=fasta, out=tmp_path / "out") for a in args]
+
+    result = CliRunner().invoke(app, [*argv, "-e", "esmc_6b"])
+
+    assert result.exit_code == 2, result.output
+    out = plain(result.output)
+    assert "esmc_6b is served only by the local backend" in out
+    assert "--backend local" in out
+
+
+def test_resolve_embedder_points_a_local_only_key_at_the_local_backend(capsys):
+    """The library path (`embed_fasta`) resolves through here, not the CLI."""
+    with pytest.raises(SystemExit):
+        resolve_embedder("esmc_6b")
+    assert "--backend local" in capsys.readouterr().err

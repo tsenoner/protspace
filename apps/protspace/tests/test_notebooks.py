@@ -852,6 +852,70 @@ def test_preparation_panel_is_built_without_the_network(monkeypatch, tmp_path):
     assert namespace["input_args"][0]["type"] == "example"
 
 
+def test_preparation_blocks_a_local_only_embedder_on_biocentral(
+    monkeypatch, tmp_path, capsys
+):
+    """esmc_6b runs only on the local backend: disabled with its remedy on
+    Biocentral, dropped at Generate as a backstop, enabled on local."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    labels = {v: k for k, v in namespace["_BACKEND_LABELS"].items()}
+    box = namespace["emb_cbs"]["esmc_6b"]
+
+    namespace["backend_dropdown"].value = labels["biocentral"]
+    assert box.disabled and box.value is False
+    assert "esmc_6b" in namespace["backend_note"].value
+    assert "switch the backend to Local" in namespace["backend_note"].value
+    assert namespace["_drop_incompatible"](["esmc_6b", "prot_t5"], "biocentral") == [
+        "prot_t5"
+    ]
+    assert "Skipping esmc_6b" in capsys.readouterr().out
+
+    namespace["backend_dropdown"].value = labels["local"]
+    # Free Colab's RAM blocks it as oversized; this machine's is what decides.
+    oversized = namespace["_TOO_BIG_HERE"]
+    assert box.disabled is ("esmc_6b" in oversized)
+
+
+@pytest.mark.parametrize(
+    ("probe", "blocked"),
+    [
+        (False, False),  # free T4 with this package: weights go straight to the GPU
+        (True, True),  # no GPU, or no accelerate: host RAM decides
+        (None, True),  # a released package without the probe (<= 4.18.0)
+    ],
+)
+def test_preparation_blocks_oversized_only_where_the_load_stages_in_host_ram(
+    monkeypatch, tmp_path, probe, blocked
+):
+    """On free Colab's 12.7 GB, esm2_3b and esmc_6b are blocked only where the
+    load would build the model in host RAM; a free T4 loads both onto the GPU."""
+    import os
+
+    from protspace.data.embedding import local as local_backend
+
+    if probe is None:
+        monkeypatch.delattr(local_backend, "stages_in_host_ram")
+    else:
+        monkeypatch.setattr(local_backend, "stages_in_host_ram", lambda: probe)
+    real_sysconf = os.sysconf
+    free_colab_pages = int(12.7e9) // real_sysconf("SC_PAGE_SIZE")
+    monkeypatch.setattr(
+        os,
+        "sysconf",
+        lambda name: (
+            free_colab_pages if name == "SC_PHYS_PAGES" else real_sysconf(name)
+        ),
+    )
+
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    labels = {v: k for k, v in namespace["_BACKEND_LABELS"].items()}
+    namespace["backend_dropdown"].value = labels["local"]
+
+    for key in ("esm2_3b", "esmc_6b"):
+        assert namespace["emb_cbs"][key].disabled is blocked, key
+    assert ("too large for this runtime" in namespace["backend_note"].value) is blocked
+
+
 def test_preparation_names_an_unnamed_h5_and_generates(monkeypatch, tmp_path, capsys):
     """The Upload-H5 tab never passed a name, so every file without model_name --
     every file the Embeddings notebook wrote -- failed at Generate."""

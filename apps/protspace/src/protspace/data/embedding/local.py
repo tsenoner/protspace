@@ -16,12 +16,15 @@ Torch and transformers are heavy and optional — they live in the ``[local]``
 extra (``pip install "protspace[local]"``) and are imported lazily inside the
 functions that need them, so importing this module stays cheap.
 
-Checkpoint choices are deliberately aligned with the Biocentral path for output
-consistency: ESM-C maps to Synthyra's ESM++ reimplementation (same weights as
-native, MSE ~1e-9, ungated, loads via plain transformers), and ProtT5/ProstT5
-use the fp16 encoder exports (T4-friendly, embedding-equivalent). The exact
-numerical parity of local vs. Biocentral pooling is validated separately (a
-cross-check script), not asserted here.
+ESM-C loads the official ``biohub/ESMC-*`` weights through transformers'
+native ``esmc`` model (transformers >= 5.16), with no remote code. Its pooled
+vectors equal those of Synthyra's ESM++ reimplementation, which this backend
+used before transformers had the model, so ``.h5`` files from either keep the
+same ``esmc_*`` producer stamp. ESM-C 6B loads in half precision on a GPU
+(``_HALF_ON_GPU``). ProtT5/ProstT5 use the fp16 encoder exports (T4-friendly,
+embedding-equivalent). Local and Biocentral ESM-C vectors are both
+checked against the same committed references (``tests/esmc_reference.py``); the
+other families' parity was measured once (cosine >= 0.9999), not asserted here.
 """
 
 import logging
@@ -42,8 +45,8 @@ from protspace.data.embedding.store import (
 
 logger = logging.getLogger(__name__)
 
-# Short key → (HuggingFace checkpoint, model family). Covers the same 12
-# shortcuts as the Biocentral backend (ALL_SHORT_KEYS).
+# Short key → (HuggingFace checkpoint, model family). Every CLI shortcut
+# (EMBEDDER_MODELS), including the local-only ones (LOCAL_ONLY_EMBEDDERS).
 LOCAL_CHECKPOINTS: dict[str, tuple[str, str]] = {
     "prot_t5": ("Rostlab/prot_t5_xl_half_uniref50-enc", "prot_t5"),
     "prost_t5": ("Rostlab/ProstT5_fp16", "prost_t5"),
@@ -55,16 +58,27 @@ LOCAL_CHECKPOINTS: dict[str, tuple[str, str]] = {
     "ankh_base": ("ElnaggarLab/ankh-base", "ankh"),
     "ankh_large": ("ElnaggarLab/ankh-large", "ankh"),
     "ankh3_large": ("ElnaggarLab/ankh3-large", "ankh"),
-    "esmc_300m": ("Synthyra/ESMplusplus_small", "esmc"),
-    "esmc_600m": ("Synthyra/ESMplusplus_large", "esmc"),
+    "esmc_300m": ("biohub/ESMC-300M", "esmc"),
+    "esmc_600m": ("biohub/ESMC-600M", "esmc"),
+    "esmc_6b": ("biohub/ESMC-6B", "esmc"),
 }
 
-# Checkpoints too large for a free Colab runtime; embed_sequences' warning below
-# carries the mechanism (host RAM, not VRAM). This backend only warns —
-# `--backend local -e esm2_3b` is correct on real hardware — but the Colab
-# notebook imports this set to keep those models off its local path, so the size
-# rule has one home rather than two.
-COLAB_OVERSIZED: frozenset[str] = frozenset({"esm2_3b"})
+# Checkpoints too large for a free Colab runtime's 12.7 GB of host RAM when the
+# load stages the whole model there (`stages_in_host_ram`: no CUDA GPU, or no
+# accelerate). On a GPU they load straight onto it: measured 2026-10-29 on a free
+# T4 (14.6 GB VRAM), esmc_6b peaked at 0.6 GB of host RAM and 12.5 GB of VRAM,
+# esm2_3b at 0.5 GB and 11.0 GB. This backend only warns — `--backend local
+# -e esm2_3b` is correct on real hardware — but the Colab notebook imports this
+# set and `stages_in_host_ram` to keep those models off its local path where they
+# would kill the kernel, so the size rule has one home rather than two.
+COLAB_OVERSIZED: frozenset[str] = frozenset({"esm2_3b", "esmc_6b"})
+
+# Checkpoints loaded in half precision on a CUDA device: bf16 where the GPU has
+# it, fp16 otherwise (fp32 on CPU, where half-precision matmul is slow). ESM-C
+# 6B was trained in bf16; its 25.4 GB of fp32 weights would not leave room for
+# activations on a 24-40 GB GPU, while half precision needs 12.7 GB. Measured
+# against fp32 on real weights (the add-esmc-6b-local OpenSpec change).
+_HALF_ON_GPU = frozenset({"biohub/ESMC-6B"})
 
 # Model families whose tokenizer wraps the sequence with a leading special
 # token (CLS / <AA2fold>) as well as a trailing EOS. T5 encoders (ProtT5, Ankh)
@@ -107,16 +121,19 @@ def resolve_default_backend() -> str:
     """
     import sys
 
-    if "google.colab" not in sys.modules:
-        return "biocentral"
+    if "google.colab" in sys.modules and _cuda_available():
+        return "local"
+    return "biocentral"
+
+
+def _cuda_available() -> bool:
+    """Whether torch sees a CUDA GPU; False when torch is missing or the probe fails."""
     try:
         import torch
 
-        if torch.cuda.is_available():
-            return "local"
+        return torch.cuda.is_available()
     except Exception:  # torch missing or CUDA probe failed
-        pass
-    return "biocentral"
+        return False
 
 
 def resolve_local_checkpoint(name: str) -> tuple[str, str]:
@@ -177,30 +194,77 @@ def pool_residues(hidden: np.ndarray, seq_len: int, mod_type: str) -> np.ndarray
 # ---------------------------------------------------------------------------
 
 
+# transformers refuses a device_map below this accelerate (its
+# ACCELERATE_MIN_VERSION; a test keeps this at least as high), so an older one
+# keeps the host-RAM path rather than failing every GPU load.
+_ACCELERATE_MIN = (1, 1, 0)
+
+
+def _accelerate_available() -> bool:
+    """accelerate installed at a version transformers accepts for device_map."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        installed = version("accelerate")
+    except PackageNotFoundError:
+        return False
+    return _release(installed) >= _ACCELERATE_MIN
+
+
+def _release(version: str) -> tuple[int, ...]:
+    """(1, 13, 0) from "1.13.0" or "1.13.0rc1"; parts after a non-digit drop."""
+    parts = []
+    for part in version.split(".")[:3]:
+        digits = re.match(r"\d+", part)
+        if digits is None:
+            break
+        parts.append(int(digits.group()))
+    return tuple(parts)
+
+
+def stages_in_host_ram() -> bool:
+    """True where ``setup_model`` builds the whole model in host RAM before the GPU.
+
+    That is no CUDA GPU (or a failed probe), or no ``accelerate``. Otherwise each
+    weight is placed on the GPU as it is read. The Colab notebook gates
+    ``COLAB_OVERSIZED`` on this.
+    """
+    return not (_cuda_available() and _accelerate_available())
+
+
 def setup_model(checkpoint: str, mod_type: str):
     """Load ``(model, tokenizer, device)`` for *checkpoint* / *mod_type*."""
     import torch
     from transformers import (
-        AutoModelForMaskedLM,
+        AutoModel,
         AutoTokenizer,
-        EsmModel,
         T5EncoderModel,
         T5Tokenizer,
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if _cuda_available() else "cpu")
     logger.info("Loading %s (%s) on %s", checkpoint, mod_type, device)
+    # Without a device_map transformers builds the model in host RAM and .to()
+    # copies it; with one device, device_map places each weight as it is read
+    # and adds no dispatch hooks (see COLAB_OVERSIZED for what that saves).
+    placement = {} if stages_in_host_ram() else {"device_map": device}
+    if device.type == "cuda" and not placement:
+        logger.info("accelerate not installed: loading in host RAM, then copying")
 
-    if mod_type == "esm":
+    if mod_type in ("esm", "esmc"):
+        # AutoModel resolves the config: EsmModel for ESM-2, transformers' own
+        # EsmcModel for ESM-C (a different architecture; no remote code).
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-        model = EsmModel.from_pretrained(checkpoint)
-    elif mod_type == "esmc":
-        # Synthyra ESM++: custom modeling code, tokenizer attached to model.
-        model = AutoModelForMaskedLM.from_pretrained(checkpoint, trust_remote_code=True)
-        tokenizer = model.tokenizer
+        kwargs = dict(placement)
+        if checkpoint in _HALF_ON_GPU and device.type == "cuda":
+            # Native bf16 only (Ampere+): torch's default also counts emulated
+            # bf16, which would put a T4/V100 on a slow software path, not fp16.
+            native_bf16 = torch.cuda.is_bf16_supported(including_emulation=False)
+            kwargs["dtype"] = torch.bfloat16 if native_bf16 else torch.float16
+        model = AutoModel.from_pretrained(checkpoint, **kwargs)
     elif mod_type == "ankh":
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-        model = T5EncoderModel.from_pretrained(checkpoint)
+        model = T5EncoderModel.from_pretrained(checkpoint, **placement)
     elif mod_type in ("prot_t5", "prost_t5"):
         # fp16 on GPU (matches the half-precision checkpoints); fp32 on CPU,
         # where half-precision matmul is unsupported/slow.
@@ -208,7 +272,7 @@ def setup_model(checkpoint: str, mod_type: str):
         tokenizer = T5Tokenizer.from_pretrained(
             checkpoint, do_lower_case=(mod_type == "prot_t5")
         )
-        model = T5EncoderModel.from_pretrained(checkpoint, torch_dtype=dtype)
+        model = T5EncoderModel.from_pretrained(checkpoint, dtype=dtype, **placement)
     else:  # pragma: no cover - guarded by resolve_local_checkpoint
         raise ValueError(f"Unknown model family: {mod_type}")
 
@@ -221,18 +285,14 @@ def _embed_batch(
     """Embed a batch of pre-processed sequences → list of per-protein vectors."""
     import torch
 
-    if mod_type == "esmc":
-        # ESM++'s custom tokenizer takes only the basic call signature.
-        inputs = tokenizer(processed, return_tensors="pt", padding=True)
-    else:
-        inputs = tokenizer(
-            processed,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=max_length + 2,  # room for the special tokens
-            add_special_tokens=True,
-        )
+    inputs = tokenizer(
+        processed,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=max_length + 2,  # room for the special tokens
+        add_special_tokens=True,
+    )
     inputs = {k: v.to(device) for k, v in inputs.items()}
 
     with torch.inference_mode():
@@ -273,15 +333,6 @@ def embed_sequences(
     checkpoint, mod_type = resolve_local_checkpoint(embedder)
     validate_headers(sequences.keys())
 
-    if embedder in COLAB_OVERSIZED:
-        logger.warning(
-            "%s materialises more fp32 weights in host RAM than a free Colab "
-            "runtime (12.7 GB) can take, before they ever reach the GPU — and "
-            "that failure kills the kernel rather than raising. Fine on a larger "
-            "runtime or real hardware; otherwise pick a smaller model.",
-            embedder,
-        )
-
     h5_path = Path(h5_path)
     # Claims the file for this backend and model, and drops the proteins it
     # already holds a current vector for (see store.begin_run).
@@ -307,6 +358,16 @@ def embed_sequences(
         ordered_ids = sorted(remaining, key=lambda k: len(remaining[k]))
         logger.info("Embedding %d sequence(s) with %s", len(ordered_ids), embedder)
 
+        if embedder in COLAB_OVERSIZED and stages_in_host_ram():
+            logger.warning(
+                "%s loads through host RAM here (no CUDA GPU, or accelerate is "
+                "not installed), and needs more of it than a free Colab runtime "
+                "(12.7 GB) has — that failure kills the kernel rather than "
+                "raising. Fine on a larger runtime; on a GPU, install "
+                "protspace[local] (which includes accelerate) to load it "
+                "straight onto the GPU.",
+                embedder,
+            )
         model, tokenizer, device = setup_model(checkpoint, mod_type)
         try:
             i = 0
@@ -344,8 +405,10 @@ def embed_sequences(
             pbar.close()
         finally:
             # Release GPU memory. The `del` must run in this frame (not a
-            # helper) so the caller's references drop before empty_cache;
-            # gc.collect() breaks the esmc tokenizer<->model reference cycle.
+            # helper) so the caller's references drop before empty_cache.
+            # `del` alone is not enough: a model loaded by setup_model is still
+            # held by reference cycles until gc runs (measured for ESM-C model +
+            # tokenizer and the ESM-2 model), so collect before empty_cache.
             import gc
 
             del model, tokenizer
