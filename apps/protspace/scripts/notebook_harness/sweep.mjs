@@ -70,14 +70,14 @@ async function setTheme(page, css) {
 async function openSection(page, index) {
   // index -1 closes them all; ipywidgets keeps at most one open.
   await page.evaluate(
-    ({ selector, index }) => {
-      const headers = [...document.querySelectorAll(selector)].filter((h) => h.closest('[data-harness-panel="0"]'));
+    ({ panel, selector, index }) => {
+      const headers = [...document.querySelectorAll(selector)].filter((h) => h.closest(panel));
       const isOpen = (h) => /Collapse-open/.test(h.parentElement.className);
       headers.forEach((header, i) => {
         if ((i === index) !== isOpen(header)) header.click();
       });
     },
-    { selector: HEADERS, index },
+    { panel: PANEL, selector: HEADERS, index },
   );
   await page.waitForTimeout(300);
 }
@@ -93,8 +93,8 @@ async function selectMethods(page, wanted) {
 }
 
 // Everything measured inside the page: slider tracks, overflow, contrast.
-function measure(minTrack) {
-  const root = document.querySelector('[data-harness-panel="0"]');
+function measure({ minTrack, panelSelector }) {
+  const root = document.querySelector(panelSelector);
   const visible = (e) => {
     const r = e.getBoundingClientRect();
     return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden';
@@ -195,7 +195,7 @@ async function sweep(browser) {
           await page.setViewportSize({ width, height: 1000 });
           await page.waitForTimeout(250);
           const state = `${theme} ${combo} section=${section < 0 ? 'none' : section + 1} ${width}px`;
-          const found = await page.evaluate(measure, MIN_TRACK);
+          const found = await page.evaluate(measure, { minTrack: MIN_TRACK, panelSelector: PANEL });
           states += 1;
           for (const kind of ['sliders', 'overflow', 'contrast']) {
             for (const detail of found[kind]) failures.push(`${state}: ${kind}: ${detail}`);
