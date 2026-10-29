@@ -131,21 +131,21 @@ never needed there; given anyway, these flags make `prepare` warn that they have
 
 ### Projection
 
-| Flag               | Description                                                                                     | Default     |
-| ------------------ | ----------------------------------------------------------------------------------------------- | ----------- |
-| `-m, --methods`    | DR methods, comma-separated or repeated. See [Projection methods](#projection-methods).         | `pca2`      |
-| `-s, --similarity` | Also compute a sequence-similarity projection via MMseqs2. Needs `protspace[similarity]`.       | off         |
-| `--metric`         | Distance metric: `euclidean`, `cosine`, `manhattan`.                                            | `euclidean` |
-| `--random-state`   | Random seed.                                                                                    | `42`        |
-| `--n-neighbors`    | UMAP/PaCMAP/LocalMAP neighbors (≥ 2). Larger = more global structure.                           | `25`        |
-| `--min-dist`       | UMAP minimum distance (0.0–0.99).                                                               | `0.1`       |
-| `--perplexity`     | t-SNE perplexity (≥ 5; must be below the number of proteins). About `n_samples / 3` works best. | `30.0`      |
-| `--learning-rate`  | t-SNE learning rate (≥ 1).                                                                      | `200.0`     |
-| `--mn-ratio`       | PaCMAP/LocalMAP mid-near ratio (0.0–1.0).                                                       | `0.5`       |
-| `--fp-ratio`       | PaCMAP/LocalMAP further ratio.                                                                  | `2.0`       |
-| `--n-init`         | MDS initializations.                                                                            | `4`         |
-| `--max-iter`       | MDS maximum iterations.                                                                         | `300`       |
-| `--eps`            | MDS convergence tolerance.                                                                      | `0.001`     |
+| Flag               | Description                                                                                    | Default     |
+| ------------------ | ---------------------------------------------------------------------------------------------- | ----------- |
+| `-m, --methods`    | DR methods, comma-separated or repeated. See [Projection methods](#projection-methods).        | `pca2`      |
+| `-s, --similarity` | Also compute a sequence-similarity projection via MMseqs2. Needs `protspace[similarity]`.      | off         |
+| `--metric`         | Distance metric: `euclidean`, `cosine`, `manhattan`.                                           | `euclidean` |
+| `--random-state`   | Random seed.                                                                                   | `42`        |
+| `--n-neighbors`    | UMAP/PaCMAP/LocalMAP neighbors (≥ 2). Larger = more global structure.                          | `25`        |
+| `--min-dist`       | UMAP minimum distance (0.0–0.99).                                                              | `0.1`       |
+| `--perplexity`     | t-SNE perplexity (≥ 5; must be below the number of proteins, ideally at most `n_samples / 3`). | `30.0`      |
+| `--learning-rate`  | t-SNE learning rate (≥ 1).                                                                     | `200.0`     |
+| `--mn-ratio`       | PaCMAP/LocalMAP mid-near ratio (0.0–1.0).                                                      | `0.5`       |
+| `--fp-ratio`       | PaCMAP/LocalMAP further ratio.                                                                 | `2.0`       |
+| `--n-init`         | MDS initializations.                                                                           | `4`         |
+| `--max-iter`       | MDS maximum iterations.                                                                        | `300`       |
+| `--eps`            | MDS convergence tolerance.                                                                     | `0.001`     |
 
 ### Annotations
 

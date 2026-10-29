@@ -170,8 +170,8 @@ Choose which 2-D projections to generate:
 ### Parameters (Optional)
 
 Fine-tune settings for each method. The defaults are the CLI's, and each slider covers only the
-values the CLI accepts. t-SNE's perplexity must stay below the number of proteins (about a third of
-it works best). The Methods section says so as soon as the loaded input is too small for the
+values the CLI accepts. t-SNE's perplexity must stay below the number of proteins (at most about a
+third of it is sensible). The Methods section says so as soon as the loaded input is too small for the
 value, and Generate does not start until it is changed:
 
 | Method   | Parameters                                                              |
