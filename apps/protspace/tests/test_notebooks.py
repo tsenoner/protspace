@@ -1193,8 +1193,9 @@ def test_preparation_parameter_defaults_are_the_clis(monkeypatch, tmp_path):
 
 
 def test_preparation_sliders_stay_within_the_config(monkeypatch, tmp_path):
-    """The perplexity slider went to 500 while protspace takes 5 to 50, so t-SNE
-    failed at Generate after the embeddings and annotations were done."""
+    """The perplexity slider once went to 500 while protspace 4.18.0 and earlier
+    capped it at 50, so t-SNE failed at Generate after the embeddings and
+    annotations were done; every slider bound must sit inside the config's."""
     from dataclasses import fields
 
     from protspace.utils.constants import DimensionReductionConfig
