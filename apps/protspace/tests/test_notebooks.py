@@ -1176,6 +1176,7 @@ def test_preparation_reports_a_failed_example_fetch(monkeypatch, tmp_path, capsy
 
 
 def test_preparation_records_the_metric_picked(monkeypatch, tmp_path):
+    """t-SNE reads the metric as UMAP does, and keeps numba's JIT out of the suite."""
     import json as _json
 
     from protspace.data.io.bundle import read_tables
@@ -1189,7 +1190,7 @@ def test_preparation_records_the_metric_picked(monkeypatch, tmp_path):
     namespace["_on_h5_load"]()
     namespace["tabs"].selected_index = 1
     for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method == "UMAP"
+        toggle.value = method == "t-SNE"
     namespace["pw"]["metric"].value = "cosine"
     namespace["ann_preset"].value = namespace["_CSV_ONLY"]
     namespace["csv_path_field"].value = str(csv)
@@ -1540,7 +1541,7 @@ def test_preparation_shows_each_step_and_ends_full(monkeypatch, tmp_path):
     namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
     namespace["tabs"].selected_index = 1
     for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method in {"PCA", "UMAP"}
+        toggle.value = method in {"PCA", "t-SNE"}
     namespace["ann_preset"].value = namespace["_CSV_ONLY"]
     namespace["csv_path_field"].value = str(csv)
 
@@ -1556,7 +1557,7 @@ def test_preparation_shows_each_step_and_ends_full(monkeypatch, tmp_path):
     steps = [re.search(r"Step (\d) of (\d) \u00b7 ([^&]+)", v).groups() for v in shown]
     assert ("1", "5", "Loading the embeddings") in steps
     assert ("3", "5", "Reducing dimensions (PCA 2, 1 of 2)") in steps
-    assert ("3", "5", "Reducing dimensions (UMAP 2, 2 of 2)") in steps
+    assert ("3", "5", "Reducing dimensions (TSNE 2, 2 of 2)") in steps
     preparing = [label for *_, label in steps if label.startswith("Preparing")]
     assert preparing and all(label.endswith(" KB)") for label in preparing)
     bar = namespace["gen_progress"]
