@@ -2139,6 +2139,37 @@ def test_clickthrough_stops_the_weights_clock_when_loading_fails(monkeypatch, tm
     assert ended == ["did not load ({time})"]
 
 
+def test_clickthrough_live_line_ends_on_its_final_text(monkeypatch):
+    """done() did not wait for the ticker: a tick already past its 1 s wait could
+    publish 'loading... m:ss' after 'loaded in', freezing the line mid-load."""
+    import threading
+    import time
+    import types
+
+    import IPython
+    import IPython.display
+
+    shown, ticking = [], threading.Event()
+
+    class Handle:
+        def update(self, obj):
+            if threading.current_thread() is not threading.main_thread():
+                ticking.set()
+                time.sleep(0.3)  # the tick is slow to reach the front end
+            shown.append(obj.data)
+
+    monkeypatch.setattr(
+        IPython, "get_ipython", lambda: types.SimpleNamespace(kernel=object())
+    )
+    monkeypatch.setattr(IPython.display, "display", lambda *_a, **_k: Handle())
+    live = _clickthrough_namespace()["_Live"]("Weights", "loading")
+    assert ticking.wait(5)
+    live.done("loaded in {time}")
+    time.sleep(0.5)  # long enough for a late tick to land
+
+    assert shown[-1].startswith("Weights   loaded in")
+
+
 def _fake_hf_logging(monkeypatch):
     """Just enough huggingface_hub and transformers for `setup_model`'s quieting."""
     import sys
