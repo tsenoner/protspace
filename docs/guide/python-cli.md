@@ -267,7 +267,7 @@ weights (`biohub/ESMC-300M`, `biohub/ESMC-600M`, `biohub/ESMC-6B`).
 
 No GPU or local install? The
 [Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
-embeds a FASTA with the same models on a free Colab GPU (`esmc_6b` included)
+embeds a FASTA with any of these models except `esm2_3b` on a free Colab GPU (`esmc_6b` included)
 and writes an `.h5` that `prepare -i` reads, per protein or per residue.
 
 ### Local backend
