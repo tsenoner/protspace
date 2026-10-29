@@ -131,8 +131,10 @@ def test_project_says_so_as_a_usage_error(tmp_path, n, methods, expected, option
         env={"COLUMNS": "1000"},
     )
     assert result.exit_code == 2
-    assert expected in result.output
-    assert f"Invalid value for '{option}'" in result.output
+    # CI forces colour, and Rich styles the option name inside the phrase.
+    output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert expected in output
+    assert f"Invalid value for '{option}'" in output
 
 
 class _Embedded(Exception):
