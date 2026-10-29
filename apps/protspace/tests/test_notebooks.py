@@ -1577,6 +1577,26 @@ def test_preparation_eat_disables_its_button_while_it_runs(tmp_path, monkeypatch
     assert "Done in" in ns["eat_status"].value
 
 
+def test_preparation_eat_reports_a_failure_after_the_transfer(tmp_path, monkeypatch):
+    """Only run_transfer's errors became a card: a failed write or download left
+    "Step 3 of 5 · Writing the bundle" up, as if the cell were still running."""
+    bundle, emb_set = _toxin_only_bundle(tmp_path)
+
+    def refuse(*_a, **_k):
+        raise OSError("disk full")
+
+    def break_the_write(namespace):
+        namespace["replace_annotations_in_bundle"] = refuse
+
+    downloads, ns = _run_preparation_eat_cell(
+        monkeypatch, bundle, emb_set, "fam", before_click=break_the_write
+    )
+    status = ns["eat_status"].value
+    assert status.startswith("[fail]") and "OSError: disk full" in status
+    assert "Step" not in status
+    assert downloads == [] and ns["eat_btn"].disabled is False
+
+
 @pytest.mark.parametrize(
     "value",
     [
