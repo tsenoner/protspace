@@ -431,7 +431,8 @@ this order:
    [Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
 3. **File name**, a model key the file name ends in: `seqs_esm2_650m.h5`, `Ss_mSCR_esm2_650m.h5`
    and `esm2_650m.h5` are all `esm2_650m`. The keys are the [embedder models](#embedder-models)
-   (plus `esm3_open`); the longest match wins, and only the end of the name counts. A directory
+   (plus `esm3_open`, which older Embeddings-notebook files carry); the longest match wins, and
+   only the end of the name counts. A directory
    input takes the key its files share; files from different models in one directory are an
    error, so give each model's files their own `-i`
 4. **File stem**, only when the file is the command's only input: `results.h5` is named `results`

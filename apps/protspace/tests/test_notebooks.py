@@ -275,21 +275,20 @@ def test_cells_carry_ids_when_the_format_requires_them(path: Path):
     assert not missing, f"{path.name}: cells {missing} have no id"
 
 
+# The notebooks that install anything. The Embeddings notebook installs nothing:
+# every model it offers runs on Colab's own torch and transformers.
+INSTALLING_NOTEBOOKS = [
+    p for p in NOTEBOOKS if "_loaded_distributions" in p.read_text()
+]
+
+
 def _install_cell(path: Path) -> str:
-    """The install cell up to its import block, which needs Colab. The Embeddings
-    notebook installs only for ESM3, so its helper is run with that call."""
+    """The install cell up to its import block, which needs Colab."""
     (source,) = [src for _, src in _code_cells(path) if "_loaded_distributions" in src]
-    if "def _run(" in source:
-        marker = "# --- end of install helper ---"
-        start, end = (
-            source.index("# --- install helper:"),
-            source.index(marker) + len(marker),
-        )
-        return source[start:end] + '\n_install(["esm"])\n'
     return source.split("# A preloaded module")[0]
 
 
-@pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
+@pytest.mark.parametrize("path", INSTALLING_NOTEBOOKS, ids=lambda p: p.name)
 def test_install_cell_stops_when_pip_changed_a_loaded_package(path, monkeypatch):
     """Colab had numpy loaded when pip upgraded it; the cell's imports passed and
     Generate failed on `_blas_supports_fpe` until a manual restart."""
@@ -349,9 +348,10 @@ def _install_helper(path: Path) -> str:
 
 
 def test_install_helper_is_the_same_in_every_notebook():
-    """One fix, three copies: a notebook cannot import a shared module before it
-    has installed one, so the copies are kept equal here instead."""
-    helpers = {path.name: _install_helper(path) for path in NOTEBOOKS}
+    """One fix, one copy per notebook that installs: a notebook cannot import a
+    shared module before it has installed one, so the copies are kept equal here."""
+    helpers = {path.name: _install_helper(path) for path in INSTALLING_NOTEBOOKS}
+    assert len(helpers) >= 2, sorted(helpers)
     assert len(set(helpers.values())) == 1, sorted(helpers)
 
 
@@ -380,7 +380,9 @@ def _run_install_helper(monkeypatch, *, uv_fails=False):
 
     monkeypatch.setattr(subprocess, "run", run)
     namespace = {"__name__": "__notebook__"}
-    exec(compile(_install_helper(NOTEBOOKS[0]), "install", "exec"), namespace)
+    exec(
+        compile(_install_helper(INSTALLING_NOTEBOOKS[0]), "install", "exec"), namespace
+    )
     namespace["_install"](["protspace[local]"])
     return calls, held
 
@@ -1568,40 +1570,30 @@ def test_clickthrough_is_one_cell_and_offers_every_model_it_maps():
     assert offered == list(_clickthrough_namespace()["MODEL_SHORT_KEYS"])
 
 
-@pytest.mark.parametrize(
-    ("model", "with_sdk"),
-    [
-        ("facebook/esm2_t6_8M_UR50D", False),
-        ("Rostlab/prot_t5_xl_half_uniref50-enc", False),
-        ("biohub/ESMC-300M", False),
-        ("biohub/esm3-sm-open-v1", True),
-    ],
-)
-def test_clickthrough_installs_the_esm_package_only_for_esm3(model, with_sdk):
-    """The `esm` package pins transformers < 5: installed for every model, it replaced
-    Colab's transformers 5 and huggingface_hub 1. ESM C now runs on transformers'
-    own port, so only ESM3 needs it."""
-    pytest.importorskip("torch")
-    namespace = _clickthrough_namespace(model_name=model)
-    installs = []
-    namespace["_install"] = installs.append
-
-    class Stop(Exception):
-        pass
-
-    def stop():
-        raise Stop
-
-    namespace["_choose_fasta"] = stop
-    with pytest.raises(Stop):
-        namespace["_run"]()
-    assert installs == ([["esm"]] if with_sdk else [])
+def test_clickthrough_installs_nothing_and_offers_no_esm3():
+    """ESM3 needed the `esm` package, which pins transformers < 5 and replaced
+    Colab's transformers 5 and huggingface_hub 1 when installed. With ESM3 dropped,
+    every model runs on Colab's own packages, ESM C on transformers' own port."""
+    source = _clickthrough_main()
+    namespace = _clickthrough_namespace()
+    assert "_install" not in namespace
+    imported = {
+        alias.name.split(".")[0]
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {
+        (node.module or "").split(".")[0]
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom)
+    }
+    assert not imported & {"esm", "subprocess"}
+    assert not [k for k in namespace["MODEL_SHORT_KEYS"] if "esm3" in k.lower()]
 
 
-def test_clickthrough_switches_off_tensorflow_and_the_second_download():
-    """Before transformers is first imported: TensorFlow/JAX off (transformers 4.x
-    imports them), and no background safetensors conversion, which downloaded
-    ProtT5's 2.4 GB a second time."""
+def test_clickthrough_switches_off_the_second_download():
+    """Before transformers is first imported: no background safetensors conversion,
+    which downloaded ProtT5's 2.4 GB a second time."""
     tree = ast.parse(_clickthrough_main())
     statements = list(ast.walk(tree))
     first_transformers = min(
@@ -1623,12 +1615,7 @@ def test_clickthrough_switches_off_tensorflow_and_the_second_download():
         and getattr(n.targets[0].value, "attr", None) == "environ"
         and n.lineno < first_transformers
     }
-    assert {
-        "USE_TF",
-        "USE_FLAX",
-        "USE_JAX",
-        "DISABLE_SAFETENSORS_CONVERSION",
-    } <= set_before
+    assert "DISABLE_SAFETENSORS_CONVERSION" in set_before
     hub_names = {
         alias.name
         for n in statements
@@ -1681,7 +1668,7 @@ def _fake_transformers(monkeypatch):
 
 def test_clickthrough_loads_the_official_esm_c_through_transformers(monkeypatch):
     """ESM C ran through the `esm` package, gated behind a login; transformers has
-    its own port of the official MIT weights (biohub/ESMC-*) since 5.18."""
+    its own port of the official MIT weights (biohub/ESMC-*) since 5.16."""
     pytest.importorskip("torch")
     calls = _fake_transformers(monkeypatch)
     namespace = _clickthrough_namespace()
@@ -1736,7 +1723,6 @@ def _run_until_the_fasta(namespace):
     def stop():
         raise Stop
 
-    namespace["_install"] = lambda _packages: None
     namespace["_choose_fasta"] = stop
     with pytest.raises(Stop):
         namespace["_run"]()
@@ -1883,12 +1869,17 @@ def test_clickthrough_reads_fasta_without_pyfaidx(tmp_path):
     [
         (OSError("401 Client Error: Unauthorized"), "Colab secret HF_TOKEN"),
         (ConnectionError("Max retries exceeded"), "did not answer"),
-        (ImportError("No module named 'esm'"), "Restart session"),
+        (ImportError("No module named 'sentencepiece'"), "Restart session"),
+        # transformers < 5.16 has no `esmc` model and asks for remote code instead.
+        (
+            ValueError("The repository biohub/ESMC-300M contains custom code"),
+            "transformers 5.16 or newer",
+        ),
     ],
 )
 def test_clickthrough_load_failure_says_what_to_do(error, advice):
     namespace = _clickthrough_namespace()
-    stop = namespace["_load_failure"]("biohub/esm3-sm-open-v1", error)
+    stop = namespace["_load_failure"]("biohub/ESMC-300M", error)
     assert isinstance(stop, SystemExit) and advice in str(stop)
 
 
