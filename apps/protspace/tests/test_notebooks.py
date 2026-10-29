@@ -278,7 +278,7 @@ def test_cells_carry_ids_when_the_format_requires_them(path: Path):
 # The notebooks that install anything. The Embeddings notebook installs nothing:
 # every model it offers runs on Colab's own torch and transformers.
 INSTALLING_NOTEBOOKS = [
-    p for p in NOTEBOOKS if "_loaded_distributions" in p.read_text()
+    p for p in NOTEBOOKS if "# --- install helper:" in p.read_text()
 ]
 
 
@@ -1574,21 +1574,15 @@ def test_clickthrough_installs_nothing_and_offers_no_esm3():
     """ESM3 needed the `esm` package, which pins transformers < 5 and replaced
     Colab's transformers 5 and huggingface_hub 1 when installed. With ESM3 dropped,
     every model runs on Colab's own packages, ESM C on transformers' own port."""
-    source = _clickthrough_main()
-    namespace = _clickthrough_namespace()
-    assert "_install" not in namespace
-    imported = {
-        alias.name.split(".")[0]
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    } | {
-        (node.module or "").split(".")[0]
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.ImportFrom)
-    }
+    imported = set()
+    for node in ast.walk(ast.parse(_clickthrough_main())):
+        if isinstance(node, ast.Import):
+            imported |= {alias.name.split(".")[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            imported.add((node.module or "").split(".")[0])
     assert not imported & {"esm", "subprocess"}
-    assert not [k for k in namespace["MODEL_SHORT_KEYS"] if "esm3" in k.lower()]
+    keys = _clickthrough_namespace()["MODEL_SHORT_KEYS"]
+    assert not [k for k in keys if "esm3" in k.lower()]
 
 
 def test_clickthrough_switches_off_the_second_download():
@@ -1662,6 +1656,8 @@ def _fake_transformers(monkeypatch):
         "T5Tokenizer",
     ):
         setattr(fake, name, loader(name))
+    fake.__version__ = "5.18.0"
+    fake.CONFIG_MAPPING = {"esmc": object()}
     monkeypatch.setitem(sys.modules, "transformers", fake)
     return calls
 
@@ -1677,7 +1673,25 @@ def test_clickthrough_loads_the_official_esm_c_through_transformers(monkeypatch)
 
     assert mod_type == "esmc"
     assert ("AutoModel", "biohub/ESMC-300M", {}) in calls  # no remote code
-    assert namespace["MODEL_SHORT_KEYS"]["biohub/ESMC-300M"] == "esmc_300m"
+    keys = namespace["MODEL_SHORT_KEYS"]
+    assert (keys["biohub/ESMC-300M"], keys["biohub/ESMC-6B"]) == (
+        "esmc_300m",
+        "esmc_6b",
+    )
+
+
+def test_clickthrough_names_the_transformers_esm_c_needs(monkeypatch):
+    """Before 5.16 transformers has no `esmc` model and asks for remote code the
+    official repos do not ship; say which version to install instead."""
+    import sys
+
+    pytest.importorskip("torch")
+    _fake_transformers(monkeypatch)
+    sys.modules["transformers"].CONFIG_MAPPING = {}
+    sys.modules["transformers"].__version__ = "5.13.1"
+
+    with pytest.raises(SystemExit, match=r"5\.16 or newer.*has 5\.13\.1"):
+        _clickthrough_namespace()["_setup_model"]("biohub/ESMC-300M")
 
 
 @pytest.mark.parametrize(
@@ -1711,7 +1725,42 @@ def test_clickthrough_loads_esm_c_6b_in_half_precision_on_a_gpu(
     assert kwargs == ({"dtype": getattr(torch, dtype)} if dtype else {})
     if dtype:
         assert asked == [{"including_emulation": False}]
-    assert namespace["MODEL_SHORT_KEYS"]["biohub/ESMC-6B"] == "esmc_6b"
+
+
+def test_clickthrough_size_rules_match_the_package():
+    """The notebook cannot import the package, so its copies are pinned here: the
+    checkpoints halved on a GPU, the ones too big for free Colab, and the RAM probe
+    the Preparation notebook gates the same models with."""
+    from protspace.data.embedding import local
+
+    if "esmc_6b" not in local.LOCAL_CHECKPOINTS:
+        pytest.skip("the package predates esmc_6b (#560)")
+    namespace = _clickthrough_namespace()
+    keys = namespace["MODEL_SHORT_KEYS"]
+    assert namespace["_HALF_ON_GPU"] == set(local._HALF_ON_GPU)
+    assert {keys[c] for c in namespace["_OVERSIZED"]} == local.COLAB_OVERSIZED & set(
+        keys.values()
+    )
+
+
+def _function(source: str, name: str) -> str:
+    (node,) = [
+        n
+        for n in ast.walk(ast.parse(source))
+        if isinstance(n, ast.FunctionDef) and n.name == name
+    ]
+    return ast.dump(node)
+
+
+def test_clickthrough_probes_ram_as_the_preparation_notebook_does():
+    preparation = "\n".join(
+        src
+        for _, src in _code_cells(NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb")
+        if "def _ram_below_gb(" in src
+    )
+    assert _function(_clickthrough_main(), "_ram_below_gb") == _function(
+        preparation, "_ram_below_gb"
+    )
 
 
 def _run_until_the_fasta(namespace):
@@ -1728,13 +1777,25 @@ def _run_until_the_fasta(namespace):
         namespace["_run"]()
 
 
-@pytest.mark.parametrize(("cuda", "need"), [(True, 16), (False, 32)])
-def test_clickthrough_stops_esm_c_6b_where_ram_is_short(monkeypatch, cuda, need):
+def _fake_gpu(monkeypatch, gb=None):
+    """A runtime with a GPU of `gb` GB, or none (gb=None)."""
+    import types
+
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: gb is not None)
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda _i: "a GPU")
+    monkeypatch.setattr(
+        torch.cuda,
+        "get_device_properties",
+        lambda _i: types.SimpleNamespace(total_memory=(gb or 0) * 1e9),
+    )
+
+
+@pytest.mark.parametrize(("gpu_gb", "need"), [(15.8, 16), (None, 32)])
+def test_clickthrough_stops_esm_c_6b_where_ram_is_short(monkeypatch, gpu_gb, need):
     """Free Colab's 12.7 GB of host RAM: transformers builds the model there first,
     and running out kills the kernel without an error, so stop before the download."""
-    torch = pytest.importorskip("torch")
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
-    monkeypatch.setattr(torch.cuda, "get_device_name", lambda _i: "Tesla T4")
+    _fake_gpu(monkeypatch, gpu_gb)
     namespace = _clickthrough_namespace(model_name="biohub/ESMC-6B")
     namespace["_ram_below_gb"] = lambda gb: gb == need
     namespace["_choose_fasta"] = lambda: pytest.fail("read the FASTA first")
@@ -1754,22 +1815,13 @@ def test_clickthrough_warns_when_esm_c_6b_may_not_fit_the_gpu(
 ):
     """A T4 holds the 12.7 GB of weights, so 6B runs there, with long sequences
     skipped on out-of-memory; say so rather than refuse."""
-    import types
-
-    torch = pytest.importorskip("torch")
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(torch.cuda, "get_device_name", lambda _i: "a GPU")
-    monkeypatch.setattr(
-        torch.cuda,
-        "get_device_properties",
-        lambda _i: types.SimpleNamespace(total_memory=gpu_gb * 1e9),
-    )
+    _fake_gpu(monkeypatch, gpu_gb)
     namespace = _clickthrough_namespace(model_name="biohub/ESMC-6B")
     namespace["_ram_below_gb"] = lambda _gb: False
 
     _run_until_the_fasta(namespace)
 
-    assert ("leaving little for long sequences" in capsys.readouterr().out) is warned
+    assert ("little room for long sequences" in capsys.readouterr().out) is warned
 
 
 class _FakeBatch(dict):
@@ -1869,12 +1921,7 @@ def test_clickthrough_reads_fasta_without_pyfaidx(tmp_path):
     [
         (OSError("401 Client Error: Unauthorized"), "Colab secret HF_TOKEN"),
         (ConnectionError("Max retries exceeded"), "did not answer"),
-        (ImportError("No module named 'sentencepiece'"), "Restart session"),
-        # transformers < 5.16 has no `esmc` model and asks for remote code instead.
-        (
-            ValueError("The repository biohub/ESMC-300M contains custom code"),
-            "transformers 5.16 or newer",
-        ),
+        (ImportError("No module named 'sentencepiece'"), "`pip install` it"),
     ],
 )
 def test_clickthrough_load_failure_says_what_to_do(error, advice):
