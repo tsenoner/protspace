@@ -2266,6 +2266,30 @@ def test_clickthrough_writes_named_embeddings_and_skips_long_sequences(
     assert again == (["c"], [], [])
 
 
+def test_clickthrough_refuses_to_mix_id_namings_in_one_file(monkeypatch, tmp_path):
+    """Proteins are skipped by name: after the UniProt-ID box was flipped, a re-run
+    embedded every protein again into the same file (60 entries became 120)."""
+    import h5py
+
+    namespace = _clickthrough_functions(monkeypatch)
+    out = tmp_path / "x_esm2_8m.h5"
+    with h5py.File(out, "w") as f:  # written before the attribute existed
+        f.create_dataset("P83302", data=[0.0])
+    embed = namespace["create_embedding"]
+
+    assert embed("x", ["Q1"], ["MKV"], output_file=str(out), id_mode="accession")[0]
+    with h5py.File(out) as f:
+        assert f.attrs["protein_ids"] == "accession"
+
+    loaded = []
+    namespace["setup_model"] = lambda checkpoint: loaded.append(checkpoint)
+    with pytest.raises(SystemExit, match="named by their UniProt accession.*Flip"):
+        embed("x", ["sp|Q1|X"], ["MKV"], output_file=str(out), id_mode="header")
+    assert loaded == []  # stopped before loading the model
+    with h5py.File(out) as f:
+        assert sorted(f) == ["P83302", "Q1"]
+
+
 def test_clickthrough_writes_per_residue_embeddings(monkeypatch, tmp_path):
     import h5py
 
