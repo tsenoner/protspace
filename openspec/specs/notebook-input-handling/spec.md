@@ -2,7 +2,7 @@
 
 ## Purpose
 
-How the Preparation notebook gets an input into the Colab runtime, names an HDF5 input, and decides which input Generate runs on, without blocking Run all or failing silently.
+How the Preparation notebook gets an input into the Colab runtime, names an HDF5 input, decides which input Generate runs on, and configures, runs and reports a run (annotations, sliders, saved settings, progress, failure advice, compact output, rendering harness), and how the Colab notebooks' install cell guards against pip replacing loaded packages, without blocking Run all or failing silently.
 
 ## Requirements
 
@@ -136,9 +136,9 @@ SHALL do the same.
 
 ### Requirement: The install cell stops when pip changed a loaded package
 
-The install cell of each Colab notebook SHALL install without replacing a distribution this
-session has already imported, holding each such distribution at its loaded version, and SHALL use
-a plain install only when that cannot be resolved. As a safety net, it SHALL stop with a message
+The install cell of the Preparation and Transfer notebooks SHALL install without replacing a
+distribution this session has already imported, holding each such distribution at its loaded
+version, and SHALL use a plain install only when that cannot be resolved. As a safety net, it SHALL stop with a message
 naming every loaded distribution whose installed version changed anyway, and telling the user to
 restart the session and run the cell again. Once it has stopped, it SHALL stop again on every
 re-run in the same session, and SHALL pass after a restart when nothing changes.

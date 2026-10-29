@@ -256,7 +256,7 @@ one finite 2560-dimensional float32 vector.
   host memory, about 15 GB of GPU memory)
 - **THEN** `esmc_6b` is available, and sequences up to 2,000 residues each yield a finite vector
 
-#### Scenario: A small Colab runtime without a GPU
+#### Scenario: A small Colab runtime that stages in host memory
 
 - **WHEN** the panel's effective backend is local, host memory is below the oversized threshold,
   and loading stages the model in host memory
@@ -285,4 +285,5 @@ memory, without failing.
 #### Scenario: A CPU runtime
 
 - **WHEN** the local backend loads a checkpoint without a CUDA GPU
-- **THEN** loading is unchanged, and the runtime counts as staging the model in host memory
+- **THEN** the model is built in host memory on the CPU, and the runtime counts as staging the
+  model in host memory
