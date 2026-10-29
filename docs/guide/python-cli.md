@@ -299,7 +299,8 @@ On a GPU the local backend loads every model straight into GPU memory, so a mode
 machine's RAM still loads: on free Colab (12.7 GB of RAM) both `esmc_6b` and `esm2_3b` peak below
 1 GB of RAM while loading. This uses the `accelerate` package, which the `[local]` extra installs;
 without it the model is first built in RAM. In the Colab Preparation notebook, `esm2_3b` and
-`esmc_6b` are disabled only on a runtime without a GPU and under 16 GB of RAM.
+`esmc_6b` are disabled only where the model would be built in RAM first (no GPU, or no
+`accelerate`) and the runtime has under 16 GB of RAM.
 
 ## Annotations
 
