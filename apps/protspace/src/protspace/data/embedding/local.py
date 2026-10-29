@@ -20,7 +20,8 @@ ESM-C loads the official ``biohub/ESMC-*`` weights through transformers'
 native ``esmc`` model (transformers >= 5.16), with no remote code. Its pooled
 vectors equal those of Synthyra's ESM++ reimplementation, which this backend
 used before transformers had the model, so ``.h5`` files from either keep the
-same ``esmc_*`` producer stamp. ProtT5/ProstT5 use the fp16 encoder exports
+same ``esmc_*`` producer stamp. ESM-C 6B is local-only (Biocentral fails to
+compute it) and loads in half precision on a GPU (``_HALF_ON_GPU``). ProtT5/ProstT5 use the fp16 encoder exports
 (T4-friendly, embedding-equivalent). Local and Biocentral ESM-C vectors are both
 checked against the same committed references (``tests/esmc_reference.py``); the
 other families' parity was measured once (cosine >= 0.9999), not asserted here.
@@ -44,8 +45,10 @@ from protspace.data.embedding.store import (
 
 logger = logging.getLogger(__name__)
 
-# Short key → (HuggingFace checkpoint, model family). Covers the same 12
-# shortcuts as the Biocentral backend (ALL_SHORT_KEYS).
+# Short key → (HuggingFace checkpoint, model family). Covers every shortcut the
+# Biocentral backend serves (ALL_SHORT_KEYS) plus the local-only ones
+# (LOCAL_ONLY_EMBEDDERS in cli.common_options): esmc_6b, which Biocentral
+# accepts but fails to compute.
 LOCAL_CHECKPOINTS: dict[str, tuple[str, str]] = {
     "prot_t5": ("Rostlab/prot_t5_xl_half_uniref50-enc", "prot_t5"),
     "prost_t5": ("Rostlab/ProstT5_fp16", "prost_t5"),
@@ -59,6 +62,7 @@ LOCAL_CHECKPOINTS: dict[str, tuple[str, str]] = {
     "ankh3_large": ("ElnaggarLab/ankh3-large", "ankh"),
     "esmc_300m": ("biohub/ESMC-300M", "esmc"),
     "esmc_600m": ("biohub/ESMC-600M", "esmc"),
+    "esmc_6b": ("biohub/ESMC-6B", "esmc"),
 }
 
 # Checkpoints too large for a free Colab runtime; embed_sequences' warning below
@@ -66,7 +70,14 @@ LOCAL_CHECKPOINTS: dict[str, tuple[str, str]] = {
 # `--backend local -e esm2_3b` is correct on real hardware — but the Colab
 # notebook imports this set to keep those models off its local path, so the size
 # rule has one home rather than two.
-COLAB_OVERSIZED: frozenset[str] = frozenset({"esm2_3b"})
+COLAB_OVERSIZED: frozenset[str] = frozenset({"esm2_3b", "esmc_6b"})
+
+# Checkpoints loaded in half precision on a CUDA device: bf16 where the GPU has
+# it, fp16 otherwise (fp32 on CPU, where half-precision matmul is slow). ESM-C
+# 6B was trained in bf16; its 25.4 GB of fp32 weights would not leave room for
+# activations on a 24-40 GB GPU, while half precision needs 12.7 GB. Measured
+# against fp32 on real weights (the add-esmc-6b-local OpenSpec change).
+_HALF_ON_GPU = frozenset({"biohub/ESMC-6B"})
 
 # Model families whose tokenizer wraps the sequence with a leading special
 # token (CLS / <AA2fold>) as well as a trailing EOS. T5 encoders (ProtT5, Ankh)
@@ -196,7 +207,11 @@ def setup_model(checkpoint: str, mod_type: str):
         # AutoModel resolves the config: EsmModel for ESM-2, transformers' own
         # EsmcModel for ESM-C (a different architecture; no remote code).
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-        model = AutoModel.from_pretrained(checkpoint)
+        if checkpoint in _HALF_ON_GPU and device.type == "cuda":
+            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            model = AutoModel.from_pretrained(checkpoint, dtype=dtype)
+        else:
+            model = AutoModel.from_pretrained(checkpoint)
     elif mod_type == "ankh":
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
         model = T5EncoderModel.from_pretrained(checkpoint)
@@ -270,7 +285,7 @@ def embed_sequences(
 
     if embedder in COLAB_OVERSIZED:
         logger.warning(
-            "%s materialises more fp32 weights in host RAM than a free Colab "
+            "%s materialises more weights in host RAM than a free Colab "
             "runtime (12.7 GB) can take, before they ever reach the GPU — and "
             "that failure kills the kernel rather than raising. Fine on a larger "
             "runtime or real hardware; otherwise pick a smaller model.",
