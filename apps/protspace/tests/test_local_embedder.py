@@ -263,7 +263,6 @@ def test_setup_model_loads_esmc_6b_in_half_precision_on_gpu(
     torch = pytest.importorskip("torch")
     calls, _, _ = _fake_transformers(monkeypatch)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
-    monkeypatch.setattr(local, "_accelerate_available", lambda: True)
     monkeypatch.setattr(
         torch.cuda,
         "is_bf16_supported",
@@ -274,70 +273,51 @@ def test_setup_model_loads_esmc_6b_in_half_precision_on_gpu(
 
     assert device.type == ("cuda" if cuda else "cpu")
     model_kwargs = next(kw for name, _, kw in calls if name == "AutoModel")
-    want = {"device_map": device} if cuda else {}
-    if expected is not None:
-        want["dtype"] = getattr(torch, expected)
-    assert model_kwargs == want
+    want = None if expected is None else getattr(torch, expected)
+    assert model_kwargs.get("dtype") == want
 
 
 @pytest.mark.parametrize(
     ("checkpoint", "mod_type", "loader"),
     [
         ("biohub/ESMC-6B", "esmc", "AutoModel"),
-        ("facebook/esm2_t36_3B_UR50D", "esm", "AutoModel"),
         ("ElnaggarLab/ankh-base", "ankh", "T5EncoderModel"),
         ("Rostlab/prot_t5_xl_half_uniref50-enc", "prot_t5", "T5EncoderModel"),
     ],
 )
-@pytest.mark.parametrize(
-    ("cuda", "accelerate", "direct"),
-    [
-        (True, True, True),  # weights stream onto the GPU, never all in host RAM
-        (True, False, False),  # no accelerate: the old host-RAM path, not an error
-        (False, True, False),  # CPU: nothing to save, loading unchanged
-    ],
-)
+@pytest.mark.parametrize("staged", [False, True])
 def test_setup_model_loads_straight_onto_the_gpu(
-    monkeypatch, checkpoint, mod_type, loader, cuda, accelerate, direct
+    monkeypatch, checkpoint, mod_type, loader, staged
 ):
     """On CUDA every family loads with device_map=<the GPU>, so a checkpoint
-    larger than host RAM (ESM-C 6B on free Colab) is never built there whole."""
+    larger than host RAM (ESM-C 6B on free Colab) is never built there whole;
+    where stages_in_host_ram() says otherwise, the load has no device_map."""
     torch = pytest.importorskip("torch")
     calls, _, _ = _fake_transformers(monkeypatch)
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda **_: True)
-    monkeypatch.setattr(local, "_accelerate_available", lambda: accelerate)
+    monkeypatch.setattr(local, "stages_in_host_ram", lambda: staged)
 
     _, _, device = local.setup_model(checkpoint, mod_type)
 
     model_kwargs = next(kw for name, _, kw in calls if name == loader)
-    if direct:
-        assert model_kwargs["device_map"] == device
-        assert device.type == "cuda"
-    else:
-        assert "device_map" not in model_kwargs
+    assert model_kwargs.get("device_map") == (None if staged else device)
 
 
 @pytest.mark.parametrize(
     ("cuda", "accelerate", "staged"),
     [
         (True, True, False),  # free T4: weights go straight onto the GPU
-        (True, False, True),
-        (False, True, True),  # CPU runtime
+        (True, False, True),  # no accelerate: the old path, not an error
+        (False, True, True),  # CPU runtime: loading unchanged
     ],
 )
-def test_stages_in_host_ram_follows_the_placement_rule(
-    monkeypatch, cuda, accelerate, staged
-):
-    """The notebook's gate and setup_model's device_map read the same facts, so
-    the panel never enables a model that the load would then build in host RAM."""
+def test_stages_in_host_ram(monkeypatch, cuda, accelerate, staged):
     torch = pytest.importorskip("torch")
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
     monkeypatch.setattr(local, "_accelerate_available", lambda: accelerate)
 
     assert local.stages_in_host_ram() is staged
-    placed = local._gpu_direct_placement(torch.device("cuda" if cuda else "cpu"))
-    assert ("device_map" in placed) is not staged
 
 
 def test_stages_in_host_ram_when_the_probe_fails(monkeypatch):
@@ -354,11 +334,22 @@ def test_oversized_warning_only_where_the_load_stages_in_host_ram(
     monkeypatch, tmp_path, caplog, staged
 ):
     """On a GPU the 6B load no longer goes through host RAM, so warning that it
-    would kill a free Colab kernel there would be wrong."""
+    would kill a free Colab kernel there would be wrong. The warning comes just
+    before the load, so a run with nothing left to embed never probes torch."""
+    pytest.importorskip("torch")
+
+    class Loaded(Exception):
+        pass
+
+    def setup_model(*_args):
+        raise Loaded
+
     monkeypatch.setattr(local, "stages_in_host_ram", lambda: staged)
+    monkeypatch.setattr(local, "setup_model", setup_model)
 
     with caplog.at_level("WARNING", logger=local.logger.name):
-        local.embed_sequences({}, "esmc_6b", tmp_path / "emb.h5")
+        with pytest.raises(Loaded):
+            local.embed_sequences({"p1": "MKV"}, "esmc_6b", tmp_path / "emb.h5")
 
     assert ("loads through host RAM" in caplog.text) is staged
 

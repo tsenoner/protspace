@@ -122,16 +122,19 @@ def resolve_default_backend() -> str:
     """
     import sys
 
-    if "google.colab" not in sys.modules:
-        return "biocentral"
+    if "google.colab" in sys.modules and _cuda_available():
+        return "local"
+    return "biocentral"
+
+
+def _cuda_available() -> bool:
+    """Whether torch sees a CUDA GPU; False when torch is missing or the probe fails."""
     try:
         import torch
 
-        if torch.cuda.is_available():
-            return "local"
+        return torch.cuda.is_available()
     except Exception:  # torch missing or CUDA probe failed
-        pass
-    return "biocentral"
+        return False
 
 
 def resolve_local_checkpoint(name: str) -> tuple[str, str]:
@@ -197,40 +200,13 @@ def _accelerate_available() -> bool:
 
 
 def stages_in_host_ram() -> bool:
-    """True where loading a checkpoint here builds the whole model in host RAM.
+    """True where ``setup_model`` builds the whole model in host RAM before the GPU.
 
-    That is a runtime without a CUDA GPU, or one without ``accelerate``; with
-    both, ``setup_model`` places each weight on the GPU as it is read. The Colab
-    notebook blocks ``COLAB_OVERSIZED`` only where this is True and RAM is small,
-    and reads a released package that lacks this function as staging, since
-    every one before it did. A failed probe counts as staging.
+    That is no CUDA GPU (or a failed probe), or no ``accelerate``. Otherwise each
+    weight is placed on the GPU as it is read. The Colab notebook gates
+    ``COLAB_OVERSIZED`` on this.
     """
-    try:
-        import torch
-
-        cuda = torch.cuda.is_available()
-    except Exception:  # torch missing or the CUDA probe failed
-        return True
-    return not (cuda and _accelerate_available())
-
-
-def _gpu_direct_placement(device) -> dict:
-    """``from_pretrained`` kwargs that stream the weights straight onto a GPU.
-
-    Without a ``device_map`` transformers builds the whole model in host RAM and
-    ``.to(device)`` copies it over afterwards, so loading peaks at the model's
-    size plus the checkpoint tensors still being cast. That kills a free Colab
-    kernel (12.7 GB RAM) on ESM-C 6B, whose half-precision weights are 12.7 GB.
-    With one device, ``device_map`` places each tensor as it is read and adds no
-    dispatch hooks. It needs ``accelerate`` (in the ``[local]`` extra); an
-    install without it keeps the old path. Off a GPU there is nothing to save.
-    """
-    if device.type != "cuda":
-        return {}
-    if not _accelerate_available():
-        logger.info("accelerate not installed: loading in host RAM, then copying")
-        return {}
-    return {"device_map": device}
+    return not (_cuda_available() and _accelerate_available())
 
 
 def setup_model(checkpoint: str, mod_type: str):
@@ -243,9 +219,14 @@ def setup_model(checkpoint: str, mod_type: str):
         T5Tokenizer,
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if _cuda_available() else "cpu")
     logger.info("Loading %s (%s) on %s", checkpoint, mod_type, device)
-    placement = _gpu_direct_placement(device)
+    # Without a device_map transformers builds the model in host RAM and .to()
+    # copies it; with one device, device_map places each weight as it is read
+    # and adds no dispatch hooks (see COLAB_OVERSIZED for what that saves).
+    placement = {} if stages_in_host_ram() else {"device_map": device}
+    if device.type == "cuda" and not placement:
+        logger.info("accelerate not installed: loading in host RAM, then copying")
 
     if mod_type in ("esm", "esmc"):
         # AutoModel resolves the config: EsmModel for ESM-2, transformers' own
@@ -329,16 +310,6 @@ def embed_sequences(
     checkpoint, mod_type = resolve_local_checkpoint(embedder)
     validate_headers(sequences.keys())
 
-    if embedder in COLAB_OVERSIZED and stages_in_host_ram():
-        logger.warning(
-            "%s loads through host RAM here (no CUDA GPU, or accelerate is not "
-            "installed), and needs more of it than a free Colab runtime (12.7 GB) "
-            "has — that failure kills the kernel rather than raising. Fine on a "
-            "larger runtime; on a GPU, install protspace[local] (which includes "
-            "accelerate) to load it straight onto the GPU.",
-            embedder,
-        )
-
     h5_path = Path(h5_path)
     # Claims the file for this backend and model, and drops the proteins it
     # already holds a current vector for (see store.begin_run).
@@ -364,6 +335,16 @@ def embed_sequences(
         ordered_ids = sorted(remaining, key=lambda k: len(remaining[k]))
         logger.info("Embedding %d sequence(s) with %s", len(ordered_ids), embedder)
 
+        if embedder in COLAB_OVERSIZED and stages_in_host_ram():
+            logger.warning(
+                "%s loads through host RAM here (no CUDA GPU, or accelerate is "
+                "not installed), and needs more of it than a free Colab runtime "
+                "(12.7 GB) has — that failure kills the kernel rather than "
+                "raising. Fine on a larger runtime; on a GPU, install "
+                "protspace[local] (which includes accelerate) to load it "
+                "straight onto the GPU.",
+                embedder,
+            )
         model, tokenizer, device = setup_model(checkpoint, mod_type)
         try:
             i = 0
