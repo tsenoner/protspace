@@ -1625,17 +1625,24 @@ def test_preparation_eat_lists_only_columns_it_can_fill(tmp_path, monkeypatch):
         )
     )
     write_bundle([annotations, *projection_tables(4, (2,))], bundle)
-    _, ns = _run_preparation_eat_cell(monkeypatch, bundle, emb_set, None)
+    # The helper clicks Transfer, which with no column picked overwrites the
+    # status the reload wrote; read that one before the click.
+    seen = []
+    _, ns = _run_preparation_eat_cell(
+        monkeypatch,
+        bundle,
+        emb_set,
+        None,
+        before_click=lambda n: seen.append(n["eat_status"].value),
+    )
 
     assert ns["eat_col"].options == (
         ("Pick an annotation\u2026", None),
         ("fam (2 set / 2 missing)", "fam"),
     )
     assert ns["eat_col"].value is None
-    assert (
-        "Not listed: ec, kind" in ns["eat_status"].value
-        or "Pick the annotation" in ns["eat_status"].value
-    )
+    assert "Not listed: ec, kind" in seen[0]
+    assert "Pick the annotation" in ns["eat_status"].value
 
 
 def test_preparation_eat_disables_its_button_while_it_runs(tmp_path, monkeypatch):
