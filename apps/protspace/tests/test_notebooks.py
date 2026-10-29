@@ -1717,14 +1717,47 @@ def test_clickthrough_loads_esm_c_6b_in_half_precision_on_a_gpu(
         "is_bf16_supported",
         lambda **kw: asked.append(kw) or native_bf16,
     )
-    namespace = _clickthrough_namespace()
+    namespace = _clickthrough_namespace(_accelerate_available=lambda: True)
 
     namespace["_setup_model"](checkpoint)
 
     (kwargs,) = [kw for name, _, kw in calls if name == "AutoModel"]
-    assert kwargs == ({"dtype": getattr(torch, dtype)} if dtype else {})
+    want = {"device_map": torch.device("cuda")} if cuda else {}
+    if dtype:
+        want["dtype"] = getattr(torch, dtype)
+    assert kwargs == want
     if dtype:
         assert asked == [{"including_emulation": False}]
+
+
+@pytest.mark.parametrize(
+    ("checkpoint", "loader"),
+    [
+        ("biohub/ESMC-6B", "AutoModel"),
+        ("facebook/esm2_t33_650M_UR50D", "EsmModel"),
+        ("ElnaggarLab/ankh-base", "T5EncoderModel"),
+        ("Rostlab/prot_t5_xl_half_uniref50-enc", "T5EncoderModel"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("cuda", "accelerate", "direct"),
+    [(True, True, True), (True, False, False), (False, True, False)],
+)
+def test_clickthrough_loads_straight_onto_the_gpu(
+    monkeypatch, checkpoint, loader, cuda, accelerate, direct
+):
+    """As the package's local backend does: on a GPU every model loads with
+    device_map, so ESM C 6B never sits whole in free Colab's 12.7 GB of RAM."""
+    torch = pytest.importorskip("torch")
+    calls = _fake_transformers(monkeypatch)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda **_: False)
+    namespace = _clickthrough_namespace(_accelerate_available=lambda: accelerate)
+
+    namespace["_setup_model"](checkpoint)
+
+    (kwargs,) = [kw for name, _, kw in calls if name == loader]
+    assert ("device_map" in kwargs) is direct
 
 
 def test_clickthrough_size_rules_match_the_package():
@@ -1791,16 +1824,21 @@ def _fake_gpu(monkeypatch, gb=None):
     )
 
 
-@pytest.mark.parametrize(("gpu_gb", "need"), [(15.8, 16), (None, 32)])
-def test_clickthrough_stops_esm_c_6b_where_ram_is_short(monkeypatch, gpu_gb, need):
-    """Free Colab's 12.7 GB of host RAM: transformers builds the model there first,
-    and running out kills the kernel without an error, so stop before the download."""
+@pytest.mark.parametrize(
+    ("gpu_gb", "need", "fix"),
+    [(15.8, 16, "pip install accelerate"), (None, 32, "T4 GPU")],
+)
+def test_clickthrough_stops_esm_c_6b_where_ram_is_short(monkeypatch, gpu_gb, need, fix):
+    """Where the model loads through host RAM (no GPU, or no accelerate), free
+    Colab's 12.7 GB runs out and kills the kernel without an error, so stop before
+    the download and name the fix."""
     _fake_gpu(monkeypatch, gpu_gb)
     namespace = _clickthrough_namespace(model_name="biohub/ESMC-6B")
+    namespace["_accelerate_available"] = lambda: gpu_gb is None
     namespace["_ram_below_gb"] = lambda gb: gb == need
     namespace["_choose_fasta"] = lambda: pytest.fail("read the FASTA first")
 
-    with pytest.raises(SystemExit, match=f"at least {need} GB of RAM"):
+    with pytest.raises(SystemExit, match=f"at least {need} GB of RAM.*{fix}"):
         namespace["_run"]()
 
     # Every other model ignores the runtime's size.
@@ -1809,15 +1847,29 @@ def test_clickthrough_stops_esm_c_6b_where_ram_is_short(monkeypatch, gpu_gb, nee
     _run_until_the_fasta(namespace)
 
 
-# 15.8: a T4. 23.6: what a 24 GB L4 reports. 40: an A100.
+def test_clickthrough_runs_esm_c_6b_on_a_free_t4(monkeypatch, capsys):
+    """Measured on free Colab: with device_map the T4 runtime peaks at 0.6 GB of
+    RAM loading 6B and at 12.5 GB of GPU memory embedding, so nothing stops or
+    warns there, however little RAM the runtime has."""
+    _fake_gpu(monkeypatch, 15.6)  # what a free T4 reports
+    namespace = _clickthrough_namespace(model_name="biohub/ESMC-6B")
+    namespace["_accelerate_available"] = lambda: True
+    namespace["_ram_below_gb"] = lambda _gb: True
+
+    _run_until_the_fasta(namespace)
+
+    assert "little room" not in capsys.readouterr().out
+
+
+# 12: smaller than any Colab GPU. 15.6: what a free T4 reports. 23.6: a 24 GB L4.
 @pytest.mark.parametrize(
-    ("gpu_gb", "warned"), [(15.8, True), (23.6, False), (40.0, False)]
+    ("gpu_gb", "warned"), [(12.0, True), (15.6, False), (23.6, False), (40.0, False)]
 )
 def test_clickthrough_warns_when_esm_c_6b_may_not_fit_the_gpu(
     monkeypatch, capsys, gpu_gb, warned
 ):
-    """A T4 holds the 12.7 GB of weights, so 6B runs there, with long sequences
-    skipped on out-of-memory; say so rather than refuse."""
+    """A T4 holds 6B with 2,000-residue sequences (12.5 GB peak, measured); a
+    smaller card would skip long ones on out-of-memory, so say so rather than refuse."""
     _fake_gpu(monkeypatch, gpu_gb)
     namespace = _clickthrough_namespace(model_name="biohub/ESMC-6B")
     namespace["_ram_below_gb"] = lambda _gb: False

@@ -72,8 +72,9 @@ It embeds a FASTA with ProtT5, ProstT5, Ankh, ESM2 or ESM C and writes an `.h5` 
 vector per protein (or per residue), named so ProtSpace recognises the model. Attach a GPU
 (**Runtime → Change runtime type → T4 GPU**), set the model and the FASTA in its one cell, and run
 it; it downloads the `.h5` when done. Run it again after changing a setting: the model stays
-loaded, and proteins already in the file are skipped. ESM C 6B does not fit a free runtime: pick
-a High-RAM one, ideally with an L4 or A100 GPU.
+loaded, and proteins already in the file are skipped. ESM C 6B runs on the free T4: the weights
+load straight into GPU memory, and it takes about 5.5 minutes per 1,000 proteins after a
+6-minute download and load. Without a GPU it needs a High-RAM runtime.
 
 - No login and nothing to install for any of the models. ESM C runs on transformers' own port of
   the official weights (`biohub/ESMC-300M`, `-600M`, `-6B`). ESM3 is no longer offered; `.h5`
