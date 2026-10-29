@@ -494,3 +494,74 @@ def test_embed_cli_rejects_nonpositive_max_length(tmp_path):
     )
 
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# Local-only shortcuts (esmc_6b): refused on Biocentral before any work
+# ---------------------------------------------------------------------------
+
+
+def _refuse_work(monkeypatch):
+    """Fail the test if anything is fetched or embedded."""
+
+    def boom(*args, **kwargs):
+        raise AssertionError("work started for a refused embedder")
+
+    for target in (
+        "protspace.data.embedding.biocentral.embed_sequences",
+        "protspace.data.embedding.local.embed_sequences",
+        "protspace.data.loaders.query.query_uniprot",
+        "protspace.data.loaders.query.resolve_query_fasta",
+    ):
+        monkeypatch.setattr(target, boom)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["embed", "-i", "{fasta}", "-o", "{out}"],
+        ["prepare", "-i", "{fasta}", "-m", "pca2", "-o", "{out}"],
+        ["prepare", "-q", "(family:globin)", "-m", "pca2", "-o", "{out}"],
+    ],
+    ids=["embed", "prepare-fasta", "prepare-query"],
+)
+def test_cli_refuses_a_local_only_embedder_on_biocentral(tmp_path, monkeypatch, args):
+    fasta = tmp_path / "s.fasta"
+    fasta.write_text(">P12345\nMKVLAAG\n")
+    _refuse_work(monkeypatch)
+    argv = [a.format(fasta=fasta, out=tmp_path / "out") for a in args]
+
+    result = CliRunner().invoke(app, [*argv, "-e", "esmc_6b"])
+
+    assert result.exit_code == 2, result.output
+    out = plain(result.output)
+    assert "esmc_6b is served only by the local backend" in out
+    assert "--backend local" in out
+
+
+def test_embed_cli_accepts_a_local_only_embedder_on_the_local_backend(
+    tmp_path, monkeypatch
+):
+    fasta = tmp_path / "s.fasta"
+    fasta.write_text(">P12345\nMKVLAAG\n")
+    captured = {}
+    monkeypatch.setattr(
+        "protspace.data.embedding.local.embed_sequences",
+        _fake_embed(captured, backend="local"),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["embed", "-i", str(fasta), "-e", "esmc_6b", "-o", str(tmp_path / "out")]
+        + ["--backend", "local"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["embedder"] == "esmc_6b"
+
+
+def test_resolve_embedder_points_a_local_only_key_at_the_local_backend(capsys):
+    """The library path (`embed_fasta`) resolves through here, not the CLI."""
+    with pytest.raises(SystemExit):
+        resolve_embedder("esmc_6b")
+    assert "--backend local" in capsys.readouterr().err

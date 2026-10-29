@@ -254,13 +254,15 @@ protspace prepare -i sequences.fasta -e prot_t5 -m pca2,umap2 -o output
 ```
 
 Available shortcuts: `prot_t5`, `prost_t5`, `esm2_8m`, `esm2_35m`, `esm2_150m`, `esm2_650m`,
-`esm2_3b`, `ankh_base`, `ankh_large`, `ankh3_large`, `esmc_300m`, `esmc_600m`
+`esm2_3b`, `ankh_base`, `ankh_large`, `ankh3_large`, `esmc_300m`, `esmc_600m`, `esmc_6b`
+
+`esmc_6b` runs only with `--backend local` (see below); Biocentral cannot compute it yet.
 
 ::: warning Licensing
 `ankh_base`, `ankh_large` and `ankh3_large` are CC-BY-NC-SA-4.0. All other models are permissively
-licensed, including the ESM-C models: `esmc_300m` and `esmc_600m` were relicensed under MIT in May
-2026, retroactively, when ESM-C moved to the Chan Zuckerberg Biohub, which publishes the weights
-(`biohub/ESMC-300M`, `biohub/ESMC-600M`).
+licensed, including the ESM-C models: `esmc_300m`, `esmc_600m` and `esmc_6b` were relicensed under
+MIT in May 2026, retroactively, when ESM-C moved to the Chan Zuckerberg Biohub, which publishes the
+weights (`biohub/ESMC-300M`, `biohub/ESMC-600M`, `biohub/ESMC-6B`).
 :::
 
 ### Local backend
@@ -279,6 +281,13 @@ the ESM-C model built into `transformers` (5.16 or later, which the extra instal
 login or remote code. ESM-C embeddings from Biocentral made with protspace 4.17.1 or earlier came
 from a different model; a run that finds one of those files refuses to resume from it, and
 `--refetch embed` replaces it.
+
+`esmc_6b` (ESM-C 6B, 2560-dimensional vectors) is available only on this backend: Biocentral accepts
+the model but fails to compute it, so `--backend biocentral -e esmc_6b` stops with a usage error. Its
+weights are 25.4 GB in float32. On a GPU they load in half precision (bfloat16 where the GPU
+supports it, float16 otherwise), which needs about 13 GB of GPU memory plus room for the sequences,
+so a 24 GB or larger card is the practical minimum. On the CPU they stay float32 and need over
+26 GB of RAM.
 
 ## Annotations
 
