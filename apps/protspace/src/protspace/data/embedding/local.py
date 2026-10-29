@@ -236,7 +236,11 @@ def setup_model(checkpoint: str, mod_type: str):
     # and adds no dispatch hooks (see COLAB_OVERSIZED for what that saves).
     placement = {} if stages_in_host_ram() else {"device_map": device}
     if device.type == "cuda" and not placement:
-        logger.info("accelerate not installed: loading in host RAM, then copying")
+        logger.info(
+            "accelerate is missing or older than transformers needs for "
+            "device_map (pip install -U accelerate): loading in host RAM, "
+            "then copying"
+        )
 
     if mod_type in ("esm", "esmc"):
         # AutoModel resolves the config: EsmModel for ESM-2, transformers' own
@@ -348,10 +352,10 @@ def embed_sequences(
         if embedder in COLAB_OVERSIZED and stages_in_host_ram():
             logger.warning(
                 "%s loads through host RAM here (no CUDA GPU, or accelerate is "
-                "not installed), and needs more of it than a free Colab runtime "
+                "missing or too old), and needs more of it than a free Colab runtime "
                 "(12.7 GB) has — that failure kills the kernel rather than "
                 "raising. Fine on a larger runtime; on a GPU, install "
-                "protspace[local] (which includes accelerate) to load it "
+                "protspace[local] (which installs a recent accelerate) to load it "
                 "straight onto the GPU.",
                 embedder,
             )
