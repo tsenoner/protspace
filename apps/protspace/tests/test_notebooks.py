@@ -2139,6 +2139,74 @@ def test_clickthrough_stops_the_weights_clock_when_loading_fails(monkeypatch, tm
     assert ended == ["did not load ({time})"]
 
 
+def _fake_hf_logging(monkeypatch):
+    """Just enough huggingface_hub and transformers for `setup_model`'s quieting."""
+    import sys
+    import types
+
+    hub_utils = types.ModuleType("huggingface_hub.utils")
+    hub_utils.disable_progress_bars = lambda: None
+    hub = types.ModuleType("huggingface_hub")
+    hub.utils = hub_utils
+    logging = types.SimpleNamespace(
+        disable_progress_bar=lambda: None,
+        get_verbosity=lambda: 30,
+        set_verbosity_error=lambda: None,
+        set_verbosity=lambda _level: None,
+    )
+    tf_utils = types.ModuleType("transformers.utils")
+    tf_utils.logging = logging
+    transformers = types.ModuleType("transformers")
+    transformers.utils = tf_utils
+    for name, module in (
+        ("huggingface_hub", hub),
+        ("huggingface_hub.utils", hub_utils),
+        ("transformers", transformers),
+        ("transformers.utils", tf_utils),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+
+
+def test_clickthrough_frees_a_stopped_runs_model_before_the_next(monkeypatch):
+    """Stop during a run leaves its traceback in sys.last_traceback (IPython keeps
+    it for %debug), and its frames hold the model: on a T4, a 6B left there leaves
+    the next model no room. Switching models drops it."""
+    import gc
+    import sys
+    import weakref
+
+    pytest.importorskip("torch")
+    _fake_hf_logging(monkeypatch)
+
+    class Model:
+        pass
+
+    def embed(_model):
+        raise KeyboardInterrupt
+
+    model = Model()
+    alive = weakref.ref(model)
+    try:
+        embed(model)
+    except KeyboardInterrupt as exc:  # what IPython stores on an error
+        for name, value in (
+            ("last_type", type(exc)),
+            ("last_value", exc),
+            ("last_traceback", exc.__traceback__),
+        ):
+            monkeypatch.setattr(sys, name, value, raising=False)
+    del model
+    gc.collect()
+    assert alive() is not None  # the traceback alone keeps it
+
+    namespace = _clickthrough_namespace()
+    namespace["_setup_model"] = lambda _checkpoint: ("model", "tokenizer", "esmc")
+    namespace["setup_model"]("biohub/ESMC-300M")
+
+    assert alive() is None
+    assert sys.last_traceback is None
+
+
 class _FakeBatch(dict):
     def to(self, _device):
         return self
