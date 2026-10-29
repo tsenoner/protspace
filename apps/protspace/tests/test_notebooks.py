@@ -1656,6 +1656,44 @@ def test_preparation_perplexity_fallback_words_it_as_the_package(
     assert namespace["_param_problem"](n_proteins) == expected
 
 
+def test_preparation_refuses_a_perplexity_under_the_released_package(
+    monkeypatch, tmp_path
+):
+    """Colab installs the released protspace (<= 4.18.0), which has no
+    check_method_params and still caps perplexity at 50: the slider stops there
+    and the panel's own copy of the check refuses."""
+    import dataclasses
+
+    from protspace.data.processors import pipeline
+    from protspace.utils.constants import DimensionReductionConfig
+
+    monkeypatch.delattr(pipeline, "check_method_params")
+    (field,) = [
+        f
+        for f in dataclasses.fields(DimensionReductionConfig)
+        if f.name == "perplexity"
+    ]
+    monkeypatch.setattr(field, "metadata", {"gte": 5, "lte": 50})
+
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    assert namespace["check_method_params"].__module__ == "__notebook__"
+    assert namespace["pw"]["perplexity"].max == 50
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "s.h5", n=20))
+    namespace["tabs"].selected_index = 1
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method == "t-SNE"
+    assert "not below the number of proteins (20)" in namespace["param_check"].value
+
+    loaded = []
+    namespace["load_h5"] = lambda *a, **k: loaded.append(a)
+    namespace["_on_gen"](None)
+    assert "Not started" in namespace["gen_status"].value
+    assert loaded == [] and downloads == []
+
+    namespace["pw"]["perplexity"].value = 6
+    assert namespace["param_check"].value == ""
+
+
 def test_preparation_eat_lists_only_columns_it_can_fill(tmp_path, monkeypatch):
     """After Generate the target preselected `ec`, empty for every protein of a
     non-UniProt dataset; a transfer on it could do nothing."""
