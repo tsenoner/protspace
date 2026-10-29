@@ -738,8 +738,9 @@ def test_transfer_notebook_shows_and_saves_the_neighbour_report(
 # --- The Preparation panel, run for real ------------------------------------------
 #
 # Cells 1-3 (install, upload, panel) with the installed ipywidgets and a mocked
-# `google.colab`; pip is stubbed and the network is refused, so the panel and
-# Generate run against this package exactly as in Colab, minus the browser.
+# `google.colab`; pip is stubbed and the network (urllib and requests) is refused,
+# so the panel and Generate run against this package exactly as in Colab, minus
+# the browser.
 # Colab ships ipywidgets 7, the dev lock 8: run this file once more with
 # `uv run --with ipywidgets==7.7.1 pytest tests/test_notebooks.py` to cover both.
 
@@ -817,6 +818,8 @@ def _run_preparation_panel(monkeypatch, tmp_path, *, uploads=None):
     import types
     import urllib.request
 
+    import requests
+
     monkeypatch.chdir(tmp_path)
     downloads, network = [], []
 
@@ -838,6 +841,12 @@ def _run_preparation_panel(monkeypatch, tmp_path, *, uploads=None):
 
     monkeypatch.setattr(urllib.request, "urlopen", _refuse)
     monkeypatch.setattr(urllib.request, "urlretrieve", _refuse)
+    # The annotation retrievers (UniProt/TED/InterPro over http_utils.PooledSession,
+    # cath_names, the InterPro XML) use `requests`, not urllib: refuse them too, so
+    # `network == []` really means nothing was fetched.
+    monkeypatch.setattr(
+        requests.Session, "request", lambda self, method, url, *a, **k: _refuse(url)
+    )
 
     namespace = {"__name__": "__notebook__"}
     real_run = subprocess.run
