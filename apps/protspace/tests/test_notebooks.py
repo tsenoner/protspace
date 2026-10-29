@@ -813,6 +813,7 @@ def _run_preparation_panel(monkeypatch, tmp_path, *, uploads=None):
     """Run cells 1-3 and return (namespace, downloads, network calls)."""
     pytest.importorskip("ipywidgets")
     pytest.importorskip("IPython")
+    import importlib.metadata
     import subprocess
     import sys
     import types
@@ -864,6 +865,10 @@ def _run_preparation_panel(monkeypatch, tmp_path, *, uploads=None):
     monkeypatch.setattr(tqdm, "tqdm", tqdm.tqdm)
     with monkeypatch.context() as pip:
         pip.setattr(subprocess, "run", _pip_or_real)
+        # test_install_* covers the install itself: with pip stubbed nothing
+        # changes on disk, so skip the helper's two full distribution scans
+        # (about 0.5 s per panel run).
+        pip.setattr(importlib.metadata, "packages_distributions", dict)
         exec(compile(_preparation_cell("# @title 1."), "prep:1", "exec"), namespace)
     namespace["display"] = lambda *_a, **_k: None
     namespace["clear_output"] = lambda *_a, **_k: None
