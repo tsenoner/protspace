@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v4.17.2 (2026-10-29)
+
+### Bug Fixes
+
+- **embed**: Load ESM-C from the official biohub weights on the local backend
+  ([`bec69bf`](https://github.com/tsenoner/protspace/commit/bec69bf2293df4d025332b63a13774f9d393bfe6))
+
+- **embed**: Request ESM-C from Biocentral under the official biohub ids
+  ([`c2af477`](https://github.com/tsenoner/protspace/commit/c2af4772f8ad5b139272f2aeb9739ff70d40f14e))
+
+- **notebook**: Name no model in the Biocentral block message
+  ([`21d11d8`](https://github.com/tsenoner/protspace/commit/21d11d862a0e1699412726bca30895fad874c71e))
+
+### Documentation
+
+- Describe the local backend's native ESM-C loading
+  ([`8c13088`](https://github.com/tsenoner/protspace/commit/8c13088b64c6426b101ec191dbdbca6064ff2e7c))
+
+- ESM-C is served correctly by both backends
+  ([`eaeff52`](https://github.com/tsenoner/protspace/commit/eaeff52d29834f9f6a97efb67e6cf2727ce23409))
+
+### Refactoring
+
+- **embed**: Load ESM-2 and ESM-C through one AutoModel branch
+  ([`444116b`](https://github.com/tsenoner/protspace/commit/444116b58d31cbd3aecced68cc993ac0d287e4f0))
+
+### Testing
+
+- **biocentral**: Check the live server once per canary run
+  ([`7833792`](https://github.com/tsenoner/protspace/commit/78337929e8933106a688830d61f063054447a0b0))
+
+- **embed**: Hold the local ESM-C path to the committed reference
+  ([`39efb1b`](https://github.com/tsenoner/protspace/commit/39efb1bea194395bc919f0e3ce09d207fc48b790))
+
+
 ## v4.17.1 (2026-10-27)
 
 ### Bug Fixes
