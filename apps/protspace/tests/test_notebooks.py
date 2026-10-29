@@ -36,6 +36,22 @@ def _code_cells(path: Path):
         yield i, source if isinstance(source, str) else "".join(source)
 
 
+@pytest.fixture
+def transform():
+    """IPython's cell transformer, which rewrites `!cmd` and `%magic` lines.
+
+    `TransformerManager` is the transformer on its own, deliberately in place of
+    `InteractiveShell.instance().input_transformer_manager`: the shell is a
+    process-wide singleton that is never torn down, and building it sets
+    `builtins.__IPYTHON__` and installs a `warnings` filter that would then
+    outlive the test for the rest of the pytest session.
+    """
+    return pytest.importorskip(
+        "IPython.core.inputtransformer2",
+        reason="IPython is a dev-group dependency (via jupyter)",
+    ).TransformerManager()
+
+
 def test_notebook_directory_is_not_empty():
     """Guard the glob: an empty match would make every test below vacuous."""
     assert NOTEBOOKS, f"no notebooks found under {NOTEBOOK_DIR}"
@@ -55,23 +71,12 @@ def test_cell_magics_stay_on_the_first_line(path: Path):
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
-def test_code_cells_compile_after_ipython_transformation(path: Path):
+def test_code_cells_compile_after_ipython_transformation(path: Path, transform):
     """Catches the syntax errors a raw `compile()` would miss, and vice versa.
 
     Notebook cells are not plain Python: `!cmd` and `%magic` are rewritten
     before execution. Transforming first is what the real runtime does.
-
-    `TransformerManager` is the transformer on its own, deliberately in place of
-    `InteractiveShell.instance().input_transformer_manager`: the shell is a
-    process-wide singleton that is never torn down, and building it sets
-    `builtins.__IPYTHON__` and installs a `warnings` filter that would then
-    outlive this test for the rest of the pytest session.
     """
-    transform = pytest.importorskip(
-        "IPython.core.inputtransformer2",
-        reason="IPython is a dev-group dependency (via jupyter)",
-    ).TransformerManager()
-
     for index, source in _code_cells(path):
         try:
             compile(transform.transform_cell(source), f"{path.name}:{index}", "exec")
@@ -159,7 +164,7 @@ def _guarded_import_fallbacks(tree: ast.AST, names: set[str]) -> dict[str, froze
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
-def test_notebook_fallback_sets_match_the_package(path: Path):
+def test_notebook_fallback_sets_match_the_package(path: Path, transform):
     """The `except ImportError` copies must equal the constants they stand in for.
 
     Cell 1 installs the *released* protspace while the notebook is served from
@@ -185,11 +190,6 @@ def test_notebook_fallback_sets_match_the_package(path: Path):
     # Transform first, for the reason this module exists: cell source is not
     # plain Python, and a `!cmd` line anywhere in a matched cell would otherwise
     # raise SyntaxError from a test that has nothing to say about shell lines.
-    transform = pytest.importorskip(
-        "IPython.core.inputtransformer2",
-        reason="IPython is a dev-group dependency (via jupyter)",
-    ).TransformerManager()
-
     for index, source in _code_cells(path):
         tree = ast.parse(transform.transform_cell(source))
         for name, value in _guarded_import_fallbacks(tree, set(expected)).items():
@@ -201,7 +201,7 @@ def test_notebook_fallback_sets_match_the_package(path: Path):
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
-def test_no_notebook_imports_a_private_protspace_name(path: Path):
+def test_no_notebook_imports_a_private_protspace_name(path: Path, transform):
     """Cell 1 installs the *released* protspace while this notebook is main's.
 
     A name added this release does not exist in the release the cell installs,
@@ -210,11 +210,6 @@ def test_no_notebook_imports_a_private_protspace_name(path: Path):
     names are the contract that survives the lag; private ones are not, and a
     duplicated fallback copy is a second source of truth that drifts.
     """
-    transform = pytest.importorskip(
-        "IPython.core.inputtransformer2",
-        reason="IPython is a dev-group dependency (via jupyter)",
-    ).TransformerManager()
-
     private = []
     for index, source in _code_cells(path):
         for node in ast.walk(ast.parse(transform.transform_cell(source))):
@@ -233,7 +228,7 @@ def test_no_notebook_imports_a_private_protspace_name(path: Path):
     )
 
 
-def test_preparation_names_each_bundle_distinctly():
+def test_preparation_names_each_bundle_distinctly(transform):
     """A fixed download name is what issue #338 reads as a stale projection.
 
     Two Generate actions land as `data.parquetbundle` and `data (1).parquetbundle`,
@@ -241,11 +236,6 @@ def test_preparation_names_each_bundle_distinctly():
     than a substring match: the point is that the name carries something from
     this run, not that it is spelled any particular way.
     """
-    transform = pytest.importorskip(
-        "IPython.core.inputtransformer2",
-        reason="IPython is a dev-group dependency (via jupyter)",
-    ).TransformerManager()
-
     values = [
         value
         for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb")
@@ -883,10 +873,23 @@ def _run_preparation_panel(monkeypatch, tmp_path, *, uploads=None):
     return namespace, downloads, network
 
 
-def _generate_pca_from_csv(namespace, csv: Path):
-    """Generate PCA only, annotations from the CSV alone: nothing to fetch."""
+def _load_h5_tab(namespace, tmp_path: Path, name="results.h5", n=40) -> Path:
+    """Write an HDF5 and select it in the Upload-H5 tab; the path field's
+    observer loads it."""
+    h5 = _clickthrough_h5(tmp_path / name, n=n)
+    namespace["h5_path_field"].value = str(h5)
+    namespace["tabs"].selected_index = 1
+    return h5
+
+
+def _only_methods(namespace, *methods: str) -> None:
     for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method == "PCA"
+        toggle.value = method in methods
+
+
+def _generate_from_csv(namespace, csv: Path, methods=("PCA",)):
+    """Generate *methods*, annotations from the CSV alone: nothing to fetch."""
+    _only_methods(namespace, *methods)
     namespace["ann_preset"].value = namespace["_CSV_ONLY"]
     namespace["csv_path_field"].value = str(csv)
     namespace["_on_gen"](None)
@@ -974,16 +977,13 @@ def test_preparation_names_an_unnamed_h5_and_generates(monkeypatch, tmp_path, ca
     """The Upload-H5 tab never passed a name, so every file without model_name --
     every file the Embeddings notebook wrote -- failed at Generate."""
     namespace, downloads, network = _run_preparation_panel(monkeypatch, tmp_path)
-    h5 = _clickthrough_h5(tmp_path / "toxins_esm2_650m.h5")
     csv = tmp_path / "custom.csv"
     csv.write_text(
         "identifier,group\n" + "".join(f"prot{i:03d},g{i % 3}\n" for i in range(40))
     )
 
-    namespace["h5_path_field"].value = str(h5)
-    namespace["_on_h5_load"]()
-    namespace["tabs"].selected_index = 1
-    _generate_pca_from_csv(namespace, csv)
+    _load_h5_tab(namespace, tmp_path, name="toxins_esm2_650m.h5")
+    _generate_from_csv(namespace, csv)
 
     output = capsys.readouterr().out
     assert "embedding name 'esm2_650m'" in namespace["h5_status"].value
@@ -998,11 +998,9 @@ def test_preparation_uses_the_embedder_picked_for_an_h5(monkeypatch, tmp_path):
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     csv = tmp_path / "custom.csv"
     csv.write_text("identifier,group\nprot000,a\n")
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["_on_h5_load"]()
+    _load_h5_tab(namespace, tmp_path)
     namespace["h5_name"].value = "prot_t5"
-    namespace["tabs"].selected_index = 1
-    _generate_pca_from_csv(namespace, csv)
+    _generate_from_csv(namespace, csv)
 
     (bundle,) = downloads
     assert _projection_names(bundle) == ["ProtT5 — PCA 2"]
@@ -1077,9 +1075,7 @@ def test_preparation_disables_generate_while_it_runs(monkeypatch, tmp_path):
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     csv = tmp_path / "custom.csv"
     csv.write_text("identifier,group\nprot000,a\n")
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["_on_h5_load"]()
-    namespace["tabs"].selected_index = 1
+    _load_h5_tab(namespace, tmp_path)
 
     seen, real_load_h5 = [], namespace["load_h5"]
 
@@ -1088,7 +1084,7 @@ def test_preparation_disables_generate_while_it_runs(monkeypatch, tmp_path):
         return real_load_h5(*args, **kwargs)
 
     namespace["load_h5"] = _load_h5
-    _generate_pca_from_csv(namespace, csv)
+    _generate_from_csv(namespace, csv)
 
     assert seen == [True]
     assert downloads and namespace["gen_btn"].disabled is False
@@ -1096,9 +1092,7 @@ def test_preparation_disables_generate_while_it_runs(monkeypatch, tmp_path):
 
 def test_preparation_csv_only_needs_a_csv(monkeypatch, tmp_path, capsys):
     namespace, downloads, network = _run_preparation_panel(monkeypatch, tmp_path)
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["_on_h5_load"]()
-    namespace["tabs"].selected_index = 1
+    _load_h5_tab(namespace, tmp_path)
     namespace["ann_preset"].value = namespace["_CSV_ONLY"]
 
     namespace["_on_gen"](None)
@@ -1113,10 +1107,8 @@ def test_preparation_reads_a_gzipped_csv(monkeypatch, tmp_path):
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     csv = tmp_path / "custom.csv.gz"
     csv.write_bytes(gzip.compress(b"identifier,group\nprot000,a\n"))
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["_on_h5_load"]()
-    namespace["tabs"].selected_index = 1
-    _generate_pca_from_csv(namespace, csv)
+    _load_h5_tab(namespace, tmp_path)
+    _generate_from_csv(namespace, csv)
 
     assert len(downloads) == 1
 
@@ -1144,10 +1136,8 @@ def test_preparation_keeps_empty_csv_cells_empty(monkeypatch, tmp_path, loader):
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     csv = tmp_path / "custom.csv"
     csv.write_text("identifier,group,note\nprot000,a,\nprot001,,x\n")
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["_on_h5_load"]()
-    namespace["tabs"].selected_index = 1
-    _generate_pca_from_csv(namespace, csv)
+    _load_h5_tab(namespace, tmp_path)
+    _generate_from_csv(namespace, csv)
 
     (bundle,) = downloads
     rows = {r["protein_id"]: r for r in read_tables(bundle)[0].to_pylist()}
@@ -1186,15 +1176,9 @@ def test_preparation_records_the_metric_picked(monkeypatch, tmp_path):
     csv.write_text(
         "identifier,group\n" + "".join(f"prot{i:03d},g{i % 3}\n" for i in range(40))
     )
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["_on_h5_load"]()
-    namespace["tabs"].selected_index = 1
-    for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method == "t-SNE"
+    _load_h5_tab(namespace, tmp_path)
     namespace["pw"]["metric"].value = "cosine"
-    namespace["ann_preset"].value = namespace["_CSV_ONLY"]
-    namespace["csv_path_field"].value = str(csv)
-    namespace["_on_gen"](None)
+    _generate_from_csv(namespace, csv, methods=("t-SNE",))
 
     (bundle,) = downloads
     (info,) = read_tables(bundle)[1].column("info_json").to_pylist()
@@ -1363,10 +1347,8 @@ def test_preparation_skips_uniprot_when_no_id_is_an_accession(
     from protspace.data.io.bundle import read_tables
 
     namespace, downloads, network = _run_preparation_panel(monkeypatch, tmp_path)
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["tabs"].selected_index = 1
-    for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method == "PCA"
+    _load_h5_tab(namespace, tmp_path)
+    _only_methods(namespace, "PCA")
     if with_csv:
         csv = tmp_path / "custom.csv"
         csv.write_text("identifier,group\nprot000,a\n")
@@ -1392,13 +1374,11 @@ def test_preparation_skips_uniprot_when_no_id_is_an_accession(
 def test_preparation_restores_its_settings_after_a_restart(monkeypatch, tmp_path):
     """A restart (the install cell may ask for one) cleared every field."""
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
-    h5 = _clickthrough_h5(tmp_path / "results_esm2_650m.h5")
     csv = tmp_path / "custom.csv"
     csv.write_text("identifier,group\nprot000,a\n")
-    namespace["h5_path_field"].value = str(h5)
-    namespace["tabs"].selected_index = 1
+    h5 = _load_h5_tab(namespace, tmp_path, name="results_esm2_650m.h5")
     namespace["pw"]["n_neighbors"].value = 40
-    _generate_pca_from_csv(namespace, csv)
+    _generate_from_csv(namespace, csv)
 
     restarted, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
     assert restarted["tabs"].selected_index == 1
@@ -1471,8 +1451,7 @@ def test_preparation_failure_advice_matches_the_error(
     """Every failure printed the same UniProt/Biocentral/caching list, the numpy
     and perplexity failures included."""
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["tabs"].selected_index = 1
+    _load_h5_tab(namespace, tmp_path)
 
     def fail(*_a, **_k):
         raise error
@@ -1511,9 +1490,8 @@ def test_preparation_generate_refreshes_the_eat_columns(monkeypatch, tmp_path):
     assert namespace["eat_col"].options == ()
     csv = tmp_path / "custom.csv"
     csv.write_text("identifier,group\nprot000,a\n")
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["tabs"].selected_index = 1
-    _generate_pca_from_csv(namespace, csv)
+    _load_h5_tab(namespace, tmp_path)
+    _generate_from_csv(namespace, csv)
 
     assert "group" in [value for _, value in namespace["eat_col"].options]
 
@@ -1538,10 +1516,8 @@ def test_preparation_shows_each_step_and_ends_full(monkeypatch, tmp_path):
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     csv = tmp_path / "custom.csv"
     csv.write_text("identifier,group\nprot000,a\n")
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["tabs"].selected_index = 1
-    for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method in {"PCA", "t-SNE"}
+    _load_h5_tab(namespace, tmp_path)
+    _only_methods(namespace, "PCA", "t-SNE")
     namespace["ann_preset"].value = namespace["_CSV_ONLY"]
     namespace["csv_path_field"].value = str(csv)
 
@@ -1580,9 +1556,8 @@ def test_preparation_offers_every_bundle_for_download(monkeypatch, tmp_path):
     assert namespace["bundles_box"].layout.display == "none"
     csv = tmp_path / "custom.csv"
     csv.write_text("identifier,group\nprot000,a\n")
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
-    namespace["tabs"].selected_index = 1
-    _generate_pca_from_csv(namespace, csv)
+    _load_h5_tab(namespace, tmp_path)
+    _generate_from_csv(namespace, csv)
 
     (bundle,) = downloads
     assert bundle.endswith(".parquetbundle")
@@ -1598,10 +1573,8 @@ def test_preparation_refuses_a_perplexity_the_input_cannot_support(
     """t-SNE needs perplexity below the protein count; the default 30 on 20
     proteins failed in scikit-learn after the embeddings and annotations."""
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "s.h5", n=20))
-    namespace["tabs"].selected_index = 1
-    for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method == "t-SNE"
+    _load_h5_tab(namespace, tmp_path, name="s.h5", n=20)
+    _only_methods(namespace, "t-SNE")
     assert "not below the number of proteins (20)" in namespace["param_check"].value
 
     loaded = []
@@ -1679,10 +1652,8 @@ def test_preparation_refuses_a_perplexity_under_the_released_package(
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     assert namespace["check_method_params"].__module__ == "__notebook__"
     assert namespace["pw"]["perplexity"].max == 50
-    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "s.h5", n=20))
-    namespace["tabs"].selected_index = 1
-    for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method == "t-SNE"
+    _load_h5_tab(namespace, tmp_path, name="s.h5", n=20)
+    _only_methods(namespace, "t-SNE")
     assert "not below the number of proteins (20)" in namespace["param_check"].value
 
     loaded = []
@@ -2885,8 +2856,7 @@ def _example_run(monkeypatch, tmp_path, *, bundle_columns, bundle_served=True):
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     monkeypatch.setattr(ReductionPipeline, "_fetch_annotations", fetch)
-    for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method == "PCA"
+    _only_methods(namespace, "PCA")
     return namespace, downloads, calls, asked
 
 
