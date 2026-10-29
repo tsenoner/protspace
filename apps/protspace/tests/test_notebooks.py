@@ -1529,6 +1529,29 @@ def test_preparation_refuses_a_perplexity_the_input_cannot_support(
     assert namespace["param_check"].value == ""
 
 
+def test_preparation_refuses_a_query_perplexity_before_embedding(monkeypatch, tmp_path):
+    """A query's protein count is known only once UniProt answers; the
+    perplexity check waited until every model had embedded the whole set."""
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    ids = [f"P{i:05d}" for i in range(20)]
+    fasta = tmp_path / "query.fasta"
+    fasta.write_text("".join(f">{i}\nMKV\n" for i in ids))
+    namespace["query_uniprot"] = lambda _query, save_to: (ids, fasta)
+    embedded = []
+    namespace["embed_fasta"] = lambda *a, **_k: embedded.append(a)
+    namespace["query_input"].value = "(family:globin)"
+    namespace["_on_query_set"]()
+    namespace["tabs"].selected_index = 3
+    for method, toggle in namespace["method_toggles"].items():
+        toggle.value = method == "t-SNE"
+    namespace["_on_gen"](None)
+
+    status = namespace["gen_status"].value
+    assert "Not started" in status and "This query returned 20 proteins" in status
+    assert embedded == [] and downloads == []
+    assert namespace["gen_btn"].disabled is False
+
+
 @pytest.mark.parametrize("n_proteins", [5, 20, 100])
 def test_preparation_perplexity_fallback_words_it_as_the_package(
     monkeypatch, tmp_path, n_proteins
