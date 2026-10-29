@@ -1911,6 +1911,24 @@ def test_clickthrough_loads_esm_c_6b_in_half_precision_on_a_gpu(
         assert asked == [{"including_emulation": False}]
 
 
+@pytest.mark.parametrize("cuda", [True, False], ids=["gpu", "cpu"])
+def test_clickthrough_loads_prot_t5_in_its_stored_precision(monkeypatch, cuda):
+    """Half precision on a GPU, as the checkpoint is stored; full on a CPU. Passed as
+    `dtype=`, as the package does: `torch_dtype=` is deprecated in transformers 5."""
+    torch = pytest.importorskip("torch")
+    calls = _fake_transformers(monkeypatch)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    namespace = _clickthrough_namespace(_accelerate_available=lambda: True)
+
+    namespace["_setup_model"]("Rostlab/prot_t5_xl_half_uniref50-enc")
+
+    (kwargs,) = [kw for name, _, kw in calls if name == "T5EncoderModel"]
+    if cuda:
+        assert kwargs == {"dtype": torch.float16, "device_map": torch.device("cuda")}
+    else:
+        assert kwargs == {"dtype": torch.float32}
+
+
 @pytest.mark.parametrize(
     ("checkpoint", "loader"),
     [
