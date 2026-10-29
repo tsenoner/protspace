@@ -848,6 +848,11 @@ def _run_preparation_panel(monkeypatch, tmp_path, *, uploads=None):
             return types.SimpleNamespace(returncode=0, stdout="", stderr="")
         return real_run(cmd, *args, **kwargs)
 
+    import tqdm
+
+    # Cell 1 swaps the global tqdm for its notebook bar; undo it at teardown, on
+    # the outer monkeypatch so the test body still sees the panel's bar.
+    monkeypatch.setattr(tqdm, "tqdm", tqdm.tqdm)
     with monkeypatch.context() as pip:
         pip.setattr(subprocess, "run", _pip_or_real)
         exec(compile(_preparation_cell("# @title 1."), "prep:1", "exec"), namespace)
@@ -2903,13 +2908,8 @@ def test_preparation_hides_transient_progress_bars(monkeypatch, tmp_path):
 
     _run_preparation_panel(monkeypatch, tmp_path)
     bar_class = tqdm.tqdm
-    try:
-        assert bar_class(range(3), leave=False).disable
-        assert not bar_class(range(3)).disable
-    finally:
-        import tqdm.std
-
-        tqdm.tqdm = tqdm.std.tqdm
+    assert bar_class(range(3), leave=False).disable
+    assert not bar_class(range(3)).disable
 
 
 def test_preparation_hides_the_package_lines_the_card_repeats(
