@@ -1280,18 +1280,51 @@ def _string_constants(root: Path) -> list[str]:
     return found
 
 
+def _assert_in_package(phrases) -> None:
+    """Each phrase still occurs in some string literal of the protspace package."""
+    import protspace
+
+    source = _string_constants(Path(protspace.__file__).parent)
+    missing = [p for p in phrases if not any(p in s for s in source)]
+    assert not missing, f"no longer in the package: {missing}"
+
+
+def _rendered_url_messages(root: Path) -> list[str]:
+    """f-strings like f"Downloading {X_URL} ..." with X_URL resolved from its module."""
+    found = []
+    for py in root.rglob("*.py"):
+        tree = ast.parse(py.read_text())
+        consts = {
+            target.id: node.value.value
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.JoinedStr) or len(node.values) < 2:
+                continue
+            head, value = node.values[:2]
+            if (
+                isinstance(head, ast.Constant)
+                and isinstance(value, ast.FormattedValue)
+                and isinstance(value.value, ast.Name)
+                and value.value.id in consts
+            ):
+                found.append(head.value + consts[value.value.id])
+    return found
+
+
 def test_preparation_panel_wording_matches_the_package(monkeypatch, tmp_path, capsys):
     """Log lines told Colab users to pass `--refetch` and `-f`. The panel
     rewrites each such phrase; a phrase the package no longer says would leave
     its replacement dead, so each is pinned to the package's source."""
     import logging
 
-    import protspace
-
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
-    source = _string_constants(Path(protspace.__file__).parent)
-    for cli in namespace["_PANEL_WORDING"]:
-        assert any(cli in text for text in source), f"no longer in the package: {cli!r}"
+    _assert_in_package(namespace["_PANEL_WORDING"])
 
     logging.getLogger("protspace.data.annotations.cache").warning(
         "All cached annotations are empty. Use --refetch annotations to re-fetch, "
@@ -2635,13 +2668,9 @@ def test_preparation_names_the_custom_csv_beside_generate(monkeypatch, tmp_path)
 def test_preparation_retells_routine_package_lines(monkeypatch, tmp_path, capsys):
     import logging
 
-    import protspace
-
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
-    source = _string_constants(Path(protspace.__file__).parent)
-    pinned = [*namespace["_PANEL_RETOLD"], "Missing annotations: "]
-    for text in pinned:
-        assert any(text in s for s in source), f"no longer in the package: {text!r}"
+    # "Missing annotations: " is _PANEL_HIDDEN's, pinned by the test that hides it.
+    _assert_in_package(namespace["_PANEL_RETOLD"])
 
     log = logging.getLogger("protspace.data.annotations.cache")
     log.warning(
@@ -2934,10 +2963,15 @@ def test_preparation_hides_the_package_lines_the_card_repeats(
     import protspace
 
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
-    source = _string_constants(Path(protspace.__file__).parent)
-    for hidden in namespace["_PANEL_HIDDEN"]:
-        stem = hidden.split("set()")[0].split("https://")[0]
-        assert any(stem in s for s in source), f"no longer in the package: {stem!r}"
+    hidden = namespace["_PANEL_HIDDEN"]
+    _assert_in_package([h.split("set()")[0] for h in hidden if "https://" not in h])
+    # A URL prefix is pinned to the package's real f"Downloading {X_URL} ..."
+    # messages: its stem alone ("Downloading ") matches unrelated literals.
+    rendered = _rendered_url_messages(Path(protspace.__file__).parent)
+    for prefix in [h for h in hidden if "https://" in h]:
+        assert any(m.startswith(prefix) for m in rendered), (
+            f"no longer in the package: {prefix!r}"
+        )
 
     log = logging.getLogger("protspace.data.io.bundle")
     log.info("Saved bundled output to: output/x.parquetbundle")
