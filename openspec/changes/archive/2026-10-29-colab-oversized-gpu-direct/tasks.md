@@ -22,4 +22,4 @@
 
 - [x] 4.1 Colab benchmark on the free T4 (results in the proposal and the PR)
 - [x] 4.2 `docs/guide/python-cli.md` local-backend section, `apps/protspace/CLAUDE.md`
-- [ ] 4.3 tsenoner/protspace#563: the ClickThrough notebook's loader and RAM gate get the same rule
+- [x] 4.3 tsenoner/protspace#563: the ClickThrough notebook's loader and RAM gate get the same rule
