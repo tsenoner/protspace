@@ -1414,7 +1414,7 @@ def test_preparation_rerun_keeps_settings_newer_than_an_upload(monkeypatch, tmp_
     csv.write_text("identifier,group\nprot000,a\n")
     later = _clickthrough_h5(tmp_path / "later_esm2_650m.h5")
     namespace["h5_path_field"].value = str(later)
-    _generate_pca_from_csv(namespace, csv)
+    _generate_from_csv(namespace, csv)
 
     def run_all():  # the same session: the upload cell unticked, then the panel
         for marker in ("# @title Optional: upload", "# @title 2."):
@@ -1567,12 +1567,37 @@ def test_preparation_offers_every_bundle_for_download(monkeypatch, tmp_path):
     assert downloads == [bundle, str(Path(bundle))]
 
 
+def _as_released_package(monkeypatch) -> None:
+    """protspace <= 4.18.0, which Colab installs: no check_method_params, and
+    perplexity still capped at 50."""
+    import dataclasses
+
+    from protspace.data.processors import pipeline
+    from protspace.utils.constants import DimensionReductionConfig
+
+    monkeypatch.delattr(pipeline, "check_method_params")
+    (field,) = [
+        f
+        for f in dataclasses.fields(DimensionReductionConfig)
+        if f.name == "perplexity"
+    ]
+    monkeypatch.setattr(field, "metadata", {"gte": 5, "lte": 50})
+
+
+@pytest.mark.parametrize("released", [False, True], ids=["current", "released"])
 def test_preparation_refuses_a_perplexity_the_input_cannot_support(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, released
 ):
     """t-SNE needs perplexity below the protein count; the default 30 on 20
-    proteins failed in scikit-learn after the embeddings and annotations."""
+    proteins failed in scikit-learn after the embeddings and annotations. Under
+    the released package the slider stops at its cap of 50 and the panel's own
+    copy of the check refuses."""
+    if released:
+        _as_released_package(monkeypatch)
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    if released:
+        assert namespace["check_method_params"].__module__ == "__notebook__"
+        assert namespace["pw"]["perplexity"].max == 50
     _load_h5_tab(namespace, tmp_path, name="s.h5", n=20)
     _only_methods(namespace, "t-SNE")
     assert "not below the number of proteins (20)" in namespace["param_check"].value
@@ -1628,42 +1653,6 @@ def test_preparation_perplexity_fallback_words_it_as_the_package(
     perplexity = namespace["pw"]["perplexity"].value
     expected = tsne_perplexity_problem(perplexity, n_proteins)
     assert namespace["_param_problem"](n_proteins) == expected
-
-
-def test_preparation_refuses_a_perplexity_under_the_released_package(
-    monkeypatch, tmp_path
-):
-    """Colab installs the released protspace (<= 4.18.0), which has no
-    check_method_params and still caps perplexity at 50: the slider stops there
-    and the panel's own copy of the check refuses."""
-    import dataclasses
-
-    from protspace.data.processors import pipeline
-    from protspace.utils.constants import DimensionReductionConfig
-
-    monkeypatch.delattr(pipeline, "check_method_params")
-    (field,) = [
-        f
-        for f in dataclasses.fields(DimensionReductionConfig)
-        if f.name == "perplexity"
-    ]
-    monkeypatch.setattr(field, "metadata", {"gte": 5, "lte": 50})
-
-    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
-    assert namespace["check_method_params"].__module__ == "__notebook__"
-    assert namespace["pw"]["perplexity"].max == 50
-    _load_h5_tab(namespace, tmp_path, name="s.h5", n=20)
-    _only_methods(namespace, "t-SNE")
-    assert "not below the number of proteins (20)" in namespace["param_check"].value
-
-    loaded = []
-    namespace["load_h5"] = lambda *a, **k: loaded.append(a)
-    namespace["_on_gen"](None)
-    assert "Not started" in namespace["gen_status"].value
-    assert loaded == [] and downloads == []
-
-    namespace["pw"]["perplexity"].value = 6
-    assert namespace["param_check"].value == ""
 
 
 def test_preparation_eat_lists_only_columns_it_can_fill(tmp_path, monkeypatch):
@@ -2067,17 +2056,6 @@ def test_clickthrough_size_rules_match_the_package():
     )
 
 
-def test_clickthrough_accelerate_floor_covers_what_transformers_requires():
-    """The notebook copies transformers' device_map floor for accelerate (the
-    package asks transformers directly); if transformers raises it, the copy must
-    follow, or the notebook would pass device_map where transformers refuses it."""
-    pytest.importorskip("transformers")
-    from transformers.utils.import_utils import ACCELERATE_MIN_VERSION
-
-    floor = tuple(int(part) for part in ACCELERATE_MIN_VERSION.split("."))
-    assert _clickthrough_namespace()["_ACCELERATE_MIN"] >= floor
-
-
 def _function(source: str, name: str) -> str:
     (node,) = [
         n
@@ -2149,23 +2127,44 @@ def test_clickthrough_stops_esm_c_6b_where_ram_is_short(monkeypatch, gpu_gb, nee
     _run_until_the_fasta(namespace)
 
 
+def _usable_accelerate(answer):
+    """transformers' own accelerate check answering `answer` (a value or an error)."""
+
+    def check():
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    return check
+
+
 @pytest.mark.parametrize(
-    ("installed", "usable"), [("1.15.0", True), ("1.0.1", False), (None, False)]
+    "answer", [True, False, RuntimeError("a half-installed transformers"), None]
 )
-def test_clickthrough_keeps_the_ram_path_below_the_accelerate_minimum(
-    monkeypatch, installed, usable
+def test_clickthrough_asks_transformers_whether_accelerate_is_usable(
+    monkeypatch, answer
 ):
-    """transformers refuses device_map with an older accelerate, which would fail
-    every GPU load; the notebook then loads through RAM, as the package does."""
-    import importlib.metadata as metadata
+    """transformers refuses device_map with an accelerate it considers too old,
+    which would fail every GPU load, so the notebook asks transformers itself and
+    agrees with the package on every answer (None: transformers not importable)."""
+    import sys
+    import types
 
-    def version(name):
-        if installed is None:
-            raise metadata.PackageNotFoundError(name)
-        return installed
+    from protspace.data.embedding import local
 
-    monkeypatch.setattr(metadata, "version", version)
-    assert _clickthrough_namespace()["_accelerate_available"]() is usable
+    if answer is None:
+        monkeypatch.setitem(sys.modules, "transformers", None)
+        monkeypatch.setitem(sys.modules, "transformers.utils", None)
+    else:
+        utils = types.ModuleType("transformers.utils")
+        utils.is_accelerate_available = _usable_accelerate(answer)
+        monkeypatch.setitem(
+            sys.modules, "transformers", types.ModuleType("transformers")
+        )
+        monkeypatch.setitem(sys.modules, "transformers.utils", utils)
+    expected = answer is True
+    assert _clickthrough_namespace()["_accelerate_available"]() is expected
+    assert local._accelerate_available() is expected
 
 
 def test_clickthrough_runs_esm_c_6b_on_a_free_t4(monkeypatch, capsys):
@@ -2411,6 +2410,22 @@ def test_clickthrough_refuses_to_mix_id_namings_in_one_file(monkeypatch, tmp_pat
     assert loaded == []  # stopped before loading the model
     with h5py.File(out) as f:
         assert sorted(f) == ["P83302", "Q1"]
+
+
+@pytest.mark.parametrize(
+    ("extract", "headers", "mode"),
+    [
+        (True, ["sp|P83302|3SX1_OPHHA", "contig7"], "accession"),
+        (True, ["P83302", "contig7"], "header"),  # a bare accession renames nothing
+        (True, ["contig7"], "header"),
+        (False, ["sp|P83302|3SX1_OPHHA"], "header"),
+    ],
+)
+def test_clickthrough_id_mode_counts_only_renamed_headers(extract, headers, mode):
+    """The resume check stamps how proteins were named; a FASTA whose IDs are
+    the same either way must not be refused when the box is flipped."""
+    namespace = _clickthrough_namespace(should_extract_uniprot_id=extract)
+    assert namespace["_id_mode"](headers) == mode
 
 
 def test_clickthrough_writes_per_residue_embeddings(monkeypatch, tmp_path):
