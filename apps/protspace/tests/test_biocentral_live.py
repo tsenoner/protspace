@@ -7,10 +7,15 @@ refuses (v2 broke every released client at once), and a server that still answer
 no longer in the words the package reads (a renamed prediction model leaves every
 predicted_* column empty without an error).
 
+They also catch a server that answers with the wrong model: Biocentral once returned
+ESM-2 vectors for ESM-C, with the right shape and no error, so the ESM-C check compares the
+vector itself with one computed locally from the official weights.
+
 An unreachable server is a skip, not a failure: the canary is about version drift, and an
 outage has its own status page.
 """
 
+import functools
 import os
 
 import h5py
@@ -28,6 +33,7 @@ from protspace.data.biocentral_connection import (
     wait_for_server,
 )
 from protspace.data.embedding.biocentral import embed_sequences, resolve_embedder
+from tests.esmc_reference import ESMC_UBIQUITIN, UBIQUITIN, cosine_to_reference
 
 pytestmark = [
     pytest.mark.integration,
@@ -39,9 +45,6 @@ pytestmark = [
 
 # Ubiquitin: a small soluble protein. Bacteriorhodopsin: a textbook seven-helix membrane
 # protein. Both are well inside the server's 7-5000 residue limits.
-UBIQUITIN = (
-    "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
-)
 BACTERIORHODOPSIN = (
     "MLELLPTAVEGVSQAQITGRPEWIWLALGTALMGLGTLYFLVKGMGVSDPDAKKFYAITTLVPAIAFTMYLSMLLGYGLTM"
     "VPFGGEQNPIYWARYADWLFTTPLLLLDLALLVDADQGTILALVGADGIMIGTGLVGALTKVYSYRFVWWAISTAAMLYIL"
@@ -50,8 +53,9 @@ BACTERIORHODOPSIN = (
 )
 
 
+@functools.cache
 def _usable_server():
-    """The client, once the live server is one it can use.
+    """The client, once the live server is one it can use (checked once per run).
 
     Skips when the server cannot be reached; raises when it answers but is not a server
     the locked client supports, with the message that names both versions.
@@ -82,6 +86,25 @@ def test_embedding_through_the_package(tmp_path):
         for name in h5:
             assert h5[name].shape == (1024,), name
             assert np.isfinite(h5[name][:]).all(), name
+
+
+@pytest.mark.parametrize("key", sorted(ESMC_UBIQUITIN))
+def test_esmc_is_the_official_model(tmp_path, key):
+    """Shape and finiteness would have passed the old bug; only the vector tells.
+
+    Measured agreement with the local backend is about 1e-7 in cosine; the old
+    wrong-model answer scored about 0.02, so 0.999 leaves room for a precision
+    change on the server without letting another model through.
+    """
+    _usable_server()
+
+    h5_path = embed_sequences(
+        {"ubiquitin": UBIQUITIN}, resolve_embedder(key), tmp_path / f"{key}.h5"
+    )
+
+    with h5py.File(h5_path) as h5:
+        cosine = cosine_to_reference(key, h5["ubiquitin"][:])
+    assert cosine > 0.999, f"Biocentral's {key} vector has cosine {cosine:.4f}"
 
 
 def test_annotation_predictions_through_the_package():

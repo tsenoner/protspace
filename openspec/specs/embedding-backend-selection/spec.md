@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Which backend computes embeddings — this runtime's own GPU or the remote Biocentral API — how that choice is resolved when it is left to `auto`, and which embedders each backend may actually serve. Two rules constrain the pairing: Biocentral accepts `esmc_*` but returns embeddings orthogonal to the real model, and an oversized checkpoint cannot load on a small runtime. Both describe the hosted notebook environment rather than the package, so they are declared centrally, enforced in the Colab panel, and deliberately left unenforced by the CLI, where the same combinations are correct on real hardware.
+Which backend computes embeddings — this runtime's own GPU or the remote Biocentral API — how that choice is resolved when it is left to `auto`, and which embedders each backend may actually serve. The pairing is constrained by per-backend blocked sets: today only the local one has a member (an oversized checkpoint cannot load on a small runtime), while the Biocentral set is empty since Biocentral serves ESM-C from the official checkpoints, and is kept so a release can block a shortcut that server answers wrongly. Such rules describe the hosted notebook environment rather than the package, so they are declared centrally, enforced in the Colab panel, and deliberately left unenforced by the CLI, where the same combinations are correct on real hardware.
 
 ## Requirements
 
@@ -73,24 +73,6 @@ a UniProt download.
 - **WHEN** the blocked sets are compared against the embedder registry
 - **THEN** every blocked name resolves to a known shortcut, so no rule silently gates
   nothing
-
-### Requirement: ESM-C is blocked on the Biocentral backend
-
-The `esmc_300m` and `esmc_600m` shortcuts SHALL be blocked when the effective backend is
-the Biocentral API, because that API returns embeddings orthogonal to the real model — its
-engine has no dedicated ESM-C embedder and substring-matches the checkpoint into a vanilla
-ESM-2 architecture. The remedy offered SHALL be the local backend, which serves ESM-C
-correctly.
-
-#### Scenario: ESM-C requested through Biocentral
-
-- **WHEN** the effective backend is the Biocentral API and an `esmc_*` shortcut is selected
-- **THEN** it is blocked, and the local backend is named as the way to obtain it
-
-#### Scenario: ESM-C on the local backend
-
-- **WHEN** the effective backend is local
-- **THEN** `esmc_*` shortcuts are available
 
 ### Requirement: Oversized models are blocked only on runtimes that cannot hold them
 
@@ -166,3 +148,50 @@ or `torch`.
 - **WHEN** `prepare -i emb.h5 -a labels.csv -m pca2` runs in a fresh interpreter
 - **THEN** none of `protspace.data.embedding`, `biocentral_api` and `torch` is in `sys.modules`
   afterwards
+
+### Requirement: The local backend serves ESM-C from the official checkpoints
+
+The local backend SHALL load `esmc_300m` and `esmc_600m` from the official ESM-C checkpoints
+through the `transformers` library's own model implementation, without executing modeling code
+downloaded from the checkpoint repository. The per-protein vectors it produces SHALL match those
+of the reimplementation it replaces to within float32 precision, so an embedding file written by
+an earlier local run remains owned by the same producer and resumes without being refetched.
+
+#### Scenario: Loading ESM-C locally
+
+- **WHEN** `protspace embed --backend local -e esmc_300m` runs
+- **THEN** the model loads from the official ESM-C repository with no remote code, and each
+  sequence yields one 960-dimensional vector (1152 for `esmc_600m`)
+
+#### Scenario: Resuming an earlier ESM-C file
+
+- **WHEN** a local run resumes from an `.h5` that an earlier local `esmc_*` run wrote
+- **THEN** the file is accepted as the same producer, and only the missing proteins are embedded
+
+#### Scenario: Installing the local extra
+
+- **WHEN** the `local` extra is installed
+- **THEN** the resolved `transformers` release includes the native ESM-C model
+
+### Requirement: Biocentral serves ESM-C from the official checkpoints
+
+The Biocentral backend SHALL request `esmc_300m` and `esmc_600m` under the official ESM-C
+checkpoint ids, the same checkpoints the local backend loads, so either backend yields the same
+vectors for the same sequence. A scheduled check against the live server SHALL compare an ESM-C
+embedding with a reference computed from the official weights, so a server that answers with
+another model fails the check instead of passing it.
+
+#### Scenario: ESM-C requested through Biocentral
+
+- **WHEN** the effective backend is the Biocentral API and an `esmc_*` shortcut is selected
+- **THEN** it is available, and the request names the official checkpoint
+
+#### Scenario: Both backends agree
+
+- **WHEN** the same sequence is embedded with `esmc_300m` on each backend
+- **THEN** the two vectors agree to within float32 precision
+
+#### Scenario: The server answers with another model
+
+- **WHEN** the live check's ESM-C vector does not match the reference
+- **THEN** the check fails

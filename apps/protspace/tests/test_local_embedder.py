@@ -2,8 +2,9 @@
 
 The pure helpers (checkpoint resolution, sequence preprocessing, residue
 pooling, header validation) are torch-free and always run. The end-to-end
-``embed_sequences`` test needs the optional ``[local]`` extra (torch +
-transformers) and downloads a small ESM2 model, so it is marked ``slow``.
+``embed_sequences`` tests need the optional ``[local]`` extra (torch +
+transformers) and download checkpoints (ESM2 8M, ESM-C 300M), so they are marked
+``slow`` and run weekly in protspace-slow.yml.
 """
 
 import h5py
@@ -24,10 +25,13 @@ def test_resolve_prot_t5_uses_half_encoder_checkpoint():
     assert mod_type == "prot_t5"
 
 
-def test_resolve_esmc_uses_synthyra_not_native():
-    checkpoint, mod_type = local.resolve_local_checkpoint("esmc_300m")
-    assert checkpoint == "Synthyra/ESMplusplus_small"
-    assert mod_type == "esmc"
+def test_resolve_esmc_uses_official_biohub_weights():
+    # Native transformers `esmc` model, not Synthyra's ESM++ reimplementation.
+    for key, checkpoint in (
+        ("esmc_300m", "biohub/ESMC-300M"),
+        ("esmc_600m", "biohub/ESMC-600M"),
+    ):
+        assert local.resolve_local_checkpoint(key) == (checkpoint, "esmc")
 
 
 def test_resolve_covers_every_cli_short_key():
@@ -53,13 +57,32 @@ def test_blocked_sets_name_real_short_keys():
     Each set is pinned to the registry it constrains, not to whichever one is
     handy: COLAB_OVERSIZED is a fact about local checkpoints, so a local-only
     model added later must not have to be a Biocentral shortcut to be gated.
+
+    BIOCENTRAL_INVALID may be empty (Biocentral serves every shortcut today);
+    COLAB_OVERSIZED may not, since esm2_3b cannot load on a free runtime.
     """
+    assert local.COLAB_OVERSIZED
     for blocked, registry in (
         (local.COLAB_OVERSIZED, local.LOCAL_CHECKPOINTS),
         (biocentral.BIOCENTRAL_INVALID, ALL_SHORT_KEYS),
     ):
-        assert blocked
         assert blocked <= set(registry)
+
+
+# The only shortcuts whose local checkpoint is not the id Biocentral is sent: fp16
+# encoder exports of the same weights (T4-friendly, embedding-equivalent).
+_LOCAL_FP16_EXPORTS = {
+    "prot_t5": "Rostlab/prot_t5_xl_half_uniref50-enc",
+    "prost_t5": "Rostlab/ProstT5_fp16",
+}
+
+
+def test_both_backends_send_the_same_checkpoints():
+    """A shortcut names the same weights on either backend, which is what makes
+    their vectors interchangeable; a one-sided id change must be deliberate."""
+    for key, biocentral_id in ALL_SHORT_KEYS.items():
+        expected = _LOCAL_FP16_EXPORTS.get(key, biocentral_id)
+        assert local.resolve_local_checkpoint(key)[0] == expected, key
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +193,51 @@ def test_embed_sequences_raises_when_all_sequences_dropped(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# setup_model (fake transformers: no download, no [local] extra needed)
+# ---------------------------------------------------------------------------
+
+
+def test_setup_model_loads_esmc_natively_without_remote_code(monkeypatch):
+    """ESM-C goes through transformers' own `esmc` model: plain AutoModel and
+    AutoTokenizer, never trust_remote_code (the Synthyra path needed it)."""
+    import sys
+    import types
+
+    pytest.importorskip("torch")
+    calls = []
+
+    class FakeModel:
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+    def loader(name, result):
+        def from_pretrained(checkpoint, **kwargs):
+            calls.append((name, checkpoint, kwargs))
+            return result
+
+        return types.SimpleNamespace(from_pretrained=from_pretrained)
+
+    fake = types.ModuleType("transformers")
+    model, tokenizer = FakeModel(), object()
+    fake.AutoModel = loader("AutoModel", model)
+    fake.AutoTokenizer = loader("AutoTokenizer", tokenizer)
+    for unused in ("T5EncoderModel", "T5Tokenizer"):
+        setattr(fake, unused, loader(unused, None))
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+
+    got_model, got_tokenizer, _ = local.setup_model("biohub/ESMC-300M", "esmc")
+
+    assert (got_model, got_tokenizer) == (model, tokenizer)
+    assert sorted(calls) == [
+        ("AutoModel", "biohub/ESMC-300M", {}),
+        ("AutoTokenizer", "biohub/ESMC-300M", {}),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # End-to-end (needs [local] extra; downloads esm2_8m ~30 MB)
 # ---------------------------------------------------------------------------
 
@@ -192,6 +260,25 @@ def test_embed_sequences_esm2_8m_end_to_end(tmp_path):
         assert vec.shape == (320,)  # esm2_8m hidden dim
         assert vec.dtype == np.float32
         assert np.isfinite(vec).all()
+
+
+@pytest.mark.slow
+def test_embed_sequences_esmc_matches_the_committed_reference(tmp_path):
+    """The real ESM-C path (native EsmcModel, both-ends stripping, mean pooling)
+    against the vector the Biocentral canary also checks: a transformers release
+    that changes ESM-C's output fails here before users mix it with older files.
+    Downloads biohub/ESMC-300M (~1.3 GB)."""
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    from tests.esmc_reference import UBIQUITIN, cosine_to_reference
+
+    out = local.embed_sequences(
+        {"ubiquitin": UBIQUITIN}, "esmc_300m", tmp_path / "e.h5"
+    )
+
+    with h5py.File(out) as f:
+        cosine = cosine_to_reference("esmc_300m", f["ubiquitin"][:])
+    assert cosine > 0.99999, f"local esmc_300m vector has cosine {cosine:.7f}"
 
 
 # ---------------------------------------------------------------------------

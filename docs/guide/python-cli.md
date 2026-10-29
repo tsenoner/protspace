@@ -259,7 +259,8 @@ Available shortcuts: `prot_t5`, `prost_t5`, `esm2_8m`, `esm2_35m`, `esm2_150m`, 
 ::: warning Licensing
 `ankh_base`, `ankh_large` and `ankh3_large` are CC-BY-NC-SA-4.0. All other models are permissively
 licensed, including the ESM-C models: `esmc_300m` and `esmc_600m` were relicensed under MIT in May
-2026, retroactively, when ESM-C moved to the Chan Zuckerberg Biohub.
+2026, retroactively, when ESM-C moved to the Chan Zuckerberg Biohub, which publishes the weights
+(`biohub/ESMC-300M`, `biohub/ESMC-600M`).
 :::
 
 ### Local backend
@@ -271,6 +272,13 @@ when you are working offline. It needs the extra: `pip install "protspace[local]
 ```bash
 protspace prepare -i sequences.fasta -e prot_t5 --backend local -m pca2 -o output
 ```
+
+For `esmc_300m` and `esmc_600m` both backends use the official `biohub/ESMC-300M` and
+`biohub/ESMC-600M` weights, so their vectors agree to float32 precision. Locally they load through
+the ESM-C model built into `transformers` (5.16 or later, which the extra installs), with no extra
+login or remote code. ESM-C embeddings from Biocentral made with protspace 4.17.1 or earlier came
+from a different model; a run that finds one of those files refuses to resume from it, and
+`--refetch embed` replaces it.
 
 ## Annotations
 
