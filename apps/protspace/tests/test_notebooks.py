@@ -676,6 +676,28 @@ def test_transfer_notebook_shows_only_the_predicted_rows(tmp_path, monkeypatch):
     assert frame["fam__pred_source"].tolist() == ["p0"]
 
 
+def test_transfer_notebook_fetch_clears_an_old_report(tmp_path, monkeypatch, capsys):
+    """Steps 4-6 take predictions.tsv as proof that step 3 ran. Step 2 resets the
+    working bundle, so it must drop an earlier run's report with it: otherwise a
+    failed transfer on Run all would show and download the untouched bundle."""
+    monkeypatch.chdir(tmp_path)
+    # Both downloads cached from an earlier run, so the cell fetches nothing.
+    (tmp_path / "snake_toxin_v3.parquetbundle").write_bytes(b"pristine")
+    (tmp_path / "embeddings.h5").write_bytes(b"")
+    (tmp_path / "results.parquetbundle").write_bytes(b"transferred")
+    (tmp_path / "predictions.tsv").write_text("query_id\n")
+    (source,) = [
+        source
+        for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Transfer.ipynb")
+        if "Fetch example data" in source
+    ]
+    exec(compile(source, "ProtSpace_Transfer.ipynb:2", "exec"), {})
+
+    assert (tmp_path / "results.parquetbundle").read_bytes() == b"pristine"
+    assert not (tmp_path / "predictions.tsv").exists()
+    assert "Done." in capsys.readouterr().out
+
+
 def test_transfer_notebook_shows_and_saves_the_neighbour_report(
     tmp_path, monkeypatch, capsys
 ):
