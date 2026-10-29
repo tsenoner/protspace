@@ -64,11 +64,14 @@ LOCAL_CHECKPOINTS: dict[str, tuple[str, str]] = {
     "esmc_6b": ("biohub/ESMC-6B", "esmc"),
 }
 
-# Checkpoints too large for a free Colab runtime; embed_sequences' warning below
-# carries the mechanism (host RAM, not VRAM). This backend only warns —
-# `--backend local -e esm2_3b` is correct on real hardware — but the Colab
-# notebook imports this set to keep those models off its local path, so the size
-# rule has one home rather than two.
+# Checkpoints too large for a free Colab runtime's 12.7 GB of host RAM when the
+# load stages the whole model there (`stages_in_host_ram`: no CUDA GPU, or no
+# accelerate). On a GPU they load straight onto it: measured 2026-10-29 on a free
+# T4 (14.6 GB VRAM), esmc_6b peaked at 0.6 GB of host RAM and 12.5 GB of VRAM,
+# esm2_3b at 0.5 GB and 11.0 GB. This backend only warns — `--backend local
+# -e esm2_3b` is correct on real hardware — but the Colab notebook imports this
+# set and `stages_in_host_ram` to keep those models off its local path where they
+# would kill the kernel, so the size rule has one home rather than two.
 COLAB_OVERSIZED: frozenset[str] = frozenset({"esm2_3b", "esmc_6b"})
 
 # Checkpoints loaded in half precision on a CUDA device: bf16 where the GPU has
@@ -193,6 +196,24 @@ def _accelerate_available() -> bool:
     return importlib.util.find_spec("accelerate") is not None
 
 
+def stages_in_host_ram() -> bool:
+    """True where loading a checkpoint here builds the whole model in host RAM.
+
+    That is a runtime without a CUDA GPU, or one without ``accelerate``; with
+    both, ``setup_model`` places each weight on the GPU as it is read. The Colab
+    notebook blocks ``COLAB_OVERSIZED`` only where this is True and RAM is small,
+    and reads a released package that lacks this function as staging, since
+    every one before it did. A failed probe counts as staging.
+    """
+    try:
+        import torch
+
+        cuda = torch.cuda.is_available()
+    except Exception:  # torch missing or the CUDA probe failed
+        return True
+    return not (cuda and _accelerate_available())
+
+
 def _gpu_direct_placement(device) -> dict:
     """``from_pretrained`` kwargs that stream the weights straight onto a GPU.
 
@@ -308,12 +329,13 @@ def embed_sequences(
     checkpoint, mod_type = resolve_local_checkpoint(embedder)
     validate_headers(sequences.keys())
 
-    if embedder in COLAB_OVERSIZED:
+    if embedder in COLAB_OVERSIZED and stages_in_host_ram():
         logger.warning(
-            "%s materialises more weights in host RAM than a free Colab "
-            "runtime (12.7 GB) can take, before they ever reach the GPU — and "
-            "that failure kills the kernel rather than raising. Fine on a larger "
-            "runtime or real hardware; otherwise pick a smaller model.",
+            "%s loads through host RAM here (no CUDA GPU, or accelerate is not "
+            "installed), and needs more of it than a free Colab runtime (12.7 GB) "
+            "has — that failure kills the kernel rather than raising. Fine on a "
+            "larger runtime; on a GPU, install protspace[local] (which includes "
+            "accelerate) to load it straight onto the GPU.",
             embedder,
         )
 

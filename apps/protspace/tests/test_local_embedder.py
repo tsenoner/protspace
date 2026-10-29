@@ -61,7 +61,8 @@ def test_blocked_sets_name_real_short_keys():
     model added later must not have to be a Biocentral shortcut to be gated.
 
     BIOCENTRAL_INVALID may be empty (Biocentral serves every shortcut today);
-    COLAB_OVERSIZED may not, since esm2_3b cannot load on a free runtime.
+    COLAB_OVERSIZED may not, since esm2_3b cannot load through a free runtime's
+    host RAM (a CPU runtime, or a GPU one without accelerate).
     """
     assert local.COLAB_OVERSIZED
     for blocked, registry in (
@@ -315,6 +316,51 @@ def test_setup_model_loads_straight_onto_the_gpu(
         assert device.type == "cuda"
     else:
         assert "device_map" not in model_kwargs
+
+
+@pytest.mark.parametrize(
+    ("cuda", "accelerate", "staged"),
+    [
+        (True, True, False),  # free T4: weights go straight onto the GPU
+        (True, False, True),
+        (False, True, True),  # CPU runtime
+    ],
+)
+def test_stages_in_host_ram_follows_the_placement_rule(
+    monkeypatch, cuda, accelerate, staged
+):
+    """The notebook's gate and setup_model's device_map read the same facts, so
+    the panel never enables a model that the load would then build in host RAM."""
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(local, "_accelerate_available", lambda: accelerate)
+
+    assert local.stages_in_host_ram() is staged
+    placed = local._gpu_direct_placement(torch.device("cuda" if cuda else "cpu"))
+    assert ("device_map" in placed) is not staged
+
+
+def test_stages_in_host_ram_when_the_probe_fails(monkeypatch):
+    """No torch (or a broken CUDA probe) counts as staging: a false block beats a
+    killed kernel."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "torch", None)  # import torch -> ImportError
+    assert local.stages_in_host_ram() is True
+
+
+@pytest.mark.parametrize("staged", [True, False])
+def test_oversized_warning_only_where_the_load_stages_in_host_ram(
+    monkeypatch, tmp_path, caplog, staged
+):
+    """On a GPU the 6B load no longer goes through host RAM, so warning that it
+    would kill a free Colab kernel there would be wrong."""
+    monkeypatch.setattr(local, "stages_in_host_ram", lambda: staged)
+
+    with caplog.at_level("WARNING", logger=local.logger.name):
+        local.embed_sequences({}, "esmc_6b", tmp_path / "emb.h5")
+
+    assert ("loads through host RAM" in caplog.text) is staged
 
 
 # ---------------------------------------------------------------------------

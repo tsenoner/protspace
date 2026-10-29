@@ -285,9 +285,16 @@ from a different model; a run that finds one of those files refuses to resume fr
 `esmc_6b` (ESM-C 6B, 2560-dimensional vectors) is available only on this backend: Biocentral accepts
 the model but fails to compute it, so `--backend biocentral -e esmc_6b` stops with a usage error. Its
 weights are 25.4 GB in float32. On a GPU they load in half precision (bfloat16 where the GPU
-supports it, float16 otherwise), which needs about 13 GB of GPU memory plus room for the sequences,
-so a 24 GB or larger card is the practical minimum. On the CPU they stay float32 and need over
-26 GB of RAM.
+supports it, float16 otherwise), about 12 GB of GPU memory, so a 16 GB card such as the T4 on free
+Colab is enough: there it peaks at 12.5 GB with sequences up to 2,000 residues, and takes about
+5.5 minutes per 1,000 proteins of typical length (plus about 4 minutes to download the weights and
+2 to load them). On the CPU they stay float32 and need over 26 GB of RAM.
+
+On a GPU the local backend loads every model straight into GPU memory, so a model larger than the
+machine's RAM still loads: on free Colab (12.7 GB of RAM) both `esmc_6b` and `esm2_3b` peak below
+1 GB of RAM while loading. This uses the `accelerate` package, which the `[local]` extra installs;
+without it the model is first built in RAM. In the Colab Preparation notebook, `esm2_3b` and
+`esmc_6b` are disabled only on a runtime without a GPU and under 16 GB of RAM.
 
 ## Annotations
 
