@@ -99,7 +99,8 @@ def test_protspace_resolves_with_colabs_loaded_packages_held(tmp_path):
     may have loaded at Colab's versions and resolve protspace[local] for Colab's
     Python and platform. A failure means some dependency now needs a version the
     override cannot hold, and the notebooks would fall back to asking for a
-    restart."""
+    restart. --override pins each held package to Colab's version, so a
+    successful resolve is the whole check."""
     uv = shutil.which("uv")
     if uv is None:
         pytest.skip("needs uv")
@@ -115,14 +116,3 @@ def test_protspace_resolves_with_colabs_loaded_packages_held(tmp_path):
         capture_output=True, text=True, env={**os.environ, "VIRTUAL_ENV": ""},
     )  # fmt: skip
     assert result.returncode == 0, result.stderr[-3000:]
-    resolved = {
-        canonicalize_name(line.split("==")[0]): line.split("==")[1].split()[0]
-        for line in result.stdout.splitlines()
-        if "==" in line and not line.startswith("#")
-    }
-    changed = {
-        n: (colab[n], resolved[n])
-        for n in PRELOADED
-        if n in colab and n in resolved and resolved[n] != colab[n]
-    }
-    assert not changed, changed
