@@ -15,6 +15,7 @@ An unreachable server is a skip, not a failure: the canary is about version drif
 outage has its own status page.
 """
 
+import functools
 import os
 
 import h5py
@@ -52,8 +53,9 @@ BACTERIORHODOPSIN = (
 )
 
 
+@functools.cache
 def _usable_server():
-    """The client, once the live server is one it can use.
+    """The client, once the live server is one it can use (checked once per run).
 
     Skips when the server cannot be reached; raises when it answers but is not a server
     the locked client supports, with the message that names both versions.
