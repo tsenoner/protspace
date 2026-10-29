@@ -4,21 +4,9 @@
 
 Runs the notebook's own cells in Voila (google.colab and pip stubbed, a small
 demo dataset loaded) for ipywidgets 7.7.1, which Colab ships, and 8, which CI
-uses, then drives each page with headless Playwright (`sweep.mjs`): every
-viewport width x light/dark (Colab's dark-mode variables approximated) x
-method selection (none, one, all six) x accordion section, a screenshot each,
-and these checks:
-
-- every visible slider keeps a track at least 120 px wide;
-- no control reaches past the panel, and the page never scrolls sideways;
-- text contrast at least 4.5:1 (3:1 for placeholders), collapsed accordion
-  titles, tab labels and buttons included;
-- Generate is visible.
-
-A second page clicks Generate on the demo data with each step slowed down and
-screenshots the progress states, then runs the EAT cell. Exit status 1 when a
-check fails; `report.json` in the output directory lists every failure.
-See README.md.
+uses, and drives each page with headless Playwright (`sweep.mjs`). Exit status
+1 when any check fails; `report.json` in the output directory lists every
+failure. README.md describes the states and the checks.
 """
 
 from __future__ import annotations
