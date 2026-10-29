@@ -133,8 +133,9 @@ label comes out wrong. The same rules apply in the [CLI](/guide/python-cli#model
 
    The line beside **Generate** says what it will run on. The panel keeps its settings in the
    runtime: after **Runtime → Restart session**, Run all brings back the last Generate's tab,
-   paths, methods and annotation choices, and loads the newest uploaded file when nothing was
-   generated yet.
+   paths, methods and annotation choices, then loads any file you uploaded after that Generate
+   (with nothing generated yet, the newest upload of each kind). A Run all without a restart
+   does the same.
 
 ## Step 3: Configure Options
 
