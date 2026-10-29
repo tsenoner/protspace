@@ -2,8 +2,9 @@
 
 The pure helpers (checkpoint resolution, sequence preprocessing, residue
 pooling, header validation) are torch-free and always run. The end-to-end
-``embed_sequences`` test needs the optional ``[local]`` extra (torch +
-transformers) and downloads a small ESM2 model, so it is marked ``slow``.
+``embed_sequences`` tests need the optional ``[local]`` extra (torch +
+transformers) and download checkpoints (ESM2 8M, ESM-C 300M), so they are marked
+``slow`` and run weekly in protspace-slow.yml.
 """
 
 import h5py
@@ -24,15 +25,20 @@ def test_resolve_prot_t5_uses_half_encoder_checkpoint():
     assert mod_type == "prot_t5"
 
 
-def test_resolve_esmc_uses_synthyra_not_native():
-    checkpoint, mod_type = local.resolve_local_checkpoint("esmc_300m")
-    assert checkpoint == "Synthyra/ESMplusplus_small"
-    assert mod_type == "esmc"
+def test_resolve_esmc_uses_official_biohub_weights():
+    # Native transformers `esmc` model, not Synthyra's ESM++ reimplementation.
+    for key, checkpoint in (
+        ("esmc_300m", "biohub/ESMC-300M"),
+        ("esmc_600m", "biohub/ESMC-600M"),
+        ("esmc_6b", "biohub/ESMC-6B"),
+    ):
+        assert local.resolve_local_checkpoint(key) == (checkpoint, "esmc")
 
 
 def test_resolve_covers_every_cli_short_key():
-    """The local backend must support the same 12 shortcuts as Biocentral."""
-    for key in ALL_SHORT_KEYS:
+    """Every local checkpoint resolves to a known family. That the registry
+    equals the CLI's list is pinned in test_cli_no_similarity.py."""
+    for key in local.LOCAL_CHECKPOINTS:
         checkpoint, mod_type = local.resolve_local_checkpoint(key)
         assert checkpoint, f"no checkpoint for {key}"
         assert mod_type in {"prot_t5", "prost_t5", "esm", "ankh", "esmc"}
@@ -53,13 +59,33 @@ def test_blocked_sets_name_real_short_keys():
     Each set is pinned to the registry it constrains, not to whichever one is
     handy: COLAB_OVERSIZED is a fact about local checkpoints, so a local-only
     model added later must not have to be a Biocentral shortcut to be gated.
+
+    BIOCENTRAL_INVALID may be empty (Biocentral serves every shortcut today);
+    COLAB_OVERSIZED may not, since esm2_3b cannot load through a free runtime's
+    host RAM (a CPU runtime, or a GPU one without accelerate).
     """
+    assert local.COLAB_OVERSIZED
     for blocked, registry in (
         (local.COLAB_OVERSIZED, local.LOCAL_CHECKPOINTS),
         (biocentral.BIOCENTRAL_INVALID, ALL_SHORT_KEYS),
     ):
-        assert blocked
         assert blocked <= set(registry)
+
+
+# The only shortcuts whose local checkpoint is not the id Biocentral is sent: fp16
+# encoder exports of the same weights (T4-friendly, embedding-equivalent).
+_LOCAL_FP16_EXPORTS = {
+    "prot_t5": "Rostlab/prot_t5_xl_half_uniref50-enc",
+    "prost_t5": "Rostlab/ProstT5_fp16",
+}
+
+
+def test_both_backends_send_the_same_checkpoints():
+    """A shortcut names the same weights on either backend, which is what makes
+    their vectors interchangeable; a one-sided id change must be deliberate."""
+    for key, biocentral_id in ALL_SHORT_KEYS.items():
+        expected = _LOCAL_FP16_EXPORTS.get(key, biocentral_id)
+        assert local.resolve_local_checkpoint(key)[0] == expected, key
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +196,201 @@ def test_embed_sequences_raises_when_all_sequences_dropped(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# setup_model (fake transformers: no download, no [local] extra needed)
+# ---------------------------------------------------------------------------
+
+
+def _fake_transformers(monkeypatch):
+    """Install a fake `transformers` whose loaders record their calls."""
+    import sys
+    import types
+
+    calls = []
+
+    class FakeModel:
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+    def loader(name, result):
+        def from_pretrained(checkpoint, **kwargs):
+            calls.append((name, checkpoint, kwargs))
+            return result
+
+        return types.SimpleNamespace(from_pretrained=from_pretrained)
+
+    fake = types.ModuleType("transformers")
+    model, tokenizer = FakeModel(), object()
+    fake.AutoModel = loader("AutoModel", model)
+    fake.AutoTokenizer = loader("AutoTokenizer", tokenizer)
+    fake.T5EncoderModel = loader("T5EncoderModel", model)
+    fake.T5Tokenizer = loader("T5Tokenizer", tokenizer)
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    return calls, model, tokenizer
+
+
+def test_setup_model_loads_esmc_natively_without_remote_code(monkeypatch):
+    """ESM-C goes through transformers' own `esmc` model: plain AutoModel and
+    AutoTokenizer, never trust_remote_code (the Synthyra path needed it)."""
+    pytest.importorskip("torch")
+    calls, model, tokenizer = _fake_transformers(monkeypatch)
+
+    got_model, got_tokenizer, _ = local.setup_model("biohub/ESMC-300M", "esmc")
+
+    assert (got_model, got_tokenizer) == (model, tokenizer)
+    assert sorted(calls) == [
+        ("AutoModel", "biohub/ESMC-300M", {}),
+        ("AutoTokenizer", "biohub/ESMC-300M", {}),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("checkpoint", "cuda", "native_bf16", "expected"),
+    [
+        ("biohub/ESMC-6B", True, True, "bfloat16"),  # Ampere+: training dtype
+        ("biohub/ESMC-6B", True, False, "float16"),  # T4/V100: bf16 is emulated
+        ("biohub/ESMC-6B", False, False, None),  # CPU stays fp32
+        ("biohub/ESMC-600M", True, True, None),  # smaller models keep fp32
+    ],
+)
+def test_setup_model_loads_esmc_6b_in_half_precision_on_gpu(
+    monkeypatch, checkpoint, cuda, native_bf16, expected
+):
+    """The fake answers like torch: emulated bf16 counts unless the caller
+    passes including_emulation=False, so a T4 asked the default way says True."""
+    torch = pytest.importorskip("torch")
+    calls, _, _ = _fake_transformers(monkeypatch)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(
+        torch.cuda,
+        "is_bf16_supported",
+        lambda including_emulation=True: native_bf16 or including_emulation,
+    )
+
+    _, _, device = local.setup_model(checkpoint, "esmc")
+
+    assert device.type == ("cuda" if cuda else "cpu")
+    model_kwargs = next(kw for name, _, kw in calls if name == "AutoModel")
+    want = None if expected is None else getattr(torch, expected)
+    assert model_kwargs.get("dtype") == want
+
+
+@pytest.mark.parametrize(
+    ("checkpoint", "mod_type", "loader"),
+    [
+        ("biohub/ESMC-6B", "esmc", "AutoModel"),
+        ("ElnaggarLab/ankh-base", "ankh", "T5EncoderModel"),
+        ("Rostlab/prot_t5_xl_half_uniref50-enc", "prot_t5", "T5EncoderModel"),
+    ],
+)
+@pytest.mark.parametrize("staged", [False, True])
+def test_setup_model_loads_straight_onto_the_gpu(
+    monkeypatch, checkpoint, mod_type, loader, staged
+):
+    """On CUDA every family loads with device_map=<the GPU>, so a checkpoint
+    larger than host RAM (ESM-C 6B on free Colab) is never built there whole;
+    where stages_in_host_ram() says otherwise, the load has no device_map."""
+    torch = pytest.importorskip("torch")
+    calls, _, _ = _fake_transformers(monkeypatch)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda **_: True)
+    monkeypatch.setattr(local, "stages_in_host_ram", lambda: staged)
+
+    _, _, device = local.setup_model(checkpoint, mod_type)
+
+    model_kwargs = next(kw for name, _, kw in calls if name == loader)
+    assert model_kwargs.get("device_map") == (None if staged else device)
+
+
+@pytest.mark.parametrize(
+    ("cuda", "accelerate", "staged"),
+    [
+        (True, True, False),  # free T4: weights go straight onto the GPU
+        (True, False, True),  # no accelerate: the old path, not an error
+        (False, True, True),  # CPU runtime: loading unchanged
+    ],
+)
+def test_stages_in_host_ram(monkeypatch, cuda, accelerate, staged):
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(local, "_accelerate_available", lambda: accelerate)
+
+    assert local.stages_in_host_ram() is staged
+
+
+@pytest.mark.parametrize(
+    ("installed", "usable"),
+    [
+        ("1.15.0", True),
+        ("1.1.0", True),
+        ("1.0.1", False),
+        ("0.34.2", False),
+        (None, False),
+    ],
+)
+def test_accelerate_below_transformers_minimum_keeps_the_old_path(
+    monkeypatch, installed, usable
+):
+    """transformers raises on device_map with an accelerate it considers too old,
+    which would fail every GPU load; such an install loads through host RAM."""
+    import importlib.metadata as metadata
+
+    def version(name):
+        if installed is None:
+            raise metadata.PackageNotFoundError(name)
+        return installed
+
+    monkeypatch.setattr(metadata, "version", version)
+    assert local._accelerate_available() is usable
+
+
+def test_accelerate_minimum_covers_what_transformers_requires():
+    """If transformers raises its floor, ours must follow, or the probe would
+    report direct loading where transformers then refuses it."""
+    pytest.importorskip("transformers")
+    from transformers.utils.import_utils import ACCELERATE_MIN_VERSION
+
+    assert local._ACCELERATE_MIN >= local._release(ACCELERATE_MIN_VERSION)
+    assert local._release("1.13.0rc1") == (1, 13, 0)
+
+
+def test_stages_in_host_ram_when_the_probe_fails(monkeypatch):
+    """No torch (or a broken CUDA probe) counts as staging: a false block beats a
+    killed kernel."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "torch", None)  # import torch -> ImportError
+    assert local.stages_in_host_ram() is True
+
+
+@pytest.mark.parametrize("staged", [True, False])
+def test_oversized_warning_only_where_the_load_stages_in_host_ram(
+    monkeypatch, tmp_path, caplog, staged
+):
+    """On a GPU the 6B load no longer goes through host RAM, so warning that it
+    would kill a free Colab kernel there would be wrong. The warning comes just
+    before the load, so a run with nothing left to embed never probes torch."""
+    pytest.importorskip("torch")
+
+    class Loaded(Exception):
+        pass
+
+    def setup_model(*_args):
+        raise Loaded
+
+    monkeypatch.setattr(local, "stages_in_host_ram", lambda: staged)
+    monkeypatch.setattr(local, "setup_model", setup_model)
+
+    with caplog.at_level("WARNING", logger=local.logger.name):
+        with pytest.raises(Loaded):
+            local.embed_sequences({"p1": "MKV"}, "esmc_6b", tmp_path / "emb.h5")
+
+    assert ("loads through host RAM" in caplog.text) is staged
+
+
+# ---------------------------------------------------------------------------
 # End-to-end (needs [local] extra; downloads esm2_8m ~30 MB)
 # ---------------------------------------------------------------------------
 
@@ -192,6 +413,25 @@ def test_embed_sequences_esm2_8m_end_to_end(tmp_path):
         assert vec.shape == (320,)  # esm2_8m hidden dim
         assert vec.dtype == np.float32
         assert np.isfinite(vec).all()
+
+
+@pytest.mark.slow
+def test_embed_sequences_esmc_matches_the_committed_reference(tmp_path):
+    """The real ESM-C path (native EsmcModel, both-ends stripping, mean pooling)
+    against the vector the Biocentral canary also checks: a transformers release
+    that changes ESM-C's output fails here before users mix it with older files.
+    Downloads biohub/ESMC-300M (~1.3 GB)."""
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    from tests.esmc_reference import UBIQUITIN, cosine_to_reference
+
+    out = local.embed_sequences(
+        {"ubiquitin": UBIQUITIN}, "esmc_300m", tmp_path / "e.h5"
+    )
+
+    with h5py.File(out) as f:
+        cosine = cosine_to_reference("esmc_300m", f["ubiquitin"][:])
+    assert cosine > 0.99999, f"local esmc_300m vector has cosine {cosine:.7f}"
 
 
 # ---------------------------------------------------------------------------

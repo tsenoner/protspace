@@ -254,18 +254,21 @@ protspace prepare -i sequences.fasta -e prot_t5 -m pca2,umap2 -o output
 ```
 
 Available shortcuts: `prot_t5`, `prost_t5`, `esm2_8m`, `esm2_35m`, `esm2_150m`, `esm2_650m`,
-`esm2_3b`, `ankh_base`, `ankh_large`, `ankh3_large`, `esmc_300m`, `esmc_600m`
+`esm2_3b`, `ankh_base`, `ankh_large`, `ankh3_large`, `esmc_300m`, `esmc_600m`, `esmc_6b`
+
+`esmc_6b` runs only with `--backend local` (see below); Biocentral cannot compute it yet.
 
 ::: warning Licensing
 `ankh_base`, `ankh_large` and `ankh3_large` are CC-BY-NC-SA-4.0. All other models are permissively
-licensed, including the ESM-C models: `esmc_300m` and `esmc_600m` were relicensed under MIT in May
-2026, retroactively, when ESM-C moved to the Chan Zuckerberg Biohub.
+licensed, including the ESM-C models: `esmc_300m`, `esmc_600m` and `esmc_6b` were relicensed under
+MIT in May 2026, retroactively, when ESM-C moved to the Chan Zuckerberg Biohub, which publishes the
+weights (`biohub/ESMC-300M`, `biohub/ESMC-600M`, `biohub/ESMC-6B`).
 :::
 
 No GPU or local install? The
 [Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
-embeds a FASTA with the same models on a free Colab GPU and writes an `.h5` that `prepare -i`
-reads, per protein or per residue.
+embeds a FASTA with the same models on a free Colab GPU (`esmc_6b` included)
+and writes an `.h5` that `prepare -i` reads, per protein or per residue.
 
 ### Local backend
 
@@ -276,6 +279,27 @@ when you are working offline. It needs the extra: `pip install "protspace[local]
 ```bash
 protspace prepare -i sequences.fasta -e prot_t5 --backend local -m pca2 -o output
 ```
+
+For `esmc_300m` and `esmc_600m` both backends use the official `biohub/ESMC-300M` and
+`biohub/ESMC-600M` weights, so their vectors agree to float32 precision. Locally they load through
+the ESM-C model built into `transformers` (5.16 or later, which the extra installs), with no extra
+login or remote code. ESM-C embeddings from Biocentral made with protspace 4.17.1 or earlier came
+from a different model; a run that finds one of those files refuses to resume from it, and
+`--refetch embed` replaces it.
+
+`esmc_6b` (ESM-C 6B, 2560-dimensional vectors) is available only on this backend: Biocentral accepts
+the model but fails to compute it, so `--backend biocentral -e esmc_6b` stops with a usage error. Its
+weights are 25.4 GB in float32. On a GPU they load in half precision (bfloat16 where the GPU
+supports it, float16 otherwise), about 12 GB of GPU memory, so a 16 GB card such as the T4 on free
+Colab is enough: there it peaks at 12.5 GB with sequences up to 2,000 residues, and takes about
+5.5 minutes per 1,000 proteins of typical length (plus about 4 minutes to download the weights and
+2 to load them). On the CPU they stay float32 and need over 26 GB of RAM.
+
+On a GPU the local backend loads every model straight into GPU memory, so a model larger than the
+machine's RAM still loads: on free Colab (12.7 GB of RAM) both `esmc_6b` and `esm2_3b` peak below
+1 GB of RAM while loading. This uses the `accelerate` package, which the `[local]` extra installs;
+without it the model is first built in RAM. In the Colab Preparation notebook, `esm2_3b` and
+`esmc_6b` are disabled only on a runtime without a GPU and under 16 GB of RAM.
 
 ## Annotations
 
@@ -431,7 +455,8 @@ this order:
    [Embeddings notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
 3. **File name**, a model key the file name ends in: `seqs_esm2_650m.h5`, `Ss_mSCR_esm2_650m.h5`
    and `esm2_650m.h5` are all `esm2_650m`. The keys are the [embedder models](#embedder-models)
-   (plus `esm3_open`); the longest match wins, and only the end of the name counts. A directory
+   (plus `esm3_open`, which older Embeddings-notebook files carry); the longest match wins, and
+   only the end of the name counts. A directory
    input takes the key its files share; files from different models in one directory are an
    error, so give each model's files their own `-i`
 4. **File stem**, only when the file is the command's only input: `results.h5` is named `results`

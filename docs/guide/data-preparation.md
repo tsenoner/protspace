@@ -68,15 +68,17 @@ Use the Embeddings notebook, a simple embedding tool in its own right:
 
 [![Open Embedding Generator](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
 
-It embeds a FASTA with ProtT5, ProstT5, Ankh, ESM2, ESM C or ESM3 and writes an `.h5` with one
+It embeds a FASTA with ProtT5, ProstT5, Ankh, ESM2 or ESM C and writes an `.h5` with one
 vector per protein (or per residue), named so ProtSpace recognises the model. Attach a GPU
 (**Runtime → Change runtime type → T4 GPU**), set the model and the FASTA in its one cell, and run
 it; it downloads the `.h5` when done. Run it again after changing a setting: the model stays
-loaded, and proteins already in the file are skipped.
+loaded, and proteins already in the file are skipped. ESM C 6B runs on the free T4: the weights
+load straight into GPU memory, and it takes about 5.5 minutes per 1,000 proteins after a
+6-minute download and load. Without a GPU it needs a High-RAM runtime.
 
-- No login for any of the models. ESM C runs on transformers' own port of the official weights
-  (`biohub/ESMC-300M`, `-600M`); only ESM3 installs the `esm` package, which replaces Colab's
-  transformers with an older one.
+- No login and nothing to install for any of the models. ESM C runs on transformers' own port of
+  the official weights (`biohub/ESMC-300M`, `-600M`, `-6B`). ESM3 is no longer offered; `.h5`
+  files the notebook wrote with it still load in ProtSpace as `esm3_open`.
 - Leave the FASTA path empty to try an example: 60 snake-venom proteins from Swiss-Prot (20 each of
   three-finger toxins, phospholipase A2 and Kunitz-type), fetched from UniProt. Tick its upload box
   for your own FASTA, or give a `/content/drive/...` path to read it from Google Drive.

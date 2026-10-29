@@ -53,6 +53,8 @@ def _h5(path: Path, *, model_name: str | None = None, n: int = 12, seed: int = 0
         ("Ss_mSCR_ESM2_650M", "esm2_650m"),
         ("toxins_prot_t5", "prot_t5"),
         ("toxins_prost_t5", "prost_t5"),
+        # Written by the Embeddings notebook before it dropped ESM3.
+        ("toxins_esm3_open", "esm3_open"),
         ("esm2_650m_subset", None),
         ("embeddings", None),
         ("mmseqs2", None),
