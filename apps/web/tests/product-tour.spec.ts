@@ -331,6 +331,65 @@ test.describe('on a tablet', () => {
   });
 });
 
+test.describe('Key caps', () => {
+  // The Mac caps hold the ⌘ glyph (⌘ alone, ⌘K, ⌘Z, ⇧⌘Z); report macOS so any host draws them.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'userAgentData', {
+        configurable: true,
+        value: { platform: 'macOS', mobile: false, brands: [] },
+      }),
+    );
+    await openWithTour(page);
+  });
+
+  /** Each key cap on the step: its text, its box and its glyph's box. */
+  const caps = (page: Page) =>
+    popover(page)
+      .locator('.driver-popover-description kbd')
+      .evaluateAll((kbds) =>
+        kbds.map((kbd) => {
+          const box = kbd.getBoundingClientRect();
+          const glyph = kbd.querySelector('.mod-key')!.getBoundingClientRect();
+          return {
+            text: kbd.textContent,
+            top: box.top,
+            bottom: box.bottom,
+            glyphTop: glyph.top,
+            glyphBottom: glyph.bottom,
+          };
+        }),
+      );
+
+  test('a cap holding only ⌘ is as tall as ⌘K, and every cap holds its glyph', async ({ page }) => {
+    await next(page, FULL[1].title);
+    await next(page, FULL[2].title);
+    await next(page, FULL[3].title);
+    const [chord] = await caps(page);
+    expect(chord.text).toBe('⌘K');
+    const height = chord.bottom - chord.top;
+    expect(height).toBeGreaterThan(16);
+
+    await next(page, FULL[4].title);
+    const [modifier] = await caps(page);
+    expect(modifier.text).toBe('⌘');
+    await next(page, FULL[5].title);
+    const undo = await caps(page);
+    expect(undo.map((cap) => cap.text)).toEqual(['⌘Z', '⇧⌘Z']);
+
+    for (const cap of [chord, modifier, ...undo]) {
+      expect(cap.bottom - cap.top, cap.text!).toBeCloseTo(height, 0);
+      // The glyph sits inside its cap, centred: the bug drew the cap as a sliver under it.
+      expect(cap.glyphTop, cap.text!).toBeGreaterThanOrEqual(cap.top);
+      expect(cap.glyphBottom, cap.text!).toBeLessThanOrEqual(cap.bottom);
+      expect(
+        Math.abs((cap.glyphTop + cap.glyphBottom) / 2 - (cap.top + cap.bottom) / 2),
+        cap.text!,
+      ).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
 test.describe("What's new", () => {
   test.beforeEach(async ({ page }) => {
     await seedLegacyTourSeen(page);

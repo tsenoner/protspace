@@ -127,12 +127,16 @@
   color: var(--ps-text);
 }
 
-/* ── Modifier key glyph (⌘) size bump ────────────────────── */
+/* ── Modifier key glyph (⌘) size bump ────────────────────── *
+ *
+ * The glyph is a flex item of its key cap, so vertical-align does nothing and a zero line-height
+ * gives it no height: a cap holding only ⌘ collapsed under the glyph. Line-height 1 keeps the
+ * glyph inside the cap, which centres it.
+ */
 
 .driver-popover .driver-popover-description .mod-key {
-  font-size: 1rem;
-  line-height: 0;
-  vertical-align: -0.0625rem;
+  font-size: 1.1em;
+  line-height: 1;
 }
 
 /* ── Keyboard shortcut badges ────────────────────────────── */
@@ -149,7 +153,11 @@
   font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', monospace;
   color: var(--ps-text);
   box-shadow: 0 1px 0 var(--ps-border-strong);
-  vertical-align: baseline;
+  /* A cap with only a glyph is as tall as one with a letter (one 1.4 line inside the padding, so
+     not the page's border-box), and every cap sits on the same line. */
+  box-sizing: content-box;
+  min-height: 1.4em;
+  vertical-align: middle;
   line-height: 1.4;
 }
 
