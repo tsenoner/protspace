@@ -239,6 +239,35 @@ describe('legend rows in a browser', () => {
     expect(shown()).toBe(false);
   });
 
+  it('the eye says Hide or Show in the shared tooltip, after a hover or at once on keyboard focus', async () => {
+    const legend = await mount();
+    const tooltip = legend.shadowRoot!.querySelector<PsTooltip>('ps-tooltip.name-tooltip')!;
+    const shown = () => tooltip.shadowRoot!.querySelector('.tip')!.matches(':popover-open');
+
+    await userEvent.hover(part(legend, 'Short', '.legend-item-main'));
+    await userEvent.hover(part(legend, 'Short', '.legend-eye'));
+    await expect.poll(shown, { timeout: NAME_TOOLTIP_DELAY_MS + 1000 }).toBe(true);
+    expect(tooltip.text).toBe('Hide');
+    // The eye's own name stays the full one; the tooltip names nothing.
+    expect(part(legend, 'Short', '.legend-eye').getAttribute('aria-label')).toBe('Hide Short');
+
+    await userEvent.hover(part(legend, LONG, '.legend-count'));
+    await expect.poll(shown).toBe(false);
+    // From the row's name, Tab reaches the swatch and then the eye (keyboard focus is :focus-visible).
+    part(legend, LONG, '.legend-item-main').focus();
+    await settle(legend);
+    for (
+      let i = 0;
+      i < 3 && legend.shadowRoot!.activeElement !== part(legend, LONG, '.legend-eye');
+      i++
+    ) {
+      await userEvent.keyboard('{Tab}');
+    }
+    expect(legend.shadowRoot!.activeElement).toBe(part(legend, LONG, '.legend-eye'));
+    await expect.poll(shown).toBe(true);
+    expect(tooltip.text).toBe('Hide');
+  });
+
   it('a click on the swatch opens the picker and toggles nothing; a click on the name still hides', async () => {
     const legend = await mount();
     const actions: string[] = [];

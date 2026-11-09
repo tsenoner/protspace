@@ -1,10 +1,13 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
+import type { PsButton } from '../kit/button';
 import { deepActiveElement } from '../kit/focus';
 import type { PsInput } from '../kit/input';
-import type { PsSelect } from '../kit/select';
+import type { PsSegmented } from '../kit/segmented';
+import type { PsTooltip } from '../kit/tooltip';
 import {
+  LOG_UNAVAILABLE_REASON,
   SETTINGS_INPUT_DEBOUNCE_MS,
   type ProtspaceLegendSettingsPopover,
 } from './legend-settings-popover';
@@ -309,29 +312,39 @@ describe('protspace-legend-settings-popover', () => {
     );
   });
 
-  it('logarithmic is disabled with its note when unavailable', async () => {
-    const { el } = await mount({ numeric: true, logBinningAvailable: false });
-    const select = root(el).querySelector<PsSelect>('#numeric-distribution-select')!;
-    const native = select.shadowRoot!.querySelector('select')!;
+  it('shows every bin distribution as a segment; Logarithmic is off with its reason when unavailable', async () => {
+    const { el, changes } = await mount({ numeric: true, logBinningAvailable: false });
+    const control = root(el).querySelector<PsSegmented>('#numeric-distribution')!;
+    const segments = () => [...control.shadowRoot!.querySelectorAll<HTMLElement>('[role="radio"]')];
     expect(
-      [...native.options].map((option) => [option.value, option.text.trim(), option.disabled]),
+      segments().map((segment) => [
+        segment.dataset.value,
+        segment.textContent!.trim(),
+        segment.getAttribute('aria-checked'),
+        segment.getAttribute('aria-disabled'),
+      ]),
     ).toEqual([
-      ['linear', 'Linear', false],
-      ['quantile', 'Quantile', false],
-      ['logarithmic', 'Logarithmic', true],
+      ['linear', 'Linear', 'false', null],
+      ['quantile', 'Quantile', 'true', null],
+      ['logarithmic', 'Logarithmic', 'false', 'true'],
     ]);
-    const note = root(el).querySelector<HTMLElement>('#numeric-log-disabled-note')!;
-    expect(note.textContent!.trim()).toBe(
-      'Logarithmic distribution is only available for positive values.',
-    );
-    expect(note.dataset.driverId).toBe('numeric-log-disabled-note');
-    expect(native.ariaDescribedByElements?.[0]).toBe(note);
+    // The reason is the segment's tooltip and its description; no note under the control.
+    const tooltip = segments()[2].nextElementSibling as PsTooltip;
+    expect(tooltip.text).toBe(LOG_UNAVAILABLE_REASON);
+    await expect.poll(() => segments()[2].ariaDescribedByElements).toEqual([tooltip]);
+    expect(control.parentElement!.querySelector('.hint')).toBeNull();
+    // A press on it picks nothing (a pointer would see the reason instead).
+    segments()[2].click();
+    await settle(el);
+    expect(changes).toEqual([]);
 
     el.logBinningAvailable = true;
     await settle(el);
-    expect(root(el).querySelector('#numeric-log-disabled-note')).toBeNull();
-    expect(native.options[2].disabled).toBe(false);
-    expect(native.ariaDescribedByElements ?? []).toHaveLength(0);
+    await control.updateComplete;
+    expect(segments()[2].hasAttribute('aria-disabled')).toBe(false);
+    expect(control.shadowRoot!.querySelector('ps-tooltip')).toBeNull();
+    await userEvent.click(page.getByRole('radio', { name: 'Logarithmic' }));
+    expect(changes).toEqual([{ numericStrategy: 'logarithmic' }]);
   });
 
   it('numeric shows Bins, Point size, Reverse gradient and Bin distribution; categorical shows neither switch nor select', async () => {
@@ -339,10 +352,8 @@ describe('protspace-legend-settings-popover', () => {
     await expect.element(page.getByRole('spinbutton', { name: 'Bins' })).toBeVisible();
     await expect.element(page.getByRole('spinbutton', { name: 'Point size' })).toBeVisible();
     await userEvent.click(page.getByRole('switch', { name: 'Reverse gradient' }));
-    await userEvent.selectOptions(
-      page.getByRole('combobox', { name: 'Bin distribution' }),
-      'linear',
-    );
+    await expect.element(page.getByRole('radiogroup', { name: 'Bin distribution' })).toBeVisible();
+    await userEvent.click(page.getByRole('radio', { name: 'Linear' }));
     await userEvent.click(
       page.getByRole('switch', { name: 'Show duplicate counts and spread overlaps' }),
     );
@@ -360,7 +371,7 @@ describe('protspace-legend-settings-popover', () => {
     await expect.element(page.getByRole('spinbutton', { name: 'Max legend items' })).toBeVisible();
     await expect.element(page.getByRole('spinbutton', { name: 'Shape size' })).toBeVisible();
     expect(root(categorical.el).querySelector('#reverse-gradient-toggle')).toBeNull();
-    expect(root(categorical.el).querySelector('#numeric-distribution-select')).toBeNull();
+    expect(root(categorical.el).querySelector('#numeric-distribution')).toBeNull();
   });
 
   it('Reset fires settings-reset, keeps the panel open, and is disabled when canReset is false', async () => {
@@ -368,6 +379,8 @@ describe('protspace-legend-settings-popover', () => {
     const onReset = vi.fn();
     el.addEventListener('settings-reset', onReset);
     const reset = page.getByRole('button', { name: 'Reset to defaults', exact: true });
+    // Red at rest: it wipes the annotation's colours and order with no undo.
+    expect(root(el).querySelector<PsButton>('#reset-button')!.variant).toBe('danger');
     await userEvent.click(reset);
     expect(onReset).toHaveBeenCalledOnce();
     expect(el.open).toBe(true);

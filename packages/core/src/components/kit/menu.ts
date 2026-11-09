@@ -21,6 +21,8 @@ export class PsMenuItem extends LitElement {
   @property() type: MenuItemType = 'item';
   @property({ type: Boolean, reflect: true }) checked = false;
   @property({ type: Boolean, reflect: true }) disabled = false;
+  /** An item that clears or resets something (the Filter menu's Clear all): drawn in red. */
+  @property({ type: Boolean, reflect: true }) danger = false;
 
   constructor() {
     super();

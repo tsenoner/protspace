@@ -68,13 +68,14 @@ describe('legend header', () => {
     expect(title.textContent!.trim()).not.toBe('order');
   });
 
-  it('a predicted annotation shows the sparkles icon named Predicted annotation, and no ⚡ or note', async () => {
+  it('a predicted annotation shows the PRED badge named Predicted annotation, and no ⚡ or note', async () => {
     const legend = await mount(categoricalData(TWELVE, 'predicted_membrane'), 'predicted_membrane');
     const root = legend.shadowRoot!;
     const mark = root.querySelector('.legend-header .legend-predicted')!;
     expect(mark.getAttribute('role')).toBe('img');
     expect(mark.getAttribute('aria-label')).toBe('Predicted annotation');
-    expect(mark.querySelector('svg')).not.toBeNull();
+    expect(mark.textContent!.trim()).toBe('PRED');
+    expect(mark.querySelector('svg')).toBeNull();
     const tooltip = mark.nextElementSibling!;
     expect(tooltip.tagName).toBe('PS-TOOLTIP');
     expect(tooltip.getAttribute('text')).toBe(

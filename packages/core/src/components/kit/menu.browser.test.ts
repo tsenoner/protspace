@@ -309,6 +309,16 @@ describe('ps-menu', () => {
     expect(getComputedStyle(species).backgroundColor).not.toBe('rgb(224, 242, 254)');
   });
 
+  it('draws a danger item in red, and greys it while disabled', async () => {
+    const { menu } = await setup(
+      '<ps-menu-item value="clear" danger>Clear all</ps-menu-item><ps-menu-item value="off" danger disabled>Clear none</ps-menu-item>',
+    );
+    // --ps-danger in the light theme (red-700)
+    expect(getComputedStyle(menu.querySelector('[value="clear"]')!).color).toBe('rgb(185, 28, 28)');
+    // --ps-text-faint, as any disabled item
+    expect(getComputedStyle(menu.querySelector('[value="off"]')!).color).toBe('rgb(148, 163, 184)');
+  });
+
   it('marks the focused search field in forced colours', async () => {
     const session = cdp();
     await session.send('Emulation.setEmulatedMedia', {

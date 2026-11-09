@@ -105,7 +105,9 @@ export function FilterPanel({
         ></ps-icon-button>
         <ps-menu ref={menu} label="Filter actions" placement="bottom-end">
           <ps-menu-item value="add-group">Add group</ps-menu-item>
-          <ps-menu-item value="clear-all">Clear all</ps-menu-item>
+          <ps-menu-item value="clear-all" danger>
+            Clear all
+          </ps-menu-item>
         </ps-menu>
         <ps-icon-button
           ref={close}

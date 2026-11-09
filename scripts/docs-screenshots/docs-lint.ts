@@ -64,6 +64,9 @@ const STALE_TERMS: readonly RegExp[] = [
   /figure editor…/i,
   /by separation/i,
   /row's ⋯/i,
+  // The predicted mark is the PRED badge now.
+  /⚡/u,
+  /sparkles/i,
 ];
 
 /** The pages the stale-term check reads: the user guide, not the developer docs. */

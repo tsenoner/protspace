@@ -814,17 +814,23 @@ test('numeric settings apply live and are restored on re-import', async ({ page 
   await expect(settings.getByRole('spinbutton', { name: 'Point size', exact: true })).toBeVisible();
   expect(
     await settings
+      .getByRole('radiogroup', { name: 'Palette' })
       .getByRole('radio')
       .evaluateAll((radios) => radios.map((radio) => radio.textContent?.trim() ?? '')),
   ).toEqual(['Batlow', 'Cividis', 'Inferno', 'Plasma', 'Viridis']);
+  // Every bin distribution is in view, none of them off for a range of positive lengths.
+  const distribution = settings.getByRole('radiogroup', { name: 'Bin distribution' });
   expect(
-    await settings
-      .getByRole('combobox', { name: 'Bin distribution' })
-      .evaluate(
-        (select: HTMLSelectElement) =>
-          select.querySelector<HTMLOptionElement>('option[value="logarithmic"]')?.disabled,
+    await distribution
+      .getByRole('radio')
+      .evaluateAll((radios) =>
+        radios.map((radio) => [radio.textContent?.trim(), radio.getAttribute('aria-disabled')]),
       ),
-  ).toBe(false);
+  ).toEqual([
+    ['Linear', null],
+    ['Quantile', null],
+    ['Logarithmic', null],
+  ]);
   // No Save, no Cancel, and the order lives in the header's sort menu now.
   await expect(settings.getByRole('button', { name: /^(Save|Cancel)$/ })).toHaveCount(0);
   await expect(settings.getByText('Bin order')).toHaveCount(0);
@@ -1006,7 +1012,7 @@ test('numeric palette swatches stay inside the settings popover with 100 bins', 
 
   const settings = await openLegendSettings(page);
   const panel = (await legendSettingsDialog(page).boundingBox())!;
-  const swatches = settings.getByRole('radio');
+  const swatches = settings.getByRole('radiogroup', { name: 'Palette' }).getByRole('radio');
   await expect(swatches).toHaveCount(5);
   for (const swatch of await swatches.all()) {
     const box = (await swatch.boundingBox())!;
@@ -1061,7 +1067,7 @@ test('categorical annotations do not expose gradient palettes or gradient contro
       .evaluateAll((radios) => radios.map((radio) => radio.textContent?.trim() ?? '')),
   ).toEqual(['Dark2', "Kelly's Colors", 'Okabe-Ito', 'Set2', 'Tableau 10', 'Tol Bright']);
   await expect(settings.locator('.swatch-gradient')).toHaveCount(0);
-  await expect(settings.getByRole('combobox', { name: 'Bin distribution' })).toHaveCount(0);
+  await expect(settings.getByRole('radiogroup', { name: 'Bin distribution' })).toHaveCount(0);
   await expect(settings.getByRole('switch', { name: 'Reverse gradient' })).toHaveCount(0);
   await expect(
     settings.getByRole('spinbutton', { name: 'Max legend items', exact: true }),

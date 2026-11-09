@@ -1,5 +1,6 @@
 import { css, unsafeCSS } from 'lit';
 import { COMPACT_MEDIA, PHONE_MEDIA } from '../../utils/breakpoints';
+import { predictedBadgeStyles } from '../common/annotation-name.styles';
 import { focusRing, srOnly } from '../kit/kit-shared.styles';
 
 /**
@@ -15,6 +16,7 @@ import { focusRing, srOnly } from '../kit/kit-shared.styles';
 export const queryBuilderStyles = [
   focusRing,
   srOnly,
+  predictedBadgeStyles,
   css`
     :host {
       font-family: var(--ps-font-sans);
@@ -524,12 +526,6 @@ export const queryBuilderStyles = [
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-
-    .predicted-mark {
-      display: inline-flex;
-      flex: none;
-      color: var(--ps-text-muted);
     }
 
     /* ── Value chips ─────────────────────────────────────────────────────── */

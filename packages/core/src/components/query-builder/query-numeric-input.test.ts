@@ -97,6 +97,10 @@ describe('query-numeric-input', () => {
           .textContent!.trim()
           .replace(/\s+/g, ' ');
       expect(count()).toBe('2 proteins match');
+      // What the count means is the kit tooltip beside it, not a native title.
+      const span = el.shadowRoot!.querySelector('.numeric-match-count')!;
+      expect(span.hasAttribute('title')).toBe(false);
+      expect(span.nextElementSibling!.getAttribute('text')).toBe('Proteins this condition keeps');
 
       el.condition = makeCondition({ min: 250 });
       await el.updateComplete;

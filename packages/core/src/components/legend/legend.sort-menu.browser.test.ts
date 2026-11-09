@@ -298,7 +298,10 @@ describe('legend sort menu', () => {
     expect(getComputedStyle(title).textOverflow).toBe('ellipsis');
     expect(title.scrollWidth).toBeGreaterThan(title.clientWidth);
     expect(title.getBoundingClientRect().height).toBeLessThan(24);
-    expect(root(legend).querySelector('.legend-predicted')!.getBoundingClientRect().width).toBe(14);
+    // The PRED badge keeps its width while the title gives way.
+    const badge = root(legend).querySelector('.legend-predicted')!.getBoundingClientRect();
+    expect(badge.width).toBeGreaterThan(20);
+    expect(badge.left).toBeGreaterThanOrEqual(title.getBoundingClientRect().right);
 
     const titleRight = title.getBoundingClientRect().right;
     for (const button of [sortButton(legend), settingsButton(legend)]) {

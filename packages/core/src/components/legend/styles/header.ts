@@ -30,11 +30,9 @@ export const headerStyles = css`
     color: var(--ps-text);
   }
 
+  /* The PRED badge; legend.styles.ts adds its look (predictedBadgeStyles). */
   .legend-predicted {
-    display: inline-flex;
-    flex: none;
     margin-inline-start: var(--ps-space-1);
-    color: var(--ps-text-muted);
   }
 
   .legend-header protspace-info-popover {

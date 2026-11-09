@@ -4,7 +4,9 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import './publish-modal';
 import type { ProtspacePublishModal } from './publish-modal';
+import { selectOptionStyles } from '../kit/field.styles';
 import { topLayer } from '../kit/layers';
+import { publishModalStyles } from './publish-modal.styles';
 
 // jsdom 27 has no HTMLDialogElement.showModal or close. The editor's ps-dialog only needs the
 // calls to exist here; what the dialog does is pinned in publish-modal.browser.test.ts.
@@ -564,6 +566,25 @@ describe('<protspace-publish-modal> control names', () => {
     expect(
       controls.filter((el) => !el.getAttribute('aria-label')).map((el) => el.outerHTML),
     ).toEqual([]);
+  });
+
+  it('draws New figure and Reset as danger buttons, Close and Export as they were', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const variants = Array.from(
+      modal.shadowRoot!.querySelectorAll<HTMLElement>('.publish-footer > ps-button'),
+      (button) => [button.textContent!.trim(), button.getAttribute('variant')],
+    );
+    expect(variants).toEqual([
+      ['New figure', 'danger'],
+      ['Reset', 'danger'],
+      ['Close', 'secondary'],
+      ['Export', 'primary'],
+    ]);
+  });
+
+  it('gives its native selects the kit’s option colours, so their lists read in dark', () => {
+    expect(publishModalStyles).toContain(selectOptionStyles);
   });
 });
 

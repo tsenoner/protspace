@@ -581,14 +581,16 @@ describe('query-condition-row annotation names', () => {
     expect(stored).toBe('cath');
   });
 
-  it('marks the predicted annotation with the sparkles icon, named Predicted annotation', async () => {
+  it('marks the predicted annotation with the PRED badge, named Predicted annotation', async () => {
     const el = await mountNamed('predicted_subcellular_location');
     const mark = trigger(el).querySelector('.predicted-mark')!;
     expect(mark.getAttribute('role')).toBe('img');
     expect(mark.getAttribute('aria-label')).toBe('Predicted annotation');
     expect(mark.hasAttribute('title')).toBe(false);
-    expect(mark.querySelector('svg.ps-icon')).not.toBeNull();
-    expect(mark.textContent!.trim()).toBe('');
+    expect(mark.textContent!.trim()).toBe('PRED');
+    expect(mark.nextElementSibling!.getAttribute('text')).toBe(
+      'Predicted: computational, not experimentally curated',
+    );
   });
 });
 

@@ -1,5 +1,6 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { countNoun, formatCount, type EatReliabilityState } from '@protspace/utils';
+import '../kit/tooltip';
 import { formatPercent } from '../query-builder/eat-reliability';
 import {
   EAT_BOUNDS,
@@ -85,7 +86,7 @@ function renderHistogram(
   >
     ${Array.from(summary.bins, (count, bin) => {
       const label = barLabel(bin, count);
-      return html`<button
+      const bar = html`<button
         type="button"
         class="eat-bar"
         data-bin=${bin}
@@ -95,12 +96,13 @@ function renderHistogram(
         aria-controls=${bars.openBin === bin ? 'eat-drill' : nothing}
         data-kept=${String(isKept(state, (bin + 0.5) / EAT_BIN_COUNT))}
         aria-label=${label}
-        title=${label}
         style=${`height:${Number(((count / tallest) * 100).toFixed(2))}%`}
         @click=${() => {
           if (count > 0) bars.onBar(bin);
         }}
       ></button>`;
+      // The kit tooltip, as every icon button has: a bar has no text of its own.
+      return html`${bar}<ps-tooltip text=${label} names-target></ps-tooltip>`;
     })}
   </div>`;
 }

@@ -237,6 +237,12 @@ describe('query-builder Apply gating', () => {
       ),
     ).toEqual(['Reset', 'Cancel', 'Apply']);
   });
+
+  it('draws Reset as a danger button', async () => {
+    builder.query = [human()];
+    await settle();
+    expect(shadow().querySelector('.query-footer-reset')!.getAttribute('variant')).toBe('danger');
+  });
 });
 
 describe('query-builder removal normalizes the new first item operator', () => {

@@ -5,6 +5,7 @@ import {
   clusterAgreement,
   getAnnotationMeta,
   hasAnnotationStats,
+  isPredictedAnnotation,
   type Annotation,
   type ProjectionStatisticRow,
 } from '@protspace/utils';
@@ -16,7 +17,7 @@ import {
   flattenGroupedAnnotations,
   type GroupedAnnotation,
 } from '../common/annotation-categories';
-import { predictedMark, renderAnnotationName } from '../common/annotation-name';
+import { PREDICTED_NOTE, predictedMark, renderAnnotationName } from '../common/annotation-name';
 import '../common/info-popover';
 import { icon } from '../kit/icon';
 import '../kit/popover';
@@ -411,8 +412,14 @@ export class ProtspaceAnnotationSelect extends LitElement {
     const stats = this.hasStatistics(annotation);
     const hasDocs = meta.description.length > 0 || !!meta.docsUrl;
     const id = optionId(index);
-    // The ⓘ is not a Tab stop, so its description reaches the keyboard as the option's.
-    const notes = [meta.description, eat ? EAT_NOTE : '', stats ? STATS_NOTE : '']
+    // The ⓘ is not a Tab stop, so its description reaches the keyboard as the option's; so does
+    // the PRED badge's tooltip, which only a pointer can show.
+    const notes = [
+      meta.description,
+      isPredictedAnnotation(annotation) ? `${PREDICTED_NOTE}.` : '',
+      eat ? EAT_NOTE : '',
+      stats ? STATS_NOTE : '',
+    ]
       .filter(Boolean)
       .join(' ');
     return html`

@@ -41,21 +41,25 @@ export const buttonStyles = [
     :host([variant='primary']) button:hover:not(:disabled):not([aria-disabled='true']) {
       background: var(--ps-accent-hover);
     }
-    :host([variant='secondary']) button,
-    :host([variant='danger']) button {
+    :host([variant='secondary']) button {
       background: var(--ps-surface);
       border-color: var(--ps-border-strong);
     }
+    /* A reset or a clear: red edge and red text at rest, so it reads as one before the press. */
     :host([variant='danger']) button {
+      background: var(--ps-surface);
+      border-color: var(--ps-danger);
       color: var(--ps-danger);
     }
     :host([variant='ghost']) button {
       color: var(--ps-text-muted);
     }
     :host([variant='secondary']) button:hover:not(:disabled):not([aria-disabled='true']),
-    :host([variant='danger']) button:hover:not(:disabled):not([aria-disabled='true']),
     :host([variant='ghost']) button:hover:not(:disabled):not([aria-disabled='true']) {
       background: var(--ps-surface-hover);
+    }
+    :host([variant='danger']) button:hover:not(:disabled):not([aria-disabled='true']) {
+      background: color-mix(in srgb, var(--ps-danger) 8%, var(--ps-surface));
     }
     /* A ghost menu button shows its menu is open: the tint plus an inset ring (the focus ring is an outline). */
     :host([variant='ghost']) button[aria-expanded='true'] {

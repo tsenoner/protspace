@@ -152,13 +152,13 @@ colours, order and hidden values.
 
 ### Numeric Bin Distribution
 
-When the selected annotation is numeric and a numeric gradient palette is active, an extra `Bin distribution` control appears:
+When the selected annotation is numeric and a numeric gradient palette is active, an extra `Bin distribution` row appears, with its three choices side by side; click one to apply it:
 
 - `Linear`
 - `Quantile`
 - `Logarithmic`
 
-`Quantile` is the default distribution, automatically falling back to `Linear` when the number of distinct values is small enough that quantile edges would collapse. `Logarithmic` is only available when all non-null values are strictly positive; otherwise ProtSpace falls back to `Quantile` (and from there to `Linear`, as above).
+`Quantile` is the default distribution, automatically falling back to `Linear` when the number of distinct values is small enough that quantile edges would collapse. `Logarithmic` is only available when all non-null values are strictly positive; otherwise it is greyed out, its tooltip says why, and ProtSpace falls back to `Quantile` (and from there to `Linear`, as above).
 
 ### Reverse Gradient Direction
 
@@ -201,9 +201,9 @@ This is why you might see `10` requested bins become `9`, and `9` become `8`, wi
 ## Predicted Annotations
 
 Some annotations are computational predictions rather than experimentally curated records. When one
-is selected, the legend header shows a ⚡ **Predicted** badge next to the annotation title, followed
-by the note `Computationally predicted, not experimentally curated.` The same ⚡ marker appears next
-to the annotation in the view bar's **Color by** menu.
+is selected, the legend header shows a **PRED** badge next to the annotation title; hover it for the
+note `Predicted: computational, not experimentally curated`. The same badge appears next to the
+annotation in the view bar's **Color by** menu and in the Filter panel's annotation picker.
 
 The badge marks columns produced by a machine-learning model, a de-novo sequence-topology
 predictor, or predicted 3D structure. Reference signature matches such as Pfam, CATH-Gene3D and
@@ -213,7 +213,7 @@ whose name starts with `predicted_` is treated as a prediction.
 Which built-in columns carry the badge is listed per annotation in the
 [Annotations reference](/guide/annotations), which is generated from the same table the app reads.
 
-The ⚡ badge is a property of the whole column and is decided from the annotation's name, not from
+The **PRED** badge is a property of the whole column and is decided from the annotation's name, not from
 its values, so it is not the same thing as the `EAT` badge, which marks an otherwise curated column
 in which some individual proteins carry a transferred value.
 

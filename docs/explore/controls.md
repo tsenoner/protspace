@@ -199,9 +199,9 @@ category appear under **Other**. See the
 [ProtSpace Python package](https://github.com/tsenoner/protspace) for the complete list of
 available annotations per source.
 
-::: info ⚡ Predicted badge
-A ⚡ badge next to an annotation name marks a **computational prediction** rather than curated or
-experimental data. Hover it for the tooltip "Predicted: computational, not experimentally
+::: info PRED badge
+A **PRED** badge next to an annotation name marks a **computational prediction** rather than curated
+or experimental data. Hover it for the tooltip "Predicted: computational, not experimentally
 curated". The same badge appears next to the legend title when a predicted annotation is active.
 
 Flagged annotations are:
@@ -230,7 +230,7 @@ numbers, or see [Separation Scores](/explore/separation-scores) for what they me
 
 ::: info EAT badge
 An **EAT** badge marks an annotation in which some proteins carry a value **transferred from a
-nearby annotated protein** instead of a curated record of their own, not to be confused with the ⚡
+nearby annotated protein** instead of a curated record of their own, not to be confused with the **PRED**
 badge. Hover it for the tooltip "Embedding Annotation Transfer predictions available". Select the
 annotation to see which proteins those are, and open the EAT panel from the rail for its
 controls. See [Transferred Annotations (EAT)](/explore/eat) for the whole feature.

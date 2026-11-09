@@ -1,5 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cdp, page, userEvent } from 'vitest/browser';
+import { contrast } from '../../test-support/contrast';
+import { colourChannels } from '../../test-support/css-colour';
 import { adoptTheme } from './adopt-theme';
 import type { PsButton, PsIconButton } from './button';
 import type { PsTooltip } from './tooltip';
@@ -122,6 +124,48 @@ describe('ps-button', () => {
   it('takes the primary fill from the tokens', async () => {
     const el = await mount<PsButton>('<ps-button variant="primary">Export</ps-button>');
     expect(getComputedStyle(inner(el)).backgroundColor).toBe('rgb(0, 122, 181)');
+  });
+
+  it.each([
+    ['light', null, 'rgb(185, 28, 28)'],
+    ['dark', 'dark', 'rgb(248, 113, 113)'],
+  ])(
+    'draws a danger button with a red edge and red text, tinted red on hover (%s)',
+    async (_name, theme, red) => {
+      if (theme) document.documentElement.dataset.theme = theme;
+      try {
+        const el = await mount<PsButton>('<ps-button variant="danger">Reset</ps-button>');
+        await transitions(inner(el));
+        const rest = getComputedStyle(inner(el));
+        expect(rest.color).toBe(red);
+        expect(rest.borderTopColor).toBe(red);
+        const surface = rest.backgroundColor;
+        await userEvent.hover(inner(el));
+        await transitions(inner(el));
+        const hover = getComputedStyle(inner(el));
+        // The tint is the surface with a little red (redder than the surface, not grey), and the
+        // red text keeps 4.5:1 on it.
+        const redness = (colour: string) => {
+          const [r, , b] = colourChannels(colour);
+          return r - b;
+        };
+        expect(redness(hover.backgroundColor)).toBeGreaterThan(redness(surface));
+        expect(contrast(hover.color, hover.backgroundColor)).toBeGreaterThanOrEqual(4.5);
+      } finally {
+        delete document.documentElement.dataset.theme;
+      }
+    },
+  );
+
+  it('keeps a disabled danger button red but faded, with no hover tint', async () => {
+    const el = await mount<PsButton>('<ps-button variant="danger" disabled>Reset</ps-button>');
+    const rest = getComputedStyle(inner(el)).backgroundColor;
+    await userEvent.hover(inner(el), { force: true });
+    await transitions(inner(el));
+    const style = getComputedStyle(inner(el));
+    expect(style.color).toBe('rgb(185, 28, 28)');
+    expect(style.opacity).toBe('0.5');
+    expect(style.backgroundColor).toBe(rest);
   });
 });
 

@@ -64,6 +64,9 @@ export default function KitGallery() {
         <ps-button variant="secondary" disabled>
           Disabled
         </ps-button>
+        <ps-button variant="danger" disabled>
+          Disabled
+        </ps-button>
       </Section>
 
       <Section title="Small buttons">
@@ -190,6 +193,9 @@ export default function KitGallery() {
           <ps-menu-item value="isolate">Isolate selection</ps-menu-item>
           <ps-menu-item value="clear" disabled>
             Clear selection
+          </ps-menu-item>
+          <ps-menu-item value="clear-all" danger>
+            Clear all
           </ps-menu-item>
         </MenuDemo>
       </Section>

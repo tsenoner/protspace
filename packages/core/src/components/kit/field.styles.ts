@@ -1,9 +1,29 @@
 import { css } from 'lit';
 import { focusRing, kitHost } from './kit-shared.styles';
 
+/**
+ * A native select's open list. The browser or the OS draws it, often in the OS's appearance rather
+ * than the page's (a macOS menu is light while the OS is light, even under the dark theme), and
+ * some keep the option's text colour but drop its background. An option that inherits the theme's
+ * light text is then light on white. So each option takes the OS's own pair: the system colours
+ * resolved for the OS's light or dark, which `color-scheme: light dark` selects. Theme tokens
+ * cannot do this: they follow the page's theme, which the list may not.
+ */
+export const selectOptionStyles = css`
+  select option {
+    color-scheme: light dark;
+    background-color: Canvas;
+    color: CanvasText;
+  }
+  select option:disabled {
+    color: GrayText;
+  }
+`;
+
 export const fieldStyles = [
   kitHost,
   focusRing,
+  selectOptionStyles,
   css`
     :host {
       display: inline-flex;
