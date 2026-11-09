@@ -59,6 +59,8 @@ export interface ScatterplotSyncCallbacks {
     selectedProjectionName: string,
   ) => void;
   onAnnotationChange: (annotation: string) => void;
+  /** The plot's Shift + hover focus: the focused values, or null once it ends. */
+  onCategoryFocus?: (values: readonly string[] | null) => void;
   getHiddenValues: () => string[];
   getOtherItems: () => OtherItem[];
   getLegendItems: () => LegendItem[];
@@ -83,6 +85,7 @@ export class ScatterplotSyncController implements ReactiveController {
   private _boundHandleDataChange: (e: Event) => void;
   private _boundHandleAnnotationChange: (e: Event) => void;
   private _boundHandleProjectionChange: () => void;
+  private _boundHandleCategoryFocus: (e: Event) => void;
   private _discoveryRetryCount = 0;
   private _discoveryTimeoutId: number | null = null;
   private _mutationObserver: MutationObserver | null = null;
@@ -97,6 +100,7 @@ export class ScatterplotSyncController implements ReactiveController {
     this._boundHandleDataChange = this._handleDataChange.bind(this);
     this._boundHandleAnnotationChange = this._handleAnnotationChange.bind(this);
     this._boundHandleProjectionChange = this._handleProjectionChange.bind(this);
+    this._boundHandleCategoryFocus = this._handleCategoryFocus.bind(this);
   }
 
   hostConnected(): void {
@@ -306,6 +310,7 @@ export class ScatterplotSyncController implements ReactiveController {
 
     this._scatterplotElement = element;
     element.addEventListener(LEGEND_EVENTS.DATA_CHANGE, this._boundHandleDataChange);
+    element.addEventListener(LEGEND_EVENTS.CATEGORY_FOCUS, this._boundHandleCategoryFocus);
     // The view bar's pickers dispatch annotation-change and projection-change, bubbling and
     // composed, wherever they sit: listen on the legend's own root (the document in the app).
     const root = this.host.getRootNode();
@@ -398,6 +403,11 @@ export class ScatterplotSyncController implements ReactiveController {
     }
   }
 
+  private _handleCategoryFocus(event: Event): void {
+    const values = (event as CustomEvent<{ values?: readonly string[] | null }>).detail?.values;
+    this.callbacks.onCategoryFocus?.(Array.isArray(values) ? values : null);
+  }
+
   private _handleAnnotationChange(event: Event): void {
     const customEvent = event as CustomEvent;
     const { annotation } = customEvent.detail;
@@ -441,6 +451,12 @@ export class ScatterplotSyncController implements ReactiveController {
         LEGEND_EVENTS.DATA_CHANGE,
         this._boundHandleDataChange,
       );
+      this._scatterplotElement.removeEventListener(
+        LEGEND_EVENTS.CATEGORY_FOCUS,
+        this._boundHandleCategoryFocus,
+      );
+      // No longer listening, so no end of the focus would arrive: drop it now.
+      this.callbacks.onCategoryFocus?.(null);
     }
     if (this._eventRoot) {
       this._eventRoot.removeEventListener(

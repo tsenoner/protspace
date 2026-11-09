@@ -51,7 +51,7 @@ const NO_VALUE = '—';
 @customElement('protspace-score-strip')
 class ProtspaceScoreStrip extends LitElement {
   @property({ type: Array }) points: ScoreStripPoint[] = [];
-  /** Category to emphasise, driven by the legend's hover state. */
+  /** Category to emphasise: the legend's hover, or the plot's Shift + hover focus. */
   @property({ type: String }) highlighted: string | null = null;
   @property({ type: String }) label = '';
   /**

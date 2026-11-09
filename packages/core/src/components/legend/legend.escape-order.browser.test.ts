@@ -2,7 +2,6 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import { deepActiveElement } from '../kit/focus';
-import type { PsMenu } from '../kit/menu';
 import type { PsPopover } from '../kit/popover';
 import type { ProtspaceLegend } from './legend';
 import { COLOR_COMMIT_DELAY_MS } from './legend-color-picker';
@@ -42,8 +41,6 @@ const row = (legend: ProtspaceLegend, value: string) =>
   legend.shadowRoot!.querySelector<HTMLElement>(`.legend-item[data-value="${value}"]`)!;
 const handle = (legend: ProtspaceLegend, value: string) =>
   row(legend, value).querySelector<HTMLButtonElement>('.drag-handle')!;
-const rowMenu = (legend: ProtspaceLegend) =>
-  legend.shadowRoot!.querySelector<PsMenu>('ps-menu.row-menu')!;
 const picker = (legend: ProtspaceLegend) =>
   legend.shadowRoot!.querySelector<PsPopover>('ps-popover.color-picker')!;
 const viewButton = (legend: ProtspaceLegend) =>
@@ -72,31 +69,18 @@ async function key(legend: ProtspaceLegend, target: HTMLElement, name: string): 
   await settle(legend);
 }
 
-async function openRowMenu(legend: ProtspaceLegend, value: string): Promise<void> {
-  await userEvent.hover(row(legend, value).querySelector<HTMLElement>('.legend-item-main')!);
-  await userEvent.click(row(legend, value).querySelector<HTMLElement>('.legend-more')!);
+const swatchButton = (legend: ProtspaceLegend, value: string) =>
+  row(legend, value).querySelector<HTMLButtonElement>('.legend-swatch-button')!;
+
+/** Opens the row's picker with a click on its swatch, as a user does. */
+async function clickSwatch(legend: ProtspaceLegend, value: string): Promise<void> {
+  await userEvent.click(swatchButton(legend, value));
   await settle(legend);
 }
 
-async function choose(legend: ProtspaceLegend, label: string): Promise<void> {
-  const item = [...rowMenu(legend).querySelectorAll('ps-menu-item')].find(
-    (each) => each.textContent!.trim() === label,
-  )!;
-  await userEvent.click(item);
-  await settle(legend);
-}
-
-/** Opens the picker as "Colour and shape" in the row menu does, without a press outside. */
-async function openPickerFromMenu(legend: ProtspaceLegend, value: string): Promise<void> {
-  row(legend, value).querySelector<HTMLButtonElement>('.legend-more')!.click();
-  await settle(legend);
-  rowMenu(legend).dispatchEvent(
-    new CustomEvent('ps-select', {
-      bubbles: true,
-      composed: true,
-      detail: { value: 'customize', checked: false },
-    }),
-  );
+/** Opens the row's picker as a keyboard press on its swatch does, without a press outside. */
+async function openPickerWithoutPress(legend: ProtspaceLegend, value: string): Promise<void> {
+  swatchButton(legend, value).click();
   await settle(legend);
 }
 
@@ -106,33 +90,19 @@ function press(target: Element): void {
 }
 
 describe('legend Escape order', () => {
-  it("with a reorder in progress, the picker opened from the row menu and the menu open again over it, each Escape closes one: menu, then picker, then the reorder (restored, 'Reordering canceled.')", async () => {
+  it("with a reorder in progress and the picker opened from the row's swatch, each Escape closes one: picker, then the reorder (restored, 'Reordering canceled.')", async () => {
     const legend = await mount();
     await key(legend, handle(legend, 'A'), ' ');
     await key(legend, handle(legend, 'A'), 'ArrowDown');
     expect(order(legend).slice(0, 2)).toEqual(['B', 'A']);
     expect(picked(legend)).toBe('A');
 
-    await openRowMenu(legend, 'A');
-    await choose(legend, 'Colour and shape');
-    expect(rowMenu(legend).open).toBe(false);
-    expect(picker(legend).open).toBe(true);
-    // The row is the picker's anchor, so its own "⋯" opens the menu over the picker.
-    await openRowMenu(legend, 'A');
-    expect(rowMenu(legend).open).toBe(true);
-    expect(picker(legend).open).toBe(true);
+    await clickSwatch(legend, 'A');
+    expect([picker(legend).open, picked(legend)]).toEqual([true, 'A']);
 
     await userEvent.keyboard('{Escape}');
     await settle(legend);
-    expect([rowMenu(legend).open, picker(legend).open, picked(legend)]).toEqual([false, true, 'A']);
-
-    await userEvent.keyboard('{Escape}');
-    await settle(legend);
-    expect([rowMenu(legend).open, picker(legend).open, picked(legend)]).toEqual([
-      false,
-      false,
-      'A',
-    ]);
+    expect([picker(legend).open, picked(legend)]).toEqual([false, 'A']);
 
     await userEvent.keyboard('{Escape}');
     await settle(legend);
@@ -151,8 +121,7 @@ describe('legend Escape order', () => {
 
     await key(legend, handle(legend, 'A'), ' ');
     await key(legend, handle(legend, 'A'), 'ArrowUp');
-    await openRowMenu(legend, 'A');
-    await choose(legend, 'Colour and shape');
+    await clickSwatch(legend, 'A');
     const swatch = legend.shadowRoot!.querySelector<HTMLInputElement>('.color-picker-swatch')!;
     swatch.value = '#00ff00';
     swatch.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
@@ -202,7 +171,7 @@ describe('legend Escape order', () => {
 
     await userEvent.click(viewButton(legend));
     await settle(legend);
-    await openPickerFromMenu(legend, 'A');
+    await openPickerWithoutPress(legend, 'A');
     expect([picker(legend).open, other(legend).open, picked(legend)]).toEqual([true, true, 'A']);
 
     await userEvent.keyboard('{Escape}');
@@ -225,8 +194,8 @@ describe('legend Escape order', () => {
     await userEvent.click(settingsButton(legend));
     await settle(legend);
     expect(open()).toEqual({ picker: false, settings: true });
-    // Opened as the row menu opens it, without a press outside the settings popover.
-    await openPickerFromMenu(legend, 'A');
+    // Opened as a key on the swatch opens it, without a press outside the settings popover.
+    await openPickerWithoutPress(legend, 'A');
     expect(open()).toEqual({ picker: true, settings: true });
 
     const onKey = vi.fn();

@@ -4,7 +4,7 @@ import { annotationLabel } from '@protspace/utils';
 import type { PsIconButton } from '../kit/button';
 import type { ProtspaceLegend } from './legend';
 import { sortIcon, sortLabel } from './legend-header';
-import type { LegendSortMode } from './types';
+import type { ActiveSortMode } from './legend-items-state';
 import { categoricalData, numericData, TWELVE } from './test-support/legend-fixtures';
 import { createEatFixture } from '../eat-panel/test-support/eat-fixture';
 import {
@@ -44,18 +44,16 @@ async function headerButton(
 
 const inner = (button: PsIconButton) => button.shadowRoot!.querySelector('button')!;
 
-const CATEGORICAL_LABELS: Array<[LegendSortMode, string]> = [
+const CATEGORICAL_LABELS: Array<[ActiveSortMode, string]> = [
   ['size-desc', 'By count, largest first'],
   ['size-asc', 'By count, smallest first'],
   ['alpha-asc', 'By name, A to Z'],
   ['alpha-desc', 'By name, Z to A'],
   ['manual', 'Your order'],
   ['manual-reverse', 'Your order, reversed'],
-  ['silhouette-desc', 'By separation, best first'],
-  ['silhouette-asc', 'By separation, worst first'],
 ];
 
-const NUMERIC_LABELS: Array<[LegendSortMode, string]> = [
+const NUMERIC_LABELS: Array<[ActiveSortMode, string]> = [
   ['alpha-asc', 'By value, low to high'],
   ['alpha-desc', 'By value, high to low'],
   ['manual', 'Your order'],
@@ -91,21 +89,19 @@ describe('legend header', () => {
     expect(plain.shadowRoot!.querySelector('.legend-predicted')).toBeNull();
   });
 
-  it('sortLabel names all eight modes, and the numeric ones by value', () => {
+  it('sortLabel names all six modes, and the numeric ones by value', () => {
     for (const [mode, label] of CATEGORICAL_LABELS) expect(sortLabel(mode, false)).toBe(label);
     for (const [mode, label] of NUMERIC_LABELS) expect(sortLabel(mode, true)).toBe(label);
   });
 
   it('sortIcon maps every mode', () => {
-    const categorical: Array<[LegendSortMode, string]> = [
+    const categorical: Array<[ActiveSortMode, string]> = [
       ['size-desc', 'arrow-down-wide-narrow'],
       ['size-asc', 'arrow-down-narrow-wide'],
       ['alpha-asc', 'arrow-down-a-z'],
       ['alpha-desc', 'arrow-down-z-a'],
       ['manual', 'arrow-up-down'],
       ['manual-reverse', 'arrow-up-down'],
-      ['silhouette-desc', 'arrow-down-wide-narrow'],
-      ['silhouette-asc', 'arrow-down-narrow-wide'],
     ];
     for (const [mode, name] of categorical) expect(sortIcon(mode, false)).toBe(name);
     expect(sortIcon('alpha-asc', true)).toBe('arrow-down-0-1');

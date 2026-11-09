@@ -7,6 +7,7 @@ import {
 } from '@protspace/utils';
 import type { LegendItem, OtherItem, LegendSortMode, PersistedCategoryData } from './types';
 import { getVisualEncoding, SlotTracker } from './visual-encoding';
+import { renumberKeepingOtherLast } from './legend-items-state';
 import {
   LEGEND_VALUES,
   NA_DEFAULT_COLOR,
@@ -357,22 +358,16 @@ export class LegendDataProcessor {
     persistedCategories: Record<string, PersistedCategoryData> = {},
     isNumericSource: boolean = false,
   ): LegendItem[] {
-    // Use passed zOrders if available, otherwise extract from existingLegendItems
+    // Use passed zOrders if available, otherwise extract from existingLegendItems. Other's own
+    // zOrder is never read: it always goes last.
     let existingZOrders: Map<string, number>;
-    let existingOtherZOrder: number | null = null;
 
     if (passedZOrders.size > 0) {
       existingZOrders = passedZOrders;
-      const existingOther = existingLegendItems.find((i) => i.value === LEGEND_VALUES.OTHER);
-      existingOtherZOrder = existingOther?.zOrder ?? null;
     } else {
       existingZOrders = new Map();
       existingLegendItems.forEach((item) => {
-        if (item.value === LEGEND_VALUES.OTHER) {
-          existingOtherZOrder = item.zOrder;
-        } else {
-          existingZOrders.set(item.value, item.zOrder);
-        }
+        if (item.value !== LEGEND_VALUES.OTHER) existingZOrders.set(item.value, item.zOrder);
       });
     }
 
@@ -423,9 +418,6 @@ export class LegendDataProcessor {
               existingZOrders.set(key, zOrder + 1);
             }
           });
-          if (existingOtherZOrder !== null && existingOtherZOrder >= newItem.targetIndex) {
-            existingOtherZOrder = existingOtherZOrder + 1;
-          }
         }
       }
     }
@@ -501,10 +493,9 @@ export class LegendDataProcessor {
       };
     });
 
-    // Add "Other" if there are items beyond the cap
+    // Add "Other" if there are items beyond the cap: a bucket, not a place, so always last.
     if (otherCount > 0) {
       const encoding = getVisualEncoding(-1, LEGEND_VALUES.OTHER);
-      const otherZOrder = keepsZOrder ? (existingOtherZOrder ?? items.length) : items.length;
 
       items.push({
         value: LEGEND_VALUES.OTHER,
@@ -512,11 +503,14 @@ export class LegendDataProcessor {
         shape: encoding.shape,
         count: otherCount,
         isVisible: true,
-        zOrder: otherZOrder,
+        zOrder: items.length,
       });
     }
 
-    return items;
+    // "Your order" keeps each row's place, but a row merged into Other leaves a gap, and a row
+    // taken out of it takes its list index, which can equal a kept row's zOrder or pass Other's.
+    // Numbered 0..n-1 in that order, the rows stay apart and Other stays after them.
+    return keepsZOrder ? renumberKeepingOtherLast(items) : items;
   }
 
   /**

@@ -33,7 +33,7 @@ export interface ScoreStripsView {
   /** The view shows a subset (a filter or an isolation): the strips step aside with a note. */
   filtered: boolean;
   points: StripPoints;
-  /** The category under the pointer, from a row or a strip. */
+  /** The category under the pointer, from a row or a strip, or the one the plot focuses. */
   highlighted: string | null;
   /** The caveat when the annotation is an auto-clustering column, whose scores are optimistic. */
   clusterCaveat: string | null;

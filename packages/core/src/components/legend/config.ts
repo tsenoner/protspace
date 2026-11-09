@@ -59,4 +59,6 @@ export const LEGEND_EVENTS = {
   DATA_CHANGE: 'data-change',
   ANNOTATION_CHANGE: 'annotation-change',
   PROJECTION_CHANGE: 'projection-change',
+  /** The plot's Shift + hover focus (scatter-plot.events.ts, `CategoryFocusDetail`). */
+  CATEGORY_FOCUS: 'category-focus',
 } as const;

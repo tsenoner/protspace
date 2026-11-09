@@ -18,3 +18,23 @@ offer no tips button of its own.
 - **THEN** the dialog's Plot section shows `Shift` (`⇧` on Apple platforms) with "Hold over a point
   to focus its category"
 - **AND** the plot shows no tips button
+
+## ADDED Requirements
+
+### Requirement: The plot reports the focus to the page
+
+The scatterplot SHALL dispatch a bubbling, composed `category-focus` event each time the focused
+values change, with `detail.values` holding the focused values, or null once the focus ends.
+Moving over more points with the same values SHALL NOT dispatch it again. The event SHALL be the
+only change focus makes outside the plot: the legend lights the focused rows from it
+(legend-panel), and nothing hidden, selected or stored changes.
+
+#### Scenario: Focus starts and ends
+
+- **WHEN** the user holds Shift over a point whose only value is A, then releases Shift
+- **THEN** the plot dispatches `category-focus` with values `[A]`, then with null
+
+#### Scenario: Moving within one category
+
+- **WHEN** focus is on A and the cursor moves to another point whose only value is A
+- **THEN** no further `category-focus` is dispatched

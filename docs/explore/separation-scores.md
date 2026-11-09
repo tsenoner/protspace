@@ -12,7 +12,7 @@ Without `--stats` the bundle carries no statistics part, so the legend shows no 
 
 ## Where They Appear
 
-**At the top of the legend panel, above the category list**, two strips place one dot per category on a shared axis, one strip for silhouette and one for Davies–Bouldin. Each dot carries its category's colour, so you can see at a glance whether an annotation separates uniformly or whether one group is dragging the average down. Hovering a dot marks the matching legend row, and hovering a legend row marks its dot. Either way, the readout to the right of each axis gives that category's exact value, so you get its silhouette and its Davies–Bouldin together rather than one at a time. Idle, that readout shows `—`, and it stays at `—` for a category the metric could not score: Davies–Bouldin has no value for a one-member category. Clicking a dot toggles that category's visibility, exactly as clicking its legend row does.
+**At the top of the legend panel, above the category list**, two strips place one dot per category on a shared axis, one strip for silhouette and one for Davies–Bouldin. Each dot carries its category's colour, so you can see at a glance whether an annotation separates uniformly or whether one group is dragging the average down. Hovering a dot marks the matching legend row, and hovering a legend row marks its dot; so does holding **Shift** over one of the category's points in the plot. Either way, the readout to the right of each axis gives that category's exact value, so you get its silhouette and its Davies–Bouldin together rather than one at a time. Idle, that readout shows `—`, and it stays at `—` for a category the metric could not score: Davies–Bouldin has no value for a one-member category. Clicking a dot toggles that category's visibility, exactly as clicking its legend row does.
 
 **In the projection metadata panel**, opened with the chart button at the top left of the plot, the Separation section carries the whole-annotation scores for all three metrics and names the annotation it was scored on. It comes first because the score blocks are what change when you recolour. Below it sit Recovers (for a cluster annotation only, described further down), then Faithfulness to the embedding, which holds measures such as trustworthiness that describe the layout itself and involve no annotation at all, and finally How it was made, the reduction's own settings.
 
@@ -58,7 +58,7 @@ Scores are computed once, during preparation, over every protein. Hiding legend 
 
 Because a filtered view and a whole-dataset score would contradict each other on screen, the strips are replaced by "Separation scores are hidden while the view is filtered" whenever a filter is active. This includes the EAT panel's reliability range in **Hide**; **Fade** filters nothing, so the strips stay. Clear the filter and the strips return.
 
-Sorting is not affected. The scores are read from the unsliced dataset, so **By separation** stays available in the legend's sort options and keeps ordering rows correctly while the strips themselves are hidden.
+The legend's order is not affected either way: the strips are where the ranking is read, and the rows keep the order the plot draws them in.
 
 Above 5000 proteins the computation runs on a deterministic 5000-protein subsample, seeded from the protein identifiers, so the same dataset always produces the same scores.
 
@@ -77,5 +77,5 @@ A projection clustering belongs to the projection it was found in, and the panel
 
 ## Next Steps
 
-- [Using the Legend](/explore/legend) - filtering, colours, and sorting by separation
+- [Using the Legend](/explore/legend) - filtering, colours, and sorting
 - [Data Preparation](/guide/data-preparation) - preparing a dataset with `--stats`

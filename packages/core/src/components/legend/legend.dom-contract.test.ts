@@ -111,12 +111,16 @@ describe('legend DOM contract', () => {
       expect(item.querySelector('.legend-text')!.getAttribute('part')).toBe('text');
       expect(item.querySelector('.legend-count')!.getAttribute('part')).toBe('count');
       // Two steps: jsdom's selector engine misses `[part="symbol"] .legend-symbol path` on every
-      // row after the first, although the DOM matches it.
-      const symbol = item.querySelector('.legend-item-main [part="symbol"]')!;
+      // row after the first, although the DOM matches it. The swatch is the row's own child,
+      // beside the main button: a button on every row but Other.
+      const symbol = [...item.children].find((child) => child.getAttribute('part') === 'symbol')!;
+      expect(symbol.classList.contains('legend-swatch')).toBe(true);
       expect(symbol.querySelector('.legend-symbol path')!.getAttribute('fill')).toBeTruthy();
+      expect(symbol.tagName).toBe(item.dataset.value === 'Other' ? 'SPAN' : 'BUTTON');
       expect(item.querySelector('button.drag-handle')).not.toBeNull();
     }
     expect(row(legend, 'A').querySelector('.legend-count')!.textContent!.trim()).toBe('12');
+    expect(root.querySelector('.legend-more, ps-menu.row-menu')).toBeNull();
 
     const otherHandle = row(legend, 'Other').querySelector<HTMLButtonElement>('.drag-handle')!;
     expect(otherHandle.classList.contains('drag-handle-disabled')).toBe(true);

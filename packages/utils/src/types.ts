@@ -347,14 +347,12 @@ export type LegendSortMode =
   | 'alpha-desc'
   | 'manual'
   | 'manual-reverse'
-  /** Best-separating category first. Display order only; the "Other" bucket stays size-driven. */
-  | 'silhouette-desc'
   /**
-   * Worst-separating category first — what the legend header's reverse button produces from
-   * `silhouette-desc`. It must exist as a real mode: that button derives its result by string
-   * surgery on the current mode, so without this it minted a value outside this union, which
-   * `sanitizeLegendSettingsEntry` rejects — discarding the annotation's whole persisted block.
+   * The retired "By separation" sort, best or worst first. Read only: settings and bundles saved
+   * with it still load (`sanitizeLegendSettingsEntry` rejects the annotation's whole persisted
+   * block for a value outside this union), and the legend opens them by count.
    */
+  | 'silhouette-desc'
   | 'silhouette-asc';
 
 export interface PersistedCategoryData {

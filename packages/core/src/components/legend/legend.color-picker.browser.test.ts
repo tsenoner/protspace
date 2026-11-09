@@ -3,7 +3,6 @@ import { cdp, page, userEvent } from 'vitest/browser';
 import type { LegendPersistedSettings, VisualizationData } from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
 import { deepActiveElement } from '../kit/focus';
-import type { PsMenu } from '../kit/menu';
 import type { PsPopover } from '../kit/popover';
 import type { ProtspaceLegend } from './legend';
 import { LEGEND_EVENTS, LEGEND_STYLES, SHAPE_PATH_GENERATORS } from './config';
@@ -61,8 +60,9 @@ async function mount(data: VisualizationData = categoricalData(TWELVE)) {
 
 const row = (legend: ProtspaceLegend, value: string) =>
   legend.shadowRoot!.querySelector<HTMLElement>(`.legend-item[data-value="${value}"]`)!;
-const more = (legend: ProtspaceLegend, value: string) =>
-  row(legend, value).querySelector<HTMLButtonElement>('.legend-more')!;
+/** A row's swatch, the button that opens its picker. */
+const rowSwatch = (legend: ProtspaceLegend, value: string) =>
+  row(legend, value).querySelector<HTMLButtonElement>('.legend-swatch-button')!;
 const picker = (legend: ProtspaceLegend) =>
   legend.shadowRoot!.querySelector<PsPopover>('ps-popover.color-picker')!;
 const panel = (legend: ProtspaceLegend) =>
@@ -74,16 +74,9 @@ const shape = (legend: ProtspaceLegend, name: string) =>
     `.shape-picker-item[aria-label^="Use ${name} shape"]`,
   )!;
 
-/** "⋯", then "Colour and shape", with the pointer, as a user opens it. */
+/** A click on the row's swatch, with the pointer, as a user opens it. */
 async function openPicker(legend: ProtspaceLegend, value: string): Promise<void> {
-  await userEvent.hover(row(legend, value).querySelector<HTMLElement>('.legend-item-main')!);
-  await userEvent.click(more(legend, value));
-  await settle(legend);
-  const menu = legend.shadowRoot!.querySelector<PsMenu>('ps-menu.row-menu')!;
-  const item = [...menu.querySelectorAll('ps-menu-item')].find(
-    (each) => each.textContent!.trim() === 'Colour and shape',
-  )!;
-  await userEvent.click(item);
+  await userEvent.click(rowSwatch(legend, value));
   await settle(legend);
 }
 
@@ -132,7 +125,7 @@ function twoAnnotations(): VisualizationData {
 }
 
 describe('legend colour and shape picker', () => {
-  it('Colour and shape opens the picker in the top layer beside its row, unclipped by a 240 px sidebar', async () => {
+  it('the swatch opens the picker in the top layer beside its row, unclipped by a 240 px sidebar', async () => {
     const { legend } = await mount();
     await openPicker(legend, 'A');
 
@@ -203,22 +196,14 @@ describe('legend colour and shape picker', () => {
     inputColour(legend, '#00ff00');
 
     // A synthetic click fires no pointerdown, so A's picker is not closed by an outside press:
-    // the keyboard path, where only open() can land the pending colour.
-    more(legend, 'B').click();
-    await settle(legend);
-    expect(picker(legend).open).toBe(true);
-    // Fake timers only fire when advanced: the colour is still waiting, so open() must land it.
+    // the keyboard path, where only open() can land the pending colour. Fake timers only fire
+    // when advanced, so the colour is still waiting until then.
     expect(commits()).toBe(0);
-    legend.shadowRoot!.querySelector<PsMenu>('ps-menu.row-menu')!.dispatchEvent(
-      new CustomEvent('ps-select', {
-        bubbles: true,
-        composed: true,
-        detail: { value: 'customize', checked: false },
-      }),
-    );
+    rowSwatch(legend, 'B').click();
     // Synchronously, before the commit delay could have run out.
     expect(commits()).toBe(1);
     await settle(legend);
+    expect(picker(legend).open).toBe(true);
 
     expect(panel(legend).getAttribute('aria-label')).toBe('Colour and shape: B');
     expect(storedFamilyRecord().categories.A.color).toBe('#00ff00');
@@ -303,15 +288,20 @@ describe('legend colour and shape picker', () => {
     expect(storedFamilyRecord().categories.A.shape).toBe('diamond');
   });
 
-  it('Colour and shape on the row whose picker is open keeps it open', async () => {
-    const { legend } = await mount();
+  it('a second click on the swatch whose picker is open closes it and lands the pending colour', async () => {
+    const { legend, plot } = await mount();
     await openPicker(legend, 'A');
     expect(picker(legend).open).toBe(true);
+    expect(rowSwatch(legend, 'A').getAttribute('aria-expanded')).toBe('true');
+    const commits = colourCommits(plot);
+    inputColour(legend, '#abcdef');
 
-    await openPicker(legend, 'A');
+    await userEvent.click(rowSwatch(legend, 'A'));
+    await settle(legend);
 
-    expect(picker(legend).open).toBe(true);
-    expect(panel(legend).getAttribute('aria-label')).toBe('Colour and shape: A');
+    expect(picker(legend).open).toBe(false);
+    expect(commits()).toBe(1);
+    expect(rowSwatch(legend, 'A').getAttribute('aria-expanded')).toBe('false');
   });
 
   it('an outside press closes it and flushes the pending colour; a drag that ends outside does not', async () => {
@@ -332,7 +322,7 @@ describe('legend colour and shape picker', () => {
     expect(commits()).toBe(1);
   });
 
-  it("Escape closes it, flushes, and returns focus to the row's ⋯ button", async () => {
+  it("Escape closes it, flushes, and returns focus to the row's swatch", async () => {
     const { legend, plot } = await mount();
     await openPicker(legend, 'A');
     expect(deepActiveElement()).toBe(swatch(legend));
@@ -344,10 +334,10 @@ describe('legend colour and shape picker', () => {
 
     expect(picker(legend).open).toBe(false);
     expect(commits()).toBe(1);
-    expect(deepActiveElement()).toBe(more(legend, 'A'));
+    expect(deepActiveElement()).toBe(rowSwatch(legend, 'A'));
   });
 
-  it("Shift+Tab out closes it, flushes, and returns focus to the row's ⋯ button", async () => {
+  it("Shift+Tab out closes it, flushes, and returns focus to the row's swatch", async () => {
     const { legend, plot } = await mount();
     await openPicker(legend, 'A');
     const commits = colourCommits(plot);
@@ -358,7 +348,7 @@ describe('legend colour and shape picker', () => {
 
     expect(picker(legend).open).toBe(false);
     expect(commits()).toBe(1);
-    expect(deepActiveElement()).toBe(more(legend, 'A'));
+    expect(deepActiveElement()).toBe(rowSwatch(legend, 'A'));
   });
 
   it('Tab past the shapes closes it', async () => {
@@ -395,7 +385,7 @@ describe('legend colour and shape picker', () => {
     expect(picker(legend).open).toBe(false);
   });
 
-  it('offers no Colour and shape on numeric rows', async () => {
+  it('offers no picker on numeric rows: their swatch is a plain mark', async () => {
     const { legend } = await mountLegendWithScatterplot(
       numericData(Array.from({ length: 20 }, (_, i) => i + 1)),
       'length',
@@ -404,14 +394,13 @@ describe('legend colour and shape picker', () => {
     const first = legend.shadowRoot!.querySelector<HTMLElement>(
       '.legend-item:not(.legend-item-other)',
     )!;
+    expect(first.querySelector('.legend-swatch-button')).toBeNull();
 
-    first.querySelector<HTMLButtonElement>('.legend-more')!.click();
+    await userEvent.click(first.querySelector<HTMLElement>('.legend-swatch')!);
     await settle(legend);
 
-    const menu = legend.shadowRoot!.querySelector<PsMenu>('ps-menu.row-menu')!;
-    expect(menu.open).toBe(true);
-    expect(menu.querySelector('ps-menu-item[value="isolate"]')).not.toBeNull();
-    expect(menu.querySelector('ps-menu-item[value="customize"]')).toBeNull();
+    expect(picker(legend).open).toBe(false);
+    expect(first.classList.contains('hidden')).toBe(false);
   });
 
   it('multilabel annotations show the shapes disabled with the note', async () => {

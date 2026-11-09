@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  COLOR_SCHEMES,
-  type CategoryScore,
-  type LegendPersistedSettings,
-  type LegendSortMode,
-} from '@protspace/utils';
+import { COLOR_SCHEMES, type LegendPersistedSettings } from '@protspace/utils';
 import { LEGEND_VALUES, NA_VALUE } from './config';
 import {
   applyDerivedNumericColors,
@@ -14,11 +9,13 @@ import {
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
   numericOrderFromItems,
+  renumberKeepingOtherLast,
   reorderByValues,
   resolvePersistedSettings,
   reverseKeepingOtherLast,
   reverseSortMode,
   sortItemsForDisplay,
+  type ActiveSortMode,
 } from './legend-items-state';
 import type { LegendAnnotationData, LegendItem } from './types';
 
@@ -30,10 +27,6 @@ function item(value: string, zOrder: number, patch: Partial<LegendItem> = {}): L
 
 const values = (items: readonly LegendItem[]) => items.map((each) => each.value);
 const zOrders = (items: readonly LegendItem[]) => items.map((each) => each.zOrder);
-
-function score(category: string, silhouette: number | null): CategoryScore {
-  return { category, silhouette, silhouetteEmbedding: null, daviesBouldin: null };
-}
 
 function record(patch: Partial<LegendPersistedSettings> = {}): LegendPersistedSettings {
   return {
@@ -105,9 +98,15 @@ describe('normalizeSortModeForType', () => {
     expect(normalizeSortModeForType(undefined, true)).toBe('alpha-asc');
   });
 
-  it('keeps any categorical mode and defaults to by count', () => {
-    expect(normalizeSortModeForType('silhouette-asc', false)).toBe('silhouette-asc');
+  it('keeps a categorical mode and defaults to by count', () => {
+    expect(normalizeSortModeForType('alpha-desc', false)).toBe('alpha-desc');
+    expect(normalizeSortModeForType('manual-reverse', false)).toBe('manual-reverse');
     expect(normalizeSortModeForType(undefined, false)).toBe('size-desc');
+  });
+
+  it('opens the retired by-separation sort, either way, by count', () => {
+    expect(normalizeSortModeForType('silhouette-desc', false)).toBe('size-desc');
+    expect(normalizeSortModeForType('silhouette-asc', false)).toBe('size-desc');
   });
 });
 
@@ -122,49 +121,46 @@ describe('normalizeCategoricalPaletteId', () => {
 });
 
 describe('reverseSortMode', () => {
-  it('maps all eight modes', () => {
-    const pairs: [LegendSortMode, LegendSortMode][] = [
+  it('maps all six modes', () => {
+    const pairs: [ActiveSortMode, ActiveSortMode][] = [
       ['size-asc', 'size-desc'],
       ['size-desc', 'size-asc'],
       ['alpha-asc', 'alpha-desc'],
       ['alpha-desc', 'alpha-asc'],
       ['manual', 'manual-reverse'],
       ['manual-reverse', 'manual'],
-      ['silhouette-desc', 'silhouette-asc'],
-      ['silhouette-asc', 'silhouette-desc'],
     ];
     expect(pairs.map(([mode]) => reverseSortMode(mode))).toEqual(pairs.map(([, back]) => back));
   });
 });
 
 describe('sortItemsForDisplay', () => {
-  const items = [item('A', 0), item(OTHER, 3), item('B', 1), item('C', 2)];
-
-  it('orders by zOrder for every mode but separation, without touching its input', () => {
+  it('orders by zOrder, without touching its input', () => {
+    const items = [item('A', 0), item(OTHER, 3), item('B', 1), item('C', 2)];
     const before = values(items);
-    expect(values(sortItemsForDisplay(items, 'size-desc', [score('B', 0.9)]))).toEqual([
-      'A',
-      'B',
-      'C',
-      OTHER,
-    ]);
+    expect(values(sortItemsForDisplay(items))).toEqual(['A', 'B', 'C', OTHER]);
     expect(values(items)).toEqual(before);
   });
 
-  it('keeps Other last and unscored categories after scored ones in both directions', () => {
-    const scores = [score('A', 0.1), score('B', 0.9)];
-    expect(values(sortItemsForDisplay(items, 'silhouette-desc', scores))).toEqual([
-      'B',
-      'A',
-      'C',
-      OTHER,
-    ]);
-    expect(values(sortItemsForDisplay(items, 'silhouette-asc', scores))).toEqual([
-      'A',
-      'B',
-      'C',
-      OTHER,
-    ]);
+  it('lists Other last whatever its zOrder', () => {
+    const items = [item('A', 0), item(OTHER, 1), item('B', 2), item('C', 2)];
+    expect(values(sortItemsForDisplay(items))).toEqual(['A', 'B', 'C', OTHER]);
+  });
+});
+
+describe('renumberKeepingOtherLast', () => {
+  it('numbers the rows from 0 in their order, ties by list position, and Other after them', () => {
+    // A merge left a gap at 1, a row taken out of Other shares D's 3, and Other sits at 2.
+    const items = [item('A', 0), item('C', 2.5), item('D', 3), item('X', 3), item(OTHER, 2)];
+    const renumbered = renumberKeepingOtherLast(items);
+    expect(values(renumbered)).toEqual(['A', 'C', 'D', 'X', OTHER]);
+    expect(zOrders(renumbered)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('returns the rows that already have their number unchanged', () => {
+    const items = [item('A', 0), item('B', 1), item(OTHER, 2)];
+    const renumbered = renumberKeepingOtherLast(items);
+    expect(renumbered.every((each, index) => each === items[index])).toBe(true);
   });
 });
 
@@ -394,5 +390,14 @@ describe('resolvePersistedSettings', () => {
       resolvePersistedSettings(numericRecord({ sortMode: 'size-desc' }), numeric('sig', 'topo'))
         .sortMode,
     ).toBe('alpha-asc');
+  });
+
+  it('opens a record saved with the retired by-separation sort by count, keeping the rest', () => {
+    const resolved = resolvePersistedSettings(
+      record({ sortMode: 'silhouette-asc', hiddenValues: ['B'] }),
+      categorical,
+    );
+    expect(resolved.sortMode).toBe('size-desc');
+    expect(resolved.hiddenValues).toEqual(['B']);
   });
 });

@@ -179,8 +179,8 @@ const STEPS: Record<TourStepId, StepBuilder> = {
     id: 'legend',
     title: 'Legend Panel',
     description: ctx.coarse
-      ? `<strong>Tap</strong> a row to hide or show its category, <strong>double-tap</strong> to show only that one. A row's <strong>⋯</strong> offers <em>Show only this</em> and <em>Colour and shape</em>; hold its handle and drag to reorder (higher rows are drawn on top).${hasStructureSheet(ctx.mode) ? ' The panel folds down to its header to give the plot more room.' : ''}`
-      : '<strong>Click</strong> a row to hide or show its category, <strong>double-click</strong> to show only that one. Hover a row for its eye, its drag handle (higher rows are drawn on top) and <strong>⋯</strong> (<em>Show only this</em>, <em>Colour and shape</em>). Drag a category onto <strong>Other</strong> to merge it. The sort button in the header orders the rows; the sliders button opens <strong>Legend settings</strong>.',
+      ? `<strong>Tap</strong> a row to hide or show its category, <strong>double-tap</strong> to show only that one. Tap a row's <strong>colour</strong> to change its colour and shape; hold its handle and drag to reorder (higher rows are drawn on top).${hasStructureSheet(ctx.mode) ? ' The panel folds down to its header to give the plot more room.' : ''}`
+      : '<strong>Click</strong> a row to hide or show its category, <strong>double-click</strong> to show only that one, and click its <strong>colour</strong> to change its colour and shape. Hover a row for its eye and its drag handle (higher rows are drawn on top). Drag a category onto <strong>Other</strong> to merge it. The sort button in the header orders the rows; the sliders button opens <strong>Legend settings</strong>.',
     target: driverId('legend'),
   }),
 

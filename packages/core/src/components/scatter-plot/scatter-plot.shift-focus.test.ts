@@ -11,6 +11,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
 
+import type { CategoryFocusDetail } from './scatter-plot.events';
 import { createPlot, fakeFrames, type PlotInternals } from './test-support/plot-fixture';
 
 function makeData(): VisualizationData {
@@ -100,5 +101,63 @@ describe('Shift+hover focus across the hover frame', () => {
     sp._handleShiftKey(shiftKey('keydown'));
     frames.run(); // the pending event says shiftKey: false
     expect(sp._focusedValues).toEqual(['A']);
+  });
+});
+
+describe('category-focus, the event the legend lights its rows from', () => {
+  let frames: ReturnType<typeof fakeFrames>;
+
+  beforeEach(() => {
+    frames = fakeFrames();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function listen(sp: PlotInternals): CustomEvent<CategoryFocusDetail>[] {
+    const events: CustomEvent<CategoryFocusDetail>[] = [];
+    (sp as unknown as HTMLElement).addEventListener('category-focus', (event) =>
+      events.push(event as CustomEvent<CategoryFocusDetail>),
+    );
+    return events;
+  }
+
+  it('fires with the focused values when the focus starts, and with null when it ends', () => {
+    const sp = makeScatter();
+    const events = listen(sp);
+
+    sp._handleCanvasMouseMove(move(true));
+    frames.run();
+    sp._handleShiftKey(shiftKey('keyup'));
+
+    expect(events.map((event) => event.detail.values)).toEqual([['A'], null]);
+    // Bubbling and composed, so a page or another shadow root can hear it too.
+    expect(events[0].bubbles).toBe(true);
+    expect(events[0].composed).toBe(true);
+  });
+
+  it('fires once per change, not on every move over the same category', () => {
+    const sp = makeScatter();
+    const events = listen(sp);
+
+    for (let i = 0; i < 3; i++) {
+      sp._handleCanvasMouseMove(move(true));
+      frames.run();
+    }
+    sp._handleWindowBlur();
+    sp._handleWindowBlur();
+
+    expect(events.map((event) => event.detail.values)).toEqual([['A'], null]);
+  });
+
+  it('a hover without Shift fires nothing', () => {
+    const sp = makeScatter();
+    const events = listen(sp);
+
+    sp._handleCanvasMouseMove(move(false));
+    frames.run();
+
+    expect(events).toEqual([]);
   });
 });

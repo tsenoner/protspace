@@ -6,7 +6,7 @@ import '../kit/menu';
 import '../kit/tooltip';
 import { icon, type IconName } from '../kit/icon';
 import { rangeText, reliabilityLabel } from '../query-builder/eat-reliability';
-import type { LegendSortMode } from './types';
+import type { ActiveSortMode } from './legend-items-state';
 
 /** What the legend header shows (design decision 12). */
 export interface LegendHeaderModel {
@@ -15,9 +15,8 @@ export interface LegendHeaderModel {
   predicted: boolean;
   /** The annotation's info popover, when it has docs. */
   info?: TemplateResult;
-  sortMode: LegendSortMode;
+  sortMode: ActiveSortMode;
   isNumeric: boolean;
-  hasScores: boolean;
   /** More than one row. With one there is nothing to order, and the sort button hides. */
   canSort: boolean;
   /** The settings popover is open: the settings button reports it (ps-popover does not). */
@@ -41,31 +40,26 @@ export interface LegendHeaderHandlers {
 export interface SortMenuModel {
   open: boolean;
   anchor: HTMLElement | null;
-  sortMode: LegendSortMode;
+  sortMode: ActiveSortMode;
   isNumeric: boolean;
-  hasScores: boolean;
 }
 
-const SORT_LABELS: Record<LegendSortMode, string> = {
+const SORT_LABELS: Record<ActiveSortMode, string> = {
   'size-desc': 'By count, largest first',
   'size-asc': 'By count, smallest first',
   'alpha-asc': 'By name, A to Z',
   'alpha-desc': 'By name, Z to A',
   manual: 'Your order',
   'manual-reverse': 'Your order, reversed',
-  'silhouette-desc': 'By separation, best first',
-  'silhouette-asc': 'By separation, worst first',
 };
 
-const SORT_ICONS: Record<LegendSortMode, IconName> = {
+const SORT_ICONS: Record<ActiveSortMode, IconName> = {
   'size-desc': 'arrow-down-wide-narrow',
   'size-asc': 'arrow-down-narrow-wide',
   'alpha-asc': 'arrow-down-a-z',
   'alpha-desc': 'arrow-down-z-a',
   manual: 'arrow-up-down',
   'manual-reverse': 'arrow-up-down',
-  'silhouette-desc': 'arrow-down-wide-narrow',
-  'silhouette-asc': 'arrow-down-narrow-wide',
 };
 
 const PREDICTED_NOTE = 'Predicted: computational, not experimentally curated';
@@ -98,35 +92,29 @@ export function renderEatNote(
 }
 
 /** The active order in words: the sort button's name and tooltip ("Sort: By count, largest first"). */
-export function sortLabel(mode: LegendSortMode, isNumeric: boolean): string {
+export function sortLabel(mode: ActiveSortMode, isNumeric: boolean): string {
   if (isNumeric && mode === 'alpha-asc') return 'By value, low to high';
   if (isNumeric && mode === 'alpha-desc') return 'By value, high to low';
   return SORT_LABELS[mode];
 }
 
-/** The sort button's icon: it shows the active order, largest or best first pointing down-wide. */
-export function sortIcon(mode: LegendSortMode, isNumeric: boolean): IconName {
+/** The sort button's icon: it shows the active order, largest first pointing down-wide. */
+export function sortIcon(mode: ActiveSortMode, isNumeric: boolean): IconName {
   if (isNumeric && mode === 'alpha-asc') return 'arrow-down-0-1';
   if (isNumeric && mode === 'alpha-desc') return 'arrow-down-1-0';
   return SORT_ICONS[mode];
 }
 
 /** The radio a mode checks: the mode with its direction dropped. */
-function sortBase(mode: LegendSortMode): LegendSortMode {
+function sortBase(mode: ActiveSortMode): ActiveSortMode {
   if (mode.startsWith('size')) return 'size-desc';
   if (mode.startsWith('alpha')) return 'alpha-asc';
-  if (mode.startsWith('silhouette')) return 'silhouette-desc';
   return 'manual';
 }
 
 /** "Reverse order" is checked when the mode runs against its base's direction. */
-function isReversed(mode: LegendSortMode): boolean {
-  return (
-    mode === 'size-asc' ||
-    mode === 'alpha-desc' ||
-    mode === 'manual-reverse' ||
-    mode === 'silhouette-asc'
-  );
+function isReversed(mode: ActiveSortMode): boolean {
+  return mode === 'size-asc' || mode === 'alpha-desc' || mode === 'manual-reverse';
 }
 
 /**
@@ -184,12 +172,11 @@ export function renderLegendHeader(
  */
 export function renderSortMenu(
   model: SortMenuModel,
-  handlers: { onPick(mode: LegendSortMode): void; onReverse(): void; onClose(): void },
+  handlers: { onPick(mode: ActiveSortMode): void; onReverse(): void; onClose(): void },
 ): TemplateResult {
   if (!model.open || !model.anchor) return html``;
   const base = sortBase(model.sortMode);
-  const showSeparation = !model.isNumeric && (model.hasScores || base === 'silhouette-desc');
-  const radio = (value: LegendSortMode, label: string) =>
+  const radio = (value: ActiveSortMode, label: string) =>
     html`<ps-menu-item type="radio" value=${value} .checked=${live(base === value)}
       >${label}</ps-menu-item
     >`;
@@ -197,7 +184,7 @@ export function renderSortMenu(
     const { value } = (e as CustomEvent<{ value: string }>).detail;
     if (value === 'reverse') handlers.onReverse();
     // A re-pick of the checked radio keeps the order, direction included (phase 2 ruling M1).
-    else if (value !== base) handlers.onPick(value as LegendSortMode);
+    else if (value !== base) handlers.onPick(value as ActiveSortMode);
   };
   return html`<ps-menu
     class="sort-menu"
@@ -211,7 +198,6 @@ export function renderSortMenu(
     <ps-menu-group label="Sort by">
       ${model.isNumeric ? nothing : radio('size-desc', 'By count')}
       ${radio('alpha-asc', model.isNumeric ? 'By value' : 'By name')}
-      ${showSeparation ? radio('silhouette-desc', 'By separation') : nothing}
       ${radio('manual', 'Your order')}
     </ps-menu-group>
     <ps-menu-item type="checkbox" value="reverse" .checked=${live(isReversed(model.sortMode))}

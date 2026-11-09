@@ -43,7 +43,6 @@ import {
 import { renderLegendRow, type LegendRowHandlers, type LegendRowView } from './legend-row';
 import { LegendKeyboardController, renderLegendList, TruncatedNameTooltip } from './legend-list';
 import { ColorPickerController } from './legend-color-picker';
-import { LegendRowMenu } from './legend-row-menu';
 import { OtherPopoverControl } from './legend-other-control';
 import './legend-settings-popover';
 import type { ProtspaceLegendSettingsPopover } from './legend-settings-popover';
@@ -63,8 +62,9 @@ import {
   isItemSelected,
   createItemActionEvent,
   computeOtherConcreteValues,
+  valueToKey,
 } from './legend-helpers';
-import { sortItemsForDisplay } from './legend-items-state';
+import { sortItemsForDisplay, type ActiveSortMode } from './legend-items-state';
 
 import { createLegendErrorEventDetail } from './legend.events';
 
@@ -92,7 +92,6 @@ import type {
  *
  * @csspart container - The main legend container
  * @csspart row-handle - A row's reorder handle
- * @csspart row-menu - A row's "More actions" button
  *
  * @slot - Default slot for custom content
  */
@@ -158,6 +157,15 @@ export class ProtspaceLegend extends LitElement {
    * (each strip's `highlighted` binding), so a hover in either place lights up both.
    */
   @state() private _hoveredCategory: string | null = null;
+  /**
+   * The categories the plot's Shift + hover focuses (its `category-focus` event), and the hovered
+   * point's own first value, which the score strips light; null while nothing is focused. Kept
+   * apart from `_hoveredCategory`, so a pointer on the legend and Shift on the plot never fight.
+   * Unlike the hover it does not wait for scores: the rows light without them.
+   */
+  @state() private _plotFocus: { values: ReadonlySet<string>; first: string } | null = null;
+  /** Some focused value sits in Other, so the Other row lights; derived in `willUpdate`. */
+  private _plotFocusInOther = false;
 
   @query('.legend-items')
   private _legendItemsEl?: HTMLDivElement;
@@ -250,7 +258,7 @@ export class ProtspaceLegend extends LitElement {
     return !this.autoSync;
   }
 
-  get _currentSortMode(): LegendSortMode {
+  get _currentSortMode(): ActiveSortMode {
     return this._data.normalizeSortMode(
       this.selectedAnnotation,
       this._annotationSortModes[this.selectedAnnotation],
@@ -358,6 +366,9 @@ export class ProtspaceLegend extends LitElement {
     onDataChange: (data, annotation, projectionName) =>
       this._data.onDataChange(data, annotation, projectionName),
     onAnnotationChange: (annotation) => this._data.onAnnotationChange(annotation),
+    onCategoryFocus: (values) => {
+      this._plotFocus = values?.length ? { values: new Set(values), first: values[0] } : null;
+    },
     getHiddenValues: () => this._hiddenValues,
     getOtherItems: () => this._otherItems,
     getLegendItems: () => this._legendItems,
@@ -433,19 +444,19 @@ export class ProtspaceLegend extends LitElement {
 
   private _nameTooltip = new TruncatedNameTooltip(this);
 
-  _rowMenu = new LegendRowMenu(this, {
-    getItems: () => this._legendItems,
-    isNumeric: () => this._isNumericAnnotation(),
-    isolate: (value) => this._actions.isolate(value),
-    customize: (value) => {
-      // Found by its dataset rather than a selector: a value can hold any character.
-      const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>('.legend-item') ?? [])].find(
-        (each) => each.dataset.value === value,
-      );
-      // Opening is idempotent: chosen again for the row whose picker is open, it stays open.
-      if (row) this._colorPicker.open(value, row);
-    },
-  });
+  /** The swatch's press: opens the colour and shape picker beside its row, or closes it there. */
+  private _toggleColorPicker(value: string): void {
+    this._nameTooltip.leave();
+    if (this._colorPicker.value === value) {
+      this._colorPicker.close();
+      return;
+    }
+    // Found by its dataset rather than a selector: a value can hold any character.
+    const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>('.legend-item') ?? [])].find(
+      (each) => each.dataset.value === value,
+    );
+    if (row) this._colorPicker.open(value, row);
+  }
 
   _otherPopover = new OtherPopoverControl(this, {
     getItems: () => this._otherItems,
@@ -777,9 +788,8 @@ export class ProtspaceLegend extends LitElement {
           ${header.eat ? renderEatNote(header.eat, this._headerHandlers.onEatOpen) : nothing}
           ${this._renderScoreStrips()}
         </div>
-        ${bottom ? nothing : list} ${this._colorPicker.render()} ${this._rowMenu.render()}
-        ${this._nameTooltip.render()} ${this._renderSortMenu()} ${this._otherPopover.render()}
-        ${this._settings.render(title)}
+        ${bottom ? nothing : list} ${this._colorPicker.render()} ${this._nameTooltip.render()}
+        ${this._renderSortMenu()} ${this._otherPopover.render()} ${this._settings.render(title)}
       </div>
     `;
   }
@@ -795,7 +805,6 @@ export class ProtspaceLegend extends LitElement {
       info,
       sortMode: this._currentSortMode,
       isNumeric: this._isNumericAnnotation(),
-      hasScores: this._categoryScores.length > 0,
       canSort: this._legendItems.length > 1,
       settingsOpen: this._settingsAnchor !== null,
       eat:
@@ -816,7 +825,6 @@ export class ProtspaceLegend extends LitElement {
       anchor: this._sortMenu,
       sortMode: this._currentSortMode,
       isNumeric: this._isNumericAnnotation(),
-      hasScores: this._categoryScores.length > 0,
     };
     return renderSortMenu(model, this._sortMenuHandlers);
   }
@@ -857,16 +865,17 @@ export class ProtspaceLegend extends LitElement {
     // One row has nothing to order: the sort button hides, so its menu closes too.
     if (this._sortMenu && this._legendItems.length <= 1) this._sortMenu = null;
     // Derived before render, so a change to the items renders the rows once, in their new order.
+    if (changedProperties.has('_legendItems')) {
+      this._sortedLegendItems = sortItemsForDisplay(this._legendItems);
+    }
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
-      this._sortedLegendItems = sortItemsForDisplay(
-        this._legendItems,
-        this._currentSortMode,
-        this._categoryScores,
-      );
       this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
     }
-    // Rows render by position, so after a re-sort the menu's anchor would be another row's "⋯".
-    if (changedProperties.has('_sortedLegendItems')) this._rowMenu.close();
+    if (changedProperties.has('_plotFocus') || changedProperties.has('_otherItems')) {
+      const focus = this._plotFocus;
+      this._plotFocusInOther =
+        focus !== null && this._otherItems.some((each) => focus.values.has(valueToKey(each.value)));
+    }
     this._otherPopover.willUpdate(
       changedProperties.has('_otherItems'),
       changedProperties.has('selectedAnnotation'),
@@ -889,7 +898,8 @@ export class ProtspaceLegend extends LitElement {
       filtered:
         this.isolationMode || Boolean(this._scatterplotController.scatterplot?.filtersActive),
       points: this._stripPoints,
-      highlighted: this._hoveredCategory,
+      // A pointer on the legend wins; the plot's focus lights the hovered point's own category.
+      highlighted: this._hoveredCategory ?? this._plotFocus?.first ?? null,
       clusterCaveat: this._clusterCaveat,
     };
     return renderScoreStrips(view, this._scoreStripHandlers);
@@ -899,11 +909,14 @@ export class ProtspaceLegend extends LitElement {
     const selected = isItemSelected(item, this.selectedItems);
     const picked = this._keyboard.pickedValue === item.value;
     const isOther = item.value === LEGEND_VALUES.OTHER;
+    const focused = isOther
+      ? this._plotFocusInOther
+      : (this._plotFocus?.values.has(item.value) ?? false);
     const classes = `${getItemClasses(item, selected, picked)}${
       this._categoryScores.length > 0 && item.value === this._hoveredCategory
         ? ' legend-item-score-hover'
         : ''
-    }`;
+    }${focused ? ' legend-item-focus' : ''}`;
 
     const view: LegendRowView = {
       classes,
@@ -912,7 +925,8 @@ export class ProtspaceLegend extends LitElement {
       tabbable: this._keyboard.isTabbable(item.value),
       draggable: this._canDragLegendItem(item),
       picked,
-      hasMenu: !isOther,
+      canCustomize: !isOther && !this._isNumericAnnotation(),
+      pickerOpen: this._colorPicker.value === item.value,
       otherExpanded: isOther && this._otherPopover.isOpen,
     };
     const handlers: LegendRowHandlers = {
@@ -925,7 +939,8 @@ export class ProtspaceLegend extends LitElement {
         this._keyboard.focusValue = item.value;
       },
       onToggle: () => this._actions.toggle(item.value),
-      onMenu: (e: MouseEvent) => this._rowMenu.toggle(item.value, e.currentTarget as HTMLElement),
+      onSwatch: () => this._toggleColorPicker(item.value),
+      onSwatchPointerEnter: this._nameTooltip.onSwatchPointerEnter,
       onViewOther: (e: Event) => this._otherPopover.toggle(e),
       onNamePointerEnter: this._nameTooltip.onNamePointerEnter,
       onPointerDown: (e: PointerEvent) => {

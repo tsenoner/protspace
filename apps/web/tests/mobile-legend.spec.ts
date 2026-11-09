@@ -62,7 +62,7 @@ test.describe('the legend on a phone', () => {
     const targets: Record<string, Box> = {
       eye: await box(first.locator('.legend-eye')),
       handle: await box(first.locator('.drag-handle')),
-      more: await box(legend(page).locator('.legend-more').first()),
+      swatch: await box(first.locator('.legend-swatch-button')),
       sort: await box(legendSortButton(page)),
       settings: await box(
         legend(page).getByRole('button', { name: 'Legend settings', exact: true }),

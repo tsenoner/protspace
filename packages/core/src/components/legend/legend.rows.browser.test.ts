@@ -2,12 +2,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import { layOutForMouse } from '../../test-support/mouse-media';
-import type { PsMenu } from '../kit/menu';
 import type { PsTooltip } from '../kit/tooltip';
 import type { ProtspaceLegend } from './legend';
 import { LEGEND_EVENTS, LEGEND_VALUES } from './config';
 import { legendStyles } from './legend.styles';
-import { NAME_TOOLTIP_DELAY_MS } from './legend-list';
+import { NAME_TOOLTIP_DELAY_MS, SWATCH_HINT } from './legend-list';
 import { TWELVE, categoricalData } from './test-support/legend-fixtures';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 
@@ -102,9 +101,7 @@ describe('legend rows in a browser', () => {
     expect(part(legend, LEGEND_VALUES.OTHER, '.legend-count').textContent!.trim()).toBe('123,456');
 
     await userEvent.hover(part(legend, LEGEND_VALUES.OTHER, '.legend-item-main'));
-    await expect
-      .poll(() => opacity(part(legend, LEGEND_VALUES.OTHER, '.legend-item-actions')))
-      .toBe('1');
+    await expect.poll(() => opacity(part(legend, LEGEND_VALUES.OTHER, '.legend-eye'))).toBe('1');
 
     expect(right(LEGEND_VALUES.OTHER, '.legend-count')).toBeCloseTo(right('a', '.legend-count'), 0);
     expect(right(LEGEND_VALUES.OTHER, '.legend-count')).toBeLessThanOrEqual(
@@ -133,15 +130,15 @@ describe('legend rows in a browser', () => {
     expect(text.scrollWidth).toBeLessThanOrEqual(text.clientWidth);
   });
 
-  it('the actions are transparent at rest and opaque on hover and focus-within, and never move the label', async () => {
+  it('the eye is transparent at rest and opaque on hover and focus-within, and never moves the label', async () => {
     const legend = await mount();
-    const actions = part(legend, 'Short', '.legend-item-actions');
+    const actions = part(legend, 'Short', '.legend-eye');
     const label = part(legend, 'Short', '.legend-text');
     const count = part(legend, 'Short', '.legend-count');
     const before = label.getBoundingClientRect();
     const countBefore = count.getBoundingClientRect();
     expect(opacity(actions)).toBe('0');
-    // At rest the actions take no room: the count sits one gap after the name's button.
+    // At rest the eye takes no room: the count sits one gap after the name's button.
     expect(actions.getBoundingClientRect().width).toBe(0);
     expect(
       countBefore.left - part(legend, 'Short', '.legend-item-main').getBoundingClientRect().right,
@@ -159,29 +156,35 @@ describe('legend rows in a browser', () => {
     await expect.poll(() => opacity(actions)).toBe('1');
   });
 
-  it('at 240 px a hovered row shows the handle before the swatch, and eye and ⋯ before a count that stays visible, and its name ends in an ellipsis', async () => {
+  it('at 240 px a hovered row shows the handle before the swatch, and the eye before a count that stays visible, and its name ends in an ellipsis', async () => {
     const legend = await mount();
     await userEvent.hover(part(legend, LONG, '.legend-item-main'));
-    const actions = part(legend, LONG, '.legend-item-actions');
+    const actions = part(legend, LONG, '.legend-eye');
     await expect.poll(() => opacity(actions)).toBe('1');
 
     const rowBox = row(legend, LONG).getBoundingClientRect();
     const text = part(legend, LONG, '.legend-text');
     const count = part(legend, LONG, '.legend-count');
     const box = (selector: string) => part(legend, LONG, selector).getBoundingClientRect();
-    const [eye, handle, more, countBox] = [
+    const [eye, handle, countBox] = [
       box('.legend-eye'),
       box('.drag-handle'),
-      box('.legend-more'),
       count.getBoundingClientRect(),
     ];
     expect(handle.left).toBeGreaterThanOrEqual(rowBox.left - 0.5);
     // It hangs in the row's gutter, starting before the swatch, and takes no room from the row.
-    expect(handle.left).toBeLessThan(box('.legend-swatch').left);
-    expect(box('.legend-swatch').left - rowBox.left).toBeCloseTo(12, 0);
-    expect(eye.right).toBeLessThanOrEqual(more.left + 0.5);
-    expect(more.right).toBeLessThanOrEqual(countBox.left + 0.5);
+    expect(handle.left).toBeLessThan(box('.legend-symbol').left);
+    expect(box('.legend-symbol').left - rowBox.left).toBeCloseTo(12, 0);
+    // The swatch's button is a 24 px target centred on its 16 px mark.
+    const swatch = box('.legend-swatch-button');
+    expect(swatch.width).toBeCloseTo(24, 0);
+    expect(swatch.left + swatch.width / 2).toBeCloseTo(
+      box('.legend-symbol').left + box('.legend-symbol').width / 2,
+      0,
+    );
+    expect(eye.right).toBeLessThanOrEqual(countBox.left + 0.5);
     expect(countBox.right).toBeLessThanOrEqual(rowBox.right + 0.5);
+    expect(row(legend, LONG).querySelector('.legend-more')).toBeNull();
 
     // The count is on top where it is drawn, and drawn in full.
     expect(count.textContent!.trim()).toBe('123,456');
@@ -207,7 +210,7 @@ describe('legend rows in a browser', () => {
 
     // Shown, the handle must be on top where it is drawn.
     await userEvent.hover(part(legend, LONG, '.legend-item-main'));
-    await expect.poll(() => opacity(part(legend, LONG, '.legend-item-actions'))).toBe('1');
+    await expect.poll(() => opacity(part(legend, LONG, '.legend-eye'))).toBe('1');
     const handle = part(legend, LONG, '.drag-handle');
     const box = handle.getBoundingClientRect();
     const hit = legend.shadowRoot!.elementFromPoint(
@@ -236,29 +239,72 @@ describe('legend rows in a browser', () => {
     expect(shown()).toBe(false);
   });
 
-  it('the ⋯ menu opens on its button, and Show only this isolates', async () => {
+  it('a click on the swatch opens the picker and toggles nothing; a click on the name still hides', async () => {
     const legend = await mount();
     const actions: string[] = [];
     legend.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((event: CustomEvent) => {
       actions.push(`${event.detail.action}:${event.detail.value}`);
     }) as EventListener);
-    const menu = legend.shadowRoot!.querySelector<PsMenu>('ps-menu.row-menu')!;
+    const swatch = part(legend, 'Short', '.legend-swatch-button');
+
+    await userEvent.click(swatch);
+    await settle(legend);
+    expect(legend._colorPicker.value).toBe('Short');
+    expect(swatch.getAttribute('aria-expanded')).toBe('true');
+    expect(actions).toEqual([]);
+
+    // A second click on the same swatch closes it.
+    await userEvent.click(part(legend, 'Short', '.legend-swatch-button'));
+    await settle(legend);
+    expect(legend._colorPicker.value).toBeNull();
+
+    await userEvent.click(part(legend, 'Short', '.legend-item-main'));
+    await settle(legend);
+    expect(actions).toEqual(['toggle:Short']);
+    expect(row(legend, 'Short').classList.contains('hidden')).toBe(true);
+  });
+
+  it('hovering the swatch rings it and, after 500 ms, says Change colour and shape', async () => {
+    const legend = await mount();
+    const tooltip = legend.shadowRoot!.querySelector<PsTooltip>('ps-tooltip.name-tooltip')!;
+    const shown = () => tooltip.shadowRoot!.querySelector('.tip')!.matches(':popover-open');
+    const swatch = part(legend, 'Short', '.legend-swatch-button');
+    const ring = () => getComputedStyle(swatch, '::before').boxShadow;
+    expect(ring()).toBe('none');
+    expect(getComputedStyle(swatch).cursor).toBe('pointer');
+
+    await userEvent.hover(swatch);
+    await expect.poll(ring).not.toBe('none');
+    await expect.poll(shown, { timeout: NAME_TOOLTIP_DELAY_MS + 1000 }).toBe(true);
+    expect(tooltip.text).toBe(SWATCH_HINT);
+
+    await userEvent.unhover(swatch);
+    await expect.poll(shown).toBe(false);
+  });
+
+  it("a hidden row's crossed-out eye sits where it stays on hover: nothing moves", async () => {
+    const legend = await mount();
+    await userEvent.hover(part(legend, 'Short', '.legend-item-main'));
+    await expect.poll(() => opacity(part(legend, 'Short', '.legend-eye'))).toBe('1');
+    await userEvent.click(part(legend, 'Short', '.legend-eye'));
+    await userEvent.unhover(part(legend, 'Short', '.legend-eye'));
+    await settle(legend);
+    expect(row(legend, 'Short').classList.contains('hidden')).toBe(true);
+
+    const eye = part(legend, 'Short', '.legend-eye');
+    const boxes = () =>
+      ['.legend-eye', '.legend-count', '.legend-text'].map((selector) => {
+        const box = part(legend, 'Short', selector).getBoundingClientRect();
+        return [Math.round(box.left), Math.round(box.right)];
+      });
+    await expect.poll(() => opacity(eye)).toBe('1');
+    const atRest = boxes();
+    expect(eye.getBoundingClientRect().width).toBeCloseTo(24, 0);
 
     await userEvent.hover(part(legend, 'Short', '.legend-item-main'));
-    await userEvent.click(part(legend, 'Short', '.legend-more'));
     await settle(legend);
-    expect(menu.open).toBe(true);
-    expect(part(legend, 'Short', '.legend-more').getAttribute('aria-expanded')).toBe('true');
-
-    const item = [...menu.querySelectorAll('ps-menu-item')].find(
-      (each) => each.textContent!.trim() === 'Show only this',
-    )!;
-    await userEvent.click(item);
-    await settle(legend);
-
-    expect(actions).toEqual(['isolate:Short']);
-    expect(row(legend, LONG).classList.contains('hidden')).toBe(true);
-    expect(menu.open).toBe(false);
+    expect(boxes()).toEqual(atRest);
+    expect(eye.getAttribute('aria-label')).toBe('Show Short');
   });
 
   it('a row selected in the plot outlines its symbol in the accent, 2 px', async () => {
@@ -340,7 +386,7 @@ describe('legend rows in a browser', () => {
     expect(tooltip.shadowRoot!.querySelector('.tip')!.matches(':popover-open')).toBe(false);
   });
 
-  it('under a coarse pointer rows are 40 px and the actions always show', async () => {
+  it('under a coarse pointer rows are 40 px, the eye always shows and every target is 40 px', async () => {
     leaveMouse();
     const session = cdp();
     await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
@@ -349,8 +395,8 @@ describe('legend rows in a browser', () => {
       expect(matchMedia('(pointer: coarse)').matches).toBe(true);
       const legend = await mount();
       expect(row(legend, 'Short').getBoundingClientRect().height).toBeCloseTo(40, 0);
-      expect(opacity(part(legend, 'Short', '.legend-item-actions'))).toBe('1');
-      for (const selector of ['.legend-eye', '.drag-handle', '.legend-more']) {
+      expect(opacity(part(legend, 'Short', '.legend-eye'))).toBe('1');
+      for (const selector of ['.legend-eye', '.drag-handle', '.legend-swatch-button']) {
         const box = part(legend, 'Short', selector).getBoundingClientRect();
         expect(box.width, selector).toBeCloseTo(40, 0);
         expect(box.height, selector).toBeCloseTo(40, 0);

@@ -1159,11 +1159,10 @@
 }
 
 /* Mockup frame 7: the column is for reading the names. The header drops the title (Color by in
-   the bar names the annotation), and a row keeps only its eye: with the handle and "⋯" at 40 px
-   each a 240 px row left 3 to 9 characters of name. Reorder and colour and shape stay upright. */
+   the bar names the annotation), and a row drops its handle: at 40 px it left a 240 px row too
+   few characters of name. Reordering stays upright. */
 .workbench[data-layout='landscape'] #myLegend::part(title),
-.workbench[data-layout='landscape'] #myLegend::part(row-handle),
-.workbench[data-layout='landscape'] #myLegend::part(row-menu) {
+.workbench[data-layout='landscape'] #myLegend::part(row-handle) {
   display: none;
 }
 

@@ -23,15 +23,20 @@ ellipsis; the row's accessible name SHALL hold the full name, and the full name 
 #### Scenario: Coarse pointer
 
 - **WHEN** the primary pointer is coarse
-- **THEN** the rows' actions always show
+- **THEN** the rows' eye and handle always show
 
 ### Requirement: Each row has its own actions
 
 Under a fine pointer a row's actions SHALL be hidden until the row is hovered or holds focus, and
 SHALL never move its label. The actions SHALL be an eye that hides or shows the category (named
-"Hide {name}" or "Show {name}"), a handle to drag the row, and a ⋯ menu with Show only this (Show
-all when the row is the only one shown) and Colour and shape. A hidden category's row SHALL stay in
-the list, dimmed, with ", hidden" at the end of its accessible name.
+"Hide {name}" or "Show {name}") and a handle to drag the row; a row SHALL have no ⋯ menu. The row's
+colour swatch SHALL be a button of its own, named "Colour and shape for {name}", that opens the
+colour and shape picker beside the row (a second press closes it), says "Change colour and shape"
+on hover and shows a ring on hover and while its picker is open; a press on it SHALL NOT hide or
+show the category. The Other row and the rows of a numeric annotation, which have no picker, SHALL
+keep a plain swatch. A hidden category's row SHALL stay in the list, dimmed, with ", hidden" at the
+end of its accessible name, and SHALL show its crossed-out eye at rest in the eye's own place, so
+hovering the row moves nothing.
 
 #### Scenario: Hiding a category
 
@@ -39,10 +44,15 @@ the list, dimmed, with ", hidden" at the end of its accessible name.
 - **THEN** the category is hidden on the plot, its row stays in the list dimmed, and its
   accessible name ends in ", hidden"
 
-#### Scenario: Show only this
+#### Scenario: Hovering a hidden row
 
-- **WHEN** the user picks Show only this from a row's ⋯ menu
-- **THEN** that category is the only one visible
+- **WHEN** the pointer reaches a hidden category's row
+- **THEN** its crossed-out eye stays where it was, and nothing else in the row moves
+
+#### Scenario: Colour and shape
+
+- **WHEN** the user clicks a row's swatch
+- **THEN** the colour and shape picker opens beside the row and the category stays shown
 
 #### Scenario: Dragging a row
 
@@ -91,11 +101,12 @@ a picked row, the arrow keys, Home and End SHALL move focus between rows.
 ### Requirement: The legend header names the annotation and its sort
 
 The header SHALL show the annotation's display name, never its key, then a sort button named
-"Sort: {order}" and a Legend settings button. The sort menu SHALL offer By count, By name, By
-separation (only when the projection has scores or while it is the active order), Your order and
-Reverse order; for a numeric annotation it SHALL offer By value, Your order and Reverse order. A
-pick SHALL apply at once, without a Save step, and be stored. With one row the sort button SHALL be
-hidden. At 240 px the title SHALL truncate and both buttons stay fully visible.
+"Sort: {order}" and a Legend settings button. The sort menu SHALL offer By count, By name, Your
+order and Reverse order, also when the projection has separation scores; for a numeric annotation
+it SHALL offer By value, Your order and Reverse order. A pick SHALL apply at once, without a Save
+step, and be stored. Settings or a bundle stored with the retired By separation order SHALL load,
+sorted By count. With one row the sort button SHALL be hidden. At 240 px the title SHALL truncate
+and both buttons stay fully visible.
 
 #### Scenario: Picking By name
 
@@ -106,6 +117,22 @@ hidden. At 240 px the title SHALL truncate and both buttons stay fully visible.
 
 - **WHEN** an annotation is shown with its default order
 - **THEN** the sort button is named "Sort: By count, largest first"
+
+#### Scenario: A stored By separation order
+
+- **WHEN** the legend loads settings stored with the By separation order
+- **THEN** it sorts By count and keeps the rest of the stored settings
+
+### Requirement: Other is the last row
+
+The Other row SHALL be the legend's last row in every order, Your order and its reverse included,
+however many categories are moved into Other and taken out of it.
+
+#### Scenario: Merging and taking out in Your order
+
+- **WHEN** the order is Your order, two rows are dropped onto Other and four categories are then
+  added back to the legend from it
+- **THEN** Other is still the last row, below every category taken out of it
 
 ### Requirement: Categories under Other can be brought back
 
@@ -166,3 +193,20 @@ SHALL mark that row's values on both strips; a touch SHALL NOT.
 
 - **WHEN** the mouse hovers a legend row of a scored annotation
 - **THEN** both strips mark that row's values
+
+### Requirement: The plot's category focus lights its legend row
+
+While the scatterplot's Shift + hover focus is on (category-focus), the legend SHALL highlight the
+row of each focused category, or the Other row for a point in Other, with or without separation
+scores; when the strips show, they SHALL mark the hovered point's category. A pointer on the legend
+itself SHALL take precedence on the strips. The highlight SHALL clear when the focus ends.
+
+#### Scenario: Shift over a point
+
+- **WHEN** the user holds Shift over a point of category A
+- **THEN** A's legend row is highlighted, and so is A's dot on the strips when they show
+
+#### Scenario: Releasing Shift
+
+- **WHEN** the user releases Shift
+- **THEN** no legend row stays highlighted

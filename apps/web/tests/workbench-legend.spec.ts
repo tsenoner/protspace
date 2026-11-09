@@ -33,22 +33,24 @@ import {
   setLegendSetting,
   setLegendSort,
 } from './helpers/legend';
+import { clusterScreenPoints } from './helpers/plot';
 import { seedLayout, structurePanel } from './helpers/workbench';
 
 const byName = (a: string, b: string) =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
 test.describe('workbench legend', () => {
-  test('legend rows are 28 px with their actions hidden until hover', async ({ page }) => {
+  test('legend rows are 28 px with their eye hidden until hover, and no ⋯', async ({ page }) => {
     await openExplore(page);
     const value = await getFirstLegendItemValue(page);
     const row = legend(page).locator(`.legend-item[data-value="${value}"]`);
 
     expect((await row.boundingBox())?.height).toBeCloseTo(28, 0);
-    const actions = row.locator('.legend-item-actions');
-    await expect(actions).toHaveCSS('opacity', '0');
+    const eye = row.locator('.legend-eye');
+    await expect(eye).toHaveCSS('opacity', '0');
     await legendRow(page, value).hover();
-    await expect(actions).toHaveCSS('opacity', '1');
+    await expect(eye).toHaveCSS('opacity', '1');
+    await expect(row.getByRole('button', { name: /^More actions/ })).toHaveCount(0);
   });
 
   test('the eye hides a category and the row stays, dimmed', async ({ page }) => {
@@ -66,17 +68,82 @@ test.describe('workbench legend', () => {
     );
     await expect(legendRow(page, value)).toHaveAccessibleName(/, hidden$/);
     await expect(
-      legend(page).locator(`.legend-item[data-value="${value}"] .legend-swatch`),
+      legend(page).locator(`.legend-item[data-value="${value}"] .legend-symbol`),
     ).toHaveCSS('opacity', '0.35');
   });
 
-  test('Show only this from the ⋯ menu isolates the category', async ({ page }) => {
+  test("a hidden row's eye stays put when the pointer reaches the row", async ({ page }) => {
+    await openExplore(page);
+    const value = await getFirstLegendItemValue(page);
+    await legendRowAction(page, value, 'Hide');
+    await expect.poll(() => isLegendItemHidden(page, value)).toBe(true);
+    const eye = legend(page)
+      .locator(`.legend-item[data-value="${value}"]`)
+      .getByRole('button', { name: /^Show / });
+
+    await page.mouse.move(0, 0);
+    await expect(eye).toHaveCSS('opacity', '1');
+    const atRest = await eye.boundingBox();
+    await legendRow(page, value).hover();
+    expect(await eye.boundingBox()).toEqual(atRest);
+  });
+
+  test('a click on the swatch opens Colour and shape without hiding the row', async ({ page }) => {
     await openExplore(page);
     const value = await getFirstLegendItemValue(page);
 
-    await legendRowAction(page, value, 'Show only this');
+    await legendRowAction(page, value, 'Colour and shape');
+
+    expect(await isLegendItemHidden(page, value)).toBe(false);
+    await page.keyboard.press('Escape');
+    await expect(legend(page).getByRole('dialog', { name: /^Colour and shape/ })).toBeHidden();
+  });
+
+  test('I on a focused row shows only that category', async ({ page }) => {
+    await openExplore(page);
+    const value = await getFirstLegendItemValue(page);
+
+    await legendRow(page, value).focus();
+    await page.keyboard.press('i');
 
     await expect.poll(() => legendRowValues(page, { visible: true })).toEqual([value]);
+  });
+
+  test("Shift over a point lights its category's legend row until Shift is released", async ({
+    page,
+  }) => {
+    await openExplore(page);
+    // A shown category: a hidden one's points take no hover.
+    const value = (await legendRowValues(page, { visible: true })).find(
+      (each) => each !== 'Other' && each !== '__NA__',
+    )!;
+    const [point] = await clusterScreenPoints(page, value, 1);
+    expect(point, `a plotted point of ${value}`).toBeDefined();
+    // The plot's own report of what it focuses: the point under the pointer may belong to
+    // another category drawn over it.
+    await page.locator('#myPlot').evaluate((plot) => {
+      const seen = window as unknown as { __focus?: string[] | null };
+      plot.addEventListener('category-focus', (event) => {
+        seen.__focus = (event as CustomEvent<{ values: string[] | null }>).detail.values;
+      });
+    });
+    const focused = () =>
+      legend(page)
+        .locator('.legend-item.legend-item-focus')
+        .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-value')));
+
+    await page.mouse.move(point.x, point.y);
+    await page.keyboard.down('Shift');
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __focus?: string[] }).__focus))
+      .toBeTruthy();
+    const values = await page.evaluate(() => (window as unknown as { __focus: string[] }).__focus);
+    const rows = await legendRowValues(page);
+    const expected = rows.includes(values[0]) ? values[0] : 'Other';
+    await expect.poll(focused).toEqual([expected]);
+
+    await page.keyboard.up('Shift');
+    await expect.poll(focused).toEqual([]);
   });
 
   test("a long name ends in an ellipsis and its full name is in the row's accessible name", async ({

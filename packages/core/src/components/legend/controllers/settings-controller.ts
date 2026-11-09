@@ -34,7 +34,6 @@ export class SettingsController {
     // One legend overlay at a time; a keyboard reorder in progress is dropped, as the dialog did.
     this.host._reorder.clear();
     this.host._colorPicker.close();
-    this.host._rowMenu.close();
     this.host._sortMenu = null;
     this.host._otherPopover.close();
     this.host._settingsAnchor = anchor;

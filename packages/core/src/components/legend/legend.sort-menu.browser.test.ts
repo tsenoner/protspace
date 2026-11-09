@@ -199,27 +199,29 @@ describe('legend sort menu', () => {
     expect(new Set(zOrders).size).toBe(zOrders.length);
   });
 
-  it('By separation appears only with scores or while active', async () => {
+  it('offers no By separation, even with scores; the retired mode applies as By count', async () => {
     const legend = await mount(categoricalData(TWELVE), 'family');
-    await openSortMenu(legend);
-    expect(menuItem(legend, 'silhouette-desc')).toBeUndefined();
-    await escape(legend);
-
-    legend._actions.applySortMode('silhouette-desc');
-    await settle(legend);
-    await openSortMenu(legend);
-    expect(menuItem(legend, 'silhouette-desc')?.checked).toBe(true);
-    expect(menuItem(legend, 'silhouette-desc')?.textContent!.trim()).toBe('By separation');
-    await escape(legend);
-
-    legend._actions.applySortMode('size-desc');
     legend._categoryScores = [
       { category: 'A', silhouette: 0.5, silhouetteEmbedding: null, daviesBouldin: 1 },
     ];
     await settle(legend);
     await openSortMenu(legend);
-    expect(menuItem(legend, 'silhouette-desc')).toBeDefined();
-    expect(menuItem(legend, 'silhouette-desc')?.checked).toBe(false);
+    expect(menuItems(legend).map((item) => item.textContent!.trim())).toEqual([
+      'By count',
+      'By name',
+      'Your order',
+      'Reverse order',
+    ]);
+    await escape(legend);
+
+    legend._actions.applySortMode('alpha-asc');
+    await settle(legend);
+    legend._actions.applySortMode('silhouette-desc');
+    await settle(legend);
+    expect(storedRecord('family')?.sortMode).toBe('size-desc');
+    expect(sortButton(legend).label).toBe('Sort: By count, largest first');
+    await openSortMenu(legend);
+    expect(checkedRadios(legend)).toEqual(['size-desc']);
   });
 
   it('the checked radio and the Reverse checkbox follow the active mode', async () => {

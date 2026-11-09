@@ -30,7 +30,9 @@ import {
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
   numericOrderFromItems,
+  renumberKeepingOtherLast,
   resolvePersistedSettings,
+  type ActiveSortMode,
   type ResolvedLegendSettings,
 } from '../legend-items-state';
 import type { ProtspaceLegend } from '../legend';
@@ -276,13 +278,15 @@ export class LegendDataController {
     // Stored zOrders are an order only in "Your order": under any other sort they are the rows
     // as that sort last left them, and put back after a filter or isolation changed the counts
     // they would leave the rows out of the order the header names.
+    // Numbered afresh after: an order stored before Other was pinned last can hold gaps, or rank
+    // Other among the rows.
     if (
       !this.host._isNumericAnnotation() &&
       this.host._currentSortMode.startsWith('manual') &&
       this.host._persistenceController.hasPendingCategories()
     ) {
-      this.host._legendItems = this.host._persistenceController.applyPendingZOrder(
-        this.host._legendItems,
+      this.host._legendItems = renumberKeepingOtherLast(
+        this.host._persistenceController.applyPendingZOrder(this.host._legendItems),
       );
     }
   }
@@ -547,7 +551,7 @@ export class LegendDataController {
     };
   }
 
-  normalizeSortMode(annotationName: string, sortMode: LegendSortMode | undefined): LegendSortMode {
+  normalizeSortMode(annotationName: string, sortMode: LegendSortMode | undefined): ActiveSortMode {
     const annotation =
       this.host.data?.annotations?.[annotationName] ??
       (annotationName === this.host.selectedAnnotation ? this.host.annotationData : undefined);

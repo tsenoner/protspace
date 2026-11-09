@@ -13,7 +13,9 @@ import type {
 } from '../types';
 
 /**
- * Valid sort mode values for legend persistence.
+ * Valid sort mode values for legend persistence. The two `silhouette-*` modes are the retired
+ * "By separation" sort: still valid here so older settings keep loading; the legend opens them
+ * by count.
  */
 const VALID_SORT_MODES: LegendSortMode[] = [
   'size-asc',

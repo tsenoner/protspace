@@ -49,6 +49,7 @@ export type {
 export type { LegendErrorEventDetail, LegendErrorSource } from './components/legend/legend.events';
 export type {
   BrushSelectionDetail,
+  CategoryFocusDetail,
   ProteinClickDetail,
   RendererDegradedContext,
   RendererDegradedDetail,
