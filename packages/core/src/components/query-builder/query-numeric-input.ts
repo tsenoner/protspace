@@ -27,6 +27,7 @@ import { queryBuilderStyles } from './query-builder.styles';
 import './query-range-slider';
 import type { PsCheckbox } from '../kit/checkbox';
 import '../kit/checkbox';
+import '../kit/tooltip';
 import { COMPACT_MEDIA } from '../../utils/breakpoints';
 
 /** Units shown after the typed bounds, by annotation column. */
@@ -288,11 +289,11 @@ class ProtspaceQueryNumericInput extends LitElement {
       return html`<span class="numeric-match-count" aria-busy="true">…</span>`;
     if (this._matchCount === null) return nothing;
     // Named, so it is not read as the data's maximum next to the typed bounds.
-    return html`<span class="numeric-match-count" title="Proteins this condition keeps"
-      >${countNoun(this._matchCount, 'protein', 'proteins')}<span class="sr-only">
-        ${this._matchCount === 1 ? 'matches' : 'match'}</span
-      ></span
-    >`;
+    return html`<span class="numeric-match-count"
+        >${countNoun(this._matchCount, 'protein', 'proteins')}<span class="sr-only">
+          ${this._matchCount === 1 ? 'matches' : 'match'}</span
+        ></span
+      ><ps-tooltip text="Proteins this condition keeps"></ps-tooltip>`;
   }
 
   /** A typed end: empty is no limit, so the placeholder is the data's own end. */

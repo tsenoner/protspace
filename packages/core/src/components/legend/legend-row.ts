@@ -91,6 +91,8 @@ export interface LegendRowHandlers {
   onViewOther(e: Event): void;
   /** The pointer reached the main button: a truncated name may show in full. */
   onNamePointerEnter(e: PointerEvent): void;
+  /** The pointer reached, or keyboard focus landed on, the eye: its Hide or Show tooltip. */
+  onControlEnter(e: Event): void;
   /** A press on the main button: tells a tap from a click, and starts a long press on the name. */
   onPointerDown(e: PointerEvent): void;
 }
@@ -206,7 +208,10 @@ export function renderLegendRow(
           type="button"
           class="legend-action legend-eye"
           aria-label=${`${item.isVisible ? 'Hide' : 'Show'} ${displayValue}`}
+          data-tooltip=${item.isVisible ? 'Hide' : 'Show'}
           tabindex=${tabindex}
+          @pointerenter=${handlers.onControlEnter}
+          @focus=${handlers.onControlEnter}
           @click=${(e: Event) => {
             e.stopPropagation();
             handlers.onToggle();

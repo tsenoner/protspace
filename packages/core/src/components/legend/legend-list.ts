@@ -336,6 +336,32 @@ export class TruncatedNameTooltip implements ReactiveController {
     button.addEventListener('contextmenu', preventDefault);
   };
 
+  /**
+   * A row's icon button `pointerenter` and `focus` handler (the eye): shows its `data-tooltip`,
+   * Hide or Show, as a kit icon button shows its label, after the hover delay or at once on
+   * keyboard focus. Anchored there, the tooltip hides itself when the pointer or focus leaves.
+   */
+  onControlEnter = (e: Event): void => {
+    const trigger = e.currentTarget as HTMLElement;
+    const text = trigger.dataset.tooltip ?? '';
+    if (e.type === 'focus') {
+      if (!trigger.matches(':focus-visible')) return;
+      this.leave();
+      this._trigger = trigger;
+      void this._show(trigger, text);
+      return;
+    }
+    // A finger has no hover.
+    if ((e as PointerEvent).pointerType === 'touch') return;
+    this.leave();
+    this._trigger = trigger;
+    trigger.addEventListener('pointerleave', this._onLeave);
+    this._timer = setTimeout(() => {
+      this._timer = null;
+      void this._show(trigger, text);
+    }, NAME_TOOLTIP_DELAY_MS);
+  };
+
   hover(trigger: HTMLElement, textEl: HTMLElement): void {
     this.leave();
     if (textEl.scrollWidth <= textEl.clientWidth) return;

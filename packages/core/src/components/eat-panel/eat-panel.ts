@@ -18,6 +18,7 @@ import { icon } from '../kit/icon';
 import '../kit/menu';
 import '../kit/segmented';
 import '../kit/switch';
+import '../kit/tooltip';
 import type { PsSegmented, SegmentedOption } from '../kit/segmented';
 import type { PsSwitch } from '../kit/switch';
 import {
@@ -842,12 +843,10 @@ export class ProtspaceEatPanel extends LitElement {
     const { inView, curated, predicted, kept, outside, none } = summary;
     const segment = (part: string, name: string, count: number) =>
       count > 0
-        ? html`<span
-            class="eat-segment"
-            data-part=${part}
-            style=${`flex-grow:${count}`}
-            title=${`${name}: ${formatCount(count)} (${share(count, inView)})`}
-          ></span>`
+        ? html`<span class="eat-segment" data-part=${part} style=${`flex-grow:${count}`}></span
+            ><ps-tooltip
+              text=${`${name}: ${formatCount(count)} (${share(count, inView)})`}
+            ></ps-tooltip>`
         : nothing;
     const mark = (part: string) =>
       part === 'outside'

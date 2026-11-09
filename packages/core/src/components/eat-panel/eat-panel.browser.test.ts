@@ -9,6 +9,7 @@ import {
 } from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { PsSwitch } from '../kit/switch';
+import type { PsTooltip } from '../kit/tooltip';
 import type { EatOverlayChangeDetail } from './eat-reliability-controller';
 import { EAT_THRESHOLD_COMMIT_DELAY_MS } from './eat-reliability-controller';
 import { getEatIndex, summarizeEat } from './eat-summary';
@@ -207,6 +208,23 @@ describe('protspace-eat-panel', () => {
     expect(all.slice(10).every((bar) => bar.dataset.kept === 'true')).toBe(true);
     expect(all[11].getAttribute('aria-label')).toBe(`55–60${PCT}: 2 predictions`);
     expect(all[2].getAttribute('aria-label')).toBe(`10–15${PCT}: 1 prediction`);
+  });
+
+  it('labels each bar and each overview part with the kit tooltip, not a native title', async () => {
+    const el = await mount();
+    const bar = bars(el)[11];
+    expect(bar.hasAttribute('title')).toBe(false);
+    const tip = bar.nextElementSibling as PsTooltip;
+    expect(tip.localName).toBe('ps-tooltip');
+    // The bar's name already says it, so the tooltip does not describe it again.
+    expect([tip.text, tip.namesTarget]).toEqual([`55–60${PCT}: 2 predictions`, true]);
+    const segments = [...root(el).querySelectorAll<HTMLElement>('.eat-stack .eat-segment')];
+    expect(segments.length).toBeGreaterThan(0);
+    for (const segment of segments) {
+      expect(segment.hasAttribute('title')).toBe(false);
+      expect(segment.nextElementSibling!.localName).toBe('ps-tooltip');
+    }
+    expect((segments[0].nextElementSibling as PsTooltip).text).toBe(`Curated: 4 (40${PCT})`);
   });
 
   it('emits eat-overlay-change once 150 ms after a handle drag', async () => {

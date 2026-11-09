@@ -928,6 +928,7 @@ export class ProtspaceLegend extends LitElement {
       onMenu: (e: MouseEvent) => this._rowMenu.toggle(item.value, e.currentTarget as HTMLElement),
       onViewOther: (e: Event) => this._otherPopover.toggle(e),
       onNamePointerEnter: this._nameTooltip.onNamePointerEnter,
+      onControlEnter: this._nameTooltip.onControlEnter,
       onPointerDown: (e: PointerEvent) => {
         this._lastRowPointerDown = { pointerType: e.pointerType, time: e.timeStamp };
         this._nameTooltip.onNamePointerDown(e);

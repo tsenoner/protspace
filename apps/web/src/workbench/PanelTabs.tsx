@@ -92,7 +92,6 @@ export function PanelTabs({ panel, slot }: PanelTabsProps) {
             aria-disabled={disabled ? 'true' : undefined}
             // The dot is visual only: the name says the settings changed.
             aria-label={tab.panel === 'eat' && eatAdjusted ? 'EAT, settings changed' : undefined}
-            title={disabled ? eatReason : undefined}
             tabIndex={tab.panel === panel ? 0 : -1}
             onClick={() => onClick(tab.panel)}
           >
@@ -103,6 +102,9 @@ export function PanelTabs({ panel, slot }: PanelTabsProps) {
           </button>
         );
       })}
+      {/* Why EAT is off, on the EAT tab (the last, so the tooltip's previous sibling). Hidden from
+          the tab list, which may hold only tabs; it still describes the tab. */}
+      {eatReason !== null && <ps-tooltip text={eatReason} aria-hidden="true"></ps-tooltip>}
     </div>
   );
 }
