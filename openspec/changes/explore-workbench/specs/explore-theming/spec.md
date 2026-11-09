@@ -39,13 +39,20 @@ own origin; no font SHALL be loaded from a third-party font service.
 
 ### Requirement: The user chooses System, Light or Dark
 
-The app bar SHALL offer a Theme menu with System, Light and Dark that marks the current choice,
-opens on it, and shows the choice in its button's icon. The choice SHALL be stored as JSON under
+The app bar SHALL offer a Theme button that steps System → Dark → Light → System, one press per
+step, applying each at once. Its icon SHALL show the current choice, and its accessible name and
+tooltip SHALL name the current choice and the next ("Theme: System. Switch to Dark"). The choice SHALL be stored as JSON under
 the localStorage key `protspace:theme`; with nothing valid stored, or a storage that throws, it
 SHALL be System. System SHALL follow the operating system's colour scheme, live; Light and Dark
 SHALL ignore it. The choice SHALL apply only to /explore (also when reached through the GitHub
 Pages deep link `/?/explore`), and the stored choice SHALL paint before the explore code runs, so
 a cold load never flashes the other theme.
+
+#### Scenario: The button steps through the choices
+
+- **WHEN** nothing is stored and the user presses Theme three times
+- **THEN** the page goes Dark, then Light, then back to System, and the button's name says each
+  choice and the next
 
 #### Scenario: Choosing Dark
 

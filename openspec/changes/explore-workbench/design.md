@@ -61,7 +61,8 @@ The look was chosen with mockups during brainstorming. The chosen screens are ke
 
 **Non-Goals:**
 
-- The landing page (it has its own redesign branch) and the VitePress docs theme.
+- The landing page (it has its own redesign branch) and the VitePress docs theme, beyond the top
+  bar anchors the three pages share (decision 1).
 - New analysis features beyond the workflow fixes listed here.
 - Changes to the bundle format, the Python CLI or the Colab notebooks.
 - A native app, PWA install or offline mode.
@@ -79,6 +80,10 @@ The page becomes a workbench (mockup: [`mockups/workbench-light.png`](mockups/wo
   site's Home / Docs / Explore / Resources navigation leaves this page; Docs moves into the help
   menu. The plot's Tips & Shortcuts popover and its tour button move into the help menu as
   "Keyboard shortcuts" and "Take the tour".
+- **Shared anchors** (PR 555 review): Home, Explore and the docs keep their own bars, but take the
+  bar's height, the wordmark's size and inset, and the inset of the last icon from one file,
+  `config/site-bar.css`, and all three end in Feedback then GitHub as the same icons. Switching
+  pages, nothing moves.
 - **View bar** (44 px): how the plot is drawn. Projection (with the projection's "how it was made"
   details beside it), Color by, Contours, Filter. It never wraps: labels shorten first, then the
   least-used items move into a "More" menu.
@@ -361,7 +366,10 @@ condition in the draft moves the slider only when the draft is applied.
 
 ### 16. Dark mode
 
-- A theme switch in the app bar (in the More sheet on phones): System (default), Light, Dark. The
+- A theme switch in the app bar (in the More sheet on phones): System (default), Dark, Light. In
+  the app bar it is one icon button that steps System → Dark → Light → System (PR 555 review): the
+  icon shows the mode, and the name and tooltip say the mode and the next ("Theme: System. Switch
+  to Dark"), since on a dark OS the step from System to Dark changes nothing on screen. The
   choice is stored under `protspace:theme`; an inline script in `index.html` sets `data-theme`
   before first paint, so the page never flashes white. System follows `prefers-color-scheme` live.
 - Everything on the explore page follows: shell, kit, legend, tooltips, dialogs, the loading
