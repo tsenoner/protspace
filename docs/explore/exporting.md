@@ -2,23 +2,23 @@
 
 ProtSpace allows you to export publication-ready figures, raw data, protein IDs and tables.
 
-## Export Button
+## Export Panel
 
-Click **Export** in the app bar to open its menu (on a phone: **More**, then **Export**):
+Click the **dataset name** in the app bar and choose **Export…** (on a phone: **More**, then
+**Export**). The Export panel asks what to export first, then shows only that choice's options:
 
-![The Export menu open under the Export button](./images/export-menu.png)
+![The Export panel open under the dataset name, with Image and PNG chosen](./images/export-menu.png)
 
-| Item                             | What it does                                                     |
-| -------------------------------- | ---------------------------------------------------------------- |
-| **Figure editor…**               | Opens the full-screen editor for publication figures             |
-| **Quick PNG**                    | Downloads a raster image of the current view with legend         |
-| **Quick PDF**                    | Downloads a PDF of the current view with legend                  |
-| **Protein IDs (.txt)**           | Downloads the visible proteins' identifiers, one per line        |
-| **Table (.tsv)**                 | Downloads the visible proteins as a [table](#table-export)       |
-| **Data bundle (.parquetbundle)** | Downloads a `.parquetbundle` with all data and optional settings |
+| Choose          | Then                               | Download saves                                              |
+| --------------- | ---------------------------------- | ----------------------------------------------------------- |
+| **Image**       | **PNG** or **PDF**                 | The current view with its legend, 2048 × 1024 px            |
+| **Protein IDs** |                                    | The visible proteins' identifiers, one per line (`.txt`)    |
+| **Table**       |                                    | The visible proteins as a [table](#table-export) (`.tsv`)   |
+| **Data bundle** | Whether to include legend settings | A `.parquetbundle` with all data and, if you like, settings |
 
-**Include legend settings**, below them, decides whether a data bundle carries your legend
-settings. Every export confirms with a message naming the downloaded file:
+The button at the bottom names the file, for example **Download PNG** or **Download .tsv**; it
+saves the file and closes the panel, which keeps your choice for next time. Every export confirms
+with a message naming the downloaded file:
 
 ![The notification after an export](./images/toast.png){.light-only}
 ![The notification after an export](./images/toast-dark.png){.dark-only}
@@ -29,7 +29,10 @@ Images have two paths:
 
 ### Figure Editor (Recommended)
 
-Choose **Figure editor…** to open a full-screen editor with live preview. This is the primary workflow for creating publication-quality figures. See the [Figure Editor guide](./figure-editor) for full documentation.
+Click **Figure editor** at the right of the app bar to open a full-screen editor with live preview
+(on a tablet the button shows its image icon only; on a phone: **More**, then **Figure editor**).
+This is the primary workflow for creating publication-quality figures. See the
+[Figure Editor guide](./figure-editor) for full documentation.
 
 Key features:
 
@@ -42,17 +45,17 @@ Key features:
 - **Persistent settings**, your layout is saved to localStorage and optionally embedded in `.parquetbundle` files
 - **Print-correct output**, PNG includes pHYs DPI metadata; PDF page size is mm-accurate
 
-### Quick Export
+### From the Export panel
 
-Choose **Quick PNG** or **Quick PDF** to download an image immediately, with no preview. It always uses fixed
-defaults, a 2048 × 1024 px image with the legend on the right, and keeps your current zoom and pan;
-it does not use Figure Editor settings. For another size or layout, or for the full plot, use the
-Figure Editor.
+Choose **Image**, then **PNG** or **PDF**, in the [Export panel](#export-panel) to download an
+image at once, with no preview. It always uses fixed defaults, a 2048 × 1024 px image with the
+legend on the right, and keeps your current zoom and pan; it does not use Figure Editor settings.
+For another size or layout, or for the full plot, use the Figure Editor.
 
 ### Dot size in images
 
-Dots [grow as you zoom in](/explore/scatterplot#navigation). Quick Export keeps your current zoom,
-so its dots match the size you see on screen. The Figure Editor always renders the full view, so its
+Dots [grow as you zoom in](/explore/scatterplot#navigation). An image from the Export panel keeps
+your current zoom, so its dots match the size you see on screen. The Figure Editor always renders the full view, so its
 dots are drawn at their unzoomed size.
 
 ### Plot shape in images
@@ -61,23 +64,28 @@ As on screen, the plot fills the image: each axis stretches to the image's width
 image stretches the clusters sideways, a tall one stretches them up and down.
 
 ::: warning Contours are not exported yet
-[Contours](/explore/controls#contours) are not drawn in exported images: Quick Export PNG and
-PDF, the Figure Editor and its zoom insets show the points only. The Figure Editor preview shows
+[Contours](/explore/controls#contours) are not drawn in exported images: a PNG or PDF from the
+Export panel, the Figure Editor and its zoom insets show the points only. The Figure Editor preview shows
 exactly what will be exported. Tracked in [#498](https://github.com/tsenoner/protspace/issues/498).
 :::
 
 ::: info Exports are always light
-Quick PNG and PDF, the Figure Editor's preview and its exports always use the light colours (a
+A PNG or PDF from the Export panel, the Figure Editor's preview and its exports always use the light colours (a
 white background and the light greys for `Other` and `N/A`), whatever theme the app shows, so a
 figure looks the same whoever made it. See [Light and dark](/explore/#light-and-dark).
 :::
 
 ## Parquet Export
 
-Export a `.parquetbundle` file that can be loaded back into ProtSpace or shared.
+Choose **Data bundle** in the [Export panel](#export-panel) to save a `.parquetbundle` file that
+can be loaded back into ProtSpace or shared.
 
-- **Include legend settings**: Saves your current legend customizations (colors, shapes, ordering, visibility, palette, and the shape size if you picked one) inside the file. Anyone who loads it will see the same visual configuration. The Contours mode is not saved in the file; it lives in the page URL.
+- **Include legend settings** (checked by default, and again for each new dataset): Saves your current legend customizations (colors, shapes, ordering, visibility, palette, and the shape size if you picked one) inside the file. Anyone who loads it will see the same visual configuration. The Contours mode is not saved in the file; it lives in the page URL.
 - **Figure editor settings**: When legend settings are included, the Figure Editor state (dimensions, DPI, legend layout, overlays, insets) is also saved. This lets you reopen the Figure Editor exactly where you left off.
+
+When the file you opened carries saved settings of its own, the panel says so under the checkbox:
+_The loaded file contains custom settings._ Keep **Include legend settings** checked to carry them
+on into the new file.
 
 If the bundle you loaded carried statistics (prepared with `protspace ... --stats`), the export
 re-emits them byte for byte, even with **Include legend settings** off. See

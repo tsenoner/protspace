@@ -229,7 +229,7 @@ Below 951 px the panel is the **EAT** tab of the panel under the plot, beside **
 
 ## What A Bundle Saves
 
-**Export → Bundle** with settings included stores:
+**Export… → Data bundle**, with **Include legend settings** checked, stores:
 
 - whether **Show predictions** is on;
 - the **low end of the range**;

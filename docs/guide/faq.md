@@ -110,9 +110,9 @@ this browser. See [Settings](/explore/legend#settings).
 ### Why are my figures light when the app is dark?
 
 ProtSpace has a light and a dark theme: **Theme** in the app bar, or in **More** on a phone, with
-**System** following your device. Exports always use the light colours: Quick PNG and PDF, the
-Figure Editor's preview and its exports have a white background and the light greys, so a figure
-looks the same whoever made it. See [Light and dark](/explore/#light-and-dark).
+**System** following your device. Exports always use the light colours: a PNG or PDF from the
+Export panel, the Figure Editor's preview and its exports have a white background and the light
+greys, so a figure looks the same whoever made it. See [Light and dark](/explore/#light-and-dark).
 
 ### Can I use ProtSpace on a phone or tablet?
 

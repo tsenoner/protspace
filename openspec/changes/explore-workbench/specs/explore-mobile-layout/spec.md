@@ -85,8 +85,8 @@ plot.
 ### Requirement: A phone's bars keep the essentials and search opens over the app bar
 
 On a phone the app bar and the view bar SHALL each be one 48 px row. The app bar SHALL show the
-ProtSpace wordmark linking home, the dataset name and a search button; Import, Export, Theme, Help,
-Feedback and GitHub SHALL be hidden there (the More sheet offers them), while their menus stay
+ProtSpace wordmark linking home, the dataset name and a search button; the Figure editor, Theme,
+Help, Feedback and GitHub SHALL be hidden there (the More sheet offers them), while their menus stay
 rendered so they can still open. The view bar SHALL show Projection with its details button, Color
 by and More. Labels SHALL show whole, each picker SHALL keep at least 48 px of its value, and
 every control in both bars SHALL be at least 40 × 40 px. The search button (named "Search
@@ -100,7 +100,7 @@ to the search button. A tablet SHALL keep the desktop bars.
 - **WHEN** the explore page opens at 360 × 740 or 412 × 839 px
 - **THEN** both bars are 48 px tall, the app bar shows the wordmark, the dataset name and the search
   button, and the view bar shows Projection, its details button, Color by and More
-- **AND** Import, Export, Theme and Help are hidden, no label is cut off, and every control is at
+- **AND** the Figure editor, Theme and Help are hidden, no label is cut off, and every control is at
   least 40 × 40 px
 
 #### Scenario: Searching from the search button
@@ -122,20 +122,20 @@ to the search button. A tablet SHALL keep the desktop bars.
 #### Scenario: A tablet keeps the desktop bars
 
 - **WHEN** the window is an 800 × 1280 px tablet
-- **THEN** the app bar shows Import, Export, the Theme button and Help, with the dataset name and
-  the search field unclipped
+- **THEN** the app bar shows the Figure editor as an icon, the Theme button and Help, with the
+  dataset name and the search field unclipped
 
 ### Requirement: The More sheet holds what a phone's bars leave out
 
 On a phone, upright or on its side, More SHALL open a bottom sheet: a modal dialog named "More" with
 a close button, which Escape or a press on its backdrop also closes, returning focus to More. The
 sheet SHALL hold, in order: Contours as a radio group (Off, Auto, Always), Filter with its applied
-condition count, Import data, Export, Theme as a radio group (System, Light, Dark), Help & shortcuts
-and Feedback; it SHALL NOT offer GitHub. Contours and Theme SHALL apply at once and keep the sheet
-open. Every other row SHALL close the sheet first and then act: Filter shows the Filter tab and
-focuses its heading, Import data opens the Import panel under the dataset name, Export opens the
-Export menu anchored to More, and Help & shortcuts unfolds Documentation, Keyboard shortcuts and
-Take the tour in place. The sheet SHALL fit the window and scroll inside itself, keeping its header
+condition count, Import data, Export, Figure editor, Theme as a radio group (System, Light, Dark),
+Help & shortcuts and Feedback; it SHALL NOT offer GitHub. Contours and Theme SHALL apply at once and
+keep the sheet open. Every other row SHALL close the sheet first and then act: Filter shows the
+Filter tab and focuses its heading, Import data opens the Import panel under the dataset name,
+Export opens the Export panel as a sheet on the bottom edge, Figure editor opens the figure editor,
+and Help & shortcuts unfolds Documentation, Keyboard shortcuts and Take the tour in place. The sheet SHALL fit the window and scroll inside itself, keeping its header
 in view. While a contour mode other than Off or a filter is applied, More SHALL show a dot and its
 accessible name SHALL gain ", N active"; the theme SHALL never light the dot.
 
@@ -143,7 +143,7 @@ accessible name SHALL gain ", N active"; the theme SHALL never light the dot.
 
 - **WHEN** the user taps More on a phone
 - **THEN** the sheet shows the Contours and Theme radio groups and the Filter, Import data, Export,
-  Help & shortcuts and Feedback rows, inside the window, with no GitHub link
+  Figure editor, Help & shortcuts and Feedback rows, inside the window, with no GitHub link
 
 #### Scenario: Contours applies in place
 
@@ -154,8 +154,8 @@ accessible name SHALL gain ", N active"; the theme SHALL never light the dot.
 #### Scenario: Export from the sheet
 
 - **WHEN** the user taps Export in the sheet
-- **THEN** the sheet closes, the Export menu opens within the window under More, and a tap outside
-  it or Escape closes it, Escape returning focus to More
+- **THEN** the sheet closes, the Export panel opens as a sheet across the window's bottom edge, and
+  a tap above it or Escape closes it, Escape returning focus to More
 
 #### Scenario: A filter lights the dot
 
@@ -320,7 +320,7 @@ rather than the plot's usual 15%, so the plot around a tapped protein stays read
 
 On a phone every dialog, menu and popover the explore page opens SHALL lie within the window or
 scroll inside itself, with its close or cancel control on screen without scrolling the page: the
-More sheet, the Import panel, the Export menu, the Color by picker and its info bubble, the
+More sheet, the Import panel, the Export panel, the Color by picker and its info bubble, the
 projection details card, the legend's settings popover, the colour picker and the Other categories
 dialog opened from a full-width legend row, the Filter builder with its actions, the confirmation dialogs
 and the Figure editor. The Figure editor SHALL stack its preview above its settings upright and
@@ -351,11 +351,11 @@ place them side by side on a phone on its side, with 40 px targets.
   a phone
 - **THEN** it stays inside the window
 
-#### Scenario: The Export menu on a phone on its side
+#### Scenario: The Export panel on a phone on its side
 
-- **WHEN** the user taps Export in the More sheet on a 740 × 360 px screen
-- **THEN** the Export menu lies within the window and its list scrolls inside it, down to Include
-  legend settings
+- **WHEN** the user taps Export in the More sheet on a 740 × 360 px screen and chooses Data bundle
+- **THEN** the Export panel lies within the window and scrolls inside itself, down to Download
+  .parquetbundle
 
 #### Scenario: The Filter builder on a phone
 

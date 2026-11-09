@@ -1,16 +1,17 @@
 # Bars and Tools
 
 The Explore page has two bars above the plot and a set of tools on the plot itself. The **app bar**
-holds the dataset, search, Import and Export, the theme and help. The **view bar** below it
+holds the dataset (with Import and Export), search, the Figure editor, the theme and help. The **view bar** below it
 chooses what the plot shows. The **plot tools** select proteins and narrow the view.
 [Interface Overview](/explore/) shows where each one sits; this page describes what each control
 does.
 
 ## App bar
 
-From left to right: the ProtSpace wordmark (back to the home page), the dataset menu, the search
-box, **Import** and **Export**, **Theme**, **Help**, **Feedback** and **GitHub**. On a phone the
-search box opens from a search button, and Theme and Help move into the view bar's **More** sheet.
+From left to right: the ProtSpace wordmark (back to the home page), the dataset menu (which holds
+Import and Export), the search box, **Figure editor**, **Theme**, **Help**, **Feedback** and
+**GitHub**. On a tablet **Figure editor** shows only its icon. On a phone the search box opens from
+a search button, and the Figure editor, Theme and Help move into the view bar's **More** sheet.
 
 ### Dataset menu
 
@@ -50,7 +51,7 @@ box:
 
 ### Import
 
-Click **Import**, or the [dataset name](#dataset-menu), to open the panel:
+Click the [dataset name](#dataset-menu) to open the panel:
 
 - **Open a file…** opens a file picker for a `.parquetbundle` or a FASTA file (`.fasta`, `.fa`,
   `.fna`) from your computer. For FASTA, ProtSpace sends the sequences to the prep service, which
@@ -66,6 +67,7 @@ Click **Import**, or the [dataset name](#dataset-menu), to open the panel:
   list links to the whole page. Large examples carry a **Large** badge, and their ⓘ also gives the
   download size and the memory and time they take to open. The example currently loaded is
   disabled and marked with a check; its ⓘ still opens.
+- **Export…** closes the panel and opens the [Export panel](#export) under the dataset name.
 
 Choosing an example loads it and puts `dataset=<id>` in the URL, so the link is shareable and the
 browser's **Back** button returns to whatever was shown before. The file you imported stays stored
@@ -92,21 +94,28 @@ the startup load.
 
 ### Export
 
-Click **Export** to save your visualization or its data:
+Click the dataset name and choose **Export…** to save your visualization or its data (on a phone:
+**More**, then **Export**). The Export panel asks what first, then shows only the options for it,
+and one **Download** button that names the file:
 
-![The Export menu open under its button: Figure editor…, Quick PNG, Quick PDF, Protein IDs (.txt), Table (.tsv) and Data bundle (.parquetbundle)](./images/export-menu.png)
+![The Export panel open under the dataset name: Image, Protein IDs, Table and Data bundle, with Image and PNG chosen and Download PNG](./images/export-menu.png)
 
-| Item                             | Saves                                                         |
-| -------------------------------- | ------------------------------------------------------------- |
-| **Figure editor…**               | A publication figure, laid out in the editor                  |
-| **Quick PNG**                    | A raster image of the current view with legend                |
-| **Quick PDF**                    | A PDF of the current view with legend                         |
-| **Protein IDs (.txt)**           | The visible proteins' identifiers, one per line               |
-| **Table (.tsv)**                 | The visible proteins with their coordinates and annotations   |
-| **Data bundle (.parquetbundle)** | All data and, with **Include legend settings**, your settings |
+| Choose          | Then                        | Saves                                                       |
+| --------------- | --------------------------- | ----------------------------------------------------------- |
+| **Image**       | **PNG** or **PDF**          | The current view with its legend, 2048 × 1024 px            |
+| **Protein IDs** |                             | The visible proteins' identifiers, one per line             |
+| **Table**       |                             | The visible proteins with their coordinates and annotations |
+| **Data bundle** | **Include legend settings** | All data and, with the checkbox, your settings              |
 
-See [Exporting Results](/explore/exporting) for image options (dimensions, legend size, font) and
-the [Figure Editor](/explore/figure-editor) for publication figures.
+The arrow keys move between the choices, **Tab** moves on to their options and **Download**, and
+**Escape** closes the panel and returns to the dataset name. See
+[Exporting Results](/explore/exporting) for what each file holds.
+
+### Figure editor
+
+**Figure editor** lays out the plot and its legend as a figure for a paper or a slide: journal
+sizes, labels, arrows and zoom insets, saved as PNG or PDF. See the
+[Figure Editor](/explore/figure-editor).
 
 ### Theme
 
@@ -280,7 +289,7 @@ the parameter out. A shared link opens with the same mode.
 :::
 
 ::: warning Not in exported images yet
-Contours are not drawn in exported images (Quick PNG and PDF, the
+Contours are not drawn in exported images (a PNG or PDF from the Export panel, the
 [Figure Editor](/explore/figure-editor) and its zoom insets): the file shows the points only. The
 Figure Editor preview shows exactly what will be exported. Tracked in
 [#498](https://github.com/tsenoner/protspace/issues/498).
@@ -307,8 +316,8 @@ On a phone, Filter is in **More**. [Filtering](/explore/filter) describes the pa
 
 **More** appears when the window is too narrow for the whole view bar and holds what no longer fits:
 the contour modes, then (on a tablet) Filter. A dot on it says that something inside is on (contours, or an
-applied filter). On a phone, **More** opens a sheet that also holds Import, Export, Theme,
-Help & shortcuts and Feedback.
+applied filter). On a phone, **More** opens a sheet that also holds Import, Export, the Figure
+editor, Theme, Help & shortcuts and Feedback.
 
 ## Plot tools
 

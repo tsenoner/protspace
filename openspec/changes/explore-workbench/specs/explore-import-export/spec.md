@@ -4,7 +4,8 @@
 
 The app bar's Import button and the dataset name SHALL open the same Import panel, a dialog named
 Import, under whichever was pressed, with focus on its first action. The panel SHALL offer Open a
-file…, which opens the file chooser, then Last file and the example datasets as example-datasets
+file…, which opens the file chooser, then Export…, which closes the panel and opens the Export
+panel under the same control, then Last file and the example datasets as example-datasets
 describes them.
 It SHALL say which files are read in the browser and which are sent to the server
 (".parquetbundle files are read in your browser. FASTA files (.fasta, .fa, .fna) are sent to the
@@ -27,24 +28,43 @@ button that opened it.
 - **WHEN** the user picks Open a file…
 - **THEN** the panel closes and the file chooser opens
 
-### Requirement: The Export menu lists every export
+### Requirement: The Export panel asks what, then how
 
-The app bar's Export button SHALL open a menu named Export with, in this order: Figure editor…,
-Quick PNG, Quick PDF, Protein IDs (.txt), Table (.tsv) and Data bundle (.parquetbundle), then an
-Include legend settings checkbox, checked by default and again for each new dataset, that applies
-to the data bundle and keeps the menu open, and the note "Quick exports leave out contours.",
-which describes Quick PNG and Quick PDF. A quick item SHALL close the menu and export at once at
-the default sizes; Escape SHALL close the menu and return focus to its button.
+Export… in the dataset name's Import panel (on a phone, Export in the More sheet) SHALL open a
+dialog named Export, a bottom sheet on a phone, with focus on its first choice. It SHALL first ask
+what to export, as a radio group: Image, Protein IDs, Table and Data bundle, Image chosen at first
+and the last choice kept for the next opening. Under it SHALL show only that choice's options: for
+Image, the format (PNG or PDF) and a note that the image is the current view at the default size
+without contours; for Data bundle, an Include legend settings checkbox, checked by default and
+again for each new dataset, with what it restores, and, when the loaded file carries saved
+settings, the note "The loaded file contains custom settings."; for Protein IDs and Table, what the
+file holds. One primary button SHALL name the file (Download PNG, Download PDF, Download .txt,
+Download .tsv, Download .parquetbundle), close the panel and export at the default sizes. Escape, a
+press outside or Tab out of the panel SHALL close it, Escape returning focus to the control that
+opened it. The figure editor SHALL NOT be in the panel.
 
-#### Scenario: The items
+#### Scenario: The choices
 
 - **WHEN** the user opens Export
-- **THEN** it names the six exports in order, the checked Include legend settings and the contours
-  note
+- **THEN** it asks what to export (Image, Protein IDs, Table, Data bundle), with Image and PNG
+  chosen and Download PNG
+
+#### Scenario: The bundle's settings
+
+- **WHEN** the user chooses Data bundle
+- **THEN** the format goes, Include legend settings shows checked, and the button reads Download
+  .parquetbundle
+
+### Requirement: The figure editor has its own button
+
+The app bar SHALL show a Figure editor button at its right, before the theme switch, Help,
+Feedback and GitHub: labelled with an image icon on a desktop, the icon alone named by its tooltip
+on a tablet. On a phone, upright or on its side, the More sheet's Figure editor row SHALL take its
+place. Either SHALL open the figure editor and export nothing.
 
 #### Scenario: Figure editor
 
-- **WHEN** the user picks Figure editor…
+- **WHEN** the user presses Figure editor in the app bar
 - **THEN** the figure editor opens and nothing is exported
 
 ### Requirement: Every export says it is done
@@ -54,14 +74,14 @@ bundle that leaves out proteins the loaded file holds SHALL also say how many an
 convert` keeps them. An export that fails SHALL say so in a notification, or, for the figure
 editor, inside the editor, which stays open.
 
-#### Scenario: Quick PNG
+#### Scenario: An image
 
-- **WHEN** the user picks Quick PNG
+- **WHEN** the user chooses Image and PNG and presses Download PNG
 - **THEN** a PNG downloads and "Export ready." shows with its file name
 
 #### Scenario: Protein IDs
 
-- **WHEN** the user picks Protein IDs (.txt)
+- **WHEN** the user chooses Protein IDs and presses Download .txt
 - **THEN** a .txt file downloads
 
 #### Scenario: A failed export

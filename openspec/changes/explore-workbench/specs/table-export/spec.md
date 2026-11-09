@@ -2,10 +2,10 @@
 
 ### Requirement: The web app exports the visible proteins as a table
 
-The Export menu in the app bar (on a phone, the More sheet's Export opens the same menu) SHALL
-offer a "Table (.tsv)" item whose rows are exactly the proteins the Protein IDs export writes in
-the same state: after the filter query (the EAT reliability filter included), isolation (Show only
-these) and hidden legend categories of the coloured annotation.
+The Export panel (Export… under the dataset name; on a phone, the More sheet's Export) SHALL
+offer a "Table" choice, downloaded as a .tsv, whose rows are exactly the proteins the Protein IDs
+export writes in the same state: after the filter query (the EAT reliability filter included),
+isolation (Show only these) and hidden legend categories of the coloured annotation.
 
 #### Scenario: Hidden legend category
 
