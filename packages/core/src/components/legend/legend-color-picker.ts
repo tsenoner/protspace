@@ -138,7 +138,7 @@ export class ColorPickerController implements ReactiveController {
   }
 
   private _renderBody(item: LegendItem, label: string): TemplateResult {
-    // The row menu offers no picker on numeric annotations, so only multilabel disables shapes.
+    // A numeric row's swatch opens no picker, so only multilabel disables shapes.
     const shapesDisabled = this.options.isMultilabel();
     const current: PointShape = SHAPES.includes(item.shape as PointShape)
       ? (item.shape as PointShape)

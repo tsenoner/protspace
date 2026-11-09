@@ -43,7 +43,6 @@ import {
 import { renderLegendRow, type LegendRowHandlers, type LegendRowView } from './legend-row';
 import { LegendKeyboardController, renderLegendList, TruncatedNameTooltip } from './legend-list';
 import { ColorPickerController } from './legend-color-picker';
-import { LegendRowMenu } from './legend-row-menu';
 import { OtherPopoverControl } from './legend-other-control';
 import './legend-settings-popover';
 import type { ProtspaceLegendSettingsPopover } from './legend-settings-popover';
@@ -92,7 +91,6 @@ import type {
  *
  * @csspart container - The main legend container
  * @csspart row-handle - A row's reorder handle
- * @csspart row-menu - A row's "More actions" button
  *
  * @slot - Default slot for custom content
  */
@@ -433,19 +431,19 @@ export class ProtspaceLegend extends LitElement {
 
   private _nameTooltip = new TruncatedNameTooltip(this);
 
-  _rowMenu = new LegendRowMenu(this, {
-    getItems: () => this._legendItems,
-    isNumeric: () => this._isNumericAnnotation(),
-    isolate: (value) => this._actions.isolate(value),
-    customize: (value) => {
-      // Found by its dataset rather than a selector: a value can hold any character.
-      const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>('.legend-item') ?? [])].find(
-        (each) => each.dataset.value === value,
-      );
-      // Opening is idempotent: chosen again for the row whose picker is open, it stays open.
-      if (row) this._colorPicker.open(value, row);
-    },
-  });
+  /** The swatch's press: opens the colour and shape picker beside its row, or closes it there. */
+  private _toggleColorPicker(value: string): void {
+    this._nameTooltip.leave();
+    if (this._colorPicker.value === value) {
+      this._colorPicker.close();
+      return;
+    }
+    // Found by its dataset rather than a selector: a value can hold any character.
+    const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>('.legend-item') ?? [])].find(
+      (each) => each.dataset.value === value,
+    );
+    if (row) this._colorPicker.open(value, row);
+  }
 
   _otherPopover = new OtherPopoverControl(this, {
     getItems: () => this._otherItems,
@@ -777,9 +775,8 @@ export class ProtspaceLegend extends LitElement {
           ${header.eat ? renderEatNote(header.eat, this._headerHandlers.onEatOpen) : nothing}
           ${this._renderScoreStrips()}
         </div>
-        ${bottom ? nothing : list} ${this._colorPicker.render()} ${this._rowMenu.render()}
-        ${this._nameTooltip.render()} ${this._renderSortMenu()} ${this._otherPopover.render()}
-        ${this._settings.render(title)}
+        ${bottom ? nothing : list} ${this._colorPicker.render()} ${this._nameTooltip.render()}
+        ${this._renderSortMenu()} ${this._otherPopover.render()} ${this._settings.render(title)}
       </div>
     `;
   }
@@ -865,8 +862,6 @@ export class ProtspaceLegend extends LitElement {
       );
       this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
     }
-    // Rows render by position, so after a re-sort the menu's anchor would be another row's "⋯".
-    if (changedProperties.has('_sortedLegendItems')) this._rowMenu.close();
     this._otherPopover.willUpdate(
       changedProperties.has('_otherItems'),
       changedProperties.has('selectedAnnotation'),
@@ -912,7 +907,8 @@ export class ProtspaceLegend extends LitElement {
       tabbable: this._keyboard.isTabbable(item.value),
       draggable: this._canDragLegendItem(item),
       picked,
-      hasMenu: !isOther,
+      canCustomize: !isOther && !this._isNumericAnnotation(),
+      pickerOpen: this._colorPicker.value === item.value,
       otherExpanded: isOther && this._otherPopover.isOpen,
     };
     const handlers: LegendRowHandlers = {
@@ -925,7 +921,8 @@ export class ProtspaceLegend extends LitElement {
         this._keyboard.focusValue = item.value;
       },
       onToggle: () => this._actions.toggle(item.value),
-      onMenu: (e: MouseEvent) => this._rowMenu.toggle(item.value, e.currentTarget as HTMLElement),
+      onSwatch: () => this._toggleColorPicker(item.value),
+      onSwatchPointerEnter: this._nameTooltip.onSwatchPointerEnter,
       onViewOther: (e: Event) => this._otherPopover.toggle(e),
       onNamePointerEnter: this._nameTooltip.onNamePointerEnter,
       onPointerDown: (e: PointerEvent) => {

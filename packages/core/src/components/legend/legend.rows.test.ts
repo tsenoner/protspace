@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './legend';
 import type { ProtspaceLegend } from './legend';
-import type { PsMenu } from '../kit/menu';
 import { LEGEND_EVENTS, LEGEND_VALUES } from './config';
 import { TWELVE, categoricalData, numericData } from './test-support/legend-fixtures';
 import {
@@ -16,7 +15,7 @@ import { stubPopoverApi } from './test-support/popover-stub';
 vi.stubGlobal('localStorage', createLocalStorageMock());
 // jsdom has no CSS.escape; a cancelled reorder refocuses its handle through it in a frame callback.
 vi.stubGlobal('CSS', { escape: (value: string) => value });
-// The row menu opens a ps-popover.
+// The swatch opens the colour and shape picker, a ps-popover.
 stubPopoverApi();
 
 afterEach(() => {
@@ -37,14 +36,10 @@ const main = (legend: ProtspaceLegend, value: string) =>
   row(legend, value).querySelector<HTMLButtonElement>('.legend-item-main')!;
 const eye = (legend: ProtspaceLegend, value: string) =>
   row(legend, value).querySelector<HTMLButtonElement>('.legend-eye')!;
-const more = (legend: ProtspaceLegend, value: string) =>
-  row(legend, value).querySelector<HTMLButtonElement>('.legend-more');
+const swatch = (legend: ProtspaceLegend, value: string) =>
+  row(legend, value).querySelector<HTMLElement>('.legend-swatch')!;
 const handle = (legend: ProtspaceLegend, value: string) =>
   row(legend, value).querySelector<HTMLButtonElement>('.drag-handle')!;
-const rowMenu = (legend: ProtspaceLegend) =>
-  legend.shadowRoot!.querySelector<PsMenu>('ps-menu.row-menu')!;
-const menuItems = (legend: ProtspaceLegend) =>
-  [...rowMenu(legend).querySelectorAll('ps-menu-item')].map((item) => item.textContent!.trim());
 const rowValues = (legend: ProtspaceLegend) =>
   [...legend.shadowRoot!.querySelectorAll('.legend-item')].map((each) =>
     each.getAttribute('data-value'),
@@ -53,23 +48,6 @@ const tabbable = (legend: ProtspaceLegend, selector: string) =>
   [...legend.shadowRoot!.querySelectorAll<HTMLElement>(selector)]
     .filter((el) => el.getAttribute('tabindex') === '0')
     .map((el) => el.closest('.legend-item')!.getAttribute('data-value'));
-
-async function openMenu(legend: ProtspaceLegend, value: string): Promise<void> {
-  more(legend, value)!.click();
-  await settleLegend(legend);
-}
-
-/** What the menu dispatches after it has closed itself; jsdom cannot show it to click an item. */
-async function choose(legend: ProtspaceLegend, value: string): Promise<void> {
-  rowMenu(legend).dispatchEvent(
-    new CustomEvent('ps-select', {
-      bubbles: true,
-      composed: true,
-      detail: { value, checked: false },
-    }),
-  );
-  await settleLegend(legend);
-}
 
 async function press(legend: ProtspaceLegend, target: HTMLElement, key: string): Promise<void> {
   target.dispatchEvent(
@@ -134,62 +112,92 @@ describe('legend rows', () => {
     expect(eye(legend, 'A').getAttribute('aria-label')).toBe('Show A');
   });
 
-  it('a hidden row keeps .hidden, stays listed and shows the hidden mark', async () => {
+  it('a hidden row keeps .hidden, stays listed and has its one eye, crossed out, named Show', async () => {
     const { legend } = await mount(TWELVE);
     eye(legend, 'A').click();
     await settleLegend(legend);
 
     expect(rowValues(legend)).toContain('A');
     expect(row(legend, 'A').classList.contains('hidden')).toBe(true);
-    const mark = row(legend, 'A').querySelector('.legend-hidden-mark');
-    expect(mark?.getAttribute('aria-hidden')).toBe('true');
-    expect(row(legend, 'B').querySelector('.legend-hidden-mark')).toBeNull();
+    // One control in the eye's slot, at rest and on hover alike: no second mark beside it.
+    expect(row(legend, 'A').querySelectorAll('.legend-eye')).toHaveLength(1);
+    expect(row(legend, 'A').querySelectorAll('svg').length).toBe(
+      row(legend, 'B').querySelectorAll('svg').length,
+    );
+    expect(eye(legend, 'A').getAttribute('aria-label')).toBe('Show A');
   });
 
-  it('the menu offers Show only this and Colour and shape; Other has no ⋯; numeric rows offer only Show only this', async () => {
+  it('a row has no ⋯ button: its hover controls are the handle and the eye', async () => {
+    const { legend } = await mount(TWELVE);
+    const buttons = [...row(legend, 'A').querySelectorAll('button')].map(
+      (button) => button.getAttribute('aria-label')!,
+    );
+    expect(buttons).toEqual([
+      'Reorder A',
+      'Colour and shape for A',
+      'A: 12 proteins, shown',
+      'Hide A',
+    ]);
+    expect(legend.shadowRoot!.querySelector('ps-menu')).toBeNull();
+  });
+
+  it('the swatch is a button that opens and closes the colour and shape picker', async () => {
+    const { legend } = await mount(TWELVE);
+    const actions = watchActions(legend);
+    const button = swatch(legend, 'B');
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.getAttribute('aria-label')).toBe('Colour and shape for B');
+    expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+
+    button.click();
+    await settleLegend(legend);
+    expect(legend._colorPicker.value).toBe('B');
+    expect(swatch(legend, 'B').getAttribute('aria-expanded')).toBe('true');
+    // It neither hides nor shows the row.
+    expect(actions).toEqual([]);
+    expect(row(legend, 'B').classList.contains('hidden')).toBe(false);
+
+    swatch(legend, 'B').click();
+    await settleLegend(legend);
+    expect(legend._colorPicker.value).toBeNull();
+    expect(swatch(legend, 'B').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('a press on another row’s swatch moves the picker there', async () => {
+    const { legend } = await mount(TWELVE);
+    swatch(legend, 'A').click();
+    await settleLegend(legend);
+    swatch(legend, 'C').click();
+    await settleLegend(legend);
+    expect(legend._colorPicker.value).toBe('C');
+    expect(swatch(legend, 'A').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('Other and numeric rows keep a plain swatch, no button', async () => {
     const categorical = await mount(TWELVE);
-    expect(more(categorical.legend, OTHER)).toBeNull();
-    await openMenu(categorical.legend, 'A');
-    expect(rowMenu(categorical.legend).open).toBe(true);
-    expect(rowMenu(categorical.legend).label).toBe('Actions for A');
-    expect(menuItems(categorical.legend)).toEqual(['Show only this', 'Colour and shape']);
+    expect(swatch(categorical.legend, OTHER).tagName).toBe('SPAN');
+    expect(swatch(categorical.legend, 'A').tagName).toBe('BUTTON');
     document.body.replaceChildren();
 
     const numeric = await mountLegendWithScatterplot(
       numericData([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
       'length',
     );
-    const firstBin = numeric.legend.shadowRoot!.querySelector(
-      '.legend-item:not(.legend-item-other)',
-    )!;
-    await openMenu(numeric.legend, firstBin.getAttribute('data-value')!);
-    expect(menuItems(numeric.legend)).toEqual(['Show only this']);
+    const swatches = [
+      ...numeric.legend.shadowRoot!.querySelectorAll<HTMLElement>('.legend-item .legend-swatch'),
+    ];
+    expect(swatches.length).toBeGreaterThan(0);
+    expect(swatches.every((each) => each.tagName === 'SPAN')).toBe(true);
   });
 
-  it('Show only this dispatches isolate; on the only visible row it reads Show all', async () => {
+  it('I on a row still shows only it (double-click: legend.double-click.test.ts)', async () => {
     const { legend } = await mount(TWELVE);
     const actions = watchActions(legend);
 
-    await openMenu(legend, 'A');
-    await choose(legend, 'isolate');
-
+    await press(legend, main(legend, 'A'), 'i');
     expect(actions).toEqual(['isolate:A']);
     expect(row(legend, 'B').classList.contains('hidden')).toBe(true);
-    expect(rowMenu(legend).open).toBe(false);
-
-    await openMenu(legend, 'A');
-    expect(menuItems(legend)[0]).toBe('Show all');
-  });
-
-  it('every ⋯ is announced as a menu button, before and after the menu has opened', async () => {
-    const { legend } = await mount(TWELVE);
-    expect(more(legend, 'B')!.getAttribute('aria-haspopup')).toBe('menu');
-
-    await openMenu(legend, 'A');
-    await choose(legend, 'isolate');
-
-    expect(more(legend, 'A')!.getAttribute('aria-haspopup')).toBe('menu');
-    expect(more(legend, 'B')!.getAttribute('aria-haspopup')).toBe('menu');
   });
 
   it("Other's disabled handle is hidden from assistive tech; a row's handle is not", async () => {
@@ -208,7 +216,7 @@ describe('legend rows', () => {
     expect(tabbable(legend, '.legend-item-main')).toEqual(['C']);
     expect(tabbable(legend, '.legend-eye')).toEqual(['C']);
     expect(tabbable(legend, '.drag-handle')).toEqual(['C']);
-    expect(tabbable(legend, '.legend-more')).toEqual(['C']);
+    expect(tabbable(legend, '.legend-swatch-button')).toEqual(['C']);
   });
 
   it('the Tab stop stays on its category through a re-sort', async () => {
@@ -249,7 +257,7 @@ describe('legend rows', () => {
     expect(handle(legend, 'A').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('renders one ps-menu and one ps-tooltip whatever the row count', async () => {
+  it('renders no row menu and one ps-tooltip whatever the row count', async () => {
     const counts = Object.fromEntries(
       Array.from({ length: 40 }, (_, index) => [`C${index}`, 40 - index]),
     );
@@ -260,7 +268,7 @@ describe('legend rows', () => {
     );
 
     const root = legend.shadowRoot!;
-    expect(root.querySelectorAll('ps-menu.row-menu')).toHaveLength(1);
+    expect(root.querySelectorAll('ps-menu')).toHaveLength(0);
     expect(root.querySelectorAll('ps-tooltip.name-tooltip')).toHaveLength(1);
     expect(root.querySelectorAll('.legend-items ps-menu, .legend-items ps-tooltip')).toHaveLength(
       0,

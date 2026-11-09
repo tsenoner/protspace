@@ -17,7 +17,7 @@ function draw(...args: Parameters<typeof renderLegendSymbol>): SVGPathElement {
 }
 
 /** One row for category A, every handler a spy. */
-function drawRow() {
+function drawRow(patch: Partial<LegendRowView> = {}) {
   const host = document.createElement('div');
   const item: LegendItem = {
     value: 'A',
@@ -33,7 +33,8 @@ function drawRow() {
     tabbable: true,
     draggable: true,
     picked: false,
-    hasMenu: true,
+    canCustomize: true,
+    ...patch,
   };
   const handlers: LegendRowHandlers = {
     onClick: vi.fn(),
@@ -43,7 +44,8 @@ function drawRow() {
     onHover: vi.fn(),
     onFocus: vi.fn(),
     onToggle: vi.fn(),
-    onMenu: vi.fn(),
+    onSwatch: vi.fn(),
+    onSwatchPointerEnter: vi.fn(),
     onViewOther: vi.fn(),
     onNamePointerEnter: vi.fn(),
     onPointerDown: vi.fn(),
@@ -86,5 +88,36 @@ describe('renderLegendRow pointer handling', () => {
       .querySelector('.legend-item-main')!
       .dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true }));
     expect(handlers.onPointerDown).toHaveBeenCalledOnce();
+  });
+});
+
+describe('renderLegendRow swatch', () => {
+  it('a click on the swatch reaches onSwatch only: not the row toggle, not the name', () => {
+    const { row, handlers } = drawRow();
+    const swatch = row.querySelector<HTMLButtonElement>('button.legend-swatch-button')!;
+    // The main button holds the name alone.
+    expect(row.querySelector('.legend-item-main .legend-swatch')).toBeNull();
+
+    swatch.click();
+    swatch.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    expect(handlers.onSwatch).toHaveBeenCalledOnce();
+    expect(handlers.onClick).not.toHaveBeenCalled();
+    expect(handlers.onDoubleClick).not.toHaveBeenCalled();
+    expect(handlers.onToggle).not.toHaveBeenCalled();
+  });
+
+  it('reports its picker open in aria-expanded, and hovers through onSwatchPointerEnter', () => {
+    const { row, handlers } = drawRow({ pickerOpen: true });
+    const swatch = row.querySelector<HTMLButtonElement>('.legend-swatch-button')!;
+    expect(swatch.getAttribute('aria-expanded')).toBe('true');
+    swatch.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    expect(handlers.onSwatchPointerEnter).toHaveBeenCalledOnce();
+  });
+
+  it('without a picker the swatch is a plain mark', () => {
+    const { row } = drawRow({ canCustomize: false });
+    expect(row.querySelector('.legend-swatch')!.tagName).toBe('SPAN');
+    expect(row.querySelector('.legend-swatch-button')).toBeNull();
   });
 });

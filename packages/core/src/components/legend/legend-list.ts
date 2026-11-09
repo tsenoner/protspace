@@ -242,6 +242,9 @@ export class LegendKeyboardController implements ReactiveController {
 /** A row name that ends in an ellipsis shows in full this long after the pointer reaches it. */
 export const NAME_TOOLTIP_DELAY_MS = 500;
 
+/** What the shared tooltip says over a swatch that opens the picker. */
+export const SWATCH_HINT = 'Change colour and shape';
+
 /** A finger that moves this far before its long press ends is scrolling: no name shows. */
 const LONG_PRESS_SLOP_PX = 10;
 
@@ -276,10 +279,10 @@ function swallowNextClick(button: HTMLElement): void {
 /**
  * One shared tooltip for row names that end in an ellipsis: after NAME_TOOLTIP_DELAY_MS of mouse
  * or pen hover on a row's main button, or of a finger held on it, it shows the full name; a name
- * that fits shows nothing. Keyboard and screen-reader
- * users already get the full name from the button's accessible name, so the tooltip names nothing
- * (`names-target`). The element is driven directly, never through the legend's template, so a
- * hover never re-renders the legend.
+ * that fits shows nothing. The same delay of hover on a swatch button shows SWATCH_HINT. Keyboard
+ * and screen-reader users already get the full name, and the swatch's purpose, from the buttons'
+ * accessible names, so the tooltip names nothing (`names-target`). The element is driven
+ * directly, never through the legend's template, so a hover never re-renders the legend.
  */
 export class TruncatedNameTooltip implements ReactiveController {
   private host: ReactiveControllerHost & HTMLElement;
@@ -299,6 +302,13 @@ export class TruncatedNameTooltip implements ReactiveController {
     const button = e.currentTarget as HTMLElement;
     const text = button.querySelector<HTMLElement>('.legend-text');
     if (text) this.hover(button, text);
+  };
+
+  /** A swatch button's `pointerenter` handler: says what the swatch does. */
+  onSwatchPointerEnter = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch') return;
+    this.leave();
+    this._schedule(e.currentTarget as HTMLElement, SWATCH_HINT);
   };
 
   /**
@@ -339,9 +349,13 @@ export class TruncatedNameTooltip implements ReactiveController {
   hover(trigger: HTMLElement, textEl: HTMLElement): void {
     this.leave();
     if (textEl.scrollWidth <= textEl.clientWidth) return;
+    this._schedule(trigger, textEl.textContent?.trim() ?? '');
+  }
+
+  /** Shows `text` over `trigger` after the delay, unless the pointer leaves it first. */
+  private _schedule(trigger: HTMLElement, text: string): void {
     this._trigger = trigger;
     trigger.addEventListener('pointerleave', this._onLeave);
-    const text = textEl.textContent?.trim() ?? '';
     this._timer = setTimeout(() => {
       this._timer = null;
       void this._show(trigger, text);

@@ -5,15 +5,18 @@ The legend panel lets you filter, customize, and explore protein annotations. Mo
 ## Rows
 
 Each category is one row: its colour, its name and its protein count. A long name ends in an
-ellipsis and shows in full on hover. Hovering a row shows its controls:
+ellipsis and shows in full on hover. Click the **colour** to change the category's colour and
+shape (see [Shapes](#shapes)); `Other` and numeric rows have no picker, so their colour does
+nothing. Hovering a row shows its controls:
 
 - a **grip** in the margin left of the colour, which moves the row (see
   [Reordering](#reordering-and-draw-order)),
-- an **eye** at the right, which hides or shows the category,
-- a **⋯** menu at the right, with **Show only this** and **Colour and shape**.
+- an **eye** at the right, which hides or shows the category.
+
+A hidden row keeps its crossed-out eye in that same place, so nothing moves when you hover it.
 
 On a touch screen the controls are always shown, the grip sits inside the row before the colour,
-and every row is a 40 px target.
+and every control is a 40 px target.
 
 ## Show And Hide Values
 
@@ -24,16 +27,16 @@ Click any legend row to toggle its visibility:
 - Click once, or press its eye, to hide that value. A hidden row stays in the list, dimmed, with a
   crossed-out eye.
 - Click again, or press the eye again, to show it.
-- Double-click a row, or choose **Show only this** from its ⋯ menu, to show that value and hide the
-  rest.
-- Double-click the only shown value again (its ⋯ menu then reads **Show all**) to show all values.
+- Double-click a row to show that value and hide the rest.
+- Double-click the only shown value again to show all values.
 - If only one value remains visible, clicking it restores the full set.
 
 While categories are hidden, the plot's status corner shows `N categories hidden`; its ✕ shows them
 all again. On a touch screen, tap a row to hide or show it and double-tap it to show only that value.
 
 From the keyboard: the arrow keys, **Home** and **End** move between rows, **Enter** hides or shows
-the focused row, and **i** shows only it.
+the focused row, and **i** shows only it. A row's colour is a button of its own: **Tab** to it and
+press **Enter** to open its picker.
 
 ## Reordering And Draw Order
 
@@ -246,7 +249,7 @@ If an imported bundle or saved browser state references an unsupported numeric g
 
 ### Shapes
 
-Every category renders as a circle by default. To give a category another colour or shape (square, diamond, plus, triangle-up, triangle-down), choose **Colour and shape** from its row's ⋯ menu: the popover has a Shape section underneath the colour picker.
+Every category renders as a circle by default. To give a category another colour or shape (square, diamond, plus, triangle-up, triangle-down), click its colour in the legend row (its tooltip reads `Change colour and shape`): the popover has a Shape section underneath the colour picker. Click the colour again, press **Escape** or click elsewhere to close it.
 
 Numeric and multi-label annotations always render as circles; per-category shape assignment is not available for those.
 

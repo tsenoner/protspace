@@ -72,8 +72,13 @@ export interface LegendRowView {
   draggable: boolean;
   /** Picked up for a keyboard reorder. */
   picked: boolean;
-  /** Shows "⋯" (every row but Other). */
-  hasMenu: boolean;
+  /**
+   * The swatch is a button that opens the colour and shape picker. Other and numeric rows have no
+   * picker: their swatch is a plain mark.
+   */
+  canCustomize: boolean;
+  /** This row's colour and shape picker is open: the swatch button's `aria-expanded`. */
+  pickerOpen?: boolean;
   /** The Other popover is open: the View button's `aria-expanded`. */
   otherExpanded?: boolean;
 }
@@ -87,7 +92,10 @@ export interface LegendRowHandlers {
   /** Focus entered the row: it takes the list's Tab stop. */
   onFocus(): void;
   onToggle(): void;
-  onMenu(e: MouseEvent): void;
+  /** The swatch button: opens or closes the row's colour and shape picker. */
+  onSwatch(e: MouseEvent): void;
+  /** The pointer reached the swatch button: its hint may show. */
+  onSwatchPointerEnter(e: PointerEvent): void;
   onViewOther(e: Event): void;
   /** The pointer reached the main button: a truncated name may show in full. */
   onNamePointerEnter(e: PointerEvent): void;
@@ -99,11 +107,14 @@ export interface LegendRowHandlers {
 const stop = (e: Event) => e.stopPropagation();
 
 /**
- * One legend row (design decision 12). The drag handle comes first, before the swatch; the main
- * button holds the swatch and the name and toggles the category; its accessible name carries the
- * full name, the count and the state. The eye and "⋯" sit before the count; the stylesheet reveals
- * them, and the handle under a mouse, on hover and focus, and the name gives way to them. Rows stay plain elements in the legend's shadow root: Sortable needs them as
- * direct children of the list, and a list can hold hundreds.
+ * One legend row (design decision 12). The drag handle comes first, then the swatch, a button of
+ * its own that opens the colour and shape picker (a plain mark on Other and numeric rows, which
+ * have no picker). The main button holds the name and toggles the category; its accessible name
+ * carries the full name, the count and the state. The eye sits before the count, in one slot: the
+ * stylesheet reveals it, and the handle under a mouse, on hover and focus, and the name gives way.
+ * A hidden row shows its crossed-out eye in that slot at rest too, so nothing moves on hover. Rows
+ * stay plain elements in the legend's shadow root: Sortable needs them as direct children of the
+ * list, and a list can hold hundreds.
  */
 export function renderLegendRow(
   item: LegendItem,
@@ -120,6 +131,9 @@ export function renderLegendRow(
   // a colour the user picked, or one a bundle stored, stays as given.
   const naTone =
     isNAValue(item.value) && item.color.toLowerCase() === NA_DEFAULT_COLOR.toLowerCase();
+  const symbol = isOther
+    ? renderLegendSymbol('circle', NEUTRAL_VALUE_COLOR, view.symbolSize, 'other')
+    : renderLegendSymbol(item.shape, item.color, view.symbolSize, naTone ? 'na' : undefined);
 
   return html`
     <div
@@ -157,6 +171,26 @@ export function renderLegendRow(
       >
         ${icon('grip-vertical', 14)}
       </button>
+      ${view.canCustomize
+        ? html`<button
+            type="button"
+            class="legend-swatch legend-swatch-button"
+            part="symbol"
+            aria-label=${`Colour and shape for ${displayValue}`}
+            aria-haspopup="dialog"
+            aria-expanded=${view.pickerOpen ? 'true' : 'false'}
+            tabindex=${tabindex}
+            @click=${(e: MouseEvent) => {
+              e.stopPropagation();
+              handlers.onSwatch(e);
+            }}
+            @pointerenter=${handlers.onSwatchPointerEnter}
+            @dblclick=${stop}
+            @mousedown=${stop}
+          >
+            ${symbol}
+          </button>`
+        : html`<span class="legend-swatch" part="symbol">${symbol}</span>`}
       <button
         type="button"
         class="legend-item-main"
@@ -171,16 +205,6 @@ export function renderLegendRow(
         @pointerenter=${handlers.onNamePointerEnter}
         @pointerdown=${handlers.onPointerDown}
       >
-        <span class="legend-swatch" part="symbol"
-          >${isOther
-            ? renderLegendSymbol('circle', NEUTRAL_VALUE_COLOR, view.symbolSize, 'other')
-            : renderLegendSymbol(
-                item.shape,
-                item.color,
-                view.symbolSize,
-                naTone ? 'na' : undefined,
-              )}</span
-        >
         <span class="legend-text" part="text">${label}</span>
       </button>
       ${isOther
@@ -198,43 +222,20 @@ export function renderLegendRow(
             View
           </button>`
         : nothing}
-      ${item.isVisible
-        ? nothing
-        : html`<span class="legend-hidden-mark" aria-hidden="true">${icon('eye-off', 14)}</span>`}
-      <span class="legend-item-actions">
-        <button
-          type="button"
-          class="legend-action legend-eye"
-          aria-label=${`${item.isVisible ? 'Hide' : 'Show'} ${displayValue}`}
-          tabindex=${tabindex}
-          @click=${(e: Event) => {
-            e.stopPropagation();
-            handlers.onToggle();
-          }}
-          @dblclick=${stop}
-          @mousedown=${stop}
-        >
-          ${icon(item.isVisible ? 'eye' : 'eye-off', 14)}
-        </button>
-        ${view.hasMenu
-          ? html`<button
-              type="button"
-              class="legend-action legend-more"
-              part="row-menu"
-              aria-haspopup="menu"
-              aria-label=${`More actions for ${displayValue}`}
-              tabindex=${tabindex}
-              @click=${(e: MouseEvent) => {
-                e.stopPropagation();
-                handlers.onMenu(e);
-              }}
-              @dblclick=${stop}
-              @mousedown=${stop}
-            >
-              ${icon('ellipsis', 14)}
-            </button>`
-          : nothing}
-      </span>
+      <button
+        type="button"
+        class="legend-action legend-eye"
+        aria-label=${`${item.isVisible ? 'Hide' : 'Show'} ${displayValue}`}
+        tabindex=${tabindex}
+        @click=${(e: Event) => {
+          e.stopPropagation();
+          handlers.onToggle();
+        }}
+        @dblclick=${stop}
+        @mousedown=${stop}
+      >
+        ${icon(item.isVisible ? 'eye' : 'eye-off', 14)}
+      </button>
       <span class="legend-count" part="count">${formatCount(item.count)}</span>
     </div>
   `;

@@ -164,8 +164,9 @@ On a phone:
 On every touch screen:
 
 - Drag to pan, pinch to zoom; a tap on empty space or a pan closes a pinned tooltip.
-- Tap a legend row to hide or show it, and double-tap it to show only that category. The row's
-  eye, grip and ⋯ menu are always shown, and every control is at least 40 px.
+- Tap a legend row to hide or show it, and double-tap it to show only that category; tap its
+  colour to change the colour and shape. The row's eye and grip are always shown, and every
+  control is at least 40 px.
 - To reorder the legend, hold a row's grip for a moment, then drag it.
 
 ## Next steps

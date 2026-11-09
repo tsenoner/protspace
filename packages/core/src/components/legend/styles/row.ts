@@ -2,11 +2,11 @@ import { css } from 'lit';
 
 /**
  * Legend rows (design decision 12): 28 px (40 px under a coarse pointer), the drag handle first,
- * the swatch and the name in the main button, the count in tabular figures, and the eye and "⋯"
- * revealed before the count on hover or focus. Under a mouse the handle hangs in the row's left
- * gutter and fades in the same way. Hover and focus are CSS only, so the pointer never re-renders
- * the legend. Sortable's states
- * and the drop highlight live here too. Every colour and type size reads a --ps-* token.
+ * the swatch (the colour and shape picker's button), the name in the main button, the count in
+ * tabular figures, and the eye revealed before the count on hover or focus. Under a mouse the
+ * handle hangs in the row's left gutter and fades in the same way. Hover and focus are CSS only,
+ * so the pointer never re-renders the legend. Sortable's states and the drop highlight live here
+ * too. Every colour and type size reads a --ps-* token.
  */
 export const rowStyles = css`
   /* Rows sit edge to edge and draw their own inset; layout.ts owns the rest of the list box. */
@@ -78,7 +78,43 @@ export const rowStyles = css`
     height: 16px;
   }
 
+  /*
+   * The swatch as the picker's button: a 24 px target (40 px under a coarse pointer) around the
+   * 16 px mark, its negative margins taking the extra back, so the mark sits where a plain one
+   * does. Its ring is a 24 px circle drawn behind the mark whatever the target's size; it shows on
+   * hover and while the row's picker is open.
+   */
+  .legend-swatch-button {
+    position: relative;
+    width: 24px;
+    height: 24px;
+    margin-inline: -4px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .legend-swatch-button::before {
+    content: '';
+    position: absolute;
+    inset: calc(50% - 12px);
+    border-radius: 50%;
+    transition:
+      background-color var(--ps-duration-fast) var(--ps-ease),
+      box-shadow var(--ps-duration-fast) var(--ps-ease);
+  }
+
+  .legend-swatch-button:hover::before,
+  .legend-swatch-button[aria-expanded='true']::before {
+    background: var(--ps-surface);
+    box-shadow: inset 0 0 0 2px var(--ps-accent);
+  }
+
   .legend-symbol {
+    position: relative;
     display: block;
     overflow: visible;
   }
@@ -116,20 +152,15 @@ export const rowStyles = css`
     color: var(--ps-text);
   }
 
-  /* Hidden rows stay listed and actionable: dimmed, never in the disabled colour. */
-  .legend-item.hidden .legend-swatch {
+  /* Hidden rows stay listed and actionable: dimmed, never in the disabled colour. The mark dims,
+     not its button, so the swatch's ring stays at full strength. */
+  .legend-item.hidden .legend-symbol {
     opacity: 0.35;
   }
 
   .legend-item.hidden .legend-text,
   .legend-item-other .legend-text,
   .legend-item[data-value='__NA__'] .legend-text {
-    color: var(--ps-text-muted);
-  }
-
-  .legend-hidden-mark {
-    display: inline-flex;
-    flex: none;
     color: var(--ps-text-muted);
   }
 
@@ -157,41 +188,6 @@ export const rowStyles = css`
 
   .view-button:hover {
     text-decoration: underline;
-  }
-
-  /*
-   * Between the name and the count. At rest they take no room (the negative margin takes back the
-   * row's gap) yet stay focusable; shown, the name gives way and ends in an ellipsis while the
-   * count stays in view.
-   */
-  .legend-item-actions {
-    display: flex;
-    flex: none;
-    align-items: center;
-    gap: var(--ps-space-0-5);
-    max-width: 0;
-    margin-inline-start: calc(-1 * var(--ps-space-2));
-    overflow: hidden;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--ps-duration-fast) var(--ps-ease);
-  }
-
-  /* The buttons' own padding spaces the icons, so the strip sits half a gap from its neighbours. */
-  .legend-item:hover .legend-item-actions,
-  .legend-item:focus-within .legend-item-actions,
-  .legend-item.picked .legend-item-actions {
-    max-width: none;
-    margin-inline: calc(-1 * var(--ps-space-1));
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  /* A shown strip has its own eye: the hidden mark would be a second one. */
-  .legend-item:hover .legend-hidden-mark,
-  .legend-item:focus-within .legend-hidden-mark,
-  .legend-item.picked .legend-hidden-mark {
-    display: none;
   }
 
   .legend-item-other .legend-count {
@@ -222,6 +218,35 @@ export const rowStyles = css`
   .drag-handle:hover {
     background: color-mix(in srgb, var(--ps-text) 8%, transparent);
     color: var(--ps-text);
+  }
+
+  /*
+   * The eye, between the name and the count. At rest on a shown row it takes no room (the negative
+   * margin takes back the row's gap) yet stays focusable; shown, the name gives way and ends in an
+   * ellipsis while the count stays in view. A hidden row keeps its crossed-out eye shown in the
+   * same slot, so hovering it moves nothing.
+   */
+  .legend-eye {
+    max-width: 0;
+    margin-inline-start: calc(-1 * var(--ps-space-2));
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity var(--ps-duration-fast) var(--ps-ease),
+      background-color var(--ps-duration-fast) var(--ps-ease),
+      color var(--ps-duration-fast) var(--ps-ease);
+  }
+
+  /* The button's own padding spaces the icon, so it sits half a gap from its neighbours. */
+  .legend-item:hover .legend-eye,
+  .legend-item:focus-within .legend-eye,
+  .legend-item.picked .legend-eye,
+  .legend-item.hidden .legend-eye {
+    max-width: none;
+    margin-inline: calc(-1 * var(--ps-space-1));
+    opacity: 1;
+    pointer-events: auto;
   }
 
   /* On touch, first in the row, against its edge and close to the swatch, so the name loses little
@@ -284,6 +309,7 @@ export const rowStyles = css`
 
   /* The kit's focus ring, drawn inside: rows sit edge to edge. */
   .legend-item-main:focus-visible,
+  .legend-swatch-button:focus-visible,
   .view-button:focus-visible,
   .legend-action:focus-visible,
   .drag-handle:focus-visible {
@@ -294,6 +320,7 @@ export const rowStyles = css`
 
   @media (forced-colors: active) {
     .legend-item-main:focus-visible,
+    .legend-swatch-button:focus-visible,
     .view-button:focus-visible,
     .legend-action:focus-visible,
     .drag-handle:focus-visible {
@@ -301,28 +328,30 @@ export const rowStyles = css`
     }
   }
 
-  /* Touch: taller rows, and the actions and the handle always shown. */
+  /* Touch: taller rows, the eye and the handle always shown, and 40 px targets. */
   @media (pointer: coarse) {
     .legend-item {
       height: auto;
       min-height: var(--ps-touch-target);
     }
 
-    .legend-item-actions {
+    .legend-eye {
       max-width: none;
       margin-inline: calc(-1 * var(--ps-space-1));
       opacity: 1;
       pointer-events: auto;
     }
 
-    .legend-hidden-mark {
-      display: none;
-    }
-
     .legend-action,
     .drag-handle {
       width: var(--ps-touch-target);
       height: var(--ps-touch-target);
+    }
+
+    .legend-swatch-button {
+      width: var(--ps-touch-target);
+      height: var(--ps-touch-target);
+      margin-inline: calc((16px - var(--ps-touch-target)) / 2);
     }
   }
 

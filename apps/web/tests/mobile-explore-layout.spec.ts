@@ -246,10 +246,10 @@ test.describe('the legend column on a phone on its side', () => {
       await openExplorePhone(page);
       const legend = page.locator('#myLegend');
       const row = legend.locator('.legend-item').first();
-      // Mockup frame 7: a row shows its name, count and eye; the handle and "⋯" stay upright.
+      // Mockup frame 7: a row shows its swatch, name, count and eye; the handle stays upright.
       await expect(row.locator('.legend-eye')).toBeVisible();
+      await expect(row.locator('.legend-swatch')).toBeVisible();
       await expect(row.locator('.drag-handle')).toBeHidden();
-      await expect(row.locator('.legend-more')).toBeHidden();
       expect(
         await row.locator('.legend-text').evaluate((text) => text.clientWidth),
       ).toBeGreaterThanOrEqual(110);

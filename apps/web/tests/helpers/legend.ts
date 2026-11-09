@@ -60,21 +60,23 @@ export async function legendValueContaining(page: Page, needle: string): Promise
   return value;
 }
 
-/** Hovers a row so its actions show, then clicks its eye or picks an item from its "⋯" menu. */
+/**
+ * Hovers a row so its eye shows, then clicks it; or clicks the row's swatch, which opens its
+ * colour and shape picker.
+ */
 export async function legendRowAction(
   page: Page,
   value: string,
-  action: 'Hide' | 'Show' | 'Show only this' | 'Show all' | 'Colour and shape',
+  action: 'Hide' | 'Show' | 'Colour and shape',
 ): Promise<void> {
   const item = legendItem(page, value);
-  await legendRow(page, value).hover();
-  if (action === 'Hide' || action === 'Show') {
-    await item.getByRole('button', { name: new RegExp(`^${action} `) }).click();
+  if (action === 'Colour and shape') {
+    await item.getByRole('button', { name: /^Colour and shape for / }).click();
+    await expect(legend(page).getByRole('dialog', { name: /^Colour and shape/ })).toBeVisible();
     return;
   }
-  await item.getByRole('button', { name: /^More actions for / }).click();
-  await legend(page).getByRole('menuitem', { name: action, exact: true }).click();
-  await expect(legend(page).getByRole('menu', { name: /^Actions for / })).toBeHidden();
+  await legendRow(page, value).hover();
+  await item.getByRole('button', { name: new RegExp(`^${action} `) }).click();
 }
 
 export async function getFirstLegendItemValue(page: Page): Promise<string> {

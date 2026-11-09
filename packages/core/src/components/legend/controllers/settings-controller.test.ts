@@ -12,7 +12,6 @@ function fakeHost() {
     _settingsPopover: { flush: vi.fn() },
     _reorder: { clear: vi.fn() },
     _colorPicker: { close: vi.fn() },
-    _rowMenu: { close: vi.fn() },
     _otherPopover: { close: vi.fn() },
     _sortMenu: 'family' as string | null,
   });
