@@ -165,7 +165,7 @@ test.describe('the view bar', () => {
     const title = page.locator('.driver-popover .driver-popover-title');
     await expect(title).toHaveText('Welcome to ProtSpace');
     await page.locator('.driver-popover-next-btn').click();
-    await expect(title).toHaveText('Import & Export');
+    await expect(title).toHaveText('Your Data');
     await page.locator('.driver-popover-next-btn').click();
     await expect(title).toHaveText('The View Bar');
 
