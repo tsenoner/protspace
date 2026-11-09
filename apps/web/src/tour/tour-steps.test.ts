@@ -17,6 +17,7 @@ const FULL_DESKTOP = [
   'Legend Panel',
   'Expand Hidden Categories',
   'The Sidebar',
+  'Figure Editor',
   'Light or Dark',
   "You're All Set!",
 ];
@@ -37,6 +38,7 @@ const NEW_DESKTOP = [
   'The View Bar',
   'The Sidebar',
   'Selection Tools',
+  'Figure Editor',
   'Light or Dark',
   "That's it",
 ];
@@ -61,6 +63,7 @@ const DRIVER_IDS = [
   'selection',
   'data-actions',
   'help',
+  'figure-editor',
   'theme',
   'view-bar',
   'dataset',
@@ -121,6 +124,7 @@ describe('tourSteps', () => {
       'import',
       'data-actions',
       'help',
+      'figure-editor',
       'theme',
       'rail',
       'projections',
@@ -211,6 +215,25 @@ describe('tourSteps', () => {
       host: '[data-driver-id="legend"]',
       inner: '[data-driver-id="other-row"]',
     });
+  });
+
+  it('names the Figure editor where it is: its own button, or a row of More on a phone', () => {
+    for (const kind of KINDS) {
+      for (const mode of ['desktop', 'tablet'] as const) {
+        expect(step(tourSteps(kind, context(mode)), 'figure-editor').target).toBe(
+          '[data-driver-id="figure-editor"]',
+        );
+      }
+      for (const mode of ['phone', 'landscape'] as const) {
+        expect(step(tourSteps(kind, context(mode)), 'more').description).toContain(
+          '<strong>Figure editor</strong>',
+        );
+      }
+    }
+    // Export… no longer holds the editor.
+    expect(step(tourSteps('full', context('desktop')), 'data').description).not.toContain(
+      'Figure editor',
+    );
   });
 
   it('names every rail panel, EAT included, in the Sidebar step', () => {

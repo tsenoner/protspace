@@ -30,6 +30,10 @@ describe('icon', () => {
     expect(iconMarkup('waypoints', 20)).toMatch(/<(path|circle) /);
   });
 
+  it("has the Figure editor button's icon", () => {
+    expect(iconMarkup('image', 16)).toMatch(/<(path|circle|rect) /);
+  });
+
   it('parses each icon template once, however many places render it', () => {
     const createElement = vi.spyOn(document, 'createElement');
     const templates = () => createElement.mock.calls.filter(([tag]) => tag === 'template').length;

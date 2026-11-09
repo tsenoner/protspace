@@ -79,9 +79,17 @@ let elements = new Map<string, FakeElement>();
 /** Every desktop target shown, the Other row inside the legend's shadow root. */
 function showDesktopTargets(): void {
   elements = new Map(
-    ['dataset', 'view-bar', 'search', 'scatterplot', 'selection', 'rail', 'theme', 'help'].map(
-      (id) => [selector(id), fakeElement()],
-    ),
+    [
+      'dataset',
+      'view-bar',
+      'search',
+      'scatterplot',
+      'selection',
+      'rail',
+      'figure-editor',
+      'theme',
+      'help',
+    ].map((id) => [selector(id), fakeElement()]),
   );
   elements.set(selector('legend'), fakeElement(10, {}, { [selector('other-row')]: fakeElement() }));
 }

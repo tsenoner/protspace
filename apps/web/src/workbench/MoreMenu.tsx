@@ -95,10 +95,10 @@ export function MoreMenu({ stage, mode }: { stage: ViewBarStage; mode: LayoutMod
         data-driver-id="more"
         variant="ghost"
         data-view-item=""
-        // Attributes, not the hasPopup/expanded properties: the Export menu, opened from this
-        // button by the sheet, marks it as its menu button and restores the attributes it found.
-        // This relies on order: React commits the row's setSheetWanted(false) before ps-menu's
-        // `updated` records the anchor in its microtask, so it records aria-expanded="false".
+        // Attributes, not the hasPopup/expanded properties: the Export panel, opened from this
+        // button by the sheet, marks it as its disclosure button and restores the attributes it
+        // found. This relies on order: React commits the row's setSheetWanted(false) before the
+        // panel's `updated` records the anchor in its microtask, so it records aria-expanded="false".
         // Moving the row's act into a setTimeout would break that (C4 pins the round trip).
         aria-haspopup={sheet ? 'dialog' : undefined}
         aria-expanded={sheet ? (sheetOpen ? 'true' : 'false') : undefined}

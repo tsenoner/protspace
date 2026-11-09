@@ -16,6 +16,7 @@ import {
   CircleHelp,
   Download,
   Filter,
+  Image as ImageIcon,
   Layers,
   MessageSquare,
   Sun,
@@ -27,6 +28,7 @@ import { FEEDBACK_HREF } from '@/lib/support';
 import { focusFilterTitle, openPanel } from '../explore/layout-state';
 import { THEME_CHOICES, THEME_LABELS, type ThemeChoice } from '../explore/theme-defaults';
 import { setTheme } from '../explore/theme-state';
+import { openFigureEditor } from './figure-editor-action';
 import { openDocumentation, takeTheTour } from './help-actions';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { useTheme } from './use-theme';
@@ -47,7 +49,7 @@ const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
 interface MoreSheetProps {
   open: boolean;
   onClose(): void;
-  /** The view bar's More button: the Export menu opens under it. */
+  /** The view bar's More button: the Export panel opens from it. */
   moreButton: RefObject<HTMLElement | null>;
 }
 
@@ -55,10 +57,11 @@ interface MoreSheetProps {
  * The More sheet (design decision 17): on a phone, everything the two bars leave out, in a bottom
  * sheet (ps-dialog size="sheet": top layer, scrim, focus kept inside; Escape and a backdrop press
  * close it and focus returns to More). Contours and Theme apply in place and keep the sheet open. Every
- * other row closes the sheet first and then acts, so what it opens (a menu, a dialog, the Filter
- * panel) is never a second layer under a closing one. The Export and Import menus open from More
- * and the dataset name, since their own buttons are hidden on a phone; Help & shortcuts unfolds
- * its three entries in place rather than open a menu from a hidden button.
+ * other row closes the sheet first and then acts, so what it opens (a panel, a dialog, the Filter
+ * panel, the figure editor) is never a second layer under a closing one. The Export and Import
+ * panels open from More and the dataset name, since their own buttons are hidden on a phone, and
+ * the Figure editor row stands in for the app bar's button; Help & shortcuts unfolds its three
+ * entries in place rather than open a menu from a hidden button.
  */
 export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
   const dialog = useRef<PsDialog>(null);
@@ -166,6 +169,12 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
           <button type="button" className="wb-sheet-row" onClick={openExport}>
             <Download className="wb-sheet-icon" {...ICON} />
             <span className="wb-sheet-label">Export</span>
+            <ChevronRight className="wb-sheet-chevron" {...ICON} />
+          </button>
+          {/* The editor opens after the sheet closed, so it returns focus to More. */}
+          <button type="button" className="wb-sheet-row" onClick={closeThen(openFigureEditor)}>
+            <ImageIcon className="wb-sheet-icon" {...ICON} />
+            <span className="wb-sheet-label">Figure editor</span>
             <ChevronRight className="wb-sheet-chevron" {...ICON} />
           </button>
           <div className="wb-sheet-row wb-sheet-row-static">

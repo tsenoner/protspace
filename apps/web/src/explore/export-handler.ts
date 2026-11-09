@@ -18,13 +18,13 @@ import type { notify as appNotify } from '../lib/notify';
 import { getExportFailureNotification, getExportSuccessNotification } from './notifications';
 import { loadPublishState, savePublishState } from './publish-state-store';
 
-/** The menu sends every field; other dispatchers may send only the type, so the rest default. */
+/** The panel sends every field; other dispatchers may send only the type, so the rest default. */
 type ExportRequest = Pick<ExportEventDetail, 'type'> & Partial<Omit<ExportEventDetail, 'type'>>;
 
 interface ExportHandlerOptions {
-  /** The Export menu. Its events arrive through `listen`; the figure editor's host code reads it. */
+  /** The Export panel. Its events arrive through `listen`; the figure editor's host code reads it. */
   exportMenu: ProtspaceExportMenu;
-  /** Adds a listener on the Export menu for as long as the runtime lives. */
+  /** Adds a listener on the Export panel for as long as the runtime lives. */
   listen(type: string, listener: EventListener): void;
   getSelectedProteins(): string[];
   /** Proteins the loaded file holds that the dataset, and so a bundle export, leaves out. */
@@ -49,8 +49,9 @@ function downloadFile(url: string, filename: string): void {
 }
 
 /**
- * The Export menu's two requests: the figure editor (lazy-loaded) and the quick exports. Every
- * export confirms with a toast naming its file (design decision 15), or says why it failed.
+ * The two requests the Export panel carries: the figure editor (lazy-loaded), which the app bar's
+ * Figure editor button and the More sheet send through the panel, and the panel's downloads.
+ * Every export confirms with a toast naming its file (design decision 15), or says why it failed.
  */
 export function createExportHandler(options: ExportHandlerOptions): void {
   const {
