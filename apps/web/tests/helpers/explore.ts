@@ -375,11 +375,28 @@ export const contoursTrigger = (page: Page): Locator =>
 export const contoursMenu = (page: Page): Locator =>
   page.locator('protspace-contours-menu').getByRole('menu', { name: 'Contours' });
 
-/** The Import panel's "Export…", which opens the Export menu under the dataset name, and the menu. */
+/** The Import panel's "Export…", which opens the Export panel under the dataset name, and the panel. */
 export const exportTrigger = (page: Page): Locator =>
   importMenu(page).getByRole('button', { name: 'Export…', exact: true });
-export const exportList = (page: Page): Locator =>
-  exportMenu(page).getByRole('menu', { name: 'Export', exact: true });
+export const exportPanel = (page: Page): Locator =>
+  exportMenu(page).getByRole('dialog', { name: 'Export', exact: true });
+
+/** The Export panel's first choice, what to export, and an image's format. */
+export const exportKinds = (page: Page): Locator =>
+  exportMenu(page).getByRole('radiogroup', { name: 'What to export', exact: true });
+export const exportFormats = (page: Page): Locator =>
+  exportMenu(page).getByRole('radiogroup', { name: 'Format', exact: true });
+
+/** The Export panel's one primary button; its name says the file ("Download PNG"). */
+export const exportDownload = (page: Page): Locator =>
+  exportMenu(page).getByRole('button', { name: /^Download / });
+
+/**
+ * The app bar's Figure editor button: labelled on a desktop, an icon named by its tooltip on a
+ * tablet. On a phone it is More → Figure editor.
+ */
+export const figureEditorButton = (page: Page): Locator =>
+  appBar(page).getByRole('button', { name: 'Figure editor', exact: true });
 
 /** The app bar's protein search element (`protspace-protein-search`). */
 export const proteinSearch = (page: Page): Locator => page.locator('#myProteinSearch');
@@ -517,33 +534,31 @@ export async function pickExample(page: Page, id: string): Promise<void> {
 }
 
 /**
- * Opens the Export menu unless it is open; resolves once it shows. It opens from the dataset
- * name's Import panel ("Export…"). "Open" is read from the menu's first item, which a closed menu
- * does not render, not from the menu, which stays visible while it fades out.
+ * Opens the Export panel unless it is open; resolves once it shows. It opens from the dataset
+ * name's Import panel ("Export…"). "Open" is read from the popover's `open` attribute, which goes
+ * at once on close, not from the panel, which stays visible while it fades out.
  */
 export async function openExportMenu(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const firstItem = exportMenu(page).getByRole('menuitem', { name: 'Figure editor…', exact: true });
-  if (!(await firstItem.isVisible().catch(() => false))) {
+  if ((await exportMenu(page).locator('ps-popover[open]').count()) === 0) {
     await openImportMenu(page);
     await exportTrigger(page).click();
   }
-  await expect(exportList(page)).toBeVisible();
+  await expect(exportPanel(page)).toBeVisible();
 }
 
-/** Opens the Export menu and chooses one of its exports. */
-export async function exportAction(
-  page: Page,
-  name:
-    | 'Figure editor…'
-    | 'Quick PNG'
-    | 'Quick PDF'
-    | 'Protein IDs (.txt)'
-    | 'Table (.tsv)'
-    | 'Data bundle (.parquetbundle)',
-): Promise<void> {
+/** What the Export panel downloads: an image in either format, or one of the data files. */
+export type ExportChoice = 'PNG' | 'PDF' | 'Protein IDs' | 'Table' | 'Data bundle';
+
+/** Opens the Export panel, picks what (and an image's format) and presses its Download. */
+export async function exportAction(page: Page, choice: ExportChoice): Promise<void> {
   await openExportMenu(page);
-  await exportMenu(page).getByRole('menuitem', { name, exact: true }).click();
+  const image = choice === 'PNG' || choice === 'PDF';
+  await exportKinds(page)
+    .getByRole('radio', { name: image ? 'Image' : choice, exact: true })
+    .click();
+  if (image) await exportFormats(page).getByRole('radio', { name: choice, exact: true }).click();
+  await exportDownload(page).click();
 }
 
 /** Opens the Filter panel, from the view bar or from More, unless it shows already. */

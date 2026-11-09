@@ -59,6 +59,9 @@ const STALE_TERMS: readonly RegExp[] = [
   /extract (values )?from other/i,
   /settings dialog/i,
   /theme menu/i,
+  // The Export menu's items before it became a two-step panel and the figure editor got a button.
+  /quick (png|pdf|export)/i,
+  /figure editor…/i,
 ];
 
 /** The pages the stale-term check reads: the user guide, not the developer docs. */

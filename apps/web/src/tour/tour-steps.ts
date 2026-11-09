@@ -31,6 +31,7 @@ type TourStepId =
   | 'legend'
   | 'other'
   | 'sidebar'
+  | 'figure-editor'
   | 'theme'
   | 'finish'
   | 'end';
@@ -100,7 +101,7 @@ const STEPS: Record<TourStepId, StepBuilder> = {
   data: (ctx) => ({
     id: 'data',
     title: 'Your Data',
-    description: `${press(ctx)} the <strong>dataset name</strong> to load one of the <strong>examples</strong>, reopen your <strong>last file</strong>, or choose <strong>Open a file…</strong>. You can also drop a file anywhere on the page. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is sent to our server to be embedded first. Its <strong>Export…</strong> holds the <strong>Figure editor</strong>, a quick PNG or PDF, the protein IDs and the <code>.parquetbundle</code>. ${link('/docs/guide/data-preparation', 'Learn how to prepare your data')}.`,
+    description: `${press(ctx)} the <strong>dataset name</strong> to load one of the <strong>examples</strong>, reopen your <strong>last file</strong>, or choose <strong>Open a file…</strong>. You can also drop a file anywhere on the page. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is sent to our server to be embedded first. Its <strong>Export…</strong> saves an image (PNG or PDF), the protein IDs, a table or the <code>.parquetbundle</code>. ${link('/docs/guide/data-preparation', 'Learn how to prepare your data')}.`,
     target: driverId('dataset'),
   }),
 
@@ -132,7 +133,7 @@ const STEPS: Record<TourStepId, StepBuilder> = {
     id: 'more',
     title: 'More Options',
     description:
-      '<strong>More</strong> holds <strong>Contours</strong>, <strong>Filter</strong>, <strong>Import</strong>, <strong>Export</strong>, the <strong>Theme</strong> (System, Light or Dark), <strong>Help &amp; shortcuts</strong> and <strong>Feedback</strong>. A dot on the button means contours or a filter are on.',
+      '<strong>More</strong> holds <strong>Contours</strong>, <strong>Filter</strong>, <strong>Import</strong>, <strong>Export</strong>, the <strong>Figure editor</strong>, the <strong>Theme</strong> (System, Light or Dark), <strong>Help &amp; shortcuts</strong> and <strong>Feedback</strong>. A dot on the button means contours or a filter are on.',
     target: driverId('more'),
   }),
 
@@ -200,6 +201,16 @@ const STEPS: Record<TourStepId, StepBuilder> = {
     target: driverId('rail'),
   }),
 
+  'figure-editor': (_ctx, kind) => ({
+    id: 'figure-editor',
+    title: 'Figure Editor',
+    description:
+      kind === 'whats-new'
+        ? 'The <strong>Figure editor</strong> has its own button now. It lays out the plot and its legend as a figure for a paper or a slide: journal sizes, labels, arrows and zoom insets, saved as PNG or PDF.'
+        : 'The <strong>Figure editor</strong> lays out the plot and its legend as a figure for a paper or a slide: journal sizes, labels, arrows and zoom insets, saved as PNG or PDF.',
+    target: driverId('figure-editor'),
+  }),
+
   theme: (_ctx, kind) => ({
     id: 'theme',
     title: 'Light or Dark',
@@ -257,10 +268,19 @@ function stepIds(kind: TourKind, mode: LayoutMode): TourStepId[] {
         'legend',
         'other',
         ...desktopOnly(mode, ['sidebar']),
+        'figure-editor',
         'theme',
         'finish',
       ]
-    : ['whats-new', 'view-bar', ...desktopOnly(mode, ['sidebar']), 'selection', 'theme', 'end'];
+    : [
+        'whats-new',
+        'view-bar',
+        ...desktopOnly(mode, ['sidebar']),
+        'selection',
+        'figure-editor',
+        'theme',
+        'end',
+      ];
 }
 
 /** The steps of `kind` for the window `ctx` describes, in order. */

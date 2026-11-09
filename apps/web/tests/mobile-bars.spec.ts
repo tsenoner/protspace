@@ -6,7 +6,10 @@ import {
   colorByTrigger,
   datasetSwitcher,
   dismissTourIfPresent,
-  exportMenu,
+  exportDownload,
+  exportKinds,
+  exportPanel,
+  figureEditorButton,
   filterApplyButton,
   filterPanel,
   getContoursMode,
@@ -23,7 +26,6 @@ import {
   applyFilterKeepingTen,
   bottomPanel,
   box,
-  emptyPlotSpot,
   expectNoHorizontalOverflow,
   expectWithinViewport,
   moreButton,
@@ -54,8 +56,6 @@ const PHONES = [
 ] as const;
 
 const workbench = (page: Page) => page.locator('.workbench');
-const exportMenuList = (page: Page) =>
-  exportMenu(page).getByRole('menu', { name: 'Export', exact: true });
 
 /**
  * The visible controls and labels inside `root` whose text is cut off, by name. The dataset
@@ -111,6 +111,8 @@ for (const { label, viewport } of PHONES) {
       await expect(appBar(page).getByRole('button', { name: /^(Import|Export)$/ })).toHaveCount(0);
       await expect(appBar(page).getByRole('button', { name: 'Help', exact: true })).toBeHidden();
       await expect(themeButton(page)).toBeHidden();
+      // The figure editor is a row of the More sheet on a phone.
+      await expect(figureEditorButton(page)).toBeHidden();
       // The Help menu's popover host stays rendered: no display: none above a popover.
       expect(
         await appBar(page)
@@ -153,7 +155,13 @@ test.describe('the bars on a phone', () => {
     await expectWithinViewport(page, moreSheet(page));
 
     await expect(rows.getByRole('radiogroup', { name: 'Contours' })).toBeVisible();
-    for (const name of [/^Filter/, /^Import data/, /^Export/, /^Help & shortcuts/]) {
+    for (const name of [
+      /^Filter/,
+      /^Import data/,
+      /^Export/,
+      /^Figure editor/,
+      /^Help & shortcuts/,
+    ]) {
       await expect(rows.getByRole('button', { name })).toBeVisible();
     }
     await expect(rows.getByRole('link', { name: /^Feedback/ })).toBeVisible();
@@ -172,30 +180,37 @@ test.describe('the bars on a phone', () => {
     await expect(viewBar(page).locator('.wb-more-dot')).toBeVisible();
   });
 
-  test('C4: Export in the sheet opens the Export menu, which an outside tap closes', async ({
+  test('C4: Export in the sheet opens the Export panel as a sheet, which a tap above closes', async ({
     page,
   }) => {
     await openExplorePhone(page);
     let rows = await openMoreSheet(page);
     await rows.getByRole('button', { name: /^Export/ }).tap();
 
-    // The sheet closes first, then the menu opens anchored to More.
+    // The More sheet closes first, then the Export panel opens on the bottom edge.
     await expect(moreSheet(page)).toBeHidden();
-    await expect(exportMenuList(page)).toBeVisible();
-    await expectWithinViewport(page, exportMenuList(page));
+    await expect(exportPanel(page)).toBeVisible();
+    await expectWithinViewport(page, exportPanel(page));
+    const viewport = page.viewportSize()!;
+    const panel = await box(exportPanel(page));
+    expect(Math.abs(panel.width - viewport.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(panel.y + panel.height - viewport.height)).toBeLessThanOrEqual(3);
+    // Its choices and its Download are finger-sized.
+    expect(await touchTargetsBelow(page, exportPanel(page))).toEqual([]);
 
-    await tap(page, await emptyPlotSpot(page));
-    await expect(exportMenuList(page)).toBeHidden();
+    // A tap on the scrim above it closes it.
+    await tap(page, { x: viewport.width / 2, y: panel.y / 2 });
+    await expect(exportPanel(page)).toBeHidden();
 
     // Escape closes it too, and hands focus back to More.
     rows = await openMoreSheet(page);
     await rows.getByRole('button', { name: /^Export/ }).tap();
-    await expect(exportMenuList(page)).toBeVisible();
+    await expect(exportPanel(page)).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(exportMenuList(page)).toBeHidden();
+    await expect(exportPanel(page)).toBeHidden();
     await expect(moreButton(page)).toBeFocused();
 
-    // The Export menu borrowed More as its anchor and gave back More's own popup attributes
+    // The Export panel borrowed More as its anchor and gave back More's own popup attributes
     // (Task 5.5; they sit on the ps-button host, not on the inner button moreButton finds).
     const moreHost = viewBar(page).locator('.wb-more');
     await expect(moreHost).toHaveAttribute('aria-haspopup', 'dialog');
@@ -323,7 +338,7 @@ test.describe('the bars on a phone on its side', () => {
     await expect(searchToggle(page)).toBeFocused();
   });
 
-  test('C9b: in landscape, Export in the More sheet and the dataset name open their menus on screen', async ({
+  test('C9b: in landscape, Export in the More sheet and the dataset name open their panels on screen', async ({
     page,
   }) => {
     await openExplorePhone(page);
@@ -333,18 +348,14 @@ test.describe('the bars on a phone on its side', () => {
     const rows = await openMoreSheet(page);
     await rows.getByRole('button', { name: /^Export/ }).tap();
     await expect(moreSheet(page)).toBeHidden();
-    await expect(exportMenuList(page)).toBeVisible();
-    // At touch size the menu is taller than the 360 px screen (a80b0742 added Table (.tsv)), so
-    // its panel stops above the bottom edge and the list scrolls inside it: measure the panel.
-    await expectWithinViewport(page, exportMenu(page).locator('ps-menu ps-popover .panel'));
-    // The items are slotted into the list, so they are found from the menu's host.
-    const lastItem = exportMenu(page).getByRole('menuitemcheckbox', {
-      name: 'Include legend settings',
-    });
-    await lastItem.scrollIntoViewIfNeeded();
-    await expectWithinViewport(page, lastItem);
+    await expect(exportPanel(page)).toBeVisible();
+    await expectWithinViewport(page, exportPanel(page));
+    // The bundle's options are the tallest: its Download is still reached, scrolling the sheet.
+    await exportKinds(page).getByRole('radio', { name: 'Data bundle', exact: true }).tap();
+    await exportDownload(page).scrollIntoViewIfNeeded();
+    await expectWithinViewport(page, exportDownload(page));
     await page.keyboard.press('Escape');
-    await expect(exportMenuList(page)).toBeHidden();
+    await expect(exportPanel(page)).toBeHidden();
 
     await datasetSwitcher(page).tap();
     const importPanel = importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
@@ -736,6 +747,24 @@ test.describe('the More sheet', () => {
     const dataset = await box(datasetSwitcher(page));
     expect((await box(panel)).y).toBeGreaterThanOrEqual(dataset.y + dataset.height - 1);
     await expect(datasetSwitcher(page)).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('Figure editor opens the figure editor, and closing it returns focus to More', async ({
+    page,
+  }) => {
+    const rows = await openMoreSheet(page);
+    // Right after Export, as the mockup has it.
+    const exported = await box(rows.getByRole('button', { name: /^Export/ }));
+    const row = rows.getByRole('button', { name: 'Figure editor', exact: true });
+    expect((await box(row)).y).toBeGreaterThan(exported.y);
+    await row.tap();
+
+    await expect(moreSheet(page)).toBeHidden();
+    const editor = page.getByRole('dialog', { name: 'Figure editor', exact: true });
+    await expect(editor).toBeVisible();
+    await editor.getByRole('button', { name: 'Close', exact: true }).tap();
+    await expect(editor).toBeHidden();
+    await expect(moreButton(page)).toBeFocused();
   });
 
   test("Filter in the sheet shows the Filter tab's panel and focuses its heading", async ({

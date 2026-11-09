@@ -8,6 +8,7 @@ import {
   clearStatusChip,
   closeFilterPanel,
   exportAction,
+  figureEditorButton,
   openExplore,
   waitForExploreDataLoad,
 } from './helpers/explore';
@@ -237,7 +238,7 @@ test.describe('the theme switch', () => {
 test.describe('the theme switch on an 800 px tablet', () => {
   test.use({ viewport: { width: 800, height: 1000 } });
 
-  test('the Theme button sits before Help, and the dataset name and search still fit', async ({
+  test('the Theme button sits between the Figure editor and Help, and the dataset name and search still fit', async ({
     page,
   }) => {
     await openExplore(page);
@@ -246,8 +247,10 @@ test.describe('the theme switch on an 800 px tablet', () => {
       const b = (await locator.boundingBox())!;
       return { left: b.x, right: b.x + b.width };
     };
+    const editor = await sides(figureEditorButton(page));
     const theme = await sides(themeButton(page));
     const help = await sides(appBar(page).getByRole('button', { name: 'Help', exact: true }));
+    expect(editor.right).toBeLessThanOrEqual(theme.left);
     expect(theme.right).toBeLessThanOrEqual(help.left);
     expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
   });
@@ -257,7 +260,7 @@ test.describe('exports stay light in Dark', () => {
   /** Exports a quick PNG and returns the downloaded file, base64-encoded. */
   async function quickPng(page: Page): Promise<string> {
     const download = page.waitForEvent('download');
-    await exportAction(page, 'Quick PNG');
+    await exportAction(page, 'PNG');
     const file = await download;
     return fs.readFileSync(await file.path()).toString('base64');
   }
@@ -308,7 +311,7 @@ test.describe('exports stay light in Dark', () => {
   }) => {
     await openExplore(page);
     await chooseTheme(page, 'Dark');
-    await exportAction(page, 'Figure editor…');
+    await figureEditorButton(page).click();
     const modal = figureEditorContent(page);
     const preview = figurePreviewCanvas(page);
     await expect(preview).toBeVisible();

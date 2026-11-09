@@ -36,7 +36,7 @@ export class ProtspaceImportMenu extends LitElement {
   /**
    * The panel also offers "Export…", for a host whose dataset control is the one place for the
    * data on screen. It asks, as the rest does: `open-export-menu` carries the control the panel
-   * opened from, for the host to open its export menu there.
+   * opened from, for the host to open its Export panel there.
    */
   @property({ type: Boolean }) exportable = false;
 
@@ -137,7 +137,7 @@ export class ProtspaceImportMenu extends LitElement {
               class="import-export-button"
               variant="secondary"
               data-import-action
-              aria-haspopup="menu"
+              aria-haspopup="dialog"
               @click=${this.openExportMenu}
               ><span slot="start">${icon('download', 16)}</span>Export…</ps-button
             >
@@ -322,8 +322,8 @@ export class ProtspaceImportMenu extends LitElement {
   };
 
   /**
-   * Hands over to the host's export menu, under the same control. The panel closes first and
-   * releases its layer, so the menu that opens next is the top layer and Escape closes it alone.
+   * Hands over to the host's Export panel, under the same control. This panel closes first and
+   * releases its layer, so the one that opens next is the top layer and Escape closes it alone.
    */
   private openExportMenu = async () => {
     const anchor = this.anchorEl ?? this.trigger;

@@ -176,7 +176,7 @@ test.describe('the Escape order', () => {
     await openExplore(page);
     const id = await selectFirstBySearch(page);
     await searchInput(page).blur();
-    // The same handler the Export menu's Figure editor item reaches.
+    // The request the app bar's Figure editor button sends through the Export panel.
     await exportMenu(page).evaluate((menu) =>
       menu.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true })),
     );

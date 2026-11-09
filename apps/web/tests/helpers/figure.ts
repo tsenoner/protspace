@@ -1,6 +1,6 @@
-/** The figure editor, opened from the Export menu as a person opens it. */
+/** The figure editor, opened from its app bar button as a person opens it. */
 import { expect, type Locator, type Page } from '@playwright/test';
-import { exportAction } from './explore';
+import { figureEditorButton, waitForExploreInteractionReady } from './explore';
 
 /** The figure editor's dialog, named by its heading. */
 export const figureEditor = (page: Page): Locator =>
@@ -17,11 +17,12 @@ export const figurePreviewCanvas = (page: Page): Locator =>
   figureEditorContent(page).locator('canvas.publish-preview-canvas');
 
 /**
- * Export → "Figure editor…", then waits for the dialog and for its preview canvas to have a size,
- * which it gets once the first preview is drawn. Returns the dialog.
+ * The app bar's Figure editor button, then waits for the dialog and for its preview canvas to have
+ * a size, which it gets once the first preview is drawn. Returns the dialog.
  */
 export async function openFigureEditor(page: Page): Promise<Locator> {
-  await exportAction(page, 'Figure editor…');
+  await waitForExploreInteractionReady(page);
+  await figureEditorButton(page).click();
   const dialog = figureEditor(page);
   await expect(dialog).toBeVisible();
   const canvas = figurePreviewCanvas(page);

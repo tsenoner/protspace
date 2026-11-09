@@ -7,6 +7,7 @@ import {
   openExportMenu,
   openImportMenu,
   sidebar,
+  viewBar,
   waitForExploreDataLoad,
 } from './helpers/explore';
 import { closeLegendSettings, legendSettingsDialog, openLegendSettings } from './helpers/legend';
@@ -506,14 +507,19 @@ test('with the sidebar open, the legend settings popover and the Import and Expo
       openImportMenu,
       (p: Page) => importMenu(p).getByRole('dialog', { name: 'Import', exact: true }),
     ],
-    [openExportMenu, (p: Page) => exportMenu(p).getByRole('menu', { name: 'Export', exact: true })],
+    [
+      openExportMenu,
+      (p: Page) => exportMenu(p).getByRole('dialog', { name: 'Export', exact: true }),
+    ],
   ] as const) {
     await open(page);
     const panel = panelOf(page);
     const box = (await panel.boundingBox())!;
-    // The panel reaches over the sidebar column, and nothing of the shell paints over it.
-    const sidebarBox = (await sidebar(page).boundingBox())!;
-    expect(box.x + box.width).toBeGreaterThan(sidebarBox.x);
+    // Both open under the dataset name: the panel reaches over the view bar into the plot, and
+    // nothing of the shell paints over it.
+    const viewBarBox = (await viewBar(page).boundingBox())!;
+    expect(box.y).toBeLessThan(viewBarBox.y + viewBarBox.height);
+    expect(box.y + box.height).toBeGreaterThan(viewBarBox.y + viewBarBox.height);
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
     expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);

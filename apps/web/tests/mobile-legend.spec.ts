@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { exportMenu, selectAnnotation } from './helpers/explore';
+import { selectAnnotation } from './helpers/explore';
 import { figureEditorContent } from './helpers/figure';
 import {
   getFirstLegendItemValue,
@@ -173,13 +173,10 @@ test.describe('the legend on a phone', () => {
     page,
   }) => {
     await openExplorePhone(page);
-    // On a phone, Export lives in the More sheet; the sheet closes before the menu opens.
+    // On a phone, the Figure editor is a row of the More sheet, which closes before it opens.
     await moreButton(page).tap();
-    await moreSheetContent(page)
-      .getByRole('button', { name: /^Export/ })
-      .tap();
+    await moreSheetContent(page).getByRole('button', { name: 'Figure editor', exact: true }).tap();
     await expect(moreSheet(page)).toBeHidden();
-    await exportMenu(page).getByRole('menuitem', { name: 'Figure editor…', exact: true }).tap();
 
     const editor = page.getByRole('dialog', { name: 'Figure editor', exact: true });
     await expect(editor).toBeVisible();

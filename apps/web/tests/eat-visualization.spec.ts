@@ -766,7 +766,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(transparentExport.corner[3]).toBe(0);
 
   const downloadPromise = page.waitForEvent('download');
-  await exportAction(page, 'Quick PNG');
+  await exportAction(page, 'PNG');
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.png$/);
   const downloadPath = await download.path();
@@ -927,15 +927,15 @@ test('exports the visible proteins as a table, the same set as the ID export', a
   // 619 curated + the 119 transfers at or above 0.6 (see the reliability filter test).
   await expect.poll(async () => (await readRenderedProteinIds(page)).length).toBe(738);
 
-  const download = async (item: 'Protein IDs (.txt)' | 'Table (.tsv)') => {
+  const download = async (item: 'Protein IDs' | 'Table') => {
     const downloadPromise = page.waitForEvent('download');
     await exportAction(page, item);
     const file = await downloadPromise;
     return { name: file.suggestedFilename(), text: fs.readFileSync((await file.path())!, 'utf8') };
   };
 
-  const ids = (await download('Protein IDs (.txt)')).text.split('\n');
-  const table = await download('Table (.tsv)');
+  const ids = (await download('Protein IDs')).text.split('\n');
+  const table = await download('Table');
   expect(table.name).toMatch(/\.tsv$/);
 
   const [header, ...rows] = table.text

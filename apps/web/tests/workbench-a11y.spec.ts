@@ -7,8 +7,10 @@ import {
   clearStatusChip,
   closeFilterPanel,
   colorByTrigger,
-  exportAction,
+  exportKinds,
+  figureEditorButton,
   openExplore,
+  openExportMenu,
   openImportMenu,
   selectAnnotation,
 } from './helpers/explore';
@@ -89,6 +91,18 @@ const STATES: State[] = [
     open: async (page) => {
       await openImportMenu(page);
     },
+    // The panel, in the top layer under the dataset name, covers Color by in the view bar. axe
+    // does not see the top layer as covering it and reads Color by's text on the panel's blue
+    // "Open a file…" button. The idle state checks Color by's contrast.
+    axe: { exclude: ['#myAnnotationSelect'] },
+  },
+  {
+    name: 'the Export panel with the bundle chosen',
+    open: async (page) => {
+      await openExportMenu(page);
+      // The bundle shows the most: its checkbox and the help under it.
+      await exportKinds(page).getByRole('radio', { name: 'Data bundle', exact: true }).click();
+    },
   },
   {
     name: 'the Help menu',
@@ -100,7 +114,7 @@ const STATES: State[] = [
   {
     name: 'the figure editor',
     open: async (page) => {
-      await exportAction(page, 'Figure editor…');
+      await figureEditorButton(page).click();
       await expect(figureEditor(page)).toBeVisible();
     },
   },

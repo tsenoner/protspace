@@ -7,8 +7,9 @@ The Figure Editor is a window-filling dialog for creating publication-ready figu
 
 ## Opening the Figure Editor
 
-1. Click **Export** in the app bar
-2. Choose **Figure editor…**
+Click **Figure editor** at the right of the app bar, before the theme and Help buttons. On a tablet
+the button shows only its image icon, named by its tooltip; on a phone, open **More** and choose
+**Figure editor**.
 
 The editor opens as a dialog that fills the window, with a **preview canvas** on the left and a
 **settings sidebar** on the right. **Close**, the dialog's **×** and **Escape** close it; when an
@@ -20,12 +21,13 @@ figure are always light: a white (or transparent) background with the light colo
 the same whichever theme you made it in.
 :::
 
-To download immediately without opening the editor, use **Quick PNG** or **Quick PDF**. It always exports your
-current view at 2048 × 1024 px and does not use the editor's settings.
+To download an image without opening the editor, click the dataset name, choose **Export…**, then
+**Image** and **PNG** or **PDF**. It always exports your current view at 2048 × 1024 px and does not
+use the editor's settings.
 
 The editor always renders the full view, what a double-click on the plot shows, not your current
-zoom. Its dots are therefore drawn at their unzoomed size, while Quick Export keeps the zoom and the
-larger dots that come with it. The plot fills the figure's frame, each axis stretched, as it fills
+zoom. Its dots are therefore drawn at their unzoomed size, while an image from the Export panel
+keeps the zoom and the larger dots that come with it. The plot fills the figure's frame, each axis stretched, as it fills
 its area on screen. [Contours](/explore/controls#contours) are not drawn in the
 preview or the exported figure yet; see [Exporting Results](/explore/exporting#dot-size-in-images).
 
