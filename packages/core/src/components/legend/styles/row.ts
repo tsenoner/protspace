@@ -40,9 +40,15 @@ export const rowStyles = css`
     background: var(--ps-accent-tint);
   }
 
-  /* The category under the pointer in a score strip. */
-  .legend-item-score-hover {
+  /* The category under the pointer in a score strip, or the one the plot focuses (Shift + hover
+     a point), which also takes the hover tint. */
+  .legend-item-score-hover,
+  .legend-item-focus {
     box-shadow: inset 2px 0 0 var(--ps-text);
+  }
+
+  .legend-item-focus {
+    background: var(--ps-surface-hover);
   }
 
   .legend-item-main {

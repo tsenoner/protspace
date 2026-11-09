@@ -33,6 +33,7 @@ import {
   setLegendSetting,
   setLegendSort,
 } from './helpers/legend';
+import { clusterScreenPoints } from './helpers/plot';
 import { seedLayout, structurePanel } from './helpers/workbench';
 
 const byName = (a: string, b: string) =>
@@ -106,6 +107,43 @@ test.describe('workbench legend', () => {
     await page.keyboard.press('i');
 
     await expect.poll(() => legendRowValues(page, { visible: true })).toEqual([value]);
+  });
+
+  test("Shift over a point lights its category's legend row until Shift is released", async ({
+    page,
+  }) => {
+    await openExplore(page);
+    // A shown category: a hidden one's points take no hover.
+    const value = (await legendRowValues(page, { visible: true })).find(
+      (each) => each !== 'Other' && each !== '__NA__',
+    )!;
+    const [point] = await clusterScreenPoints(page, value, 1);
+    expect(point, `a plotted point of ${value}`).toBeDefined();
+    // The plot's own report of what it focuses: the point under the pointer may belong to
+    // another category drawn over it.
+    await page.locator('#myPlot').evaluate((plot) => {
+      const seen = window as unknown as { __focus?: string[] | null };
+      plot.addEventListener('category-focus', (event) => {
+        seen.__focus = (event as CustomEvent<{ values: string[] | null }>).detail.values;
+      });
+    });
+    const focused = () =>
+      legend(page)
+        .locator('.legend-item.legend-item-focus')
+        .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-value')));
+
+    await page.mouse.move(point.x, point.y);
+    await page.keyboard.down('Shift');
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __focus?: string[] }).__focus))
+      .toBeTruthy();
+    const values = await page.evaluate(() => (window as unknown as { __focus: string[] }).__focus);
+    const rows = await legendRowValues(page);
+    const expected = rows.includes(values[0]) ? values[0] : 'Other';
+    await expect.poll(focused).toEqual([expected]);
+
+    await page.keyboard.up('Shift');
+    await expect.poll(focused).toEqual([]);
   });
 
   test("a long name ends in an ellipsis and its full name is in the row's accessible name", async ({

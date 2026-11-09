@@ -62,6 +62,7 @@ import {
   isItemSelected,
   createItemActionEvent,
   computeOtherConcreteValues,
+  valueToKey,
 } from './legend-helpers';
 import { sortItemsForDisplay, type ActiveSortMode } from './legend-items-state';
 
@@ -156,6 +157,15 @@ export class ProtspaceLegend extends LitElement {
    * (each strip's `highlighted` binding), so a hover in either place lights up both.
    */
   @state() private _hoveredCategory: string | null = null;
+  /**
+   * The categories the plot's Shift + hover focuses (its `category-focus` event), and the hovered
+   * point's own first value, which the score strips light; null while nothing is focused. Kept
+   * apart from `_hoveredCategory`, so a pointer on the legend and Shift on the plot never fight.
+   * Unlike the hover it does not wait for scores: the rows light without them.
+   */
+  @state() private _plotFocus: { values: ReadonlySet<string>; first: string } | null = null;
+  /** Some focused value sits in Other, so the Other row lights; derived in `willUpdate`. */
+  private _plotFocusInOther = false;
 
   @query('.legend-items')
   private _legendItemsEl?: HTMLDivElement;
@@ -356,6 +366,9 @@ export class ProtspaceLegend extends LitElement {
     onDataChange: (data, annotation, projectionName) =>
       this._data.onDataChange(data, annotation, projectionName),
     onAnnotationChange: (annotation) => this._data.onAnnotationChange(annotation),
+    onCategoryFocus: (values) => {
+      this._plotFocus = values?.length ? { values: new Set(values), first: values[0] } : null;
+    },
     getHiddenValues: () => this._hiddenValues,
     getOtherItems: () => this._otherItems,
     getLegendItems: () => this._legendItems,
@@ -858,6 +871,11 @@ export class ProtspaceLegend extends LitElement {
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
       this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
     }
+    if (changedProperties.has('_plotFocus') || changedProperties.has('_otherItems')) {
+      const focus = this._plotFocus;
+      this._plotFocusInOther =
+        focus !== null && this._otherItems.some((each) => focus.values.has(valueToKey(each.value)));
+    }
     this._otherPopover.willUpdate(
       changedProperties.has('_otherItems'),
       changedProperties.has('selectedAnnotation'),
@@ -880,7 +898,8 @@ export class ProtspaceLegend extends LitElement {
       filtered:
         this.isolationMode || Boolean(this._scatterplotController.scatterplot?.filtersActive),
       points: this._stripPoints,
-      highlighted: this._hoveredCategory,
+      // A pointer on the legend wins; the plot's focus lights the hovered point's own category.
+      highlighted: this._hoveredCategory ?? this._plotFocus?.first ?? null,
       clusterCaveat: this._clusterCaveat,
     };
     return renderScoreStrips(view, this._scoreStripHandlers);
@@ -890,11 +909,14 @@ export class ProtspaceLegend extends LitElement {
     const selected = isItemSelected(item, this.selectedItems);
     const picked = this._keyboard.pickedValue === item.value;
     const isOther = item.value === LEGEND_VALUES.OTHER;
+    const focused = isOther
+      ? this._plotFocusInOther
+      : (this._plotFocus?.values.has(item.value) ?? false);
     const classes = `${getItemClasses(item, selected, picked)}${
       this._categoryScores.length > 0 && item.value === this._hoveredCategory
         ? ' legend-item-score-hover'
         : ''
-    }`;
+    }${focused ? ' legend-item-focus' : ''}`;
 
     const view: LegendRowView = {
       classes,

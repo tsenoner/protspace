@@ -18,6 +18,10 @@ A hidden row keeps its crossed-out eye in that same place, so nothing moves when
 On a touch screen the controls are always shown, the grip sits inside the row before the colour,
 and every control is a 40 px target.
 
+Hold **Shift** over a point in the plot to focus its category: its legend row is highlighted
+too, and so is its dot in the [score strips](#separation-score-strips) when there are any. A point
+in `Other` highlights the `Other` row. Release **Shift** and the highlight goes.
+
 ## Show And Hide Values
 
 Click any legend row to toggle its visibility:
@@ -82,6 +86,7 @@ See [Transferred Annotations (EAT)](/explore/eat) for the EAT panel, where the b
 When the dataset was prepared with statistics and the selected annotation was scored in the current projection, two strips appear near the top of the legend panel, above the category list: one for `Silhouette`, one for `Davies–Bouldin`. Each plots one dot per category, in that category's legend color, so you can see which values sit apart from the rest and which overlap.
 
 - Hovering a dot highlights the matching legend row, and hovering a row highlights its dot.
+  Holding **Shift** over a point in the plot highlights its category's dot and row as well.
 - Clicking a dot toggles that category, exactly like clicking its legend row.
 - The strips are where to read the ranking: the legend's own order stays the plot's draw order.
 - While a filter or isolation narrows the view, the strips are replaced by the note `Separation scores are hidden while the view is filtered.`

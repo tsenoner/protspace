@@ -42,6 +42,7 @@ import type { PlotNeutrals } from './styling/plot-neutrals';
 import { PlotTheme } from './styling/plot-theme';
 import type {
   BrushSelectionDetail,
+  CategoryFocusDetail,
   ProteinClickDetail,
   RendererDegradedDetail,
   TooltipAction,
@@ -642,7 +643,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._unpinTooltip();
     this._hoveredPoint = null;
     this._shiftDown = false;
-    this._focusedValues = null;
+    this._setFocusedValues(null);
   }
 
   private _handleZOrderChange = (event: Event) => {
@@ -1874,11 +1875,27 @@ export class ProtspaceScatterplot extends LitElement {
         next = inOther ? [...values, ...this.otherAnnotationValues] : values;
       }
     }
+    this._setFocusedValues(next);
+  }
+
+  /**
+   * Sets the focus and tells the page (`category-focus`) when it changed, so the legend can light
+   * the focused rows. A repeat of the same values is no change: the hover runs on every move.
+   */
+  private _setFocusedValues(next: string[] | null): void {
     const current = this._focusedValues;
     const same =
       next === current ||
       (next !== null && current !== null && next.join('\u0000') === current.join('\u0000'));
-    if (!same) this._focusedValues = next;
+    if (same) return;
+    this._focusedValues = next;
+    this.dispatchEvent(
+      new CustomEvent<CategoryFocusDetail>('category-focus', {
+        detail: { values: next },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private _handleShiftKey = (event: KeyboardEvent) => {

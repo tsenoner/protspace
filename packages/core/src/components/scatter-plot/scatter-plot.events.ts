@@ -34,6 +34,15 @@ export interface ProteinClickDetail {
 }
 
 /**
+ * `category-focus`: a Shift + hover focus started, changed or ended. `values` are the focused
+ * internal values in the selected annotation, every Other value included when the point is in
+ * Other; null once the focus ends. The legend lights the matching rows.
+ */
+export interface CategoryFocusDetail {
+  values: readonly string[] | null;
+}
+
+/**
  * Why the renderer is running below full capability.
  *
  * Every one of these was previously either silent or console-only, on hardware
