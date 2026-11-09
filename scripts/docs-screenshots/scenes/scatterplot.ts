@@ -12,7 +12,6 @@ import {
   selectionBarAction,
   statusChip,
   toolButton,
-  viewBar,
 } from '../../../apps/web/tests/helpers/explore';
 import {
   closeLegendSettings,
@@ -275,7 +274,7 @@ const projectionCard = (page: Page): Locator =>
 async function tooltipCardSteps(page: Page, cap: CaptureApi): Promise<void> {
   await clickProteinNearPlotCentre(page);
   await expect(plotTooltip(page).getByRole('button', { name: 'View structure' })).toBeVisible();
-  const trigger = viewBar(page).getByRole('button', {
+  const trigger = page.locator('#myProjectionMetadata').getByRole('button', {
     name: 'View projection metadata',
     exact: true,
   });
@@ -358,7 +357,9 @@ export const SCATTERPLOT_CAPTURES: CaptureEntry[] = [
         [
           plotTooltip(page),
           projectionCard(page),
-          viewBar(page).getByRole('button', { name: 'View projection metadata', exact: true }),
+          page
+            .locator('#myProjectionMetadata')
+            .getByRole('button', { name: 'View projection metadata', exact: true }),
         ],
         16,
       ),

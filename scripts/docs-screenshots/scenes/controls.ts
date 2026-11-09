@@ -13,7 +13,7 @@ import {
   contoursTrigger,
   draftFilterCondition,
   exportList,
-  exportTrigger,
+  datasetSwitcher,
   filterPanel,
   openExportMenu,
   pasteIntoSearch,
@@ -142,7 +142,7 @@ export const CONTROLS_CAPTURES: CaptureEntry[] = [
     steps: async (page) => {
       await openExportMenu(page);
     },
-    target: (page) => around([exportTrigger(page), exportList(page)]),
+    target: (page) => around([datasetSwitcher(page), exportList(page)]),
   },
   {
     name: 'search-messages',

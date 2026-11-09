@@ -34,7 +34,7 @@ The Explore page is a workbench for protein embeddings: a map of your proteins i
 ![The view bar: Projection with its details button, Color by and Contours](./images/view-bar.png){.light-only}
 ![The view bar: Projection with its details button, Color by and Contours](./images/view-bar-dark.png){.dark-only}
 
-- **Projection** picks the 2D map: PCA, UMAP, t-SNE, PaCMAP, MDS or LocalMAP. The button beside it opens the [projection details](/explore/scatterplot#projection-metadata), with the projection's quality scores and settings.
+- **Projection** picks the 2D map: PCA, UMAP, t-SNE, PaCMAP, MDS or LocalMAP. The ⓘ button in the plot's top-left corner, beside the selection tools, opens the [projection details](/explore/scatterplot#projection-metadata), with the projection's quality scores and settings.
 - **Color by** picks the annotation that colours the points.
 - **Contours** draws density rings for each legend colour: Off, Auto or Always.
   On a tablet the bar also has **Filter**, which opens the [Filter panel](/explore/filter). On a desktop, Filter is in the sidebar's rail.
@@ -115,7 +115,7 @@ The tour runs once by itself, the first time you open Explore. It points at each
 
 ## Keyboard shortcuts
 
-**Help** → **Keyboard shortcuts** lists them all. The ones you will use most:
+**Help** → **Keyboard shortcuts**, or the keyboard button under the ⓘ in the plot's top-left corner, lists them all. The ones you will use most:
 
 | Keys                              | What they do                                                                               |
 | --------------------------------- | ------------------------------------------------------------------------------------------ |

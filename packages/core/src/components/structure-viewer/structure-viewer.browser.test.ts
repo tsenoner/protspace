@@ -461,4 +461,19 @@ describe('protspace-structure-viewer Mol* canvas box', () => {
     expect(drawn.bottom).toBe(box.bottom);
     expect(drawn.width).toBe(box.width);
   });
+
+  it('hides the checkerboard Mol* puts on its canvas, so the bars beside a scaled frame stay plain', async () => {
+    const viewer = await mount();
+    const root = viewer.shadowRoot!;
+    const mountEl = document.createElement('div');
+    mountEl.className = 'molstar-mount';
+    const canvas = document.createElement('canvas');
+    // What Mol* writes inline for a transparent background.
+    canvas.style.backgroundImage =
+      'linear-gradient(45deg, lightgrey 25%, transparent 25%, transparent 75%, lightgrey 75%, lightgrey)';
+    mountEl.append(canvas);
+    root.querySelector('.viewer-content')!.append(mountEl);
+
+    expect(getComputedStyle(canvas).backgroundImage).toBe('none');
+  });
 });

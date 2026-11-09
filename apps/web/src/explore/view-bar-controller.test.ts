@@ -79,12 +79,16 @@ function setup(data = makeData()) {
     }),
     cancelPending: vi.fn(),
   });
+  const plotArea = { id: 'plot-area' } as unknown as Element;
   const projectionMetadata = {
     projection: null as unknown,
     statisticsRows: undefined as unknown,
     selectedAnnotation: '',
     viewIsSubset: false,
     annotationDefinitions: {} as unknown,
+    boundary: null as Element | null,
+    // The plot area the details sit in.
+    closest: (selector: string) => (selector === '[data-workbench="plot"]' ? plotArea : null),
   };
   const root = new EventTarget();
   const interactionController = { handleAnnotationChange: vi.fn() };
@@ -106,6 +110,7 @@ function setup(data = makeData()) {
     annotationSelect,
     contoursMenu,
     projectionMetadata,
+    plotArea,
     root,
     interactionController,
     onUserChange,
@@ -181,6 +186,11 @@ describe('createViewBarController', () => {
     expect(indexAtChange).toBe(1);
     expect(m.annotationSelect.selectedProjection).toBe('PCA');
     expect(m.projectionMetadata.projection).toBe(m.data.projections[1]);
+  });
+
+  it('keeps the projection details card inside the plot area it sits in', () => {
+    const m = setup();
+    expect(m.projectionMetadata.boundary).toBe(m.plotArea);
   });
 
   it('an annotation pick writes the plot and clears provenance before onUserChange', () => {

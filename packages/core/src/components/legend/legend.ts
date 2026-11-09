@@ -1,4 +1,4 @@
-import { LitElement, html, type TemplateResult } from 'lit';
+import { LitElement, html, nothing, type TemplateResult } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import {
@@ -33,6 +33,7 @@ import {
 // Processors and renderers
 import { createProcessorContext, type LegendProcessorContext } from './legend-data-processor';
 import {
+  renderEatNote,
   renderLegendHeader,
   renderSortMenu,
   type LegendHeaderHandlers,
@@ -138,6 +139,13 @@ export class ProtspaceLegend extends LitElement {
   @property({ attribute: false }) eatReliability: EatReliabilityState | null = null;
   /** The EAT panel fades the predictions outside the range rather than hiding them. */
   @property({ type: Boolean, attribute: false }) eatFade = false;
+  /**
+   * Where the summary sits: the EAT note and the score strips. The title row stays on top
+   * either way. `top` under the title (the default), `bottom` fixed under the list, so the
+   * categories come right after the title and scroll above the summary.
+   */
+  @property({ type: String, reflect: true, attribute: 'summary-placement' })
+  summaryPlacement: 'top' | 'bottom' = 'top';
 
   // ─────────────────────────────────────────────────────────────────
   // Internal State
@@ -752,18 +760,26 @@ export class ProtspaceLegend extends LitElement {
           ></protspace-info-popover>`
         : undefined;
 
+    const list = renderLegendList(this._sortedLegendItems, (item, index) =>
+      this._renderLegendItem(item, index),
+    );
+    // In the document in the order it is seen, so Tab and a screen reader meet it there too.
+    const bottom = this.summaryPlacement === 'bottom';
+    const header = this._headerModel(title, predicted, info);
+
     return html`
       <div class="legend-container" part="container">
         <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
           ${this._statusMessage}
         </div>
-        ${renderLegendHeader(this._headerModel(title, predicted, info), this._headerHandlers)}
-        ${this._renderScoreStrips()}
-        ${renderLegendList(this._sortedLegendItems, (item, index) =>
-          this._renderLegendItem(item, index),
-        )}
-        ${this._colorPicker.render()} ${this._rowMenu.render()} ${this._nameTooltip.render()}
-        ${this._renderSortMenu()} ${this._otherPopover.render()} ${this._settings.render(title)}
+        ${renderLegendHeader(header, this._headerHandlers)} ${bottom ? list : nothing}
+        <div class="legend-summary" part="summary">
+          ${header.eat ? renderEatNote(header.eat, this._headerHandlers.onEatOpen) : nothing}
+          ${this._renderScoreStrips()}
+        </div>
+        ${bottom ? nothing : list} ${this._colorPicker.render()} ${this._rowMenu.render()}
+        ${this._nameTooltip.render()} ${this._renderSortMenu()} ${this._otherPopover.render()}
+        ${this._settings.render(title)}
       </div>
     `;
   }

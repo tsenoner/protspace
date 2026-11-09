@@ -43,6 +43,9 @@ export const Sidebar = memo(function Sidebar({
         auto-sync="true"
         auto-hide="true"
         scatterplot-selector="#myPlot"
+        // The title row on top, then the categories, then the EAT note and the score strips
+        // fixed under them.
+        summary-placement="bottom"
       >
         <PanelTabs panel={panel} slot="header-start" />
         <PanelFold slot="header-end" folded={panelFolded} />

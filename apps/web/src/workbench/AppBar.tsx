@@ -10,7 +10,11 @@ import {
 import { flushSync } from 'react-dom';
 import { ChevronDown, Database, Github, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router';
-import type { ProtspaceImportMenu, ProtspaceProteinSearch } from '@protspace/core';
+import type {
+  ProtspaceExportMenu,
+  ProtspaceImportMenu,
+  ProtspaceProteinSearch,
+} from '@protspace/core';
 import { countNoun } from '@protspace/utils';
 import { FEEDBACK_HREF, GITHUB_REPO_URL } from '@/lib/support';
 import { hasStructureSheet } from '../explore/layout-mode';
@@ -54,13 +58,34 @@ function toggleImportMenu(event: MouseEvent<HTMLButtonElement>): void {
 }
 
 /**
- * The runtime's Import and Export menus. Memoised and without props, so a status change never
- * re-renders them; the runtime finds them by id.
+ * The runtime's Import and Export menus, without buttons of their own: the dataset name opens the
+ * Import panel, and its "Export…" opens the Export menu under the same name (the More sheet opens
+ * both on a phone). Memoised and without props, so a status change never re-renders them; the
+ * runtime finds them by id.
  */
 const DataActions = memo(function DataActions() {
+  const importMenu = useRef<ProtspaceImportMenu>(null);
+  useEffect(() => {
+    const panel = importMenu.current;
+    if (!panel) return;
+    const openExport = (event: Event) => {
+      const { anchor } = (event as CustomEvent<{ anchor: HTMLElement }>).detail;
+      (document.getElementById('myExportMenu') as ProtspaceExportMenu | null)?.openFrom(
+        anchor,
+        'bottom-start',
+      );
+    };
+    panel.addEventListener('open-export-menu', openExport);
+    return () => panel.removeEventListener('open-export-menu', openExport);
+  }, []);
   return (
     <div className="wb-data-actions" data-driver-id="data-actions">
-      <protspace-import-menu id="myImportMenu" data-driver-id="import"></protspace-import-menu>
+      <protspace-import-menu
+        ref={importMenu}
+        id="myImportMenu"
+        data-driver-id="import"
+        exportable=""
+      ></protspace-import-menu>
       <protspace-export-menu id="myExportMenu"></protspace-export-menu>
     </div>
   );
@@ -191,8 +216,7 @@ export function AppBar() {
       </div>
       <div data-workbench="app-bar-actions">
         <DataActions />
-        <span className="wb-separator" aria-hidden="true" />
-        {/* Decision 1's order: Import and Export, the theme switch, Help, Feedback, GitHub. */}
+        {/* The theme switch, Help, Feedback, GitHub; Import and Export live in the dataset menu. */}
         <ThemeMenu />
         <HelpMenu />
         <a className="wb-icon-link" href={FEEDBACK_HREF} aria-label="Feedback">

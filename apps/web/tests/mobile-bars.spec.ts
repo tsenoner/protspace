@@ -13,7 +13,6 @@ import {
   getSelectedProteinIds,
   getViewState,
   importMenu,
-  importTrigger,
   projectionTrigger,
   queryBuilder,
   searchInput,
@@ -55,8 +54,6 @@ const PHONES = [
 ] as const;
 
 const workbench = (page: Page) => page.locator('.workbench');
-const exportTrigger = (page: Page) =>
-  exportMenu(page).getByRole('button', { name: 'Export', exact: true });
 const exportMenuList = (page: Page) =>
   exportMenu(page).getByRole('menu', { name: 'Export', exact: true });
 
@@ -111,8 +108,7 @@ for (const { label, viewport } of PHONES) {
       await expect(appBar(page).getByRole('link', { name: 'ProtSpace home' })).toBeVisible();
       await expect(datasetSwitcher(page)).toBeVisible();
       await expect(searchToggle(page)).toBeVisible();
-      await expect(importTrigger(page)).toBeHidden();
-      await expect(exportTrigger(page)).toBeHidden();
+      await expect(appBar(page).getByRole('button', { name: /^(Import|Export)$/ })).toHaveCount(0);
       await expect(appBar(page).getByRole('button', { name: 'Help', exact: true })).toBeHidden();
       await expect(themeButton(page)).toBeHidden();
       // The Theme and Help menus' popover hosts stay rendered: no display: none above a popover.
@@ -123,11 +119,12 @@ for (const { label, viewport } of PHONES) {
       ).toEqual(['contents', 'contents']);
       // View bar: fixed at its last stage on a phone.
       await expect(viewBar(page)).toHaveAttribute('data-stage', '3');
-      // View bar: Projection, its details, Color by and More.
+      // View bar: Projection, Color by and More. The details sit in the plot's corner, without
+      // the keyboard shortcuts button a touch screen has no use for.
       await expect(projectionTrigger(page)).toBeVisible();
-      await expect(
-        viewBar(page).getByRole('button', { name: 'View projection metadata' }),
-      ).toBeVisible();
+      const corner = page.locator('[data-workbench="plot-corner"]');
+      await expect(corner.getByRole('button', { name: 'View projection metadata' })).toBeVisible();
+      await expect(corner.getByRole('button', { name: 'Keyboard shortcuts' })).toBeHidden();
       await expect(colorByTrigger(page)).toBeVisible();
       await expect(moreButton(page)).toBeVisible();
 
@@ -375,8 +372,9 @@ test.describe('the bars on a portrait tablet', () => {
     await openExplorePhone(page);
     await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
     await expect(searchInput(page)).toBeVisible();
-    await expect(importTrigger(page)).toBeVisible();
-    await expect(exportTrigger(page)).toBeVisible();
+    // Import and Export open from the dataset name, as on a desktop.
+    await expect(datasetSwitcher(page)).toBeVisible();
+    await expect(appBar(page).getByRole('button', { name: /^(Import|Export)$/ })).toHaveCount(0);
     await expect(searchToggle(page)).toBeHidden();
     // At 800 px the view bar has room for every control: Filter shows and More does not.
     await expect(moreButton(page)).toBeHidden();
@@ -391,11 +389,9 @@ test.describe('the bars on a portrait tablet', () => {
     await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
     await expect(themeButton(page)).toBeVisible();
 
-    // Decision 1's order: Export, then Theme, then Help.
-    const exported = await box(exportTrigger(page));
+    // Decision 1's order: Theme, then Help.
     const theme = await box(themeButton(page));
     const help = await box(appBar(page).getByRole('button', { name: 'Help', exact: true }));
-    expect(exported.x + exported.width).toBeLessThanOrEqual(theme.x);
     expect(theme.x + theme.width).toBeLessThanOrEqual(help.x);
 
     // As mobile-explore-layout.spec.ts measures at 800×1000: the one more button leaves both whole.

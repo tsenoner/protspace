@@ -5,6 +5,7 @@ import '../kit/button';
 import { icon } from '../kit/icon';
 import '../kit/menu';
 import type { PsMenu } from '../kit/menu';
+import type { Placement } from '../kit/position';
 import '../kit/tooltip';
 import { EXPORT_DEFAULTS } from './export-defaults';
 import { exportMenuStyles } from './export-menu.styles';
@@ -55,6 +56,8 @@ export class ProtspaceExportMenu extends LitElement {
   @query('.trigger') private trigger!: HTMLElement;
   @query('ps-menu') private menu!: PsMenu;
   /** The control the menu opened from through openFrom; null while it belongs to its trigger. */
+  /** Where the menu opens: leftward under its own trigger, as an openFrom asks otherwise. */
+  @state() private placement: Placement = 'bottom-end';
   private anchorEl: HTMLElement | null = null;
 
   /** Checks "Include legend settings" again, as for a new dataset. */
@@ -65,11 +68,13 @@ export class ProtspaceExportMenu extends LitElement {
   /**
    * Opens the menu under `anchor`, focus on its first item, as its own trigger does. When it
    * closes, focus returns to `anchor` and the menu belongs to its trigger again. The app's More
-   * sheet opens it this way on phones, where the Export button is hidden.
+   * sheet opens it this way on phones; the dataset name's Import panel, from that name's left
+   * edge (`bottom-start`).
    */
-  openFrom(anchor: HTMLElement): void {
+  openFrom(anchor: HTMLElement, placement: Placement = 'bottom-end'): void {
     if (this.open && this.anchorEl === anchor) return;
     this.anchorEl = anchor;
+    this.placement = placement;
     this.menu.anchor = anchor;
     this.open = true;
   }
@@ -78,6 +83,7 @@ export class ProtspaceExportMenu extends LitElement {
   private restoreAnchor(): void {
     if (!this.anchorEl) return;
     this.anchorEl = null;
+    this.placement = 'bottom-end';
     this.menu.anchor = this.trigger;
   }
 
@@ -97,7 +103,7 @@ export class ProtspaceExportMenu extends LitElement {
         : nothing}
       <ps-menu
         label="Export"
-        placement="bottom-end"
+        placement=${this.placement}
         .open=${this.open}
         @ps-close=${this.onClose}
         @ps-select=${this.onSelect}

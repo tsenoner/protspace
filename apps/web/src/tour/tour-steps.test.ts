@@ -9,7 +9,7 @@ const KINDS: readonly TourKind[] = ['full', 'whats-new'];
 /** The Copy table of the plan's Global Constraints. */
 const FULL_DESKTOP = [
   'Welcome to ProtSpace',
-  'Import & Export',
+  'Your Data',
   'The View Bar',
   'Search Proteins',
   'Interactive Scatterplot',

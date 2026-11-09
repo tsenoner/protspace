@@ -185,7 +185,8 @@ the spider to select it, and click anywhere outside it (its badge, for example) 
 ![A pinned protein tooltip and the projection details card](./images/tooltip-projection-card.png){.light-only}
 ![A pinned protein tooltip and the projection details card](./images/tooltip-projection-card-dark.png){.dark-only}
 
-A small ⓘ button sits beside **Projection** in the view bar. Hover it (or focus it with the
+A small ⓘ button sits in the plot's top-left corner, beside the selection tools, with the
+keyboard shortcuts button under it. Hover the ⓘ (or focus it with the
 keyboard) to open a **Projection Metadata** card describing the current projection. Click the
 button to pin the card open, so you can scroll it and read the ⓘ popovers inside without keeping
 the pointer on the card. **Escape** or a click outside closes it; switching projections updates it.

@@ -117,8 +117,8 @@ the structure viewer follow the theme; exported images and figures are always li
 ### Help
 
 **Help** opens **Documentation** (these pages), **Keyboard shortcuts** (every shortcut, grouped by
-where it works) and **Take the tour** (the guided tour of the page). On a phone they are under
-**More → Help & shortcuts**.
+where it works; the keyboard button in the plot's top-left corner opens the same list) and **Take
+the tour** (the guided tour of the page). On a phone they are under **More → Help & shortcuts**.
 
 ## View bar
 

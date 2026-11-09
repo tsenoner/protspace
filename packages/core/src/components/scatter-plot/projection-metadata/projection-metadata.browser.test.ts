@@ -167,6 +167,122 @@ describe('protspace-projection-metadata on a phone', () => {
   });
 });
 
+describe('protspace-projection-metadata above its neighbours', () => {
+  /**
+   * The plot corner's set-up: the button inside an isolated region (the plot area is its own
+   * stacking context), with a neighbour below it that is stacked above the region (the legend).
+   */
+  async function mountInRegion(): Promise<{
+    el: ProjectionMetadataElement & { boundary: Element | null };
+    region: HTMLElement;
+    neighbour: HTMLElement;
+  }> {
+    const region = document.createElement('div');
+    region.style.cssText =
+      'position: fixed; left: 0; top: 0; width: 400px; height: 300px; isolation: isolate';
+    const el = document.createElement(
+      'protspace-projection-metadata',
+    ) as ProjectionMetadataElement & {
+      boundary: Element | null;
+    };
+    el.projection = tallProjection();
+    el.boundary = region;
+    el.style.cssText = 'position: absolute; left: 12px; top: 12px';
+    region.append(el);
+    const neighbour = document.createElement('div');
+    neighbour.style.cssText =
+      'position: fixed; left: 0; top: 150px; width: 400px; height: 400px; z-index: 50; background: red';
+    document.body.append(region, neighbour);
+    await el.updateComplete;
+    return { el, region, neighbour };
+  }
+
+  it('the open card is in the top layer, so a neighbour stacked over its region never covers it', async () => {
+    const { el } = await mountInRegion();
+    (el.shadowRoot!.querySelector('.trigger') as HTMLButtonElement).click();
+    await el.updateComplete;
+    await frame();
+    const card = el.shadowRoot!.querySelector('.content') as HTMLElement;
+    expect(card.matches(':popover-open')).toBe(true);
+    const box = card.getBoundingClientRect();
+    // Where the neighbour overlaps the card, the topmost thing is still the card.
+    const hit = document.elementFromPoint(box.left + box.width / 2, 200);
+    expect(hit === el || el.shadowRoot!.contains(hit)).toBe(true);
+  });
+
+  it('a card taller than its region stays inside it and scrolls', async () => {
+    const { el, region } = await mountInRegion();
+    (el.shadowRoot!.querySelector('.trigger') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const card = el.shadowRoot!.querySelector('.content') as HTMLElement;
+    const bounds = region.getBoundingClientRect();
+    await expect
+      .poll(() => card.getBoundingClientRect().bottom)
+      .toBeLessThanOrEqual(bounds.bottom - 8 + 0.5);
+    expect(card.getBoundingClientRect().top).toBeGreaterThan(
+      (el.shadowRoot!.querySelector('.trigger') as HTMLElement).getBoundingClientRect().bottom,
+    );
+    expect(card.scrollHeight).toBeGreaterThan(card.clientHeight);
+  });
+
+  it('closing takes the card out of the top layer', async () => {
+    const { el } = await mountInRegion();
+    const trigger = el.shadowRoot!.querySelector('.trigger') as HTMLButtonElement;
+    const card = el.shadowRoot!.querySelector('.content') as HTMLElement;
+    trigger.click();
+    await el.updateComplete;
+    expect(card.matches(':popover-open')).toBe(true);
+    trigger.click();
+    await el.updateComplete;
+    expect(card.matches(':popover-open')).toBe(false);
+  });
+});
+
+describe('protspace-projection-metadata scrollbar', () => {
+  beforeAll(() => adoptTheme());
+
+  /** Opens a card in a 400 × 300 region, with as many parameters as asked for. */
+  async function openCard(parameters: number): Promise<HTMLElement> {
+    const el = document.createElement('protspace-projection-metadata') as ProjectionMetadataElement;
+    const metadata: Record<string, unknown> = { n_components: 2 };
+    for (let i = 0; i < parameters; i++) metadata[`parameter_${i}`] = i;
+    el.projection = { name: 'ProtT5 — UMAP 2', metadata } as Projection;
+    const region = document.createElement('div');
+    region.style.cssText =
+      'position: fixed; left: 0; top: 0; width: 400px; height: 300px; isolation: isolate';
+    (el as ProjectionMetadataElement & { boundary: Element | null }).boundary = region;
+    el.style.cssText = 'position: absolute; left: 12px; top: 12px';
+    region.append(el);
+    document.body.append(region);
+    await el.updateComplete;
+    (el.shadowRoot!.querySelector('.trigger') as HTMLButtonElement).click();
+    await el.updateComplete;
+    await frame();
+    const card = el.shadowRoot!.querySelector('.content') as HTMLElement;
+    // anchorTo publishes the room left in the region once the card is open.
+    await expect.poll(() => card.style.getPropertyValue('--available-height')).not.toBe('');
+    return card;
+  }
+
+  /** Width the scrollbar takes from the card: border box minus the borders minus the client box. */
+  const barWidth = (card: HTMLElement) => card.offsetWidth - card.clientWidth - 2 * card.clientLeft;
+
+  it('a card taller than its room has a classic scrollbar that takes layout space', async () => {
+    const card = await openCard(40);
+    expect(card.scrollHeight).toBeGreaterThan(card.clientHeight);
+    // Overlay scrollbars (the macOS default) take no space; a styled one does.
+    expect(barWidth(card)).toBeGreaterThan(0);
+  });
+
+  it('a card that fits does not scroll', async () => {
+    const card = await openCard(1);
+    expect(card.scrollHeight).toBeLessThanOrEqual(card.clientHeight);
+    // Nothing to scroll to, so no thumb: the bar only draws one while the content overflows.
+    card.scrollTop = 100;
+    expect(card.scrollTop).toBe(0);
+  });
+});
+
 type ScoredCard = ProjectionMetadataElement & {
   statisticsRows?: readonly ProjectionStatisticRow[];
   selectedAnnotation: string;

@@ -10,7 +10,6 @@ import {
   selectAnnotation,
   selectionBar,
   selectionBarAction,
-  viewBar,
   waitForProteinCount,
 } from './helpers/explore';
 import { figureEditorContent, figurePreviewCanvas } from './helpers/figure';
@@ -143,7 +142,9 @@ test.describe('the Escape order', () => {
         metadata: { n_neighbors: 15, min_dist: 0.1, metric: 'cosine' },
       };
     });
-    const trigger = viewBar(page).getByRole('button', { name: 'View projection metadata' });
+    const trigger = page
+      .locator('#myProjectionMetadata')
+      .getByRole('button', { name: 'View projection metadata' });
     await trigger.click();
     await expect(trigger).toHaveAttribute('aria-expanded', 'true');
 

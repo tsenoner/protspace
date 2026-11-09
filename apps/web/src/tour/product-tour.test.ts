@@ -79,7 +79,7 @@ let elements = new Map<string, FakeElement>();
 /** Every desktop target shown, the Other row inside the legend's shadow root. */
 function showDesktopTargets(): void {
   elements = new Map(
-    ['data-actions', 'view-bar', 'search', 'scatterplot', 'selection', 'rail', 'theme', 'help'].map(
+    ['dataset', 'view-bar', 'search', 'scatterplot', 'selection', 'rail', 'theme', 'help'].map(
       (id) => [selector(id), fakeElement()],
     ),
   );
@@ -228,7 +228,7 @@ describe('startTour', () => {
 
   it('gives each target back its own aria state when the tour ends', async () => {
     const actions = fakeElement(10, { 'aria-haspopup': 'dialog' });
-    elements.set(selector('data-actions'), actions);
+    elements.set(selector('dataset'), actions);
     startTour('full', { force: true });
     await driven();
     // What driver.js does to a highlighted element, and when it moves on.

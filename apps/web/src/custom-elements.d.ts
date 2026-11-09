@@ -62,6 +62,7 @@ declare module 'react' {
         React.HTMLAttributes<HTMLElement> & {
           id?: string;
           'data-driver-id'?: string;
+          exportable?: string;
         },
         HTMLElement
       >;
@@ -136,6 +137,7 @@ declare module 'react' {
           'auto-hide'?: string;
           'scatterplot-selector'?: string;
           'data-driver-id'?: string;
+          'summary-placement'?: 'top' | 'bottom';
         },
         HTMLElement
       >;

@@ -35,13 +35,41 @@ test.describe('the view bar', () => {
     await expect(projectionTrigger(page)).toBeVisible();
     await expect(viewBar(page).getByRole('button', { name: /^Color by/ })).toBeVisible();
     await expect(viewBar(page).getByRole('button', { name: /^Contours/ })).toBeVisible();
-    // Projection, its details and Color by form the tour's projections group.
+    // Projection and Color by form the tour's projections group.
     const group = page.locator('[data-workbench="view-bar"] [data-driver-id="projections"]');
     await expect(group.locator('protspace-projection-select')).toHaveCount(1);
-    await expect(group.locator('protspace-projection-metadata')).toHaveCount(1);
     await expect(group.locator('protspace-annotation-select')).toHaveCount(1);
-    // The plot's top-left corner no longer holds the projection details.
-    await expect(page.locator('#myPlot protspace-projection-metadata')).toHaveCount(0);
+    // The projection details sit in the plot's top-left corner, beside the tool strip.
+    await expect(viewBar(page).locator('protspace-projection-metadata')).toHaveCount(0);
+    await expect(
+      page.locator('[data-workbench="plot-corner"] protspace-projection-metadata'),
+    ).toHaveCount(1);
+  });
+
+  test('the plot corner holds the tools, then the details over the keyboard shortcuts', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    const tools = (await page.locator('#myPlotTools').boundingBox())!;
+    const details = (await page
+      .locator('#myProjectionMetadata')
+      .getByRole('button', { name: 'View projection metadata' })
+      .boundingBox())!;
+    const shortcuts = page.getByRole('button', { name: 'Keyboard shortcuts', exact: true });
+    const keys = (await shortcuts.boundingBox())!;
+    // Right of the tool strip, level with its top; the shortcuts right below the details.
+    expect(details.x).toBeGreaterThanOrEqual(tools.x + tools.width);
+    expect(Math.abs(details.y - tools.y)).toBeLessThan(12);
+    expect(Math.abs(keys.x - details.x)).toBeLessThan(1);
+    expect(keys.y).toBeGreaterThanOrEqual(details.y + details.height);
+
+    // The button opens the same dialog as Help → Keyboard shortcuts.
+    await shortcuts.click();
+    const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(shortcuts).toBeFocused();
   });
 
   test('picking a projection, an annotation and a contour mode updates the plot, the legend and the URL', async ({
@@ -86,7 +114,7 @@ test.describe('the view bar', () => {
     await expectUrlParam(page, 'density', 'auto');
   });
 
-  test('the projection details open below the view bar, fully visible and topmost', async ({
+  test('the projection details open below their button, fully visible and topmost', async ({
     page,
   }) => {
     await openExplore(page);
@@ -98,17 +126,20 @@ test.describe('the view bar', () => {
       };
     });
 
-    await viewBar(page).getByRole('button', { name: 'View projection metadata' }).click();
+    await page
+      .locator('#myProjectionMetadata')
+      .getByRole('button', { name: 'View projection metadata' })
+      .click();
     const card = page.locator('#myProjectionMetadata .content');
     await expect(card).toBeVisible();
 
-    const trigger = (await viewBar(page)
+    const trigger = (await page
+      .locator('#myProjectionMetadata')
       .getByRole('button', { name: 'View projection metadata' })
       .boundingBox())!;
     const box = (await card.boundingBox())!;
     const viewport = page.viewportSize()!;
-    // The card hangs below its trigger in the view bar, over the plot area. (The bar itself is
-    // taller than 44 px until Task 2.10 removes the control bar's padding.)
+    // The card hangs below its trigger in the plot's corner, over the plot.
     expect(box.y).toBeGreaterThanOrEqual(trigger.y + trigger.height);
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);

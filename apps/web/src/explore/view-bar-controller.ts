@@ -97,6 +97,9 @@ export function createViewBarController({
   root,
   onUserChange,
 }: ViewBarControllerOptions): ViewBarController {
+  // The details card stays inside the plot area it sits in, so it never spills onto the legend.
+  projectionMetadata.boundary = projectionMetadata.closest('[data-workbench="plot"]');
+
   /** The projection details show what the plot shows; the plot no longer renders them. */
   const syncProjectionDetails = () => {
     const data = plotElement.data;

@@ -9,7 +9,6 @@ import {
   getFirstLegendItemValue,
   getProteinCount,
   importMenu,
-  importTrigger,
   importUserFile,
   isLegendItemHidden,
   openExplore,
@@ -395,7 +394,6 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
     // 568 px is the phone layout: the Import button gives way and the dataset name opens the same
     // panel (a closed disclosure until pressed), not an immediate action.
-    await expect(importTrigger(page)).toBeHidden();
     await expect(datasetSwitcher(page)).toBeVisible();
     await expect(datasetSwitcher(page)).toHaveAttribute('aria-haspopup', 'dialog');
     await expect(datasetSwitcher(page)).not.toHaveAttribute('aria-expanded', 'true');

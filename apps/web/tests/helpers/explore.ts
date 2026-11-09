@@ -283,9 +283,9 @@ export const projectionTrigger = (page: Page): Locator =>
 export const colorByTrigger = (page: Page): Locator =>
   annotationSelect(page).locator('button[aria-haspopup]').first();
 
-/** The Import menu's trigger, in the app bar. */
+/** What opens the Import panel in the app bar: the dataset name (Import has no button of its own). */
 export const importTrigger = (page: Page): Locator =>
-  appBar(page).getByRole('button', { name: 'Import', exact: true });
+  appBar(page).getByRole('button', { name: /, switch dataset$/ });
 
 /** The element that holds the Import panel. */
 export const importMenu = (page: Page): Locator => page.locator('#myImportMenu');
@@ -375,9 +375,9 @@ export const contoursTrigger = (page: Page): Locator =>
 export const contoursMenu = (page: Page): Locator =>
   page.locator('protspace-contours-menu').getByRole('menu', { name: 'Contours' });
 
-/** The app bar's Export button and its open menu. */
+/** The Import panel's "Export…", which opens the Export menu under the dataset name, and the menu. */
 export const exportTrigger = (page: Page): Locator =>
-  exportMenu(page).getByRole('button', { name: 'Export', exact: true });
+  importMenu(page).getByRole('button', { name: 'Export…', exact: true });
 export const exportList = (page: Page): Locator =>
   exportMenu(page).getByRole('menu', { name: 'Export', exact: true });
 
@@ -517,15 +517,16 @@ export async function pickExample(page: Page, id: string): Promise<void> {
 }
 
 /**
- * Opens the Export menu unless it is open; resolves once it shows. "Open" is read from the
- * trigger's aria-expanded, not the menu's visibility: a closing ps-popover fades out over 120 ms,
- * so a menu just closed would still count as visible and the click that reopens it be skipped.
+ * Opens the Export menu unless it is open; resolves once it shows. It opens from the dataset
+ * name's Import panel ("Export…"). "Open" is read from the menu's first item, which a closed menu
+ * does not render, not from the menu, which stays visible while it fades out.
  */
 export async function openExportMenu(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const trigger = exportTrigger(page);
-  if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
-    await trigger.click();
+  const firstItem = exportMenu(page).getByRole('menuitem', { name: 'Figure editor…', exact: true });
+  if (!(await firstItem.isVisible().catch(() => false))) {
+    await openImportMenu(page);
+    await exportTrigger(page).click();
   }
   await expect(exportList(page)).toBeVisible();
 }
@@ -655,6 +656,16 @@ export async function importUserFile(
   file: Parameters<Locator['setInputFiles']>[0],
 ): Promise<void> {
   await waitForExploreInteractionReady(page);
+  // "Open a file…" closes the Import panel before the file chooser opens; setting the input
+  // directly skips that, and the panel (under the dataset name) would cover the view bar.
+  if (
+    await importPanel(page)
+      .isVisible()
+      .catch(() => false)
+  ) {
+    await page.keyboard.press('Escape');
+    await expect(importMenu(page).locator('.import-menu')).toHaveCount(0);
+  }
   await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(file);
 }
 

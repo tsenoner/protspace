@@ -5,11 +5,11 @@ import { useLayoutMode } from './use-layout-mode';
 import { useViewBarStage } from './use-view-bar-stage';
 
 /**
- * How the plot is drawn (design decision 1): Projection with its details and Color by, Contours,
- * then Filter, in one 44 px row. On desktop the rail's Filter item replaces the bar's Filter. Near
+ * How the plot is drawn (design decision 1): Projection and Color by, Contours, then Filter (the
+ * projection details sit in the plot's corner, PlotArea), in one 44 px row. On desktop the rail's Filter item replaces the bar's Filter. Near
  * its width limit the bar gives up room in stages (view-bar-overflow.ts): the keys hide, then
  * Contours and then Filter move into More. On a phone
- * the bar is fixed at stage 3 and workbench.css shows Projection, its details, Color by and More.
+ * the bar is fixed at stage 3 and workbench.css shows Projection, Color by and More.
  * A stage is only data-stage and CSS: every runtime element stays mounted where it is. Memoised
  * and without props: only its own stage and the layout mode render it again. A group, not a toolbar: its controls keep their own
  * Tab stops, with no arrow-key model across them.
@@ -29,7 +29,6 @@ export const ViewBar = memo(function ViewBar() {
     >
       <div className="wb-view-group" data-driver-id="projections" data-view-item="">
         <protspace-projection-select id="myProjectionSelect"></protspace-projection-select>
-        <protspace-projection-metadata id="myProjectionMetadata"></protspace-projection-metadata>
         <protspace-annotation-select id="myAnnotationSelect"></protspace-annotation-select>
       </div>
       <protspace-contours-menu id="myContoursMenu" data-view-item=""></protspace-contours-menu>

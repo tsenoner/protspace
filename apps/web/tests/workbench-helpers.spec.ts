@@ -16,9 +16,7 @@ import {
   contoursTrigger,
   draftFilterCondition,
   expectUrlParam,
-  exportList,
   exportMenu,
-  exportTrigger,
   filterApplyButton,
   filterButton,
   filterPanel,
@@ -578,7 +576,6 @@ test.describe('view-bar menus and the filter draft', () => {
       [projectionTrigger(page), projectionMenu(page)],
       [colorByTrigger(page), colorByMenu(page)],
       [contoursTrigger(page), contoursMenu(page)],
-      [exportTrigger(page), exportList(page)],
     ];
     for (const [trigger, menu] of pairs) {
       await trigger.click();

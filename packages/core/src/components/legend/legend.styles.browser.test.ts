@@ -192,3 +192,67 @@ describe('the legend header under a coarse pointer', () => {
     }
   });
 });
+
+describe('legend summary placement', () => {
+  /** A short legend, so twelve rows overflow and the list has to scroll. */
+  async function mountShort(placement?: 'bottom'): Promise<ProtspaceLegend> {
+    const legend = await mount();
+    legend.style.height = '220px';
+    if (placement) legend.setAttribute('summary-placement', placement);
+    await settle(legend);
+    await frame();
+    return legend;
+  }
+
+  const parts = (legend: ProtspaceLegend) => ({
+    header: legend.shadowRoot!.querySelector<HTMLElement>('.legend-header')!,
+    items: legend.shadowRoot!.querySelector<HTMLElement>('.legend-items')!,
+    summary: legend.shadowRoot!.querySelector<HTMLElement>('.legend-summary')!,
+  });
+
+  it('by default the summary (EAT note and score strips) sits between the title row and the list', async () => {
+    const legend = await mountShort();
+    const { header, items, summary } = parts(legend);
+    expect(summary.contains(header)).toBe(false);
+    expect(header.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      summary.getBoundingClientRect().top + 0.5,
+    );
+    expect(summary.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      items.getBoundingClientRect().top + 0.5,
+    );
+  });
+
+  it('at the bottom, the title row stays on top and the summary is fixed under a list that scrolls', async () => {
+    const legend = await mountShort('bottom');
+    const { header, items, summary } = parts(legend);
+    const host = legend.getBoundingClientRect();
+    // The title row, with its slots (a host's tabs and fold), leads the legend.
+    expect(Math.abs(header.getBoundingClientRect().top - host.top)).toBeLessThan(1);
+    expect(header.querySelector('slot[name="header-start"]')).not.toBeNull();
+    expect(header.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      items.getBoundingClientRect().top + 0.5,
+    );
+    expect(items.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      summary.getBoundingClientRect().top + 0.5,
+    );
+    expect(Math.abs(summary.getBoundingClientRect().bottom - host.bottom)).toBeLessThan(1);
+    expect(items.scrollHeight).toBeGreaterThan(items.clientHeight);
+
+    // Scrolling the list leaves the summary where it is.
+    const top = summary.getBoundingClientRect().top;
+    items.scrollTop = items.scrollHeight;
+    await frame();
+    expect(summary.getBoundingClientRect().top).toBe(top);
+
+    // The document follows what is seen: the list first, then the summary.
+    expect(items.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('in a panel too short for both, the list keeps three rows', async () => {
+    const legend = await mountShort('bottom');
+    legend.style.height = '150px';
+    await frame();
+    const { items } = parts(legend);
+    expect(items.clientHeight).toBeGreaterThanOrEqual(3 * 28);
+  });
+});

@@ -51,7 +51,10 @@ async function expectProjectionDetailsFit(page: Page): Promise<void> {
       metadata: Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`parameter_${i}`, i])),
     };
   });
-  await viewBar(page).getByRole('button', { name: 'View projection metadata' }).tap();
+  await page
+    .locator('#myProjectionMetadata')
+    .getByRole('button', { name: 'View projection metadata' })
+    .tap();
   const card = page.locator('#myProjectionMetadata .content');
   await expect(card).toBeVisible();
   await expectWithinViewport(page, card);

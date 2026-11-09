@@ -234,11 +234,14 @@ const structureViewerStylesCore = css`
 
   /* Mol* sizes its canvas in px a frame after the mount resizes, so a shrinking viewer showed the
      old, taller canvas cut off at the bottom. Filling the mount, the old frame is scaled to fit
-     until Mol* redraws at the new size. */
+     until Mol* redraws at the new size. Mol* also puts an inline checkerboard (its sign of a
+     transparent background) on the canvas; the bars beside the scaled frame showed it, so the
+     canvas gets the surface colour Mol* draws with (_applyViewerBackground). */
   .molstar-mount canvas {
     width: 100% !important;
     height: 100% !important;
     object-fit: contain;
+    background: var(--ps-surface) !important;
   }
 
   /* Mol*'s stylesheet stays outside this shadow root, so its viewport buttons render unstyled

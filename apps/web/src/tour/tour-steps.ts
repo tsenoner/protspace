@@ -99,9 +99,9 @@ const STEPS: Record<TourStepId, StepBuilder> = {
 
   data: (ctx) => ({
     id: 'data',
-    title: 'Import & Export',
-    description: `${press(ctx)} the <strong>dataset name</strong> or <strong>Import</strong> to load one of the <strong>examples</strong>, reopen your <strong>last file</strong>, or choose <strong>Open a file…</strong>. You can also drop a file anywhere on the page. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is sent to our server to be embedded first. <strong>Export</strong> holds the <strong>Figure editor</strong>, a quick PNG or PDF, the protein IDs and the <code>.parquetbundle</code>. ${link('/docs/guide/data-preparation', 'Learn how to prepare your data')}.`,
-    target: driverId('data-actions'),
+    title: 'Your Data',
+    description: `${press(ctx)} the <strong>dataset name</strong> to load one of the <strong>examples</strong>, reopen your <strong>last file</strong>, or choose <strong>Open a file…</strong>. You can also drop a file anywhere on the page. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is sent to our server to be embedded first. Its <strong>Export…</strong> holds the <strong>Figure editor</strong>, a quick PNG or PDF, the protein IDs and the <code>.parquetbundle</code>. ${link('/docs/guide/data-preparation', 'Learn how to prepare your data')}.`,
+    target: driverId('dataset'),
   }),
 
   dataset: (ctx) => ({
@@ -120,11 +120,11 @@ const STEPS: Record<TourStepId, StepBuilder> = {
         : '<strong>Projection</strong> picks the 2D map (UMAP, PCA and others) and <strong>Color by</strong> the annotation that colours the points. Everything else is in <strong>More</strong>.'
       : kind === 'whats-new'
         ? ctx.mode === 'desktop'
-          ? "The view bar replaces the control bar: <strong>Projection</strong> (with its details beside it), <strong>Color by</strong> and <strong>Contours</strong> sit here; <strong>Filter</strong> is on the rail at the sidebar's edge. In a narrow window, what does not fit moves into <strong>More</strong>."
-          : 'The view bar replaces the control bar: <strong>Projection</strong> (with its details beside it), <strong>Color by</strong>, <strong>Contours</strong> and <strong>Filter</strong> sit here. In a narrow window, what does not fit moves into <strong>More</strong>.'
+          ? "The view bar replaces the control bar: <strong>Projection</strong>, <strong>Color by</strong> and <strong>Contours</strong> sit here; <strong>Filter</strong> is on the rail at the sidebar's edge. In a narrow window, what does not fit moves into <strong>More</strong>."
+          : 'The view bar replaces the control bar: <strong>Projection</strong>, <strong>Color by</strong>, <strong>Contours</strong> and <strong>Filter</strong> sit here. In a narrow window, what does not fit moves into <strong>More</strong>.'
         : ctx.mode === 'desktop'
-          ? '<strong>Projection</strong> picks the 2D map (UMAP, PCA and others); the button beside it shows how the map was made and how well it keeps neighbours. <strong>Color by</strong> picks the annotation that colours the points, and <strong>Contours</strong> draws density rings for each colour. In a narrow window, what does not fit moves into <strong>More</strong>.'
-          : '<strong>Projection</strong> picks the 2D map (UMAP, PCA and others); the button beside it shows how the map was made and how well it keeps neighbours. <strong>Color by</strong> picks the annotation that colours the points, <strong>Contours</strong> draws density rings for each colour, and <strong>Filter</strong> opens the Filter panel in the sidebar. In a narrow window, what does not fit moves into <strong>More</strong>.',
+          ? '<strong>Projection</strong> picks the 2D map (UMAP, PCA and others). <strong>Color by</strong> picks the annotation that colours the points, and <strong>Contours</strong> draws density rings for each colour. In a narrow window, what does not fit moves into <strong>More</strong>.'
+          : '<strong>Projection</strong> picks the 2D map (UMAP, PCA and others). <strong>Color by</strong> picks the annotation that colours the points, <strong>Contours</strong> draws density rings for each colour, and <strong>Filter</strong> opens the Filter panel in the sidebar. In a narrow window, what does not fit moves into <strong>More</strong>.',
     target: driverId('view-bar'),
   }),
 
@@ -159,13 +159,17 @@ const STEPS: Record<TourStepId, StepBuilder> = {
     const undo = ctx.coarse
       ? ''
       : `<br><br><strong>Undo</strong> ${chord(ctx, 'Z')} and <strong>redo</strong> ${redoChord(ctx)} a selection, <strong>Show only these</strong> or a filter change.`;
+    // The strip beside the tools: the projection details, and the shortcuts where there is a keyboard.
+    const beside = ctx.coarse
+      ? ' Beside them, the <strong>ⓘ</strong> button shows how the map was made and how well it keeps neighbours.'
+      : ' Beside them, the <strong>ⓘ</strong> button shows how the map was made and how well it keeps neighbours, and the keyboard button lists the shortcuts.';
     return {
       id: 'selection',
       title: 'Selection Tools',
       description:
         kind === 'whats-new'
-          ? `The selection tools now sit on the plot. A selection opens a bar with <strong>Show only these</strong>, <strong>Zoom to them</strong>, <strong>Copy IDs</strong> and <strong>Clear</strong>; chips in the corner say what is hidden, and their ✕ shows it again.${undo}`
-          : `<strong>Box select</strong> and <strong>Lasso select</strong> select the points you drag around; <strong>Move and zoom</strong> pans again and <strong>Fit to view</strong> shows every point. With a selection, the bar at the bottom of the plot offers <strong>Show only these</strong>, <strong>Zoom to them</strong>, <strong>Copy IDs</strong> and <strong>Clear</strong>. Chips in the corner say what is hidden; their ✕ shows it again.${undo}`,
+          ? `The selection tools now sit on the plot. A selection opens a bar with <strong>Show only these</strong>, <strong>Zoom to them</strong>, <strong>Copy IDs</strong> and <strong>Clear</strong>; chips in the corner say what is hidden, and their ✕ shows it again.${beside}${undo}`
+          : `<strong>Box select</strong> and <strong>Lasso select</strong> select the points you drag around; <strong>Move and zoom</strong> pans again and <strong>Fit to view</strong> shows every point.${beside} With a selection, the bar at the bottom of the plot offers <strong>Show only these</strong>, <strong>Zoom to them</strong>, <strong>Copy IDs</strong> and <strong>Clear</strong>. Chips in the corner say what is hidden; their ✕ shows it again.${undo}`,
       target: driverId('selection'),
     };
   },

@@ -18,7 +18,8 @@ import type { ExampleDatasetSummary } from './types';
  * passes to `openFrom`/`toggleFrom` (the app bar's dataset name, the empty plot's "Pick an
  * example"). The panel is a `ps-popover` with role dialog, a layer of the kit's layer stack:
  * Escape and a press outside close it, and focus returns to the control that opened it. It only
- * asks: `open-file-dialog`, `open-last-file` and `load-example-dataset` are the host's to act on.
+ * asks: `open-file-dialog`, `open-last-file`, `load-example-dataset` and (with `exportable`)
+ * `open-export-menu` are the host's to act on.
  */
 @customElement('protspace-import-menu')
 export class ProtspaceImportMenu extends LitElement {
@@ -32,6 +33,12 @@ export class ProtspaceImportMenu extends LitElement {
   @property({ attribute: 'current-example-id' }) currentExampleId: string | null = null;
   /** The stored import the panel offers to reopen, or null for none (or while it is on screen). */
   @property({ attribute: false }) lastFile: { name: string; sizeLabel: string } | null = null;
+  /**
+   * The panel also offers "Export…", for a host whose dataset control is the one place for the
+   * data on screen. It asks, as the rest does: `open-export-menu` carries the control the panel
+   * opened from, for the host to open its export menu there.
+   */
+  @property({ type: Boolean }) exportable = false;
 
   @state() private open = false;
   /** The control the panel opened from; null until the first opening (the trigger by default). */
@@ -124,6 +131,18 @@ export class ProtspaceImportMenu extends LitElement {
         >
         <p class="import-note">${IMPORT_FORMAT_NOTE}</p>
       </section>
+      ${this.exportable
+        ? html`<section class="import-section import-export">
+            <ps-button
+              class="import-export-button"
+              variant="secondary"
+              data-import-action
+              aria-haspopup="menu"
+              @click=${this.openExportMenu}
+              ><span slot="start">${icon('download', 16)}</span>Export…</ps-button
+            >
+          </section>`
+        : nothing}
       ${this.lastFile ? this.renderLastFile(this.lastFile) : nothing}
       ${this.exampleDatasets.length > 0 ? this.renderExamples() : nothing}
     </div>`;
@@ -299,6 +318,20 @@ export class ProtspaceImportMenu extends LitElement {
     // Still inside the click, so the host's file picker keeps the user's activation.
     this.dispatchEvent(
       new CustomEvent('open-file-dialog', { detail: {}, bubbles: true, composed: true }),
+    );
+  };
+
+  /**
+   * Hands over to the host's export menu, under the same control. The panel closes first and
+   * releases its layer, so the menu that opens next is the top layer and Escape closes it alone.
+   */
+  private openExportMenu = async () => {
+    const anchor = this.anchorEl ?? this.trigger;
+    this.close();
+    await this.updateComplete;
+    await this.panelPopover.updateComplete;
+    this.dispatchEvent(
+      new CustomEvent('open-export-menu', { detail: { anchor }, bubbles: true, composed: true }),
     );
   };
 

@@ -557,16 +557,15 @@
   white-space: nowrap;
 }
 
-/* Import and Export, the tour's "data actions". */
+/* The Import and Export menus, mounted without their own buttons: the dataset name opens Import,
+   whose "Export…" opens Export. Their panels are in the top layer, so the box adds nothing. */
 .wb-data-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--ps-space-1-5);
+  display: contents;
 }
 
-/* Between Import/Export and Help: even space on both sides, unlike the wordmark's separator. */
-[data-workbench='app-bar-actions'] > .wb-separator {
-  margin-inline: var(--ps-space-1);
+#myImportMenu::part(trigger),
+#myExportMenu::part(trigger) {
+  display: none;
 }
 
 /* Filter (Task 2.6): the count of applied conditions beside the label. */
@@ -590,7 +589,7 @@
   display: inline-flex;
 }
 
-/* View bar pickers (Task 2.8): Projection, its details and Color by stay together. */
+/* View bar pickers (Task 2.8): Projection and Color by stay together. */
 .wb-view-group {
   display: flex;
   flex: none;
@@ -649,20 +648,6 @@
   width: 100%;
 }
 
-/* Import and Export keep their names but show only their icons. */
-@media (max-width: 1099.98px) {
-  #myImportMenu::part(trigger-label),
-  #myExportMenu::part(trigger-label) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
-
 @media (max-width: 1023.98px) {
   .wb-dataset-count {
     display: none;
@@ -679,11 +664,6 @@
   max-width: 160px;
 }
 
-/* The Theme button's room on a tablet: the actions drop their separator, so search keeps it. */
-.workbench[data-layout='tablet'] [data-workbench='app-bar-actions'] > .wb-separator {
-  display: none;
-}
-
 /* Touch icon buttons are 8 px wider each, which the separator alone does not pay for: the actions
    close their gaps (the 40 px targets keep the glyphs apart) and the bar narrows its own. */
 @media (pointer: coarse) {
@@ -696,12 +676,41 @@
   }
 }
 
-/* The plot's tool strip: over the plot's top-left corner, never part of the plot's box. */
-#myPlotTools {
+/* The plot's top-left corner, over the plot and never part of its box: the tool strip, and beside
+   it a second strip with the projection details over the keyboard shortcuts. The corner itself
+   takes no clicks, so the plot between and below the strips stays draggable. */
+.wb-plot-corner {
   position: absolute;
   top: 12px;
   left: 12px;
   z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ps-space-2);
+  pointer-events: none;
+}
+
+.wb-plot-corner > * {
+  pointer-events: auto;
+}
+
+/* The same raised strip as the tool strip (plot-tools.styles.ts). */
+.wb-plot-aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ps-space-0-5);
+  padding: var(--ps-space-1);
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-lg);
+  background: var(--ps-surface-raised);
+  box-shadow: var(--ps-shadow-sm);
+}
+
+/* Touch screens have no keyboard to speak of; More → Help & shortcuts keeps the list. */
+@media (pointer: coarse) {
+  #myPlotShortcuts {
+    display: none;
+  }
 }
 
 /* ── View bar stages (Task 2.10) ──────────────────────────────────────────────
@@ -1057,8 +1066,6 @@
 .workbench[data-layout='landscape']
   [data-workbench='app-bar-actions']
   > :not(.wb-data-actions, ps-menu),
-.workbench[data-layout='landscape'] #myImportMenu::part(trigger),
-.workbench[data-layout='landscape'] #myExportMenu::part(trigger),
 .workbench[data-layout='landscape'] .wb-dataset-count {
   display: none;
 }
@@ -1098,7 +1105,7 @@
   background: var(--ps-surface);
 }
 
-/* The view bar holds Projection, its details, Color by and More (stage 3: Contours and Filter are
+/* The view bar holds Projection, Color by and More (stage 3: Contours and Filter are
    in More); it never wraps, and the pickers give up width first. */
 .workbench[data-layout='landscape'] [data-workbench='view-bar'] {
   grid-column: 2;
@@ -1761,7 +1768,7 @@
    while it is open (data-search-open). The actions leave the bar: the More sheet reaches them.
    Their element stays rendered, only out of the grid and empty: a popover inside a display: none
    ancestor never shows, and the Import and Export menus open from the dataset name and More. The
-   view bar is fixed at stage 3: Projection, its details, Color by and an icon-only More. */
+   view bar is fixed at stage 3: Projection, Color by and an icon-only More. */
 .workbench[data-layout='phone'] {
   --wb-view-bar-height: 48px;
 }
@@ -1783,8 +1790,6 @@
 .workbench[data-layout='phone']
   [data-workbench='app-bar-actions']
   > :not(.wb-data-actions, ps-menu),
-.workbench[data-layout='phone'] #myImportMenu::part(trigger),
-.workbench[data-layout='phone'] #myExportMenu::part(trigger),
 .workbench[data-layout='phone'] .wb-app-bar-start > .wb-separator {
   display: none;
 }
@@ -1997,12 +2002,14 @@
   max-height: none;
 }
 
-/* Folded: the header only. The list and the builder leave the tab order; the rest is clipped. */
+/* Folded: the header only. The list, the legend's summary and the builder leave the tab order;
+   the rest is clipped. */
 .workbench[data-layout='phone'][data-panel-folded] #wb-sidebar {
   overflow: hidden;
 }
 
 .workbench[data-layout='phone'][data-panel-folded] #myLegend::part(items),
+.workbench[data-layout='phone'][data-panel-folded] #myLegend::part(summary),
 .workbench[data-layout='phone'][data-panel-folded] .wb-filter-body,
 .workbench[data-layout='phone'][data-panel-folded] .wb-eat-body {
   display: none;

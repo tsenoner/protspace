@@ -84,7 +84,7 @@ function eatNoteText(eat: NonNullable<LegendHeaderModel['eat']>): string {
   return `Includes ${formatCount(eat.predicted)} predicted${outside}`;
 }
 
-function renderEatNote(
+export function renderEatNote(
   eat: NonNullable<LegendHeaderModel['eat']>,
   onOpen: () => void,
 ): TemplateResult {
@@ -144,39 +144,38 @@ export function renderLegendHeader(
   // aria-haspopup and aria-expanded are static: the sort menu exists only while open, and
   // ps-menu records these closed-state values when it mounts and restores them when it goes.
   return html`<div class="legend-header" part="header">
-      <slot name="header-start"></slot>
-      <h3 class="legend-title" part="title" @pointerenter=${handlers.onTitlePointerEnter}>
-        ${model.title}
-      </h3>
-      ${model.predicted
-        ? html`<span class="legend-predicted" role="img" aria-label="Predicted annotation"
-              >${icon('sparkles', 14)}</span
-            ><ps-tooltip text=${PREDICTED_NOTE}></ps-tooltip>`
-        : nothing}
-      ${model.info ?? nothing}
-      <span class="legend-header-spacer"></span>
-      <ps-icon-button
-        class="sort-button"
-        icon=${sortIcon(model.sortMode, model.isNumeric)}
-        label=${sortName}
-        size="sm"
-        aria-haspopup="menu"
-        aria-expanded="false"
-        ?hidden=${!model.canSort}
-        @click=${(e: Event) => handlers.onSortMenu(e.currentTarget as HTMLElement)}
-      ></ps-icon-button>
-      <ps-icon-button
-        class="settings-button"
-        icon="sliders-horizontal"
-        label="Legend settings"
-        size="sm"
-        aria-haspopup="dialog"
-        aria-expanded=${model.settingsOpen ? 'true' : 'false'}
-        @click=${(e: Event) => handlers.onSettings(e.currentTarget as HTMLElement)}
-      ></ps-icon-button>
-      <slot name="header-end"></slot>
-    </div>
-    ${model.eat ? renderEatNote(model.eat, handlers.onEatOpen) : nothing}`;
+    <slot name="header-start"></slot>
+    <h3 class="legend-title" part="title" @pointerenter=${handlers.onTitlePointerEnter}>
+      ${model.title}
+    </h3>
+    ${model.predicted
+      ? html`<span class="legend-predicted" role="img" aria-label="Predicted annotation"
+            >${icon('sparkles', 14)}</span
+          ><ps-tooltip text=${PREDICTED_NOTE}></ps-tooltip>`
+      : nothing}
+    ${model.info ?? nothing}
+    <span class="legend-header-spacer"></span>
+    <ps-icon-button
+      class="sort-button"
+      icon=${sortIcon(model.sortMode, model.isNumeric)}
+      label=${sortName}
+      size="sm"
+      aria-haspopup="menu"
+      aria-expanded="false"
+      ?hidden=${!model.canSort}
+      @click=${(e: Event) => handlers.onSortMenu(e.currentTarget as HTMLElement)}
+    ></ps-icon-button>
+    <ps-icon-button
+      class="settings-button"
+      icon="sliders-horizontal"
+      label="Legend settings"
+      size="sm"
+      aria-haspopup="dialog"
+      aria-expanded=${model.settingsOpen ? 'true' : 'false'}
+      @click=${(e: Event) => handlers.onSettings(e.currentTarget as HTMLElement)}
+    ></ps-icon-button>
+    <slot name="header-end"></slot>
+  </div>`;
 }
 
 /**

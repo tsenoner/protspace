@@ -37,8 +37,11 @@ export function anchorTo(
   floating: HTMLElement,
   placement: Placement,
   gap = 6,
+  /** The box the panel keeps inside, instead of the viewport (a panel that belongs to one region). */
+  boundary?: Element,
 ): () => void {
   const beside = placement.startsWith('left') || placement.startsWith('right');
+  const area = boundary ? { boundary } : {};
   const update = () =>
     computePosition(anchor, floating, {
       placement,
@@ -47,10 +50,16 @@ export function anchorTo(
         offset(gap),
         beside
           ? // Only the side's own axis decides: a tall panel overflowing below still fits beside.
-            flip({ padding: 8, crossAxis: false, fallbackPlacements: besideFallbacks(placement) })
-          : flip({ padding: 8 }),
-        shift({ padding: 8, crossAxis: beside }),
+            flip({
+              ...area,
+              padding: 8,
+              crossAxis: false,
+              fallbackPlacements: besideFallbacks(placement),
+            })
+          : flip({ ...area, padding: 8 }),
+        shift({ ...area, padding: 8, crossAxis: beside }),
         size({
+          ...area,
           padding: 8,
           apply: ({ availableHeight, availableWidth }) => {
             floating.style.setProperty('--available-height', `${Math.max(0, availableHeight)}px`);

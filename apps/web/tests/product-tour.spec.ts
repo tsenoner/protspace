@@ -24,7 +24,7 @@ type Step = { title: string; target: string | null };
 /** The full desktop tour: each step's title and the data-driver-id it highlights (null: centred). */
 const FULL: readonly Step[] = [
   { title: 'Welcome to ProtSpace', target: null },
-  { title: 'Import & Export', target: 'data-actions' },
+  { title: 'Your Data', target: 'dataset' },
   { title: 'The View Bar', target: 'view-bar' },
   { title: 'Search Proteins', target: 'search' },
   { title: 'Interactive Scatterplot', target: 'scatterplot' },

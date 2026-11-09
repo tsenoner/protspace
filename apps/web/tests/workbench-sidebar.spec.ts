@@ -422,7 +422,7 @@ test('a protein clicked while collapsed waits behind the Structure dot; Structur
   await expect(page.locator('#myStructureViewer')).toBeVisible();
 });
 
-test('the edge is the Tab stop after the plot tools, and the rail toggle names no dangling id', async ({
+test('the edge is the Tab stop after the plot corner, and the rail toggle names no dangling id', async ({
   page,
 }) => {
   await openExplore(page);
@@ -430,6 +430,13 @@ test('the edge is the Tab stop after the plot tools, and the rail toggle names n
     .getByRole('toolbar', { name: 'Plot tools' })
     .getByRole('button', { name: 'Move and zoom', exact: true })
     .focus();
+  // The corner reads left to right, then down: the tools, the details, the shortcuts.
+  await page.keyboard.press('Tab');
+  await expect(
+    page.locator('#myProjectionMetadata').getByRole('button', { name: 'View projection metadata' }),
+  ).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Keyboard shortcuts', exact: true })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(edge(page)).toBeFocused();
 

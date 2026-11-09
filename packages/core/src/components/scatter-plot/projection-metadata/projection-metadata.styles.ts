@@ -5,11 +5,10 @@ export const projectionMetadataStyles = [
   srOnly,
   css`
     :host {
-      /* Placed by its host (the view bar). Relative, so the card hangs below the trigger; the
-         z-index lifts the card over the plot area, which follows in the document. */
+      /* Placed by its host (the plot corner). The open card is in the top layer, above
+         everything, so the host needs no z-index of its own. */
       position: relative;
       display: inline-flex;
-      z-index: 10;
 
       /* Gap between the trigger and the card. Read by the card's top offset and by the
          invisible hover bridge that spans it. */
@@ -52,27 +51,24 @@ export const projectionMetadataStyles = [
       outline-offset: var(--ps-focus-offset);
     }
 
+    /* A top-layer panel (popover="manual"), so nothing on the page paints over it. anchorTo
+       (kit/position.ts) sets top and left below the button, inside the component's boundary,
+       and publishes the room left there as --available-height. The fallbacks are for a
+       browser without the top layer, where the card stays at its place in the flow. */
     .content {
-      position: absolute;
-      top: calc(100% + var(--card-gap));
-      left: 0;
-      /* An explicit width, because max-width never applied. :host is position:absolute with
-         no width, so it shrink-to-fits around the 32px trigger; this box then shrink-to-fits
-         inside that, resolves below the floor, and min-width wins — measured in Chrome at
-         242-258px, never the 320px the max-width implies. That is what squeezed the
-         metric-name column and forced Calinski-Harabasz onto two lines. */
+      position: fixed;
+      inset: auto;
+      margin: 0;
+      padding: 0;
+      color: inherit;
+      /* An explicit width: as a shrink-to-fit box the card resolved below its floor and
+         squeezed the metric-name column (Calinski-Harabasz went onto two lines). */
       width: min(20rem, calc(100vw - 16px));
       min-width: 15rem;
       max-width: 20rem;
-      /* The card runs ~700px tall, ~1030px for a cluster column, from a 48px top offset —
-         and the scatter-plot host is overflow:hidden (scatter-plot.styles.ts), so the
-         overrun was hard-clipped and unreachable rather than merely spilling. The clipped
-         region was the annotation-stats block: exactly what the dropdown's STATS badge
-         sends people here to read. The info popovers' bubbles sit in the top layer, so
-         this overflow never clips them. */
-      /* Fallback only: _updateMaxHeight() measures the room left below the card in the
-         viewport and sets the real cap inline. */
-      max-height: calc(100vh - 8rem);
+      /* The card runs ~700px tall, ~1030px for a cluster column: capped at the room left
+         below the button in its region, it scrolls rather than spill onto the legend. */
+      max-height: var(--available-height, calc(100vh - 8rem));
       overflow-y: auto;
       overscroll-behavior: contain;
       /* Reserve the scrollbar's width up front. Without it the bar is laid over the content
@@ -93,6 +89,44 @@ export const projectionMetadataStyles = [
         visibility 0.2s;
     }
 
+    /* An always-visible scrollbar. macOS draws a scrollbar as an overlay that only appears
+       while scrolling, so a card cut off by its region gave no sign of more below. The
+       ::-webkit-scrollbar pseudo-elements (Chromium, Safari) replace it with a classic bar that
+       takes layout space, and only exists while the card overflows. That also makes the bar
+       itself the reserved gutter scrollbar-gutter asks for above. The thumb carries a
+       transparent border clipped by background-clip so it reads as a slim pill inside the track.
+       The standard scrollbar-width / scrollbar-color are NOT set here: in Chromium 121+ they
+       switch these pseudo-elements off, so Firefox, which only knows the standard pair, gets
+       them in the @supports block below. */
+    .content::-webkit-scrollbar {
+      width: 0.75rem;
+      height: 0.75rem;
+    }
+
+    .content::-webkit-scrollbar-track {
+      background: var(--ps-surface-muted);
+      border-left: 1px solid var(--ps-border);
+    }
+
+    .content::-webkit-scrollbar-thumb {
+      min-height: 2rem;
+      border: 3px solid transparent;
+      border-radius: var(--ps-radius-full);
+      background-color: var(--ps-text-faint);
+      background-clip: padding-box;
+    }
+
+    .content::-webkit-scrollbar-thumb:hover {
+      background-color: var(--ps-text-muted);
+    }
+
+    @supports not selector(::-webkit-scrollbar) {
+      .content {
+        scrollbar-width: thin;
+        scrollbar-color: var(--ps-text-faint) var(--ps-surface-muted);
+      }
+    }
+
     /* Invisible bridge that covers the gap between trigger and popover so
      the mouse can travel from the button into the popover without losing
      :host(:hover). */
@@ -105,20 +139,18 @@ export const projectionMetadataStyles = [
       height: var(--card-gap);
     }
 
-    .content.is-pinned,
-    .trigger:focus-visible + .content {
+    /* Open while pinned, hovered (a pointer that can hover only: after a tap a touch screen
+       keeps :hover on the button) or focused from the keyboard; the component decides. */
+    .content.is-open {
       pointer-events: auto;
       opacity: 1;
       visibility: visible;
     }
 
-    /* Hover reveals the card only for a pointer that can hover. After a tap a touch screen keeps
-       :hover on the button, so a hover rule would hold the card open past a second tap. */
-    @media (hover: hover) {
-      :host(:hover) .content {
-        pointer-events: auto;
-        opacity: 1;
-        visibility: visible;
+    /* Fades in from the moment the top layer shows it. */
+    @starting-style {
+      .content.is-open {
+        opacity: 0;
       }
     }
 

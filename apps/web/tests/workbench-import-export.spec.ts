@@ -27,32 +27,37 @@ import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/wor
 /** The Import and Export menus in the app bar (Task 2.5). */
 
 test.describe('Import and Export menus', () => {
-  test('Import and Export sit in the app bar and work from the keyboard', async ({ page }) => {
+  test('Import and Export open from the dataset name and work from the keyboard', async ({
+    page,
+  }) => {
     await openExplore(page);
-    const actions = appBar(page).locator('[data-driver-id="data-actions"]');
-    await expect(actions.locator('#myImportMenu')).toBeVisible();
-    await expect(actions.locator('#myExportMenu')).toBeVisible();
+    // No buttons of their own in the bar: the dataset name opens both.
+    await expect(appBar(page).getByRole('button', { name: /^(Import|Export)$/ })).toHaveCount(0);
     // The tour's Import step finds the menu itself, in the light DOM.
     await expect(page.locator('[data-driver-id="import"]')).toHaveAttribute('id', 'myImportMenu');
 
-    await importTrigger(page).focus();
+    const dataset = importTrigger(page);
+    await dataset.focus();
     await page.keyboard.press('Enter');
     const ownDataset = importMenu(page).locator('[data-driver-id="import-own-dataset"]');
     await expect(ownDataset).toBeFocused();
-    await expect(importTrigger(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(dataset).toHaveAttribute('aria-expanded', 'true');
     await page.keyboard.press('Escape');
     await expect(ownDataset).toHaveCount(0);
-    await expect(importTrigger(page)).toBeFocused();
+    await expect(dataset).toBeFocused();
 
-    const exportTrigger = exportMenu(page).getByRole('button', { name: 'Export', exact: true });
-    await exportTrigger.focus();
+    // "Export…", the panel's next action, hands over to the Export menu under the same name.
+    await page.keyboard.press('Enter');
+    await expect(ownDataset).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(importMenu(page).getByRole('button', { name: 'Export…' })).toBeFocused();
     await page.keyboard.press('Enter');
     const figureEditor = exportMenu(page).getByRole('menuitem', { name: 'Figure editor…' });
     await expect(figureEditor).toBeFocused();
-    await expect(exportTrigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(ownDataset).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(exportMenu(page).getByRole('menu', { name: 'Export' })).toBeHidden();
-    await expect(exportTrigger).toBeFocused();
+    await expect(dataset).toBeFocused();
   });
 
   test('Open a file… opens the file chooser', async ({ page }) => {
@@ -111,7 +116,6 @@ test.describe('Import and Export menus', () => {
     const panel = importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
     await expect(panel).toBeVisible();
     await expect(switcher).toHaveAttribute('aria-expanded', 'true');
-    await expect(importTrigger(page)).toHaveAttribute('aria-expanded', 'false');
     const anchor = (await switcher.boundingBox())!;
     const box = (await panel.boundingBox())!;
     expect(Math.abs(box.x - anchor.x)).toBeLessThan(2);

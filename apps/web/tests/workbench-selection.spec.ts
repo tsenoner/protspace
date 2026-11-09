@@ -8,7 +8,6 @@ import {
   filterPanel,
   getFirstLegendItemValue,
   getSelectedProteinIds,
-  importTrigger,
   isLegendItemHidden,
   isolateSelection,
   openExplore,
@@ -279,9 +278,8 @@ test.describe('plot tools and selection', () => {
         200,
       );
 
-      // Icon-only below 1100 px, still named.
-      await expect(importTrigger(page)).toHaveAccessibleName('Import');
-      await expect(appBar(page).getByRole('button', { name: 'Export' })).toBeVisible();
+      // Import and Export live in the dataset name's menu, not in the bar.
+      await expect(appBar(page).getByRole('button', { name: /^(Import|Export)$/ })).toHaveCount(0);
       if (width < 1024) await expect(page.locator('.wb-dataset-count')).toBeHidden();
       else await expect(page.locator('.wb-dataset-count')).toBeVisible();
     }

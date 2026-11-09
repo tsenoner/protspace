@@ -30,6 +30,7 @@ import { modalCoverage, splitMetadata, type MetadataRow } from './projection-met
 import '../../common/info-popover';
 import { icon } from '../../kit/icon';
 import { pushLayer } from '../../kit/layers';
+import { anchorTo } from '../../kit/position';
 
 /**
  * The two agreement metrics, in the order the columns appear. Fixed rather than derived from the
@@ -119,72 +120,110 @@ export class ProtspaceProjectionMetadata extends LitElement {
   // the page's own Escape (the selection) hears the press.
   private _releaseLayer: (() => void) | null = null;
 
+  /**
+   * The region the card stays inside, such as the plot it describes. Unset, the viewport. The card
+   * scrolls when it is taller than the room it has there, so it never spills onto its neighbours.
+   */
+  @property({ attribute: false }) boundary: Element | null = null;
+
+  /** The pointer is over the button or the card (only for a pointer that can hover). */
+  @state() private _hovered = false;
+  /** The button has keyboard focus (:focus-visible), which shows the card as hover does. */
+  @state() private _focusVisible = false;
+
   static styles = projectionMetadataStyles;
 
-  /** Smallest card worth showing before scrolling; below this a "scrollable" card is unusable. */
-  private static readonly MIN_CARD_HEIGHT = 200;
-  /** Breathing room kept between the bottom of the card and the viewport's edge. */
-  private static readonly CARD_MARGIN = 8;
+  /** Gap between the button and the card; the card's hover bridge spans it (--card-gap). */
+  private static readonly CARD_GAP = 8;
+  /**
+   * How long the card waits after the pointer leaves before it closes, so a pointer crossing the
+   * gap, or a card that flipped away from the button, does not drop it on the way.
+   */
+  private static readonly HOVER_CLOSE_DELAY = 120;
+
+  private _stopPositioning: (() => void) | null = null;
+  private _hoverCloseTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private get _open(): boolean {
+    return this._pinned || this._hovered || this._focusVisible;
+  }
 
   updated(changed: PropertyValues) {
-    // Only when the content that sets the natural height can actually have changed. This reads
-    // the host's clientHeight and writes an inline maxHeight, so running it on every update
-    // forces a synchronous layout — free today, a per-frame cost the moment anything on this
-    // card gains hover state. `_pinned` counts: the card has no measurable box until it opens.
     if (
-      changed.has('projection') ||
-      changed.has('statisticsRows') ||
-      changed.has('selectedAnnotation') ||
       changed.has('_pinned') ||
-      changed.has('_recoversExpanded')
+      changed.has('_hovered') ||
+      changed.has('_focusVisible') ||
+      changed.has('boundary')
     ) {
-      this._updateMaxHeight();
+      this._syncTopLayer();
     }
   }
 
   /**
-   * Caps the card at the room left below it in the viewport, and keeps it inside the viewport's
-   * width. The card opens from the view bar, with the whole plot height free below it, so the
-   * viewport is the bound; a measured cap still beats a CSS one because the card's top depends on
-   * where the bar sits.
+   * The open card lives in the top layer (as the ⓘ bubbles inside it do), so nothing on the page
+   * paints over it: the plot corner it opens from is one stacking context among the legend, the
+   * status chips and the sidebar, and each of them drew through the card. Placed with the kit's
+   * anchoring, below the button, inside `boundary`, and capped at the height left there.
    */
-  private _updateMaxHeight(): void {
+  private _syncTopLayer(): void {
     const content = this.shadowRoot?.querySelector('.content') as HTMLElement | null;
-    if (!content) return;
-    const { MIN_CARD_HEIGHT, CARD_MARGIN } = ProtspaceProjectionMetadata;
-    const available = window.innerHeight - content.getBoundingClientRect().top - CARD_MARGIN;
-    // max-height caps the content box: the card's borders come on top of it.
-    const borders = content.offsetHeight - content.clientHeight;
-    content.style.maxHeight = `${Math.max(MIN_CARD_HEIGHT, available - borders)}px`;
-    this._keepInsideViewport(content);
-  }
-
-  /**
-   * Slides the card left when it would cross the viewport's right edge (the button sits far right
-   * on a phone's view bar), never past the left margin. Measured from the host, so the card's own
-   * inline offset never feeds back into the next measurement.
-   */
-  private _keepInsideViewport(content: HTMLElement): void {
-    const { CARD_MARGIN } = ProtspaceProjectionMetadata;
-    const hostLeft = this.getBoundingClientRect().left;
-    const overflow = hostLeft + content.offsetWidth - (window.innerWidth - CARD_MARGIN);
-    if (overflow <= 0) {
-      content.style.left = '';
+    const trigger = this.shadowRoot?.querySelector('.trigger');
+    this._stopPositioning?.();
+    this._stopPositioning = null;
+    // No top layer (jsdom): the card stays where it is laid out, shown and hidden by its classes.
+    if (!content || !trigger || typeof content.showPopover !== 'function') return;
+    if (!this._open) {
+      if (content.matches(':popover-open')) content.hidePopover();
       return;
     }
-    content.style.left = `${Math.max(CARD_MARGIN, hostLeft - overflow) - hostLeft}px`;
+    if (!content.matches(':popover-open')) content.showPopover();
+    this._stopPositioning = anchorTo(
+      trigger,
+      content,
+      'bottom-start',
+      ProtspaceProjectionMetadata.CARD_GAP,
+      this.boundary ?? undefined,
+    );
   }
 
-  private _onWindowResize = () => this._updateMaxHeight();
+  private _onPointerEnter = (event: PointerEvent) => {
+    if (event.pointerType === 'touch' || !matchMedia('(hover: hover)').matches) return;
+    clearTimeout(this._hoverCloseTimer);
+    this._hovered = true;
+  };
+
+  private _onPointerLeave = () => {
+    clearTimeout(this._hoverCloseTimer);
+    this._hoverCloseTimer = setTimeout(
+      () => (this._hovered = false),
+      ProtspaceProjectionMetadata.HOVER_CLOSE_DELAY,
+    );
+  };
+
+  private _onTriggerFocus = (event: FocusEvent) => {
+    this._focusVisible = (event.target as HTMLElement).matches(':focus-visible');
+  };
+
+  private _onTriggerBlur = () => {
+    this._focusVisible = false;
+  };
 
   connectedCallback() {
     super.connectedCallback();
-    window.addEventListener('resize', this._onWindowResize);
+    // On the host, so the card counts too: it stays in this shadow tree in the top layer.
+    this.addEventListener('pointerenter', this._onPointerEnter);
+    this.addEventListener('pointerleave', this._onPointerLeave);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    window.removeEventListener('resize', this._onWindowResize);
+    this.removeEventListener('pointerenter', this._onPointerEnter);
+    this.removeEventListener('pointerleave', this._onPointerLeave);
+    clearTimeout(this._hoverCloseTimer);
+    this._hovered = false;
+    this._focusVisible = false;
+    this._stopPositioning?.();
+    this._stopPositioning = null;
     this._setPinned(false);
   }
 
@@ -251,14 +290,17 @@ export class ProtspaceProjectionMetadata extends LitElement {
         aria-expanded=${this._pinned}
         aria-describedby="projection-metadata-content"
         @click=${() => this._setPinned(!this._pinned)}
+        @focus=${this._onTriggerFocus}
+        @blur=${this._onTriggerBlur}
       >
         ${icon('info', 16)}
       </button>
 
       <div
-        class="content ${this._pinned ? 'is-pinned' : ''}"
+        class="content ${this._pinned ? 'is-pinned' : ''} ${this._open ? 'is-open' : ''}"
         id="projection-metadata-content"
         role="tooltip"
+        popover="manual"
       >
         <!-- The projection's own name, which the panel never showed: splitMetadata skips
              the "name" key, so a card describing one projection out of several did not say

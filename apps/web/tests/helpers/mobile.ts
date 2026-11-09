@@ -234,9 +234,10 @@ export async function emptyPlotSpot(page: Page): Promise<Point> {
   const spot = await page.locator('#myPlot').evaluate((element: PlotElement, avoid) => {
     const rect = element.getBoundingClientRect();
     const boxes = [...avoid];
-    // Light-DOM siblings of the plot inside the plot area.
-    for (const id of ['myPlotTools', 'myPlotStatus', 'mySelectionBar']) {
-      const r = document.getElementById(id)?.getBoundingClientRect();
+    // Light-DOM siblings of the plot inside the plot area: the corner (tool strip, details and
+    // shortcuts), the status corner and the selection bar.
+    for (const selector of ['[data-workbench="plot-corner"]', '#myPlotStatus', '#mySelectionBar']) {
+      const r = document.querySelector(selector)?.getBoundingClientRect();
       if (r && r.width > 0 && r.height > 0)
         boxes.push({ x: r.x, y: r.y, width: r.width, height: r.height });
     }
