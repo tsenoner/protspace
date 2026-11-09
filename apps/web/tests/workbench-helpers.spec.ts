@@ -188,14 +188,14 @@ test.describe('explore helpers', () => {
     await expectUrlParam(page, 'dataset', other.id);
   });
 
-  test('openExportMenu shows the export menu', async ({ page }) => {
+  test('openExportMenu shows the Export panel', async ({ page }) => {
     await openExplore(page);
     await openExportMenu(page);
-    const quickPng = exportMenu(page).getByRole('menuitem', { name: 'Quick PNG', exact: true });
-    await expect(quickPng).toBeVisible();
-    // An open menu stays open.
+    const image = exportMenu(page).getByRole('radio', { name: 'Image', exact: true });
+    await expect(image).toBeVisible();
+    // An open panel stays open.
     await openExportMenu(page);
-    await expect(quickPng).toBeVisible();
+    await expect(image).toBeVisible();
   });
 
   test('openFilter opens the Filter panel with its query builder', async ({ page }) => {

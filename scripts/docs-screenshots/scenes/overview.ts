@@ -79,7 +79,7 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     kind: 'png',
     viewport: 'desktop',
     themes: ['light', 'dark'],
-    // Import and Export, Theme, Help, Feedback and GitHub.
+    // The Figure editor, Theme, Help, Feedback and GitHub.
     target: (page) => {
       const actions = appBar(page).locator('[data-workbench="app-bar-actions"]');
       return barSpan(appBar(page), actions, actions);

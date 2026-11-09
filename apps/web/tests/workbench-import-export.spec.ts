@@ -5,8 +5,13 @@ import {
   appBar,
   datasetSwitcher,
   exportAction,
+  exportDownload,
+  exportFormats,
+  exportKinds,
   exportMenu,
+  exportPanel,
   expectUrlParam,
+  figureEditorButton,
   getCurrentDatasetName,
   getSelectedProteinIds,
   importMenu,
@@ -24,7 +29,7 @@ import { figureEditor, figureEditorContent } from './helpers/figure';
 import { PHOSPHATASE_1587_FIXTURE, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
 
-/** The Import and Export menus in the app bar (Task 2.5). */
+/** The Import and Export panels under the dataset name (Task 2.5), and the Figure editor button. */
 
 test.describe('Import and Export menus', () => {
   test('Import and Export open from the dataset name and work from the keyboard', async ({
@@ -46,17 +51,27 @@ test.describe('Import and Export menus', () => {
     await expect(ownDataset).toHaveCount(0);
     await expect(dataset).toBeFocused();
 
-    // "Export…", the panel's next action, hands over to the Export menu under the same name.
+    // "Export…", the panel's next action, hands over to the Export panel under the same name.
     await page.keyboard.press('Enter');
     await expect(ownDataset).toBeFocused();
     await page.keyboard.press('ArrowDown');
     await expect(importMenu(page).getByRole('button', { name: 'Export…' })).toBeFocused();
     await page.keyboard.press('Enter');
-    const figureEditor = exportMenu(page).getByRole('menuitem', { name: 'Figure editor…' });
-    await expect(figureEditor).toBeFocused();
+    // Focus lands on the first choice, what to export.
+    const image = exportKinds(page).getByRole('radio', { name: 'Image', exact: true });
+    await expect(image).toBeFocused();
     await expect(ownDataset).toHaveCount(0);
+    await expect(dataset).toHaveAttribute('aria-expanded', 'true');
+    // The arrow keys pick what, Tab moves on to how.
+    await page.keyboard.press('ArrowRight');
+    await expect(
+      exportKinds(page).getByRole('radio', { name: 'Protein IDs', exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(exportDownload(page)).toBeFocused();
+    await expect(exportDownload(page)).toHaveAccessibleName('Download .txt');
     await page.keyboard.press('Escape');
-    await expect(exportMenu(page).getByRole('menu', { name: 'Export' })).toBeHidden();
+    await expect(exportPanel(page)).toBeHidden();
     await expect(dataset).toBeFocused();
   });
 
@@ -212,14 +227,14 @@ test.describe('Import and Export menus', () => {
     await expect(importMenu(page).locator(`[data-example-id="${other.id}"]`)).toBeDisabled();
   });
 
-  test('Quick PNG downloads a file and shows Export ready.', async ({ page }) => {
+  test('an image downloads as a PNG and shows Export ready.', async ({ page }) => {
     await openExplore(page);
 
     const download = page.waitForEvent('download');
-    await exportAction(page, 'Quick PNG');
+    await exportAction(page, 'PNG');
     const file = await download;
     expect(file.suggestedFilename()).toMatch(/\.png$/);
-    await expect(exportMenu(page).getByRole('menu', { name: 'Export' })).toBeHidden();
+    await expect(exportPanel(page)).toBeHidden();
     const toast = page.locator('[data-sonner-toast]').filter({ hasText: 'Export ready.' });
     await expect(toast).toBeVisible();
     await expect(toast).toContainText(file.suggestedFilename());
@@ -229,41 +244,53 @@ test.describe('Import and Export menus', () => {
     await openExplore(page);
 
     const download = page.waitForEvent('download');
-    await exportAction(page, 'Protein IDs (.txt)');
+    await exportAction(page, 'Protein IDs');
     expect((await download).suggestedFilename()).toBe('protein_ids.txt');
     await expect(
       page.locator('[data-sonner-toast]').filter({ hasText: 'protein_ids.txt' }),
     ).toBeVisible();
   });
 
-  test('the menu names its six exports and the contours note', async ({ page }) => {
+  test('the panel asks what, then how, and shows only that choice’s options', async ({ page }) => {
     await openExplore(page);
     await openExportMenu(page);
 
-    // The items are the menu's slotted children, outside its shadow [role=menu] in the DOM, so
-    // they are found from the element, not chained from the menu.
-    const menu = exportMenu(page);
-    await expect(menu.getByRole('menu', { name: 'Export' })).toBeVisible();
-    for (const name of [
-      'Figure editor…',
-      'Quick PNG',
-      'Quick PDF',
-      'Protein IDs (.txt)',
-      'Table (.tsv)',
-      'Data bundle (.parquetbundle)',
-    ]) {
-      await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
-    }
+    await expect(exportKinds(page).getByRole('radio')).toHaveText([
+      'Image',
+      'Protein IDs',
+      'Table',
+      'Data bundle',
+    ]);
+    // An image: PNG or PDF, and what the file leaves out.
+    await expect(exportFormats(page).getByRole('radio')).toHaveText(['PNG', 'PDF']);
+    await expect(exportMenu(page).getByText(/without contours/)).toBeVisible();
+    await expect(exportDownload(page)).toHaveAccessibleName('Download PNG');
+    // The figure editor is not in the panel: it has its own button.
+    await expect(exportPanel(page).getByText('Figure editor…')).toHaveCount(0);
+
+    // A bundle: whether it carries the legend settings, checked by default.
+    await exportKinds(page).getByRole('radio', { name: 'Data bundle', exact: true }).click();
+    await expect(exportFormats(page)).toHaveCount(0);
     await expect(
-      menu.getByRole('menuitemcheckbox', { name: 'Include legend settings' }),
-    ).toHaveAttribute('aria-checked', 'true');
-    await expect(exportMenu(page).getByText('Quick exports leave out contours.')).toBeVisible();
+      exportMenu(page).getByRole('checkbox', { name: 'Include legend settings' }),
+    ).toBeChecked();
+    await expect(exportDownload(page)).toHaveAccessibleName('Download .parquetbundle');
   });
 
-  test('the figure editor opens from Export', async ({ page }) => {
+  test('the figure editor opens from its button in the app bar', async ({ page }) => {
     await openExplore(page);
-    await exportAction(page, 'Figure editor…');
+    await expect(figureEditorButton(page)).toBeVisible();
+    // Labelled on a desktop, not an icon alone: the label is the kit button's slotted text.
+    await expect(appBar(page).locator('ps-button[data-driver-id="figure-editor"]')).toHaveText(
+      'Figure editor',
+    );
+    await figureEditorButton(page).click();
     await expect(figureEditorContent(page)).toBeAttached();
+    await expect(figureEditor(page)).toBeVisible();
+    // Closing it returns focus to the button that opened it.
+    await page.keyboard.press('Escape');
+    await expect(figureEditorContent(page)).toHaveCount(0);
+    await expect(figureEditorButton(page)).toBeFocused();
   });
 
   test('Escape closes the figure editor and the selection stays', async ({ page }) => {
@@ -272,7 +299,7 @@ test.describe('Import and Export menus', () => {
     const id = await clickProteinNearPlotCentre(page);
     await expect.poll(() => getSelectedProteinIds(page)).toEqual([id]);
 
-    await exportAction(page, 'Figure editor…');
+    await figureEditorButton(page).click();
     const editor = figureEditor(page);
     await expect(editor).toBeVisible();
 

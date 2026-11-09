@@ -32,6 +32,7 @@ const FULL: readonly Step[] = [
   { title: 'Legend Panel', target: 'legend' },
   { title: 'Expand Hidden Categories', target: 'other-row' },
   { title: 'The Sidebar', target: 'rail' },
+  { title: 'Figure Editor', target: 'figure-editor' },
   { title: 'Light or Dark', target: 'theme' },
   { title: "You're All Set!", target: null },
 ];
@@ -41,6 +42,7 @@ const WHATS_NEW: readonly Step[] = [
   { title: 'The View Bar', target: 'view-bar' },
   { title: 'The Sidebar', target: 'rail' },
   { title: 'Selection Tools', target: 'selection' },
+  { title: 'Figure Editor', target: 'figure-editor' },
   { title: 'Light or Dark', target: 'theme' },
   { title: "That's it", target: null },
 ];

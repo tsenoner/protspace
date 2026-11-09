@@ -26,7 +26,7 @@ async function exportToastSteps(page: Page, cap: CaptureApi): Promise<void> {
   // The phospholipase cluster sits where the toast opens, and would show around its edges.
   await clickLegendItem(page, await legendValueContaining(page, PLA2));
   const download = page.waitForEvent('download');
-  await exportAction(page, 'Quick PNG');
+  await exportAction(page, 'PNG');
   await download;
   await expect(exportReady(page)).toBeVisible();
   await expect(
