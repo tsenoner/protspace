@@ -1,5 +1,5 @@
 import { LitElement, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
-import { property, query, state } from 'lit/decorators.js';
+import { property, state } from 'lit/decorators.js';
 import {
   DEFAULT_CATEGORICAL_PALETTE_ID,
   DEFAULT_NUMERIC_STRATEGY,
@@ -12,8 +12,8 @@ import type { PsButton } from '../kit/button';
 import '../kit/input';
 import type { PsInput } from '../kit/input';
 import '../kit/popover';
-import '../kit/select';
-import type { PsSelect, SelectOption } from '../kit/select';
+import '../kit/segmented';
+import type { PsSegmented, SegmentedOption } from '../kit/segmented';
 import '../kit/switch';
 import type { PsSwitch } from '../kit/switch';
 import { LEGEND_DEFAULTS } from './config';
@@ -59,7 +59,7 @@ const SETTINGS_KEYS: readonly (keyof LegendDisplaySettings)[] = [
 ];
 
 /** Points a kit control's description at its hint, or at nothing; writes only on a change. */
-function describe(control: PsButton | PsInput | PsSelect, hint: Element | null): void {
+function describe(control: PsButton | PsInput, hint: Element | null): void {
   const next: readonly Element[] = hint ? [hint] : [];
   if (control.describedBy.length !== next.length || control.describedBy[0] !== next[0]) {
     control.describedBy = next;
@@ -71,7 +71,14 @@ function sameSettings(next: LegendDisplaySettings, prev?: LegendDisplaySettings)
   return !!prev && SETTINGS_KEYS.every((key) => next[key] === prev[key]);
 }
 
-const DISTRIBUTIONS: Record<'withLog' | 'withoutLog', SelectOption[]> = {
+/** Why Logarithmic is off: its tooltip, and what a screen reader reads as its description. */
+export const LOG_UNAVAILABLE_REASON = 'Only available when every value is positive';
+
+/**
+ * Bin distribution as a segmented control: three short choices, all in view, drawn in the theme's
+ * colours (a native select's list is drawn by the OS and could be unreadable in dark).
+ */
+const DISTRIBUTIONS: Record<'withLog' | 'withoutLog', SegmentedOption[]> = {
   withLog: [
     { value: 'linear', label: 'Linear' },
     { value: 'quantile', label: 'Quantile' },
@@ -80,7 +87,7 @@ const DISTRIBUTIONS: Record<'withLog' | 'withoutLog', SelectOption[]> = {
   withoutLog: [
     { value: 'linear', label: 'Linear' },
     { value: 'quantile', label: 'Quantile' },
-    { value: 'logarithmic', label: 'Logarithmic', disabled: true },
+    { value: 'logarithmic', label: 'Logarithmic', disabled: true, tooltip: LOG_UNAVAILABLE_REASON },
   ],
 };
 
@@ -118,8 +125,6 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
   @property({ attribute: false }) annotationLabel = '';
 
   @state() private _invalid: ReadonlySet<NumberField> = new Set();
-  @query('#numeric-distribution-select') private _strategySelect?: PsSelect;
-  @query('#numeric-log-disabled-note') private _logNote?: HTMLElement;
 
   private _pending: { field: NumberField; value: number | null } | null = null;
   private _timer: ReturnType<typeof setTimeout> | null = null;
@@ -196,8 +201,6 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
       this.flush();
       this._syncFields();
     }
-    const select = this._strategySelect;
-    if (select) describe(select, this._logNote ?? null);
     for (const field of NUMBER_FIELDS) {
       const input = this.renderRoot.querySelector<PsInput>(`#${FIELD_IDS[field]}`);
       if (input) describe(input, this.renderRoot.querySelector(`#${FIELD_IDS[field]}-hint`));
@@ -243,22 +246,13 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
       >
       <div class="field">
         <span class="label" aria-hidden="true">Bin distribution</span>
-        <ps-select
-          id="numeric-distribution-select"
+        <ps-segmented
+          id="numeric-distribution"
           label="Bin distribution"
           .options=${this.logBinningAvailable ? DISTRIBUTIONS.withLog : DISTRIBUTIONS.withoutLog}
           .value=${settings.numericStrategy}
           @change=${this._onStrategy}
-        ></ps-select>
-        ${this.logBinningAvailable
-          ? nothing
-          : html`<p
-              class="hint"
-              id="numeric-log-disabled-note"
-              data-driver-id="numeric-log-disabled-note"
-            >
-              Logarithmic distribution is only available for positive values.
-            </p>`}
+        ></ps-segmented>
       </div>`;
   }
 
@@ -337,7 +331,7 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
 
   private _onStrategy = (event: Event) =>
     this._change({
-      numericStrategy: (event.currentTarget as PsSelect).value as NumericBinningStrategy,
+      numericStrategy: (event.currentTarget as PsSegmented).value as NumericBinningStrategy,
     });
 
   private _onReset = () => {

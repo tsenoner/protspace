@@ -1,5 +1,6 @@
 import { css, unsafeCSS } from 'lit';
 import { LANDSCAPE_PHONE_MEDIA, PHONE_MEDIA } from '../../utils/breakpoints';
+import { selectOptionStyles } from '../kit/field.styles';
 import { focusRing, kitHost, reducedMotion } from '../kit/kit-shared.styles';
 
 /**
@@ -11,6 +12,8 @@ export const publishModalStyles = [
   kitHost,
   focusRing,
   reducedMotion,
+  // The editor's native selects: their lists stay readable in either theme.
+  selectOptionStyles,
   css`
     /* ─── Layout ────────────────────────────────────────────── */
     .publish-container {

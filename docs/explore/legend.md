@@ -141,13 +141,13 @@ colours, order and hidden values.
 
 ### Numeric Bin Distribution
 
-When the selected annotation is numeric and a numeric gradient palette is active, an extra `Bin distribution` control appears:
+When the selected annotation is numeric and a numeric gradient palette is active, an extra `Bin distribution` row appears, with its three choices side by side; click one to apply it:
 
 - `Linear`
 - `Quantile`
 - `Logarithmic`
 
-`Quantile` is the default distribution, automatically falling back to `Linear` when the number of distinct values is small enough that quantile edges would collapse. `Logarithmic` is only available when all non-null values are strictly positive; otherwise ProtSpace falls back to `Quantile` (and from there to `Linear`, as above).
+`Quantile` is the default distribution, automatically falling back to `Linear` when the number of distinct values is small enough that quantile edges would collapse. `Logarithmic` is only available when all non-null values are strictly positive; otherwise it is greyed out, its tooltip says why, and ProtSpace falls back to `Quantile` (and from there to `Linear`, as above).
 
 ### Reverse Gradient Direction
 

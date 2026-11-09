@@ -214,26 +214,28 @@ describe('legend settings popover, mounted', () => {
     await openSettings(legend);
     const reset = page.getByRole('button', { name: 'Reset to defaults', exact: true });
     await expect.element(reset).toBeDisabled();
-    const select = page.getByRole('combobox', { name: 'Bin distribution' });
-    const initial = (select.element() as HTMLSelectElement).value;
-    await userEvent.selectOptions(select, initial === 'linear' ? 'quantile' : 'linear');
+    const distribution = page.getByRole('radiogroup', { name: 'Bin distribution' });
+    const initial = distribution.getByRole('radio', { checked: true });
+    const name = initial.element().textContent!.trim();
+    await userEvent.click(
+      distribution.getByRole('radio', { name: name === 'Linear' ? 'Quantile' : 'Linear' }),
+    );
     await settle(legend);
     await expect.element(reset).toBeEnabled();
-    await userEvent.selectOptions(select, initial);
+    await userEvent.click(distribution.getByRole('radio', { name }));
     await settle(legend);
     await expect.element(reset).toBeDisabled();
   });
 
-  it('a press on the Bin distribution select is inside the popover, and choosing an option keeps it open', async () => {
+  it('choosing a Bin distribution applies it and keeps the popover open', async () => {
     const { legend } = await mount(numericData([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]), 'length');
     expect(popover(legend).numeric).toBe(true);
     await openSettings(legend);
-    const select = page.getByRole('combobox', { name: 'Bin distribution' });
-    const native = select.element() as HTMLSelectElement;
-    // The press a click on the select makes, which opens its picker: inside the panel.
-    native.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
-    native.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }));
-    await userEvent.selectOptions(select, 'linear');
+    await userEvent.click(
+      page
+        .getByRole('radiogroup', { name: 'Bin distribution' })
+        .getByRole('radio', { name: 'Linear' }),
+    );
     await settle(legend);
 
     expect(popover(legend).open).toBe(true);

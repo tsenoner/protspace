@@ -223,7 +223,11 @@ export async function setBinDistribution(
   label: 'Linear' | 'Quantile' | 'Logarithmic',
 ): Promise<void> {
   const settings = await openLegendSettings(page);
-  await settings.getByRole('combobox', { name: 'Bin distribution' }).selectOption({ label });
+  const option = settings
+    .getByRole('radiogroup', { name: 'Bin distribution' })
+    .getByRole('radio', { name: label, exact: true });
+  await option.click();
+  await expect(option).toBeChecked();
 }
 
 export async function toggleLegendSetting(
@@ -267,15 +271,20 @@ export async function readLegendSettings(page: Page): Promise<{
     distribution?: string;
     reverseGradient?: boolean;
   } = {
-    palette: ((await settings.getByRole('radio', { checked: true }).textContent()) ?? '').trim(),
+    palette: (
+      (await settings
+        .getByRole('radiogroup', { name: 'Palette' })
+        .getByRole('radio', { checked: true })
+        .textContent()) ?? ''
+    ).trim(),
     maxItems: await fields.nth(0).inputValue(),
     size: await fields.nth(1).inputValue(),
   };
-  const distribution = settings.getByRole('combobox', { name: 'Bin distribution' });
+  const distribution = settings.getByRole('radiogroup', { name: 'Bin distribution' });
   if ((await distribution.count()) > 0) {
-    result.distribution = await distribution.evaluate(
-      (select: HTMLSelectElement) => select.selectedOptions[0]?.textContent?.trim() ?? '',
-    );
+    result.distribution = (
+      (await distribution.getByRole('radio', { checked: true }).textContent()) ?? ''
+    ).trim();
   }
   const reverse = settings.getByRole('switch', { name: 'Reverse gradient', exact: true });
   if ((await reverse.count()) > 0) {

@@ -50,11 +50,11 @@ export const legendSettingsPopoverStyles = [
       font-size: var(--ps-text-xs);
       line-height: var(--ps-leading-normal);
     }
-    ps-input,
-    ps-select {
+    ps-input {
       width: 100%;
     }
-    ps-switch {
+    ps-switch,
+    ps-segmented {
       align-self: flex-start;
     }
     .swatches {

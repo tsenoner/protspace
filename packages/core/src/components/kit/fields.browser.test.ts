@@ -1,5 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cdp, page, userEvent } from 'vitest/browser';
+import { contrast } from '../../test-support/contrast';
+import { colourChannels } from '../../test-support/css-colour';
 import { adoptTheme } from './adopt-theme';
 import type { PsCheckbox } from './checkbox';
 import './checkbox';
@@ -129,6 +131,36 @@ describe('ps-select', () => {
     await el.updateComplete;
     expect(el.value).toBe('kelly');
     expect(select.value).toBe('kelly');
+  });
+
+  // The list is drawn in the OS's appearance, whatever the page's theme: the options follow the OS.
+  it.each([
+    ['the OS is light and the page dark', 'light', 'dark'],
+    ['the OS is dark and the page light', 'dark', 'light'],
+  ])('keeps its open list readable when %s', async (_case, os, theme) => {
+    const session = cdp();
+    await session.send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value: os }],
+    });
+    document.documentElement.dataset.theme = theme;
+    try {
+      const el = await mount<PsSelect>('<ps-select label="Unit"></ps-select>');
+      el.options = [
+        { value: 'px', label: 'px' },
+        { value: 'mm', label: 'mm', disabled: true },
+      ];
+      await el.updateComplete;
+      const [option, disabled] = el.shadowRoot!.querySelectorAll('option');
+      const { color, backgroundColor } = getComputedStyle(option);
+      expect(contrast(color, backgroundColor)).toBeGreaterThanOrEqual(4.5);
+      // A light list under a light OS, a dark one under a dark OS.
+      const [r, g, b] = colourChannels(backgroundColor);
+      expect((r + g + b) / 3 > 128).toBe(os === 'light');
+      expect(getComputedStyle(disabled).color).not.toBe(color);
+    } finally {
+      delete document.documentElement.dataset.theme;
+      await session.send('Emulation.setEmulatedMedia', { features: [] });
+    }
   });
 
   it('forwards describedBy to the native select', async () => {
