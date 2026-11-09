@@ -261,7 +261,7 @@ keeping at least 110 px for the name, and the legend header SHALL fit with its s
 #### Scenario: The legend column
 
 - **WHEN** the explore page opens at 740 × 360 or 844 × 390 px
-- **THEN** each legend row shows its eye but no drag handle or row menu, its name keeps at least
+- **THEN** each legend row shows its colour and its eye but no drag handle, its name keeps at least
   110 px, and the legend header does not overflow
 
 ### Requirement: A touch screen gets finger-sized targets and touch gestures

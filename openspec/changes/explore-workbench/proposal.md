@@ -26,9 +26,9 @@ splits the largest elements and replaces copied code with one set of shared part
   Lucide icons only; one focus ring; one order for Escape.
 - **Plot proportions.** The plot uses one scale for both axes, live and in exports, so clusters keep
   their shape on every screen. A layout change redraws the plot once and keeps the viewed centre.
-- **Legend.** 28 px rows with truncated names, hover actions (hide, reorder, "Show only this",
-  colour and shape), the display name in the header, a visible sort order, a searchable "Other"
-  popover instead of the extract dialog, and settings that apply as they change.
+- **Legend.** 28 px rows with truncated names, hover actions (hide, reorder), a colour dot that
+  opens colour and shape, the display name in the header, a visible sort order, a searchable
+  "Other" popover instead of the extract dialog, and settings that apply as they change.
 - **Workflows.** A selection bar on the plot, status chips for filtered or isolated views, undo and
   redo, Filter as a sidebar panel with a draft that only applies on Apply, search that reports
   found and missing IDs, one notification style with close buttons, an honest loading screen, a

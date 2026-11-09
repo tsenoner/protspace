@@ -279,14 +279,18 @@ the Escape handling in `control-bar.ts` and the legend's own focus trap.
 
 - Rows are 28 px (40 px on touch): colour dot, name, count right-aligned in tabular figures. Long
   names end in an ellipsis and show in full on hover; nothing breaks mid-word.
-- On hover a row shows an eye (hide/show), a drag handle (reorder) and a "⋯" menu with "Show only
-  this" and "Colour and shape". The existing click (hide/show), double-click (show only this), and
-  keyboard actions (arrows, Enter, `i`) stay as shortcuts; `i` is added to the shortcut list.
-  Hidden categories stay in the list, dimmed, with a crossed-out eye.
+- On hover a row shows an eye (hide/show) and a drag handle (reorder). The colour dot is its own
+  button and opens the colour and shape picker (review of PR 555: no "⋯" menu, which only repeated
+  the dot and double-click). The existing click (hide/show), double-click (show only this), and
+  keyboard actions (arrows, Enter, `i`) stay; `i` is added to the shortcut list. Hidden categories
+  stay in the list, dimmed, with a crossed-out eye in the eye's own place, so a hover moves nothing.
+- "Other" is always the last row, in every order. Shift + hover on the plot lights the focused
+  category's row, and its dot on the score strips.
 - The header shows the annotation's display name, never its raw key, then its info button (when
-  the annotation has docs), a sort button that shows the active order (by count, by name, by
-  separation when cluster scores exist, or the user's own; numeric annotations offer by value or
-  the user's own; "Reverse order" flips any of them), and settings. The demo
+  the annotation has docs), a sort button that shows the active order (by count, by name, or the
+  user's own; numeric annotations offer by value or the user's own; "Reverse order" flips any of
+  them), and settings. The list order is the plot's draw order; the score strips show the
+  separation ranking, so there is no sort by separation (a stored one opens by count). The demo
   list today looks sorted by count but is not (282 sits above 289); showing the active order makes
   that visible.
 - "Other · N categories" opens a searchable popover listing those categories with their counts and an
