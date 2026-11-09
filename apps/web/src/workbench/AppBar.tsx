@@ -20,7 +20,7 @@ import { FEEDBACK_HREF, GITHUB_REPO_URL } from '@/lib/support';
 import { hasStructureSheet } from '../explore/layout-mode';
 import { HelpMenu } from './HelpMenu';
 import { SearchToggle } from './SearchToggle';
-import { ThemeMenu } from './ThemeMenu';
+import { ThemeToggle } from './ThemeToggle';
 import { useAppBarSides } from './use-app-bar-sides';
 import { useLayoutMode } from './use-layout-mode';
 import { useWorkbenchStatus } from './use-workbench-status';
@@ -217,7 +217,7 @@ export function AppBar() {
       <div data-workbench="app-bar-actions">
         <DataActions />
         {/* The theme switch, Help, Feedback, GitHub; Import and Export live in the dataset menu. */}
-        <ThemeMenu />
+        <ThemeToggle />
         <HelpMenu />
         <a className="wb-icon-link" href={FEEDBACK_HREF} aria-label="Feedback">
           <MessageSquare size={16} strokeWidth={1.75} aria-hidden="true" />

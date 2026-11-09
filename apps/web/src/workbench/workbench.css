@@ -8,7 +8,8 @@
  */
 
 .workbench {
-  --wb-app-bar-height: 48px;
+  /* Home and the docs share the app bar's height, wordmark and insets (config/site-bar.css). */
+  --wb-app-bar-height: var(--site-bar-height);
   --wb-view-bar-height: 44px;
   display: flex;
   flex-direction: column;
@@ -37,8 +38,8 @@
 [data-workbench='app-bar'] {
   flex: none;
   height: var(--wb-app-bar-height);
-  /* 16 px on the left, as in the mockup: the scale has no 16 px step. */
-  padding: 0 var(--ps-space-3) 0 16px;
+  /* The site's insets, so the wordmark and GitHub sit where Home and the docs have them. */
+  padding: 0 var(--site-bar-inset-end) 0 var(--site-bar-inset-start);
   border-bottom: 1px solid var(--ps-border);
   background: var(--ps-surface);
 }
@@ -53,7 +54,7 @@
 [data-workbench='home'] img {
   display: block;
   width: auto;
-  height: 22px;
+  height: var(--site-bar-logo-height);
   /* Dark: invert the dark ink, then turn the hues back (the mockup's treatment). */
   filter: var(--ps-logo-filter);
 }
@@ -1056,7 +1057,7 @@
 
 /* As on phones (Task 5.4): the actions leave the bar but stay rendered, because a popover inside
    a display: none ancestor never shows. The dataset name opens Import, the More sheet Export, and
-   the Help and Theme menus' ps-menus stay for the same reason. */
+   the Help menu's ps-menu stays for the same reason. */
 .workbench[data-layout='landscape'] [data-workbench='app-bar-actions'] {
   position: absolute;
   width: 0;
@@ -1777,7 +1778,6 @@
   position: relative;
   grid-template-columns: minmax(0, 1fr) auto;
   column-gap: var(--ps-space-2);
-  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
 }
 
 .workbench[data-layout='phone'] [data-workbench='app-bar-actions'] {
@@ -1786,16 +1786,12 @@
   height: 0;
 }
 
-/* The Help and Theme menus' ps-menus stay: a popover host never gets a display: none ancestor. */
+/* The Help menu's ps-menu stays: a popover host never gets a display: none ancestor. */
 .workbench[data-layout='phone']
   [data-workbench='app-bar-actions']
   > :not(.wb-data-actions, ps-menu),
 .workbench[data-layout='phone'] .wb-app-bar-start > .wb-separator {
   display: none;
-}
-
-.workbench[data-layout='phone'] [data-workbench='home'] img {
-  height: 18px;
 }
 
 /* The name ends in an ellipsis before anything leaves the bar, and keeps a word of itself. */
@@ -1814,7 +1810,7 @@
   display: flex;
   align-items: center;
   gap: var(--ps-space-1);
-  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+  padding: 0 var(--site-bar-inset-end) 0 var(--site-bar-inset-start);
   background: var(--ps-surface);
 }
 

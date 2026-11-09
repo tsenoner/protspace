@@ -205,8 +205,8 @@ const STEPS: Record<TourStepId, StepBuilder> = {
     title: 'Light or Dark',
     description:
       kind === 'whats-new'
-        ? 'ProtSpace now has a dark theme. <strong>System</strong> follows your device; <strong>Light</strong> and <strong>Dark</strong> stay as you set them. Exports and figures stay light.'
-        : '<strong>System</strong> follows your device; <strong>Light</strong> and <strong>Dark</strong> stay as you set them. The plot and the structure follow the theme; exports and figures are always light.',
+        ? 'ProtSpace now has a dark theme. Each click of this button moves from <strong>System</strong> (follows your device) to <strong>Dark</strong>, then <strong>Light</strong>, then back; its icon shows which is on. Exports and figures stay light.'
+        : 'Each click moves from <strong>System</strong> (follows your device) to <strong>Dark</strong>, then <strong>Light</strong>, then back; the icon shows which is on. The plot and the structure follow the theme; exports and figures are always light.',
     target: driverId('theme'),
   }),
 

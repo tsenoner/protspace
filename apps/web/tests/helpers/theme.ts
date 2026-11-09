@@ -32,15 +32,22 @@ export async function htmlTheme(page: Page): Promise<string | null> {
   return page.evaluate(() => document.documentElement.getAttribute('data-theme'));
 }
 
-/** The app bar's Theme button (desktop and tablet; hidden on phones and in landscape). */
+/**
+ * The app bar's Theme button (desktop and tablet; hidden on phones and in landscape). Its name
+ * says the current mode and the next, "Theme: System. Switch to Dark".
+ */
 export const themeButton = (page: Page): Locator =>
-  appBar(page).getByRole('button', { name: 'Theme', exact: true });
+  appBar(page).getByRole('button', { name: /^Theme: / });
 
-/** Picks a theme from the app bar's Theme menu and waits for the menu to close. */
+/**
+ * Presses the app bar's Theme button until `label` is on (it steps System → Dark → Light), and
+ * checks the button names it.
+ */
 export async function chooseTheme(page: Page, label: 'System' | 'Light' | 'Dark'): Promise<void> {
-  const menu = page.getByRole('menu', { name: 'Theme', exact: true });
-  await themeButton(page).click();
-  await expect(menu).toBeVisible();
-  await page.getByRole('menuitemradio', { name: label, exact: true }).click();
-  await expect(menu).toBeHidden();
+  const choice = label.toLowerCase();
+  for (let presses = 0; presses < 3 && (await htmlTheme(page)) !== choice; presses++) {
+    await themeButton(page).click();
+  }
+  expect(await htmlTheme(page)).toBe(choice);
+  await expect(themeButton(page)).toHaveAccessibleName(new RegExp(`^Theme: ${label}\\.`));
 }

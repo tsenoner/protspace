@@ -130,7 +130,7 @@ to the search button. A tablet SHALL keep the desktop bars.
 On a phone, upright or on its side, More SHALL open a bottom sheet: a modal dialog named "More" with
 a close button, which Escape or a press on its backdrop also closes, returning focus to More. The
 sheet SHALL hold, in order: Contours as a radio group (Off, Auto, Always), Filter with its applied
-condition count, Import data, Export, Theme as a radio group (System, Light, Dark), Help & shortcuts
+condition count, Import data, Export, Theme as a radio group (System, Dark, Light), Help & shortcuts
 and Feedback; it SHALL NOT offer GitHub. Contours and Theme SHALL apply at once and keep the sheet
 open. Every other row SHALL close the sheet first and then act: Filter shows the Filter tab and
 focuses its heading, Import data opens the Import panel under the dataset name, Export opens the

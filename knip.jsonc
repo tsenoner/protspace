@@ -18,6 +18,8 @@
         // entry, so knip could never report anything there as unused.
         "scripts/docs-screenshots/*.spec.ts",
         "docs/.vitepress/config.mts",
+        // VitePress loads the custom theme by its path, not by an import.
+        "docs/.vitepress/theme/index.ts",
         "perf/**/*.spec.ts",
         "tests/contract/**/*.test.ts",
       ],
@@ -28,6 +30,9 @@
         "docs/.vitepress/**/*.{ts,mts}",
         "tests/contract/**/*.ts",
       ],
+      // The docs theme imports vue, which VitePress resolves to its own copy: listing it would only
+      // pin a second version beside VitePress's.
+      "ignoreDependencies": ["vue"],
     },
     "packages/core": {
       // Both entries (src/index.ts, src/components/publish/index.ts) are discovered from

@@ -171,17 +171,24 @@ test.describe('the theme switch', () => {
     await expect.poll(() => backgroundOf(workbench(page))).toBe(DARK_SURFACE);
   });
 
-  test('the menu marks the current choice and opens on it', async ({ page }) => {
+  test('each press steps System, Dark, Light and back, and the name says the mode and the next', async ({
+    page,
+  }) => {
+    await seedTheme(page, 'system');
     await openExplore(page);
-    await chooseTheme(page, 'Dark');
-
-    await themeButton(page).click();
-    const item = (name: string) => page.getByRole('menuitemradio', { name, exact: true });
-    await expect(item('Dark')).toHaveAttribute('aria-checked', 'true');
-    await expect(item('Dark')).toBeFocused();
-    await expect(item('System')).toHaveAttribute('aria-checked', 'false');
-    await expect(item('Light')).toHaveAttribute('aria-checked', 'false');
-    await expect(themeButton(page)).toHaveAttribute('aria-expanded', 'true');
+    const steps = [
+      ['system', 'Theme: System. Switch to Dark'],
+      ['dark', 'Theme: Dark. Switch to Light'],
+      ['light', 'Theme: Light. Switch to System'],
+      ['system', 'Theme: System. Switch to Dark'],
+    ] as const;
+    for (const [index, [theme, name]] of steps.entries()) {
+      if (index > 0) await themeButton(page).click();
+      expect(await htmlTheme(page)).toBe(theme);
+      await expect(themeButton(page)).toHaveAccessibleName(name);
+    }
+    // No menu any more: a press applies the next mode at once.
+    await expect(page.getByRole('menu', { name: 'Theme' })).toHaveCount(0);
   });
 
   test("the button's icon shows the choice", async ({ page }) => {
@@ -208,26 +215,29 @@ test.describe('the theme switch', () => {
     await expect.poll(() => backgroundOf(workbench(page))).toBe(WHITE);
   });
 
-  test('Escape closes the theme menu and returns focus to the button', async ({ page }) => {
+  test('Enter on the focused button switches the theme, keeps focus and announces it', async ({
+    page,
+  }) => {
+    await seedTheme(page, 'system');
     await openExplore(page);
+    const status = appBar(page)
+      .getByRole('status')
+      .filter({ hasText: /^Theme: / });
+    await expect(status).toHaveCount(0);
+
     await themeButton(page).focus();
     await page.keyboard.press('Enter');
-
-    const menu = page.getByRole('menu', { name: 'Theme', exact: true });
-    await expect(menu).toBeVisible();
-    // Whatever the default, the menu opens on the checked choice.
-    await expect(page.getByRole('menuitemradio', { checked: true })).toBeFocused();
-
-    await page.keyboard.press('Escape');
-    await expect(menu).toBeHidden();
+    expect(await htmlTheme(page)).toBe('dark');
     await expect(themeButton(page)).toBeFocused();
+    await expect(themeButton(page)).toHaveAccessibleName('Theme: Dark. Switch to Light');
+    await expect(status).toHaveText('Theme: Dark');
   });
 });
 
 test.describe('the theme switch on an 800 px tablet', () => {
   test.use({ viewport: { width: 800, height: 1000 } });
 
-  test('the Theme button sits between Export and Help, and the dataset name and search still fit', async ({
+  test('the Theme button sits before Help, and the dataset name and search still fit', async ({
     page,
   }) => {
     await openExplore(page);
@@ -236,10 +246,8 @@ test.describe('the theme switch on an 800 px tablet', () => {
       const b = (await locator.boundingBox())!;
       return { left: b.x, right: b.x + b.width };
     };
-    const exported = await sides(appBar(page).getByRole('button', { name: 'Export', exact: true }));
     const theme = await sides(themeButton(page));
     const help = await sides(appBar(page).getByRole('button', { name: 'Help', exact: true }));
-    expect(exported.right).toBeLessThanOrEqual(theme.left);
     expect(theme.right).toBeLessThanOrEqual(help.left);
     expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
   });
@@ -376,10 +384,10 @@ test.describe('dark surfaces', () => {
     await expect(title).toHaveCSS('color', DARK_TEXT);
     await expect(page.locator('.driver-overlay path')).toHaveCSS('fill', DARK_SCRIM);
 
-    // The welcome step is centred with no arrow; step 2 points at Import and Export, so its arrow
+    // The welcome step is centred with no arrow; step 2 points at the dataset name, so its arrow
     // shows. The arrow is a border triangle: only the side named in its class is painted.
     await popover.locator('.driver-popover-next-btn').click();
-    await expect(title).toHaveText('Import & Export');
+    await expect(title).toHaveText('Your Data');
     const arrowColour = () =>
       popover.locator('.driver-popover-arrow').evaluate((arrow) => {
         const side = /driver-popover-arrow-side-(left|right|top|bottom)\b/.exec(

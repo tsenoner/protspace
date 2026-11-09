@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { DEFAULT_EXAMPLE_DATASET } from '../src/explore/example-datasets';
 import {
   appBar,
@@ -137,4 +137,46 @@ test.describe('workbench shell', () => {
       await expect(page.locator('[data-workbench]')).toHaveCount(0);
     }
   });
+});
+
+/**
+ * Home's header and Explore's app bar share their anchors (config/site-bar.css, PR 555 review): the
+ * bar's height, the wordmark's box, and Feedback then GitHub ending at the same right edge. The
+ * docs' nav reads the same file; its dev server is not part of this suite.
+ */
+test.describe('the anchors Home and Explore share', () => {
+  const box = async (locator: Locator) => {
+    const b = (await locator.boundingBox())!;
+    return { left: b.x, top: b.y, right: b.x + b.width, height: b.height };
+  };
+  const anchors = async (bar: Locator, wordmark: Locator) => {
+    // Until the SVG has loaded, the wordmark is 0 px wide.
+    await expect
+      .poll(() => wordmark.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+      .toBeGreaterThan(0);
+    return {
+      bar: (await box(bar)).height,
+      wordmark: await box(wordmark),
+      feedback: await box(bar.getByRole('link', { name: 'Feedback', exact: true })),
+      github: await box(bar.getByRole('link', { name: 'GitHub', exact: true })),
+    };
+  };
+
+  for (const width of [1280, 1440, 800]) {
+    test(`at ${width} px nothing moves between Home and Explore`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto('/');
+      const header = page.getByRole('banner');
+      const home = await anchors(header, header.locator('img[src="/wordmark.svg"]'));
+
+      await openExplore(page);
+      const explore = await anchors(appBar(page), page.locator("[data-workbench='home'] img"));
+
+      expect(home).toEqual(explore);
+      expect(explore.bar).toBe(48);
+      expect(explore.wordmark).toMatchObject({ left: 24, height: 24 });
+      expect(explore.feedback.right).toBeLessThan(explore.github.left);
+      expect(width - explore.github.right).toBe(16);
+    });
+  }
 });

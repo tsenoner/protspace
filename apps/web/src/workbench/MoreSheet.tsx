@@ -38,7 +38,7 @@ const CONTOUR_OPTIONS = DENSITY_LAYER_MODES.map((mode) => ({
   label: DENSITY_MODE_LABELS[mode].label,
 }));
 
-/** The theme choices as the segmented control offers them, named as the app bar's menu names them. */
+/** The theme choices as the segmented control offers them, named as the app bar's button names them. */
 const THEME_OPTIONS = THEME_CHOICES.map((value) => ({ value, label: THEME_LABELS[value] }));
 
 /** A row's Lucide icon: 16 px at the kit's stroke, decorative. */

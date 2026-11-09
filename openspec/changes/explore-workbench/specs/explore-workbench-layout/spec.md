@@ -32,6 +32,12 @@ The landing and privacy pages SHALL keep the site header.
 - **WHEN** the user opens the landing page or the privacy page
 - **THEN** the site header with its navigation is shown
 
+#### Scenario: The bars share their anchors
+
+- **WHEN** the user moves between the landing page, /explore and the docs at the same window width
+- **THEN** each top bar is 48 px tall, the wordmark is 24 px tall at the same left inset, and the
+  bar ends in Feedback then GitHub, with the last icon at the same right inset
+
 ### Requirement: The view bar keeps one row
 
 The view bar SHALL hold Projection with its details, Color by, Contours and Filter in a single row
