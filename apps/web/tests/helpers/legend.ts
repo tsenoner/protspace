@@ -108,7 +108,7 @@ export async function isLegendItemHidden(page: Page, value: string): Promise<boo
   return (await main.first().getAttribute('aria-pressed')) === 'false';
 }
 
-type LegendSortChoice = 'By count' | 'By name' | 'By value' | 'By separation' | 'Your order';
+type LegendSortChoice = 'By count' | 'By name' | 'By value' | 'Your order';
 
 /** The header's sort button; its name reads "Sort: {active order}". */
 export function legendSortButton(page: Page): Locator {

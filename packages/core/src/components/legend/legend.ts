@@ -63,7 +63,7 @@ import {
   createItemActionEvent,
   computeOtherConcreteValues,
 } from './legend-helpers';
-import { sortItemsForDisplay } from './legend-items-state';
+import { sortItemsForDisplay, type ActiveSortMode } from './legend-items-state';
 
 import { createLegendErrorEventDetail } from './legend.events';
 
@@ -248,7 +248,7 @@ export class ProtspaceLegend extends LitElement {
     return !this.autoSync;
   }
 
-  get _currentSortMode(): LegendSortMode {
+  get _currentSortMode(): ActiveSortMode {
     return this._data.normalizeSortMode(
       this.selectedAnnotation,
       this._annotationSortModes[this.selectedAnnotation],
@@ -792,7 +792,6 @@ export class ProtspaceLegend extends LitElement {
       info,
       sortMode: this._currentSortMode,
       isNumeric: this._isNumericAnnotation(),
-      hasScores: this._categoryScores.length > 0,
       canSort: this._legendItems.length > 1,
       settingsOpen: this._settingsAnchor !== null,
       eat:
@@ -813,7 +812,6 @@ export class ProtspaceLegend extends LitElement {
       anchor: this._sortMenu,
       sortMode: this._currentSortMode,
       isNumeric: this._isNumericAnnotation(),
-      hasScores: this._categoryScores.length > 0,
     };
     return renderSortMenu(model, this._sortMenuHandlers);
   }
@@ -854,12 +852,10 @@ export class ProtspaceLegend extends LitElement {
     // One row has nothing to order: the sort button hides, so its menu closes too.
     if (this._sortMenu && this._legendItems.length <= 1) this._sortMenu = null;
     // Derived before render, so a change to the items renders the rows once, in their new order.
+    if (changedProperties.has('_legendItems')) {
+      this._sortedLegendItems = sortItemsForDisplay(this._legendItems);
+    }
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
-      this._sortedLegendItems = sortItemsForDisplay(
-        this._legendItems,
-        this._currentSortMode,
-        this._categoryScores,
-      );
       this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
     }
     this._otherPopover.willUpdate(

@@ -122,6 +122,23 @@ describe('legend settings stored before phase 3', () => {
     );
   });
 
+  it('opens a record saved with the retired By separation sort by count, keeping the rest', async () => {
+    const data = categoricalData(TWELVE);
+    const key = legendStorageKey(generateDatasetHash(data), 'family');
+    const seed = { ...legacyLegendRecord(), sortMode: 'silhouette-desc' as const };
+    localStorage.setItem(key, JSON.stringify(seed));
+
+    const legend = await mount(data, 'family');
+
+    expect(rowValues(legend)).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'Other']);
+    expect(legend.getAllPersistedSettings().family.sortMode).toBe('size-desc');
+    expect(legend.maxVisibleValues).toBe(8);
+    expect(hiddenRows(legend)).toEqual(['C']);
+    expect(symbolPath(legend, 'B').getAttribute('d')).toBe(
+      SHAPE_PATH_GENERATORS[seed.categories.B.shape](LEGEND_STYLES.legendDisplaySize),
+    );
+  });
+
   it('round-trips a numeric record with numericSettings; a topology mismatch drops hidden values and the manual order', async () => {
     const data = numericData(Array.from({ length: 20 }, (_, i) => i + 1));
     const key = legendStorageKey(generateDatasetHash(data), 'length');

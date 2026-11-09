@@ -665,7 +665,7 @@ Score the quality of the projections in an existing project directory and write 
 [`.parquetbundle`](/guide/data-format).
 
 Folding it in with `bundle -s` fills the bundle's statistics slot, and the web app reads that table: it
-draws separation-score strips in the legend, adds a `By separation` legend sort mode and fills the
+draws separation-score strips in the legend and fills the
 Separation section of the projection metadata panel. See
 [Separation Scores](/explore/separation-scores) for how the scores read in the app, and
 [Data Format Reference](/guide/data-format#statistics-optional-5th-part) for the bundle parts. The

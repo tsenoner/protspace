@@ -58,7 +58,7 @@ Scores are computed once, during preparation, over every protein. Hiding legend 
 
 Because a filtered view and a whole-dataset score would contradict each other on screen, the strips are replaced by "Separation scores are hidden while the view is filtered" whenever a filter is active. This includes the EAT panel's reliability range in **Hide**; **Fade** filters nothing, so the strips stay. Clear the filter and the strips return.
 
-Sorting is not affected. The scores are read from the unsliced dataset, so **By separation** stays available in the legend's sort options and keeps ordering rows correctly while the strips themselves are hidden.
+The legend's order is not affected either way: the strips are where the ranking is read, and the rows keep the order the plot draws them in.
 
 Above 5000 proteins the computation runs on a deterministic 5000-protein subsample, seeded from the protein identifiers, so the same dataset always produces the same scores.
 
@@ -77,5 +77,5 @@ A projection clustering belongs to the projection it was found in, and the panel
 
 ## Next Steps
 
-- [Using the Legend](/explore/legend) - filtering, colours, and sorting by separation
+- [Using the Legend](/explore/legend) - filtering, colours, and sorting
 - [Data Preparation](/guide/data-preparation) - preparing a dataset with `--stats`

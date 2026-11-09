@@ -242,8 +242,8 @@ describe('DragController', () => {
       expect(mockHost.requestUpdate).toHaveBeenCalled();
     });
 
-    it('reorders by the drawn order when a separation sort draws rows off their zOrder', () => {
-      // silhouette-desc draws cat3, cat1, cat2, Other; the zOrder is still cat1, cat2, cat3.
+    it('reorders by the drawn order, the indices Sortable counts, not by zOrder', () => {
+      // Drawn cat3, cat1, cat2, Other while the zOrder says cat1, cat2, cat3.
       const drawn = ['cat3', 'cat1', 'cat2', 'Other'].map(
         (value) => mockLegendItems.find((item) => item.value === value)!,
       );

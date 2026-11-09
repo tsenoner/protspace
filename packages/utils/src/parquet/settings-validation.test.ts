@@ -57,11 +57,10 @@ describe('settings-validation', () => {
       expect(isValidSortMode('alpha-desc')).toBe(true);
       expect(isValidSortMode('manual')).toBe(true);
       expect(isValidSortMode('manual-reverse')).toBe(true);
+      // The retired "By separation" sort, both ways. Older settings and bundles hold it, and an
+      // invalid sortMode makes `sanitizeLegendSettingsEntry` discard the WHOLE entry — colours,
+      // shapes, z-order, hidden values — so dropping these here would be silent data loss.
       expect(isValidSortMode('silhouette-desc')).toBe(true);
-      // The legend header's reverse button derives its result by string surgery on the
-      // current mode, so this is what it produces from `silhouette-desc`. An invalid
-      // sortMode makes `sanitizeLegendSettingsEntry` discard the WHOLE entry — colours,
-      // shapes, z-order, hidden values — so a missing mode here is silent data loss.
       expect(isValidSortMode('silhouette-asc')).toBe(true);
     });
 

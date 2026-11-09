@@ -13,10 +13,7 @@ const FALLBACK_CLASS = 'sortable-fallback';
  * Callback interface for drag events
  */
 export interface DragCallbacks {
-  /**
-   * Returns the legend items in the order the rows are drawn. Sortable's indices count drawn
-   * rows, which differ from zOrder order in the separation sorts.
-   */
+  /** Returns the legend items in the order the rows are drawn: Sortable's indices count them. */
   getDisplayedItems: () => readonly LegendItem[];
   /** Updates legend items with new z-orders */
   setLegendItems: (items: LegendItem[]) => void;

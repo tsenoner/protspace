@@ -31,6 +31,7 @@ import {
   normalizeSortModeForType,
   numericOrderFromItems,
   resolvePersistedSettings,
+  type ActiveSortMode,
   type ResolvedLegendSettings,
 } from '../legend-items-state';
 import type { ProtspaceLegend } from '../legend';
@@ -547,7 +548,7 @@ export class LegendDataController {
     };
   }
 
-  normalizeSortMode(annotationName: string, sortMode: LegendSortMode | undefined): LegendSortMode {
+  normalizeSortMode(annotationName: string, sortMode: LegendSortMode | undefined): ActiveSortMode {
     const annotation =
       this.host.data?.annotations?.[annotationName] ??
       (annotationName === this.host.selectedAnnotation ? this.host.annotationData : undefined);

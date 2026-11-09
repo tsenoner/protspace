@@ -4,7 +4,6 @@ import {
   getNumericBinLabelMap,
   isGradientPalette,
   resolveNumericAnnotationDisplaySettings,
-  type CategoryScore,
   type NumericAnnotationDisplaySettings,
   type NumericBinningStrategy,
 } from '@protspace/utils';
@@ -25,11 +24,20 @@ import type {
 
 const isSpecial = (value: string): boolean => value === LEGEND_VALUES.OTHER || value === NA_VALUE;
 
-/** A sort mode the annotation's type supports: numeric legends sort by value or by hand. */
+/**
+ * The orders the legend offers. `LegendSortMode` also holds the retired by-separation sorts, so
+ * that settings and bundles saved with one still load; they open by count.
+ */
+export type ActiveSortMode = Exclude<LegendSortMode, 'silhouette-desc' | 'silhouette-asc'>;
+
+/**
+ * A sort mode the annotation's type supports: numeric legends sort by value or by hand. A retired
+ * by-separation sort reads as by count.
+ */
 export function normalizeSortModeForType(
   mode: LegendSortMode | undefined,
   isNumeric: boolean,
-): LegendSortMode {
+): ActiveSortMode {
   if (isNumeric) {
     return mode === 'alpha-asc' ||
       mode === 'alpha-desc' ||
@@ -38,7 +46,9 @@ export function normalizeSortModeForType(
       ? mode
       : 'alpha-asc';
   }
-  return mode ?? 'size-desc';
+  return mode === undefined || mode === 'silhouette-desc' || mode === 'silhouette-asc'
+    ? 'size-desc'
+    : mode;
 }
 
 /** A categorical palette id: a gradient or a missing id falls back to Kelly's colours. */
@@ -47,49 +57,20 @@ export function normalizeCategoricalPaletteId(id: string | null | undefined): st
 }
 
 /** The same order the other way round: `manual` ↔ `manual-reverse`, `-asc` ↔ `-desc`. */
-export function reverseSortMode(mode: LegendSortMode): LegendSortMode {
+export function reverseSortMode(mode: ActiveSortMode): ActiveSortMode {
   if (mode === 'manual') return 'manual-reverse';
   if (mode === 'manual-reverse') return 'manual';
   return (
     mode.endsWith('-asc') ? mode.replace('-asc', '-desc') : mode.replace('-desc', '-asc')
-  ) as LegendSortMode;
+  ) as ActiveSortMode;
 }
 
 /**
- * Display order for the legend list. Every mode but the separation sorts has already been applied
- * upstream and is carried by `zOrder`; scores arrive too late for that path, so they are applied
- * here. Deliberately display-only: bucket membership stays size-driven, so switching sort never
- * changes which categories are visible.
+ * Display order for the legend list: by zOrder, which every sort mode sets upstream, so the list
+ * reads in the order the plot draws.
  */
-export function sortItemsForDisplay(
-  items: readonly LegendItem[],
-  mode: LegendSortMode,
-  scores: readonly CategoryScore[],
-): LegendItem[] {
-  const sorted = [...items];
-  if (mode !== 'silhouette-desc' && mode !== 'silhouette-asc') {
-    return sorted.sort((a, b) => a.zOrder - b.zOrder);
-  }
-  // Indexed once rather than a `.find()` per comparison: the comparator runs
-  // O(items · log items) times and the scan is O(categories), so a legend with a few
-  // hundred categories paid hundreds of thousands of string compares per rebuild.
-  const scoreByCategory = new Map(scores.map((score) => [score.category, score.silhouette]));
-  const scoreOf = (value: string): number => scoreByCategory.get(value) ?? Number.NEGATIVE_INFINITY;
-  // Ascending is the reverse of best-first. Unscored categories keep sorting last either way:
-  // they sit at -Infinity, so the ascending branch negates only the scored gap.
-  const descending = mode === 'silhouette-desc';
-  return sorted.sort((a, b) => {
-    // "Other" is a bucket, not a category, so it has no score and stays last.
-    if (a.value === LEGEND_VALUES.OTHER) return 1;
-    if (b.value === LEGEND_VALUES.OTHER) return -1;
-    const scoreA = scoreOf(a.value);
-    const scoreB = scoreOf(b.value);
-    const unscored = scoreA === Number.NEGATIVE_INFINITY || scoreB === Number.NEGATIVE_INFINITY;
-    const diff = unscored || descending ? scoreB - scoreA : scoreA - scoreB;
-    // `||` (not `!== 0 ? … :`) so an unscored pair, where diff is NaN, also falls
-    // through to the zOrder tiebreak instead of coercing to a no-op comparator.
-    return diff || a.zOrder - b.zOrder;
-  });
+export function sortItemsForDisplay(items: readonly LegendItem[]): LegendItem[] {
+  return [...items].sort((a, b) => a.zOrder - b.zOrder);
 }
 
 /** The rows by zOrder the other way round, Other still last, zOrders renumbered from 0. */
@@ -189,7 +170,7 @@ export interface ResolvedLegendSettings {
   annotationShapeSize: number | null;
   hiddenValues: string[];
   paletteId: string;
-  sortMode: LegendSortMode;
+  sortMode: ActiveSortMode;
   enableDuplicateStackUI: boolean;
   /** Numeric annotations only: the binning to keep, and the manual order if it still applies. */
   numeric: (NumericAnnotationDisplaySettings & { manualOrderIds?: string[] }) | null;

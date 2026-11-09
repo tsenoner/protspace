@@ -80,6 +80,7 @@ When the dataset was prepared with statistics and the selected annotation was sc
 
 - Hovering a dot highlights the matching legend row, and hovering a row highlights its dot.
 - Clicking a dot toggles that category, exactly like clicking its legend row.
+- The strips are where to read the ranking: the legend's own order stays the plot's draw order.
 - While a filter or isolation narrows the view, the strips are replaced by the note `Separation scores are hidden while the view is filtered.`
 
 See [Separation Scores](/explore/separation-scores) for what the numbers mean and how they are computed.
@@ -92,16 +93,15 @@ the **Sort legend** menu:
 
 - **By count**, largest first (categorical annotations)
 - **By name** (categorical) or **By value** (numeric)
-- **By separation**, only when the selected annotation carries per-category
-  [separation scores](/explore/separation-scores) for the current projection: categories ordered by
-  how cleanly each one separates. It is display-only: it reorders the list without changing which
-  categories fall into `Other`, and it keeps working while the view is filtered.
 - **Your order**, the order you dragged the rows into
 - **Reverse order**, a checkbox that flips the active order:
   - Numeric `By value`: low-to-high vs high-to-low
   - `Your order`: reverses your order
-  - `By separation`: best-separating first vs worst-separating first
   - `By count` and `By name`: the reverse of each
+
+The order is also the plot's draw order. To see which categories separate best, read the
+[score strips](#separation-score-strips). Settings or bundles saved with the former separation
+sort open sorted by count.
 
 ## Settings
 
