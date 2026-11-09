@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyBlock, applyBlockText, leafConditions, type ApplyBlock } from './query-apply-state';
 import { createCondition, createGroup, createNumericCondition } from './query-types';
 import type { FilterQuery } from './query-types';
+import { setJoiner } from './query-operators';
 
 const human = () => createCondition({ annotation: 'organism', values: ['Human'] });
 const ready = { matched: 2, total: 5, dirty: true };
@@ -36,6 +37,12 @@ describe('applyBlock', () => {
     expect(
       applyBlock({ query: [human(), createCondition({ logicalOp: 'NOT' })], ...ready }),
     ).toEqual({ kind: 'annotation', n: 2 });
+  });
+
+  it('asks for an annotation on a card joined by "and not" without one', () => {
+    const empty = createCondition({ logicalOp: 'AND' });
+    const query = setJoiner([human(), empty], empty.id, 'NOT');
+    expect(applyBlock({ query, ...ready })).toEqual({ kind: 'annotation', n: 2 });
   });
 
   it('an annotation without a value blocks with its number', () => {

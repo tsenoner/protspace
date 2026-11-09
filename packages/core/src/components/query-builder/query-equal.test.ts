@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { queryChanges, sameQuery } from './query-equal';
+import { setJoiner } from './query-operators';
 import type { FilterQuery } from './query-types';
 
 const organism = (values: string[], id = 'a'): FilterQuery[number] => ({
@@ -71,6 +72,20 @@ describe('sameQuery', () => {
   it('counts no change after a value is unticked and ticked again', () => {
     expect(queryChanges([organism(['Mouse', 'Human'])], [organism(['Human', 'Mouse'])]).count).toBe(
       0,
+    );
+  });
+});
+
+describe('queryChanges', () => {
+  it('marks a card whose joiner turned to "and not" as edited, and back', () => {
+    const applied: FilterQuery = [organism(['Human']), { ...length(5), logicalOp: 'AND' }];
+    const negated = setJoiner(applied, 'n', 'NOT');
+    expect(queryChanges(negated, applied)).toEqual({ edited: new Set(['n']), count: 1 });
+    expect(queryChanges(applied, negated)).toEqual({ edited: new Set(['n']), count: 1 });
+    const family = { ...(organism(['a'], 'f') as object), annotation: 'family', logicalOp: 'AND' };
+    const withFamily: FilterQuery = [organism(['Human']), family as FilterQuery[number]];
+    expect(queryChanges(setJoiner(withFamily, 'f', 'NOT'), withFamily).edited).toEqual(
+      new Set(['f']),
     );
   });
 });

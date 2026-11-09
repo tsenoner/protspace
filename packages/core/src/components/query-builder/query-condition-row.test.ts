@@ -99,6 +99,95 @@ describe('query-condition-row annotation kind detection', () => {
     await el.updateComplete;
     expect(fired).toBe(false);
   });
+
+  /** The condition `el` sends after switching to `annotation`. */
+  async function afterSelecting(el: ConditionRowEl, annotation: string) {
+    let sent: FilterCondition | undefined;
+    el.addEventListener(
+      'condition-changed',
+      (e) => (sent = (e as CustomEvent<{ condition: FilterCondition }>).detail.condition),
+      { once: true },
+    );
+    el._selectAnnotation(annotation);
+    await el.updateComplete;
+    return sent!;
+  }
+
+  it('"is none of" moves to another category annotation, but not to a numeric one', async () => {
+    const el = await mount();
+    const noneOf: FilterCondition = {
+      id: 'c1',
+      kind: 'categorical',
+      annotation: 'organism',
+      values: ['Human'],
+      logicalOp: 'NOT',
+    };
+    el.condition = { ...noneOf, annotation: 'family' };
+    await el.updateComplete;
+    expect((await afterSelecting(el, 'organism')).logicalOp).toBe('NOT');
+    el.condition = noneOf;
+    await el.updateComplete;
+    expect((await afterSelecting(el, 'length')).logicalOp).toBeUndefined();
+  });
+
+  it('a numeric card\'s NOT, its "and not", is not read as "is none of" on a category annotation', async () => {
+    const el = await mount();
+    el.condition = {
+      id: 'c1',
+      kind: 'numeric',
+      annotation: 'length',
+      min: 150,
+      max: null,
+      logicalOp: 'NOT',
+    };
+    await el.updateComplete;
+    expect((await afterSelecting(el, 'organism')).logicalOp).toBeUndefined();
+  });
+});
+
+describe('query-condition-row value list', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** Every `value-list-toggle` the row sends, as `id open|closed`. */
+  function record(el: ConditionRowEl): string[] {
+    const sent: string[] = [];
+    el.addEventListener('value-list-toggle', (e) => {
+      const { id, open } = (e as CustomEvent<{ id: string; open: boolean }>).detail;
+      sent.push(`${id} ${open ? 'open' : 'closed'}`);
+    });
+    return sent;
+  }
+
+  it('says when its value list opens and closes, so the builder counts only for an open one', async () => {
+    const el = await mount();
+    el.condition = { id: 'c1', kind: 'categorical', annotation: 'organism', values: [] };
+    await el.updateComplete;
+    const sent = record(el);
+    const add = el.shadowRoot!.querySelector<HTMLElement>('.value-add')!;
+
+    add.click();
+    await el.updateComplete;
+    add.click();
+    await el.updateComplete;
+
+    expect(sent).toEqual(['c1 open', 'c1 closed']);
+  });
+
+  it('reused for another card with its list open, it closes the old card’s list and opens the new', async () => {
+    const el = await mount();
+    el.condition = { id: 'c1', kind: 'categorical', annotation: 'organism', values: [] };
+    await el.updateComplete;
+    el.shadowRoot!.querySelector<HTMLElement>('.value-add')!.click();
+    await el.updateComplete;
+    const sent = record(el);
+
+    el.condition = { id: 'c2', kind: 'categorical', annotation: 'organism', values: ['Human'] };
+    await el.updateComplete;
+
+    expect(sent).toEqual(['c1 closed', 'c2 open']);
+  });
 });
 
 /**

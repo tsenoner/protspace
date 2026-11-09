@@ -10,6 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './query-builder';
+import { evaluateQuery } from './query-evaluate';
 import { createCondition, createGroup } from './query-types';
 import type { FilterQuery } from './query-types';
 import type { ProtspaceData } from './types';
@@ -297,6 +298,98 @@ describe('query-builder removal normalizes the new first item operator', () => {
   });
 });
 
+describe('query-builder joiners', () => {
+  interface JoinerInternals extends QueryBuilderInternals {
+    _joinerTarget: { id: string; anchor: Element } | null;
+    _handleJoinerSelect(e: CustomEvent<{ value: string }>): void;
+    _resolvePrompt(choice: 'group' | 'all' | 'cancel'): void;
+  }
+  let builder: JoinerInternals;
+  let changes: FilterQuery[];
+
+  beforeEach(async () => {
+    document.body.innerHTML = '';
+    builder = document.createElement('protspace-query-builder') as JoinerInternals;
+    builder.annotations = ['organism'];
+    builder.data = makeData();
+    changes = [];
+    // The host's part: the edited query comes back as the builder's query.
+    builder.addEventListener('query-changed', (e) => {
+      builder.query = (e as CustomEvent<{ query: FilterQuery }>).detail.query;
+      changes.push(builder.query);
+    });
+    document.body.appendChild(builder);
+    await builder.updateComplete;
+  });
+
+  const pills = () =>
+    [...builder.shadowRoot!.querySelectorAll('.joiner-pill')].map((pill) =>
+      pill.textContent!.replace(/\s+/g, ' ').trim(),
+    );
+  const menuItems = () =>
+    [...builder.shadowRoot!.querySelectorAll('ps-menu[label="Joiner"] ps-menu-item')].map((item) =>
+      item.getAttribute('value'),
+    );
+
+  /** Picks `value` in the joiner menu of the item `id` (jsdom cannot open the menu itself). */
+  async function pick(id: string, value: string) {
+    builder._joinerTarget = { id, anchor: builder };
+    builder._handleJoinerSelect(new CustomEvent('ps-select', { detail: { value } }));
+    await builder.updateComplete;
+  }
+
+  it('offers "and", "or" and "and not" between two cards; "and not" negates the card', async () => {
+    const mouse = createCondition({ annotation: 'organism', values: ['Mouse'], logicalOp: 'AND' });
+    builder.query = [human(), mouse];
+    builder._joinerTarget = { id: mouse.id, anchor: builder };
+    builder.requestUpdate();
+    await builder.updateComplete;
+    expect(menuItems()).toEqual(['AND', 'OR', 'NOT']);
+
+    await pick(mouse.id, 'NOT');
+    expect(pills()).toEqual(['Joiner for condition 2: and not']);
+    // Human and not Mouse: P1 and P3.
+    expect([...evaluateQuery(builder.query, makeData())].sort()).toEqual([0, 2]);
+
+    await pick(mouse.id, 'AND');
+    expect(pills()).toEqual(['Joiner for condition 2: and']);
+  });
+
+  it('a negated first card reads "not", and its menu only removes the "not"', async () => {
+    const mouse = createCondition({ annotation: 'organism', values: ['Mouse'], logicalOp: 'AND' });
+    builder.query = [human(), mouse];
+    await pick(mouse.id, 'NOT');
+    builder.query = builder.query.slice(1);
+    await builder.updateComplete;
+    expect(pills()).toEqual(['Negation for condition 1: not']);
+    builder._joinerTarget = { id: mouse.id, anchor: builder };
+    builder.requestUpdate();
+    await builder.updateComplete;
+    expect(menuItems()).toEqual(['AND']);
+
+    await pick(mouse.id, 'AND');
+    expect(pills()).toEqual([]);
+    expect(builder.query).toEqual([{ ...mouse, logicalOp: undefined }]);
+  });
+
+  it('"and not" picked in an "or" list asks "Group these?"; "Use “and” for all" keeps it', async () => {
+    const mouse = createCondition({ annotation: 'organism', values: ['Mouse'], logicalOp: 'OR' });
+    const third = createCondition({ annotation: 'organism', values: ['Human'], logicalOp: 'OR' });
+    builder.query = [human(), mouse, third];
+    await builder.updateComplete;
+    // jsdom has no scrollIntoView, which brings the prompt on screen.
+    Element.prototype.scrollIntoView ??= () => {};
+    await pick(third.id, 'NOT');
+    expect(changes).toHaveLength(0);
+    const prompt = builder.shadowRoot!.querySelector('.joiner-prompt')!;
+    expect(prompt.textContent).toContain('Use “and” for all');
+
+    builder._resolvePrompt('all');
+    await builder.updateComplete;
+    expect(pills()).toEqual(['Joiner for condition 2: and', 'Joiner for condition 3: and not']);
+  });
+});
+
 describe('query-builder embedded in a host', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -365,15 +458,40 @@ describe('query-builder value count bases', () => {
     vi.useRealTimers();
   });
 
-  /** Each card's count base, in card order: sorted indices, or null for the whole dataset. */
+  type RowInternals = HTMLElement & {
+    condition: { id: string };
+    matchedIndices: Set<number> | null | undefined;
+  };
+  const rowsOf = () => [
+    ...builder.shadowRoot!.querySelectorAll<RowInternals>('protspace-query-condition-row'),
+  ];
+
+  /** What a row reports when its value list opens or closes (jsdom cannot open the popover). */
+  const toggleList = (row: RowInternals, open: boolean) =>
+    row.dispatchEvent(
+      new CustomEvent('value-list-toggle', {
+        detail: { id: row.condition.id, open },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+
+  /**
+   * Each card's count base with its value list open, in card order: sorted indices, or null for
+   * the whole dataset.
+   */
   async function bases(query: FilterQuery) {
     builder.query = query;
     await builder.updateComplete;
     vi.advanceTimersByTime(300);
     await builder.updateComplete;
-    return [...builder.shadowRoot!.querySelectorAll('protspace-query-condition-row')].map((row) => {
-      const set = (row as HTMLElement & { matchedIndices: Set<number> | null }).matchedIndices;
-      return set === null ? null : [...set].sort();
+    for (const row of rowsOf()) toggleList(row, true);
+    // The base is worked out after the next paint.
+    vi.advanceTimersByTime(50);
+    await builder.updateComplete;
+    return rowsOf().map((row) => {
+      const set = row.matchedIndices;
+      return set === null ? null : [...set!].sort();
     });
   }
 
@@ -451,5 +569,88 @@ describe('query-builder value count bases', () => {
       conditions: [negated],
     });
     expect(await bases([human(), noneOf])).toEqual([null, null]);
+  });
+
+  it('an "and not" card counts inside what the other cards keep, as an "and" card does', async () => {
+    const notMouse = mouse();
+    const andNot = createGroup({
+      id: `${notMouse.id}:not`,
+      logicalOp: 'NOT',
+      conditions: [notMouse],
+    });
+    expect(await bases([human(), andNot])).toEqual([
+      // Human and not Mouse: the first card counts among the proteins with no Mouse label.
+      [0, 2],
+      [0, 2],
+    ]);
+  });
+
+  it('a closed list gets no base; opening it shows the counts pending, then the base', async () => {
+    builder.query = [human(), mouse('AND')];
+    await builder.updateComplete;
+    vi.advanceTimersByTime(300);
+    await builder.updateComplete;
+    const [first, second] = rowsOf();
+    expect(first.matchedIndices).toBeUndefined();
+    expect(second.matchedIndices).toBeUndefined();
+
+    toggleList(second, true);
+    await builder.updateComplete;
+    expect(second.matchedIndices).toBeUndefined();
+    vi.advanceTimersByTime(50);
+    await builder.updateComplete;
+    expect([...second.matchedIndices!].sort()).toEqual([0, 2]);
+    // The other card's list is still closed.
+    expect(first.matchedIndices).toBeUndefined();
+  });
+
+  it('with nothing else configured an opening list counts over the whole dataset at once', async () => {
+    builder.query = [human(), createCondition({ logicalOp: 'AND' })];
+    await builder.updateComplete;
+    const [row] = rowsOf();
+    toggleList(row, true);
+    await builder.updateComplete;
+    expect(row.matchedIndices).toBeNull();
+  });
+
+  it("the open list keeps its base while its own card changes, and follows another card's change", async () => {
+    const own = human();
+    const other = mouse('OR');
+    builder.query = [own, createCondition({ ...other, logicalOp: 'AND' })];
+    await builder.updateComplete;
+    const [row] = rowsOf();
+    toggleList(row, true);
+    vi.advanceTimersByTime(350);
+    await builder.updateComplete;
+    const base = row.matchedIndices;
+    expect([...base!].sort()).toEqual([1, 3, 4]);
+
+    // A tick in the card's own list: the same set, so the list does not count again.
+    builder.query = [
+      { ...own, values: ['Human', 'Mouse'] },
+      { ...other, logicalOp: 'AND' },
+    ];
+    await builder.updateComplete;
+    vi.advanceTimersByTime(300);
+    await builder.updateComplete;
+    expect(row.matchedIndices).toBe(base);
+
+    // The other card is now joined with "or": the first card counts over the whole dataset.
+    builder.query = [{ ...own, values: ['Human', 'Mouse'] }, other];
+    await builder.updateComplete;
+    vi.advanceTimersByTime(300);
+    await builder.updateComplete;
+    expect(row.matchedIndices).toBeNull();
+
+    // And back: a new base, worked out with the count.
+    builder.query = [own, { ...other, values: ['Human'], logicalOp: 'AND' }];
+    await builder.updateComplete;
+    vi.advanceTimersByTime(300);
+    await builder.updateComplete;
+    expect([...row.matchedIndices!].sort()).toEqual([0, 2]);
+
+    toggleList(row, false);
+    await builder.updateComplete;
+    expect(row.matchedIndices).toBeUndefined();
   });
 });

@@ -5,6 +5,7 @@ import {
   findConditionsForAnnotation,
   replaceConditionsForAnnotation,
 } from './query-annotation-conditions';
+import { setJoiner } from './query-operators';
 
 const KEY = 'ec__eat_confidence';
 
@@ -148,5 +149,24 @@ describe('replaceConditionsForAnnotation', () => {
     );
 
     expect((next[0] as NumericCondition).logicalOp).toBeUndefined();
+  });
+
+  // The builder never offers "and not" for this column; a query that has it anyway gets the
+  // positive condition the control emits, not one still negated by the card's group.
+  it('does not keep an "and not" on the replacement either', () => {
+    const first = createNumericCondition({ annotation: 'length', min: 10 });
+    const eat = onKey({ logicalOp: 'AND' });
+    const query = setJoiner([first, eat], eat.id, 'NOT');
+
+    const next = replaceConditionsForAnnotation(
+      query,
+      KEY,
+      onKey({ id: eat.id, min: 0.6, max: null, logicalOp: undefined }),
+    );
+
+    expect(next).toHaveLength(2);
+    expect(isFilterGroup(next[1])).toBe(false);
+    expect((next[1] as NumericCondition).logicalOp).toBeUndefined();
+    expect((next[1] as NumericCondition).min).toBe(0.6);
   });
 });
