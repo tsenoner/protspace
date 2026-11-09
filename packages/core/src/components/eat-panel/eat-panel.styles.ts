@@ -407,7 +407,8 @@ export const eatPanelStyles = [
       color: var(--ps-text-muted);
     }
 
-    .eat-breakdown {
+    .eat-breakdown,
+    .eat-chooser {
       display: grid;
       gap: var(--ps-space-1);
     }

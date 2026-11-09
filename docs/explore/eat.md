@@ -36,14 +36,16 @@ This is not the ⚡ **Predicted** badge, which marks a whole column as computati
 
 ## Opening The EAT Panel
 
-The panel always describes the annotation you colour by. Its header reads **EAT · Toxin class**, with an ⓘ that sums up what EAT is, **Reset**, and ✕ to close it. There are four ways in:
+The panel describes the annotation you colour by. Its header reads **EAT · Toxin class**, with an ⓘ that sums up what EAT is, **Reset**, and ✕ to close it. There are four ways in:
 
 - **The rail.** On a desktop, the EAT button sits in the icon rail at the sidebar's right edge, under Legend and Filter. The panel takes the legend's place above the structure.
 - **The tabs.** On phones and tablets the sidebar's panel has three tabs: **Legend**, **Filter** and **EAT**.
 - **The legend.** When Color by has predictions, the legend shows one line under its title, such as `Includes 659 predicted`, with an **EAT ›** link that opens the panel. Once you narrow the range it adds what happens to the rest, `· outside 50–100 % hidden` (or `faded`), and with predictions off it reads `659 predictions off, shown as N/A`.
 - **The Filter panel.** A reliability range shows there as a locked row with **Edit in EAT ›**. See [The Filter Panel's Locked Row](#the-filter-panel-s-locked-row).
 
-The EAT button and tab are greyed out when there is nothing to show. Hover the button, or tap the tab, to read why: `This dataset has no transferred annotations (EAT).`, or, when the dataset has predictions but not for the current annotation, `Toxin family has no EAT predictions. Color by an annotation marked EAT.` If the panel is already open when you switch Color by to such an annotation, it says `<annotation> has no predicted values.` and lists the annotations that do have predictions, each with its share predicted, to colour by in one click.
+The EAT button and tab are greyed out only when the dataset has no predictions at all. Hover the button, or tap the tab, to read why: `This dataset has no transferred annotations (EAT).`
+
+When the dataset has predictions but the annotation you colour by has none, the panel opens on a chooser. It says `<annotation> has no predicted values.`, then **Pick an annotation to inspect its transferred labels**, with one **Color by** button for each annotation that has predictions, beside its share predicted. Picking one colours the map by it and fills the panel. The same chooser shows if you switch Color by to such an annotation while the panel is open.
 
 A dot on the rail button (or the tab) means some EAT setting differs from its default. **Reset** puts every setting back: predictions shown, the range at 0–100 %, **Hide**, and source lines on click with up to 20 from one source.
 

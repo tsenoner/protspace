@@ -364,6 +364,8 @@ export class ProtspaceEatPanel extends LitElement {
   render() {
     if (!this.active) return nothing;
     if (this.data && !this._index) {
+      // The panel opens on any annotation once the dataset has predictions: this one has none, so
+      // the panel offers the ones that do.
       const label = annotationLabel(this.annotation, this.data.annotations[this.annotation]);
       return html`<div class="eat-scroll">
         <p class="eat-empty">${label} has no predicted values.</p>

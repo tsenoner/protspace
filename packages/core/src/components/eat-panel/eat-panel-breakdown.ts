@@ -377,7 +377,12 @@ export function renderOtherAnnotations(view: EatOthersView): TemplateResult | ty
     : nothing}`;
 }
 
-/** The empty state's list: every annotation with predictions, as `Color by <label>  61 % ›`. */
+const CHOOSER_HEADING = 'Pick an annotation to inspect its transferred labels';
+
+/**
+ * The chooser the panel opens on when Color by has no predictions: every annotation with
+ * predictions, as `Color by <label>  61 % ›`. A pick colours the map by it, and the panel fills in.
+ */
 export function renderEmptyColorBy(
   data: VisualizationData,
   annotation: string,
@@ -385,7 +390,11 @@ export function renderEmptyColorBy(
 ): TemplateResult | typeof nothing {
   const others = otherEatAnnotations(data, annotation);
   if (others.length === 0) return nothing;
-  return html`<ul class="eat-color-by-list">
-    ${others.map((key) => colorByRow(data, key, onColorBy, true))}
-  </ul>`;
+  return html`<section class="eat-chooser" aria-label=${CHOOSER_HEADING}>
+    <h3 class="eat-heading">${CHOOSER_HEADING}</h3>
+    <ul class="eat-color-by-list">
+      ${others.map((key) => colorByRow(data, key, onColorBy, true))}
+    </ul>
+    <p class="eat-help">Picking one colours the map by it and fills this panel.</p>
+  </section>`;
 }

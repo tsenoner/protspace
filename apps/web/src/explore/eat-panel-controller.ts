@@ -20,20 +20,12 @@ import { getExportFailureNotification, getExportSuccessNotification } from './no
 import { setWorkbenchStatus, type EatAvailability } from './workbench-status';
 
 /**
- * Whether the EAT panel can open for `annotation`: it has predictions, another annotation does
- * (the panel opens on its empty state, the rail item is disabled), or none does. Stops at the
- * first predicted cell, so it never builds the panel's index.
+ * Whether the EAT panel can open: whenever any annotation has predictions. On an annotation with
+ * none it opens on its chooser of those that do. Stops at the first predicted cell, so it never
+ * builds the panel's index.
  */
-export function eatAvailabilityFor(
-  data: VisualizationData | null,
-  annotation: string,
-): EatAvailability {
-  if (!hasEatPredictions(data)) return { kind: 'dataset' };
-  if (hasEatPredictionsForAnnotation(data, annotation)) return { kind: 'available' };
-  return {
-    kind: 'annotation',
-    annotationLabel: annotationLabel(annotation, data?.annotations[annotation]),
-  };
+export function eatAvailabilityFor(data: VisualizationData | null): EatAvailability {
+  return hasEatPredictions(data) ? { kind: 'available' } : { kind: 'dataset' };
 }
 
 function sameColors(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>): boolean {
@@ -219,8 +211,9 @@ export function createEatPanelController({
     if (eatPanel.data !== data) eatPanel.data = data;
     if (eatPanel.annotation !== annotation) eatPanel.annotation = annotation;
     setWorkbenchStatus({
-      eatAvailability: eatAvailabilityFor(data, annotation),
-      eatAnnotationLabel: annotation
+      eatAvailability: eatAvailabilityFor(data),
+      // The header names an annotation the panel describes; its chooser describes none.
+      eatAnnotationLabel: hasEatPredictionsForAnnotation(data, annotation)
         ? annotationLabel(annotation, data?.annotations[annotation])
         : '',
     });

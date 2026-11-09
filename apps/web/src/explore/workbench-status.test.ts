@@ -81,22 +81,19 @@ describe('workbench status', () => {
   });
 
   it('an equal EAT availability keeps its object and does not notify', () => {
-    setWorkbenchStatus({ eatAvailability: { kind: 'annotation', annotationLabel: 'Family' } });
+    setWorkbenchStatus({ eatAvailability: { kind: 'available' } });
     const first = getWorkbenchStatus();
     const listener = vi.fn();
     subscribeWorkbenchStatus(listener);
-    setWorkbenchStatus({ eatAvailability: { kind: 'annotation', annotationLabel: 'Family' } });
+    setWorkbenchStatus({ eatAvailability: { kind: 'available' } });
     expect(getWorkbenchStatus()).toBe(first);
     expect(listener).not.toHaveBeenCalled();
-    setWorkbenchStatus({ eatAvailability: { kind: 'annotation', annotationLabel: 'Pfam' } });
+    setWorkbenchStatus({ eatAvailability: { kind: 'dataset' } });
     expect(listener).toHaveBeenCalledOnce();
   });
 
-  it('says why the EAT panel cannot open', () => {
+  it('says why the EAT panel cannot open: only a dataset without predictions keeps it shut', () => {
     expect(eatUnavailableReason({ kind: 'available' })).toBeNull();
-    expect(eatUnavailableReason({ kind: 'annotation', annotationLabel: 'Family' })).toBe(
-      'Family has no EAT predictions. Color by an annotation marked EAT.',
-    );
     expect(eatUnavailableReason({ kind: 'dataset' })).toBe(
       'This dataset has no transferred annotations (EAT).',
     );

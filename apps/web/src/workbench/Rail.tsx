@@ -22,7 +22,7 @@ interface RailProps {
   structureCollapsed: boolean;
   /** The applied filter's conditions: above 0 the Filter item gets a dot and says the count. */
   filterConditions: number;
-  /** Whether the EAT item is enabled, and why not. */
+  /** Whether the EAT item is enabled (the dataset has predictions), and why not. */
   eatAvailability: EatAvailability;
   /** The EAT panel's settings differ from their defaults: the EAT item gets a dot. */
   eatAdjusted: boolean;
@@ -141,8 +141,8 @@ export function Rail({
               : 'EAT — transferred annotations')
           }
           tooltipPlacement="left"
-          // Off without EAT, except while its panel shows: pressed, it still collapses the sidebar.
-          disabled={eatReason !== null && !(sidebarOpen && panel === 'eat')}
+          // Off only for a dataset without predictions, whose legend shows in the panel's place.
+          disabled={eatReason !== null}
           focusableWhenDisabled
           pressed={sidebarOpen && panel === 'eat'}
           onClick={() => togglePanel('eat')}

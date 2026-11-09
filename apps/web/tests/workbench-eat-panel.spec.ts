@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
   clearStatusChip,
+  colorByTrigger,
   filterButton,
   filterPanel,
   getSelectedProteinIds,
@@ -27,7 +28,8 @@ import { rail, readLayout, seedLayout, workbenchRoot } from './helpers/workbench
 
 /**
  * The EAT panel (Phase 9): a sidebar section like Filter, opened from the rail's EAT item on
- * desktop and from the panel tabs on a phone, enabled only when Color by carries EAT predictions.
+ * desktop and from the panel tabs on a phone, enabled whenever the dataset carries EAT predictions.
+ * On an annotation without them it opens on a chooser of those that have them.
  */
 
 test.beforeEach(async ({ page }) => {
@@ -76,7 +78,7 @@ test('the EAT rail item opens the panel in place of the legend', async ({ page }
   await expect(item).toBeFocused();
 });
 
-test('switching Color by to an annotation without EAT keeps the panel on its empty state', async ({
+test('switching Color by to an annotation without EAT shows the panel’s chooser', async ({
   page,
 }) => {
   await loadPhosphataseEat(page);
@@ -87,24 +89,63 @@ test('switching Color by to an annotation without EAT keeps the panel on its emp
 
   await selectAnnotation(page, 'annotation_score');
   await expect(eatPanel(page)).toContainText('has no predicted values.');
-  // The item says why it is off, and stays pressed and usable while its panel shows.
+  await expect(
+    eatPanel(page).getByRole('region', {
+      name: 'Pick an annotation to inspect its transferred labels',
+    }),
+  ).toBeVisible();
+  // The header names no annotation; the item stays as it was, pressed while its panel shows.
+  const section = page.locator('#wb-eat-panel');
+  await expect(section.getByRole('heading', { level: 2 })).toHaveAccessibleName('EAT');
   const item = eatRailItem(page);
-  await expect(item).toHaveAccessibleName(
-    /has no EAT predictions\. Color by an annotation marked EAT\./,
-  );
+  await expect(item).toHaveAccessibleName('EAT — transferred annotations');
   await expect(item).toHaveAttribute('aria-pressed', 'true');
   // Nothing on this annotation to reset: the panel shows its defaults.
-  await expect(page.locator('#wb-eat-panel').getByRole('button', { name: 'Reset' })).toBeDisabled();
+  await expect(section.getByRole('button', { name: 'Reset' })).toBeDisabled();
 
-  // Close lands on Legend, since the EAT item turns off with the panel closed.
-  await page.locator('#wb-eat-panel').getByRole('button', { name: 'Close EAT' }).click();
-  await expect(item).toBeDisabled();
-  await expect(rail(page).getByRole('button', { name: 'Legend' })).toBeFocused();
+  // Close hands focus to the EAT item, which stays on.
+  await section.getByRole('button', { name: 'Close EAT' }).click();
+  await expect(item).toBeEnabled();
+  await expect(item).toBeFocused();
+});
+
+test('the EAT item opens on any annotation; the chooser colours by one and fills the panel', async ({
+  page,
+}) => {
+  await loadPhosphataseEat(page);
+  await selectAnnotation(page, 'annotation_score');
+
+  const item = eatRailItem(page);
+  await expect(item).toBeEnabled();
+  await expect(item).toHaveAccessibleName('EAT — transferred annotations');
+  await openEatPanel(page);
+  const chooser = eatPanel(page).getByRole('region', {
+    name: 'Pick an annotation to inspect its transferred labels',
+  });
+  await expect(chooser).toBeVisible();
+  await chooser.getByRole('button', { name: /^Color by EC number, \d+\s%\spredicted$/ }).click();
+
+  // Color by follows the pick, and the panel fills in for it.
+  await expect(colorByTrigger(page)).toContainText('EC number');
+  await expect(
+    page.locator('#wb-eat-panel').getByRole('heading', { name: 'EAT · EC number' }),
+  ).toBeVisible();
+  await expect(eatThresholdBox(page)).toBeVisible();
 });
 
 test('on a phone the EAT tab is the third tab', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await loadPhosphataseEat(page);
+  // An annotation without EAT leaves the tab on: it opens the chooser.
+  await selectAnnotation(page, 'annotation_score');
+  await expect(panelTab(page, 'EAT')).not.toHaveAttribute('aria-disabled');
+  await panelTab(page, 'EAT').click();
+  await expect(
+    eatPanel(page).getByRole('region', {
+      name: 'Pick an annotation to inspect its transferred labels',
+    }),
+  ).toBeVisible();
+  await panelTab(page, 'Legend').click();
   await selectAnnotation(page, 'ec');
 
   const tabs = page.getByRole('tablist', { name: 'Sidebar panels' }).filter({ visible: true });

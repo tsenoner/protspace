@@ -435,6 +435,14 @@ describe('protspace-eat-panel', () => {
     const el = await mount({ annotation: 'family' });
     expect(text(el, '.eat-empty')).toBe(`${annotationLabel('family')} has no predicted values.`);
     expect(bars(el)).toHaveLength(0);
+    // With no annotation to offer, there is no chooser.
+    const data = createEatFixture();
+    delete data.annotation_predicted;
+    el.data = data;
+    el.annotation = 'toxin';
+    await el.updateComplete;
+    expect(text(el, '.eat-empty')).toBe(`${annotationLabel('toxin')} has no predicted values.`);
+    expect(root(el).querySelector('.eat-chooser')).toBeNull();
   });
 
   it('shows In view only with a context', async () => {
@@ -626,10 +634,20 @@ describe('protspace-eat-panel', () => {
     });
   });
 
-  it('lists the annotations with predictions as Color by buttons in the empty state', async () => {
+  it('opens on a chooser of the annotations with predictions when Color by has none', async () => {
     const el = await mount({ data: fixtureWithOthers(), annotation: 'family' });
     const picked = listenColorBy(el);
-    const buttons = [...root(el).querySelectorAll<HTMLButtonElement>('.eat-color-by')];
+    const chooser = root(el).querySelector<HTMLElement>('.eat-chooser')!;
+    expect(chooser.getAttribute('aria-label')).toBe(
+      'Pick an annotation to inspect its transferred labels',
+    );
+    expect(text(el, '.eat-chooser .eat-heading')).toBe(
+      'Pick an annotation to inspect its transferred labels',
+    );
+    expect(text(el, '.eat-chooser .eat-help')).toBe(
+      'Picking one colours the map by it and fills this panel.',
+    );
+    const buttons = [...chooser.querySelectorAll<HTMLButtonElement>('.eat-color-by')];
     expect(buttons.map((b) => b.textContent!.replace(/[ \t\r\n]+/g, ' ').trim())).toEqual([
       `Color by ${annotationLabel('toxin')} 56${PCT} ›`,
       `Color by ${annotationLabel('kind')} 33${PCT} ›`,
