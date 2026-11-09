@@ -337,6 +337,35 @@ describe('protspace-import-menu', () => {
     expect(isOpen()).toBe(false);
   });
 
+  it('Export… shows only when exportable, opens a dialog, and hands over with the anchor', async () => {
+    await open();
+    expect(root().querySelector('.import-export-button')).toBeNull();
+    escape();
+    await settle();
+
+    menu.exportable = true;
+    const handOver = vi.fn();
+    menu.addEventListener('open-export-menu', handOver);
+    menu.openFrom(datasetButton());
+    await settle();
+    const exportButton = root().querySelector('.import-export-button') as HTMLElement;
+    expect(exportButton.textContent!.trim()).toBe('Export…');
+    // The Export panel it opens is a dialog, as this one is.
+    expect(exportButton.shadowRoot!.querySelector('button')!.getAttribute('aria-haspopup')).toBe(
+      'dialog',
+    );
+    // After "Open a file…", before the examples.
+    expect(
+      [...root().querySelectorAll('.import-section')].indexOf(exportButton.parentElement!),
+    ).toBe(1);
+
+    exportButton.click();
+    await vi.waitFor(() => expect(handOver).toHaveBeenCalledOnce());
+    // The panel closed first, so the one that opens next is the top layer.
+    expect(isOpen()).toBe(false);
+    expect((handOver.mock.calls[0][0] as CustomEvent).detail).toEqual({ anchor: datasetButton() });
+  });
+
   it('ArrowDown and ArrowUp move between the actions and skip the disabled example', async () => {
     menu.currentExampleId = 'demo';
     trigger().focus();
