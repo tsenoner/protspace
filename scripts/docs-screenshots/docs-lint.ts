@@ -58,6 +58,9 @@ const STALE_TERMS: readonly RegExp[] = [
   /take a tour/i,
   /extract (values )?from other/i,
   /settings dialog/i,
+  // The predicted mark is the PRED badge now.
+  /⚡/u,
+  /sparkles/i,
 ];
 
 /** The pages the stale-term check reads: the user guide, not the developer docs. */

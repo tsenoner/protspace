@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import './annotation-select';
 import type { ProjectionStatisticRow } from '@protspace/utils';
+import { PREDICTED_NOTE } from '../common/annotation-name';
 import { pushLayer, topLayer } from '../kit/layers';
 import { stubPopoverApi } from '../legend/test-support/popover-stub';
 
@@ -198,7 +199,7 @@ describe('protspace-annotation-select annotation names', () => {
     expect(await search('membrane')).toEqual(['Membrane']);
   });
 
-  it('names the selected annotation by label, with the sparkles mark named Predicted annotation', async () => {
+  it('names the selected annotation by label, with the PRED badge named Predicted annotation', async () => {
     const el = await setup({
       annotations: ['cc_subcellular_location', 'predicted_subcellular_location'],
       selectedAnnotation: 'predicted_subcellular_location',
@@ -211,8 +212,12 @@ describe('protspace-annotation-select annotation names', () => {
     expect(mark.getAttribute('role')).toBe('img');
     expect(mark.getAttribute('aria-label')).toBe('Predicted annotation');
     expect(mark.hasAttribute('title')).toBe(false);
-    expect(mark.querySelector('svg.ps-icon')).not.toBeNull();
-    expect(mark.textContent!.trim()).toBe('');
+    expect(mark.textContent!.trim()).toBe('PRED');
+    // Its note is a kit tooltip, hidden from the trigger's name.
+    const tooltip = mark.nextElementSibling!;
+    expect(tooltip.tagName).toBe('PS-TOOLTIP');
+    expect(tooltip.getAttribute('text')).toBe(PREDICTED_NOTE);
+    expect(tooltip.getAttribute('aria-hidden')).toBe('true');
 
     el.selectedAnnotation = 'cc_subcellular_location';
     await el.updateComplete;
@@ -623,7 +628,10 @@ describe('protspace-annotation-select listbox', () => {
   });
 
   it("an option's description holds the annotation's description", async () => {
-    const el = await setup({ annotations: ['ec', 'pfam', 'my_column'], eatAnnotations: ['ec'] });
+    const el = await setup({
+      annotations: ['ec', 'pfam', 'my_column', 'predicted_subcellular_location'],
+      eatAnnotations: ['ec'],
+    });
     await openDropdown(el);
     const notes = (annotation: string) => {
       const option = getRowFor(el, annotation).querySelector('[role="option"]')!;
@@ -632,6 +640,8 @@ describe('protspace-annotation-select listbox', () => {
     };
     expect(notes('pfam')).toBe('Protein family classification from Pfam, with bit scores.');
     expect(notes('ec')).toMatch(/\. EAT predictions available\.$/);
+    // A predicted one's description carries the PRED badge's note, which only a pointer shows.
+    expect(notes('predicted_subcellular_location')).toContain(`${PREDICTED_NOTE}.`);
     // No description and no badges: nothing to describe.
     expect(notes('my_column')).toBeNull();
   });

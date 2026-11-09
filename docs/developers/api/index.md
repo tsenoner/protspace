@@ -236,7 +236,7 @@ Category filtering and color mapping with automatic settings persistence.
 
 `container`, `header`, `title`, `items`, `item`, `symbol`, `text`, `count` and `empty`. `title`
 is the header's annotation name. The `predicted-note` part is gone: a predicted annotation shows
-a sparkles icon in the header, with its note in the icon's tooltip.
+a PRED badge in the header, with its note in the badge's tooltip.
 
 ### Slots
 
@@ -422,7 +422,7 @@ number — EAT confidence"), and keeps a column of your own that merely ends lik
 renamed. `eatAnnotations` adds the EAT badge to annotations that carry transferred predictions.
 `statisticsRows` with `selectedProjection` adds the STATS badge to annotations the bundle scored in
 that projection. A predicted annotation (the registry's flag, else a `predicted_` prefix) carries a
-sparkles mark named "Predicted annotation". The rows are options of a listbox the search field
+PRED badge named "Predicted annotation", with its note as a tooltip and in the option's description. The rows are options of a listbox the search field
 controls; Shift+Enter on the highlighted row shows or hides it in the hover tooltip.
 
 Methods: `applySelection(annotation)`, `applyTooltipSelection(names)`, `cancelPending()`.

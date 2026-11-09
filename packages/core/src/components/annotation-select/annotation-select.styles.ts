@@ -1,4 +1,5 @@
 import { css } from 'lit';
+import { predictedBadgeStyles } from '../common/annotation-name.styles';
 import { focusRing, kitHost, srOnly } from '../kit/kit-shared.styles';
 
 /**
@@ -10,6 +11,7 @@ export const annotationSelectStyles = [
   kitHost,
   focusRing,
   srOnly,
+  predictedBadgeStyles,
   css`
     :host {
       display: inline-flex;
@@ -91,13 +93,6 @@ export const annotationSelectStyles = [
 
     .dropdown-trigger.open .chevron-down {
       transform: rotate(180deg);
-    }
-
-    /* The predicted mark beside a name (renderAnnotationName and the rows). */
-    .predicted-mark {
-      display: inline-flex;
-      flex: none;
-      color: var(--ps-text-muted);
     }
 
     /* ─── The panel, inside the ps-popover ───────────────────── */

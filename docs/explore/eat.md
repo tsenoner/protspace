@@ -32,7 +32,7 @@ Annotations carrying predictions are marked with an **EAT** badge in the [Color 
 
 ![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge.png)
 
-This is not the ⚡ **Predicted** badge, which marks a whole column as computational based on its name. An **EAT** badge means the opposite: the column is curated, and only some of its cells were filled in. See [Predicted Annotations](/explore/legend#predicted-annotations).
+This is not the **PRED** badge, which marks a whole column as computational based on its name. An **EAT** badge means the opposite: the column is curated, and only some of its cells were filled in. See [Predicted Annotations](/explore/legend#predicted-annotations).
 
 ## Opening The EAT Panel
 

@@ -1,3 +1,4 @@
+import { predictedBadgeStyles } from '../common/annotation-name.styles';
 import { focusRing, kitHost, reducedMotion, srOnly } from '../kit/kit-shared.styles';
 import { layoutStyles } from './styles/layout';
 import { headerStyles } from './styles/header';
@@ -18,6 +19,7 @@ export const legendStyles = [
   focusRing,
   reducedMotion,
   srOnly,
+  predictedBadgeStyles,
   layoutStyles,
   headerStyles,
   rowStyles,

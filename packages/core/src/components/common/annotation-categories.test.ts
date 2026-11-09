@@ -50,7 +50,7 @@ describe('annotation-categories', () => {
 
     it('keeps de-novo InterPro predictors (signal_peptide) in the InterPro group', () => {
       const result = groupAnnotations(['pfam', 'signal_peptide', 'cath']);
-      // signal_peptide is marked predicted (⚡ per-row) but its source is still InterPro.
+      // signal_peptide is marked predicted (PRED per row) but its source is still InterPro.
       const interpro = result.find((g) => g.category === 'InterPro');
       expect(interpro?.annotations).toEqual(['cath', 'pfam', 'signal_peptide']);
     });

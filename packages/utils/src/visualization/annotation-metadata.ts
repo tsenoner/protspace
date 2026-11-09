@@ -8,7 +8,7 @@
  * `data/annotations/configuration.py`; `source` mirrors the fetch API. The `isPredicted` flag,
  * by contrast, marks *computational predictions* — de-novo machine-learning, topology, and
  * structure-based predictors (the Biocentral `predicted_*` models, the Phobius `signal_peptide`,
- * and TED `ted_domains`) — so the app can caveat them with a ⚡ Predicted badge. This is
+ * and TED `ted_domains`) — so the app can caveat them with a PRED badge. This is
  * intentionally broader than the backend's `predicted_` naming: reference signature-database
  * matches (Pfam, CATH-Gene3D, SUPERFAMILY, …) and curated/factual data (UniProt, Taxonomy) are
  * NOT flagged. Any unknown column starting with `predicted_` is still treated as a prediction.
@@ -28,7 +28,7 @@ export interface AnnotationMeta {
   /**
    * Whether the values are a computational prediction — de-novo ML, topology, or structure-based —
    * rather than curated/experimental data or a reference signature-database match. Drives the
-   * ⚡ Predicted badge in the legend, dropdown, and docs.
+   * PRED badge in the legend, dropdown, and docs.
    */
   isPredicted: boolean;
   /** Short human-readable description for the documentation popover. */

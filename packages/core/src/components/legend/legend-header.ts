@@ -4,7 +4,8 @@ import { countNoun, formatCount, type EatReliabilityState } from '@protspace/uti
 import '../kit/button';
 import '../kit/menu';
 import '../kit/tooltip';
-import { icon, type IconName } from '../kit/icon';
+import type { IconName } from '../kit/icon';
+import { predictedBadge } from '../common/annotation-name';
 import { rangeText, reliabilityLabel } from '../query-builder/eat-reliability';
 import type { LegendSortMode } from './types';
 
@@ -67,8 +68,6 @@ const SORT_ICONS: Record<LegendSortMode, IconName> = {
   'silhouette-desc': 'arrow-down-wide-narrow',
   'silhouette-asc': 'arrow-down-narrow-wide',
 };
-
-const PREDICTED_NOTE = 'Predicted: computational, not experimentally curated';
 
 /**
  * `Includes 659 predicted · outside 50–100 % hidden   EAT ›` (`… faded` in Fade), or `659
@@ -148,12 +147,7 @@ export function renderLegendHeader(
     <h3 class="legend-title" part="title" @pointerenter=${handlers.onTitlePointerEnter}>
       ${model.title}
     </h3>
-    ${model.predicted
-      ? html`<span class="legend-predicted" role="img" aria-label="Predicted annotation"
-            >${icon('sparkles', 14)}</span
-          ><ps-tooltip text=${PREDICTED_NOTE}></ps-tooltip>`
-      : nothing}
-    ${model.info ?? nothing}
+    ${model.predicted ? predictedBadge('legend-predicted') : nothing} ${model.info ?? nothing}
     <span class="legend-header-spacer"></span>
     <ps-icon-button
       class="sort-button"
