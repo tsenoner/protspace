@@ -160,12 +160,10 @@ function mount(
     listenerCount: () => listeners.size,
   };
   const commits: FilterCommit[] = [];
-  const root = new EventTarget();
   const controller = createFilterController({
     plotElement: plot as unknown as ProtspaceScatterplot,
     eatPanel,
     queryBuilder: queryBuilder as unknown as ProtspaceQueryBuilder,
-    root: root as unknown as Document,
     isPanelShown: () => panel.shown,
     subscribePanel(listener) {
       listeners.add(listener);
@@ -178,7 +176,7 @@ function mount(
   if (selectedAnnotation !== undefined) controller.setSelectedAnnotation(selectedAnnotation);
   // Mounting with an annotation mirrors once; the tests count only what they cause.
   eatPanel.setReliabilityState.mockClear();
-  return { controller, plot, eatPanel, queryBuilder, panel, root, commits };
+  return { controller, plot, eatPanel, queryBuilder, panel, commits };
 }
 
 const fire = (target: EventTarget, type: string, detail?: unknown) =>
@@ -775,8 +773,7 @@ describe('filter controller: per-base EAT reliability (multi-EAT)', () => {
       expect.objectContaining({ min: 0.5 }),
     );
 
-    // The pickers' annotation-change, heard on the root (the document in the app).
-    fire(m.root, 'annotation-change', { annotation: 'go' });
+    m.controller.setSelectedAnnotation('go');
     expect(m.eatPanel.setReliabilityState).toHaveBeenLastCalledWith(
       expect.objectContaining({ min: 0.8 }),
     );

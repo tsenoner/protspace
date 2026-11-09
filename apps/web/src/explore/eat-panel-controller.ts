@@ -35,6 +35,11 @@ function sameColors(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, strin
 }
 
 interface EatPanelController {
+  /**
+   * Color by changed: follow it. The runtime's one `annotation-change` listener calls it last,
+   * once the filter has moved to the new annotation, whose context and reliability it reads.
+   */
+  handleAnnotationChange(): void;
   /** The selection changed: the card follows a single selected protein. */
   setSelection(proteinIds: readonly string[]): void;
   /** "Edit in EAT" on a locked row of `annotation`: Color by it unless it already is. */
@@ -45,7 +50,8 @@ interface EatPanelController {
 
 /**
  * Feeds the EAT panel (`#myEatPanel`) from the plot: its data and Color by annotation on every
- * `data-change` and `annotation-change`, the context of the other filter conditions, and `active`
+ * `data-change` and Color by change (`handleAnnotationChange`), the context of the other filter
+ * conditions, and `active`
  * while the panel is on screen, so it computes only then. Publishes whether the panel can open for
  * the rail, the phone tab and the restore, and whether it is off its defaults (the rail dot).
  *
@@ -328,7 +334,6 @@ export function createEatPanelController({
 
   plotElement.addEventListener('data-change', syncData);
   plotElement.addEventListener('legend-colormapping-change', syncColors);
-  root.addEventListener('annotation-change', syncData);
   root.addEventListener('eat-reliability-reset', onReliabilityReset);
   eatPanel.addEventListener('eat-overlay-change', onOverlayChange);
   eatPanel.addEventListener('eat-outcome-change', onOutcomeChange);
@@ -343,6 +348,7 @@ export function createEatPanelController({
   syncData();
 
   return {
+    handleAnnotationChange: syncData,
     setSelection(proteinIds) {
       selection = [...proteinIds];
       syncFocus();
@@ -357,7 +363,6 @@ export function createEatPanelController({
     dispose() {
       plotElement.removeEventListener('data-change', syncData);
       plotElement.removeEventListener('legend-colormapping-change', syncColors);
-      root.removeEventListener('annotation-change', syncData);
       root.removeEventListener('eat-reliability-reset', onReliabilityReset);
       eatPanel.removeEventListener('eat-overlay-change', onOverlayChange);
       eatPanel.removeEventListener('eat-outcome-change', onOutcomeChange);

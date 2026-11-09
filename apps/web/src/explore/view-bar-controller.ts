@@ -34,16 +34,17 @@ interface ViewBarControllerOptions {
   contoursMenu: ProtspaceContoursMenu;
   projectionMetadata: ProtspaceProjectionMetadata;
   interactionController: Pick<InteractionController, 'handleAnnotationChange'>;
-  /**
-   * Where the bubbling `annotation-change` is heard after the legend's own listener: the
-   * document in the app. The legend registers there when it connects, before the runtime starts.
-   */
-  root: Pick<Document, 'addEventListener' | 'removeEventListener'>;
   /** A pick changed the view (or an apply did; the view controller tells the two apart). */
   onUserChange(kind: 'projection' | 'annotation' | 'tooltip' | 'density'): void;
 }
 
 interface ViewBarController extends ViewPickers {
+  /**
+   * Color by changed: clear the provenance connectors and the plot's hidden values, re-sync the
+   * legend, then report. The runtime's one `annotation-change` listener calls it first, after the
+   * legend's own listener (annotation-change.ts).
+   */
+  handleAnnotationChanged(): void;
   /** A new dataset's first view: sets the pickers without dispatching anything. */
   showInitialView(view: InitialView): void;
   /** Drops picks still waiting for their commit. */
@@ -94,7 +95,6 @@ export function createViewBarController({
   contoursMenu,
   projectionMetadata,
   interactionController,
-  root,
   onUserChange,
 }: ViewBarControllerOptions): ViewBarController {
   // The details card stays inside the plot area it sits in, so it never spills onto the legend.
@@ -153,15 +153,6 @@ export function createViewBarController({
     syncProjectionDetails();
   };
 
-  /**
-   * On the document, after the legend's listener, as the control bar's app listener ran: clear
-   * the provenance connectors and the plot's hidden values, re-sync the legend, then report.
-   */
-  const onAnnotationChanged = () => {
-    interactionController.handleAnnotationChange();
-    onUserChange('annotation');
-  };
-
   const onTooltipChange = (event: Event) => {
     const { tooltipAnnotations } = (event as CustomEvent<{ tooltipAnnotations: string[] }>).detail;
     plotElement.tooltipAnnotations = [...tooltipAnnotations];
@@ -182,9 +173,12 @@ export function createViewBarController({
   annotationSelect.addEventListener('annotation-change', onAnnotationPicked);
   annotationSelect.addEventListener('tooltip-annotations-change', onTooltipChange);
   contoursMenu.addEventListener('density-layer-change', onDensityChange);
-  root.addEventListener('annotation-change', onAnnotationChanged);
 
   return {
+    handleAnnotationChanged() {
+      interactionController.handleAnnotationChange();
+      onUserChange('annotation');
+    },
     get selectedProjection() {
       return projectionSelect.selectedProjection;
     },
@@ -227,7 +221,6 @@ export function createViewBarController({
       annotationSelect.removeEventListener('annotation-change', onAnnotationPicked);
       annotationSelect.removeEventListener('tooltip-annotations-change', onTooltipChange);
       contoursMenu.removeEventListener('density-layer-change', onDensityChange);
-      root.removeEventListener('annotation-change', onAnnotationChanged);
     },
   };
 }
