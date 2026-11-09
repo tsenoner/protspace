@@ -514,10 +514,16 @@ async function clearChips(page: Page, rowIndex: number): Promise<void> {
 }
 
 /** Close any open annotation/value picker without closing the dialog. */
+/**
+ * Closes an open value or annotation picker with Escape, which closes that layer and nothing
+ * else. Not with a press on the match count: it sits right under the cards, where an open list
+ * can cover it.
+ */
 async function closeOpenPickers(page: Page): Promise<void> {
-  const matchCount = queryBuilder(page).locator('.match-count');
-  if (await matchCount.isVisible().catch(() => false)) {
-    await matchCount.click();
+  const item = queryBuilder(page).locator('.value-picker-item, .annotation-picker-item').first();
+  if (await item.isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await expect(item).toBeHidden();
   }
 }
 
