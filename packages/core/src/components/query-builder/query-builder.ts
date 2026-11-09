@@ -709,7 +709,7 @@ export class ProtspaceQueryBuilder extends LitElement {
           <div class="query-footer-buttons">
             <ps-button
               class="query-footer-reset"
-              variant="ghost"
+              variant="danger"
               .disabled=${!canReset}
               @click=${this._handleReset}
               ><span slot="start">${icon('rotate-ccw', 16)}</span

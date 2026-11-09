@@ -116,6 +116,10 @@ export const menuItemStyles = [
       color: var(--ps-accent-text);
       font-weight: var(--ps-weight-medium);
     }
+    /* Red text, as a danger button has; before disabled, which greys it at equal specificity. */
+    :host([danger]) {
+      color: var(--ps-danger);
+    }
     :host([disabled]) {
       color: var(--ps-text-faint);
       background: transparent;

@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
+import type { PsButton } from '../kit/button';
 import { deepActiveElement } from '../kit/focus';
 import type { PsInput } from '../kit/input';
 import type { PsSelect } from '../kit/select';
@@ -368,6 +369,8 @@ describe('protspace-legend-settings-popover', () => {
     const onReset = vi.fn();
     el.addEventListener('settings-reset', onReset);
     const reset = page.getByRole('button', { name: 'Reset to defaults', exact: true });
+    // Red at rest: it wipes the annotation's colours and order with no undo.
+    expect(root(el).querySelector<PsButton>('#reset-button')!.variant).toBe('danger');
     await userEvent.click(reset);
     expect(onReset).toHaveBeenCalledOnce();
     expect(el.open).toBe(true);

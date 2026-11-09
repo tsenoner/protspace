@@ -32,9 +32,9 @@ interface FooterHandlers {
 export function renderFooter(model: FooterModel, handlers: FooterHandlers): TemplateResult {
   return html`
     <div class="publish-footer" slot="footer">
-      <ps-button variant="ghost" @click=${handlers.newFigure}>New figure</ps-button>
+      <ps-button variant="danger" @click=${handlers.newFigure}>New figure</ps-button>
       <ps-tooltip text="Clear overlays and insets, keep the layout"></ps-tooltip>
-      <ps-button variant="ghost" @click=${handlers.reset}>Reset</ps-button>
+      <ps-button variant="danger" @click=${handlers.reset}>Reset</ps-button>
       <ps-tooltip text="Reset every setting to its default"></ps-tooltip>
       <div class="publish-footer-status">
         ${model.exportError

@@ -565,6 +565,21 @@ describe('<protspace-publish-modal> control names', () => {
       controls.filter((el) => !el.getAttribute('aria-label')).map((el) => el.outerHTML),
     ).toEqual([]);
   });
+
+  it('draws New figure and Reset as danger buttons, Close and Export as they were', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const variants = Array.from(
+      modal.shadowRoot!.querySelectorAll<HTMLElement>('.publish-footer > ps-button'),
+      (button) => [button.textContent!.trim(), button.getAttribute('variant')],
+    );
+    expect(variants).toEqual([
+      ['New figure', 'danger'],
+      ['Reset', 'danger'],
+      ['Close', 'secondary'],
+      ['Export', 'primary'],
+    ]);
+  });
 });
 
 describe('<protspace-publish-modal> inset renders', () => {

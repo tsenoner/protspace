@@ -188,7 +188,7 @@ declare module 'react' {
         }
       >;
       'ps-menu-group': KitProps<PsMenuGroup, 'label'>;
-      'ps-menu-item': KitProps<PsMenuItem, 'value' | 'type' | 'checked' | 'disabled'>;
+      'ps-menu-item': KitProps<PsMenuItem, 'value' | 'type' | 'checked' | 'disabled' | 'danger'>;
       'ps-menu-label': KitProps<HTMLElement>;
       'ps-dialog': KitProps<PsDialog, 'open' | 'heading' | 'size' | 'dismissible', CloseEvents>;
       'ps-input': KitProps<

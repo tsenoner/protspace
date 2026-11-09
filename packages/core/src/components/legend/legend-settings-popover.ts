@@ -173,7 +173,7 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
         <div class="footer">
           <ps-button
             id="reset-button"
-            variant="secondary"
+            variant="danger"
             size="sm"
             ?disabled=${!this.canReset}
             focusable-when-disabled
