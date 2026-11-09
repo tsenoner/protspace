@@ -129,7 +129,7 @@ function rowFacts(row: EatLabelRow): string[] {
 
 /** The section's helper line, with the overall typical reliability once when there is one. */
 function breakdownHelp(overallMedian: number | null): string {
-  const help = 'Click a label to check its least reliable predictions.';
+  const help = 'Click a label to check its least or most reliable predictions.';
   return overallMedian === null
     ? help
     : `${help} Typical reliability across all predictions: ${formatPercent(overallMedian)}.`;

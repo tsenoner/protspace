@@ -373,6 +373,7 @@ export const eatPanelStyles = [
 
       :is(
         .eat-drill-select,
+        .eat-drill-more,
         .eat-export,
         .eat-other-filter-clear,
         .eat-show-all,
@@ -472,7 +473,8 @@ export const eatPanelStyles = [
 
     .eat-label-row:hover:not(:disabled),
     .eat-color-by:hover,
-    .eat-show-all:hover {
+    .eat-show-all:hover,
+    .eat-drill-more:hover {
       background: var(--ps-surface-hover);
     }
 
@@ -542,6 +544,7 @@ export const eatPanelStyles = [
     }
 
     .eat-show-all,
+    .eat-drill-more,
     .eat-color-by,
     .eat-others summary,
     .eat-display > summary {
@@ -555,7 +558,8 @@ export const eatPanelStyles = [
       cursor: pointer;
     }
 
-    .eat-show-all {
+    .eat-show-all,
+    .eat-drill-more {
       justify-self: start;
       color: var(--ps-accent-text);
     }
@@ -609,7 +613,7 @@ export const eatPanelStyles = [
       color: var(--ps-text-muted);
     }
 
-    /* A drill-down list (a bar's or a label's): heading, up to 5 rows, footer. */
+    /* A drill-down list (a bar's or a label's): heading, 5 rows and more on request, footer. */
     .eat-drill {
       display: grid;
       gap: var(--ps-space-1);
@@ -618,6 +622,15 @@ export const eatPanelStyles = [
       border: 1px solid var(--ps-border);
       border-radius: var(--ps-radius-sm);
       background: var(--ps-surface-muted);
+    }
+
+    /* The heading and the Least | Most reliable switch share a line while both fit. */
+    .eat-drill-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--ps-space-1) var(--ps-space-2);
     }
 
     .eat-drill-heading {

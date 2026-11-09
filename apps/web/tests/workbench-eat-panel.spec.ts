@@ -294,6 +294,51 @@ test('a histogram bar lists its weakest predictions and a row selects the protei
   expect(await getSelectedProteinIds(page)).toEqual([proteinId]);
 });
 
+test('a label’s list turns to the most reliable and shows more; a row still selects', async ({
+  page,
+}) => {
+  await loadPhosphataseEat(page);
+  await selectAnnotation(page, 'ec');
+  await openEatPanel(page);
+
+  // The label with the most predictions, so its list has more than one page.
+  await eatPanel(page).getByRole('button', { name: /^Sort/ }).click();
+  await page.getByRole('menuitemradio', { name: 'Most predictions' }).click();
+  await eatPanel(page).locator('.eat-label-row').first().click();
+  const least = eatPanel(page).getByRole('region', { name: '5 least reliable predictions' });
+  await expect(least).toBeVisible();
+  const total = Number(
+    (await least.locator('.eat-drill-count').textContent())!
+      .match(/of ([\d,]+)/)![1]
+      .replace(/,/g, ''),
+  );
+  expect(total).toBeGreaterThan(10);
+  const reliabilities = async (list: typeof least) =>
+    (await list.locator('.eat-drill-reliability').allTextContents()).map((text) =>
+      parseFloat(text),
+    );
+  const weakest = await reliabilities(least);
+
+  await least.getByRole('radio', { name: 'Most reliable' }).click();
+  const most = eatPanel(page).getByRole('region', { name: '5 most reliable predictions' });
+  await expect(most).toBeVisible();
+  const strongest = await reliabilities(most);
+  // Strongest first, and none weaker than the weakest list's strongest.
+  expect(strongest).toEqual([...strongest].sort((a, b) => b - a));
+  expect(Math.min(...strongest)).toBeGreaterThanOrEqual(Math.max(...weakest));
+
+  await most.getByRole('button', { name: 'Show 5 more' }).click();
+  const more = eatPanel(page).getByRole('region', { name: '10 most reliable predictions' });
+  await expect(more).toBeVisible();
+  await expect(more.locator('.eat-drill-count')).toHaveText(`Showing 10 of ${total}`);
+
+  const row = more.getByRole('listitem').nth(7).getByRole('button');
+  const proteinId = (await row.getAttribute('aria-label'))!.split(',')[0];
+  await row.click();
+  await expect(selectionBar(page)).toContainText('1 selected');
+  expect(await getSelectedProteinIds(page)).toEqual([proteinId]);
+});
+
 test('the selected-protein card goes to the source and draws its lines', async ({ page }) => {
   await loadPhosphataseEat(page);
   await selectAnnotation(page, 'ec');

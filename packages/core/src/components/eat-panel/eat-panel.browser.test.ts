@@ -8,6 +8,7 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
+import type { PsSegmented } from '../kit/segmented';
 import type { PsSwitch } from '../kit/switch';
 import type { EatOverlayChangeDetail } from './eat-reliability-controller';
 import { EAT_THRESHOLD_COMMIT_DELAY_MS } from './eat-reliability-controller';
@@ -533,7 +534,7 @@ describe('protspace-eat-panel', () => {
       );
       expect(row('A').querySelector('.eat-label-tag')).toBeNull();
       expect(root(el).querySelector('.eat-breakdown .eat-help')!.textContent).toBe(
-        `Click a label to check its least reliable predictions. Typical reliability across all predictions: 50${PCT}.`,
+        `Click a label to check its least or most reliable predictions. Typical reliability across all predictions: 50${PCT}.`,
       );
       const swatch = row('B').querySelector<HTMLElement>('.eat-swatch')!;
       expect(getComputedStyle(swatch).backgroundColor).toBe('rgb(255, 0, 0)');
@@ -710,6 +711,93 @@ describe('protspace-eat-panel', () => {
       expect(selected).toEqual([{ proteinIds: ['Q7'], zoom: false }]);
       root(el).querySelector<HTMLButtonElement>('.eat-drill-row')!.click();
       expect(selected[1]).toEqual({ proteinIds: ['Q8'], zoom: true });
+    });
+
+    /** Picks `end` in the open list's Least | Most reliable switch, as a user does. */
+    async function listFirst(el: ProtspaceEatPanel, end: 'least' | 'most'): Promise<void> {
+      const order = root(el).querySelector<PsSegmented>('.eat-drill-end')!;
+      await order.updateComplete;
+      order.shadowRoot!.querySelector<HTMLButtonElement>(`[data-value="${end}"]`)!.click();
+      await el.updateComplete;
+    }
+
+    it('lists the most reliable, strongest first, and keeps that end across lists until Reset', async () => {
+      const el = await mount({ data: labelData(SPEC), annotation: 'cls' });
+      bars(el)[10].click();
+      await el.updateComplete;
+      const order = root(el).querySelector<PsSegmented>('.eat-drill-end')!;
+      expect(order.label).toBe('List first');
+      expect(order.value).toBe('least');
+      await listFirst(el, 'most');
+      expect(text(el, '.eat-drill-heading')).toBe(`5 most reliable in 50–55${PCT}`);
+      expect(root(el).querySelector('#eat-drill')!.getAttribute('aria-label')).toBe(
+        `5 most reliable in 50–55${PCT}`,
+      );
+      expect(drillIds(el)).toEqual(['Q6', 'Q1', 'Q3', 'Q4', 'Q2']);
+      expect(text(el, '.eat-drill-count')).toBe('Showing 5 of 6');
+
+      // The next list opens from the same end.
+      labelRow(el, 'B').click();
+      await el.updateComplete;
+      expect(text(el, '.eat-drill-heading')).toBe('2 most reliable predictions');
+      expect(drillIds(el)).toEqual(['Q7', 'Q8']);
+      // A way of looking, not a setting: no rail dot, but Reset goes back to the least reliable.
+      expect(el.isAtDefaults).toBe(true);
+      el.reset();
+      await el.updateComplete;
+      expect(text(el, '.eat-drill-heading')).toBe('2 least reliable predictions');
+      expect(drillIds(el)).toEqual(['Q8', 'Q7']);
+    });
+
+    it('Show more adds the next five in the list’s order; a list opens on five again', async () => {
+      // M: 12 predictions at 1–12 % (Q0–Q11); N: one at 50 % (Q12).
+      const el = await mount({
+        data: labelData([
+          {
+            label: 'M',
+            curated: 0,
+            predicted: Array.from({ length: 12 }, (_, i) => (i + 1) / 100),
+          },
+          { label: 'N', curated: 0, predicted: [0.5] },
+        ]),
+        annotation: 'cls',
+      });
+      const more = () => root(el).querySelector<HTMLButtonElement>('.eat-drill-more');
+      labelRow(el, 'M').click();
+      await el.updateComplete;
+      expect(drillIds(el)).toEqual(['Q0', 'Q1', 'Q2', 'Q3', 'Q4']);
+      expect(text(el, '.eat-drill-more')).toBe('Show 5 more');
+
+      more()!.click();
+      await el.updateComplete;
+      expect(drillIds(el)).toEqual(['Q0', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9']);
+      expect(text(el, '.eat-drill-heading')).toBe('10 least reliable predictions');
+      expect(text(el, '.eat-drill-count')).toBe('Showing 10 of 12');
+      expect(text(el, '.eat-drill-more')).toBe('Show 2 more');
+
+      // The last press removes the button: focus moves on to the first row it added.
+      more()!.focus();
+      more()!.click();
+      await el.updateComplete;
+      expect(drillIds(el)).toHaveLength(12);
+      expect(text(el, '.eat-drill-count')).toBe('Showing 12 of 12');
+      expect(more()).toBeNull();
+      await vi.waitFor(() =>
+        expect(root(el).activeElement).toBe(
+          root(el).querySelector('.eat-drill-row[data-protein="Q10"]'),
+        ),
+      );
+
+      // The other end keeps the count; another list opens on five.
+      await listFirst(el, 'most');
+      expect(drillIds(el).slice(0, 3)).toEqual(['Q11', 'Q10', 'Q9']);
+      expect(drillIds(el)).toHaveLength(12);
+      labelRow(el, 'N').click();
+      await el.updateComplete;
+      labelRow(el, 'M').click();
+      await el.updateComplete;
+      expect(drillIds(el)).toEqual(['Q11', 'Q10', 'Q9', 'Q8', 'Q7']);
+      expect(text(el, '.eat-drill-count')).toBe('Showing 5 of 12');
     });
 
     it('with Show off, By label is greyed but not disabled, and its lists still work', async () => {

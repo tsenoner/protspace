@@ -47,7 +47,7 @@ The EAT button and tab are greyed out only when the dataset has no predictions a
 
 When the dataset has predictions but the annotation you colour by has none, the panel opens on a chooser. It says `<annotation> has no predicted values.`, then **Pick an annotation to inspect its transferred labels**, with one **Color by** button for each annotation that has predictions, beside its share predicted. Picking one colours the map by it and fills the panel. The same chooser shows if you switch Color by to such an annotation while the panel is open.
 
-A dot on the rail button (or the tab) means some EAT setting differs from its default. **Reset** puts every setting back: predictions shown, the range at 0–100 %, **Hide**, and source lines on click with up to 20 from one source.
+A dot on the rail button (or the tab) means some EAT setting differs from its default. **Reset** puts every setting back: predictions shown, the range at 0–100 %, **Hide**, and source lines on click with up to 20 from one source. It also turns the lists under labels and bars back to least reliable first.
 
 <img src="./images/eat-panel.png" class="light-only" alt="The EAT panel for Toxin class: Show predictions, the How much is predicted bar with its key, the reliability chart with its range boxes and two handles, Hide and Fade, the label rows with their bars and typical reliability, and the closed Display options" width="299" height="994" />
 <img src="./images/eat-panel-dark.png" class="dark-only" alt="The EAT panel for Toxin class: Show predictions, the How much is predicted bar with its key, the reliability chart with its range boxes and two handles, Hide and Fade, the label rows with their bars and typical reliability, and the closed Display options" width="299" height="994" loading="lazy" />
@@ -135,14 +135,14 @@ The panel shows 8 rows at first. With more labels, **Show all N labels** lists t
 
 The panel is built for one loop: find the weakest predictions, look at each one, and see where its label came from.
 
-1. **Click a label row**, or a bar of the reliability chart. A list opens under it: **5 least reliable predictions** (for a bar, `5 least reliable in 20–25 %`), weakest first. Each row shows the protein's ID, its reliability and `from <source ID>`. A row outside the range says `Hidden, outside the range` or `Faded, outside the range`, and you can still pick it.
+1. **Click a label row**, or a bar of the reliability chart. A list opens under it: **5 least reliable predictions** (for a bar, `5 least reliable in 20–25 %`), weakest first. Switch it from **Least reliable** to **Most reliable** to see the strongest first instead; the next list you open starts from the same end, until you press **Reset**. Each row shows the protein's ID, its reliability and `from <source ID>`. A row outside the range says `Hidden, outside the range` or `Faded, outside the range`, and you can still pick it.
 2. **Pick one.** The protein is selected and the map zooms to it. The list stays open, so you can work down it. The [structure](/explore/structures) opens collapsed to its header row, so it does not push the list away; click its header to expand it.
 3. **Read the Selected protein strip** at the bottom of the panel.
 4. **Go to source** selects the protein the label was copied from, fits both on the map, and draws the dashed line between them, with a ring on the source.
 
 ![Clicking the Ancestral / non-conventional label opens its five least reliable predictions; picking one zooms the map to it and shows the Selected protein strip; Go to source selects the source and draws the line between the two](./images/eat-check.gif)
 
-Under each list, **Select all 212 in range** selects every prediction in range behind that label or bar, **Export IDs** downloads their IDs, and `Showing 5 of 212` says how many there are. Click the row or bar again, or press Escape, to close the list.
+Under each list, **Show 5 more** adds the next five in the list's order, and `Showing 10 of 212` says how many of them the list shows. **Select all 212 in range** selects every prediction in range behind that label or bar, and **Export IDs** downloads their IDs. Click the row or bar again, or press Escape, to close the list.
 
 ### The Selected Protein Strip
 
