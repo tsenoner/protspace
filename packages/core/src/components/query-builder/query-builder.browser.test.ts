@@ -258,4 +258,101 @@ describe('protspace-query-builder: the locked EAT reliability row', () => {
       expect(target.right, selector).toBeLessThanOrEqual(box.getBoundingClientRect().right);
     }
   });
+
+  it('cannot be joined with "and not": the EAT panel owns it un-negated', async () => {
+    const builder = await mount(
+      [createCondition({ annotation: 'organism', values: ['Human'] }), locked('OR')],
+      360,
+      eatData,
+    );
+    builder.shadowRoot!.querySelector<PsButton>('.joiner-pill')!.click();
+    await builder.updateComplete;
+    const item = builder.shadowRoot!.querySelector<HTMLElement & { disabled: boolean }>(
+      'ps-menu[label="Joiner"] ps-menu-item[value="NOT"]',
+    )!;
+    expect(item.disabled).toBe(true);
+    expect(item.querySelector('[slot="description"]')!.textContent).toBe(
+      'not for the EAT reliability',
+    );
+  });
+});
+
+describe('protspace-query-builder: the joiner "and not"', () => {
+  /** The builder with its host's part: an edited query comes back as its query. */
+  async function mountHosted(query: FilterQuery) {
+    const builder = await mount(query);
+    builder.addEventListener('query-changed', (e) => {
+      builder.query = (e as CustomEvent<{ query: FilterQuery }>).detail.query;
+    });
+    return builder;
+  }
+  const pillTexts = (builder: ProtspaceQueryBuilder) =>
+    [...builder.shadowRoot!.querySelectorAll('.joiner-pill')].map((pill) =>
+      pill.textContent!.replace(/\s+/g, ' ').trim(),
+    );
+
+  /** Opens the joiner menu from the pill at `index` and picks `value`. */
+  async function pick(builder: ProtspaceQueryBuilder, index: number, value: string) {
+    builder.shadowRoot!.querySelectorAll<PsButton>('.joiner-pill')[index].click();
+    await builder.updateComplete;
+    const item = builder.shadowRoot!.querySelector<HTMLElement>(
+      `ps-menu[label="Joiner"] ps-menu-item[value="${value}"]`,
+    )!;
+    await expect.poll(() => item.checkVisibility()).toBe(true);
+    item.click();
+    await builder.updateComplete;
+  }
+
+  it('picked from the menu between two cards, it negates the second', async () => {
+    const builder = await mountHosted([
+      createCondition({ annotation: 'organism', values: ['Human'] }),
+      createCondition({ annotation: 'organism', values: ['Mouse'], logicalOp: 'AND' }),
+    ]);
+    await pick(builder, 0, 'NOT');
+    expect(pillTexts(builder)).toEqual(['Joiner for condition 2: and not']);
+    const [menu] = builder.shadowRoot!.querySelectorAll('ps-menu[label="Joiner"]');
+    expect(menu.querySelector('ps-menu-item[value="NOT"]')!.hasAttribute('checked')).toBe(true);
+  });
+
+  it('on a card that becomes first it reads "not", and its menu removes it', async () => {
+    const builder = await mountHosted([
+      createCondition({ annotation: 'organism', values: ['Human'] }),
+      createCondition({ annotation: 'organism', values: ['Mouse'], logicalOp: 'AND' }),
+    ]);
+    await pick(builder, 0, 'NOT');
+    rows(builder)[0].shadowRoot!.querySelector<PsIconButton>('.condition-remove')!.click();
+    await builder.updateComplete;
+    expect(pillTexts(builder)).toEqual(['Negation for condition 1: not']);
+
+    await pick(builder, 0, 'AND');
+    expect(pillTexts(builder)).toEqual([]);
+  });
+});
+
+describe('protspace-query-builder: the footer', () => {
+  const card = (logicalOp?: 'AND') =>
+    createCondition({ annotation: 'organism', values: ['Human'], logicalOp });
+  const box = (builder: ProtspaceQueryBuilder, selector: string) =>
+    builder.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+
+  it('follows the last card and "Add condition" while the cards fit', async () => {
+    const builder = await mount([card()]);
+    const add = box(builder, '.add-condition');
+    const footer = box(builder, '.query-footer');
+    // One gap of the builder's column between them, and room left below.
+    expect(footer.top - add.bottom).toBeGreaterThanOrEqual(0);
+    expect(footer.top - add.bottom).toBeLessThan(24);
+    expect(builder.getBoundingClientRect().bottom - footer.bottom).toBeGreaterThan(200);
+  });
+
+  it('stays at the bottom with Apply on screen once the cards overflow; the cards scroll', async () => {
+    const builder = await mount([card(), ...Array.from({ length: 11 }, () => card('AND'))]);
+    const conditions = builder.shadowRoot!.querySelector<HTMLElement>('.query-conditions')!;
+    expect(conditions.scrollHeight).toBeGreaterThan(conditions.clientHeight);
+    const host = builder.getBoundingClientRect();
+    expect(box(builder, '.query-footer').bottom).toBeCloseTo(host.bottom, 0);
+    const apply = box(builder, '.query-footer-apply');
+    expect(apply.top).toBeGreaterThanOrEqual(host.top);
+    expect(apply.bottom).toBeLessThanOrEqual(host.bottom);
+  });
 });

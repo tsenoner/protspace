@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
-import { countNoun, formatCount } from '@protspace/utils';
+import { countNoun, formatCount, isEatConfidenceAnnotation } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/button';
 import { icon } from '../kit/icon';
@@ -19,7 +19,6 @@ import {
   groupRun,
   isMixed,
   isNegatedGroup,
-  itemJoiner,
   joinerWouldMix,
   nextJoiner,
   removeCard,
@@ -27,43 +26,36 @@ import {
   setJoiner,
   setJoinerForAll,
   setOperator,
+  shownJoiner,
   ungroup,
   ungroupChangesResult,
   type ConditionOperator,
   type Joiner,
 } from './query-operators';
-import { evaluateQuery, evaluateQueryExcluding, hasConfiguredCondition } from './query-evaluate';
-import { queryChanges } from './query-equal';
+import { evaluateQuery, hasConfiguredCondition } from './query-evaluate';
+import { queryChanges, sameQuery } from './query-equal';
 import { applyBlock, applyBlockText, leafConditions } from './query-apply-state';
+import { countBase, countBaseKey } from './query-count-base';
 import { queryBuilderHostStyles, queryBuilderStyles } from './query-builder.styles';
 import './query-condition-row';
 
-/**
- * Each card's count base, by condition id: the proteins its values are counted among, null for
- * the whole dataset. A card joined with "or" adds proteins from anywhere its list reaches, so it
- * counts over its list's base; so does the first card of an "or" list. A card joined with "and"
- * counts inside what the rest of its list keeps. A group passes its own base down to its cards,
- * worked out by the same rule; the top-level list's base is the whole dataset.
- */
-function countBases(query: FilterQuery, data: ProtspaceData): Map<string, Set<number> | null> {
-  const bases = new Map<string, Set<number> | null>();
-  const walk = (items: FilterQueryItem[], context: Set<number> | null) => {
-    items.forEach((item, index) => {
-      const orJoined =
-        itemJoiner(item, index) === 'OR' ||
-        (index === 0 && items.length > 1 && itemJoiner(items[1], 1) === 'OR');
-      let base = context;
-      if (!orJoined && hasConfiguredCondition(items.filter((_, i) => i !== index))) {
-        const rest = evaluateQueryExcluding(items, data, item.id);
-        base = context ? new Set([...rest].filter((i) => context.has(i))) : rest;
-      }
-      const card = cardOf(item, index === 0);
-      if (card) bases.set(card.condition.id, base);
-      else walk((item as FilterGroup).conditions, base);
-    });
+/** Runs `task` after the next paint; returns its cancel. */
+function afterPaint(task: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const frame = requestAnimationFrame(() => {
+    timer = setTimeout(task, 0);
+  });
+  return () => {
+    cancelAnimationFrame(frame);
+    clearTimeout(timer);
   };
-  walk(query, null);
-  return bases;
+}
+
+/** A card's count base and what it was worked out from (see `countBaseKey`). */
+interface CountedBase {
+  key: FilterQuery;
+  data: ProtspaceData;
+  base: Set<number> | null;
 }
 
 /**
@@ -106,8 +98,15 @@ export class ProtspaceQueryBuilder extends LitElement {
   @property({ type: Boolean, reflect: true }) embedded = false;
 
   @state() private _matchedIndices: Set<number> = new Set();
-  /** Each card's count base, by condition id (see `countBases`). */
-  @state() private _excludedMatchMap: Map<string, Set<number> | null> = new Map();
+  /**
+   * The count bases (see `countBase`) of the cards whose value list is open, by condition id; a
+   * card keeps its entry after its list closes, until it leaves the query.
+   */
+  @state() private _bases: ReadonlyMap<string, CountedBase> = new Map();
+  /** The cards whose value list is open: only their values are counted. */
+  private _openLists = new Set<string>();
+  /** Cancels the base count waiting for a list that just opened. */
+  private _cancelBaseCount?: () => void;
   /** A count is pending (the 300 ms debounce): Apply waits, with no reason text. */
   @state() private _counting = true;
   /** How the count moved with the last edit; null before a second count on the same data. */
@@ -203,6 +202,8 @@ export class ProtspaceQueryBuilder extends LitElement {
       clearTimeout(this._debounceTimer);
       this._debounceTimer = null;
     }
+    this._cancelBaseCount?.();
+    this._cancelBaseCount = undefined;
   }
 
   // ─── Match Count (debounced) ──────────────────────────────────────────────
@@ -218,11 +219,69 @@ export class ProtspaceQueryBuilder extends LitElement {
       this._countedData = this.data;
       this._countedQuery = query;
       this._matchedIndices = matched;
-
-      const map = countBases(query, this.data);
-      this._excludedMatchMap = map;
+      // An open list counts again only when another card or the data changed.
+      this._countBases();
       this._counting = false;
     }, 300);
+  }
+
+  // ─── Count bases (only for an open value list) ────────────────────────────
+
+  /**
+   * A card's value list opened or closed. Opening shows the list at once, its counts pending,
+   * and works the base out after that paint, unless the base it has still holds.
+   */
+  private _handleValueListToggle(e: CustomEvent<{ id: string; open: boolean }>) {
+    e.stopPropagation();
+    const { id, open } = e.detail;
+    if (!open) {
+      this._openLists.delete(id);
+      this.requestUpdate();
+      return;
+    }
+    this._openLists.add(id);
+    const kept = this._bases.get(id);
+    if (kept && !this._holds(kept, id)) {
+      const bases = new Map(this._bases);
+      bases.delete(id);
+      this._bases = bases;
+    }
+    this.requestUpdate();
+    this._cancelBaseCount?.();
+    this._cancelBaseCount = afterPaint(() => {
+      this._cancelBaseCount = undefined;
+      this._countBases();
+    });
+  }
+
+  /** The base was worked out for this data and for a query that gives the card the same one. */
+  private _holds(counted: CountedBase, id: string): boolean {
+    return counted.data === this.data && sameQuery(counted.key, countBaseKey(this.query, id));
+  }
+
+  /**
+   * Works out the base of every open list that does not have one that holds; the others keep
+   * theirs, the same set, so their lists keep their counts. Cards no longer in the query go.
+   */
+  private _countBases() {
+    const data = this.data;
+    if (!data) return;
+    const ids = new Set(leafConditions(this.query).map((condition) => condition.id));
+    const bases = new Map([...this._bases].filter(([id]) => ids.has(id)));
+    for (const id of this._openLists) {
+      if (!ids.has(id)) {
+        this._openLists.delete(id);
+        continue;
+      }
+      const kept = bases.get(id);
+      if (kept && this._holds(kept, id)) continue;
+      const base = countBase(this.query, data, id);
+      if (base !== undefined) bases.set(id, { key: countBaseKey(this.query, id), data, base });
+    }
+    const changed =
+      bases.size !== this._bases.size ||
+      [...bases].some(([id, counted]) => this._bases.get(id) !== counted);
+    if (changed) this._bases = bases;
   }
 
   // ─── Dispatch helpers ────────────────────────────────────────────────────
@@ -284,7 +343,10 @@ export class ProtspaceQueryBuilder extends LitElement {
     this._joinerMenuOpen = !same;
   }
 
-  /** A joiner picked: applied, unless it would mix "and" and "or", which asks first. */
+  /**
+   * A joiner picked: applied, unless it would mix "and" and "or", which asks first. On a first
+   * item the menu only removes its "not", which mixes nothing.
+   */
   private _handleJoinerSelect(e: CustomEvent<{ value: string }>) {
     e.stopPropagation();
     this._joinerMenuOpen = false;
@@ -292,7 +354,7 @@ export class ProtspaceQueryBuilder extends LitElement {
     if (!target) return;
     const joiner = e.detail.value as Joiner;
     if (joiner === this._joinerOf(target.id)) return;
-    if (joinerWouldMix(this.query, target.id, joiner)) {
+    if (!this._isFirst(target.id) && joinerWouldMix(this.query, target.id, joiner)) {
       this._promptSheet = typeof matchMedia === 'function' && matchMedia(COMPACT_MEDIA).matches;
       this._joinerPrompt = { id: target.id, joiner };
       this._focusPrompt = true;
@@ -301,21 +363,46 @@ export class ProtspaceQueryBuilder extends LitElement {
     this._dispatchQueryChanged(setJoiner(this.query, target.id, joiner));
   }
 
-  /** The joiner the item `id` shows now; "and not" (a negated group) reads as neither. */
-  private _joinerOf(id: string): Joiner | 'NOT' | undefined {
-    const find = (items: FilterQuery): Joiner | 'NOT' | undefined | null => {
+  /** The item `id` (a card's condition id, or a group's id) and its index in its list, or null. */
+  private _findItem(id: string): { item: FilterQueryItem; index: number } | null {
+    const find = (items: FilterQuery): { item: FilterQueryItem; index: number } | null => {
       for (const [index, item] of items.entries()) {
         const card = cardOf(item, index === 0);
-        if (item.id === id || card?.condition.id === id)
-          return isNegatedGroup(item) && index > 0 ? 'NOT' : itemJoiner(item, index);
+        if (item.id === id || card?.condition.id === id) return { item, index };
         if (!card && isFilterGroup(item)) {
           const inner = find(item.conditions);
-          if (inner !== null) return inner;
+          if (inner) return inner;
         }
       }
       return null;
     };
-    return find(this.query) ?? undefined;
+    return find(this.query);
+  }
+
+  /** The joiner the pill before the item `id` shows: "and", "or" or "and not" ("not" if first). */
+  private _joinerOf(id: string): Joiner | undefined {
+    const found = this._findItem(id);
+    return found ? shownJoiner(found.item, found.index) : undefined;
+  }
+
+  private _isFirst(id: string): boolean {
+    return this._findItem(id)?.index === 0;
+  }
+
+  /**
+   * The item `id` is or holds an EAT reliability condition. The EAT panel owns that condition and
+   * reads it back un-negated, so "and not" is not offered for it.
+   */
+  private _holdsEatReliability(id: string): boolean {
+    const found = this._findItem(id);
+    return (
+      found !== null &&
+      leafConditions([found.item]).some(
+        (condition) =>
+          condition.kind === 'numeric' &&
+          isEatConfidenceAnnotation(this.data?.annotations?.[condition.annotation]),
+      )
+    );
   }
 
   private _resolvePrompt(choice: 'group' | 'all' | 'cancel') {
@@ -412,14 +499,19 @@ export class ProtspaceQueryBuilder extends LitElement {
         : nothing}
       ${items.map(
         (item, index) => html`
-          ${index > 0 ? this._renderJoiner(item, index, numbers) : nothing}
+          ${index > 0 || shownJoiner(item, index) === 'NOT'
+            ? this._renderJoiner(item, index, numbers)
+            : nothing}
           ${this._renderItem(item, index, numbers)}
         `,
       )}
     `;
   }
 
-  /** "and ⌄" / "or ⌄" between two items, and the "Group these?" prompt it may raise. */
+  /**
+   * "and ⌄" / "or ⌄" / "and not ⌄" between two items, and the "Group these?" prompt it may raise.
+   * A first item has a pill only while negated: "not ⌄", whose menu removes the "not".
+   */
   private _renderJoiner(
     item: FilterQueryItem,
     index: number,
@@ -428,8 +520,10 @@ export class ProtspaceQueryBuilder extends LitElement {
     const card = cardOf(item, false);
     const id = card ? card.condition.id : item.id;
     const n = card ? numbers.get(card.condition.id) : undefined;
-    const label = n ? `Joiner for condition ${n}` : card ? 'Joiner' : 'Joiner for group';
-    const text = isNegatedGroup(item) ? 'and not' : itemJoiner(item, index) === 'OR' ? 'or' : 'and';
+    const what = n ? `condition ${n}` : card ? '' : 'group';
+    const label = `${index === 0 ? 'Negation' : 'Joiner'}${what ? ` for ${what}` : ''}`;
+    const shown = shownJoiner(item, index);
+    const text = index === 0 ? 'not' : shown === 'NOT' ? 'and not' : shown === 'OR' ? 'or' : 'and';
     const prompt = this._joinerPrompt?.id === id ? this._joinerPrompt : null;
     return html`
       <div class="joiner">
@@ -522,33 +616,38 @@ export class ProtspaceQueryBuilder extends LitElement {
         @operator-changed=${this._handleOperatorChanged}
         @condition-removed=${this._handleConditionRemoved}
         @condition-duplicated=${this._handleConditionDuplicated}
+        @value-list-toggle=${this._handleValueListToggle}
       ></protspace-query-condition-row>
     `;
   }
 
   /**
-   * A card's count base (see `countBases`), or undefined while it waits for the count: a card
-   * added since the last one. With nothing else configured the base is the whole dataset, known
-   * without the count.
+   * A card's count base (see `countBase`) while its value list is open, or undefined while the
+   * base is being worked out. With nothing else configured the base is the whole dataset, known
+   * without counting. A closed list reads none.
    */
   private _countBase(id: string): Set<number> | null | undefined {
-    if (this._excludedMatchMap.has(id)) return this._excludedMatchMap.get(id);
     const others = leafConditions(this.query).filter((condition) => condition.id !== id);
-    return hasConfiguredCondition(others) ? undefined : null;
+    if (!hasConfiguredCondition(others)) return null;
+    return this._openLists.has(id) ? this._bases.get(id)?.base : undefined;
   }
 
+  /** A group's box. Its "not", like a card's, is the pill before it. */
   private _renderGroup(group: FilterGroup, numbers: ReadonlyMap<string, number>) {
     const items = group.conditions;
-    const joiners = new Set(items.map(itemJoiner).filter(Boolean));
+    // A "not" inside makes "All of these" untrue, so such a group is just a group.
+    const joiners = new Set(items.map(shownJoiner).filter(Boolean));
     const inner = joiners.size === 1 ? [...joiners][0] : undefined;
     const label = inner === 'OR' ? 'Any of these' : inner === 'AND' ? 'All of these' : 'Group';
     const negated = isNegatedGroup(group);
-    const name = inner ? `Group, joined with ${inner === 'OR' ? 'or' : 'and'}` : 'Group';
+    const name =
+      inner === 'OR' || inner === 'AND'
+        ? `Group, joined with ${inner === 'OR' ? 'or' : 'and'}`
+        : 'Group';
     return html`
       <div class="group-container" role="group" aria-label=${negated ? `${name}, negated` : name}>
         <div class="group-header">
           <span class="group-label">${label}</span>
-          ${negated ? html`<span class="condition-badge">not</span>` : nothing}
           <ps-icon-button
             class="group-menu-trigger"
             icon="ellipsis"
@@ -576,9 +675,37 @@ export class ProtspaceQueryBuilder extends LitElement {
     `;
   }
 
+  /**
+   * The joiner menu's items: "and", "or" and "and not", or for a first item, which joins nothing,
+   * only a way to remove its "not".
+   */
+  private _renderJoinerItems() {
+    const target = this._joinerTarget?.id;
+    if (target && this._isFirst(target))
+      return html`<ps-menu-item value="AND"
+        >Remove “not”<span slot="description">keep what this matches</span></ps-menu-item
+      >`;
+    const current = target ? this._joinerOf(target) : undefined;
+    const eat = !!target && this._holdsEatReliability(target);
+    return html`
+      <ps-menu-item type="radio" value="AND" ?checked=${current === 'AND'}
+        >and<span slot="description">this and everything above must match</span></ps-menu-item
+      >
+      <ps-menu-item type="radio" value="OR" ?checked=${current === 'OR'}
+        >or<span slot="description">this or everything above may match</span></ps-menu-item
+      >
+      <ps-menu-item type="radio" value="NOT" ?checked=${current === 'NOT'} ?disabled=${eat}
+        >and not<span slot="description"
+          >${eat
+            ? 'not for the EAT reliability'
+            : 'everything above must match, and this must not'}</span
+        ></ps-menu-item
+      >
+    `;
+  }
+
   /** The joiner and group menus, one each, anchored to the pill or ⋯ that opened them. */
   private _renderMenus() {
-    const current = this._joinerTarget ? this._joinerOf(this._joinerTarget.id) : undefined;
     const negated = this._groupTarget
       ? this._findGroup(this._groupTarget.id)?.logicalOp === 'NOT'
       : false;
@@ -596,12 +723,7 @@ export class ProtspaceQueryBuilder extends LitElement {
           this._joinerMenuOpen = false;
         }}
       >
-        <ps-menu-item type="radio" value="AND" ?checked=${current === 'AND'}
-          >and<span slot="description">this and everything above must match</span></ps-menu-item
-        >
-        <ps-menu-item type="radio" value="OR" ?checked=${current === 'OR'}
-          >or<span slot="description">this or everything above may match</span></ps-menu-item
-        >
+        ${this._renderJoinerItems()}
       </ps-menu>
       <ps-menu
         label="Actions for group"

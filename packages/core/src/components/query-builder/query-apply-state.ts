@@ -1,5 +1,6 @@
 import type { FilterCondition, FilterQuery, FilterQueryItem } from './query-types';
 import { isFilterGroup } from './query-types';
+import { isCardGroup } from './query-operators';
 
 /** Why Apply is disabled (design decision 14); null from `applyBlock` means it is enabled. */
 export type ApplyBlock =
@@ -28,6 +29,22 @@ export function leafConditions(query: FilterQuery): FilterCondition[] {
 const isConfigured = (condition: FilterCondition): boolean =>
   !!condition.annotation && (condition.kind === 'numeric' || condition.values.length > 0);
 
+/** The conditions negated as cards: a NOT of their own, or the "and not" group they are the card of. */
+function negatedCards(query: FilterQuery): Set<string> {
+  const negated = new Set<string>();
+  const walk = (items: readonly FilterQueryItem[]) => {
+    for (const item of items) {
+      if (!isFilterGroup(item)) {
+        if (item.logicalOp === 'NOT') negated.add(item.id);
+      } else if (isCardGroup(item) && item.logicalOp === 'NOT') {
+        negated.add(item.conditions[0].id);
+      } else walk(item.conditions);
+    }
+  };
+  walk(query);
+  return negated;
+}
+
 /**
  * A problem with the query's shape, found without counting. A row with an annotation and nothing
  * to match blocks, as does a negated row with no annotation; an untouched row (no annotation, not
@@ -36,10 +53,11 @@ const isConfigured = (condition: FilterCondition): boolean =>
  */
 function structuralBlock(query: FilterQuery): ApplyBlock | null {
   const leaves = leafConditions(query);
+  const negated = negatedCards(query);
   for (const [index, condition] of leaves.entries()) {
     const n = index + 1;
     if (!condition.annotation) {
-      if (condition.logicalOp === 'NOT') return { kind: 'annotation', n };
+      if (negated.has(condition.id)) return { kind: 'annotation', n };
       continue;
     }
     if (isConfigured(condition)) continue;

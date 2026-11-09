@@ -3,6 +3,7 @@ import {
   applyFirstCategoryFilter,
   clearStatusChip,
   closeFilterPanel,
+  draftFilterCondition,
   filterApplyButton,
   filterButton,
   filterPanel,
@@ -195,4 +196,83 @@ test.describe('the Filter panel', () => {
     await applyFirstCategoryFilter(page);
     await expectNoAxeViolations(page, { include: '#wb-filter-panel' });
   });
+
+  test('the footer follows the last card, and stays at the bottom once the cards overflow', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await openFilter(page);
+    const add = queryBuilder(page).getByRole('button', { name: 'Add condition', exact: true });
+    const footer = queryBuilder(page).locator('.query-footer');
+    const below = async () => {
+      const button = (await add.boundingBox())!;
+      return (await footer.boundingBox())!.y - (button.y + button.height);
+    };
+    // One gap of the builder's column under "Add condition".
+    expect(await below()).toBeGreaterThanOrEqual(0);
+    expect(await below()).toBeLessThan(24);
+
+    for (let n = 2; n <= 10; n++) await add.click();
+    await expect(conditionRows(page)).toHaveCount(10);
+    const panel = (await filterPanel(page).boundingBox())!;
+    const box = (await footer.boundingBox())!;
+    // At the panel's bottom edge, inside the body's padding.
+    expect(panel.y + panel.height - (box.y + box.height)).toBeLessThan(20);
+    await expect(filterApplyButton(page)).toBeInViewport();
+  });
+
+  test('"and not" keeps the first card’s proteins without the second’s; undo and redo keep it', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    const total = (await getProteinCount(page)).toLocaleString('en-US');
+    /** A length card for `min`–`max` alone, without the N/A proteins; returns how many it keeps. */
+    const lengthCard = async (row: number, min: string, max: string) => {
+      const card = await draftFilterCondition(page, row, 'length');
+      await card.getByRole('checkbox', { name: /^Include proteins with no/ }).uncheck();
+      await card.getByLabel('Minimum value').fill(min);
+      await card.getByLabel('Maximum value').fill(max);
+      await card.getByLabel('Maximum value').blur();
+      const count = card.locator('.numeric-match-count');
+      await expect(count).toHaveText(/^[1-9][\d,]* proteins?/);
+      await expect(count).not.toHaveText(new RegExp(`^${total} `));
+      return Number((await count.innerText()).replace(/\D/g, ''));
+    };
+    const outer = await lengthCard(0, '60', '120');
+    const inner = await lengthCard(1, '80', '100');
+    const joiner = queryBuilder(page).getByRole('button', { name: /^Joiner for condition 2/ });
+
+    await joiner.click();
+    await page.getByRole('menuitemradio', { name: /^and not/ }).click();
+
+    await expect(joiner).toHaveAccessibleName('Joiner for condition 2: and not');
+    const kept = outer - inner;
+    await expect(countLine(page)).toHaveText(
+      new RegExp(`^\\s*${kept.toLocaleString('en-US')} of `),
+    );
+    await filterApplyButton(page).click();
+    await expect(filterButton(page)).toHaveAccessibleName('Filter, 2 conditions applied');
+    expect((await readPlotFilter(page)).kept).toBe(kept);
+
+    await undo(page);
+    await expect.poll(async () => (await readPlotFilter(page)).filtersActive).toBe(false);
+    await redo(page);
+    await expect.poll(async () => (await readPlotFilter(page)).kept).toBe(kept);
+    await expect(joiner).toHaveAccessibleName('Joiner for condition 2: and not');
+  });
 });
+
+/** The modifier the app reads as Mod, decided as its isMacOrIos() decides it. */
+function modKey(page: Page): Promise<'Meta' | 'Control'> {
+  return page.evaluate(() => {
+    const platform = (navigator as Navigator & { userAgentData?: { platform?: string } })
+      .userAgentData?.platform;
+    const mac = platform
+      ? platform === 'macOS' || platform === 'iOS'
+      : /Macintosh;.*Mac OS X/.test(navigator.userAgent) ||
+        /iPhone|iPad|iPod/.test(navigator.userAgent);
+    return mac ? 'Meta' : 'Control';
+  });
+}
+const undo = async (page: Page) => page.keyboard.press(`${await modKey(page)}+KeyZ`);
+const redo = async (page: Page) => page.keyboard.press(`${await modKey(page)}+Shift+KeyZ`);

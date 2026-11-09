@@ -60,17 +60,30 @@ for **N/A** joined with **or**.
 - **Any value** and **N/A** sit at the top, above a line. Ticking **Any value** clears the other
   values, since "any value or X" is just "any value".
 
-The counts take the other cards into account. In a card joined with **and**, a value's count is
-how many of the proteins the other cards keep have that value. The footer says how many values you
-ticked and how many proteins they hold. **Done** closes the list.
+The counts take the other cards into account. In a card joined with **and** or **and not**, a
+value's count is how many of the proteins the other cards keep have that value. The counts are
+worked out when the list opens, so they may show a moment after the list does. The footer says
+how many values you ticked and how many proteins they hold. **Done** closes the list.
 
 ### And, or and groups
 
-Between two cards, a pill says how they join: **and** (both must match) or **or** (either may
-match). Click it to switch.
+Between two cards, a pill says how they join. Click it to switch:
 
-Joiners are read from top to bottom, so mixing **and** and **or** in one list can be hard to read.
-When a switch would mix them, the panel asks **Group these?**:
+| Joiner      | Keeps the proteins that                 |
+| ----------- | --------------------------------------- |
+| **and**     | match the cards above and this one      |
+| **or**      | match the cards above or this one       |
+| **and not** | match the cards above, but not this one |
+
+**and not** works on every card: a category card, a numeric range or a group. "Protein family is
+any of A **and not** Sequence length 60 to 120" keeps the proteins of family A outside that range.
+Like **is none of**, it leaves out the proteins with no value for that card's annotation. If you
+remove the card above an **and not** card, its pill reads **not**, and its menu has
+**Remove "not"**.
+
+Joiners are read from top to bottom, so mixing **and** and **or** in one list can be hard to read
+(**and not** counts as **and** here). When a switch would mix them, the panel asks **Group
+these?**:
 
 - **Group these** puts the cards that the new joiner links in a group.
 - **Use "or" for all** (or "and") uses the same joiner for the whole list.
@@ -79,9 +92,10 @@ When a switch would mix them, the panel asks **Group these?**:
 ![A group card, Any of these, holding two Protein family cards joined by or, then and, then a Sequence length card](./images/filter-group.png)
 
 A group is a card of its own, named **Any of these** (joined by or) or **All of these** (joined by
-and). **+ Add condition** inside it adds a card to the group. Its **⋯** menu has **Ungroup**, and
-its **✕** removes the group with its cards. **Add group** in the panel's **⋯** menu starts an
-empty group.
+and), or **Group** when its cards are joined in different ways or one has **and not**.
+**+ Add condition** inside it adds a card to the group. Its **⋯** menu has **Ungroup**, and its
+**✕** removes the group with its cards. **Add group** in the panel's **⋯** menu starts an empty
+group.
 
 ## Numeric conditions
 
@@ -115,7 +129,9 @@ The header says how many changes are not applied yet, such as **2 unapplied chan
 **Applied** when the plot shows the draft. An empty card is not a change.
 
 The footer shows how many proteins the draft keeps, with a bar for their share. After an edit it
-also says how the count moved, such as **+539 since last edit**.
+also says how the count moved, such as **+539 since last edit**. It follows the last card. When
+the cards fill the panel, they scroll and the footer stays at the bottom, so **Apply** is always
+on screen.
 
 Apply is enabled only when applying would change something. While it is disabled, the line under
 the buttons says why:
@@ -151,8 +167,8 @@ The condition shows here as a locked row, such as `Toxin class — reliability �
 
 ![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row.png)
 
-You cannot edit it here. **Edit in EAT ›** opens the EAT panel, and the ✕ puts the range back to
-0–100 %. **Fade** writes no condition. See
+You cannot edit it here, or join it with **and not**. **Edit in EAT ›** opens the EAT panel, and
+the ✕ puts the range back to 0–100 %. **Fade** writes no condition. See
 [The Filter Panel's Locked Row](/explore/eat#the-filter-panel-s-locked-row).
 
 ## Filter or Show only

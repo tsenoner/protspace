@@ -12,11 +12,21 @@ import { ANY_VALUE, clearLeadingOpInList, createGroup, isFilterGroup } from './q
  * - has any value / has no value: `values: [ANY_VALUE]` / `[NA_VALUE]`
  * - is between: every numeric condition, which has no operator menu; its card is the range
  *   editor (see `readRange`)
+ *
+ * The joiner "and not" is the evaluator's NOT on the item: on a group the user built, its own
+ * `logicalOp: 'NOT'`; on a card, a one-condition group `{ logicalOp: 'NOT', conditions: [card] }`
+ * that renders as the card, since a categorical card's own NOT already says "is none of".
  */
 export type ConditionOperator = 'any-of' | 'none-of' | 'has-any' | 'has-none' | 'between';
 
-/** How a card joins the cards before it. A first card has none. */
-export type Joiner = 'AND' | 'OR';
+/**
+ * How an item joins the items before it: "and", "or", or "and not" (`'NOT'`). A first item has
+ * none, unless it is negated: an "and not" item whose neighbour above went keeps its NOT.
+ */
+export type Joiner = 'AND' | 'OR' | 'NOT';
+
+/** "and" or "or": "and not" is in the "and" family, which is what mixing is about. */
+type JoinerFamily = 'AND' | 'OR';
 
 export const CATEGORICAL_OPERATORS: readonly ConditionOperator[] = [
   'any-of',
@@ -87,9 +97,10 @@ function withOperatorFields(
 }
 
 const NONE_OF_GROUP = ':none-of';
+const NOT_CARD = ':not';
 
 /** The one-condition group "is none of" needs under "or"; the builder renders it as a card. */
-export function isNoneOfGroup(item: FilterQueryItem): item is FilterGroup {
+function isNoneOfGroup(item: FilterQueryItem): item is FilterGroup {
   if (!isFilterGroup(item) || !item.id.endsWith(NONE_OF_GROUP)) return false;
   const [only, ...rest] = item.conditions;
   return (
@@ -102,7 +113,19 @@ export function isNoneOfGroup(item: FilterQueryItem): item is FilterGroup {
   );
 }
 
-/** A card: the condition it shows and the joiner it shows (none on a first card). */
+/** The one-condition group a card joined by "and not" is stored in; rendered as the card. */
+function isNotCard(item: FilterQueryItem): item is FilterGroup {
+  if (!isFilterGroup(item) || !item.id.endsWith(NOT_CARD) || item.logicalOp !== 'NOT') return false;
+  const [only, ...rest] = item.conditions;
+  return rest.length === 0 && only !== undefined && !isFilterGroup(only);
+}
+
+/** A group that is one card: "is none of" under "or", or a card joined by "and not". */
+export function isCardGroup(item: FilterQueryItem): item is FilterGroup {
+  return isNoneOfGroup(item) || isNotCard(item);
+}
+
+/** A card: the condition it shows and the joiner it shows (see `Joiner` for a first card). */
 interface Card {
   condition: FilterCondition;
   joiner: Joiner | undefined;
@@ -113,20 +136,33 @@ export function cardOf(item: FilterQueryItem, isFirst: boolean): Card | null {
   if (isNoneOfGroup(item)) {
     return { condition: item.conditions[0] as FilterCondition, joiner: isFirst ? undefined : 'OR' };
   }
+  if (isNotCard(item)) return { condition: item.conditions[0] as FilterCondition, joiner: 'NOT' };
   if (isFilterGroup(item)) return null;
+  // A numeric card has no operator, so a NOT on it (a query built before "and not" had its own
+  // group) can only be its joiner.
+  if (item.kind === 'numeric' && item.logicalOp === 'NOT')
+    return { condition: item, joiner: 'NOT' };
   return { condition: item, joiner: isFirst ? undefined : item.logicalOp === 'OR' ? 'OR' : 'AND' };
 }
 
-/** The item a card is stored as: under "or", a negated card goes in its group. */
+/**
+ * The item a card is stored as. Its condition's own `logicalOp` is read only as a categorical
+ * card's "is none of"; the joiner comes from `joiner`. "and not" puts the card in a group of its
+ * own, and so does "is none of" under "or".
+ */
 function storeCard(condition: FilterCondition, joiner: Joiner | undefined): FilterQueryItem {
-  const negated = condition.logicalOp === 'NOT';
-  if (negated && joiner === 'OR')
+  const noneOf = condition.kind === 'categorical' && condition.logicalOp === 'NOT';
+  // The card as the first item of a list, which is what it is inside its own group.
+  const lone: FilterCondition = { ...condition, logicalOp: noneOf ? 'NOT' : undefined };
+  if (joiner === 'NOT')
+    return createGroup({ id: `${condition.id}${NOT_CARD}`, logicalOp: 'NOT', conditions: [lone] });
+  if (noneOf && joiner === 'OR')
     return createGroup({
       id: `${condition.id}${NONE_OF_GROUP}`,
       logicalOp: 'OR',
-      conditions: [condition],
+      conditions: [lone],
     });
-  if (negated) return condition;
+  if (noneOf) return lone;
   return { ...condition, logicalOp: joiner };
 }
 
@@ -192,8 +228,10 @@ export function removeCard(query: FilterQuery, id: string): FilterQuery {
 export function duplicateCard(query: FilterQuery, id: string, copyId: string) {
   return editCard(query, id, ({ condition, joiner }, index) => {
     const copy = { ...structuredClone(condition), id: copyId };
-    // A first card has no joiner; its copy follows it, so it joins with "and".
-    return [storeCard(condition, joiner), storeCard(copy, index === 0 ? 'AND' : joiner)];
+    // A first card has no joiner; its copy follows it, so it joins with "and", or "and not" when
+    // the first card is negated.
+    const copyJoiner = index === 0 && joiner !== 'NOT' ? 'AND' : joiner;
+    return [storeCard(condition, joiner), storeCard(copy, copyJoiner)];
   });
 }
 
@@ -201,11 +239,29 @@ export function duplicateCard(query: FilterQuery, id: string, copyId: string) {
 //
 // A joiner belongs to an item: a card or a group, at any depth. "is none of" counts as "and"
 // (NOT reads "and has a value but not"), except the "or" group a negated card is stored in.
+// "and not" counts as "and" too: it narrows what the items above keep.
 
-/** How the item at `index` of its list joins the items before it; a first item has none. */
-export function itemJoiner(item: FilterQueryItem, index: number): Joiner | undefined {
+/**
+ * How the item at `index` of its list joins the items before it, "and" or "or" (its family: "and
+ * not" is "and"); a first item has none.
+ */
+export function itemJoiner(item: FilterQueryItem, index: number): JoinerFamily | undefined {
   if (index === 0) return undefined;
   return isNoneOfGroup(item) || item.logicalOp === 'OR' ? 'OR' : 'AND';
+}
+
+/** The item is joined by "and not": a card in its "and not" group, or a group the user negated. */
+function isAndNot(item: FilterQueryItem): boolean {
+  if (isFilterGroup(item)) return isNotCard(item) || isNegatedGroup(item);
+  return cardOf(item, false)?.joiner === 'NOT';
+}
+
+/**
+ * The joiner the pill before the item at `index` shows: its family, or "and not". A first item
+ * shows none, unless it is negated ("not").
+ */
+export function shownJoiner(item: FilterQueryItem, index: number): Joiner | undefined {
+  return isAndNot(item) ? 'NOT' : itemJoiner(item, index);
 }
 
 /** One list (the query's top level or a group's) joins with both "and" and "or". */
@@ -214,24 +270,31 @@ export function isMixed(items: FilterQuery): boolean {
   return joiners.size > 1;
 }
 
-/** A group the user built, negated as a whole: shown as such, never offered as an operator. */
+/** A group the user built, negated as a whole ("and not" before it). */
 export function isNegatedGroup(item: FilterQueryItem): item is FilterGroup {
   return isUserGroup(item) && item.logicalOp === 'NOT';
 }
 
-/** A group the user built, not the one "is none of" is stored in. */
+/** A group the user built, not one a card is stored in. */
 function isUserGroup(item: FilterQueryItem): item is FilterGroup {
-  // isNoneOfGroup narrows to FilterGroup, so its negation would narrow a group away.
-  const noneOf: (item: FilterQueryItem) => boolean = isNoneOfGroup;
-  return isFilterGroup(item) && !noneOf(item);
+  // isCardGroup narrows to FilterGroup, so its negation would narrow a group away.
+  const oneCard: (item: FilterQueryItem) => boolean = isCardGroup;
+  return isFilterGroup(item) && !oneCard(item);
 }
 
-/** `item` at `index` of its list, joined by `joiner` (none when first). */
-function withJoiner(item: FilterQueryItem, joiner: Joiner | undefined): FilterQueryItem {
+/** `item` joined by exactly `joiner`: "and" or "or" drop an "and not"; none is a plain first item. */
+function setItemJoiner(item: FilterQueryItem, joiner: Joiner | undefined): FilterQueryItem {
   const card = cardOf(item, false);
   if (card) return storeCard(card.condition, joiner);
-  if (item.logicalOp !== 'NOT') return { ...item, logicalOp: joiner };
-  // A negated group keeps its NOT under "and"; under "or" it goes in a group of its own.
+  return { ...item, logicalOp: joiner };
+}
+
+/**
+ * `item` joined by `joiner` (none when first) with its meaning kept: a negated item stays negated,
+ * as it is under "and" and when first, and in a group of its own under "or".
+ */
+function withJoiner(item: FilterQueryItem, joiner: JoinerFamily | undefined): FilterQueryItem {
+  if (!isAndNot(item)) return setItemJoiner(item, joiner);
   if (joiner === 'OR') return createGroup({ logicalOp: 'OR', conditions: [item] });
   return item;
 }
@@ -267,17 +330,21 @@ function listOf(query: FilterQuery, id: string): FilterQuery | null {
   return found;
 }
 
+const familyOf = (joiner: Joiner): JoinerFamily => (joiner === 'OR' ? 'OR' : 'AND');
+
+/** The item at `index` joined by exactly `joiner`; a first item takes only its NOT, or none. */
+function joinAt(item: FilterQueryItem, index: number, joiner: Joiner): FilterQueryItem {
+  return setItemJoiner(item, joiner === 'NOT' ? 'NOT' : index === 0 ? undefined : joiner);
+}
+
 /**
- * The query with the item `id` joined by `joiner`; nothing else changes. A negated group picked
- * "and" or "or" here drops its NOT: the user chose the joiner over "and not".
+ * The query with the item `id` joined by `joiner`; nothing else changes. An "and not" item picked
+ * "and" or "or" here drops its NOT: the user chose that joiner over "and not". A first item has no
+ * joiner: "and" or "or" drops its NOT, and "and not" sets it.
  */
 export function setJoiner(query: FilterQuery, id: string, joiner: Joiner) {
   return editList(query, id, (items, index) =>
-    items.map((item, i) => {
-      if (i !== index) return item;
-      if (isNegatedGroup(item)) return { ...item, logicalOp: index === 0 ? 'NOT' : joiner };
-      return withJoiner(item, index === 0 ? undefined : joiner);
-    }),
+    items.map((item, i) => (i === index ? joinAt(item, index, joiner) : item)),
   );
 }
 
@@ -287,25 +354,35 @@ export function joinerWouldMix(query: FilterQuery, id: string, joiner: Joiner): 
   return list !== null && isMixed(list);
 }
 
-/** The query with every item in the list holding `id` joined by `joiner`. */
+/**
+ * The query with the item `id` joined by `joiner`, and every other item in its list by the same
+ * family ("and" for "and not"), each keeping its meaning.
+ */
 export function setJoinerForAll(query: FilterQuery, id: string, joiner: Joiner) {
-  return editList(query, id, (items) =>
-    items.map((item, i) => withJoiner(item, i === 0 ? undefined : joiner)),
+  return editList(query, id, (items, index) =>
+    items.map((item, i) =>
+      i === index
+        ? joinAt(item, index, joiner)
+        : withJoiner(item, i === 0 ? undefined : familyOf(joiner)),
+    ),
   );
 }
 
 /**
  * The query with the item `id` joined by `joiner`, and the run of items that joiner now links
  * (the item, the one before it, and their neighbours joined the same way) wrapped in one group.
- * Every condition keeps its id, so counts and the EAT condition still find it.
+ * "and not" runs with "and". A NOT stays with its own item: "A and not B or C", grouped, reads
+ * "A and (not B or C)". Every condition keeps its id, so counts and the EAT condition still find
+ * it.
  */
 export function groupRun(query: FilterQuery, id: string, joiner: Joiner) {
+  const family = familyOf(joiner);
   return editList(setJoiner(query, id, joiner), id, (items, index) => {
     if (index === 0) return items;
     let start = index - 1;
-    while (start > 0 && itemJoiner(items[start], start) === joiner) start--;
+    while (start > 0 && itemJoiner(items[start], start) === family) start--;
     let end = index;
-    while (end + 1 < items.length && itemJoiner(items[end + 1], end + 1) === joiner) end++;
+    while (end + 1 < items.length && itemJoiner(items[end + 1], end + 1) === family) end++;
     if (start === 0 && end === items.length - 1) return items;
     const run = items
       .slice(start, end + 1)
@@ -349,8 +426,11 @@ export function ungroup(query: FilterQuery, id: string) {
   });
 }
 
-/** The joiner a new item at the end of `items` takes: the list's last one, else "and". */
-export function nextJoiner(items: FilterQuery): Joiner | undefined {
+/**
+ * The joiner a new item at the end of `items` takes: the list's last one, else "and"; after "and
+ * not", "and".
+ */
+export function nextJoiner(items: FilterQuery): JoinerFamily | undefined {
   if (items.length === 0) return undefined;
   return itemJoiner(items[items.length - 1], items.length - 1) ?? 'AND';
 }

@@ -49,6 +49,8 @@ import './query-numeric-input';
  * - `condition-duplicated` — Duplicate in the card's menu, detail: `{ id: string }`
  * - `operator-changed` — an operator picked in the operator menu, detail:
  *   `{ id: string, operator: ConditionOperator }`; the builder stores it (`setOperator`)
+ * - `value-list-toggle` — the value list opened or closed, detail: `{ id: string, open: boolean }`
+ *   (the condition's id); the builder works out `matchedIndices` only while it is open
  * - `eat-reliability-reset` — a locked EAT reliability card's ✕, detail: `{ annotation }` (the
  *   base annotation whose reliability resets)
  * - `eat-panel-open` — a locked EAT reliability card's "Edit in EAT ›", detail: `{ annotation }`
@@ -77,8 +79,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   @property({ type: Array }) annotations: string[] = [];
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;
   /**
-   * The proteins this card's values are counted among; null is the whole dataset, undefined not
-   * known yet (the builder's count is pending).
+   * The proteins this card's values are counted among, read by the value list while it is open;
+   * null is the whole dataset, undefined not known yet (the builder is counting).
    */
   @property({ attribute: false }) matchedIndices: Set<number> | null | undefined = undefined;
   /** The condition's number in the builder (1-based, group leaves included); 0 shows none. */
@@ -101,9 +103,13 @@ class ProtspaceQueryConditionRow extends LitElement {
   @litQuery('.value-add') private _valueAddEl?: HTMLElement;
   @litQuery('.annotation-popover') private _annotationPopoverEl?: PsPopover;
 
+  /** The condition whose value list was last reported open (see `value-list-toggle`). */
+  private _listOpenFor: string | undefined = undefined;
+
   // ─── Auto-focus annotation picker input ───────────────────────────────────
 
   updated(changedProperties: Map<string, unknown>) {
+    this._reportValueList();
     if (!changedProperties.has('_showAnnotationPicker') || !this._showAnnotationPicker) return;
     // The popover (a layer: Escape and an outside press close it) shows itself in its own update.
     // A phone's sheet focuses its title instead, so the keyboard does not cover the list.
@@ -112,6 +118,27 @@ class ProtspaceQueryConditionRow extends LitElement {
         ? this.renderRoot.querySelector<HTMLElement>('.annotation-picker-title')?.focus()
         : this._annotationInputEl?.focus(),
     );
+  }
+
+  /**
+   * Tells the builder which card's value list is open, so it counts for that one. The builder
+   * reuses a row for another card when one is removed, so a list still open then is reported as
+   * closed for the old card and open for the new one.
+   */
+  private _reportValueList() {
+    const openFor = this._showValuePicker ? this.condition?.id : undefined;
+    if (openFor === this._listOpenFor) return;
+    const send = (id: string, open: boolean) =>
+      this.dispatchEvent(
+        new CustomEvent('value-list-toggle', {
+          detail: { id, open },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    if (this._listOpenFor !== undefined) send(this._listOpenFor, false);
+    if (openFor !== undefined) send(openFor, true);
+    this._listOpenFor = openFor;
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -230,17 +257,21 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._showValuePicker = false;
     // The annotation the card already has: keep its values, operator and range.
     if (annotation === this.condition.annotation) return;
-    // Replace the whole condition object so its kind matches the annotation.
-    const base = {
-      id: this.condition.id,
-      logicalOp: this.condition.logicalOp,
-      annotation,
-    };
     // Use the shared numeric check so that a numeric annotation is still treated as
     // numeric after materialization bins it to kind:'categorical' (it keeps
     // sourceKind:'numeric'); otherwise the currently-coloured numeric annotation
     // would offer a categorical bin picker instead of the numeric range input.
     const isNumeric = isNumericAnnotation(this.data?.annotations?.[annotation]);
+    // A NOT is "is none of" only between two category annotations: a numeric card has no
+    // operator, and its own NOT is its "and not", which the builder keeps.
+    const keepsNot = this.condition.kind === 'categorical' && !isNumeric;
+    const logicalOp = this.condition.logicalOp;
+    // Replace the whole condition object so its kind matches the annotation.
+    const base = {
+      id: this.condition.id,
+      logicalOp: logicalOp === 'NOT' && !keepsNot ? undefined : logicalOp,
+      annotation,
+    };
     this._dispatchChanged(isNumeric ? createNumericCondition(base) : createCondition(base));
   }
 

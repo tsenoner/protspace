@@ -24,6 +24,7 @@ import {
 } from '@protspace/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findConditionsForAnnotation } from '../../../../packages/core/src/components/query-builder/query-annotation-conditions';
+import { setJoiner } from '../../../../packages/core/src/components/query-builder/query-operators';
 import {
   createCondition,
   type FilterQuery,
@@ -916,5 +917,43 @@ describe('filter controller: the EAT panel’s context mask (Decision 9)', () =>
     const calls = vi.mocked(evaluateQuery).mock.calls.length;
     expect(m.controller.getContextMask()).toBe(mask);
     expect(vi.mocked(evaluateQuery).mock.calls.length).toBe(calls);
+  });
+
+  it('an "and not" filter applies, undoes and redoes as it was; the slider leaves it alone', () => {
+    const m = mount(() => data, { selectedAnnotation: 'family' });
+    const long: FilterQuery[number] = {
+      id: 'long',
+      kind: 'numeric',
+      annotation: 'length',
+      min: 15,
+      max: null,
+      logicalOp: 'AND',
+    };
+    // Length at least 10, and not at least 15: p10 to p14.
+    const query = setJoiner([...atLeastTen, long], 'long', 'NOT');
+    const before = m.controller.getApplied();
+    editQuery(m.queryBuilder, query);
+    expect(m.queryBuilder.dirty).toBe(true);
+    apply(m.queryBuilder, evaluateQuery(query, data));
+    const after = m.controller.getApplied();
+    expect(after.query).toBe(query);
+    expect(m.plot.filteredProteinIds).toEqual(['p10', 'p11', 'p12', 'p13', 'p14']);
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(2);
+    expect(m.queryBuilder.dirty).toBe(false);
+    expect(Array.from(m.controller.getContextMask() ?? [])).toEqual(
+      range(20).map((i) => (i >= 10 && i < 15 ? 1 : 0)),
+    );
+
+    // The reliability condition joins; the negated card stays as it is.
+    threshold(m.controller, 'family', 0.6);
+    expect(applied(m.controller)[1]).toEqual(query[1]);
+    expect(m.plot.filteredProteinIds).toEqual(['p12', 'p13', 'p14']);
+
+    m.controller.restore(before);
+    expect(applied(m.controller)).toHaveLength(1);
+    m.controller.restore(after);
+    expect(applied(m.controller).slice(0, 2)).toEqual(query);
+    expect(m.plot.filteredProteinIds).toEqual(['p12', 'p13', 'p14']);
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(3);
   });
 });

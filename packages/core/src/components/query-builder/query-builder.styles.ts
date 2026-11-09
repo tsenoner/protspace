@@ -54,9 +54,12 @@ export const queryBuilderStyles = [
       font-weight: var(--ps-weight-semibold);
     }
 
+    /* As tall as the cards, so the footer follows "+ Add condition"; once the cards outgrow the
+       panel they shrink to the room left and scroll, and the footer stays at the bottom with
+       Apply on screen. */
     .query-conditions {
       display: flex;
-      flex: 1 1 auto;
+      flex: 0 1 auto;
       flex-direction: column;
       gap: var(--ps-space-2);
       min-height: 0;

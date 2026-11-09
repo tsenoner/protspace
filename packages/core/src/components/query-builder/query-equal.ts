@@ -2,10 +2,12 @@ import type {
   CategoricalCondition,
   FilterQuery,
   FilterQueryItem,
+  LogicalOp,
   NumericCondition,
 } from './query-types';
 import { clearLeadingOpInList, isFilterGroup } from './query-types';
 import { hasConfiguredCondition } from './query-evaluate';
+import { isCardGroup } from './query-operators';
 
 /** The same values in any order: a condition matches a set of values, so order is no change. */
 function sameValues(a: readonly string[], b: readonly string[]): boolean {
@@ -43,13 +45,24 @@ export function sameQuery(a: FilterQuery, b: FilterQuery): boolean {
   return a.length === b.length && a.every((item, index) => sameItem(item, b[index]));
 }
 
-function leavesById(items: FilterQuery, into = new Map<string, FilterQueryItem>()) {
+/** A condition, and the joiner of the group it is the card of ("and not", "is none of" under "or"). */
+interface Leaf {
+  condition: FilterQueryItem;
+  cardJoiner: LogicalOp | undefined;
+}
+
+function leavesById(items: FilterQuery, into = new Map<string, Leaf>(), cardJoiner?: LogicalOp) {
   for (const item of items) {
-    if (isFilterGroup(item)) leavesById(item.conditions, into);
-    else into.set(item.id, item);
+    if (isFilterGroup(item))
+      leavesById(item.conditions, into, isCardGroup(item) ? item.logicalOp : undefined);
+    else into.set(item.id, { condition: item, cardJoiner });
   }
   return into;
 }
+
+/** The same condition, joined the same way: a card's "and not" lives on the group it is in. */
+const sameLeaf = (a: Leaf, b: Leaf) =>
+  a.cardJoiner === b.cardJoiner && sameItem(a.condition, b.condition);
 
 /**
  * The query without its incomplete conditions (no annotation, or nothing to match yet) and the
@@ -83,7 +96,7 @@ export function queryChanges(
   const edited = new Set<string>();
   for (const [id, leaf] of after) {
     const old = before.get(id);
-    if (!old || !sameItem(old, leaf)) edited.add(id);
+    if (!old || !sameLeaf(old, leaf)) edited.add(id);
   }
   let count = edited.size;
   for (const id of before.keys()) if (!after.has(id)) count += 1;
