@@ -14,7 +14,6 @@ import {
 } from './helpers/explore';
 import { figureEditor } from './helpers/figure';
 import { openLegendOther, openLegendSettings } from './helpers/legend';
-import { themeButton } from './helpers/theme';
 import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
 
 /**
@@ -35,13 +34,6 @@ const help = (page: Page) => appBar(page).getByRole('button', { name: 'Help', ex
 
 const STATES: State[] = [
   { name: 'the idle workbench', open: async () => {} },
-  {
-    name: 'the theme menu',
-    open: async (page) => {
-      await themeButton(page).click();
-      await expect(page.getByRole('menu', { name: 'Theme' })).toBeVisible();
-    },
-  },
   {
     name: 'the Color by picker',
     open: async (page) => {

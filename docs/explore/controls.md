@@ -110,8 +110,10 @@ the [Figure Editor](/explore/figure-editor) for publication figures.
 
 ### Theme
 
-**Theme** switches the page between **System** (follow your operating system, the default),
-**Light** and **Dark**. ProtSpace remembers your choice in this browser. The plot, the legend and
+**Theme** steps the page through **System** (follow your operating system, the default),
+**Dark** and **Light**: each click moves to the next one and applies it at once. Its icon shows the
+mode that is on, and its tooltip says which mode a click switches to. ProtSpace remembers your
+choice in this browser. The plot, the legend and
 the structure viewer follow the theme; exported images and figures are always light.
 
 ### Help

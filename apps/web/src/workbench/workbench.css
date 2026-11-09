@@ -1057,7 +1057,7 @@
 
 /* As on phones (Task 5.4): the actions leave the bar but stay rendered, because a popover inside
    a display: none ancestor never shows. The dataset name opens Import, the More sheet Export, and
-   the Help and Theme menus' ps-menus stay for the same reason. */
+   the Help menu's ps-menu stays for the same reason. */
 .workbench[data-layout='landscape'] [data-workbench='app-bar-actions'] {
   position: absolute;
   width: 0;
@@ -1786,7 +1786,7 @@
   height: 0;
 }
 
-/* The Help and Theme menus' ps-menus stay: a popover host never gets a display: none ancestor. */
+/* The Help menu's ps-menu stays: a popover host never gets a display: none ancestor. */
 .workbench[data-layout='phone']
   [data-workbench='app-bar-actions']
   > :not(.wb-data-actions, ps-menu),

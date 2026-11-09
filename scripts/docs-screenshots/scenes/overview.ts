@@ -1,6 +1,6 @@
 /**
  * The interface overview (`docs/explore/index.md`): the whole workbench, each bar, the plot, the
- * legend, the docked structure, the Theme menu, and a GIF of the sidebar folding and resizing.
+ * legend, the docked structure, the Theme button, and a GIF of the sidebar folding and resizing.
  * Ported from the old static captures (interface-overview 177, scatterplot-example 186,
  * legend-panel 195, structure-viewer 204 at a8cb13ca), on the workbench's helpers.
  */
@@ -37,7 +37,9 @@ async function showStructure(page: Page): Promise<void> {
   await waitForStructureLoaded(page, proteinId, 90_000);
 }
 
-const themeMenu = (page: Page) => page.getByRole('menu', { name: 'Theme', exact: true });
+/** The Theme button's tooltip ("Theme: System. Switch to Dark"), inside the kit button. */
+const themeTooltip = (page: Page) =>
+  appBar(page).locator('ps-icon-button[data-driver-id="theme"] ps-tooltip [part="tip"]');
 
 /**
  * A bar's full height, from `first`'s left edge to `last`'s right edge, grown by `pad`: a full-width
@@ -130,11 +132,12 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     kind: 'png',
     viewport: 'desktop',
     themes: ['light', 'dark'],
+    // The button with its tooltip, which names the mode and what a press does.
     steps: async (page) => {
-      await themeButton(page).click();
-      await expect(themeMenu(page)).toBeVisible();
+      await themeButton(page).hover();
+      await expect(themeTooltip(page)).toBeVisible();
     },
-    target: (page) => around([themeButton(page), themeMenu(page)]),
+    target: (page) => around([themeButton(page), themeTooltip(page)]),
     docs: ['explore/index.md'],
   },
   {
