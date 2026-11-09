@@ -9,6 +9,7 @@ import {
   getRendererDegradedNotification,
 } from './notifications';
 import { chooseTour, type TourKind } from '../tour/storage-key';
+import { bindAnnotationChange } from './annotation-change';
 import { createDatasetController } from './dataset-controller';
 import { createEatPanelController } from './eat-panel-controller';
 import { confirmAction } from './confirm-dialog';
@@ -420,8 +421,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   });
   lifecycle.addCleanup(() => selectionController.dispose());
 
-  // Before the filter controller: both hear annotation-change on the document, and the filter's
-  // reliability mirror runs last, as the control bar's did.
   const viewBarController = createViewBarController({
     plotElement,
     projectionSelect,
@@ -429,7 +428,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     contoursMenu,
     projectionMetadata,
     interactionController,
-    root: document,
     onUserChange(kind) {
       if (kind === 'projection') viewController.handleUserProjectionChange();
       else if (kind === 'annotation') viewController.handleUserAnnotationChange();
@@ -505,7 +503,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     plotElement,
     eatPanel,
     queryBuilder,
-    root: document,
     isPanelShown: () => isPanelShown('filter'),
     subscribePanel,
     // Apply, Reset and the chip's ✕ are undo steps; the EAT slider is not (it reports nothing).
@@ -537,6 +534,16 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     notify,
   });
   lifecycle.addCleanup(() => eatPanelController?.dispose());
+  // Color by's annotation-change reaches the view bar, the filter and the EAT panel in that order
+  // through one listener, whatever order they were created in (annotation-change.ts).
+  lifecycle.addCleanup(
+    bindAnnotationChange({
+      root: document,
+      viewBar: viewBarController,
+      filter: filterController,
+      eat: eatPanelController,
+    }),
+  );
   const statusController = createStatusController({
     plotElement,
     plotStatus,

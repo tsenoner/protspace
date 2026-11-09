@@ -90,7 +90,6 @@ function setup(data = makeData()) {
     // The plot area the details sit in.
     closest: (selector: string) => (selector === '[data-workbench="plot"]' ? plotArea : null),
   };
-  const root = new EventTarget();
   const interactionController = { handleAnnotationChange: vi.fn() };
   const onUserChange = vi.fn();
   const controller = createViewBarController({
@@ -100,7 +99,6 @@ function setup(data = makeData()) {
     contoursMenu: contoursMenu as unknown as ProtspaceContoursMenu,
     projectionMetadata: projectionMetadata as unknown as ProtspaceProjectionMetadata,
     interactionController,
-    root: root as unknown as Document,
     onUserChange,
   });
   return {
@@ -111,17 +109,10 @@ function setup(data = makeData()) {
     contoursMenu,
     projectionMetadata,
     plotArea,
-    root,
     interactionController,
     onUserChange,
     data,
   };
-}
-
-/** As the DOM delivers a bubbling, composed event: on the picker, then on the document. */
-function bubble(target: EventTarget, root: EventTarget, type: string, detail: unknown): void {
-  target.dispatchEvent(new CustomEvent(type, { detail }));
-  root.dispatchEvent(new CustomEvent(type, { detail }));
 }
 
 describe('deriveViewOptions', () => {
@@ -204,7 +195,11 @@ describe('createViewBarController', () => {
     );
     m.onUserChange.mockImplementation((kind: string) => order.push(kind));
 
-    bubble(m.annotationSelect, m.root, 'annotation-change', { annotation: 'species' });
+    m.annotationSelect.dispatchEvent(
+      new CustomEvent('annotation-change', { detail: { annotation: 'species' } }),
+    );
+    // Then the document hears it: the runtime's one listener calls the view bar first.
+    m.controller.handleAnnotationChanged();
 
     // The plot was written in the picker's own listener, before the document heard the event.
     expect(order).toEqual(['plot:species', 'clear provenance', 'annotation']);
@@ -349,10 +344,13 @@ describe('createViewBarController', () => {
     m.projectionSelect.dispatchEvent(
       new CustomEvent('projection-change', { detail: { projection: 'PCA' } }),
     );
-    bubble(m.annotationSelect, m.root, 'annotation-change', { annotation: 'species' });
+    m.annotationSelect.dispatchEvent(
+      new CustomEvent('annotation-change', { detail: { annotation: 'species' } }),
+    );
 
     expect(m.onUserChange).not.toHaveBeenCalled();
     expect(m.plot.selectedProjectionIndex).toBe(0);
+    expect(m.plot.selectedAnnotation).toBe('family');
   });
 
   it('the projection details name annotations from the dataset definitions', () => {

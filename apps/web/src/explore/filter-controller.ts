@@ -46,8 +46,6 @@ interface FilterControllerOptions {
   /** The EAT panel, which follows the applied filter's reliability condition. */
   eatPanel: Pick<ProtspaceEatPanel, 'setReliabilityState'>;
   queryBuilder: ProtspaceQueryBuilder;
-  /** Where `annotation-change` is heard; the document in the app. */
-  root: Pick<Document, 'addEventListener' | 'removeEventListener'>;
   /** Whether the Filter panel is on screen: the builder counts only then. */
   isPanelShown(): boolean;
   /** Calls `listener` whenever `isPanelShown()` may have changed. */
@@ -57,7 +55,10 @@ interface FilterControllerOptions {
 }
 
 export interface FilterController {
-  /** The colouring annotation changed: move the reliability control to its column's state. */
+  /**
+   * The colouring annotation changed: move the reliability control to its column's state. The
+   * runtime's one `annotation-change` listener calls it, before the EAT panel's turn.
+   */
   setSelectedAnnotation(annotation: string): void;
   /** The EAT panel's reliability filter: replaces its base's condition and applies the filter. */
   setEatReliability(baseKey: string, state: EatReliabilityInput): void;
@@ -115,7 +116,6 @@ export function createFilterController({
   plotElement,
   eatPanel,
   queryBuilder,
-  root,
   isPanelShown,
   subscribePanel,
   onFilterCommitted,
@@ -277,11 +277,6 @@ export function createFilterController({
     if (before.query.length > 0) onFilterCommitted?.({ before, after: applied, cause: 'reset' });
   };
 
-  const onAnnotationChange = (event: Event) => {
-    const annotation = (event as CustomEvent<{ annotation?: unknown }>).detail?.annotation;
-    if (typeof annotation === 'string') setSelectedAnnotation(annotation);
-  };
-
   const onDataChange = (event: Event) => {
     const data = (event as CustomEvent<{ data?: VisualizationData | null }>).detail?.data;
     if (!data) return;
@@ -308,7 +303,6 @@ export function createFilterController({
   queryBuilder.addEventListener('query-apply', onQueryApply);
   queryBuilder.addEventListener('query-reset', onQueryReset);
   queryBuilder.addEventListener('query-cancel', onQueryCancel);
-  root.addEventListener('annotation-change', onAnnotationChange);
   plotElement.addEventListener('data-change', onDataChange);
   const unsubscribePanel = subscribePanel(onPanelChange);
 
@@ -427,7 +421,6 @@ export function createFilterController({
       queryBuilder.removeEventListener('query-apply', onQueryApply);
       queryBuilder.removeEventListener('query-reset', onQueryReset);
       queryBuilder.removeEventListener('query-cancel', onQueryCancel);
-      root.removeEventListener('annotation-change', onAnnotationChange);
       plotElement.removeEventListener('data-change', onDataChange);
       unsubscribePanel();
       // The status store outlives this page: no stale count after leaving /explore.

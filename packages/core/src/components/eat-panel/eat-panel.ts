@@ -44,13 +44,14 @@ import {
 } from './eat-reliability-controller';
 import {
   countIn,
+  drillPredictions,
   getEatIndex,
   isKept,
   labelsAt,
   predictionIds,
   summarizeEat,
-  weakestIn,
   type EatDrill,
+  type EatDrillEnd,
   type EatIndex,
   type EatSummary,
 } from './eat-summary';
@@ -78,6 +79,13 @@ const OUTCOME_OPTIONS: SegmentedOption[] = [
   { value: 'dim', label: 'Fade' },
 ];
 const OUTCOME_OPTIONS_OFF = OUTCOME_OPTIONS.map((option) => ({ ...option, disabled: true }));
+
+/** Rows a drill-down list shows when it opens, and adds with each Show more. */
+const DRILL_PAGE = 5;
+const DRILL_END_OPTIONS: SegmentedOption[] = [
+  { value: 'least', label: 'Least reliable' },
+  { value: 'most', label: 'Most reliable' },
+];
 
 /**
  * Scrolls `scroller` the least that shows all of `element`, as `block: 'nearest'` does, without
@@ -156,6 +164,10 @@ export class ProtspaceEatPanel extends LitElement {
   @state() private _othersOpen = false;
   @state() private _displayOpen = false;
   @state() private _drill: OpenDrill | null = null;
+  /** Which end a drill-down list starts from; it holds across lists until Reset. */
+  @state() private _drillEnd: EatDrillEnd = 'least';
+  /** How many rows the open list shows: `DRILL_PAGE`, plus `DRILL_PAGE` per Show more. */
+  @state() private _drillShown = DRILL_PAGE;
   @state() private _exportMenu: ExportMenu | null = null;
   /** The Sort trigger while the label Sort menu is open. */
   @state() private _sortMenu: HTMLElement | null = null;
@@ -241,11 +253,13 @@ export class ProtspaceEatPanel extends LitElement {
   }
 
   /**
-   * Back to the defaults (Show on, keep everything, Hide, trace on, 20 lines). Emits
-   * `eat-overlay-change` once, and `eat-drawing-change` when a Drawing switch moved.
+   * Back to the defaults (Show on, keep everything, Hide, trace on, 20 lines, lists least reliable
+   * first). Emits `eat-overlay-change` once, and `eat-drawing-change` when a Drawing switch moved.
+   * The list order is a way of looking, not a setting: it never counts against `isAtDefaults`.
    */
   reset(): void {
     this._outcome = 'hide';
+    this._drillEnd = 'least';
     if (!this._trace || this._linesPerSource !== DEFAULT_LINES_PER_SOURCE) {
       this._setDrawing(true, DEFAULT_LINES_PER_SOURCE);
     }
@@ -364,6 +378,8 @@ export class ProtspaceEatPanel extends LitElement {
   render() {
     if (!this.active) return nothing;
     if (this.data && !this._index) {
+      // The panel opens on any annotation once the dataset has predictions: this one has none, so
+      // the panel offers the ones that do.
       const label = annotationLabel(this.annotation, this.data.annotations[this.annotation]);
       return html`<div class="eat-scroll">
         <p class="eat-empty">${label} has no predicted values.</p>
@@ -622,7 +638,10 @@ export class ProtspaceEatPanel extends LitElement {
     });
   }
 
-  /** Opens `next`, or closes it when it is the open list; one list is open at a time. */
+  /**
+   * Opens `next`, or closes it when it is the open list; one list is open at a time, and each
+   * opens on its first `DRILL_PAGE` rows.
+   */
   private _toggleDrill(next: OpenDrill): void {
     const open = this._drill;
     const same =
@@ -631,6 +650,21 @@ export class ProtspaceEatPanel extends LitElement {
         ? 'bin' in open && open.bin === next.bin
         : 'label' in open && open.label === next.label);
     this._drill = same ? null : next;
+    this._drillShown = DRILL_PAGE;
+  }
+
+  /**
+   * Show more: the next `DRILL_PAGE` rows in the list's order. Once every prediction shows, the
+   * button goes, and focus moves on to the first row it added.
+   */
+  private _showMore(button: HTMLElement): void {
+    const before = this._drillShown;
+    const focused = (this.renderRoot as ShadowRoot).activeElement === button;
+    this._drillShown += DRILL_PAGE;
+    void this.updateComplete.then(() => {
+      if (!focused || button.isConnected) return;
+      this.renderRoot.querySelectorAll<HTMLElement>('.eat-drill-row')[before]?.focus();
+    });
   }
 
   private _bar(bin: number): HTMLElement | null {
@@ -733,10 +767,11 @@ export class ProtspaceEatPanel extends LitElement {
   }
 
   /**
-   * The open list: its 5 least reliable predictions in the context, weakest first, each a button
-   * that selects the protein and says where its label came from; then `Select all N in range` and
-   * `Showing 5 of 41`. A row outside the range says it is hidden (Hide) or faded (Fade), and stays
-   * clickable.
+   * The open list: 5 of its predictions in the context from the chosen end, the least reliable
+   * (weakest first, the default) or the most reliable (strongest first), each a button that selects
+   * the protein and says where its label came from; then `Show 5 more` while some are left,
+   * `Select all N in range` and `Showing 5 of 41`. A row outside the range says it is hidden
+   * (Hide) or faded (Fade), and stays clickable.
    */
   private _renderDrill(): TemplateResult | typeof nothing {
     const index = this._index;
@@ -752,15 +787,18 @@ export class ProtspaceEatPanel extends LitElement {
       drill = { label };
     }
     const state = this._eat.reliability;
-    const weakest = weakestIn(index, drill, this.context);
+    const end = this._drillEnd;
+    const shown = drillPredictions(index, drill, this.context, end, this._drillShown);
+    const which = end === 'least' ? 'least reliable' : 'most reliable';
     const heading =
       'bin' in open
-        ? `${weakest.length} least reliable in ${binRange(open.bin)}`
-        : countNoun(weakest.length, 'least reliable prediction', 'least reliable predictions');
+        ? `${shown.length} ${which} in ${binRange(open.bin)}`
+        : countNoun(shown.length, `${which} prediction`, `${which} predictions`);
     const predicted = data.annotation_predicted?.[this.annotation];
     const { total, kept } = countIn(index, drill, this.context, state);
+    const more = Math.min(DRILL_PAGE, total - shown.length);
     const hides = this._eat.overlayEnabled;
-    const rows = Array.from(weakest, (k) => {
+    const rows = Array.from(shown, (k) => {
       const confidence = index.confidence[k];
       const labels = labelsAt(index, k);
       const id = data.protein_ids[index.order[k]];
@@ -795,11 +833,30 @@ export class ProtspaceEatPanel extends LitElement {
       </li>`;
     });
     return html`<div id="eat-drill" class="eat-drill" role="region" aria-label=${heading}>
-      <p class="eat-drill-heading">${heading}</p>
+      <div class="eat-drill-head">
+        <p class="eat-drill-heading">${heading}</p>
+        <ps-segmented
+          class="eat-drill-end"
+          label="List first"
+          .options=${DRILL_END_OPTIONS}
+          .value=${end}
+          @change=${(event: Event) =>
+            (this._drillEnd = (event.currentTarget as PsSegmented).value as EatDrillEnd)}
+        ></ps-segmented>
+      </div>
       <p class="eat-help">Pick one to see it on the map and where its label came from.</p>
       <ul class="eat-drill-list">
         ${rows}
       </ul>
+      ${more > 0
+        ? html`<button
+            type="button"
+            class="eat-drill-more"
+            @click=${(event: Event) => this._showMore(event.currentTarget as HTMLElement)}
+          >
+            Show ${formatCount(more)} more
+          </button>`
+        : nothing}
       <div class="eat-drill-foot">
         <button
           type="button"
@@ -814,7 +871,9 @@ export class ProtspaceEatPanel extends LitElement {
           Select all ${formatCount(kept)} in range
         </button>
         ${this._renderExportButton(drill)}
-        <span class="eat-drill-count">Showing ${weakest.length} of ${formatCount(total)}</span>
+        <span class="eat-drill-count"
+          >Showing ${formatCount(shown.length)} of ${formatCount(total)}</span
+        >
       </div>
     </div>`;
   }

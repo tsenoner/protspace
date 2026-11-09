@@ -37,8 +37,8 @@ interface PanelTabsProps {
  * The Legend, Filter and EAT tabs below 951 px (design decision 17), where the desktop rail is
  * hidden. A copy renders at the start of each panel's header, so the tabs stay in the shown
  * panel's header row; CSS hides them on desktop. Arrow keys, Home and End switch panels at once
- * (automatic activation). EAT without predictions to show is `aria-disabled`: the arrow keys skip
- * it, and a tap says why.
+ * (automatic activation). EAT on a dataset without predictions is `aria-disabled`: the arrow keys
+ * skip it, and a tap says why.
  */
 export function PanelTabs({ panel, slot }: PanelTabsProps) {
   const { eatAvailability, eatAdjusted } = useWorkbenchStatus();
@@ -50,9 +50,7 @@ export function PanelTabs({ panel, slot }: PanelTabsProps) {
     let next: SidebarPanel | null = null;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       const step = event.key === 'ArrowRight' ? 1 : -1;
-      // From the disabled EAT tab, which an annotation without EAT keeps open, as from the end.
-      const from = at === -1 ? enabled.length - (step > 0 ? 1 : 0) : at;
-      next = enabled[(from + step + enabled.length) % enabled.length].panel;
+      next = enabled[(at + step + enabled.length) % enabled.length].panel;
     } else if (event.key === 'Home') {
       next = enabled[0].panel;
     } else if (event.key === 'End') {

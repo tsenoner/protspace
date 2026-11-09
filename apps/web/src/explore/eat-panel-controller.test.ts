@@ -24,20 +24,13 @@ const EAT_DATA: VisualizationData = {
 };
 
 describe('eatAvailabilityFor', () => {
-  it('is available for an annotation with predictions', () => {
-    expect(eatAvailabilityFor(EAT_DATA, 'ec')).toEqual({ kind: 'available' });
-  });
-
-  it('names an annotation without predictions when another one has some', () => {
-    expect(eatAvailabilityFor(EAT_DATA, 'family')).toEqual({
-      kind: 'annotation',
-      annotationLabel: 'Family',
-    });
+  it('is available whenever an annotation has predictions', () => {
+    expect(eatAvailabilityFor(EAT_DATA)).toEqual({ kind: 'available' });
   });
 
   it('is the dataset kind when no annotation has predictions, or with no data', () => {
-    expect(eatAvailabilityFor(TEST_DATA, 'ec')).toEqual({ kind: 'dataset' });
-    expect(eatAvailabilityFor(null, 'ec')).toEqual({ kind: 'dataset' });
+    expect(eatAvailabilityFor(TEST_DATA)).toEqual({ kind: 'dataset' });
+    expect(eatAvailabilityFor(null)).toEqual({ kind: 'dataset' });
   });
 });
 
@@ -144,20 +137,22 @@ describe('createEatPanelController', () => {
   });
 
   it('feeds the panel the plot data and annotation, and publishes availability', () => {
-    const { plot, root, panel } = setup({ value: false });
+    const { plot, root, panel, controller } = setup({ value: false });
     expect(panel.data).toBe(EAT_DATA);
     expect(panel.annotation).toBe('ec');
     expect(getWorkbenchStatus().eatAvailability).toEqual({ kind: 'available' });
     expect(getWorkbenchStatus().eatAnnotationLabel).toBe('EC number');
 
+    // An annotation without predictions: the panel still opens, on its chooser, and its header
+    // names no annotation.
     plot.selectedAnnotation = 'family';
+    // The panel hears no annotation-change itself: the runtime's one listener calls it, last.
     root.dispatchEvent(new Event('annotation-change'));
+    expect(panel.annotation).toBe('ec');
+    controller.handleAnnotationChange();
     expect(panel.annotation).toBe('family');
-    expect(getWorkbenchStatus().eatAnnotationLabel).toBe('Family');
-    expect(getWorkbenchStatus().eatAvailability).toEqual({
-      kind: 'annotation',
-      annotationLabel: 'Family',
-    });
+    expect(getWorkbenchStatus().eatAnnotationLabel).toBe('');
+    expect(getWorkbenchStatus().eatAvailability).toEqual({ kind: 'available' });
 
     plot.data = TEST_DATA;
     plot.dispatchEvent(new Event('data-change'));

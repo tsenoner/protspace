@@ -9,11 +9,12 @@ type DatasetPhase = 'starting' | 'loading' | 'ready' | 'empty';
 /** The phone structure sheet: folded to its header, or expanded over the lower half. */
 type StructureSheet = 'folded' | 'expanded';
 
-/** Whether the EAT panel can open: why not, for the rail tooltip and the phone tab's hint. */
+/**
+ * Whether the EAT panel can open: whenever some annotation of the dataset has predictions. When
+ * Color by has none, the panel opens on a chooser of those that do.
+ */
 export type EatAvailability =
   | { kind: 'available' }
-  /** The Color by annotation has no predictions; another one may. */
-  | { kind: 'annotation'; annotationLabel: string }
   /** No annotation of the dataset has any. */
   | { kind: 'dataset' };
 
@@ -49,7 +50,10 @@ export interface WorkbenchStatus {
   eatAvailability: EatAvailability;
   /** The EAT panel's settings differ from their defaults: the rail item's and the tab's dot. */
   eatAdjusted: boolean;
-  /** The Color by annotation's display name, for the EAT panel's header (`EAT · EC number`). */
+  /**
+   * The Color by annotation's display name, for the EAT panel's header (`EAT · EC number`); empty
+   * when it has no predictions, as the panel then shows its chooser.
+   */
   eatAnnotationLabel: string;
   /** EAT Dim's reliability filter while it fades predictions (the plot's chip); else null. */
   eatDim: EatReliabilityState | null;
@@ -86,9 +90,7 @@ export function subscribeWorkbenchStatus(listener: () => void): () => void {
   };
 }
 
-const sameAvailability = (a: EatAvailability, b: EatAvailability): boolean =>
-  a.kind === b.kind &&
-  (a.kind !== 'annotation' || a.annotationLabel === (b as typeof a).annotationLabel);
+const sameAvailability = (a: EatAvailability, b: EatAvailability): boolean => a.kind === b.kind;
 
 /** Merges `patch` and notifies, unless no field changes. An equal availability keeps its object. */
 export function setWorkbenchStatus(patch: Partial<WorkbenchStatus>): void {
@@ -102,11 +104,11 @@ export function setWorkbenchStatus(patch: Partial<WorkbenchStatus>): void {
   for (const listener of [...listeners]) listener();
 }
 
-/** Why the EAT panel cannot open (the rail's tooltip, the phone tab's hint); null when it can. */
+/**
+ * Why the EAT panel cannot open (the rail's tooltip, the phone tab's hint); null when it can. Only
+ * a dataset without predictions keeps it shut.
+ */
 export function eatUnavailableReason(availability: EatAvailability): string | null {
-  if (availability.kind === 'annotation') {
-    return `${availability.annotationLabel} has no EAT predictions. Color by an annotation marked EAT.`;
-  }
   if (availability.kind === 'dataset') return 'This dataset has no transferred annotations (EAT).';
   return null;
 }

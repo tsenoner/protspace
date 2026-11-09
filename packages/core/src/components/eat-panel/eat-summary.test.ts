@@ -6,6 +6,7 @@ import { evaluateQuery } from '../query-builder/query-evaluate';
 import {
   binOf,
   countIn,
+  drillPredictions,
   EAT_BIN_COUNT,
   getEatIndex,
   isKept,
@@ -13,7 +14,6 @@ import {
   labelsAt,
   rankOf,
   summarizeEat,
-  weakestIn,
 } from './eat-summary';
 import type { EatDrill, EatIndex, EatSummary } from './eat-summary';
 import {
@@ -135,7 +135,9 @@ describe('eat summary', () => {
 
   it('lists the weakest five of a bin and of a label, weakest first', () => {
     const weakest = (drill: EatDrill, context: Uint8Array | null, limit?: number) =>
-      ids(Array.from(weakestIn(index, drill, context, limit), (k) => index.order[k]));
+      ids(
+        Array.from(drillPredictions(index, drill, context, 'least', limit), (k) => index.order[k]),
+      );
     const BIN_55: EatDrill = { bin: 11 };
     const LABEL_A: EatDrill = { label: 0 };
     expect(weakest(BIN_55, null)).toEqual(['P5', 'P7']);
@@ -147,6 +149,22 @@ describe('eat summary', () => {
       kept: 2,
     });
     expect(countIn(index, BIN_55, null, at(0.6, 1))).toEqual({ total: 2, kept: 0 });
+  });
+
+  it('lists the strongest of a bin and of a label from the end of the same order', () => {
+    const strongest = (drill: EatDrill, context: Uint8Array | null, limit?: number) =>
+      ids(
+        Array.from(drillPredictions(index, drill, context, 'most', limit), (k) => index.order[k]),
+      );
+    const BIN_55: EatDrill = { bin: 11 };
+    const LABEL_A: EatDrill = { label: 0 };
+    // P5 and P7 tie at 0.55: read from the end, the id tie-break runs backwards too.
+    expect(strongest(BIN_55, null)).toEqual(['P7', 'P5']);
+    expect(strongest(LABEL_A, null)).toEqual(['P9', 'P5', 'P3']);
+    expect(strongest(LABEL_A, null, 2)).toEqual(['P9', 'P5']);
+    expect(strongest(LABEL_A, mask(['P9']))).toEqual(['P5', 'P3']);
+    // More than there are: every one, once.
+    expect(strongest(LABEL_A, null, 10)).toEqual(['P9', 'P5', 'P3']);
   });
 
   it('counts lent predictions per source, missing sources included', () => {

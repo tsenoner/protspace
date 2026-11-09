@@ -59,7 +59,7 @@ export function Workbench() {
   const legendFraction = legendFractionPreview ?? layout.legendFraction;
   const desktop = mode === 'desktop';
   // A dataset with no EAT shows the legend in the EAT panel's place. The stored panel stays, so the
-  // next EAT dataset reopens it; an annotation without EAT keeps the panel on its empty state.
+  // next EAT dataset reopens it; an annotation without EAT shows the panel's chooser.
   const panel =
     layout.panel === 'eat' && eatAvailability.kind === 'dataset' ? 'legend' : layout.panel;
   // Floating is desktop-only: below 951 px a stored floating card shows docked (storage keeps it).

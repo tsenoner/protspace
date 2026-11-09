@@ -397,18 +397,25 @@ export function labelsAt(index: EatIndex, k: number): string[] {
   return labels;
 }
 
+/** Which end of the reliability order a drill-down list starts from. */
+export type EatDrillEnd = 'least' | 'most';
+
 /**
- * The weakest predictions behind a histogram bar or a label, weakest first, as positions `k` in
- * `order` (the protein is `order[k]`, its reliability `confidence[k]`).
+ * The first `limit` predictions behind a histogram bar or a label from one end of the reliability
+ * order: the weakest first (`least`), or the strongest first (`most`, the same order read from its
+ * end). Positions `k` in `order` (the protein is `order[k]`, its reliability `confidence[k]`).
  */
-export function weakestIn(
+export function drillPredictions(
   index: EatIndex,
   drill: EatDrill,
   context: Uint8Array | null,
+  end: EatDrillEnd = 'least',
   limit = 5,
 ): Int32Array {
   const found: number[] = [];
-  for (let k = 0; k < index.order.length && found.length < limit; k++) {
+  const n = index.order.length;
+  for (let i = 0; i < n && found.length < limit; i++) {
+    const k = end === 'least' ? i : n - 1 - i;
     if (context && !context[index.order[k]]) continue;
     if (inDrill(index, drill, k)) found.push(k);
   }
