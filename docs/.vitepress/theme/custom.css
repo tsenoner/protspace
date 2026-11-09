@@ -1,0 +1,124 @@
+/*
+ * The docs' nav bar in the site's top bar geometry (config/site-bar.css), so the wordmark and the
+ * Feedback and GitHub icons sit where the landing's header and Explore's app bar have them.
+ * VitePress lays the bar out from --vp-nav-height, so the content, the sidebar and the phone's
+ * local nav move with it. Its component styles are scoped, hence the .VPNav prefix: one class more
+ * than theirs.
+ */
+@import '../../../config/site-bar.css';
+
+:root {
+  --vp-nav-height: var(--site-bar-height);
+  --vp-nav-logo-height: var(--site-bar-logo-height);
+}
+
+/* --vp-nav-height includes the 1 px divider, as the app's bars include their border: VitePress draws
+   it under the bar, a pixel lower. */
+.VPNav .VPNavBar .divider {
+  margin-top: -1px;
+}
+
+.VPNav .VPNavBar .wrapper {
+  padding: 0 var(--site-bar-inset-end) 0 var(--site-bar-inset-start);
+}
+
+/* Beside the sidebar the wordmark sits over it, and the bar's right part ends at the inset. Past
+   1440 px VitePress centres the page; the bar keeps its insets, as the app's bars do. */
+@media (min-width: 960px) {
+  .VPNav .VPNavBar.has-sidebar .wrapper {
+    padding: 0;
+  }
+
+  .VPNav .VPNavBar.has-sidebar .container > .title {
+    padding-left: var(--site-bar-inset-start);
+  }
+
+  .VPNav .VPNavBar.has-sidebar .content {
+    padding-right: var(--site-bar-inset-end);
+  }
+}
+
+/* The phone's menu button is the bar's last button, as wide as the app's icon buttons. Its lines
+   sit 2 px left of centre, so they end where Explore's search icon, the last button of its phone
+   bar, ends. */
+.VPNav .VPNavBarHamburger {
+  width: var(--site-bar-icon-box);
+}
+
+.VPNav .VPNavBarHamburger .container {
+  margin-right: 4px;
+}
+
+/* "…" holds the appearance switch below 1280 px; the end links come after it now. */
+.VPNav .VPNavBarExtra {
+  margin-right: 0;
+}
+
+/* ── The end links (theme/end-links.ts) ──────────────────────────────────── */
+
+.VPNav .site-end-links {
+  display: none;
+  align-items: center;
+  gap: var(--site-bar-icon-gap);
+}
+
+@media (min-width: 768px) {
+  .VPNav .site-end-links {
+    display: flex;
+  }
+}
+
+/* VitePress's divider between the appearance switch and its social links. */
+@media (min-width: 1280px) {
+  .VPNav .site-end-links::before {
+    content: '';
+    width: 1px;
+    height: 24px;
+    margin: 0 calc(8px - var(--site-bar-icon-gap)) 0 16px;
+    background-color: var(--vp-c-divider);
+  }
+}
+
+.VPNav .site-end-link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--site-bar-icon-box);
+  height: var(--site-bar-icon-box);
+  border-radius: 6px;
+  color: var(--vp-c-text-2);
+  transition: background-color 0.25s;
+}
+
+/* As in the app: the background changes, the colour stays. */
+.VPNav .site-end-link:hover {
+  background-color: var(--vp-c-default-soft);
+}
+
+/* In the phone menu, after the appearance switch: named rows, like its other links. */
+.VPNavScreen .site-end-links.labelled {
+  display: block;
+  margin-top: 8px;
+}
+
+.VPNavScreen .site-end-links.labelled .site-end-link {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
+  width: auto;
+  height: auto;
+  border-bottom: 1px solid var(--vp-c-divider);
+  border-radius: 0;
+  padding: 12px 0 11px;
+  line-height: 24px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--vp-c-text-1);
+  transition: color 0.25s;
+}
+
+.VPNavScreen .site-end-links.labelled .site-end-link:hover {
+  background: none;
+  color: var(--vp-c-brand-1);
+}

@@ -1,0 +1,45 @@
+/*
+ * The top bar geometry Home, Explore and Docs share. Each page builds its own bar (Home's
+ * Header.tsx, Explore's AppBar.tsx with workbench.css, the docs' VitePress nav), but all three read
+ * these properties, so the wordmark and the right-hand icons stay on the same lines when the
+ * reader moves between the pages.
+ *
+ * Imported by apps/web/src/index.css and docs/.vitepress/theme/custom.css.
+ */
+
+:root {
+  /* The bar's height, its 1 px bottom border included. */
+  --site-bar-height: 48px;
+  --site-bar-logo-height: 24px;
+  /* From the window's left edge to the wordmark. */
+  --site-bar-inset-start: 24px;
+  /* From the window's right edge to the box of the last icon button. */
+  --site-bar-inset-end: 16px;
+  /* An icon button's box and the gap between two of them: Explore's kit buttons
+     (--ps-control-md, --ps-space-1-5), which Home and Docs copy for their own. */
+  --site-bar-icon-box: 32px;
+  --site-bar-icon-gap: 6px;
+}
+
+/* Finger-sized buttons (the kit's --ps-touch-target). */
+@media (pointer: coarse) {
+  :root {
+    --site-bar-icon-box: 40px;
+  }
+}
+
+/* Explore's touch tablet closes the gaps between its wider buttons. */
+@media (pointer: coarse) and (max-width: 950px) {
+  :root {
+    --site-bar-icon-gap: 0px;
+  }
+}
+
+/* Phones (Explore's phone layout starts at 640 px too): the bar ends in one button, close to the
+   edge, and the wordmark moves in. */
+@media (max-width: 640px) {
+  :root {
+    --site-bar-inset-start: 16px;
+    --site-bar-inset-end: 4px;
+  }
+}

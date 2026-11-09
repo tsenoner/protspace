@@ -1,8 +1,9 @@
 /**
  * Shared navigation configuration for ProtSpace
  *
- * Single source of truth for all navigation items across the app and docs.
- * This ensures consistent navigation structure in both React app and VitePress docs.
+ * Single source of truth for the text navigation across the app and docs. The icon links every
+ * top bar ends with (Feedback, then GitHub) are not navigation: each bar renders them itself, in
+ * the same order and boxes (config/site-bar.css).
  */
 import { getUrls, type Environment } from './urls';
 import { PUBLICATION_WEB, PUBLICATION_JMB, doiUrl } from './citations';
@@ -15,10 +16,6 @@ interface NavItem {
    * are app-relative paths, so they stay on whatever origin and port the app is served from.
    */
   internal?: boolean;
-  /** Target attribute for external links */
-  target?: string;
-  /** Icon identifier (optional, for custom rendering) */
-  icon?: string;
   /** Dropdown items for navigation groups */
   items?: Array<{ text: string; link: string }>;
 }
@@ -52,13 +49,6 @@ export const getNavigation = (mode: Environment): NavItem[] => {
         { text: 'Latest publication (bioRxiv)', link: doiUrl(PUBLICATION_WEB.doi) },
         { text: 'Original publication (JMB)', link: doiUrl(PUBLICATION_JMB.doi) },
       ],
-    },
-    {
-      text: 'GitHub',
-      link: 'https://github.com/tsenoner/protspace',
-      internal: false,
-      target: '_blank',
-      icon: 'github',
     },
   ];
 };

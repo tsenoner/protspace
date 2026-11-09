@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* The top bar geometry the landing, Explore and the docs share. */
+@import '../../../config/site-bar.css';
 
 @plugin 'tailwindcss-animate';
 

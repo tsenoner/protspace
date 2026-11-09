@@ -18,6 +18,14 @@ URLS = { production: {...}, development: {...} }
 getNavigation(mode); // Returns all navigation items
 ```
 
+### Top bar geometry (`site-bar.css`)
+
+The height of the top bar, the wordmark's size and inset, and the inset and size of the icon
+buttons the bar ends with (Feedback, then GitHub), as CSS custom properties. The landing's header
+(`apps/web/src/components/Header.tsx`), Explore's app bar (`apps/web/src/workbench/workbench.css`)
+and the docs' nav (`docs/.vitepress/theme/custom.css`) all read them, so the wordmark and the
+icons stay on the same lines when switching pages.
+
 ## Usage
 
 ### URLs
@@ -41,7 +49,7 @@ const navItems = getNavigation(mode);
 
 // VitePress config
 import { getNavigation } from '../../config/navigation';
-const primaryNav = getNavigation(mode).filter((item) => !item.target);
+const navItems = getNavigation(mode);
 ```
 
 ## Development Proxy
