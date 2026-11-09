@@ -278,3 +278,41 @@ describe('the legend’s Other popover', () => {
     }
   });
 });
+
+describe('Other stays the last row', () => {
+  // Fourteen categories by count, A (14) down to N (1): ten rows, and K to N under Other.
+  const FOURTEEN = Object.fromEntries(
+    'ABCDEFGHIJKLMN'.split('').map((value, index) => [value, 14 - index]),
+  );
+
+  it('in Your order, after rows go into Other and come back out of it', async () => {
+    const { legend } = await mountLegendWithScatterplot(categoricalData(FOURTEEN), 'family');
+    await settle(legend);
+    legend._actions.applySortMode('manual');
+    await settle(legend);
+
+    // Two rows dropped onto Other, as a drag commits it.
+    for (const value of ['B', 'E']) {
+      legend._actions.mergeToOther(value);
+      await settle(legend);
+    }
+    expect(rowValues(legend)).not.toContain('B');
+    // Four taken out again from the popover: before the fix the last one listed below Other.
+    await openOther(legend);
+    for (const value of ['K', 'B', 'L', 'M']) {
+      addButton(legend, value).click();
+      await settle(legend);
+    }
+
+    expect(rowValues(legend)).toEqual([
+      ...['A', 'C', 'D', 'F', 'G', 'H', 'I', 'J'],
+      ...['K', 'B', 'L', 'M'],
+      LEGEND_VALUES.OTHER,
+    ]);
+    const zOrders = legend._legendItems.map((item) => item.zOrder).sort((a, b) => a - b);
+    expect(zOrders).toEqual(zOrders.map((_, index) => index));
+    expect(legend._legendItems.find((item) => item.value === LEGEND_VALUES.OTHER)!.zOrder).toBe(
+      zOrders.length - 1,
+    );
+  });
+});

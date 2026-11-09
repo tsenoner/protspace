@@ -63,6 +63,9 @@ current legend cap (**Max legend items** in the [settings](#settings)). The row 
   legend cap rises by one). **Add all** moves every value out of `Other`.
 - Drag a row onto `Other` to group it there again.
 
+`Other` is always the last row, in every sort, **Your order** included, however many values you
+move into it or take out of it.
+
 ![The Other popover open beside the legend](./images/legend-other-popover.png){.light-only}
 ![The Other popover open beside the legend](./images/legend-other-popover-dark.png){.dark-only}
 

@@ -9,6 +9,7 @@ import {
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
   numericOrderFromItems,
+  renumberKeepingOtherLast,
   reorderByValues,
   resolvePersistedSettings,
   reverseKeepingOtherLast,
@@ -139,6 +140,27 @@ describe('sortItemsForDisplay', () => {
     const before = values(items);
     expect(values(sortItemsForDisplay(items))).toEqual(['A', 'B', 'C', OTHER]);
     expect(values(items)).toEqual(before);
+  });
+
+  it('lists Other last whatever its zOrder', () => {
+    const items = [item('A', 0), item(OTHER, 1), item('B', 2), item('C', 2)];
+    expect(values(sortItemsForDisplay(items))).toEqual(['A', 'B', 'C', OTHER]);
+  });
+});
+
+describe('renumberKeepingOtherLast', () => {
+  it('numbers the rows from 0 in their order, ties by list position, and Other after them', () => {
+    // A merge left a gap at 1, a row taken out of Other shares D's 3, and Other sits at 2.
+    const items = [item('A', 0), item('C', 2.5), item('D', 3), item('X', 3), item(OTHER, 2)];
+    const renumbered = renumberKeepingOtherLast(items);
+    expect(values(renumbered)).toEqual(['A', 'C', 'D', 'X', OTHER]);
+    expect(zOrders(renumbered)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('returns the rows that already have their number unchanged', () => {
+    const items = [item('A', 0), item('B', 1), item(OTHER, 2)];
+    const renumbered = renumberKeepingOtherLast(items);
+    expect(renumbered.every((each, index) => each === items[index])).toBe(true);
   });
 });
 

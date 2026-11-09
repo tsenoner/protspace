@@ -65,12 +65,35 @@ export function reverseSortMode(mode: ActiveSortMode): ActiveSortMode {
   ) as ActiveSortMode;
 }
 
+const otherLast = (item: LegendItem): number => Number(item.value === LEGEND_VALUES.OTHER);
+
 /**
  * Display order for the legend list: by zOrder, which every sort mode sets upstream, so the list
- * reads in the order the plot draws.
+ * reads in the order the plot draws. Other is last whatever its zOrder says.
  */
 export function sortItemsForDisplay(items: readonly LegendItem[]): LegendItem[] {
-  return [...items].sort((a, b) => a.zOrder - b.zOrder);
+  return [...items].sort((a, b) => otherLast(a) - otherLast(b) || a.zOrder - b.zOrder);
+}
+
+/**
+ * The rows' zOrders numbered 0..n-1 in their order (by zOrder, ties by list position) and Other's
+ * after them; the list keeps its own order. A gap, a shared zOrder or Other in the middle, as an
+ * older stored order or a merge followed by a take-out leave them, is gone after it.
+ */
+export function renumberKeepingOtherLast(items: readonly LegendItem[]): LegendItem[] {
+  const ranked = items
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (a, b) =>
+        otherLast(a.item) - otherLast(b.item) || a.item.zOrder - b.item.zOrder || a.index - b.index,
+    );
+  const zOrders = new Array<number>(items.length);
+  ranked.forEach(({ index }, rank) => {
+    zOrders[index] = rank;
+  });
+  return items.map((item, index) =>
+    item.zOrder === zOrders[index] ? item : { ...item, zOrder: zOrders[index] },
+  );
 }
 
 /** The rows by zOrder the other way round, Other still last, zOrders renumbered from 0. */

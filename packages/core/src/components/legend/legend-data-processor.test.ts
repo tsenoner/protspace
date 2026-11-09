@@ -985,10 +985,40 @@ describe('legend-data-processor', () => {
           zOrder: 99,
         },
       ];
-      // In manual mode, existing zOrders should be preserved
+      // In manual mode a row keeps its place; the places are numbered from 0 without gaps.
       const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, existing, 'manual');
-      const cat2 = items.find((i) => i.value === 'category2');
-      expect(cat2?.zOrder).toBe(99);
+      expect(items.map((i) => [i.value, i.zOrder])).toEqual([
+        ['category1', 0],
+        ['category2', 1],
+      ]);
+    });
+
+    it('in manual mode closes the gaps a merge leaves and keeps Other last', () => {
+      // B went into Other, so the kept rows hold 0, 2 and 3; X and Y come out of Other.
+      const existing: LegendItem[] = [
+        { value: 'A', color: '#a00', shape: 'circle', count: 9, isVisible: true, zOrder: 0 },
+        { value: 'C', color: '#c00', shape: 'circle', count: 7, isVisible: true, zOrder: 2 },
+        { value: 'D', color: '#d00', shape: 'circle', count: 6, isVisible: true, zOrder: 3 },
+        { value: 'Other', color: '#888', shape: 'circle', count: 9, isVisible: true, zOrder: 4 },
+      ];
+      const topItems: Array<[string, number]> = [
+        ['A', 9],
+        ['C', 7],
+        ['D', 6],
+        ['X', 2],
+        ['Y', 1],
+      ];
+      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 3, existing, 'manual');
+      expect(
+        [...items].sort((a, b) => a.zOrder - b.zOrder).map((i) => [i.value, i.zOrder]),
+      ).toEqual([
+        ['A', 0],
+        ['C', 1],
+        ['D', 2],
+        ['X', 3],
+        ['Y', 4],
+        ['Other', 5],
+      ]);
     });
 
     it('uses sorted index for z-order in non-manual modes', () => {
@@ -1516,7 +1546,7 @@ describe('legend-data-processor', () => {
           zOrder: 99,
         },
       ];
-      // In manual mode, existing zOrders should be preserved
+      // In manual mode a row keeps its place behind the new ones; places are numbered from 0.
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
@@ -1526,7 +1556,62 @@ describe('legend-data-processor', () => {
         existing,
         'manual',
       );
-      expect(result.legendItems.find((i) => i.value === 'a')?.zOrder).toBe(99);
+      const byZOrder = [...result.legendItems].sort((x, y) => x.zOrder - y.zOrder);
+      expect(byZOrder.map((i) => [i.value, i.zOrder])).toEqual([
+        ['b', 0],
+        ['c', 1],
+        ['a', 2],
+      ]);
+    });
+
+    it('keeps Other last in manual mode through merges into it and take-outs from it', () => {
+      // Fourteen categories, counts 14 down to 1; ten rows and Other (K to N) to start with.
+      const counts = new Map(
+        'ABCDEFGHIJKLMN'.split('').map((value, index) => [value, 14 - index] as const),
+      );
+      const run = (
+        existing: LegendItem[],
+        max: number,
+        pending: { extract?: string; merge?: string } = {},
+      ) => {
+        const visible = new Set(existing.filter((i) => i.value !== 'Other').map((i) => i.value));
+        return LegendDataProcessor.processLegendItems(
+          ctx,
+          'annotation1',
+          counts,
+          max,
+          false,
+          existing,
+          'manual',
+          {},
+          visible,
+          new Map(),
+          true,
+          pending.extract,
+          pending.merge,
+        ).legendItems;
+      };
+      const order = (items: LegendItem[]) =>
+        [...items].sort((a, b) => a.zOrder - b.zOrder).map((i) => i.value);
+
+      let items = run([], 10);
+      // Two rows go into Other, then four come out of it. Before Other was pinned, the gaps the
+      // merges left let the last row taken out number past Other and list below it.
+      items = run(items, 9, { merge: 'B' });
+      items = run(items, 8, { merge: 'E' });
+      items = run(items, 9, { extract: 'K' });
+      items = run(items, 10, { extract: 'B' });
+      items = run(items, 11, { extract: 'L' });
+      items = run(items, 12, { extract: 'M' });
+
+      expect(order(items)).toEqual([
+        ...['A', 'C', 'D', 'F', 'G', 'H', 'I', 'J'],
+        ...['K', 'B', 'L', 'M'],
+        'Other',
+      ]);
+      expect(items.map((i) => i.zOrder).sort((a, b) => a - b)).toEqual(
+        Array.from({ length: items.length }, (_, index) => index),
+      );
     });
 
     it('uses sorted index for z-order across processing in non-manual modes', () => {
