@@ -1,17 +1,13 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { test, expect } from '@playwright/test';
-import {
-  dismissTourIfPresent,
-  waitForExploreDataLoad,
-  getFirstLegendItemValue,
-  openImportMenu,
-} from './helpers/explore';
+import { dismissTourIfPresent, openImportMenu, waitForExploreDataLoad } from './helpers/explore';
 import {
   distinctCanvasColors,
   simulateTextureLimit,
   simulatedGlStats,
 } from './helpers/gl-simulation';
+import { getFirstLegendItemValue } from './helpers/legend';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 // The Swiss-Prot bundle from the perf-datasets release, fetched by

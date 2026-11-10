@@ -23,6 +23,7 @@ import {
   clickProteinNearPlotCentre,
   rail,
   structurePanel,
+  workbenchRoot,
 } from '../../../apps/web/tests/helpers/workbench';
 import type { CaptureEntry, Clip } from '../capture-plan';
 import { around } from './clip';
@@ -145,7 +146,7 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     kind: 'gif',
     viewport: 'desktop',
     steps: async (page, cap) => {
-      const workbench = page.locator('.workbench');
+      const workbench = workbenchRoot(page);
       await cap.hold(800);
 
       await cap.click(rail(page).getByRole('button', { name: 'Collapse sidebar' }), {

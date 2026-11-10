@@ -8,7 +8,6 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import {
   appBar,
   dismissTourIfPresent,
-  viewBar,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
 } from './explore';
@@ -82,9 +81,8 @@ export async function openExplorePhone(page: Page): Promise<void> {
 
 // ─── Phone controls ────────────────────────────────────────────────────────────
 
-/** The view bar's More button; its name reads "More view options" (", N active" with its dot). */
-export const moreButton = (page: Page): Locator =>
-  viewBar(page).getByRole('button', { name: /^More view options/ });
+/** The view bar's More button, which the phone layout shares with desktop. */
+export { moreButton } from './explore';
 
 /** The More bottom sheet: the dialog named "More" (its box, its heading and its Close). */
 export const moreSheet = (page: Page): Locator =>

@@ -12,7 +12,9 @@ import {
   openExplore,
   openFilter,
   queryBuilder,
+  redo,
   statusChip,
+  undo,
 } from './helpers/explore';
 import { expectNoAxeViolations } from './helpers/a11y';
 import { rail, structurePanel, watchPlotResizes } from './helpers/workbench';
@@ -261,18 +263,3 @@ test.describe('the Filter panel', () => {
     await expect(joiner).toHaveAccessibleName('Joiner for condition 2: and not');
   });
 });
-
-/** The modifier the app reads as Mod, decided as its isMacOrIos() decides it. */
-function modKey(page: Page): Promise<'Meta' | 'Control'> {
-  return page.evaluate(() => {
-    const platform = (navigator as Navigator & { userAgentData?: { platform?: string } })
-      .userAgentData?.platform;
-    const mac = platform
-      ? platform === 'macOS' || platform === 'iOS'
-      : /Macintosh;.*Mac OS X/.test(navigator.userAgent) ||
-        /iPhone|iPad|iPod/.test(navigator.userAgent);
-    return mac ? 'Meta' : 'Control';
-  });
-}
-const undo = async (page: Page) => page.keyboard.press(`${await modKey(page)}+KeyZ`);
-const redo = async (page: Page) => page.keyboard.press(`${await modKey(page)}+Shift+KeyZ`);

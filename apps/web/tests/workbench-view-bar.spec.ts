@@ -1,13 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   appBar,
-  closeFilterPanel,
   expectUrlParam,
   filterButton,
   filterPanel,
   getColorByOptions,
   getContoursMode,
   getViewState,
+  moreButton,
   openExplore,
   openFilter,
   projectionTrigger,
@@ -238,8 +238,6 @@ async function squeezeViewBar(page: Page): Promise<void> {
   });
 }
 
-const moreButton = (page: Page) =>
-  viewBar(page).getByRole('button', { name: /^More view options/ });
 const moreMenu = (page: Page) => page.getByRole('menu', { name: 'More view options' });
 /** The More menu's host: its items are its light-DOM children. */
 const moreItems = (page: Page) => page.locator('#wb-more-menu');
@@ -320,24 +318,20 @@ test.describe('view bar stages', () => {
     ).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(moreMenu(page)).toBeHidden();
-    // Filter in More opens the same panel, with focus on its heading. On desktop Close hands focus
-    // to the rail's Filter item; below 951 px the panel row's tabs switch back (Task 5.3).
+    // Filter in More opens the same panel, with focus on its heading. The squeezed bar reaches
+    // stage 3 below 951 px, where the panel row's tabs switch back (Task 5.3).
+    expect(filterOut).toBeLessThan(951);
     await openFilter(page);
     await expect(page.locator('#wb-filter-title')).toBeFocused();
-    if (page.viewportSize()!.width >= 951) {
-      await closeFilterPanel(page);
-      await expect(
-        page
-          .getByRole('navigation', { name: 'Panels' })
-          .getByRole('button', { name: 'Filter', exact: true }),
-      ).toBeFocused();
-    } else {
-      await page
-        .getByRole('tab', { name: 'Legend', exact: true })
-        .filter({ visible: true })
-        .click();
-      await expect(filterPanel(page)).toBeHidden();
-    }
+    await page.getByRole('tab', { name: 'Legend', exact: true }).filter({ visible: true }).click();
+    await expect(filterPanel(page)).toBeHidden();
+
+    // Widening, still below 951 px, brings Filter back into the view bar. (From 951 px up
+    // filterButton is the rail's item, which never leaves, so only this width can show it.)
+    await page.setViewportSize({ width: 950, height: 720 });
+    await settle(page);
+    expect(await readStage(page)).toBeLessThan(3);
+    await expect(viewBar(page).getByRole('button', { name: /^Filter/ })).toBeVisible();
 
     await page.setViewportSize({ width: 1280, height: 720 });
     await settle(page);

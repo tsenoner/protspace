@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   applyFirstCategoryFilter,
   closeFilterPanel,
+  firstProteinIds,
   getSelectedProteinIds,
   openExplore,
   pasteIntoSearch,
@@ -12,20 +13,6 @@ import {
 const search = (page: Page) => page.locator('protspace-protein-search');
 /** The report under the field; its one-sentence summary is in the search's live region. */
 const report = (page: Page) => search(page).locator('.search-report');
-
-/** The first `count` protein ids of the loaded dataset. */
-function proteinIds(page: Page, count: number): Promise<string[]> {
-  return page
-    .locator('#myPlot')
-    .evaluate(
-      (plot, n) =>
-        ((plot as Element & { data?: { protein_ids?: string[] } }).data?.protein_ids ?? []).slice(
-          0,
-          n,
-        ),
-      count,
-    );
-}
 
 type Transform = { k: number; x: number; y: number };
 function readTransform(page: Page): Promise<Transform> {
@@ -62,7 +49,7 @@ test.describe('protein search feedback', () => {
   }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await openExplore(page);
-    const [a, b] = await proteinIds(page, 2);
+    const [a, b] = await firstProteinIds(page, 2);
 
     await pasteIntoSearch(page, `${a}, ${b.toLowerCase()}; MISSING_ONE\nMISSING_TWO`);
 
@@ -73,19 +60,20 @@ test.describe('protein search feedback', () => {
     await expect.poll(() => getSelectedProteinIds(page)).toEqual([a, b]);
 
     await shown.getByRole('button', { name: 'Copy missing IDs' }).click();
+    // Copying keeps the report on screen and says so. "Copied" shows once the clipboard write
+    // has resolved, so the clipboard is read after it, never while the write is in flight.
+    await expect(shown.getByRole('button', { name: 'Copied' })).toBeVisible();
+    await expect(shown).toBeVisible();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       'MISSING_ONE\nMISSING_TWO',
     );
-    // Copying keeps the report on screen and says so.
-    await expect(shown).toBeVisible();
-    await expect(shown.getByRole('button', { name: 'Copied' })).toBeVisible();
   });
 
   test('a single hit moves the protein to the centre of the clear plot area ±2 px', async ({
     page,
   }) => {
     await openExplore(page);
-    const [id] = await proteinIds(page, 1);
+    const [id] = await firstProteinIds(page, 1);
 
     await searchInput(page).fill(id);
     await searchInput(page).press('Enter');
@@ -147,7 +135,7 @@ test.describe('protein search feedback', () => {
     page,
   }) => {
     await openExplore(page);
-    const ids = await proteinIds(page, 3);
+    const ids = await firstProteinIds(page, 3);
     const before = await readTransform(page);
 
     await pasteIntoSearch(page, ids.join('\n'));

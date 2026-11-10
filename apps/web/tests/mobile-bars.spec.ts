@@ -40,7 +40,7 @@ import {
   touchTargetsBelow,
 } from './helpers/mobile';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
-import { stubStructureRequests } from './helpers/workbench';
+import { stubStructureRequests, workbenchRoot } from './helpers/workbench';
 import { DARK_SURFACE, htmlTheme, themeButton } from './helpers/theme';
 import { seedLegacyTourSeen } from './helpers/tour-storage-state';
 
@@ -54,8 +54,6 @@ const PHONES = [
   { label: 'C1', viewport: { width: 360, height: 740 } },
   { label: 'C2', viewport: { width: 412, height: 839 } },
 ] as const;
-
-const workbench = (page: Page) => page.locator('.workbench');
 
 /**
  * The visible controls and labels inside `root` whose text is cut off, by name. The dataset
@@ -169,8 +167,10 @@ test.describe('the bars on a phone', () => {
     }
     await expect(rows.getByRole('link', { name: /^Feedback/ })).toBeVisible();
     await expect(rows.getByRole('radiogroup', { name: 'Theme' })).toBeVisible();
-    // GitHub is not offered on a phone.
+    // GitHub is not offered on a phone: the sheet has no row for it, and the app bar's link goes
+    // with the other actions.
     await expect(rows.getByRole('link', { name: /GitHub/ })).toHaveCount(0);
+    await expect(appBar(page).getByRole('link', { name: 'GitHub', exact: true })).toBeHidden();
 
     // Contours applies in place: the sheet stays open.
     await rows.getByRole('radio', { name: 'Auto', exact: true }).tap();
@@ -241,7 +241,7 @@ test.describe('the bars on a phone', () => {
     await openExplorePhone(page);
     await panelTab(page, 'Filter').tap();
 
-    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel', 'filter');
     await expect(filterPanel(page)).toBeVisible();
     const panel = await box(filterPanel(page));
     const bottom = await box(bottomPanel(page));
@@ -312,7 +312,7 @@ test.describe('the bars on a phone on its side', () => {
     page,
   }) => {
     await openExplorePhone(page);
-    await expect(workbench(page)).toHaveAttribute('data-layout', 'landscape');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'landscape');
 
     const app = await box(appBar(page));
     const view = await box(viewBar(page));
@@ -345,7 +345,7 @@ test.describe('the bars on a phone on its side', () => {
     page,
   }) => {
     await openExplorePhone(page);
-    await expect(workbench(page)).toHaveAttribute('data-layout', 'landscape');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'landscape');
 
     // A popover inside a display: none ancestor never renders: these would open as 0×0 boxes.
     const rows = await openMoreSheet(page);
@@ -384,7 +384,7 @@ test.describe('the bars on a portrait tablet', () => {
 
   test('C10: a portrait tablet (800×1280) keeps the desktop bars', async ({ page }) => {
     await openExplorePhone(page);
-    await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'tablet');
     await expect(searchInput(page)).toBeVisible();
     // Import and Export open from the dataset name, as on a desktop.
     await expect(datasetSwitcher(page)).toBeVisible();
@@ -400,7 +400,7 @@ test.describe('the bars on a portrait tablet', () => {
     page,
   }) => {
     await openExplorePhone(page);
-    await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'tablet');
     await expect(themeButton(page)).toBeVisible();
 
     // Decision 1's order: Theme, then Help.
@@ -698,7 +698,7 @@ test.describe('search on a phone', () => {
     await page.keyboard.press('Escape');
     await expect(appBar(page)).not.toHaveAttribute('data-search-open');
     await page.setViewportSize({ width: 740, height: 360 });
-    await expect(workbench(page)).toHaveAttribute('data-layout', 'landscape');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'landscape');
     await expect(searchInput(page)).toBeHidden();
     await page.keyboard.press('Control+k');
     await expect(appBar(page)).toHaveAttribute('data-search-open', '');
@@ -853,7 +853,9 @@ test.describe('the More sheet', () => {
     await expect(themeSegment(page, 'Dark')).toHaveAttribute('aria-checked', 'true');
     await expect(moreSheet(page)).toBeVisible();
     await expect
-      .poll(() => workbench(page).evaluate((element) => getComputedStyle(element).backgroundColor))
+      .poll(() =>
+        workbenchRoot(page).evaluate((element) => getComputedStyle(element).backgroundColor),
+      )
       .toBe(DARK_SURFACE);
   });
 

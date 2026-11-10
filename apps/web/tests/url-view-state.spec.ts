@@ -3,14 +3,11 @@ import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
   captureExploreViewStability,
-  clickLegendItem,
   dismissTourIfPresent,
   expectUrlParam,
   getColorByOptions,
   getContoursMode,
-  getFirstLegendItemValue,
   getViewState,
-  isLegendItemHidden,
   openExplore,
   projectionTrigger,
   selectAnnotation,
@@ -23,6 +20,7 @@ import {
 } from './helpers/explore';
 import { STARTUP_DATASET_URL } from './helpers/fixtures';
 import { seedTourSeen } from './helpers/tour-storage-state';
+import { clickLegendItem, getFirstLegendItemValue, isLegendItemHidden } from './helpers/legend';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -53,8 +51,6 @@ async function getCurrentView(page: Page) {
   ]);
   return { annotation: view.annotation, projection: view.projection, annotations, projections };
 }
-
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 async function waitForView(
   page: Page,
