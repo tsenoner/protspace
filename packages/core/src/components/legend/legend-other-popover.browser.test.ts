@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import { deepActiveElement } from '../kit/focus';
 import type { PsPopover } from '../kit/popover';
@@ -186,6 +187,21 @@ describe('protspace-legend-other-popover', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(el.open).toBe(false);
     expect(document.activeElement).toBe(anchor);
+  });
+
+  it('Tab past Add all closes it, as the colour picker and the settings popover do', async () => {
+    const { el, anchor } = await mount([{ value: 'a', count: 1 }]);
+    const onClose = vi.fn();
+    el.addEventListener('ps-close', onClose);
+    await open(el, anchor);
+    el.shadowRoot!.querySelector<HTMLElement>('ps-button.other-add-all')!.focus();
+
+    await userEvent.tab();
+    await settle(el);
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(el.open).toBe(false);
+    expect(panel(el).matches(':popover-open')).toBe(false);
   });
 
   it('the panel is a dialog named Other categories and the search field has focus on open', async () => {

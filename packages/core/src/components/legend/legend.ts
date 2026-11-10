@@ -376,6 +376,7 @@ export class ProtspaceLegend extends LitElement {
     onMergeToOther: (value) => this._actions.mergeToOther(value),
     onSortModeChange: (mode) => this._reorder.onDragSortModeChange(mode),
     onDropComplete: (value) => this._actions.highlightDropped(value),
+    canDrag: (item) => this._canDragLegendItem(item),
   });
 
   private _headerHandlers: LegendHeaderHandlers = {
@@ -641,6 +642,12 @@ export class ProtspaceLegend extends LitElement {
     this._numericSettingsByAnnotation = {};
     this._numericManualOrderIdsByAnnotation = {};
     this._eatPredicted = null;
+    this._eatOff = false;
+    // The previous dataset's scores and focus would draw its categories until the new data lands.
+    this._categoryScores = [];
+    this._clusterCaveat = null;
+    this._hoveredCategory = null;
+    this._plotFocus = null;
     this._reorder.clear();
 
     // Reset isolation state
@@ -914,7 +921,10 @@ export class ProtspaceLegend extends LitElement {
       onFocus: () => {
         this._keyboard.focusValue = item.value;
       },
-      onToggle: () => this._actions.toggle(item.value),
+      onToggle: () => {
+        this._actions.toggle(item.value);
+        void this._nameTooltip.controlToggled();
+      },
       onSwatch: () => this._toggleColorPicker(item.value),
       onSwatchPointerEnter: this._nameTooltip.onSwatchPointerEnter,
       onViewOther: (e: Event) => this._otherPopover.toggle(e),

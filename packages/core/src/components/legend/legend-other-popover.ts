@@ -98,6 +98,7 @@ export class ProtspaceLegendOtherPopover extends LitElement {
       .anchor=${beside ? row : this.anchor}
       .open=${this.open}
       placement=${beside ? 'left-start' : 'bottom-end'}
+      close-on-tab-out
       panel-role="dialog"
       panel-label="Other categories"
       @ps-open=${this._onOpen}
