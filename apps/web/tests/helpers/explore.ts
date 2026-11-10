@@ -149,17 +149,17 @@ export async function expectUrlParam(
 }
 
 /**
- * Holds the next request matching `glob` until the returned function is
- * called. The page may abort the held request meanwhile (a cancelled or
+ * Holds the next request matching `url` (a glob or a regex) until the returned
+ * function is called. The page may abort the held request meanwhile (a cancelled or
  * superseded download), so continuing it is allowed to fail.
  */
-export async function holdNextRequest(page: Page, glob: string): Promise<() => void> {
+export async function holdNextRequest(page: Page, url: string | RegExp): Promise<() => void> {
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
   await page.route(
-    glob,
+    url,
     async (route) => {
       await gate;
       await route.fallback().catch(() => {});

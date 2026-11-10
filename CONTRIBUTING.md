@@ -291,19 +291,22 @@ missing producer must not read as a pass):
 uv sync --package protspace --no-dev --locked   # what bundle-contract.yml does
 ```
 
-**E2E:** the Playwright web server starts `pnpm dev:app` with `VITE_STARTUP_DATASET_URL`
-pointing the startup demo at a pinned fixture, so no scenario depends on the product's demo.
-Locally Playwright reuses a dev server already listening on :8080, and one you started yourself
-lacks that variable: stop it first (`lsof -iTCP:8080 -sTCP:LISTEN`), or the suite fails its
-"pinned startup demo" check.
+**E2E:** the Playwright web server builds the app (`apps/web/tests/vite.e2e.config.ts`, into
+the gitignored `apps/web/dist-e2e/<port>/`) with `VITE_STARTUP_DATASET_URL` pointing the startup
+demo at a pinned fixture, so no scenario depends on the product's demo, and serves the build
+with `vite preview` on :8080. It is a development-mode build, so `/dev/kit` and the other
+`import.meta.env.DEV` paths are in it. `PLAYWRIGHT_PORT=<port>` starts the same server on another
+port, with its own build. Locally Playwright reuses any server already listening on :8080, a dev server included,
+and one you started yourself lacks that variable: stop it first (`lsof -iTCP:8080 -sTCP:LISTEN`),
+or the suite fails its "pinned startup demo" check.
 
-To iterate faster, keep one pinned dev server running and point the suite at it.
-`PLAYWRIGHT_BASE_URL` skips the web server entirely: nothing is started, built or stopped, so
-it also works for a server on another port. A plain `pnpm dev:app` (no pin) serves the product
-demo, and these fail against it: `example-datasets.spec.ts` (its pinned-demo check),
-`workbench-loading.spec.ts` (the empty-state tests, which abort the fixture's request) and
-`url-view-state.spec.ts` (it expects the fixture's columns and legend). Start the server with
-the pin and every spec runs:
+To iterate on app code without a rebuild per run, keep one pinned dev server running and point
+the suite at it. `PLAYWRIGHT_BASE_URL` skips the web server entirely: nothing is started, built
+or stopped, so it also works for a server on another port. A plain `pnpm dev:app` (no pin)
+serves the product demo, and these fail against it: `example-datasets.spec.ts` (its pinned-demo
+check), `workbench-loading.spec.ts` (the empty-state tests, which abort the fixture's request)
+and `url-view-state.spec.ts` (it expects the fixture's columns and legend). Start the server
+with the pin and every spec runs:
 
 ```bash
 # in one terminal, from the repo root

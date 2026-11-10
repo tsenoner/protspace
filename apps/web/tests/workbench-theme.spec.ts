@@ -31,9 +31,13 @@ const EXPLORE_CHUNK = /\/(src\/pages\/Explore\.tsx|assets\/Explore-[^/]*\.js)(\?
 
 /**
  * Loads `path` with the Explore chunk held back, so no token sheet is in the page. Returns the
- * body's background on the first animation frame (`first`) and again once the app has asked for
- * the chunk (`beforeChunk`: index.css is applied by then, the tokens are not), and `release`,
- * which lets the chunk through.
+ * body's background on the first animation frame (`first`), the visible surface once the app has
+ * asked for the chunk (`beforeChunk`: index.css is applied by then, the tokens are not), and
+ * `release`, which lets the chunk through.
+ *
+ * `beforeChunk` reads what the user sees, not the body alone: in a build the chunk's CSS arrives
+ * before its JS, and its `body { background: var(--ps-surface) }` leaves the body transparent
+ * until the tokens exist. The boot style's colour on <html> then shows through.
  */
 async function loadWithExploreChunkHeld(
   page: Page,
@@ -71,7 +75,16 @@ async function loadWithExploreChunkHeld(
       () => (window as unknown as { __firstPaint?: string }).__firstPaint ?? null,
     )
   ).jsonValue()) as string;
-  const beforeChunk = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const beforeChunk = await page.evaluate(() => {
+    // The body's background where it paints one, else the root's, else the browser's canvas
+    // (white unless the root asks for a dark scheme).
+    const transparent = 'rgba(0, 0, 0, 0)';
+    const body = getComputedStyle(document.body).backgroundColor;
+    if (body !== transparent) return body;
+    const root = getComputedStyle(document.documentElement);
+    if (root.backgroundColor !== transparent) return root.backgroundColor;
+    return root.colorScheme.includes('dark') ? 'the dark canvas' : 'rgb(255, 255, 255)';
+  });
   return { first, beforeChunk, release };
 }
 
@@ -83,7 +96,7 @@ test.describe('theme choice', () => {
     const { first, beforeChunk, release } = await loadWithExploreChunkHeld(page);
 
     expect(first).toBe(DARK_SURFACE);
-    // The landing's white body rule is in the page now, layered; the boot style still wins.
+    // The landing's white body rule is in the page now, layered; the boot style's surface shows.
     expect(beforeChunk).toBe(DARK_SURFACE);
     expect(await htmlTheme(page)).toBe('dark');
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(

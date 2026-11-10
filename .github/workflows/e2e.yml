@@ -124,9 +124,9 @@ jobs:
       - name: Runner hardware
         run: nproc && lscpu | grep 'Model name'
 
-      # Only the packages the dev server resolves through node_modules. The tests are served
-      # by `pnpm dev:app` (a Vite dev server, see webServer in playwright.config.ts), so
-      # `@protspace/app#build` produced an 89MB bundle nothing here reads.
+      # Only the packages the app resolves through node_modules. The web server in
+      # playwright.config.ts builds the app itself (a development-mode build that pins the startup
+      # fixture) and serves it with `vite preview`, so `@protspace/app#build` would go unused.
       - name: Build workspace packages
         run: pnpm build --filter=@protspace/core --filter=@protspace/utils
 

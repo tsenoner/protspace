@@ -64,7 +64,11 @@ test.describe('workbench shell', () => {
   });
 
   test('tokens and the kit are ready before the explore runtime loads', async ({ page }) => {
-    const releaseRuntime = await holdNextRequest(page, '**/src/explore/runtime.ts*');
+    // The runtime module: its dev-server path, or a build's chunk.
+    const releaseRuntime = await holdNextRequest(
+      page,
+      /\/(src\/explore\/runtime\.ts|assets\/runtime-[^/]*\.js)(\?|$)/,
+    );
     await page.goto('/explore');
 
     const bar = appBar(page);

@@ -16,9 +16,9 @@ const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
  * Playwright configuration for ProtSpace app e2e tests (product tour, etc.).
  *
  * Which server the suite runs against:
- * - default: `pnpm dev:app` on :8080 with VITE_STARTUP_DATASET_URL set (see `webServer`).
- *   Locally a server already listening on :8080 is reused as is, env or not.
- * - PLAYWRIGHT_PORT=<port>: builds this checkout's packages, then starts a fresh server there.
+ * - default: a build of the app served by `vite preview` on :8080 (see `appServerCommand`).
+ *   Locally a server already listening on :8080 is reused as is, a dev server included, env or not.
+ * - PLAYWRIGHT_PORT=<port>: the same build and preview, on a fresh server on that port.
  * - PLAYWRIGHT_BASE_URL=<url>: starts nothing and builds nothing; runs against that server.
  * CONTRIBUTING.md ("E2E") lists the fast local workflows and the specs that need the env.
  *
@@ -38,6 +38,25 @@ if (process.env.PERF_COUNTS === '1' && !OWN_PORT && !process.env.PLAYWRIGHT_BASE
   );
 }
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${OWN_PORT ?? 8080}`;
+
+/**
+ * Builds this checkout's packages and the app (tests/vite.e2e.config.ts, into the gitignored
+ * apps/web/dist-e2e/<port>, so a concurrent run on another port keeps its own build), then serves
+ * the build with `vite preview`: what users get, and faster to test than the dev server's
+ * per-module requests. NODE_ENV=development keeps `import.meta.env.DEV` (the /dev/kit page, the
+ * example dev fallback). The build bakes in VITE_STARTUP_DATASET_URL, and the e2e config serves
+ * its `/@fs/` fixture URL.
+ *
+ * The counts gate keeps the dev server: tests/perf/budgets.json was measured against it.
+ */
+const appServerCommand = (port: number | string): string =>
+  process.env.PERF_COUNTS === '1'
+    ? `pnpm turbo run build --filter=@protspace/app^... && pnpm --filter @protspace/app exec vite --port ${port} --strictPort`
+    : [
+        'pnpm turbo run build --filter=@protspace/app^...',
+        `NODE_ENV=development pnpm --filter @protspace/app exec vite build -c tests/vite.e2e.config.ts --mode development --outDir dist-e2e/${port}`,
+        `pnpm --filter @protspace/app exec vite preview -c tests/vite.e2e.config.ts --outDir dist-e2e/${port} --port ${port} --strictPort`,
+      ].join(' && ');
 const TOUR_COMPLETED_STORAGE_STATE = tourCompletedStorageState(BASE_URL);
 const EMPTY_STORAGE_STATE: BrowserContextOptions['storageState'] = { cookies: [], origins: [] };
 
@@ -91,7 +110,7 @@ export default defineConfig({
   failOnFlakyTests: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
 
-  // Headless WebGL (SwiftShader) is CPU-bound, so leave cores free for the dev
+  // Headless WebGL (SwiftShader) is CPU-bound, so leave cores free for the web
   // server and OS; 50% of cores is a good balance. CI runners are smaller.
   workers: process.env.CI ? 2 : '50%',
 
@@ -103,7 +122,7 @@ export default defineConfig({
     ? undefined
     : OWN_PORT
       ? {
-          command: `pnpm turbo run build --filter=@protspace/app^... && pnpm --filter @protspace/app exec vite --port ${OWN_PORT} --strictPort`,
+          command: appServerCommand(OWN_PORT),
           cwd: REPO_ROOT,
           url: BASE_URL,
           reuseExistingServer: false,
@@ -114,7 +133,7 @@ export default defineConfig({
           gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
         }
       : {
-          command: 'pnpm dev:app',
+          command: appServerCommand(8080),
           cwd: REPO_ROOT,
           url: BASE_URL,
           reuseExistingServer: !process.env.CI,
@@ -122,7 +141,7 @@ export default defineConfig({
           stdout: 'pipe',
           stderr: 'pipe',
           // Pins the startup demo to a test fixture, so no scenario depends on the
-          // product's demo bundle. A dev server that was already running locally
+          // product's demo bundle. A server that was already running locally
           // (reuseExistingServer) was started without it: stop it before a run.
           env: { VITE_STARTUP_DATASET_URL: STARTUP_DATASET_URL },
           // Stop the server with the run, so a pinned server is never left on :8080.
@@ -386,7 +405,7 @@ export default defineConfig({
       testMatch: /(^|[\\/])mobile-[^\\/]*\.spec\.ts$/,
     },
     {
-      // Development-only page at /dev/kit; the dev server the suite starts serves it.
+      // Development-only page at /dev/kit; the suite's build keeps it (NODE_ENV=development).
       name: 'kit-gallery',
       use: devices['Desktop Chrome'],
       testMatch: /kit-gallery\.spec\.ts/,
