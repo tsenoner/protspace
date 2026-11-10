@@ -1,11 +1,9 @@
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import {
   annotationSelect,
   clearSelection,
   colorByTrigger,
-  dismissTourIfPresent,
   draftFilterCondition,
   exportAction,
   filterButton,
@@ -18,38 +16,18 @@ import {
   selectAnnotation,
   selectProjection,
   viewBar,
-  waitForProteinCount,
 } from './helpers/explore';
-import { eatPanel, eatThresholdBox, openEatPanel } from './helpers/eat';
-import { STARTUP_URL_GLOB } from './helpers/fixtures';
+import { eatPanel, eatThresholdBox, loadPhosphataseEat, openEatPanel } from './helpers/eat';
 import { getFirstLegendItemValue } from './helpers/legend';
 import { proteinScreenPosition } from './helpers/plot';
 import { seedTourSeen } from './helpers/tour-storage-state';
 
-const EAT_FIXTURE = fileURLToPath(
-  new URL('./fixtures/phosphatase_eat.parquetbundle', import.meta.url),
-);
-// Exact asset from issue #277 comment 4902936797. Bundle SHA-256:
+// The phosphatase EAT fixture (helpers/eat.ts) is the exact asset from issue #277 comment 4902936797. Bundle SHA-256:
 // 06bacd7a1f862bdea4a9bf2e81037a4a7d772636704c74e3f2806958f3b9ba33.
 
 test.beforeEach(async ({ page }) => {
   await seedTourSeen(page);
 });
-
-async function loadEatFixture(page: Page): Promise<void> {
-  await page.route(STARTUP_URL_GLOB, (route) => route.abort());
-  await page.goto('/explore');
-  await dismissTourIfPresent(page);
-  await page.waitForFunction(() => {
-    const loader = document.querySelector('protspace-data-loader') as
-      | (Element & { loadFromFile?: (file: File) => Promise<void> })
-      | null;
-    return typeof loader?.loadFromFile === 'function';
-  });
-
-  await page.locator('protspace-data-loader input[type="file"]').setInputFiles(EAT_FIXTURE);
-  await waitForProteinCount(page, 832);
-}
 
 /**
  * Per-protein reliability score for the `ec` annotation, read straight off the
@@ -291,7 +269,7 @@ async function sampleEncodedExportMarkers(
 }
 
 test('renders and explores EAT transfers from the real phosphatase bundle', async ({ page }) => {
-  await loadEatFixture(page);
+  await loadPhosphataseEat(page);
   await selectAnnotation(page, 'ec');
 
   const plot = page.locator('protspace-scatterplot');
@@ -777,7 +755,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
 test('with a dirty draft, moving the threshold in the EAT panel updates the draft’s reliability row and keeps the other edit', async ({
   page,
 }) => {
-  await loadEatFixture(page);
+  await loadPhosphataseEat(page);
   await selectAnnotation(page, 'ec');
   const value = await getFirstLegendItemValue(page);
   type Draft = Array<{ kind?: string; annotation?: string; min?: number | null }>;
@@ -827,7 +805,7 @@ test('with a dirty draft, moving the threshold in the EAT panel updates the draf
 test('keeps curated points visible while the reliability filter hides low-confidence EAT predictions', async ({
   page,
 }) => {
-  await loadEatFixture(page);
+  await loadPhosphataseEat(page);
   await selectAnnotation(page, 'ec');
 
   await openEatPanel(page);
@@ -919,7 +897,7 @@ test('keeps curated points visible while the reliability filter hides low-confid
  * companions. Driven through the real Export menu, as a user would.
  */
 test('exports the visible proteins as a table, the same set as the ID export', async ({ page }) => {
-  await loadEatFixture(page);
+  await loadPhosphataseEat(page);
   await selectAnnotation(page, 'ec');
 
   await openEatPanel(page);

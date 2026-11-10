@@ -7,6 +7,7 @@ import {
   openExportMenu,
   openImportMenu,
   sidebar,
+  twoFrames,
   viewBar,
   waitForExploreDataLoad,
 } from './helpers/explore';
@@ -22,9 +23,10 @@ import {
   structurePanel,
   stubStructureRequests,
   watchPlotResizes,
+  workbenchRoot,
 } from './helpers/workbench';
+import { plotSettled } from './helpers/plot';
 
-const workbench = (page: Page) => page.locator('.workbench');
 const edge = (page: Page) => page.getByRole('separator', { name: 'Resize sidebar' });
 
 function expectNear(actual: number, expected: number, tolerance = 1): void {
@@ -42,19 +44,8 @@ function renders(page: Page): Promise<number> {
 
 /** The render count once it has stopped moving, so a test's own renders start from rest. */
 async function settledRenders(page: Page): Promise<number> {
-  let last = -1;
-  await expect
-    .poll(
-      async () => {
-        const now = await renders(page);
-        const still = now === last;
-        last = now;
-        return still;
-      },
-      { intervals: [300] },
-    )
-    .toBe(true);
-  return last;
+  await plotSettled(page);
+  return renders(page);
 }
 
 /** Both resizes of a toggle, each with one render: collapse, then expand back. */
@@ -168,7 +159,7 @@ test('the rail keeps Legend, Structure, Filter and Collapse sidebar, named for a
 
   // Legend opens the sidebar again.
   await legend.click();
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'open');
   await expect(page.locator('#myLegend')).toBeVisible();
 });
 
@@ -249,7 +240,7 @@ test('the edge separator moves by keyboard and commits once', async ({ page }) =
 
   // Enter collapses; focus moves to the control that brings the sidebar back.
   await page.keyboard.press('Enter');
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'collapsed');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'collapsed');
   await expect(rail(page).getByRole('button', { name: 'Expand sidebar' })).toBeFocused();
 });
 
@@ -264,7 +255,7 @@ test('width and collapsed state survive a reload, and layout never reaches the U
 
   await page.reload();
   await waitForExploreDataLoad(page);
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'collapsed');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'collapsed');
   await expandSidebar(page);
   expectNear((await sidebar(page).boundingBox())!.width, 360);
 
@@ -283,7 +274,7 @@ test('a corrupt or oversized stored layout loads safely', async ({ page }) => {
   );
   await openExplore(page);
   expectNear((await sidebar(page).boundingBox())!.width, DEFAULT_LAYOUT.sidebarWidth);
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'open');
   expect(errors).toEqual([]);
 
   // Init scripts run in order on every navigation: this one now wins.
@@ -351,9 +342,7 @@ test('a window resize re-renders the workbench only when the sidebar cap changes
   expect(before).toBeGreaterThan(0);
   for (const width of [1290, 1300, 1310, 1320, 1330]) {
     await page.setViewportSize({ width, height: 720 });
-    await page.evaluate(
-      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-    );
+    await twoFrames(page);
   }
   expect(await commits()).toBe(before);
   // 1000 px lowers the cap to 476: a real re-render the hook must see.
@@ -418,7 +407,7 @@ test('a protein clicked while collapsed waits behind the Structure dot; Structur
   await expect(page.locator('#myStructureViewer')).toHaveJSProperty('proteinId', null);
 
   await structure.click();
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'open');
   await expect(page.locator('#myStructureViewer')).toHaveJSProperty('proteinId', id);
   await expect(page.locator('#myStructureViewer')).toBeVisible();
 });
@@ -487,7 +476,7 @@ test('with the sidebar open, the legend settings popover and the Import and Expo
   await openExplore(page);
   // A docked structure: the section (z-index 3) sits under the legend, beside the edge and the rail.
   await clickProteinNearPlotCentre(page);
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'docked');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'docked');
   await expect(structurePanel(page)).toHaveCSS('z-index', '3');
   await expect(edge(page)).toBeVisible();
 

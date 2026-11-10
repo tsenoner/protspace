@@ -2,12 +2,17 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   applyFirstCategoryFilter,
   chooseTool,
+  firstProteinIds,
   getSelectedProteinIds,
   importUserFile,
+  isIsolated,
   openExplore,
+  redo,
   searchInput,
   selectionBarAction,
   statusChip,
+  twoFrames,
+  undo,
   waitForProteinCount,
 } from './helpers/explore';
 import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
@@ -17,48 +22,11 @@ test.beforeEach(async ({ page }) => {
   await stubStructureRequests(page);
 });
 
-/** The modifier the app reads as Mod, decided as its isMacOrIos() decides it. */
-function modKey(page: Page): Promise<'Meta' | 'Control'> {
-  return page.evaluate(() => {
-    const platform = (navigator as Navigator & { userAgentData?: { platform?: string } })
-      .userAgentData?.platform;
-    const mac = platform
-      ? platform === 'macOS' || platform === 'iOS'
-      : /Macintosh;.*Mac OS X/.test(navigator.userAgent) ||
-        /iPhone|iPad|iPod/.test(navigator.userAgent);
-    return mac ? 'Meta' : 'Control';
-  });
-}
-const undo = async (page: Page) => page.keyboard.press(`${await modKey(page)}+KeyZ`);
-const redo = async (page: Page) => page.keyboard.press(`${await modKey(page)}+Shift+KeyZ`);
-
-const twoFrames = (page: Page) =>
-  page.evaluate(
-    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-  );
-
 const sorted = async (page: Page) => (await getSelectedProteinIds(page)).sort();
-
-function isIsolated(page: Page): Promise<boolean> {
-  return page
-    .locator('#myPlot')
-    .evaluate((plot) =>
-      (plot as unknown as Element & { isIsolationMode(): boolean }).isIsolationMode(),
-    );
-}
 
 /** Selects the dataset's first `count` proteins through the search box, then leaves the box. */
 async function selectFirstBySearch(page: Page, count: number): Promise<string[]> {
-  const ids = await page
-    .locator('#myPlot')
-    .evaluate(
-      (plot, n) =>
-        (plot as unknown as Element & { data: { protein_ids: string[] } }).data.protein_ids.slice(
-          0,
-          n,
-        ),
-      count,
-    );
+  const ids = await firstProteinIds(page, count);
   for (const id of ids) {
     await searchInput(page).fill(id);
     await searchInput(page).press('Enter');

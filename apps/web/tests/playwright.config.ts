@@ -7,7 +7,7 @@ import {
 } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { STARTUP_DATASET_URL } from './helpers/fixtures';
-import { tourCompletedStorageState } from './helpers/tour-storage-state';
+import { exploreStorageState } from './helpers/tour-storage-state';
 
 const TEST_DIR = fileURLToPath(new URL('.', import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -35,7 +35,8 @@ if (process.env.PERF_COUNTS === '1' && !OWN_PORT && !process.env.PLAYWRIGHT_BASE
   );
 }
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${OWN_PORT ?? 8080}`;
-const TOUR_COMPLETED_STORAGE_STATE = tourCompletedStorageState(BASE_URL);
+// The tour already seen, and nothing else: what every e2e context starts with.
+const TOUR_COMPLETED_STORAGE_STATE = exploreStorageState(BASE_URL);
 const EMPTY_STORAGE_STATE: BrowserContextOptions['storageState'] = { cookies: [], origins: [] };
 
 /**

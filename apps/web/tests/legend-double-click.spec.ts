@@ -1,11 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   dismissTourIfPresent,
-  getFirstLegendItemValue,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
 } from './helpers/explore';
-import { doubleClickLegendRow, legendRow } from './helpers/legend';
+import { doubleClickLegendRow, getFirstLegendItemValue, legendRow } from './helpers/legend';
 
 /**
  * A real double-click is click (detail 1), click (detail 2), dblclick, the two clicks tens of

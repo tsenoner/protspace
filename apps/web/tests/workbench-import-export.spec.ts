@@ -4,18 +4,17 @@ import { e2eExample, serveExampleFixtures } from './helpers/example-fixtures';
 import {
   appBar,
   datasetSwitcher,
+  expectUrlParam,
   exportAction,
   exportDownload,
   exportFormats,
   exportKinds,
   exportMenu,
   exportPanel,
-  expectUrlParam,
   figureEditorButton,
   getCurrentDatasetName,
   getSelectedProteinIds,
   importMenu,
-  importTrigger,
   importUserFile,
   openExplore,
   openExportMenu,
@@ -41,7 +40,7 @@ test.describe('Import and Export menus', () => {
     // The tour's Import step finds the menu itself, in the light DOM.
     await expect(page.locator('[data-driver-id="import"]')).toHaveAttribute('id', 'myImportMenu');
 
-    const dataset = importTrigger(page);
+    const dataset = datasetSwitcher(page);
     await dataset.focus();
     await page.keyboard.press('Enter');
     const ownDataset = importMenu(page).locator('[data-driver-id="import-own-dataset"]');

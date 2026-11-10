@@ -8,6 +8,7 @@ import {
   getColorByOptions,
   getContoursMode,
   getViewState,
+  moreButton,
   openExplore,
   openFilter,
   projectionTrigger,
@@ -238,8 +239,6 @@ async function squeezeViewBar(page: Page): Promise<void> {
   });
 }
 
-const moreButton = (page: Page) =>
-  viewBar(page).getByRole('button', { name: /^More view options/ });
 const moreMenu = (page: Page) => page.getByRole('menu', { name: 'More view options' });
 /** The More menu's host: its items are its light-DOM children. */
 const moreItems = (page: Page) => page.locator('#wb-more-menu');

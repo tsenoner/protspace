@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import {
   appBar,
   appBarTextFits,
@@ -8,6 +8,7 @@ import {
   selectionBar,
   selectionBarAction,
   statusChip,
+  twoFrames,
   viewBar,
   waitForExploreDataLoad,
 } from './helpers/explore';
@@ -26,23 +27,12 @@ import {
   structureSheet,
   tap,
 } from './helpers/mobile';
-import { readLayout, watchPlotResizes } from './helpers/workbench';
+import { readLayout, watchPlotResizes, workbenchRoot } from './helpers/workbench';
 
 /**
  * The explore page's layout on phones, tablets and a phone on its side (ported from
  * feat/mobile-responsive, design decision 17).
  */
-
-const workbench = (page: Page) => page.locator('.workbench');
-
-/** Two frames on: a resize has reached its ResizeObserver by then. */
-const settle = (page: Page) =>
-  page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
 
 test.describe('explore layout on a phone', () => {
   test('L1: the plot comes first and the legend panel sits below it, on one screen', async ({
@@ -65,13 +55,13 @@ test.describe('explore layout on a phone', () => {
     await tap(page, await proteinNear(page, 0.5, 0.5));
 
     // Folded, only its 56 px header strip shows above the bottom edge.
-    await expect(workbench(page)).toHaveAttribute('data-sheet', 'folded');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-sheet', 'folded');
     await expect
       .poll(async () => Math.abs((await box(structureSheet(page))).y - (viewport.height - 56)))
       .toBeLessThanOrEqual(1);
 
     await sheetToggle(page).tap();
-    await expect(workbench(page)).toHaveAttribute('data-sheet', 'expanded');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-sheet', 'expanded');
     await expect
       .poll(async () => {
         const sheet = await box(structureSheet(page));
@@ -108,7 +98,7 @@ test.describe('the app bar on an 800 px tablet', () => {
 
   test('the dataset name and the search placeholder fit', async ({ page }) => {
     await openExplorePhone(page);
-    await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'tablet');
     expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
   });
 
@@ -116,7 +106,7 @@ test.describe('the app bar on an 800 px tablet', () => {
     page,
   }) => {
     await openExplorePhone(page);
-    await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'tablet');
     const height = async (name: string) =>
       (await appBar(page).getByRole('button', { name, exact: true }).boundingBox())!.height;
     expect(await height('Figure editor')).toBeGreaterThanOrEqual(40);
@@ -131,7 +121,7 @@ test.describe('explore layout on a tablet', () => {
     page,
   }) => {
     await openExplorePhone(page);
-    await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'tablet');
     await tap(page, await proteinNear(page, 0.5, 0.5));
     await expect(page.locator('#myStructureViewer')).toBeVisible();
 
@@ -156,16 +146,16 @@ test.describe('explore layout on a tablet', () => {
 
     await panelTab(page, 'Filter').tap();
 
-    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel', 'filter');
     await expect(filterPanel(page)).toBeVisible();
     // The Filter panel's own copy of the tabs now holds focus.
     await expect(panelTab(page, 'Filter')).toBeFocused();
     await expect(panelTab(page, 'Filter')).toHaveAttribute('aria-selected', 'true');
 
     await panelTab(page, 'Legend').tap();
-    await expect(workbench(page)).toHaveAttribute('data-panel', 'legend');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel', 'legend');
     await expect(panelTab(page, 'Legend')).toBeFocused();
-    await settle(page);
+    await twoFrames(page);
     expect(await resizes()).toBe(0);
   });
 
@@ -177,21 +167,21 @@ test.describe('explore layout on a tablet', () => {
 
     await panelTab(page, 'Legend').focus();
     await page.keyboard.press('ArrowRight');
-    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel', 'filter');
     await expect(panelTab(page, 'Filter')).toBeFocused();
     await expect(page.getByRole('tabpanel', { name: 'Filter' })).toBeVisible();
     await page.keyboard.press('Home');
-    await expect(workbench(page)).toHaveAttribute('data-panel', 'legend');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel', 'legend');
     await expect(panelTab(page, 'Legend')).toBeFocused();
     await page.keyboard.press('End');
-    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel', 'filter');
   });
 
   test('on a tablet with no protein, the right half shows the empty footer and a first tap does not resize the plot', async ({
     page,
   }) => {
     await openExplorePhone(page);
-    await expect(workbench(page)).toHaveAttribute('data-structure', 'none');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'none');
     const footer = page.locator('[data-workbench="structure-empty"]');
     await expect(footer).toBeVisible();
     const legend = await box(page.locator('#myLegend'));
@@ -202,9 +192,9 @@ test.describe('explore layout on a tablet', () => {
 
     const resizes = await watchPlotResizes(page);
     await tap(page, await proteinNear(page, 0.5, 0.5));
-    await expect(workbench(page)).toHaveAttribute('data-structure', 'docked');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'docked');
     await expect(page.locator('#myStructureViewer')).toBeVisible();
-    await settle(page);
+    await twoFrames(page);
     expect(await resizes()).toBe(0);
   });
 });
@@ -273,14 +263,14 @@ test.describe('the bottom panel on a phone', () => {
     await expect(panelFold(page)).toHaveAccessibleName('Unfold panel');
     await expect(panelFold(page)).toBeFocused();
     // Folding is one plot resize (design decision 4), not a transition's many.
-    await settle(page);
+    await twoFrames(page);
     expect(await resizes()).toBe(1);
     await expect.poll(async () => (await readLayout(page))?.panelFolded).toBe(true);
 
     await page.reload();
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await expect(workbench(page)).toHaveAttribute('data-panel-folded', '');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel-folded', '');
     await expect(panelFold(page)).toHaveAccessibleName('Unfold panel');
     await expect(panelFold(page)).toHaveAttribute('aria-expanded', 'false');
     expect(Math.abs((await box(bottomPanel(page))).height - 45)).toBeLessThanOrEqual(1);
@@ -293,9 +283,9 @@ test.describe('the bottom panel on a phone', () => {
     const resizes = await watchPlotResizes(page);
 
     await panelTab(page, 'Filter').tap();
-    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel', 'filter');
     await expect(filterPanel(page)).toBeVisible();
-    await settle(page);
+    await twoFrames(page);
 
     const after = await box(bottomPanel(page));
     expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
@@ -308,7 +298,7 @@ test.describe('the bottom panel on a phone', () => {
     await openExplorePhone(page);
     for (const tab of ['Legend', 'Filter'] as const) {
       await panelTab(page, tab).tap();
-      await expect(workbench(page)).toHaveAttribute('data-panel', tab.toLowerCase());
+      await expect(workbenchRoot(page)).toHaveAttribute('data-panel', tab.toLowerCase());
       const plot = await box(page.locator('#myPlot'));
       expect(plot.height, tab).toBeGreaterThanOrEqual(0.3 * 640);
       const panel = await box(bottomPanel(page));
@@ -347,12 +337,12 @@ test.describe('the bottom panel on a phone', () => {
     await openExplorePhone(page);
     await applyFilterKeepingTen(page);
     await panelFold(page).tap();
-    await expect(workbench(page)).toHaveAttribute('data-panel-folded', '');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel-folded', '');
 
     await statusChip(page, 'filter').locator('.status-chip-open').tap();
 
-    await expect(workbench(page)).not.toHaveAttribute('data-panel-folded');
-    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(workbenchRoot(page)).not.toHaveAttribute('data-panel-folded');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel', 'filter');
     await expect(filterPanel(page)).toBeVisible();
     await expect(page.locator('#wb-filter-title')).toBeFocused();
     expect((await readLayout(page))?.panelFolded).toBe(false);
@@ -361,12 +351,12 @@ test.describe('the bottom panel on a phone', () => {
   test('a tab tapped on a folded panel unfolds it', async ({ page }) => {
     await openExplorePhone(page);
     await panelFold(page).tap();
-    await expect(workbench(page)).toHaveAttribute('data-panel-folded', '');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel-folded', '');
 
     await panelTab(page, 'Filter').tap();
 
-    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
-    await expect(workbench(page)).not.toHaveAttribute('data-panel-folded');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(workbenchRoot(page)).not.toHaveAttribute('data-panel-folded');
     await expect(page.locator('#wb-filter-panel .wb-filter-body')).toBeVisible();
     await expect.poll(async () => (await readLayout(page))?.panelFolded).toBe(false);
   });
@@ -389,7 +379,7 @@ test('rotating from 412×839 to 839×412 and back keeps the same runtime element
 }) => {
   await page.setViewportSize({ width: 412, height: 839 });
   await openExplorePhone(page);
-  await expect(workbench(page)).toHaveAttribute('data-layout', 'phone');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'phone');
   await page.evaluate((ids) => {
     (window as unknown as { __runtimeElements: (Element | null)[] }).__runtimeElements = ids.map(
       (id) => document.getElementById(id),
@@ -403,9 +393,9 @@ test('rotating from 412×839 to 839×412 and back keeps the same runtime element
   for (const { size, mode } of turns) {
     const resizes = await watchPlotResizes(page);
     await page.setViewportSize(size);
-    await expect(workbench(page)).toHaveAttribute('data-layout', mode);
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', mode);
     await expect.poll(resizes).toBe(1);
-    await settle(page);
+    await twoFrames(page);
     expect(await resizes()).toBe(1);
   }
 

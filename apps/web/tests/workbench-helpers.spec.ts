@@ -20,10 +20,10 @@ import {
   filterApplyButton,
   filterButton,
   filterPanel,
+  firstProteinIds,
   getColorByOptions,
   getContoursMode,
   getCurrentDatasetName,
-  getFirstLegendItemValue,
   getProteinCount,
   getSelectedProteinIds,
   getViewState,
@@ -49,15 +49,16 @@ import {
   sidebar,
   statusChip,
   toast,
+  type ViewState,
   waitForExploreDataLoad,
   waitForProteinCount,
-  type ViewState,
 } from './helpers/explore';
 import { figureEditor, figurePreviewCanvas, openFigureEditor } from './helpers/figure';
 import {
   closeLegendSettings,
   doubleClickLegendRow,
   dragLegendRow,
+  getFirstLegendItemValue,
   legendRowValues,
   toggleLegendSetting,
 } from './helpers/legend';
@@ -72,6 +73,7 @@ import {
 import { waitForStructureLoaded, watchStructureLoads } from './helpers/structure';
 import { exploreStorageState, seedTourSeen } from './helpers/tour-storage-state';
 import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
+import { plotTooltip } from './helpers/mobile';
 
 /**
  * The contract of the layout-free helpers in helpers/explore.ts. A task that moves a control
@@ -287,20 +289,6 @@ test.describe('tour storage helpers', () => {
   });
 });
 
-/** The first `count` protein ids of the loaded dataset. */
-function firstProteinIds(page: Page, count: number): Promise<string[]> {
-  return page
-    .locator('#myPlot')
-    .evaluate(
-      (plot, n) =>
-        ((plot as Element & { data?: { protein_ids?: string[] } }).data?.protein_ids ?? []).slice(
-          0,
-          n,
-        ),
-      count,
-    );
-}
-
 /** A protein drawn on top at its own position, clear of the plot's edges: a hover there shows it. */
 function unoccludedProtein(page: Page): Promise<string> {
   return page.locator('#myPlot').evaluate((element) => {
@@ -321,8 +309,6 @@ function unoccludedProtein(page: Page): Promise<string> {
     throw new Error('No unoccluded protein among the first 500');
   });
 }
-
-const plotTooltip = (page: Page) => page.locator('#myPlot protspace-protein-tooltip');
 
 /** Whether `point` lies inside `box`. */
 const inside = (

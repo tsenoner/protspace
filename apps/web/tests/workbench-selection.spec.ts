@@ -3,12 +3,10 @@ import {
   appBar,
   chooseTool,
   clearStatusChip,
-  clickLegendItem,
   closeFilterPanel,
   filterPanel,
-  getFirstLegendItemValue,
+  firstProteinIds,
   getSelectedProteinIds,
-  isLegendItemHidden,
   isolateSelection,
   openExplore,
   plotArea,
@@ -18,25 +16,12 @@ import {
   selectionBar,
   selectionBarAction,
   statusChip,
+  toolButton,
+  twoFrames,
 } from './helpers/explore';
+import { clickLegendItem, getFirstLegendItemValue, isLegendItemHidden } from './helpers/legend';
 
 const toolStrip = (page: Page) => page.getByRole('toolbar', { name: 'Plot tools' });
-const toolButton = (page: Page, name: string) =>
-  toolStrip(page).getByRole('button', { name, exact: true });
-
-/** The first `count` protein ids of the loaded dataset. */
-function proteinIds(page: Page, count: number): Promise<string[]> {
-  return page
-    .locator('#myPlot')
-    .evaluate(
-      (plot, n) =>
-        ((plot as Element & { data?: { protein_ids?: string[] } }).data?.protein_ids ?? []).slice(
-          0,
-          n,
-        ),
-      count,
-    );
-}
 
 /** Selects `ids` one by one through the search box, the way a user types them. */
 async function selectBySearch(page: Page, ids: string[]): Promise<void> {
@@ -76,7 +61,7 @@ test.describe('plot tools and selection', () => {
     await openExplore(page);
 
     await expect(toolStrip(page)).toBeVisible();
-    for (const name of ['Move and zoom', 'Box select', 'Lasso select', 'Fit to view']) {
+    for (const name of ['Move and zoom', 'Box select', 'Lasso select', 'Fit to view'] as const) {
       await expect(toolButton(page, name)).toBeVisible();
     }
     await expect(toolButton(page, 'Move and zoom')).toHaveAttribute('aria-pressed', 'true');
@@ -121,7 +106,7 @@ test.describe('plot tools and selection', () => {
     page,
   }) => {
     await openExplore(page);
-    const [id] = await proteinIds(page, 1);
+    const [id] = await firstProteinIds(page, 1);
     await selectBySearch(page, [id]);
 
     // Typing again opens the suggestions; Escape closes them and nothing else.
@@ -131,9 +116,7 @@ test.describe('plot tools and selection', () => {
     await searchInput(page).press('Escape');
     await expect(suggestions).toBeHidden();
     // A wrong clear shows at once in the tools and reaches the plot after the paint.
-    await page.evaluate(
-      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-    );
+    await twoFrames(page);
     await expect(selectionBar(page)).toBeVisible();
     expect(await getSelectedProteinIds(page)).toEqual([id]);
 
@@ -146,7 +129,7 @@ test.describe('plot tools and selection', () => {
     await openExplore(page);
     await expect(selectionBar(page)).toBeHidden();
 
-    await selectBySearch(page, await proteinIds(page, 2));
+    await selectBySearch(page, await firstProteinIds(page, 2));
     await expect(selectionBar(page)).toBeVisible();
     await expect(selectionBar(page)).toContainText('2 proteins selected');
     for (const name of [
@@ -200,7 +183,7 @@ test.describe('plot tools and selection', () => {
   test('Copy IDs writes the ids to the clipboard and says so', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await openExplore(page);
-    const ids = await proteinIds(page, 2);
+    const ids = await firstProteinIds(page, 2);
     await selectBySearch(page, ids);
 
     await selectionBarAction(page, 'Copy IDs').click();
@@ -211,7 +194,7 @@ test.describe('plot tools and selection', () => {
 
   test("Zoom to them changes the plot's transform", async ({ page }) => {
     await openExplore(page);
-    await selectBySearch(page, await proteinIds(page, 2));
+    await selectBySearch(page, await firstProteinIds(page, 2));
     const transform = () =>
       page.locator('#myPlot').evaluate((plot) => {
         const t = (plot as unknown as { _transform: { k: number; x: number; y: number } })
@@ -294,7 +277,7 @@ test.describe('plot tools and selection', () => {
     page,
   }) => {
     await openExplore(page);
-    await selectBySearch(page, await proteinIds(page, 2));
+    await selectBySearch(page, await firstProteinIds(page, 2));
 
     await selectionBarAction(page, 'Show only these').click();
 
@@ -358,7 +341,7 @@ test.describe('plot tools and selection', () => {
     // A narrow plot, where a centred bar reaches under the chip row.
     await page.setViewportSize({ width: 1100, height: 800 });
     await openExplore(page);
-    const ids = await proteinIds(page, 2);
+    const ids = await firstProteinIds(page, 2);
     await selectBySearch(page, ids);
     await isolateSelection(page);
     await selectBySearch(page, ids.slice(0, 1));
