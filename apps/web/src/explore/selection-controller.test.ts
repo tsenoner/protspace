@@ -266,6 +266,28 @@ describe('selection controller: the search box', () => {
     expect(m.plot.selectedProteinIds).toEqual(['P1', 'P3', 'P2']);
   });
 
+  it('a plot change before a waiting pick lands keeps the pick shown, and the next pick builds on it', async () => {
+    const m = setup();
+    fire(m.search, 'add-selection', { proteinId: 'P1' });
+
+    // A filter applied in the same frame: the plot reports its own, older selection.
+    fire(m.plot, 'data-change', { data: { protein_ids: ['P1', 'P2', 'P3'] } });
+    fire(m.plot, 'data-isolation-reset');
+    expect(m.search.selectedProteinIds).toEqual(['P1']);
+    expect(m.bar.selectedCount).toBe(1);
+
+    fire(m.search, 'add-selection', { proteinId: 'P2' });
+    await afterPaint();
+
+    expect(m.plot.selectedProteinIds).toEqual(['P1', 'P2']);
+    expect(m.search.selectedProteinIds).toEqual(['P1', 'P2']);
+
+    // Landed: the plot's own changes show again.
+    m.plot.selectedProteinIds = [];
+    fire(m.plot, 'data-change', { data: { protein_ids: ['P1', 'P2', 'P3'] } });
+    expect(m.search.selectedProteinIds).toEqual([]);
+  });
+
   it('add-selection-multiple does not zoom', async () => {
     const m = setup();
 
