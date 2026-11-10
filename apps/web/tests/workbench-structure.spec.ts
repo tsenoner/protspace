@@ -405,6 +405,37 @@ test('the card moves and resizes from the keyboard, and stays over the plot when
   );
 });
 
+test('a second arrow key whose press straddles a frame still moves the floating card', async ({
+  page,
+}) => {
+  await openExplore(page);
+  await clickProteinNearPlotCentre(page);
+  await floatStructure(page);
+  const card = structurePanel(page);
+  const start = (await card.boundingBox())!;
+
+  // Step 1's keyup stores the card, and the re-render observes the plot afresh. The observer's
+  // first report comes with the next frame, between step 2's keydown and keyup (after the frame's
+  // requestAnimationFrame callbacks, so the keyup waits for a second one).
+  await card.evaluate(async (section) => {
+    const key = (type: string) =>
+      section.dispatchEvent(new KeyboardEvent(type, { key: 'ArrowLeft', bubbles: true }));
+    key('keydown');
+    key('keyup');
+    await Promise.resolve();
+    key('keydown');
+    for (let i = 0; i < 2; i++) await new Promise(requestAnimationFrame);
+    key('keyup');
+  });
+
+  // Both 16 px steps land, on screen and in the stored layout.
+  expectNear((await card.boundingBox())!.x, start.x - 32);
+  const area = (await plotArea(page).boundingBox())!;
+  await expect
+    .poll(async () => (await readLayout(page))!.floatingRect?.x)
+    .toBe(Math.round(start.x - 32 - area.x));
+});
+
 test('below 951 px there is no Pop out and a stored floating card shows docked', async ({
   page,
 }) => {
