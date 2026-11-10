@@ -15,6 +15,7 @@ import {
   selectAnnotation,
 } from './helpers/explore';
 import { figureEditor } from './helpers/figure';
+import { useSharedPage } from './helpers/shared-page';
 import { openLegendOther, openLegendSettings } from './helpers/legend';
 import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
 
@@ -26,7 +27,10 @@ import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/wor
 
 interface State {
   name: string;
-  /** Brings the workbench, loaded and idle, into the state. */
+  /**
+   * Brings the workbench, loaded and idle, into the state. A shared-page state leaves only what
+   * Escape closes, so the next test starts from the idle workbench (see helpers/shared-page.ts).
+   */
   open(page: Page): Promise<void>;
   /** A commented exception for this state only. */
   axe?: AxeOptions;
@@ -34,7 +38,8 @@ interface State {
 
 const help = (page: Page) => appBar(page).getByRole('button', { name: 'Help', exact: true });
 
-const STATES: State[] = [
+/** States that only open what Escape closes again: one loaded page serves them all. */
+const SHARED_STATES: State[] = [
   { name: 'the idle workbench', open: async () => {} },
   {
     name: 'the Color by picker',
@@ -51,39 +56,6 @@ const STATES: State[] = [
     name: 'the legend settings popover',
     open: async (page) => {
       await openLegendSettings(page);
-    },
-  },
-  {
-    name: 'the legend Other popover',
-    open: async (page) => {
-      // 'order' has 18 values, so the default 10 rows leave eight under Other.
-      await selectAnnotation(page, 'order');
-      const other = await openLegendOther(page);
-      // axe leaves this popover's text "incomplete" (it cannot resolve the background), so it
-      // checks no contrast here: pin the text to the token pairs theme.test.ts gates instead.
-      const colours = await other.evaluate((host) => {
-        const probe = document.createElement('span');
-        document.body.append(probe);
-        const token = (name: string) => {
-          probe.style.color = `var(${name})`;
-          return getComputedStyle(probe).color;
-        };
-        const text = (selector: string) =>
-          getComputedStyle(host.shadowRoot!.querySelector(selector)!).color;
-        const result = {
-          name: text('.other-item-name') === token('--ps-text'),
-          count: text('.other-item-count') === token('--ps-text-muted'),
-        };
-        probe.remove();
-        return result;
-      });
-      expect(colours).toEqual({ name: true, count: true });
-    },
-  },
-  {
-    name: 'the filter panel with one condition',
-    open: async (page) => {
-      await applyFirstCategoryFilter(page);
     },
   },
   {
@@ -119,6 +91,53 @@ const STATES: State[] = [
     },
   },
   {
+    name: 'the first tour step',
+    open: async (page) => {
+      await help(page).click();
+      await page.getByRole('menuitem', { name: 'Take the tour' }).click();
+      await expect(page.locator('.driver-popover .driver-popover-title')).toHaveText(
+        'Welcome to ProtSpace',
+      );
+    },
+  },
+];
+
+/** States that change the view (annotation, filter, selection, structure): each on its own page. */
+const FRESH_STATES: State[] = [
+  {
+    name: 'the legend Other popover',
+    open: async (page) => {
+      // 'order' has 18 values, so the default 10 rows leave eight under Other.
+      await selectAnnotation(page, 'order');
+      const other = await openLegendOther(page);
+      // axe leaves this popover's text "incomplete" (it cannot resolve the background), so it
+      // checks no contrast here: pin the text to the token pairs theme.test.ts gates instead.
+      const colours = await other.evaluate((host) => {
+        const probe = document.createElement('span');
+        document.body.append(probe);
+        const token = (name: string) => {
+          probe.style.color = `var(${name})`;
+          return getComputedStyle(probe).color;
+        };
+        const text = (selector: string) =>
+          getComputedStyle(host.shadowRoot!.querySelector(selector)!).color;
+        const result = {
+          name: text('.other-item-name') === token('--ps-text'),
+          count: text('.other-item-count') === token('--ps-text-muted'),
+        };
+        probe.remove();
+        return result;
+      });
+      expect(colours).toEqual({ name: true, count: true });
+    },
+  },
+  {
+    name: 'the filter panel with one condition',
+    open: async (page) => {
+      await applyFirstCategoryFilter(page);
+    },
+  },
+  {
     name: 'a toast',
     open: async (page) => {
       await applyFirstCategoryFilter(page);
@@ -139,33 +158,41 @@ const STATES: State[] = [
       await expect(page.locator('#myStructureViewer .loading-overlay')).toHaveCount(0);
     },
   },
-  {
-    name: 'the first tour step',
-    open: async (page) => {
-      await help(page).click();
-      await page.getByRole('menuitem', { name: 'Take the tour' }).click();
-      await expect(page.locator('.driver-popover .driver-popover-title')).toHaveText(
-        'Welcome to ProtSpace',
-      );
-    },
-  },
 ];
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`axe with the OS in ${colorScheme}`, () => {
     test.use({ colorScheme });
 
-    test.beforeEach(async ({ page }) => {
-      await stubStructureRequests(page);
-      await openExplore(page);
+    test.describe('on one shared page', () => {
+      const sharedPage = useSharedPage(async (page) => {
+        await stubStructureRequests(page);
+        await openExplore(page);
+      });
+
+      for (const state of SHARED_STATES) {
+        test(`${state.name} has no violations`, async () => {
+          const page = sharedPage();
+          await expectColorScheme(page, colorScheme);
+          await state.open(page);
+          await expectNoAxeViolations(page, state.axe);
+        });
+      }
     });
 
-    for (const state of STATES) {
-      test(`${state.name} has no violations`, async ({ page }) => {
-        await expectColorScheme(page, colorScheme);
-        await state.open(page);
-        await expectNoAxeViolations(page, state.axe);
+    test.describe('on a fresh page', () => {
+      test.beforeEach(async ({ page }) => {
+        await stubStructureRequests(page);
+        await openExplore(page);
       });
-    }
+
+      for (const state of FRESH_STATES) {
+        test(`${state.name} has no violations`, async ({ page }) => {
+          await expectColorScheme(page, colorScheme);
+          await state.open(page);
+          await expectNoAxeViolations(page, state.axe);
+        });
+      }
+    });
   });
 }

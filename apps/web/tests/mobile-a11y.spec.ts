@@ -13,6 +13,7 @@ import {
   structureSheet,
   tap,
 } from './helpers/mobile';
+import { useSharedPage } from './helpers/shared-page';
 
 /**
  * Design decision 20 on phones: axe on the phone layout's own states in both themes, as
@@ -24,13 +25,19 @@ interface State {
   name: string;
   /** Brings the phone screen, loaded and idle, into the state. */
   open(page: Page): Promise<void>;
+  /**
+   * On the shared page: puts back what Escape does not (see helpers/shared-page.ts), after the
+   * check. A state without it leaves only what Escape closes.
+   */
+  close?(page: Page): Promise<void>;
   /** A commented exception for this state only. */
   axe?: AxeOptions;
 }
 
 const workbench = (page: Page) => page.locator('.workbench');
 
-const STATES: State[] = [
+/** States that only open what they close again: one loaded page serves them all. */
+const SHARED_STATES: State[] = [
   {
     name: 'the idle phone screen',
     open: async (page) => {
@@ -60,7 +67,15 @@ const STATES: State[] = [
       await expect(panelTab(page, 'Filter')).toHaveAttribute('aria-selected', 'true');
       await expect(filterPanel(page)).toBeVisible();
     },
+    close: async (page) => {
+      await panelTab(page, 'Legend').tap();
+      await expect(panelTab(page, 'Legend')).toHaveAttribute('aria-selected', 'true');
+    },
   },
+];
+
+/** A state that selects a protein: on its own page. */
+const FRESH_STATES: State[] = [
   {
     name: 'the folded structure sheet after a tap',
     open: async (page) => {
@@ -76,22 +91,39 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`axe on a phone with the OS in ${colorScheme}`, () => {
     test.use({ colorScheme });
 
-    test.beforeEach(async ({ page }) => {
-      await openExplorePhone(page);
+    test.describe('on one shared page', () => {
+      const sharedPage = useSharedPage(openExplorePhone);
+
+      for (const state of SHARED_STATES) {
+        test(`${state.name} has no violations`, async () => {
+          const page = sharedPage();
+          await expectColorScheme(page, colorScheme);
+          await state.open(page);
+          await expectNoAxeViolations(page, state.axe);
+          await state.close?.(page);
+        });
+      }
     });
 
-    for (const state of STATES) {
-      test(`${state.name} has no violations`, async ({ page }) => {
-        await expectColorScheme(page, colorScheme);
-        await state.open(page);
-        await expectNoAxeViolations(page, state.axe);
+    test.describe('on a fresh page', () => {
+      test.beforeEach(async ({ page }) => {
+        await openExplorePhone(page);
       });
-    }
+
+      for (const state of FRESH_STATES) {
+        test(`${state.name} has no violations`, async ({ page }) => {
+          await expectColorScheme(page, colorScheme);
+          await state.open(page);
+          await expectNoAxeViolations(page, state.axe);
+        });
+      }
+    });
 
     test.describe('landscape', () => {
       test.use({ viewport: { width: 740, height: 360 } });
 
       test('the idle landscape screen has no violations', async ({ page }) => {
+        await openExplorePhone(page);
         await expectColorScheme(page, colorScheme);
         await expect(workbench(page)).toHaveAttribute('data-layout', 'landscape');
         await expectNoAxeViolations(page);

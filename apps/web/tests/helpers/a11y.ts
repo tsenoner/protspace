@@ -10,20 +10,28 @@ const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 /**
  * Resolves once no finite animation or transition is running (a popover's or a toast's fade), so
  * axe measures colours at their final opacity. Infinite ones (a spinner) are ignored.
+ *
+ * `document.getAnimations()` leaves out shadow trees, where the kit's popovers fade their panel:
+ * each shadow root is asked too. Missing them let axe read a popover's text half faded in.
  */
 async function animationsSettled(page: Page): Promise<void> {
   await expect
     .poll(() =>
-      page.evaluate(
-        () =>
-          document
-            .getAnimations()
-            .filter(
-              (animation) =>
-                animation.playState === 'running' &&
-                animation.effect?.getComputedTiming().endTime !== Infinity,
-            ).length,
-      ),
+      page.evaluate(() => {
+        const animations: Animation[] = [];
+        const collect = (root: Document | ShadowRoot) => {
+          animations.push(...root.getAnimations());
+          for (const element of root.querySelectorAll('*')) {
+            if (element.shadowRoot) collect(element.shadowRoot);
+          }
+        };
+        collect(document);
+        return animations.filter(
+          (animation) =>
+            animation.playState === 'running' &&
+            animation.effect?.getComputedTiming().endTime !== Infinity,
+        ).length;
+      }),
     )
     .toBe(0);
 }
