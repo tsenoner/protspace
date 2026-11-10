@@ -1,6 +1,8 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
 from protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
     ProteinAnnotations,
@@ -22,6 +24,24 @@ _FETCH_MANY_PATCH = (
 _SEARCH_SEC_ACC_PATCH = (
     "protspace.data.annotations.retrievers.uniprot_retriever._search_sec_acc"
 )
+_SEARCH_INACTIVE_PATCH = (
+    "protspace.data.annotations.retrievers.uniprot_retriever._search_inactive_records"
+)
+_SEARCH_UNIPARC_PATCH = (
+    "protspace.data.annotations.retrievers.uniprot_retriever._search_uniparc_sequences"
+)
+
+
+@pytest.fixture
+def no_bulk_answers():
+    """The bulk inactive-entry requests answer nothing, so every inactive
+    entry goes through the per-entry lookups these tests mock."""
+    with (
+        patch(_SEARCH_INACTIVE_PATCH, return_value={}) as search,
+        patch(_SEARCH_UNIPARC_PATCH, return_value={}),
+        patch(_FETCH_MANY_PATCH, return_value=[]),
+    ):
+        yield search
 
 
 class TestUniProtAnnotationRetrieverInit:
@@ -258,8 +278,10 @@ class TestExtractAnnotations:
         assert result["reviewed"] == "Swiss-Prot"
 
 
+@pytest.mark.usefixtures("no_bulk_answers")
 class TestResolveInactiveEntries:
-    """Test the _resolve_inactive_entries method."""
+    """The per-entry lookup an inactive entry falls back to when the bulk
+    requests leave it unsettled (here: the bulk search answers nothing)."""
 
     @patch(_FETCH_ONE_PATCH)
     def test_fetch_one_returns_active_entry(self, mock_fetch_one):
@@ -484,6 +506,7 @@ class TestResolveInactiveEntries:
         assert del_count == 1
 
 
+@pytest.mark.usefixtures("no_bulk_answers")
 class TestFetchAnnotationsWithMissingEntries:
     """Test that fetch_annotations detects and resolves missing entries."""
 
@@ -526,47 +549,65 @@ class TestFetchAnnotationsWithMissingEntries:
         mock_fetch_one.assert_not_called()
 
 
-class TestUniProtRelease:
-    """The UniProtKB release travels in the X-UniProt-Release header of the
-    responses the retriever already receives; no extra request is made."""
+def _endpoint(url: str, params: dict | None) -> str:
+    """Name a fake UniProt request: the URL's last segment, plus the field a
+    search queries, so the three searches are told apart
+    (``search:accession``, ``search:sec_acc``, ``search:upi``)."""
+    endpoint = url.rsplit("/", 1)[-1]
+    if endpoint == "search":
+        endpoint += ":" + params["query"].split(":", 1)[0]
+    return endpoint
 
-    @staticmethod
-    def _serve(monkeypatch, release_by_endpoint: dict[str, str]):
-        """Fake UniProt: P01308 comes back from the batch endpoint; P99999 is
-        a deleted entry resolved one by one (its sequence from UniParc);
-        Q88888 is missing from the single-entry endpoint and found by a
-        secondary-accession search. Each endpoint reports its own release."""
+
+def _queried(params: dict) -> list[str]:
+    """The values an ``A OR B`` search or a comma-joined batch asks for."""
+    if "accessions" in params:
+        return params["accessions"].split(",")
+    return [term.split(":", 1)[1] for term in params["query"].split(" OR ")]
+
+
+class _FakeUniProt:
+    """UniProt over ``requests.Session.get``, answering the batch, single
+    entry, bulk and UniParc endpoints from one table, so the bulk path and the
+    per-entry path can be compared on the same data.
+
+    *active* maps an accession to its active record; *inactive* maps an
+    accession to the stub its single lookup and the ``accession:`` search
+    return (a merged one is redirected to its target by the single lookup,
+    as UniProt's 303 does); *uniparc* maps a UniParc ID to a sequence.
+    *override* maps an endpoint name to a (status, body, headers) answer, or a
+    list of them consumed one per request, after which the table answers.
+    ``timed`` lists every request as (endpoint, time sent), on the clock
+    :meth:`on_a_fake_clock` installs (0.0 without it).
+    """
+
+    def __init__(self, monkeypatch, *, active, inactive=None, uniparc=None):
         import requests
         from requests.structures import CaseInsensitiveDict
 
-        bodies = {
-            "accessions": {"results": [_make_mock_record("P01308")]},
-            "P99999.json": {
-                "entryType": "Inactive",
-                "inactiveReason": {"inactiveReasonType": "DELETED"},
-                "extraAttributes": {"uniParcId": "UPI0000000001"},
-            },
-            "Q88888.json": None,  # 404
-            "search": {"results": [_make_mock_record("Q88880")]},
-            "UPI0000000001.json": {"sequence": {"value": "MKV", "length": 3}},
-        }
-        requested = []
-        sessions = []
+        self.active = active
+        self.inactive = inactive or {}
+        self.uniparc = uniparc or {}
+        self.override: dict = {}
+        self.release: dict[str, str] = {}
+        self.sessions: list = []
+        self.timed: list[tuple[str, float]] = []
+        self.clock = {"now": 0.0}
 
         def fake_get(session, url, params=None, timeout=None):
-            endpoint = url.rsplit("/", 1)[-1]
-            requested.append(endpoint)
-            sessions.append(session)
+            endpoint = _endpoint(url, params)
+            self.timed.append((endpoint, self.clock["now"]))
+            self.sessions.append(session)
+            status, body, headers = self._answer(endpoint, url, params)
             response = requests.Response()
             response.url = url
-            release = release_by_endpoint.get(endpoint)
-            # Real servers send it lower-case; lookups must not care.
-            response.headers = CaseInsensitiveDict(
-                {"x-uniprot-release": release} if release else {}
-            )
-            body = bodies[endpoint]
-            response.status_code = 404 if body is None else 200
-            response._content = b"{}" if body is None else json.dumps(body).encode()
+            response.status_code = status
+            headers = dict(headers)
+            if endpoint in self.release:
+                # Real servers send it lower-case; lookups must not care.
+                headers["x-uniprot-release"] = self.release[endpoint]
+            response.headers = CaseInsensitiveDict(headers)
+            response._content = json.dumps(body or {}).encode()
             return response
 
         def forbidden(*_args, **_kwargs):
@@ -574,74 +615,56 @@ class TestUniProtRelease:
 
         monkeypatch.setattr(requests.Session, "get", fake_get)
         monkeypatch.setattr(requests, "get", forbidden)
-        return requested, sessions
 
-    def test_releases_are_collected_from_every_response(self, monkeypatch):
-        requested, _ = self._serve(
-            monkeypatch,
-            {
-                "accessions": "2026_03",
-                "P99999.json": "2026_02",
-                "UPI0000000001.json": "2026_01",
-                "search": "2026_04",
-            },
-        )
-        retriever = UniProtRetriever(headers=["P01308", "P99999", "Q88888"])
+    @property
+    def sent(self) -> list[str]:
+        return [endpoint for endpoint, _ in self.timed]
 
-        result = retriever.fetch_annotations()
+    def _answer(self, endpoint, url, params):
+        answer = self.override.get(endpoint)
+        if isinstance(answer, list) and answer:
+            return answer.pop(0)
+        if isinstance(answer, tuple):
+            return answer
+        if endpoint == "accessions":
+            found = [self.active[a] for a in _queried(params) if a in self.active]
+            return 200, {"results": found}, {}
+        if endpoint == "search:accession":
+            found = [
+                {"primaryAccession": a, **self.inactive[a]}
+                for a in _queried(params)
+                if a in self.inactive
+            ]
+            return 200, {"results": found}, {}
+        if endpoint == "search:upi":
+            found = [
+                {"uniParcId": upi, "sequence": {"value": self.uniparc[upi]}}
+                for upi in _queried(params)
+                if upi in self.uniparc
+            ]
+            return 200, {"results": found}, {}
+        if endpoint == "search:sec_acc":
+            return 200, {"results": []}, {}
+        name = endpoint.removesuffix(".json")
+        if name in self.uniparc:
+            sequence = self.uniparc[name]
+            return 200, {"sequence": {"value": sequence, "length": len(sequence)}}, {}
+        if name in self.active:
+            return 200, self.active[name], {}
+        stub = self.inactive.get(name)
+        if stub is None:
+            return 404, None, {}
+        reason = stub.get("inactiveReason", {})
+        target = (reason.get("mergeDemergeTo") or [None])[0]
+        if reason.get("inactiveReasonType") == "MERGED" and target in self.active:
+            return 200, self.active[target], {}
+        return 200, stub, {}
 
-        assert {r.identifier for r in result} == {"P01308", "P99999", "Q88888"}
-        # Every path was exercised, and none made a request of its own.
-        assert sorted(requested) == sorted(
-            ["accessions", "P99999.json", "UPI0000000001.json", "Q88888.json", "search"]
-        )
-        assert retriever.releases == {"2026_01", "2026_02", "2026_03", "2026_04"}
-
-    def test_every_request_goes_through_one_session(self, monkeypatch):
-        """A new connection per request held UniProt to 208 entries a second;
-        one session reaches 308 (about 31 min for Swiss-Prot)."""
-        from protspace.data.annotations.retrievers.http_utils import PooledSession
-
-        requested, sessions = self._serve(monkeypatch, {"accessions": "2026_03"})
-        retriever = UniProtRetriever(headers=["P01308", "P99999", "Q88888"])
-
-        retriever.fetch_annotations()
-
-        # The batch, the inactive entry, UniParc, the missing entry and the
-        # secondary-accession search: five requests, one session.
-        assert len(requested) == 5
-        assert len({id(session) for session in sessions}) == 1
-        assert isinstance(sessions[0], PooledSession)
-        assert retriever.releases == {"2026_03"}
-
-    def test_no_release_header_leaves_the_set_empty(self, monkeypatch):
-        self._serve(monkeypatch, {})
-        retriever = UniProtRetriever(headers=["P01308", "P99999", "Q88888"])
-
-        retriever.fetch_annotations()
-
-        assert retriever.releases == set()
-
-    def test_a_retriever_that_fetched_nothing_has_an_empty_set(self):
-        assert UniProtRetriever(headers=["P01308"]).releases == set()
-
-
-class TestUniProtRetryAfter:
-    """A `Retry-After` on any UniProt response holds every later request of
-    the fetch, including the single-attempt lookups that resolve an inactive
-    entry: they raise at once, as before, but pass the pause on."""
-
-    @staticmethod
-    def _serve(monkeypatch, answers: dict[str, tuple[int, dict | None, dict]]):
-        """Fake UniProt over the session, on a fake clock. *answers* maps an
-        endpoint to its status, JSON body and headers. Returns the list of
-        (endpoint, time sent) the fetch produced."""
-        import requests
-        from requests.structures import CaseInsensitiveDict
-
+    def on_a_fake_clock(self, monkeypatch):
+        """Take the retry backoff out: a wait advances ``clock`` instead."""
         from protspace.data.annotations.retrievers import http_utils
 
-        clock = {"now": 0.0}
+        clock = self.clock
 
         def advance(seconds, stop=None):
             clock["now"] += seconds
@@ -658,63 +681,297 @@ class TestUniProtRetryAfter:
 
         monkeypatch.setattr(http_utils, "time", _Time)
         monkeypatch.setattr(http_utils, "_sleep", advance)
-        sent = []
+        return self
 
-        def fake_get(session, url, params=None, timeout=None):
-            endpoint = url.rsplit("/", 1)[-1]
-            sent.append((endpoint, clock["now"]))
-            status, body, headers = answers[endpoint]
-            response = requests.Response()
-            response.url = url
-            response.status_code = status
-            response.headers = CaseInsensitiveDict(headers)
-            response._content = json.dumps(body or {}).encode()
-            return response
 
-        monkeypatch.setattr(requests.Session, "get", fake_get)
-        return sent
+def _deleted(uniparc_id: str | None = None) -> dict:
+    return {
+        "entryType": "Inactive",
+        "inactiveReason": {
+            "inactiveReasonType": "DELETED",
+            "deletedReason": "Not part of a reference proteome",
+        },
+        "extraAttributes": {"uniParcId": uniparc_id} if uniparc_id else {},
+    }
+
+
+def _merged(target: str) -> dict:
+    return {
+        "entryType": "Inactive",
+        "inactiveReason": {
+            "inactiveReasonType": "MERGED",
+            "mergeDemergeTo": [target],
+        },
+        "extraAttributes": {},
+    }
+
+
+class TestUniProtRelease:
+    """The UniProtKB release travels in the X-UniProt-Release header of the
+    responses the retriever already receives; no extra request is made."""
+
+    @staticmethod
+    def _serve(monkeypatch):
+        """P01308 comes back from the batch endpoint; P99999 is a deleted
+        entry the bulk search and UniParc search settle; Q88888 is unknown to
+        the bulk search, so it is looked up on its own (404) and then by a
+        secondary-accession search."""
+        return _FakeUniProt(
+            monkeypatch,
+            active={"P01308": _make_mock_record("P01308")},
+            inactive={"P99999": _deleted("UPI0000000001")},
+            uniparc={"UPI0000000001": "MKV"},
+        )
+
+    def test_releases_are_collected_from_every_response(self, monkeypatch):
+        uniprot = self._serve(monkeypatch)
+        uniprot.release = {
+            "accessions": "2026_03",
+            "search:accession": "2026_02",
+            "search:upi": "2026_01",
+            "search:sec_acc": "2026_04",
+        }
+        retriever = UniProtRetriever(headers=["P01308", "P99999", "Q88888"])
+
+        result = retriever.fetch_annotations()
+
+        assert {r.identifier for r in result} == {"P01308", "P99999", "Q88888"}
+        # Every path was exercised, and none made a request of its own.
+        assert uniprot.sent == [
+            "accessions",
+            "search:accession",
+            "Q88888.json",
+            "search:sec_acc",
+            "search:upi",
+        ]
+        assert retriever.releases == {
+            "2026_01",
+            "2026_02",
+            "2026_03",
+            "2026_04",
+        }
+
+    def test_every_request_goes_through_one_session(self, monkeypatch):
+        """A new connection per request held UniProt to 208 entries a second;
+        one session reaches 308 (about 31 min for Swiss-Prot)."""
+        from protspace.data.annotations.retrievers.http_utils import PooledSession
+
+        uniprot = self._serve(monkeypatch)
+        uniprot.release = {"accessions": "2026_03"}
+        retriever = UniProtRetriever(headers=["P01308", "P99999", "Q88888"])
+
+        retriever.fetch_annotations()
+
+        assert len(uniprot.sent) == 5
+        assert len({id(session) for session in uniprot.sessions}) == 1
+        assert isinstance(uniprot.sessions[0], PooledSession)
+        assert retriever.releases == {"2026_03"}
+
+    def test_no_release_header_leaves_the_set_empty(self, monkeypatch):
+        self._serve(monkeypatch)
+        retriever = UniProtRetriever(headers=["P01308", "P99999", "Q88888"])
+
+        retriever.fetch_annotations()
+
+        assert retriever.releases == set()
+
+    def test_a_retriever_that_fetched_nothing_has_an_empty_set(self):
+        assert UniProtRetriever(headers=["P01308"]).releases == set()
+
+
+class TestUniProtRetryAfter:
+    """A `Retry-After` on any UniProt response holds every later request of
+    the fetch: the bulk inactive-entry requests, which retry, and the
+    single-attempt lookups that resolve an inactive entry on its own, which
+    raise at once, as before, but pass the pause on."""
 
     def test_a_retry_after_on_an_entry_lookup_holds_the_next_request(self, monkeypatch):
-        sent = self._serve(
-            monkeypatch,
-            {
-                "accessions": (200, {"results": [_make_mock_record("P01308")]}, {}),
-                "P99999.json": (429, None, {"Retry-After": "3"}),
-                "search": (200, {"results": []}, {}),
-            },
-        )
+        uniprot = _FakeUniProt(
+            monkeypatch, active={"P01308": _make_mock_record("P01308")}
+        ).on_a_fake_clock(monkeypatch)
+        uniprot.override["P99999.json"] = (429, None, {"Retry-After": "3"})
 
         rows = UniProtRetriever(headers=["P01308", "P99999"]).fetch_annotations()
 
         assert {row.identifier for row in rows} == {"P01308", "P99999"}
         # The secondary-accession search waits out the pause.
-        assert sent == [("accessions", 0.0), ("P99999.json", 0.0), ("search", 3.0)]
+        assert uniprot.timed == [
+            ("accessions", 0.0),
+            ("search:accession", 0.0),
+            ("P99999.json", 0.0),
+            ("search:sec_acc", 3.0),
+        ]
 
     def test_a_retry_after_on_a_uniparc_lookup_holds_the_next_request(
         self, monkeypatch
     ):
-        deleted = {
-            "entryType": "Inactive",
-            "inactiveReason": {"inactiveReasonType": "DELETED"},
-            "extraAttributes": {"uniParcId": "UPI0000000001"},
-        }
-        sent = self._serve(
+        uniprot = _FakeUniProt(
             monkeypatch,
-            {
-                "accessions": (200, {"results": [_make_mock_record("P01308")]}, {}),
-                "P99999.json": (200, deleted, {}),
-                "UPI0000000001.json": (429, None, {"Retry-After": "2"}),
-                "Q88888.json": (404, None, {}),
-                "search": (200, {"results": []}, {}),
+            active={"P01308": _make_mock_record("P01308")},
+            inactive={
+                "P99999": _deleted("UPI0000000001"),
+                "P99998": _deleted("UPI0000000002"),
             },
+        ).on_a_fake_clock(monkeypatch)
+        # The UniParc search knows neither id, so each is looked up alone.
+        uniprot.override["UPI0000000001.json"] = (429, None, {"Retry-After": "2"})
+
+        UniProtRetriever(headers=["P01308", "P99999", "P99998"]).fetch_annotations()
+
+        assert uniprot.timed == [
+            ("accessions", 0.0),
+            ("search:accession", 0.0),
+            ("search:upi", 0.0),
+            ("UPI0000000001.json", 0.0),
+            ("UPI0000000002.json", 2.0),
+        ]
+
+    def test_a_retry_after_on_the_bulk_search_holds_and_retries_it(self, monkeypatch):
+        uniprot = _FakeUniProt(
+            monkeypatch,
+            active={"P01308": _make_mock_record("P01308")},
+            inactive={"P99999": _deleted("UPI0000000001")},
+            uniparc={"UPI0000000001": "MKV"},
+        ).on_a_fake_clock(monkeypatch)
+        uniprot.override["search:accession"] = [(429, None, {"Retry-After": "2"})]
+
+        rows = UniProtRetriever(headers=["P01308", "P99999"]).fetch_annotations()
+
+        assert {r.identifier: r.annotations["sequence"] for r in rows}[
+            "P99999"
+        ] == "MKV"
+        assert uniprot.timed == [
+            ("accessions", 0.0),
+            ("search:accession", 0.0),
+            ("search:accession", 2.0),
+            ("search:upi", 2.0),
+        ]
+
+
+class TestBulkInactiveResolution:
+    """A batch's inactive entries cost a bulk search, one fetch of the merge
+    targets and one UniParc search, with the values the per-entry lookup
+    gives them; whatever those leave unsettled is looked up on its own."""
+
+    ACTIVE = {
+        "P01308": _make_mock_record("P01308", protein_name="Insulin"),
+        "Q076D1": _make_mock_record("Q076D1", protein_name="Crotastatin", length=77),
+    }
+    INACTIVE = {
+        "A0A001": _deleted("UPI0000000001"),
+        "A0A002": _merged("Q076D1"),
+        "A0A003": _deleted(),  # no UniParc id: no sequence to recover
+        "A0A004": _merged("Q99999"),  # target itself gone
+    }
+    UNIPARC = {"UPI0000000001": "MKVLAAGIV"}
+    HEADERS = ["P01308", "A0A001", "A0A002", "A0A003", "A0A004", "A0A005"]
+
+    def _serve(self, monkeypatch):
+        return _FakeUniProt(
+            monkeypatch,
+            active=self.ACTIVE,
+            inactive=self.INACTIVE,
+            uniparc=self.UNIPARC,
         )
 
-        UniProtRetriever(headers=["P01308", "P99999", "Q88888"]).fetch_annotations()
+    def test_a_batch_costs_three_bulk_requests(self, monkeypatch):
+        uniprot = self._serve(monkeypatch)
+        retriever = UniProtRetriever(headers=self.HEADERS[:4])
 
-        assert sent == [
-            ("accessions", 0.0),
-            ("P99999.json", 0.0),
-            ("UPI0000000001.json", 0.0),
-            ("Q88888.json", 2.0),
-            ("search", 2.0),
+        rows = {r.identifier: r.annotations for r in retriever.fetch_annotations()}
+
+        assert uniprot.sent == [
+            "accessions",
+            "search:accession",
+            "accessions",  # the merge targets
+            "search:upi",
+        ]
+        assert rows["A0A002"]["protein_name"] == "Crotastatin"
+        assert rows["A0A002"]["length"] == "77"
+        assert rows["A0A001"]["sequence"] == "MKVLAAGIV"
+        assert rows["A0A001"]["length"] == "9"
+        assert rows["A0A001"]["protein_name"] == ""
+        assert set(rows["A0A003"].values()) == {""}
+
+    def test_only_what_the_bulk_requests_miss_is_looked_up_alone(self, monkeypatch):
+        """An accession the search does not know is looked up alone (then by
+        secondary accession), and so is a merge target the batch endpoint does
+        not return; nothing else is."""
+        uniprot = self._serve(monkeypatch)
+
+        rows = {
+            r.identifier: r.annotations
+            for r in UniProtRetriever(headers=self.HEADERS).fetch_annotations()
+        }
+
+        singles = [e for e in uniprot.sent if e.endswith(".json") or "sec_acc" in e]
+        assert singles == ["A0A005.json", "search:sec_acc", "Q99999.json"]
+        # Merged into an entry that is gone too: deleted, like A0A005.
+        assert set(rows["A0A004"].values()) == set(rows["A0A005"].values()) == {""}
+
+    @pytest.mark.parametrize(
+        "failing", ["search:accession", "accessions", "search:upi"]
+    )
+    def test_the_bulk_path_gives_the_per_entry_values(self, monkeypatch, failing):
+        """Every value and count is the same whether the bulk requests answer
+        or one of them fails and its accessions go one by one."""
+        self._serve(monkeypatch)
+        bulk = UniProtRetriever(headers=self.HEADERS)
+        expected = {r.identifier: r.annotations for r in bulk.fetch_annotations()}
+
+        uniprot = self._serve(monkeypatch)
+        # The batch endpoint itself must still answer: only the call after
+        # the batch fails.
+        if failing == "accessions":
+            batch = (200, {"results": [self.ACTIVE["P01308"]]}, {})
+            uniprot.override["accessions"] = [batch, (400, None, {})]
+        else:
+            uniprot.override[failing] = (400, None, {})
+        fallback = UniProtRetriever(headers=self.HEADERS)
+        got = {r.identifier: r.annotations for r in fallback.fetch_annotations()}
+
+        assert got == expected
+        assert set(got) == set(self.HEADERS)
+
+    def test_an_unreadable_record_does_not_fail_the_batch(self, monkeypatch):
+        """Parsing ran inside each entry's own try before; one record that
+        cannot be read must not mark the batch failed and append its proteins
+        a second time, empty."""
+        self._serve(monkeypatch)
+        extract = UniProtRetriever._extract_annotations
+
+        def picky(entry):
+            if entry.entry == "Q076D1":
+                raise TypeError("unexpected shape")
+            return extract(entry)
+
+        monkeypatch.setattr(
+            UniProtRetriever, "_extract_annotations", staticmethod(picky)
+        )
+        retriever = UniProtRetriever(headers=self.HEADERS[:3])
+
+        rows = retriever.fetch_annotations()
+
+        assert [r.identifier for r in rows] == ["P01308", "A0A001", "A0A002"]
+        assert retriever.failed_batch_count == 0
+        assert rows[0].annotations["protein_name"] == "Insulin"
+        # Merged into the unreadable entry: left unresolved, like a deleted one.
+        assert set(rows[2].annotations.values()) == {""}
+
+    def test_failed_bulk_requests_warn_once(self, monkeypatch, caplog):
+        uniprot = self._serve(monkeypatch)
+        batch = (200, {"results": [self.ACTIVE["P01308"]]}, {})
+        uniprot.override["accessions"] = [batch, (400, None, {})]
+        uniprot.override["search:accession"] = (400, None, {})
+        uniprot.override["search:upi"] = (400, None, {})
+        retriever = UniProtRetriever(headers=self.HEADERS)
+
+        with caplog.at_level("WARNING"):
+            retriever.fetch_annotations()
+
+        bulk = [r for r in caplog.records if "bulk UniProt" in r.getMessage()]
+        assert retriever.bulk_fallbacks == 3
+        assert [r.getMessage() for r in bulk] == [
+            "3 bulk UniProt lookups for inactive entries failed; those entries "
+            "were looked up one by one"
         ]

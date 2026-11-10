@@ -16,6 +16,7 @@ from protspace.cli.common_options import (
     Opt_MaxLength,
     Opt_Verbose,
     build_embed_config,
+    refuse_local_only_on_biocentral,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ def embed(
             "-e",
             "--embedder",
             help=(
-                "Biocentral model shortcut (repeatable for multi-model).\n"
+                "Model shortcut (repeatable for multi-model).\n"
                 f"{EMBEDDER_HELP_MODELS}\n{EMBEDDER_HELP_LICENSE}"
             ),
         ),
@@ -60,6 +61,7 @@ def embed(
     Biocentral API (default) or on a local GPU/CPU with --backend local.
     """
     setup_logging(verbose)
+    refuse_local_only_on_biocentral(embedder, backend)
 
     import h5py
 
