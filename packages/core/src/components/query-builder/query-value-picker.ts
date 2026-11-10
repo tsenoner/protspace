@@ -3,9 +3,14 @@ import { property, state, query as litQuery } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
 import { ANY_VALUE } from './query-types';
-import { toInternalValue } from '../legend/config';
-import { resolveAnnotationInternalValues } from './query-evaluate';
-import { annotationLabel, formatCount, isNAValue } from '@protspace/utils';
+import { carriesWanted, slotAt, valueSlots } from './query-evaluate';
+import {
+  annotationLabel,
+  formatCount,
+  getProteinAnnotationCount,
+  isNAValue,
+  toInternalValue,
+} from '@protspace/utils';
 import { displayFilterValue } from './query-presence';
 import { queryBuilderStyles } from './query-builder.styles';
 import { icon } from '../kit/icon';
@@ -172,17 +177,33 @@ class ProtspaceQueryValuePicker extends LitElement {
     let multiLabel = false;
     if (!this.data || !this.annotation) return { counts, size, multiLabel };
     const total = this.data.protein_ids?.length ?? 0;
+    const idxData = this.data.annotation_data?.[this.annotation];
+    const declared = this.data.annotations?.[this.annotation]?.values;
+    // A column the data lacks reads as N/A for every protein, as the evaluator resolves it.
+    const slots = valueSlots(declared ?? []);
+    const slotCounts = new Uint32Array(slots.values.length);
+    // The protein that last counted each slot, so a value it carries twice counts once.
+    const countedBy = new Int32Array(slots.values.length).fill(-1);
 
     const countProtein = (idx: number) => {
       if (!(idx >= 0 && idx < total)) return;
       size++;
-      const resolved = resolveAnnotationInternalValues(idx, this.annotation, this.data!);
-      if (resolved.length > 1) multiLabel = true;
-      let hasReal = false;
-      for (const internal of resolved) {
-        counts.set(internal, (counts.get(internal) ?? 0) + 1);
-        if (!isNAValue(internal)) hasReal = true;
+      const labels = idxData && declared ? getProteinAnnotationCount(idxData, idx) : 0;
+      if (labels === 0) {
+        slotCounts[slots.naSlot]++;
+        return;
       }
+      let distinct = 0;
+      let hasReal = false;
+      for (let k = 0; k < labels; k++) {
+        const slot = slotAt(idxData!, slots, idx, k);
+        if (countedBy[slot] === idx) continue;
+        countedBy[slot] = idx;
+        slotCounts[slot]++;
+        distinct++;
+        if (slot !== slots.naSlot) hasReal = true;
+      }
+      if (distinct > 1) multiLabel = true;
       if (hasReal) anyCount++;
     };
 
@@ -193,6 +214,9 @@ class ProtspaceQueryValuePicker extends LitElement {
       for (const idx of base) countProtein(idx);
     }
 
+    slots.values.forEach((value, slot) => {
+      if (slotCounts[slot] > 0) counts.set(value, slotCounts[slot]);
+    });
     counts.set(ANY_VALUE, anyCount);
     return { counts, size, multiLabel };
   }
@@ -222,13 +246,16 @@ class ProtspaceQueryValuePicker extends LitElement {
   /** The union for a multi-label annotation, where per-value counts overlap. */
   private _walkSelection(selected: readonly string[]): number {
     const data = this.data;
-    if (!data) return 0;
+    const idxData = data?.annotation_data?.[this.annotation];
+    const declared = data?.annotations?.[this.annotation]?.values;
+    // Multi-label means the column has labels, so both are present here.
+    if (!data || !idxData || !declared) return 0;
     const total = data.protein_ids?.length ?? 0;
     const set = new Set(selected);
+    const slots = valueSlots(declared);
+    const wanted = Uint8Array.from(slots.values, (value) => (set.has(value) ? 1 : 0));
     const hit = (idx: number) =>
-      idx >= 0 &&
-      idx < total &&
-      resolveAnnotationInternalValues(idx, this.annotation, data).some((v) => set.has(v));
+      idx >= 0 && idx < total && carriesWanted(idxData, slots, wanted, idx);
     let n = 0;
     const base = this.matchedIndices;
     if (base === null) {
