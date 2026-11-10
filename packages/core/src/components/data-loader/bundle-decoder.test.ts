@@ -174,4 +174,16 @@ describe('decodeBundle', () => {
       expect([...new Uint8Array(fallbackBytes)]).toEqual([4, 5, 6]);
     },
   );
+
+  it('rethrows a bundle the worker refused instead of decoding it again', async () => {
+    mocks.reply.mockImplementation((worker: FakeWorker) =>
+      answer(worker, { type: 'decode-result', ok: false, rejected: true, error: 'too many rows' }),
+    );
+
+    await expect(decodeBundle(bytes, reread)).rejects.toThrow('too many rows');
+
+    expect(reread).not.toHaveBeenCalled();
+    expect(mocks.decodeParquetBundle).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+  });
 });

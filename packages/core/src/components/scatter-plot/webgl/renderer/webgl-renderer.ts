@@ -449,11 +449,10 @@ export class WebGLRenderer {
    *
    * Why this exists: the renderer uses painter's algorithm — points are sorted
    * once by depth, then position/style buffers are written in sorted order. A
-   * pure depth change (same points, same coords, new depth values) leaves the
-   * sample-based depth-changed detection unable to compare like-for-like
-   * (sampled point[i] is read from the input order; staged depths[i] is from the
-   * sorted order). Without an explicit signal, the renderer can keep the stale
-   * sort. This API is that signal.
+   * pure depth change (same points, same coords, new depth values) can miss the
+   * sample-based depth-changed detection, which reads only the first 100 staged
+   * slots. Without an explicit signal, the renderer can keep the stale sort. This
+   * API is that signal.
    */
   invalidateDepthOrder() {
     this.depthOrderDirty = true;
@@ -1420,11 +1419,11 @@ export class WebGLRenderer {
     this.depthOrderDirty = false;
     if (positions || resized || depthOrderDirty) return 'resort';
 
-    // Check if depths have actually changed by sampling first few slots
-    // If depths are the same, we can skip re-sorting (color-only update optimization)
-    // (note: depths array is in sorted order after last render)
-    const sampleSize = Math.min(100, pd.length, this.currentPointCount);
-    return this.sampledDepthsMoved(pd, sampleSize, false) ? 'resort' : 'restyle';
+    // A restyle rewrites the slots staged from `sortedDataRef` in their paint order, so
+    // sample those (color-only update optimization): a moved depth needs a re-sort.
+    const src = this.sortedDataRef;
+    if (!src) return 'resort';
+    return this.stagedDepthsMoved(src) ? 'resort' : 'restyle';
   }
 
   /**
@@ -1693,18 +1692,10 @@ export class WebGLRenderer {
    * would leave on screen.
    */
   private stagedDepthsMoved(pd: PlotData): boolean {
-    return this.sampledDepthsMoved(pd, Math.min(100, this.currentPointCount), true);
-  }
-
-  /**
-   * Whether any of the first `n` staged depths differs from the paint depth the
-   * style getters now give its point, skipping hidden points. Staged depth `k`
-   * is compared against slot `sortOrder[k]` when `sorted`, else slot `k`.
-   */
-  private sampledDepthsMoved(pd: PlotData, n: number, sorted: boolean): boolean {
     const { depths } = this.stageArrays;
+    const n = Math.min(100, this.currentPointCount);
     for (let k = 0; k < n; k++) {
-      const sp = this.pointAt(pd, sorted ? this.sortOrder[k] : k);
+      const sp = this.pointAt(pd, this.sortOrder[k]);
       const opacity = this.style.getOpacity(sp);
       if (opacity === 0) continue;
       const depth = composePaintDepth(this.style.getDepth(sp), opacity, this.style.isPredicted(sp));

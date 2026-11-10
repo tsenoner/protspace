@@ -147,10 +147,7 @@ export class DataViews {
   }
 
   private _idSet(ids: string[] | null): Set<string> | null {
-    if (!ids) {
-      this._filterSet = null;
-      return null;
-    }
+    if (!ids) return null;
     if (this._filterSet?.ids !== ids) this._filterSet = { ids, set: new Set(ids) };
     return this._filterSet.set;
   }
