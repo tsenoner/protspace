@@ -4,9 +4,9 @@
 
 The app bar's Import button and the dataset name SHALL open the same Import panel, a dialog named
 Import, under whichever was pressed, with focus on its first action. The panel SHALL offer Open a
-file…, which opens the file chooser, then Export…, which closes the panel and opens the Export
-panel under the same control, then Last file and the example datasets as example-datasets
-describes them.
+file…, which opens the file chooser, then Last file and the example datasets as
+example-datasets describes them, and last Export…, which closes the panel and opens the Export
+panel under the same control.
 It SHALL say which files are read in the browser and which are sent to the server
 (".parquetbundle files are read in your browser. FASTA files (.fasta, .fa, .fna) are sent to the
 server for embedding."). The arrow keys SHALL move between its actions, skipping the disabled

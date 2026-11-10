@@ -354,10 +354,9 @@ describe('protspace-import-menu', () => {
     expect(exportButton.shadowRoot!.querySelector('button')!.getAttribute('aria-haspopup')).toBe(
       'dialog',
     );
-    // After "Open a file…", before the examples.
-    expect(
-      [...root().querySelectorAll('.import-section')].indexOf(exportButton.parentElement!),
-    ).toBe(1);
+    // Last, after the examples.
+    const sections = [...root().querySelectorAll('.import-section')];
+    expect(sections.indexOf(exportButton.parentElement!)).toBe(sections.length - 1);
 
     exportButton.click();
     await vi.waitFor(() => expect(handOver).toHaveBeenCalledOnce());

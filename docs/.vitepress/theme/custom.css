@@ -10,6 +10,19 @@
 :root {
   --vp-nav-height: var(--site-bar-height);
   --vp-nav-logo-height: var(--site-bar-logo-height);
+  /* ProtSpace's accent (packages/core/src/styles/theme.ts --ps-accent*), not VitePress's indigo:
+     the current page in the bar, links and buttons are the blue of Home's and Explore's. */
+  --vp-c-brand-1: #0369a1;
+  --vp-c-brand-2: #00699c;
+  --vp-c-brand-3: #007ab5;
+  --vp-c-brand-soft: rgb(3 105 161 / 0.12);
+}
+
+.dark {
+  --vp-c-brand-1: #38bdf8;
+  --vp-c-brand-2: #7dd3fc;
+  --vp-c-brand-3: #0284c7;
+  --vp-c-brand-soft: rgb(56 189 248 / 0.16);
 }
 
 /* --vp-nav-height includes the 1 px divider, as the app's bars include their border: VitePress draws
@@ -49,9 +62,19 @@
   margin-right: 4px;
 }
 
-/* "…" holds the appearance switch below 1280 px; the end links come after it now. */
-.VPNav .VPNavBarExtra {
-  margin-right: 0;
+/* The links sit where Home's header has them: 32 px apart (Home's gap-8), with 24 px (gap-6) from
+   Resources' chevron to the icon buttons. */
+.VPNav .VPNavBarMenuLink,
+.VPNav .VPNavBarMenuGroup .button {
+  padding: 0 16px;
+}
+
+/* The theme button (theme/end-links.ts) replaces VitePress's slider: hide the slider, the "…" that
+   holds it below 1280 px, and the phone menu's switch. */
+.VPNav .VPNavBar .appearance,
+.VPNav .VPNavBarExtra,
+.VPNavScreen .appearance {
+  display: none;
 }
 
 /* ── The end links (theme/end-links.ts) ──────────────────────────────────── */
@@ -68,15 +91,17 @@
   }
 }
 
-/* VitePress's divider between the appearance switch and its social links. */
-@media (min-width: 1280px) {
-  .VPNav .site-end-links::before {
-    content: '';
-    width: 1px;
-    height: 24px;
-    margin: 0 calc(8px - var(--site-bar-icon-gap)) 0 16px;
-    background-color: var(--vp-c-divider);
-  }
+/* 24 px from the last link's text, which ends 16 px inside its box. No divider, as on Home. */
+.VPNav .VPNavBar .site-end-links {
+  margin-left: 8px;
+}
+
+.VPNav .site-end-link,
+.VPNavScreen .site-end-link {
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
 }
 
 .VPNav .site-end-link {
@@ -104,9 +129,10 @@
 
 .VPNavScreen .site-end-links.labelled .site-end-link {
   display: flex;
+  width: 100%;
+  text-align: start;
   gap: 8px;
   justify-content: flex-start;
-  width: auto;
   height: auto;
   border-bottom: 1px solid var(--vp-c-divider);
   border-radius: 0;

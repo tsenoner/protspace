@@ -113,7 +113,19 @@ const Hero = () => {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid items-center gap-10 py-14 sm:py-20 lg:min-h-[640px] lg:max-h-[880px] lg:grid-cols-12 lg:py-16 lg:h-[calc(100vh-3rem)]">
           <div className="min-w-0 lg:col-span-6 xl:col-span-5">
-            <h1 className="text-[2rem] font-semibold leading-[1.08] tracking-tight text-foreground sm:text-5xl lg:text-[2.75rem] lg:leading-[1.05] xl:text-[3.5rem] 2xl:text-[3.75rem]">
+            {/* The site's wordmark at hero size; the header shows its own once this scrolls away.
+                The hero's largest element: 9.6em of this box's type scale (about 540 px at 1440 px,
+                1.4× the heading's widest line), the SVG's 1% inset taken back by -ml so its ink
+                lines up with the heading's left edge. */}
+            <div className="mb-[0.4em] text-[2rem] sm:text-5xl lg:text-[2.75rem] xl:text-[3.5rem] 2xl:text-[3.75rem]">
+              <img
+                id="hero-wordmark"
+                src="/wordmark.svg"
+                alt="ProtSpace"
+                className="-ml-[0.1em] block h-auto w-[9.6em] max-w-[calc(100%+0.1em)]"
+              />
+            </div>
+            <h1 className="text-[1.625rem] font-semibold leading-[1.1] tracking-tight text-foreground sm:text-[2.25rem] lg:text-[2rem] xl:text-[2.5rem] 2xl:text-[2.75rem]">
               <span className="block">Your Journey Through</span>
               <span className="block text-primary">Protein Universe</span>
             </h1>

@@ -156,7 +156,7 @@ docked.
 #### Scenario: The default card clears the selection bar
 
 - **WHEN** the card floats at its default place while proteins are selected
-- **THEN** Copy IDs and Clear on the selection bar stay clickable
+- **THEN** Copy IDs and Clear selection on the selection bar stay clickable
 
 #### Scenario: A card stored outside the plot
 

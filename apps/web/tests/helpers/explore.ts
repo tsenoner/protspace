@@ -411,7 +411,7 @@ export const selectionBar = (page: Page): Locator =>
 /** One of the selection bar's actions. */
 export const selectionBarAction = (
   page: Page,
-  name: 'Show only these' | 'Zoom to them' | 'Copy IDs' | 'Clear',
+  name: 'Show only these' | 'Zoom to them' | 'Copy IDs' | 'Clear selection',
 ): Locator => selectionBar(page).getByRole('button', { name, exact: true });
 
 /** The search's report under the field: found and missing ids, or why a hit is not shown. */
@@ -869,7 +869,7 @@ async function isIsolated(page: Page): Promise<boolean> {
 /** Clears the selection with the bar's Clear and waits until the plot holds none; a no-op with none. */
 export async function clearSelection(page: Page): Promise<void> {
   if ((await getSelectedProteinIds(page)).length === 0) return;
-  await selectionBarAction(page, 'Clear').click();
+  await selectionBarAction(page, 'Clear selection').click();
   await expect.poll(() => getSelectedProteinIds(page)).toEqual([]);
 }
 

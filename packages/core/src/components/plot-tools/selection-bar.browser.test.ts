@@ -64,7 +64,7 @@ describe('protspace-selection-bar', () => {
       'Show only these',
       'Zoom to them',
       'Copy IDs',
-      'Clear',
+      'Clear selection',
     ]);
     for (const b of buttons(el)) {
       expect(b.size).toBe('sm');
@@ -96,7 +96,7 @@ describe('protspace-selection-bar', () => {
         heard.push(type);
       });
     }
-    for (const name of ['Show only these', 'Zoom to them', 'Copy IDs', 'Clear']) {
+    for (const name of ['Show only these', 'Zoom to them', 'Copy IDs', 'Clear selection']) {
       inner(button(el, name)).click();
     }
     expect(heard).toEqual([
@@ -138,20 +138,20 @@ describe('protspace-selection-bar', () => {
     expect(deepActiveElement()).toBe(inner(button(el, 'Zoom to them')));
     await userEvent.keyboard('{ArrowLeft}');
     await userEvent.keyboard('{ArrowLeft}');
-    expect(deepActiveElement()).toBe(inner(button(el, 'Clear')));
+    expect(deepActiveElement()).toBe(inner(button(el, 'Clear selection')));
 
     // The stop follows focus: Tab comes back to Clear.
     before.focus();
     await el.updateComplete;
     await userEvent.keyboard('{Tab}');
-    expect(deepActiveElement()).toBe(inner(button(el, 'Clear')));
+    expect(deepActiveElement()).toBe(inner(button(el, 'Clear selection')));
 
     // A disabled Show only these is skipped.
     el.canIsolate = false;
     await el.updateComplete;
     inner(button(el, 'Zoom to them')).focus();
     await userEvent.keyboard('{ArrowLeft}');
-    expect(deepActiveElement()).toBe(inner(button(el, 'Clear')));
+    expect(deepActiveElement()).toBe(inner(button(el, 'Clear selection')));
   });
 
   it('Clear while focused calls returnFocus("clear") and focus does not fall to body', async () => {
@@ -171,7 +171,7 @@ describe('protspace-selection-bar', () => {
     await el.updateComplete;
     expect(calls).toEqual([]);
 
-    inner(button(el, 'Clear')).focus();
+    inner(button(el, 'Clear selection')).focus();
     await userEvent.keyboard('{Enter}');
     await vi.waitFor(() => expect(calls).toEqual(['clear']));
     expect(deepActiveElement()).toBe(outside);
@@ -222,7 +222,7 @@ describe('protspace-selection-bar', () => {
 });
 
 describe('protspace-selection-bar on a phone', () => {
-  const NAMES = ['Show only these', 'Zoom to them', 'Copy IDs', 'Clear'];
+  const NAMES = ['Show only these', 'Zoom to them', 'Copy IDs', 'Clear selection'];
 
   it('at 360 px wide the bar fits inside a 336 px host and every action keeps its accessible name', async () => {
     await page.viewport(360, 740);
@@ -260,7 +260,7 @@ describe('protspace-selection-bar on a phone', () => {
     }
   });
 
-  it('above 640 px labels are visible', async () => {
+  it('above 640 px each button shows its icon and its label, the count a size larger', async () => {
     await page.viewport(1024, 768);
     const el = await mount(3);
     await Promise.all(buttons(el).map((b) => b.updateComplete));
@@ -271,7 +271,16 @@ describe('protspace-selection-bar on a phone', () => {
     for (const name of NAMES) {
       const b = button(el, name);
       expect(b.querySelector('.action-label')!.getBoundingClientRect().width).toBeGreaterThan(1);
-      expect(getComputedStyle(b.querySelector('.action-icon')!).display).toBe('none');
+      expect(getComputedStyle(b.querySelector('.action-icon')!).display).not.toBe('none');
     }
+    const countSize = parseFloat(
+      getComputedStyle(el.shadowRoot!.querySelector('.selection-count')!).fontSize,
+    );
+    const labelSize = parseFloat(
+      getComputedStyle(button(el, 'Copy IDs').shadowRoot!.querySelector('button')!).fontSize,
+    );
+    expect(countSize).toBeGreaterThan(labelSize);
+    // A divider after the count and one before Clear selection.
+    expect(el.shadowRoot!.querySelectorAll('.divider')).toHaveLength(2);
   });
 });

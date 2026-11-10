@@ -51,10 +51,11 @@ test.describe('Import and Export menus', () => {
     await expect(ownDataset).toHaveCount(0);
     await expect(dataset).toBeFocused();
 
-    // "Export…", the panel's next action, hands over to the Export panel under the same name.
+    // "Export…", the panel's last action (ArrowUp wraps to it), hands over to the Export panel
+    // under the same name.
     await page.keyboard.press('Enter');
     await expect(ownDataset).toBeFocused();
-    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowUp');
     await expect(importMenu(page).getByRole('button', { name: 'Export…' })).toBeFocused();
     await page.keyboard.press('Enter');
     // Focus lands on the first choice, what to export.

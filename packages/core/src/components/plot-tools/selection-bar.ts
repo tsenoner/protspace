@@ -18,15 +18,16 @@ const ACTIONS: ReadonlyArray<{
   { action: 'isolate', label: 'Show only these', event: 'isolate-data', icon: 'target' },
   { action: 'zoom', label: 'Zoom to them', event: 'zoom-to-selection', icon: 'zoom-in' },
   { action: 'copy', label: 'Copy IDs', event: 'copy-selection', icon: 'copy' },
-  { action: 'clear', label: 'Clear', event: 'clear-selections', icon: 'x' },
+  { action: 'clear', label: 'Clear selection', event: 'clear-selections', icon: 'x' },
 ];
 
 /**
  * The selection's actions at the bottom of the plot, shown while proteins are selected (design
- * decision 13): the count, then Show only these, Zoom to them, Copy IDs and Clear. A toolbar with
- * one Tab stop; the arrow keys move between its buttons. It reports presses; the host's selection
- * controller acts and sets `selectedCount`. On a phone (≤ 640 px) it fits a 360 px plot: icons, the
- * labels kept as the buttons' names, and a short count.
+ * decision 13): the count, then Show only these, Zoom to them and Copy IDs, then Clear selection,
+ * each button with its icon and set apart from the count, and Clear from the rest, by a divider. A
+ * toolbar with one Tab stop; the arrow keys move between its buttons. It reports presses; the
+ * host's selection controller acts and sets `selectedCount`. On a phone (≤ 640 px) it fits a 360 px
+ * plot: icons, the labels kept as the buttons' names, and a short count.
  *
  * @fires isolate-data - `{}`
  * @fires zoom-to-selection - `{}`
@@ -95,18 +96,21 @@ export class ProtspaceSelectionBar extends LitElement {
         <span class="selection-count-short" aria-hidden="true"
           >${formatCount(this.selectedCount)} selected</span
         >
+        <span class="divider" aria-hidden="true"></span>
         ${ACTIONS.map(
           ({ action, label, icon: name }) =>
-            html`<ps-button
-              size="sm"
-              variant="ghost"
-              data-action=${action}
-              tabindex=${action === stop ? '0' : '-1'}
-              ?disabled=${!this._isEnabled(action)}
-              @click=${() => this._press(action)}
-              ><span slot="start" class="action-icon" aria-hidden="true">${icon(name, 16)}</span
-              ><span class="action-label">${label}</span></ps-button
-            >`,
+            html`${action === 'clear'
+                ? html`<span class="divider" aria-hidden="true"></span>`
+                : ''}<ps-button
+                size="sm"
+                variant="ghost"
+                data-action=${action}
+                tabindex=${action === stop ? '0' : '-1'}
+                ?disabled=${!this._isEnabled(action)}
+                @click=${() => this._press(action)}
+                ><span slot="start" class="action-icon" aria-hidden="true">${icon(name, 16)}</span
+                ><span class="action-label">${label}</span></ps-button
+              >`,
         )}
       </div>`;
   }

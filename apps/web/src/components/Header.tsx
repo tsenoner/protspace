@@ -1,6 +1,6 @@
 import { ChevronDown, Github, Menu, MessageSquare, X } from 'lucide-react';
-import { useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useState } from 'react';
+import { Link, NavLink } from 'react-router';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FEEDBACK_HREF, GITHUB_REPO_URL } from '@/lib/support';
 import { cn } from '@/lib/utils';
@@ -24,7 +24,16 @@ const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
 const newTabProps = { target: '_blank', rel: 'noopener noreferrer' } as const;
 
 const textClass = 'text-foreground';
-const hoverTextClass = 'hover:text-primary';
+/** ProtSpace's accent text colour (--ps-accent-text), which the docs' nav uses as its brand colour
+    too: the hover and the current page are the same blue in both bars. Literal class names, so
+    Tailwind finds them. */
+const hoverTextClass = 'hover:text-[var(--ps-accent-text,#0369a1)]';
+const activeTextClass = 'text-[var(--ps-accent-text,#0369a1)]';
+/** Classes for an internal link: the current page is marked, as the docs' nav marks Docs. */
+const navLinkClass =
+  (base: string) =>
+  ({ isActive }: { isActive: boolean }) =>
+    cn(base, isActive ? activeTextClass : textClass, hoverTextClass);
 const mutedTextClass = 'text-foreground/80';
 const dropdownClasses =
   'absolute top-full right-0 mt-2 w-48 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border bg-background border-border/40';
@@ -35,13 +44,44 @@ const iconButtonClass =
 
 type HeaderProps = {
   className?: string;
+  /**
+   * The id of a large wordmark on the page (the landing's hero). While it is wholly in view the
+   * bar's wordmark stays hidden; as soon as it starts to scroll under the bar, the bar's fades in,
+   * where the docs' and Explore's bars have theirs.
+   */
+  heroLogoId?: string;
 };
+
+/** Whether the element `id` has started to go under the bar (true without one). */
+function useScrolledPast(id: string | undefined): boolean {
+  const [past, setPast] = useState(!id);
+  useEffect(() => {
+    const target = id ? document.getElementById(id) : null;
+    if (!target) {
+      setPast(true);
+      return;
+    }
+    const barHeight = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--site-bar-height') || '48',
+    );
+    // The moment its top edge reaches the bar's bottom, not once it has gone under entirely: a
+    // large wordmark takes a long scroll to disappear, and in between neither would be readable.
+    const observer = new IntersectionObserver(
+      ([entry]) => setPast(entry.intersectionRatio < 1 && entry.boundingClientRect.top < barHeight),
+      { rootMargin: `-${barHeight}px 0px 0px 0px`, threshold: 1 },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [id]);
+  return past;
+}
 
 /**
  * The site header of the landing and privacy pages; the explore page has its own app bar. Both,
  * and the docs' nav, take their height, wordmark and insets from config/site-bar.css.
  */
-const Header = ({ className }: HeaderProps) => {
+const Header = ({ className, heroLogoId }: HeaderProps) => {
+  const logoShown = useScrolledPast(heroLogoId);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
@@ -54,7 +94,16 @@ const Header = ({ className }: HeaderProps) => {
     <header className={headerClasses}>
       {/* The bar is --site-bar-height tall with the header's border, as Explore's app bar is. */}
       <div className="flex h-[calc(var(--site-bar-height)-1px)] items-center justify-between ps-(--site-bar-inset-start) pe-(--site-bar-inset-end)">
-        <Link to="/" className="flex items-center">
+        {/* Hidden (and out of the Tab order) while the hero's large wordmark is in view. */}
+        <Link
+          to="/"
+          className={cn(
+            'flex items-center transition-opacity duration-300 ease-out motion-reduce:transition-none',
+            logoShown ? 'opacity-100' : 'pointer-events-none opacity-0',
+          )}
+          aria-hidden={!logoShown || undefined}
+          tabIndex={logoShown ? undefined : -1}
+        >
           <img src="/wordmark.svg" alt="ProtSpace" className="block h-(--site-bar-logo-height)" />
         </Link>
 
@@ -106,9 +155,14 @@ const Header = ({ className }: HeaderProps) => {
               // Internal link
               if (item.internal && item.link) {
                 return (
-                  <Link key={item.text} to={item.link} className={linkClasses}>
+                  <NavLink
+                    key={item.text}
+                    to={item.link}
+                    end
+                    className={navLinkClass('text-sm font-medium transition-colors')}
+                  >
                     {item.text}
-                  </Link>
+                  </NavLink>
                 );
               }
 
@@ -122,6 +176,9 @@ const Header = ({ className }: HeaderProps) => {
           </nav>
 
           <div className="flex items-center gap-(--site-bar-icon-gap)">
+            {/* The theme button's slot in the docs' and Explore's bars. Home is light only, so it
+                stays empty and the links above line up with theirs. */}
+            <span className="size-(--site-bar-icon-box) flex-none" aria-hidden="true" />
             {END_LINKS.map(({ label, href, Icon, newTab }) => (
               <Tooltip key={label}>
                 <TooltipTrigger asChild>
@@ -211,14 +268,15 @@ const Header = ({ className }: HeaderProps) => {
             // Internal link (SPA navigation - needs onClick to close menu)
             if (item.internal && item.link) {
               return (
-                <Link
+                <NavLink
                   key={item.text}
                   to={item.link}
-                  className={linkClasses}
+                  end
+                  className={navLinkClass('block py-2 text-sm font-medium transition-colors')}
                   onClick={() => setIsMenuOpen(false)}
                 >
                   {item.text}
-                </Link>
+                </NavLink>
               );
             }
 

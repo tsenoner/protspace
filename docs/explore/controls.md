@@ -346,7 +346,7 @@ many and offers:
   **Showing only** chip; its ✕ (**Show all proteins**) brings them back.
 - **Zoom to them** fits the view to the selection.
 - **Copy IDs** copies the selected IDs, one per line.
-- **Clear** empties the selection.
+- **Clear selection** empties the selection.
 
 **Escape** also clears the selection; pressed again, it returns to **Move and zoom**. Escape in the
 search box only closes the suggestion list and empties the box; it never clears the selection,

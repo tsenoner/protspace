@@ -13,7 +13,7 @@ The scatterplot is the main visualization area where proteins appear as points. 
 | Select one                | Click a point                                                        |
 | Add or remove one         | **⌘/Ctrl** + click a point                                           |
 | Box or lasso select       | Pick **Box select** or **Lasso select** in the tool strip, then drag |
-| Clear the selection       | Press **Escape**, or **Clear** in the selection bar                  |
+| Clear the selection       | Press **Escape**, or **Clear selection** in the selection bar        |
 | Back to **Move and zoom** | Press **Escape** again                                               |
 | Undo / redo               | **⌘/Ctrl + Z** / **⇧ + ⌘/Ctrl + Z**                                  |
 | Focus search              | **⌘/Ctrl + K**                                                       |
@@ -108,13 +108,13 @@ many and what you can do with them:
   `Showing only … · K steps` chip; its ✕ (**Show all proteins**) brings every protein back.
 - **Zoom to them** fits the view to the selected proteins.
 - **Copy IDs** copies their identifiers, one per line.
-- **Clear** empties the selection.
+- **Clear selection** empties the selection.
 
 ### Clearing
 
 - Press **Escape** to clear the selection (first press), then to go back to **Move and zoom**
   (second press). Escape closes an open menu, popover or pinned tooltip first.
-- Press **Clear** in the selection bar
+- Press **Clear selection** in the selection bar
 
 ### Undo and redo
 

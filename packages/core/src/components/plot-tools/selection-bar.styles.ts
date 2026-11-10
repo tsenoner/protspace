@@ -34,17 +34,26 @@ export const selectionBarStyles = [
       box-shadow: var(--ps-shadow-md);
       white-space: nowrap;
     }
+    /* The count is status, not a button: a size up from the buttons' label, with no box. */
     .selection-count,
     .selection-count-short {
       padding: 0 var(--ps-space-2);
-      font-size: var(--ps-text-sm);
+      font-size: var(--ps-text-md);
       font-weight: var(--ps-weight-medium);
       font-variant-numeric: tabular-nums;
       color: var(--ps-text);
     }
-    .selection-count-short,
-    .action-icon {
+    .selection-count-short {
       display: none;
+    }
+    .action-icon {
+      display: inline-flex;
+    }
+    .divider {
+      flex: none;
+      width: 1px;
+      height: 20px;
+      background: var(--ps-border);
     }
     @media ${unsafeCSS(PHONE_MEDIA)} {
       /* Sized to its content, not to the half of the plot right of its left: 50% edge. */
@@ -57,9 +66,6 @@ export const selectionBarStyles = [
       }
       .selection-count-short {
         display: inline;
-      }
-      .action-icon {
-        display: inline-flex;
       }
       .action-label {
         position: absolute;
@@ -85,9 +91,6 @@ export const selectionBarStyles = [
     }
     :host([compact]) .selection-count-short {
       display: inline;
-    }
-    :host([compact]) .action-icon {
-      display: inline-flex;
     }
     :host([compact]) .action-label {
       position: absolute;

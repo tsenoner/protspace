@@ -22,8 +22,10 @@ pointer the tool buttons take the touch size explore-mobile-layout sets.
 
 While proteins are selected, a toolbar named Selection SHALL show at the bottom centre of the plot
 with the count ("1 protein selected", "1,234 proteins selected", announced from a live region)
-and the actions Show only these, Zoom to them, Copy IDs and Clear, which form one Tab stop moved by
-the arrow keys. Show only these SHALL isolate the selection (point-visibility) and hide the bar,
+and the actions Show only these, Zoom to them, Copy IDs and Clear selection, which form one Tab
+stop moved by the arrow keys. The count SHALL be set a size larger than the actions' labels, each
+action SHALL show its icon before its label, and a divider SHALL follow the count and precede
+Clear selection. Show only these SHALL isolate the selection (point-visibility) and hide the bar,
 and SHALL be disabled when the selection cannot be isolated. Zoom to them SHALL zoom the plot onto
 the selection. Copy IDs SHALL write the ids, one per line, to the clipboard and say "Copied N
 protein IDs". Clear SHALL empty the selection, and focus SHALL stay on the tool strip rather than

@@ -149,7 +149,12 @@ test.describe('plot tools and selection', () => {
     await selectBySearch(page, await proteinIds(page, 2));
     await expect(selectionBar(page)).toBeVisible();
     await expect(selectionBar(page)).toContainText('2 proteins selected');
-    for (const name of ['Show only these', 'Zoom to them', 'Copy IDs', 'Clear'] as const) {
+    for (const name of [
+      'Show only these',
+      'Zoom to them',
+      'Copy IDs',
+      'Clear selection',
+    ] as const) {
       await expect(selectionBarAction(page, name)).toBeVisible();
     }
 
@@ -186,7 +191,7 @@ test.describe('plot tools and selection', () => {
     expect(Math.abs(bar.height - 38)).toBeLessThanOrEqual(1);
     expect(await page.locator('#myPlot').boundingBox()).toEqual(plot);
 
-    await selectionBarAction(page, 'Clear').click();
+    await selectionBarAction(page, 'Clear selection').click();
     await expect.poll(() => getSelectedProteinIds(page)).toEqual([]);
     await expect(selectionBar(page)).toBeHidden();
     await expect(toolButton(page, 'Box select')).toBeFocused();

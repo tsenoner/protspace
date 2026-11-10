@@ -230,7 +230,7 @@ test('the default floating card leaves Copy IDs and Clear clickable', async ({ p
 
   // A trial click runs every actionability check, the hit test included, and clicks nothing: it
   // fails if the card intercepts the pointer.
-  for (const name of ['Copy IDs', 'Clear'] as const) {
+  for (const name of ['Copy IDs', 'Clear selection'] as const) {
     await selectionBarAction(page, name).click({ trial: true, timeout: 5_000 });
   }
   const bar = (await selectionBar(page).boundingBox())!;

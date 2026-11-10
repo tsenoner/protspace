@@ -80,6 +80,8 @@ export default defineConfig({
         text: item.text,
         link,
         ...(item.link && item.text !== 'Docs' && { target: '_self' }), // Only set target for non-Docs items
+        // Home and Explore are the site's own pages, opened in the same tab: no ↗ (as on Home).
+        noIcon: true,
       };
     }),
 

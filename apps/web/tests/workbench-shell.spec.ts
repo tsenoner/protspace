@@ -137,6 +137,31 @@ test.describe('workbench shell', () => {
       await expect(page.locator('[data-workbench]')).toHaveCount(0);
     }
   });
+
+  test("Home's header shows its wordmark as the hero's large one starts under the bar", async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const barLogo = page.getByRole('banner').locator('a[href="/"]').first();
+    const heroLogo = page.locator('#hero-wordmark');
+    await expect(heroLogo).toBeVisible();
+    // At the top the hero's wordmark is the one in view; the bar's is hidden and out of the Tab order.
+    await expect(barLogo).toHaveCSS('opacity', '0');
+    await expect(barLogo).toHaveAttribute('tabindex', '-1');
+
+    // As soon as the hero's wordmark starts under the bar, while most of it is still in view.
+    const top = (await heroLogo.boundingBox())!.y;
+    await page.evaluate((y) => window.scrollTo(0, y), top - 40);
+    await expect(barLogo).toHaveCSS('opacity', '1');
+    await expect(barLogo).not.toHaveAttribute('tabindex', '-1');
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(barLogo).toHaveCSS('opacity', '0');
+
+    // Pages without a hero wordmark show the bar's from the start.
+    await page.goto('/privacy');
+    await expect(page.getByRole('banner').locator('a[href="/"]').first()).toHaveCSS('opacity', '1');
+  });
 });
 
 /**

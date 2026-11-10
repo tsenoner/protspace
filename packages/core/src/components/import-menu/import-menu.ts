@@ -131,6 +131,8 @@ export class ProtspaceImportMenu extends LitElement {
         >
         <p class="import-note">${IMPORT_FORMAT_NOTE}</p>
       </section>
+      ${this.lastFile ? this.renderLastFile(this.lastFile) : nothing}
+      ${this.exampleDatasets.length > 0 ? this.renderExamples() : nothing}
       ${this.exportable
         ? html`<section class="import-section import-export">
             <ps-button
@@ -143,8 +145,6 @@ export class ProtspaceImportMenu extends LitElement {
             >
           </section>`
         : nothing}
-      ${this.lastFile ? this.renderLastFile(this.lastFile) : nothing}
-      ${this.exampleDatasets.length > 0 ? this.renderExamples() : nothing}
     </div>`;
   }
 
