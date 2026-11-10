@@ -7,6 +7,7 @@ import type { ProtspacePublishModal } from './publish-modal';
 import { selectOptionStyles } from '../kit/field.styles';
 import { topLayer } from '../kit/layers';
 import { publishModalStyles } from './publish-modal.styles';
+import { PUBLISH_FRAMING } from './publish-state';
 
 // jsdom 27 has no HTMLDialogElement.showModal or close. The editor's ps-dialog only needs the
 // calls to exist here; what the dialog does is pinned in publish-modal.browser.test.ts.
@@ -1552,5 +1553,86 @@ describe('<protspace-publish-modal> review fixes', () => {
     // 2048 px at 300 dpi is 173.4 mm, which spans MAX_EXPORT_DIMENSION px at 1200 dpi.
     expect(internals._state).toMatchObject({ dpi: 1200, widthPx: 8192, heightPx: 4096 });
     expect(dpi.value).toBe('1200');
+  });
+});
+
+describe('figures saved before the workbench framing', () => {
+  const EXTENT = { xMin: 0, xMax: 40, yMin: 0, yMax: 10 };
+  const PADDED = { xMin: -0.8, xMax: 40.8, yMin: -0.2, yMax: 10.2 };
+  const INFO = { marginLeft: 20, marginRight: 20, marginTop: 300, marginBottom: 300 };
+  const LABEL = {
+    type: 'label',
+    x: 0.3,
+    y: 0.4,
+    text: 't',
+    fontSize: 14,
+    rotation: 0,
+    color: '#000',
+  };
+
+  type FramedModal = HTMLElement & {
+    savedPublishState: Record<string, unknown>;
+    currentProjection: { projection: string; dimensionality: number };
+    plotElement: HTMLElement;
+    _state: { framing?: number; overlays: Array<{ x?: number; y?: number }> };
+  };
+
+  function plot(): HTMLElement {
+    const el = document.createElement('div') as HTMLElement & Record<string, unknown>;
+    el.getDataExtent = (options?: { padded?: boolean }) => (options?.padded ? PADDED : EXTENT);
+    el.getRenderInfo = () => INFO;
+    return el;
+  }
+
+  function open(saved: Record<string, unknown>, projection = 'umap'): FramedModal {
+    const modal = document.createElement('protspace-publish-modal') as FramedModal;
+    modal.savedPublishState = saved;
+    modal.currentProjection = { projection, dimensionality: 2 };
+    modal.plotElement = plot();
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  let restoreGetContext: () => void;
+  beforeEach(() => {
+    restoreGetContext = stubCanvasGetContext();
+  });
+  afterEach(() => {
+    document.body.innerHTML = '';
+    restoreGetContext();
+  });
+
+  it('moves an unmarked state onto the current framing and marks it', () => {
+    const modal = open({
+      viewFingerprint: { projection: 'umap', dimensionality: 2 },
+      overlays: [LABEL],
+    });
+    const [label] = modal._state.overlays;
+    expect(modal._state.framing).toBe(PUBLISH_FRAMING);
+    expect(label.x).not.toBeCloseTo(0.3, 5);
+    expect(label.y).not.toBeCloseTo(0.4, 5);
+  });
+
+  it('leaves a state already in the current framing where it is', () => {
+    const modal = open({
+      viewFingerprint: { projection: 'umap', dimensionality: 2 },
+      overlays: [LABEL],
+      framing: PUBLISH_FRAMING,
+    });
+    expect(modal._state.overlays[0]).toMatchObject({ x: 0.3, y: 0.4 });
+  });
+
+  it('waits, unmoved and unmarked, while the figure is open on another projection', () => {
+    const modal = open(
+      { viewFingerprint: { projection: 'umap', dimensionality: 2 }, overlays: [LABEL] },
+      'pca',
+    );
+    expect(modal._state.framing).toBeUndefined();
+    expect(modal._state.overlays[0]).toMatchObject({ x: 0.3, y: 0.4 });
+  });
+
+  it('marks a state with nothing placed without needing the plot', () => {
+    const modal = open({ overlays: [] });
+    expect(modal._state.framing).toBe(PUBLISH_FRAMING);
   });
 });

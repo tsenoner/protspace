@@ -110,6 +110,12 @@ export interface LegendLayout {
 
 // ── Top-level publish state ─────────────────────────────
 
+/**
+ * The plot framing overlay and inset positions are placed in (see `framing-migration.ts`): a state
+ * without it was saved before the workbench changed the framing, and is moved onto this one.
+ */
+export const PUBLISH_FRAMING = 2;
+
 export interface PublishState {
   preset: PresetId | 'custom';
   sizeMode: SizeMode;
@@ -134,6 +140,8 @@ export interface PublishState {
     projection: string;
     dimensionality: number;
   };
+  /** {@link PUBLISH_FRAMING} once the positions are in the current framing; absent before. */
+  framing?: typeof PUBLISH_FRAMING;
 }
 
 /** Tool currently active on the overlay */
@@ -168,5 +176,6 @@ export function createDefaultPublishState(base?: {
     overlays: [],
     insets: [],
     referenceWidth: base?.imageWidth ?? 2048,
+    framing: PUBLISH_FRAMING,
   };
 }
