@@ -102,6 +102,9 @@ function scaledFillMaxWidth(config: ScatterplotConfig, exportWidth: number): num
   return (fillMaxWidth / width) * exportWidth;
 }
 
+/** What an export reads of the style: it stages every point through one pass. */
+type ExportStyle = Pick<WebGLStyleGetters, 'createStylePass'>;
+
 /** Options for a single off-screen export render. */
 interface ExportRenderOptions {
   width: number;
@@ -227,7 +230,7 @@ export class ExportRenderer {
   renderToCanvas(
     pd: PlotData | null,
     config: ScatterplotConfig,
-    style: WebGLStyleGetters,
+    style: ExportStyle,
     options: ExportRenderOptions,
   ): HTMLCanvasElement {
     const { width, height, dataDomain, pointSizeReference } = options;
@@ -339,7 +342,7 @@ export class ExportRenderer {
     scales: ScalePair,
     dpr: number,
     config: ScatterplotConfig,
-    style: WebGLStyleGetters,
+    style: ExportStyle,
     options: ExportRenderOptions,
     pointSizeReference?: { width: number; height: number },
   ): void {
@@ -601,7 +604,7 @@ export class ExportRenderer {
   private prepareOffscreenBufferData(
     pd: PlotData,
     scales: ScalePair,
-    style: WebGLStyleGetters,
+    style: ExportStyle,
     selectionActive: boolean,
     labelAtlas: LabelAtlasPlan | null = null,
   ): StagePointArrays & { pointCount: number; selectedStartIndex: number } {

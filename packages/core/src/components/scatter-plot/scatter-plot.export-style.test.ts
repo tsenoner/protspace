@@ -8,13 +8,14 @@
  * the options the plot built it with.
  */
 import { vi, describe, it, expect } from 'vitest';
-import type { PlotDataPoint, VisualizationData } from '@protspace/utils';
-import type { WebGLStyleGetters } from './webgl/types';
+import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
+import type { PointStylePass, WebGLStyleGetters } from './webgl/types';
 import type { PlotNeutrals } from './styling/plot-neutrals';
+import { createPassScratch } from './webgl/renderer/pass-staging';
 
 /** The options of each renderer the plot built. */
 const constructed = vi.hoisted(
-  () => [] as { style: WebGLStyleGetters; exportStyle: WebGLStyleGetters }[],
+  () => [] as { style: WebGLStyleGetters; createExportStylePass: () => PointStylePass }[],
 );
 
 // Every colour resolves to black, so a knockout taken from any colour the export is given
@@ -67,21 +68,31 @@ function makeDarkPlot(): PlotInternals {
   return el;
 }
 
-/** The live and export style getters `el` hands a renderer it builds now. */
+/** The live style getters and the export pass factory `el` hands a renderer it builds now. */
 function rendererStyles(el: PlotInternals) {
   Object.defineProperty(el, '_canvas', { value: document.createElement('canvas') });
   el._createWebglRenderer();
-  const { style, exportStyle } = constructed.at(-1)!;
-  return { live: style, exported: exportStyle };
+  const { style, createExportStylePass } = constructed.at(-1)!;
+  return { live: style, createExportStylePass };
+}
+
+/** The colours an export pass stages for each slot of `pd`. */
+function exportedColors(createPass: () => PointStylePass, pd: PlotData): string[][] {
+  const pass = createPass();
+  const scratch = createPassScratch(pd.length);
+  pass.resolve(pd, pd.length, scratch);
+  return Array.from(scratch.record, (r) => [...pass.records.colors[r]]);
 }
 
 describe('exports stage light', () => {
-  it('exportStyle.getColors gives #888888 for Other while style.getColors gives the dark grey', () => {
-    const { live, exported } = rendererStyles(makeDarkPlot());
+  it('an export stages #888888 for Other while style.getColors gives the dark grey', () => {
+    const el = makeDarkPlot();
+    const { live, createExportStylePass } = rendererStyles(el);
     expect(live.getColors(point(1))).toEqual(['#64748b']);
-    expect(exported.getColors(point(1))).toEqual(['#888888']);
+    const exported = exportedColors(createExportStylePass, el._plotData);
+    expect(exported[1]).toEqual(['#888888']);
     // A category of its own keeps its colour in both.
-    expect(exported.getColors(point(0))).toEqual(['#ff0000']);
+    expect(exported[0]).toEqual(['#ff0000']);
   });
 
   it.each([undefined, '#ffffff', 'white', 'transparent', 'rgba(0,0,0,0)', '#0b1120'])(

@@ -312,7 +312,7 @@ describe('createEatPanelController', () => {
     const recolour = (colorMapping: Record<string, string>) =>
       plot.dispatchEvent(
         new CustomEvent('legend-colormapping-change', {
-          detail: { colorMapping, shapeMapping: {}, colorOnly: false },
+          detail: { colorMapping, shapeMapping: {} },
         }),
       );
     recolour({ '1.1.1.1': '#f00' });

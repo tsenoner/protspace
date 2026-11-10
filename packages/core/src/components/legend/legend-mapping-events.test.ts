@@ -11,7 +11,6 @@ describe('legend-mapping-events guards', () => {
     const d: LegendColorMappingDetail = {
       colorMapping: { A: '#ff0000' },
       shapeMapping: { A: 'circle' },
-      colorOnly: false,
     };
     expect(isLegendColorMappingDetail(d)).toBe(true);
   });

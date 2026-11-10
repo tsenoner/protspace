@@ -13,7 +13,7 @@ import type { RendererDegradedDetail } from '../../../scatter-plot.events';
 import { WebGLRenderer } from '../webgl-renderer';
 import { ATLAS_WIDTHS } from '../label-atlas-plan';
 import { createMockCanvas, type MockGLOptions } from './mock-webgl2';
-import { referenceStylePass } from './reference-staging';
+import { referenceStylePass, type ReferenceStyle } from './reference-staging';
 
 /**
  * A PlotData of `length` points backed by tiny arrays. The renderer only reads
@@ -60,7 +60,7 @@ const scales = (): ScalePair => ({
  * misses a newly required member compiles clean and only misbehaves at runtime
  * (a missing `isMultilabel` silently falls back to the over-allocating default).
  */
-export function styleGetters(colors: string[] = ['#f00']): WebGLStyleGetters {
+export function styleGetters(colors: string[] = ['#f00']): ReferenceStyle {
   return {
     getColors: () => colors,
     getPointSize: () => 9,

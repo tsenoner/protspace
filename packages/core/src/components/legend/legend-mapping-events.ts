@@ -8,8 +8,6 @@
 export interface LegendColorMappingDetail {
   colorMapping: Record<string, string>;
   shapeMapping: Record<string, string>;
-  /** Behavioral contract: true skips the depth re-sort. */
-  colorOnly: boolean;
 }
 
 /** legend-zorder-change.detail (keyed by annotation value). */

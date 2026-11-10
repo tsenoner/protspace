@@ -5,7 +5,7 @@
  */
 import type { PointMarks } from '../types';
 import { maxMarkedPoints } from './device-limits';
-import { MARK_TEXTURE_UNIT, bindTextureAt } from './texture-units';
+import { MARK_TEXTURE_UNIT, bindTextureAt, setClampedFilter } from './texture-units';
 
 /** The staged points the marks are written over, by draw index. */
 interface StagedPoints {
@@ -75,10 +75,7 @@ export class MarkTexture {
         null,
       );
       this.refused = gl.getError() !== gl.NO_ERROR;
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      setClampedFilter(gl, gl.NEAREST);
     });
   }
 

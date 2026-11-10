@@ -80,11 +80,11 @@ async function openPicker(legend: ProtspaceLegend, value: string): Promise<void>
   await settle(legend);
 }
 
-/** Counts the colour-only mapping changes the legend sends the plot (a colour edit's commit). */
+/** Counts the colour/shape mapping changes the legend sends the plot (a colour edit's commit). */
 function colourCommits(plot: MockScatterplot): () => number {
   let count = 0;
-  plot.addEventListener(LEGEND_EVENTS.COLORMAPPING_CHANGE, (event) => {
-    if ((event as CustomEvent<{ colorOnly: boolean }>).detail.colorOnly) count += 1;
+  plot.addEventListener(LEGEND_EVENTS.COLORMAPPING_CHANGE, () => {
+    count += 1;
   });
   return () => count;
 }

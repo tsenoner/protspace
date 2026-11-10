@@ -25,6 +25,7 @@ MODEL_DISPLAY_NAMES: dict[str, str] = {
     "ankh3_large": "Ankh3-Large",
     "esmc_300m": "ESMC-300M",
     "esmc_600m": "ESMC-600M",
+    "esmc_6b": "ESMC-6B",
     "MMseqs2": "MMseqs2",
 }
 

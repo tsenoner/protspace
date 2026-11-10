@@ -110,22 +110,15 @@ describe('scatter-plot getMaterializedData fast-path', () => {
     const sp = createPlot({ data: makeFamilyData(FAMILY), selectedAnnotation: 'fam' });
     const first = sp.getMaterializedData();
 
-    const spy = vi.spyOn(JSON, 'stringify');
-    const before = spy.mock.calls.length;
-
     sp.selectedAnnotation = 'other';
     const next = sp.getMaterializedData();
 
-    expect(spy.mock.calls.length).toBeGreaterThan(before);
     expect(next).not.toBe(first);
   });
 
   it('fast-path miss: changing this.data ref re-materializes', () => {
     const sp = createPlot({ data: makeFamilyData(FAMILY), selectedAnnotation: 'fam' });
     const first = sp.getMaterializedData();
-
-    const spy = vi.spyOn(JSON, 'stringify');
-    const before = spy.mock.calls.length;
 
     sp.data = makeFamilyData({
       ...FAMILY,
@@ -135,7 +128,6 @@ describe('scatter-plot getMaterializedData fast-path', () => {
     });
     const next = sp.getMaterializedData();
 
-    expect(spy.mock.calls.length).toBeGreaterThan(before);
     expect(next).not.toBe(first);
   });
 

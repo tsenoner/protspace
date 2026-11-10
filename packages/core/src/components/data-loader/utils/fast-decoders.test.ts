@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { snappyUncompress as hyparquetSnappy } from 'hyparquet';
 import { snappyCompress } from 'hysnappy';
+import { seededRandom } from '../../../test-support/seeded-random';
 import { V3_COMPRESSORS, V3_PARSERS } from './fast-decoders';
 
 const uncompress = V3_COMPRESSORS.SNAPPY!;
@@ -27,13 +28,8 @@ function attempt(input: Uint8Array, outputLength: number): Uint8Array | Error {
 
 /** Deterministic bytes over a small alphabet, so the compressor emits plenty of copies. */
 function sample(length: number, alphabet: number, seed: number): Uint8Array {
-  const bytes = new Uint8Array(length);
-  let state = seed;
-  for (let i = 0; i < length; i++) {
-    state = (state * 1103515245 + 12345) & 0x7fffffff;
-    bytes[i] = state % alphabet;
-  }
-  return bytes;
+  const random = seededRandom(seed);
+  return Uint8Array.from({ length }, () => Math.floor(random() * alphabet));
 }
 
 describe('V3_COMPRESSORS.SNAPPY', () => {

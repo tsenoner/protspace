@@ -49,10 +49,11 @@ class Backend(StrEnum):
 # Embedder help text, shared by `prepare -e` and `embed -e`
 # ---------------------------------------------------------------------------
 
-# Mirrors ALL_SHORT_KEYS in data.embedding.biocentral, which is not imported
-# here because it pulls h5py/numpy/biocentral_api (~400 ms, ~0.9 s where torch is
-# installed: biotrainer-core imports it) into every CLI startup, including `--help`.
-# test_cli_no_similarity.py fails if they drift.
+# Mirrors LOCAL_CHECKPOINTS in data.embedding.local: ALL_SHORT_KEYS in
+# data.embedding.biocentral plus LOCAL_ONLY_EMBEDDERS. Neither is imported here
+# because data.embedding pulls h5py/numpy/biocentral_api (~400 ms, ~0.9 s where
+# torch is installed: biotrainer-core imports it) into every CLI startup,
+# including `--help`. test_cli_no_similarity.py fails if they drift.
 EMBEDDER_MODELS: tuple[str, ...] = (
     "prot_t5",
     "prost_t5",
@@ -66,9 +67,34 @@ EMBEDDER_MODELS: tuple[str, ...] = (
     "ankh3_large",
     "esmc_300m",
     "esmc_600m",
+    "esmc_6b",
 )
-EMBEDDER_HELP_MODELS = f"Models: {', '.join(EMBEDDER_MODELS)}."
+# Shortcuts only `--backend local` serves. Biocentral accepts biohub/ESMC-6B but
+# fails to compute it; once it does, move the key to EXTRA_SHORT_KEYS.
+LOCAL_ONLY_EMBEDDERS: frozenset[str] = frozenset({"esmc_6b"})
+EMBEDDER_HELP_MODELS = (
+    f"Models: {', '.join(EMBEDDER_MODELS)} "
+    f"({', '.join(sorted(LOCAL_ONLY_EMBEDDERS))}: --backend local only)."
+)
 EMBEDDER_HELP_LICENSE = "Note: ankh_* and ankh3_* are non-commercial (CC-BY-NC-SA-4.0)."
+
+
+def refuse_local_only_on_biocentral(embedders: list[str], backend: Backend) -> None:
+    """Usage error for a local-only shortcut on the Biocentral backend.
+
+    Called before any input is fetched, so the run does not first pay for a
+    UniProt download or a server round trip that cannot succeed.
+    """
+    if backend != Backend.biocentral:
+        return
+    local_only = [e for e in embedders if e in LOCAL_ONLY_EMBEDDERS]
+    if local_only:
+        raise typer.BadParameter(
+            f"{', '.join(local_only)} is served only by the local backend; "
+            "Biocentral cannot compute it yet. Use --backend local "
+            '(pip install "protspace[local]").',
+            param_hint="'-e/--embedder'",
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -9,10 +9,8 @@ import type { createStyleGetters } from '../../../styling/style-getters';
 export function liveStyle(current: () => ReturnType<typeof createStyleGetters>): WebGLStyleGetters {
   return {
     getColors: (p) => current().getColors(p),
-    getPointSize: (p) => current().getPointSize(p),
     getOpacity: (p) => current().getOpacity(p),
     getDepth: (p) => current().getDepth(p),
-    getShape: (p) => current().getPointShape(p),
     isPredicted: (p) => current().isPredicted(p),
     isMultilabel: () => current().isMultilabel(),
     createStylePass: () => current().createStylePass(),

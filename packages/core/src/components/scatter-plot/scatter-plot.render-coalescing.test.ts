@@ -54,12 +54,11 @@ function makePlot() {
 
 const zOrder = (m: Record<string, number>) =>
   new CustomEvent('legend-zorder-change', { detail: { zOrderMapping: m } });
-const colors = (colorOnly: boolean) =>
+const colors = () =>
   new CustomEvent('legend-colormapping-change', {
     detail: {
       colorMapping: { A: '#111111', B: '#222222' },
       shapeMapping: { A: 'circle', B: 'circle' },
-      colorOnly,
     },
   });
 
@@ -77,7 +76,7 @@ describe('render coalescing', () => {
     const { el } = makePlot();
 
     el._handleZOrderChange(zOrder({ A: 1, B: 0 }));
-    el._handleColorMappingChange(colors(false));
+    el._handleColorMappingChange(colors());
     el._renderLoop.request();
     expect(counters.restage).toBe(0);
 
@@ -93,7 +92,7 @@ describe('render coalescing', () => {
     const render = vi.spyOn(renderer, 'render');
 
     el._handleZOrderChange(zOrder({ A: 1, B: 0 }));
-    el._handleColorMappingChange(colors(false));
+    el._handleColorMappingChange(colors());
     el._renderLoop.request();
     expect(frames.size).toBe(1);
 
@@ -108,7 +107,7 @@ describe('render coalescing', () => {
     // Alone, each is a partial re-stage: positions only, then styles only.
     renderer.invalidatePositionCache();
     el._renderLoop.request();
-    el._handleColorMappingChange(colors(true));
+    el._handleColorMappingChange(colors());
 
     frames.run();
     expect([counters.restage, counters.restagePos, counters.restageStyle]).toEqual([1, 1, 1]);
@@ -117,7 +116,7 @@ describe('render coalescing', () => {
   it('a flush renders a waiting request now, and the frame then finds nothing to do', () => {
     const { el } = makePlot();
 
-    el._handleColorMappingChange(colors(false));
+    el._handleZOrderChange(zOrder({ A: 1, B: 0 }));
     el._renderLoop.flush();
     expect(counters.restage).toBe(1);
 
@@ -128,13 +127,13 @@ describe('render coalescing', () => {
   it('a legend mapping equal to the current one does not re-stage', () => {
     const { el } = makePlot();
     el._handleZOrderChange(zOrder({ A: 1, B: 0 }));
-    el._handleColorMappingChange(colors(false));
+    el._handleColorMappingChange(colors());
     frames.run();
     resetCounters();
 
     // A legend rebuild re-sends the same maps as new objects.
     el._handleZOrderChange(zOrder({ B: 0, A: 1 }));
-    el._handleColorMappingChange(colors(false));
+    el._handleColorMappingChange(colors());
     frames.run();
     expect(counters.restage).toBe(0);
 
@@ -146,7 +145,7 @@ describe('render coalescing', () => {
   it('a colour-only change restyles the categories on the next frame, without a re-stage', () => {
     const { el, renderer } = makePlot();
     const render = vi.spyOn(renderer, 'render');
-    el._handleColorMappingChange(colors(true));
+    el._handleColorMappingChange(colors());
     frames.run();
     expect(render).toHaveBeenCalledTimes(1);
     expect(counters.restage).toBe(0);
@@ -231,7 +230,7 @@ describe('render coalescing', () => {
     const { el } = makePlot();
     vi.stubGlobal('requestAnimationFrame', undefined);
 
-    el._handleColorMappingChange(colors(false));
+    el._handleZOrderChange(zOrder({ A: 1, B: 0 }));
     expect(counters.restage).toBe(1);
   });
 
@@ -243,7 +242,7 @@ describe('render coalescing', () => {
       return document.createElement('canvas');
     });
 
-    el._handleColorMappingChange(colors(false));
+    el._handleZOrderChange(zOrder({ A: 1, B: 0 }));
     el.captureAtResolution(100, 100);
     expect(stagedAtExport).toEqual([1]);
 

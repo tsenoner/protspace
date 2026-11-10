@@ -1,5 +1,6 @@
 import type * as d3 from 'd3';
 import type { PlotData } from '@protspace/utils';
+import { linearAxis, mapLinear } from '../webgl/renderer/rescale';
 
 /**
  * Screen-space point index for hit-testing and rubber-band/lasso selection.
@@ -72,9 +73,11 @@ export class PointGridIndex {
     this.visible = visible;
   }
 
-  rebuild(pd: PlotData, slots: ArrayLike<number>) {
+  /** Index `slots` of `pd`, or every slot when `slots` is null. */
+  rebuild(pd: PlotData, slots: ArrayLike<number> | null) {
     this.visible = null;
-    if (!this.scales || slots.length === 0) {
+    const total = slots ? slots.length : pd.length;
+    if (!this.scales || total === 0) {
       this.clear();
       return;
     }
@@ -82,9 +85,9 @@ export class PointGridIndex {
     // Precompute screen-space coordinates once at rebuild time.
     // This makes query/hit-testing significantly cheaper, because we avoid calling
     // scale functions for every candidate slot during interactions.
-    const sx = this.scales.x;
-    const sy = this.scales.y;
-    const total = slots.length;
+    // mapLinear is the d3 call without the call: the same double, NaN for NaN.
+    const xAxis = linearAxis(this.scales.x);
+    const yAxis = linearAxis(this.scales.y);
     const px = new Float32Array(total);
     const py = new Float32Array(total);
     const slotOf = new Int32Array(total);
@@ -95,9 +98,9 @@ export class PointGridIndex {
     let maxX = -Infinity;
     let maxY = -Infinity;
     for (let i = 0; i < total; i++) {
-      const slot = slots[i];
-      const x = sx(pd.xs[slot]);
-      const y = sy(pd.ys[slot]);
+      const slot = slots ? slots[i] : i;
+      const x = mapLinear(xAxis, pd.xs[slot]);
+      const y = mapLinear(yAxis, pd.ys[slot]);
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
       px[n] = x;
       py[n] = y;

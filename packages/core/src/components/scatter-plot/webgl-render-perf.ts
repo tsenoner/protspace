@@ -726,12 +726,13 @@ export class WebglRenderPerfRunner {
     const candidates: PlotData = getPointsForRendering
       ? getPointsForRendering.call(host)
       : (host._plotData as PlotData);
-    const getOpacity = host._getOpacity as ((p: PlotDataPoint) => number) | undefined;
+    // The plot's visibility model is the single opacity authority.
+    const style = host._style as { model(): { opacityOf(p: PlotDataPoint): number } } | undefined;
 
     const clickable: PlotDataPoint[] = [];
     for (let i = 0; i < candidates.length && clickable.length < 2; i++) {
       const p = materializePlotDataPoint(candidates, i);
-      if (getOpacity && getOpacity.call(host, p) === 0) continue;
+      if (style && style.model().opacityOf(p) === 0) continue;
       const px = scales.x(p.x);
       const py = scales.y(p.y);
       const sx = transform.x + transform.k * px;

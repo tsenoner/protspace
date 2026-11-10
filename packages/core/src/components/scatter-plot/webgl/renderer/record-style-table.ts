@@ -18,7 +18,7 @@ import { RECORD_FLOATS, RECORD_STYLE_WIDTH } from './point-shaders';
 import { packRecords, type PackedRecords } from './pass-staging';
 import type { StagePointStyleArrays } from './stage-point';
 import { drainGlErrors } from './device-limits';
-import { RECORD_STYLE_TEXTURE_UNIT, bindTextureAt } from './texture-units';
+import { RECORD_STYLE_TEXTURE_UNIT, bindTextureAt, setClampedFilter } from './texture-units';
 import { SELECTED_OPACITY_THRESHOLD } from '../../paint-depth';
 
 const SELECTED_TIER_MIN_ALPHA = SELECTED_OPACITY_THRESHOLD - 1e-6;
@@ -319,10 +319,7 @@ export class RecordStyleTable {
           gl.FLOAT,
           staged.texels,
         );
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        setClampedFilter(gl, gl.NEAREST);
         ok = gl.getError() === gl.NO_ERROR;
         this.rows = ok ? rows : 0;
       }

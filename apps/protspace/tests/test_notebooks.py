@@ -632,6 +632,30 @@ def test_preparation_panel_is_built_without_the_network(monkeypatch, tmp_path):
     assert namespace["input_args"][0]["type"] == "example"
 
 
+def test_preparation_blocks_a_local_only_embedder_on_biocentral(
+    monkeypatch, tmp_path, capsys
+):
+    """esmc_6b runs only on the local backend: disabled with its remedy on
+    Biocentral, dropped at Generate as a backstop, enabled on local."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    labels = {v: k for k, v in namespace["_BACKEND_LABELS"].items()}
+    box = namespace["emb_cbs"]["esmc_6b"]
+
+    namespace["backend_dropdown"].value = labels["biocentral"]
+    assert box.disabled and box.value is False
+    assert "esmc_6b" in namespace["backend_note"].value
+    assert "switch the backend to Local" in namespace["backend_note"].value
+    assert namespace["_drop_incompatible"](["esmc_6b", "prot_t5"], "biocentral") == [
+        "prot_t5"
+    ]
+    assert "Skipping esmc_6b" in capsys.readouterr().out
+
+    namespace["backend_dropdown"].value = labels["local"]
+    # Free Colab's RAM blocks it as oversized; this machine's is what decides.
+    oversized = namespace["_TOO_BIG_HERE"]
+    assert box.disabled is ("esmc_6b" in oversized)
+
+
 def test_preparation_names_an_unnamed_h5_and_generates(monkeypatch, tmp_path, capsys):
     """The Upload-H5 tab never passed a name, so every file without model_name --
     every file the Embeddings notebook wrote -- failed at Generate."""

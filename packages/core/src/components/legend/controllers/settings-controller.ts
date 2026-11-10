@@ -251,7 +251,7 @@ export class SettingsController {
     this.syncColorsToPersistence();
 
     // Update scatterplot and save (color-only change, no z-order change)
-    this.host._scatterplotController.dispatchColorMappingChange(true);
+    this.host._scatterplotController.dispatchColorMappingChange();
     this.host._persistenceController.saveSettings();
     this.host.requestUpdate();
   }
@@ -278,7 +278,7 @@ export class SettingsController {
     this.syncColorsToPersistence();
 
     // Update scatterplot and save (shape change, no z-order change)
-    this.host._scatterplotController.dispatchColorMappingChange(true);
+    this.host._scatterplotController.dispatchColorMappingChange();
     this.host._persistenceController.saveSettings();
     this.host.requestUpdate();
   }

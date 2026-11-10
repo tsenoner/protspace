@@ -122,8 +122,9 @@ export class ProtspaceLegend extends LitElement {
 
   /**
    * Off while the host drives the legend, as the app does during a dataset load. The legend
-   * follows the scatterplot either way: its sync controller subscribes on connect. While off,
-   * it counts in protein order, the order a host's per-protein `annotationValues` feed has.
+   * follows the scatterplot either way: its sync controller subscribes on connect. The app
+   * reads it as its own "loading" flag. Tied categories always keep the order the proteins
+   * first meet them in, whatever it says.
    */
   @property({ type: Boolean, attribute: 'auto-sync' })
   autoSync: boolean = true;
@@ -251,11 +252,6 @@ export class ProtspaceLegend extends LitElement {
   get _annotationDisplayName(): string {
     const name = this.selectedAnnotation;
     return name ? annotationLabel(name, this.data?.annotations?.[name] ?? this.annotationData) : '';
-  }
-
-  /** `autoSync` is off; its doc lists what that changes. */
-  get _hostDriven(): boolean {
-    return !this.autoSync;
   }
 
   get _currentSortMode(): ActiveSortMode {

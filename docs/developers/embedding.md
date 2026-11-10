@@ -206,10 +206,9 @@ on by default, so the attribute only spells it out:
 <protspace-structure-viewer auto-sync scatterplot-selector="#plot"></protspace-structure-viewer>
 ```
 
-The legend follows the scatterplot whatever `autoSync` says. Setting `legend.autoSync = false` hands
-the legend to its host, as the ProtSpace app does while it loads a dataset: the legend then counts
-categories in protein order, the order a per-protein `annotationValues` feed has, and leaves the EAT
-overlay switch for the host to apply to the plot.
+The legend follows the scatterplot whatever `autoSync` says; the ProtSpace app turns it off while it
+loads a dataset, as a flag for its own sync code. Tied categories always keep the order the proteins
+first meet them in.
 
 The view and app controls (Projection, Color by, Contours, search, Import, Export and the plot
 tools) have no auto-sync. They report picks as events and leave the plot to the host, as the

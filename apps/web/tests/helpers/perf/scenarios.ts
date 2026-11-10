@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_LAYOUT } from '../../../src/explore/layout-defaults';
+import { readPerfManifest } from '../../../../../perf/datasets-manifest';
 import {
   annotationSelect,
   colorByTrigger,
@@ -95,19 +96,24 @@ export function repeatableSegments(prefixes: string[]): string[] {
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_BUNDLE = path.resolve(HERE, '../../../public/data.parquetbundle');
+const PERF_DIR = path.resolve(HERE, '../../../../../perf');
 /**
  * A bundle without legend settings. Imported after the demo bundle it keeps `protein_families`,
  * which has an "Other" bucket, and the legend's sync at the end of the load lists that bucket in
  * another order than its first count did. A reordering alone must not re-stage the plot.
  * It is a dataset of the `perf-datasets` release, which `pnpm perf:fetch` downloads.
  */
-const NO_SETTINGS_BUNDLE = path.resolve(
-  HERE,
-  '../../../../../perf/datasets/phosphatase.parquetbundle',
-);
+const NO_SETTINGS_DATASET = 'phosphatase';
 
-/** `file`, or a clear failure when the perf dataset `id` is not downloaded. */
-function perfDataset(file: string, id: string): string {
+/**
+ * The file of the perf dataset `id` (perf/datasets.manifest.json), or a clear failure when
+ * it is not downloaded.
+ */
+function perfDataset(id: string): string {
+  const { datasets } = readPerfManifest(path.join(PERF_DIR, 'datasets.manifest.json'));
+  const dataset = datasets.find((d) => d.id === id);
+  if (!dataset) throw new Error(`no perf dataset ${id} in perf/datasets.manifest.json`);
+  const file = path.join(PERF_DIR, 'datasets', dataset.file);
   if (!fs.existsSync(file)) {
     throw new Error(`${file} is missing; run pnpm perf:fetch --only ${id}`);
   }
@@ -438,7 +444,7 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
     },
     {
       name: 'import-no-settings',
-      act: () => importBundle(page, perfDataset(NO_SETTINGS_BUNDLE, 'phosphatase')),
+      act: () => importBundle(page, perfDataset(NO_SETTINGS_DATASET)),
     },
   );
   return segments;

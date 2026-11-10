@@ -510,7 +510,6 @@ describe('ScatterplotSyncController', () => {
           detail: {
             colorMapping: { cat1: '#f00', cat2: '#0f0' },
             shapeMapping: { cat1: 'circle', cat2: 'square' },
-            colorOnly: false,
           },
         }),
       );
