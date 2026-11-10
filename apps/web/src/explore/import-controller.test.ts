@@ -166,6 +166,17 @@ describe('the Import menu', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it('a reopen whose load status cannot be written warns instead of rejecting unhandled', async () => {
+    const { importMenu, datasetController, warn } = bind();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    datasetController.tryLoadPersistedAgain.mockRejectedValueOnce(new Error('quota'));
+
+    importMenu.dispatchEvent(new CustomEvent('open-last-file', { detail: {} }));
+
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('The stored file could not be read'));
+    expect(error).toHaveBeenCalled();
+  });
+
   it('a null file warns and refreshes', async () => {
     let stored: typeof STORED | null = STORED;
     const { importMenu, datasetController, warn, readSummary } = bind({

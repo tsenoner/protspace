@@ -88,7 +88,14 @@ export function bindImportMenu({
       return;
     }
     // Through the recovery path: an OPFS load, which keeps the user's stored legend settings.
-    await datasetController.tryLoadPersistedAgain(file);
+    // A failed decode reports itself (data-error); this rejects only when the stored load status
+    // cannot be read or written, which would otherwise be an unhandled rejection and no word.
+    try {
+      await datasetController.tryLoadPersistedAgain(file);
+    } catch (error) {
+      console.error('Reopening the stored file failed:', error);
+      warn(STORED_FILE_UNREADABLE);
+    }
   };
 
   // This event name is part of the import menu's contract in @protspace/core.

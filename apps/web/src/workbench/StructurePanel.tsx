@@ -93,6 +93,8 @@ function LegendDivider({ fraction, onPreview }: LegendDividerProps) {
       onLostPointerCapture={onPointerEnd}
       onKeyDown={onKeyDown}
       onKeyUp={onKeyUp}
+      // Focus leaving with a key held (Tab, a window switch) sends no keyup here: commit then.
+      onBlur={onKeyUp}
     />
   );
 }
