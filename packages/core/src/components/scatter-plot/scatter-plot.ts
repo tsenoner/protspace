@@ -170,6 +170,10 @@ export class ProtspaceScatterplot extends LitElement {
 
   // State
   @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
+  // Bumped when the selected annotation's values change under the same plot data (a
+  // numeric rebin), so the update cycle redraws what reads them; `_plotData` keeps its
+  // identity, which the point grid and the renderer key their staged work on.
+  @state() private _annotationRevision = 0;
   @state() private _tooltipData: {
     x: number;
     y: number;
@@ -586,20 +590,15 @@ export class ProtspaceScatterplot extends LitElement {
     }
     this._colorMapping = detail.colorMapping;
     this._shapeMapping = detail.shapeMapping;
-    const colorOnly = detail.colorOnly ?? false;
 
     // Force fresh style getters to use new color/shape mapping
     this._style.invalidateGetters();
 
     if (this._plotData.length > 0) {
-      // Color-only changes skip the depth re-sort, and restyle whole
-      // categories (colour and shape) without re-staging.
-      if (colorOnly) {
-        this._webglRenderer?.invalidateCategoryStyles();
-      } else {
-        this._webglRenderer?.invalidateDepthOrder();
-        this._webglRenderer?.invalidateStyleCache();
-      }
+      // Paint depth reads no colour or shape (the legend's z-order has its own event),
+      // so a mapping change restyles whole categories without a re-sort. Where the
+      // record table cannot, the renderer restyles in the staged order.
+      this._webglRenderer?.invalidateCategoryStyles();
       this._renderLoop.request();
     }
   };
@@ -655,6 +654,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     if (
       changedProperties.has('_plotData') ||
+      changedProperties.has('_annotationRevision') ||
       changedProperties.has('selectedProjectionIndex') ||
       changedProperties.has('projectionPlane') ||
       changedProperties.has('filteredProteinIds') ||
@@ -730,18 +730,20 @@ export class ProtspaceScatterplot extends LitElement {
       const { length, originalIndices } = this._plotData;
       this._processData();
       this._pointGrid.scheduleRebuild();
-      this._webglRenderer?.invalidatePositionCache();
-      this._webglRenderer?.invalidateStyleCache();
       // A projection or plane switch keeps every point in its slot unless the new
       // projection lacks some point's coordinates; any other geometry change may
       // move them.
-      this._renderLoop.noteGeometry(
+      const slotsKept =
         !changedProperties.has('data') &&
-          !changedProperties.has('filteredProteinIds') &&
-          !changedProperties.has('filtersActive') &&
-          this._plotData.length === length &&
-          sameSlots(originalIndices, this._plotData.originalIndices),
-      );
+        !changedProperties.has('filteredProteinIds') &&
+        !changedProperties.has('filtersActive') &&
+        this._plotData.length === length &&
+        sameSlots(originalIndices, this._plotData.originalIndices);
+      this._webglRenderer?.invalidatePositionCache();
+      // Styles read no coordinate: points that kept their slots keep their styles,
+      // and the renderer only moves them.
+      if (!slotsKept) this._webglRenderer?.invalidateStyleCache();
+      this._renderLoop.noteGeometry(slotsKept);
       if (changedProperties.has('data')) {
         this.resetZoom();
         this._style.scheduleIdIndex();
@@ -1043,7 +1045,8 @@ export class ProtspaceScatterplot extends LitElement {
 
     // Style-getters read annotation values lazily via getProteinAnnotationValues —
     // changing the selected annotation only requires re-render + cache invalidation.
-    this._plotData = clonePlotData(this._plotData);
+    // The points and their slots stay as they are.
+    this._annotationRevision++;
     if (this._plotDataBuild) this._plotDataBuild = { ...this._plotDataBuild, data: dataToUse };
     this._style.invalidateGetters();
   }
@@ -1074,7 +1077,8 @@ export class ProtspaceScatterplot extends LitElement {
         this._processData();
       }
 
-      this._pointGrid.scheduleRebuild();
+      // Re-marks what is interactive; rebuilds on its own if `_processData` made new plot data.
+      this._pointGrid.scheduleRemark();
       this._webglRenderer?.invalidateStyleCache();
       this._renderLoop.request();
       this._updateSelectionOverlays();

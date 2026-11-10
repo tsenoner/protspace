@@ -159,6 +159,28 @@ export function stageInPaintOrder(
 }
 
 /**
+ * Re-write the positions of the first `count` slots of an earlier
+ * {@link stageInPaintOrder}, in the order it staged them, from `pd` through
+ * `scales`: the same doubles a re-sort would stage, without resolving any style.
+ */
+export function stagePositions(
+  target: Float32Array,
+  order: Uint32Array,
+  pd: PlotData,
+  scales: ScalePair,
+  count: number,
+): void {
+  const { xs, ys } = pd;
+  const xAxis = linearAxis(scales.x);
+  const yAxis = linearAxis(scales.y);
+  for (let k = 0; k < count; k++) {
+    const slot = order[k];
+    target[k * 2] = mapLinear(xAxis, xs[slot]);
+    target[k * 2 + 1] = mapLinear(yAxis, ys[slot]);
+  }
+}
+
+/**
  * Re-write the style channels of the first `count` slots of an earlier
  * {@link stageInPaintOrder} over `src`, leaving positions and depths alone.
  * `slotCount` is the count that staging resolved, so every slot in `order` is

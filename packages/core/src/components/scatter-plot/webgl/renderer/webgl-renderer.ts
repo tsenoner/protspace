@@ -44,7 +44,12 @@ import {
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
 import { composePaintDepth } from '../../paint-depth';
-import { createPassScratch, restageStyles, stageInPaintOrder } from './pass-staging';
+import {
+  createPassScratch,
+  restageStyles,
+  stageInPaintOrder,
+  stagePositions,
+} from './pass-staging';
 import { RecordStyleTable, markedFirstDrawn, shownSlotCount } from './record-style-table';
 import { planRendererCapacity, shouldReplanCapacityResource } from './capacity-planner';
 import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
@@ -145,8 +150,11 @@ interface StageRequest {
   glide: boolean;
 }
 
-/** How a stage writes the points: re-sorted into a new paint order, or restyled in the old one. */
-type StagePlan = 'resort' | 'restyle';
+/**
+ * How a stage writes the points: re-sorted into a new paint order, restyled in the
+ * old one, or moved in the old one (new positions for the same slots, styles as staged).
+ */
+type StagePlan = 'resort' | 'restyle' | 'reposition';
 
 /** What the scatter plot hands its renderer. */
 interface WebGLRendererOptions {
@@ -1383,18 +1391,20 @@ export class WebGLRenderer {
       return;
     }
 
-    const plan = this.planStage(pd, request.positions);
+    const plan = this.planStage(pd, request);
     let glideMoved = false;
     if (plan === 'resort') glideMoved = this.resortPoints(pd, scales, request.glide);
+    else if (plan === 'reposition') glideMoved = this.repositionPoints(pd, scales, request.glide);
     else this.restylePoints(pd);
     this.uploadStaged(gl, plan, glideMoved);
   }
 
   /**
    * Fit the staging arrays and the atlas to `pd`, then decide how to stage it:
-   * re-sort it into a fresh paint order, or restyle it in the staged one.
+   * re-sort it into a fresh paint order, restyle it in the staged one, or only
+   * move it there.
    */
-  private planStage(pd: PlotData, positions: boolean): StagePlan {
+  private planStage(pd: PlotData, request: StageRequest): StagePlan {
     // Grow to fit, and release a footprint that has become absurd for the data on
     // screen. Grow-only capacity would hold a 2M load's footprint through the 5K
     // demo opened after it, for the rest of the session. The planner owns both
@@ -1417,7 +1427,12 @@ export class WebGLRenderer {
     // the sample-based check (which can't reliably detect category-level swaps).
     const depthOrderDirty = this.depthOrderDirty;
     this.depthOrderDirty = false;
-    if (positions || resized || depthOrderDirty) return 'resort';
+    if (resized || depthOrderDirty) return 'resort';
+    // Paint depth reads no coordinate, so new positions for the same slots keep the
+    // paint order and every staged style (a projection or plane switch).
+    if (request.positions) {
+      return !request.styles && this.slotsUnchanged(pd) ? 'reposition' : 'resort';
+    }
 
     // A restyle rewrites the slots staged from `sortedDataRef` in their paint order, so
     // sample those (color-only update optimization): a moved depth needs a re-sort.
@@ -1487,6 +1502,46 @@ export class WebGLRenderer {
   }
 
   /**
+   * Whether `pd` holds the points staged last, slot for slot, in a paint order
+   * that is still current: then only their positions can differ.
+   */
+  private slotsUnchanged(pd: PlotData): boolean {
+    const src = this.sortedDataRef;
+    if (!src || !this.buffersInitialized || this.stagedOrderStale) return false;
+    if (pd.length !== this.currentPointCount || src.length !== pd.length) return false;
+    const a = pd.originalIndices;
+    const b = src.originalIndices;
+    if (a === b) return true;
+    if (!a || !b) return false;
+    for (let i = 0; i < pd.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  /**
+   * Stage `pd`'s positions in the paint order staged last, through `scales`, and
+   * glide there as {@link resortPoints} does. Styles, depths, the selection cut
+   * and the record table stay as staged. True when the glide's start positions
+   * changed.
+   */
+  private repositionPoints(pd: PlotData, scales: ScalePair, glide: boolean): boolean {
+    const count = this.currentPointCount;
+    const { dataPositions } = this.stageArrays;
+    const glideStart = this.glide.capture(
+      glide,
+      dataPositions,
+      this.positionRescale,
+      this.sortOrder,
+      count,
+    );
+    stagePositions(dataPositions, this.sortOrder, pd, scales, count);
+    const glideMoved = this.glide.afterResort(glideStart, glide, this.sortOrder, count);
+    this.sortedDataRef = pd;
+    this.stagedScales = snapshotScales(scales);
+    this.positionRescale = IDENTITY_RESCALE;
+    return glideMoved;
+  }
+
+  /**
    * Color-only update: no reordering needed, just update color/shape buffers.
    * Iterate via sortOrder into sortedDataRef to match the buffer order from the last
    * rebuild. Positions and depths are unchanged from that rebuild.
@@ -1541,6 +1596,12 @@ export class WebGLRenderer {
 
     const { dataPositions, sizes, colors, depths, labelCounts, shapes, predicted } =
       this.stageArrays;
+    if (plan === 'reposition') {
+      // Only the positions moved: every other buffer, and the table, hold as uploaded.
+      this.updateBuffer(gl, this.resources.dataPositionBuffer, dataPositions, count * 2);
+      if (glideMoved) this.syncMorphAttribute(gl);
+      return;
+    }
     // Only a re-sort moves points between slots, so only it changes positions and
     // paint depths; a restyle keeps both as staged.
     if (plan === 'resort') {

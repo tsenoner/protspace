@@ -2578,7 +2578,7 @@ export class ProtspaceLegend extends LitElement {
     this._syncLegendColorsToPersistence();
 
     // Update scatterplot and save (color-only change, no z-order change)
-    this._scatterplotController.dispatchColorMappingChange(true);
+    this._scatterplotController.dispatchColorMappingChange();
     this._persistenceController.saveSettings();
     this.requestUpdate();
   }
@@ -2614,7 +2614,7 @@ export class ProtspaceLegend extends LitElement {
     this._syncLegendColorsToPersistence();
 
     // Update scatterplot and save (shape change, no z-order change)
-    this._scatterplotController.dispatchColorMappingChange(true);
+    this._scatterplotController.dispatchColorMappingChange();
     this._persistenceController.saveSettings();
     this.requestUpdate();
   }

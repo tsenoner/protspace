@@ -100,7 +100,7 @@ describe('style getters invalidation lifecycle (characterization lock)', () => {
     expect(before.getColors(point(0))).toEqual(['#f00']);
     sp._handleColorMappingChange(
       new CustomEvent('legend-colormapping-change', {
-        detail: { colorMapping: { A: '#00f', B: '#0f0' }, shapeMapping: {}, colorOnly: true },
+        detail: { colorMapping: { A: '#00f', B: '#0f0' }, shapeMapping: {} },
       }),
     );
     const after = sp._style.getters();
