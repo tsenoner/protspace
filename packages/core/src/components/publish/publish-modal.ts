@@ -282,6 +282,8 @@ export class ProtspacePublishModal extends LitElement {
         this._state = { ...this._state, overlays: anns };
       },
       onInsetAdded: (inset) => {
+        // Placing an inset hands the canvas back to Select; the toolbar says so too.
+        this._tool = 'select';
         this._state = {
           ...this._state,
           insets: [...this._state.insets, inset],
@@ -497,9 +499,17 @@ export class ProtspacePublishModal extends LitElement {
   private _removeOverlay(index: number) {
     const anns = this._state.overlays.filter((_, i) => i !== index);
     this._state = { ...this._state, overlays: anns };
-    if (this._selectedItem?.kind === 'overlay' && this._selectedItem.index === index) {
-      this._setSelection(null);
-    }
+    this._keepSelectionAfterRemoval('overlay', index);
+  }
+
+  /**
+   * After the `kind` item at `index` goes: its selection goes with it, and a selection further
+   * down the list moves up one, so it stays on the item it was on.
+   */
+  private _keepSelectionAfterRemoval(kind: 'overlay' | 'inset', index: number) {
+    const selected = this._selectedItem;
+    if (selected?.kind !== kind || selected.index < index) return;
+    this._setSelection(selected.index === index ? null : { kind, index: selected.index - 1 });
   }
 
   private _updateOverlay(index: number, partial: Partial<Overlay>) {
@@ -511,9 +521,7 @@ export class ProtspacePublishModal extends LitElement {
   private _removeInset(index: number) {
     const ins = this._state.insets.filter((_, i) => i !== index);
     this._state = { ...this._state, insets: ins };
-    if (this._selectedItem?.kind === 'inset' && this._selectedItem.index === index) {
-      this._setSelection(null);
-    }
+    this._keepSelectionAfterRemoval('inset', index);
   }
 
   private _updateInset(index: number, partial: Partial<Inset>) {
@@ -529,9 +537,28 @@ export class ProtspacePublishModal extends LitElement {
     // Re-render at full resolution for export
     if (!this.plotElement) return;
     await waitForFonts();
+    let figure: HTMLCanvasElement;
+    try {
+      figure = this._renderFigure(this.plotElement as CaptureablePlotElement);
+    } catch (err) {
+      // A figure too large for a canvas, or a lost WebGL context: say so here, not in the console.
+      console.error('Figure export failed:', err);
+      this._exportError = `Export failed. ${err instanceof Error ? err.message : String(err)}`;
+      return;
+    }
+    this.dispatchEvent(
+      new CustomEvent('publish-export', {
+        detail: { canvas: figure, state: this._state },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /** The figure at its full size, for export. */
+  private _renderFigure(plotEl: CaptureablePlotElement): HTMLCanvasElement {
     const s = this._state;
     const { plotRect } = this._layout(s.widthPx, s.heightPx);
-    const plotEl = this.plotElement as CaptureablePlotElement;
     const bgColor = backgroundColor(s);
     const plotCanvas = this._capturePlot(plotEl, plotRect, bgColor);
 
@@ -551,14 +578,7 @@ export class ProtspacePublishModal extends LitElement {
       legendTitle: this._legendTitle,
       insetRenders,
     });
-
-    this.dispatchEvent(
-      new CustomEvent('publish-export', {
-        detail: { canvas: outCanvas, state: s },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    return outCanvas;
   }
 
   private _handleClose() {
@@ -627,17 +647,6 @@ export class ProtspacePublishModal extends LitElement {
     });
   }
 
-  private _clearOverlays() {
-    this._state = {
-      ...this._state,
-      overlays: [],
-      insets: [],
-      viewFingerprint: this.currentProjection ?? undefined,
-    };
-    this._showFingerprintWarning = false;
-    this._showResampleNote = false;
-  }
-
   // ── Render ─────────────────────────────────────────
 
   override render() {
@@ -671,7 +680,7 @@ export class ProtspacePublishModal extends LitElement {
                         href="#"
                         @click=${(e: Event) => {
                           e.preventDefault();
-                          this._clearOverlays();
+                          this._handleNewFigure();
                         }}
                         >Clear overlays</a
                       >

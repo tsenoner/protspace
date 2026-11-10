@@ -1,4 +1,5 @@
 import { html, nothing, type TemplateResult } from 'lit';
+import { live } from 'lit/directives/live.js';
 import { icon } from '../../kit/icon';
 import '../../kit/tooltip';
 import { cmToMm, inToMm, mmToCm, mmToIn, pxToMm } from '../dimension-utils';
@@ -6,6 +7,9 @@ import { getActivePresetMaxHeightPx, getActivePresetWidthPx } from '../publish-m
 import type { PublishState } from '../publish-state';
 
 type Unit = PublishState['unit'];
+
+const DPI_MIN = 1;
+const DPI_MAX = 2400;
 
 const RESAMPLE_TOOLTIP =
   'When on, changing the resolution re-renders the figure at a new pixel count. ' +
@@ -40,15 +44,23 @@ function formatDimensionForUnit(px: number, mm: number, unit: Unit): string {
   return mmToCm(mm).toFixed(2);
 }
 
-/** A typed width or height: whole pixels in px, else converted to mm. A non-positive entry is ignored. */
+/**
+ * A typed width or height: whole pixels in px, else converted to mm. A non-positive entry is
+ * ignored, and the box goes back to `shown`: nothing re-renders to put it back.
+ */
 function readSize(
   event: Event,
   unit: Unit,
+  shown: string,
   setPx: (px: number) => void,
   setMm: (mm: number) => void,
 ): void {
-  const value = parseFloat((event.target as HTMLInputElement).value);
-  if (!Number.isFinite(value) || value <= 0) return;
+  const input = event.target as HTMLInputElement;
+  const value = parseFloat(input.value);
+  if (!Number.isFinite(value) || value <= 0) {
+    input.value = shown;
+    return;
+  }
   if (unit === 'px') setPx(Math.round(value));
   else setMm(unitToMm(value, unit));
 }
@@ -151,7 +163,7 @@ export function renderDimensions(
             max="8000"
             step="1"
             ?disabled=${dimsReadOnly || widthLocked}
-            .value=${String(s.widthPx)}
+            .value=${live(String(s.widthPx))}
             @input=${(e: Event) => {
               const px = parseInt((e.target as HTMLInputElement).value);
               if (Number.isFinite(px) && px > 0) handlers.widthPx(px);
@@ -163,9 +175,10 @@ export function renderDimensions(
             data-publish-input="width"
             aria-label="Width"
             ?disabled=${dimsReadOnly || widthLocked}
-            .value=${String(widthDisplay)}
+            .value=${live(widthDisplay)}
             step=${s.unit === 'px' ? '1' : '0.1'}
-            @change=${(e: Event) => readSize(e, s.unit, handlers.widthPx, handlers.widthMm)}
+            @change=${(e: Event) =>
+              readSize(e, s.unit, widthDisplay, handlers.widthPx, handlers.widthMm)}
           />
           ${widthLocked
             ? html`<ps-tooltip text="Width is fixed by the active journal preset."></ps-tooltip>`
@@ -198,7 +211,7 @@ export function renderDimensions(
             max=${heightMaxPx !== null ? String(Math.max(200, heightMaxPx)) : '8000'}
             step="1"
             ?disabled=${dimsReadOnly}
-            .value=${String(s.heightPx)}
+            .value=${live(String(s.heightPx))}
             @input=${(e: Event) => {
               const px = parseInt((e.target as HTMLInputElement).value);
               if (Number.isFinite(px) && px > 0) handlers.heightPx(px);
@@ -210,9 +223,10 @@ export function renderDimensions(
             data-publish-input="height"
             aria-label="Height"
             ?disabled=${dimsReadOnly}
-            .value=${String(heightDisplay)}
+            .value=${live(heightDisplay)}
             step=${s.unit === 'px' ? '1' : '0.1'}
-            @change=${(e: Event) => readSize(e, s.unit, handlers.heightPx, handlers.heightMm)}
+            @change=${(e: Event) =>
+              readSize(e, s.unit, heightDisplay, handlers.heightPx, handlers.heightMm)}
           />
         </div>
       </div>
@@ -225,11 +239,16 @@ export function renderDimensions(
             class="publish-row-input"
             data-publish-input="dpi"
             aria-label="Resolution"
-            min="1"
-            max="2400"
-            .value=${String(s.dpi)}
+            min=${DPI_MIN}
+            max=${DPI_MAX}
+            .value=${live(String(s.dpi))}
             @change=${(e: Event) => {
-              handlers.dpi(parseInt((e.target as HTMLInputElement).value) || s.dpi);
+              // Held to the box's range: a typed 99999 with Resample on would ask for a canvas
+              // no browser can draw. Every entry re-renders, so live() shows what applies.
+              const dpi = parseInt((e.target as HTMLInputElement).value);
+              handlers.dpi(
+                Number.isFinite(dpi) ? Math.min(DPI_MAX, Math.max(DPI_MIN, dpi)) : s.dpi,
+              );
             }}
           />
           <span class="publish-unit">Pixels/Inch</span>
