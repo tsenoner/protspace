@@ -40,6 +40,21 @@ import type { PsPopover } from '../kit/popover';
 import './query-value-picker';
 import './query-numeric-input';
 
+/** Proteins with a value, per dataset and annotation, for the operator menu's counts. */
+const presenceCounts = new WeakMap<ProtspaceData, Map<string, number>>();
+
+/** Distinct values a categorical annotation holds, N/A left out, per values array. */
+const valueCounts = new WeakMap<readonly (string | null)[], number>();
+
+function distinctValues(values: readonly (string | null)[]): number {
+  let n = valueCounts.get(values);
+  if (n === undefined) {
+    n = values.filter((v) => v !== null && !isNAValue(v)).length;
+    valueCounts.set(values, n);
+  }
+  return n;
+}
+
 /**
  * Renders a single query condition row.
  *
@@ -56,21 +71,6 @@ import './query-numeric-input';
  * - `eat-panel-open` — a locked EAT reliability card's "Edit in EAT ›", detail: `{ annotation }`
  *   (the base annotation, which the app makes the Color by one so the panel shows it)
  */
-/** Proteins with a value, per dataset and annotation, for the operator menu's counts. */
-const presenceCounts = new WeakMap<ProtspaceData, Map<string, number>>();
-
-/** Distinct values a categorical annotation holds, N/A left out, per values array. */
-const valueCounts = new WeakMap<readonly (string | null)[], number>();
-
-function distinctValues(values: readonly (string | null)[]): number {
-  let n = valueCounts.get(values);
-  if (n === undefined) {
-    n = values.filter((v) => v !== null && !isNAValue(v)).length;
-    valueCounts.set(values, n);
-  }
-  return n;
-}
-
 @customElement('protspace-query-condition-row')
 class ProtspaceQueryConditionRow extends LitElement {
   static styles = queryBuilderStyles;

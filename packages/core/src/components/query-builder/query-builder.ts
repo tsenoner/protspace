@@ -10,6 +10,7 @@ import '../kit/menu';
 import '../kit/dialog';
 import { pushLayer } from '../kit/layers';
 import { COMPACT_MEDIA } from '../../utils/breakpoints';
+import { AfterPaintCommit } from '../../utils/after-paint-commit';
 import type { FilterCondition, FilterGroup, FilterQuery, FilterQueryItem } from './query-types';
 import { createCondition, createGroup, isFilterGroup } from './query-types';
 import {
@@ -38,18 +39,6 @@ import { applyBlock, applyBlockText, leafConditions } from './query-apply-state'
 import { countBase, countBaseKey } from './query-count-base';
 import { queryBuilderHostStyles, queryBuilderStyles } from './query-builder.styles';
 import './query-condition-row';
-
-/** Runs `task` after the next paint; returns its cancel. */
-function afterPaint(task: () => void): () => void {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const frame = requestAnimationFrame(() => {
-    timer = setTimeout(task, 0);
-  });
-  return () => {
-    cancelAnimationFrame(frame);
-    clearTimeout(timer);
-  };
-}
 
 /** A card's count base and what it was worked out from (see `countBaseKey`). */
 interface CountedBase {
@@ -105,8 +94,8 @@ export class ProtspaceQueryBuilder extends LitElement {
   @state() private _bases: ReadonlyMap<string, CountedBase> = new Map();
   /** The cards whose value list is open: only their values are counted. */
   private _openLists = new Set<string>();
-  /** Cancels the base count waiting for a list that just opened. */
-  private _cancelBaseCount?: () => void;
+  /** The base count waiting for a list that just opened to paint. */
+  private readonly _baseCount = new AfterPaintCommit();
   /** A count is pending (the 300 ms debounce): Apply waits, with no reason text. */
   @state() private _counting = true;
   /** How the count moved with the last edit; null before a second count on the same data. */
@@ -202,8 +191,7 @@ export class ProtspaceQueryBuilder extends LitElement {
       clearTimeout(this._debounceTimer);
       this._debounceTimer = null;
     }
-    this._cancelBaseCount?.();
-    this._cancelBaseCount = undefined;
+    this._baseCount.cancel();
   }
 
   // ─── Match Count (debounced) ──────────────────────────────────────────────
@@ -247,11 +235,7 @@ export class ProtspaceQueryBuilder extends LitElement {
       this._bases = bases;
     }
     this.requestUpdate();
-    this._cancelBaseCount?.();
-    this._cancelBaseCount = afterPaint(() => {
-      this._cancelBaseCount = undefined;
-      this._countBases();
-    });
+    this._baseCount.schedule(() => this._countBases());
   }
 
   /** The base was worked out for this data and for a query that gives the card the same one. */
@@ -707,7 +691,7 @@ export class ProtspaceQueryBuilder extends LitElement {
   /** The joiner and group menus, one each, anchored to the pill or ⋯ that opened them. */
   private _renderMenus() {
     const negated = this._groupTarget
-      ? this._findGroup(this._groupTarget.id)?.logicalOp === 'NOT'
+      ? this._findItem(this._groupTarget.id)?.item.logicalOp === 'NOT'
       : false;
     const changesResult =
       !negated && !!this._groupTarget && ungroupChangesResult(this.query, this._groupTarget.id);
@@ -744,19 +728,6 @@ export class ProtspaceQueryBuilder extends LitElement {
         >
       </ps-menu>
     `;
-  }
-
-  private _findGroup(id: string): FilterGroup | null {
-    const find = (items: FilterQuery): FilterGroup | null => {
-      for (const item of items) {
-        if (!isFilterGroup(item)) continue;
-        if (item.id === id) return item;
-        const inner = find(item.conditions);
-        if (inner) return inner;
-      }
-      return null;
-    };
-    return find(this.query);
   }
 
   render() {

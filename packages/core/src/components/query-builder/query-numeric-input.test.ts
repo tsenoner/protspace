@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * Behavioural contract for the numeric range input used by a query condition.
- * The condition object is owned by the control bar; this component is controlled,
+ * The condition object is owned by the query builder; this component is controlled,
  * so each test feeds an emitted condition back in as the prop (as the real parent
  * does) before asserting the next render.
  */
