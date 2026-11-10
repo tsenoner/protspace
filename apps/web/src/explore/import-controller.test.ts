@@ -34,6 +34,7 @@ function bind(
   const datasetController = {
     loadChosenExample: vi.fn().mockResolvedValue('loaded'),
     tryLoadPersistedAgain: vi.fn().mockResolvedValue(undefined),
+    hasDisplayedDataset: vi.fn(() => true),
   };
   const screen = { exampleId: 'demo' as string | null, name: 'Demo' };
   let changeListener: ChangeListener | null = null;
@@ -140,6 +141,17 @@ describe('the Import menu', () => {
     emitChange('demo', 'menu');
     await vi.waitFor(() => expect(importMenu.lastFile).not.toBeNull());
     expect(readSummary).toHaveBeenCalledTimes(3);
+  });
+
+  it('offers the stored file while the recovery banner names it on an empty page', async () => {
+    const { importMenu, screen, datasetController } = bind();
+    // Startup stopped at the banner: the app bar names the stored file, nothing is on screen.
+    datasetController.hasDisplayedDataset.mockReturnValue(false);
+    screen.exampleId = null;
+    screen.name = 'mine.parquetbundle';
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(importMenu.lastFile).toEqual({ name: 'mine.parquetbundle', sizeLabel: '12.3 MB' });
   });
 
   it('open-last-file loads the stored file and retries it', async () => {

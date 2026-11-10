@@ -468,6 +468,30 @@ describe('Clear stored data on the recovery banner', () => {
     expect(datasetController.loadDefaultDatasetAndClearPersistedFile).toHaveBeenCalledTimes(1);
   });
 
+  it('a dataset landing later dismisses the banner, and a confirmation still open then clears nothing', async () => {
+    let resolveConfirm: (value: boolean) => void = () => {};
+    const confirmClear = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirm = resolve;
+        }),
+    );
+    const { datasetController, handlers } = await bannerHandlers(confirmClear);
+    const [[onChange]] = datasetController.subscribeToDatasetChanges.mock.calls as unknown as [
+      [(exampleId: string | null, source: string) => void],
+    ];
+
+    const clearing = handlers.onClear();
+    // An import lands while the dialog is open: it replaced the stored file the banner names.
+    onChange(null, 'user');
+    expect(dismissRecoveryBanner).toHaveBeenCalledTimes(1);
+    resolveConfirm(true);
+    await clearing;
+
+    expect(clearLastImportedFile).not.toHaveBeenCalled();
+    expect(datasetController.loadDefaultDatasetAndClearPersistedFile).not.toHaveBeenCalled();
+  });
+
   it('without a confirmation to ask, the stored copy is never cleared', async () => {
     const { handlers } = await bannerHandlers();
 
