@@ -26,8 +26,14 @@ function makeData(): VisualizationData {
         colors: FAMILIES.map(() => '#000000'),
         shapes: FAMILIES.map(() => 'circle'),
       },
+      phylum: {
+        kind: 'categorical',
+        values: ['X', 'Y'],
+        colors: ['#000000', '#000000'],
+        shapes: ['circle', 'circle'],
+      },
     },
-    annotation_data: { family: codes },
+    annotation_data: { family: codes, phylum: Int32Array.from(codes, (code) => code % 2) },
   };
 }
 
@@ -60,11 +66,25 @@ async function load(feed: boolean) {
   legend.forceSync();
   await settle(legend);
 
+  return { legend, plot, view: view(legend) };
+}
+
+function view(legend: ProtspaceLegend) {
   return {
     items: legend.getLegendExportData().items,
     other: (legend as unknown as { _otherItems: OtherItem[] })._otherItems.map((o) => o.value),
   };
 }
+
+const countedKeys = (legend: ProtspaceLegend) => [
+  ...(
+    legend as unknown as {
+      _computeAnnotationCounts(knownValues: string[]): ReadonlyMap<string, number>;
+    }
+  )
+    ._computeAnnotationCounts([])
+    .keys(),
+];
 
 describe('legend after a dataset load', () => {
   afterEach(() => {
@@ -72,20 +92,48 @@ describe('legend after a dataset load', () => {
     localStorage.clear();
   });
 
-  it('counts the synced storage in protein order while auto-sync is off', async () => {
-    const counted = await load(false);
+  it('counts the synced storage as a per-protein feed would', async () => {
+    const counted = (await load(false)).view;
     document.body.innerHTML = '';
     localStorage.clear();
-    const fed = await load(true);
+    const fed = (await load(true)).view;
 
     expect(counted).toEqual(fed);
-    // The proteins meet L to C first, so those get the rows and the colours in that order;
-    // the sync then orders the tie as storage lists it.
+    // The proteins meet L to A, so L to C get the rows and the colours in that order, and the
+    // sync once auto-sync is back on keeps them there.
     const slot = (value: string) => FAMILIES.length - 1 - FAMILIES.indexOf(value);
     expect(counted.items.map(({ value, color }) => [value, color])).toEqual([
-      ...FAMILIES.slice(2).map((value) => [value, getVisualEncoding(slot(value), value).color]),
+      ...FAMILIES.slice(2)
+        .reverse()
+        .map((value) => [value, getVisualEncoding(slot(value), value).color]),
       ['Other', getVisualEncoding(-1, 'Other').color],
     ]);
-    expect(counted.other).toEqual(['A', 'B']);
+    expect(counted.other).toEqual(['B', 'A']);
+  });
+
+  it('orders tied counts the same with auto-sync on as with it off', async () => {
+    const { legend } = await load(false);
+
+    const synced = countedKeys(legend);
+    legend.autoSync = false;
+    const hostDriven = countedKeys(legend);
+
+    expect(synced).toEqual(hostDriven);
+    expect(synced).toEqual([...FAMILIES].reverse());
+  });
+
+  it('keeps the rows and colours of tied categories across an annotation round trip', async () => {
+    const { legend, plot, view: loaded } = await load(false);
+
+    plot.selectedAnnotation = 'phylum';
+    legend.forceSync();
+    await settle(legend);
+    expect(legend.getLegendExportData().items.map((item) => item.value)).toEqual(['Y', 'X']);
+
+    plot.selectedAnnotation = 'family';
+    legend.forceSync();
+    await settle(legend);
+
+    expect(view(legend)).toEqual(loaded);
   });
 });

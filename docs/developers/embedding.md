@@ -94,9 +94,9 @@ on by default, so the attribute only spells it out:
 ```
 
 The legend follows the scatterplot whatever `autoSync` says. Setting `legend.autoSync = false` hands
-the legend to its host, as the ProtSpace app does while it loads a dataset: the legend then counts
-categories in protein order, the order a per-protein `annotationValues` feed has, and leaves the EAT
-overlay switch for the host to apply to the plot.
+the legend to its host, as the ProtSpace app does while it loads a dataset: the legend then leaves
+the EAT overlay switch for the host to apply to the plot. Tied categories always keep the order the
+proteins first meet them in.
 
 ## Configuring the plot
 

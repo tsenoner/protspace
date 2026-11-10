@@ -237,8 +237,7 @@ export class ProtspaceLegend extends LitElement {
   /**
    * Off while the host drives the legend, as the app does during a dataset load. The legend
    * follows the scatterplot either way: its sync controller subscribes on connect. While off,
-   * it counts in protein order, the order a host's per-protein `annotationValues` feed has, and
-   * leaves the EAT overlay switch for the host to apply to the plot.
+   * it leaves the EAT overlay switch for the host to apply to the plot.
    */
   @property({ type: Boolean, attribute: 'auto-sync' })
   autoSync: boolean = true;
@@ -1736,17 +1735,14 @@ export class ProtspaceLegend extends LitElement {
         knownValues,
       );
     }
-    // Protein order while host-driven, the order a per-protein `annotationValues` feed
-    // gives, so the legend comes out the same whether its host feeds it or it counts the
-    // synced storage. Tied counts keep this order, which settles their rows and colours.
+    // Keys come in protein order, as from a per-protein `annotationValues` feed, so tied
+    // categories keep the same rows and colours on every recount, however the legend is fed.
     return LegendDataProcessor.countFromStorage(
       source.colData,
       source.values,
       source.proteinCount,
       filteredIndices,
       knownValues,
-      // Host-driven (see `autoSync`): tie order follows protein order.
-      !this.autoSync,
     );
   }
 

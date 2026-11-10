@@ -183,9 +183,10 @@ describe('legend-data-processor', () => {
           'B',
           'Z',
         ]);
-        expect(asObject(counts)).toEqual(
-          asObject(legacyCounts(colData, VALUES, PROTEINS, null, ['A', 'B', 'Z'])),
-        );
+        // Entries, not an object: the key order (ties keep it) must match too.
+        expect([...counts]).toEqual([
+          ...legacyCounts(colData, VALUES, PROTEINS, null, ['A', 'B', 'Z']),
+        ]);
         // Explicit shape so a change to BOTH paths cannot pass unnoticed.
         expect(asObject(counts)).toEqual(totals);
       },
@@ -200,9 +201,10 @@ describe('legend-data-processor', () => {
           'B',
           'Z',
         ]);
-        expect(asObject(counts)).toEqual(
-          asObject(legacyCounts(colData, VALUES, PROTEINS, filtered, ['A', 'B', 'Z'])),
-        );
+        // Entries, not an object: the key order (ties keep it) must match too.
+        expect([...counts]).toEqual([
+          ...legacyCounts(colData, VALUES, PROTEINS, filtered, ['A', 'B', 'Z']),
+        ]);
         expect(asObject(counts)).toEqual({ A: 1, B: 2, Z: 0 });
       },
     );
@@ -276,17 +278,12 @@ describe('legend-data-processor', () => {
     ];
 
     it.each(orderKinds)(
-      'with proteinOrder, lists values as the legacy per-protein list did on %s storage',
+      'lists values as the legacy per-protein list did on %s storage',
       (_name, colData, order) => {
         const proteins = colData.length;
-        const counts = LegendDataProcessor.countFromStorage(
-          colData,
-          ORDER_VALUES,
-          proteins,
-          null,
-          ['B'],
-          true,
-        );
+        const counts = LegendDataProcessor.countFromStorage(colData, ORDER_VALUES, proteins, null, [
+          'B',
+        ]);
         // Known values stay first, as in the legacy count.
         expect([...counts.keys()]).toEqual(['B', ...order.filter((key) => key !== 'B')]);
         expect([...counts]).toEqual([
@@ -295,14 +292,29 @@ describe('legend-data-processor', () => {
       },
     );
 
-    it('lists values in storage order, __NA__ last, without proteinOrder', () => {
+    it('lists values in the order the isolated proteins meet them', () => {
+      // Unfiltered the proteins meet C, A, B; the isolated ones (p3..p5) meet A, C, B.
       const counts = LegendDataProcessor.countFromStorage(
-        new Int32Array([2, 0, 9, -1, 1, 2]),
+        new Int32Array([2, 0, 1, 0, 2, 1]),
         ORDER_VALUES,
         6,
-        null,
+        new Set([3, 4, 5]),
       );
-      expect([...counts.keys()]).toEqual(['A', 'B', 'C', NA_VALUE]);
+      expect([...counts.keys()]).toEqual(['A', 'C', 'B']);
+    });
+
+    it('lists a lone filled value after the known values', () => {
+      const counts = LegendDataProcessor.countFromStorage(
+        new Int32Array([-1, 2, 2]),
+        ORDER_VALUES,
+        3,
+        null,
+        ['A'],
+      );
+      expect([...counts]).toEqual([
+        ['A', 0],
+        ['C', 2],
+      ]);
     });
 
     // ─── isolation misalignment the flat-array path had ─────────────────────

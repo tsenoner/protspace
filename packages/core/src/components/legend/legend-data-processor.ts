@@ -37,32 +37,52 @@ export function createProcessorContext(): LegendProcessorContext {
 }
 
 /**
- * The filled bins of a {@link LegendDataProcessor.countFromStorage} count, in the order a walk
+ * The `filled` bins of a {@link LegendDataProcessor.countFromStorage} count, in the order a walk
  * over the proteins first hits them. A second walk rather than bookkeeping in the count, which
- * would slow every count down; it stops once it has met every filled bin.
+ * would slow every count down; it stops once it has met every filled bin. The two storage kinds
+ * large datasets use read their arrays directly: through the generic accessors a walk that has
+ * to reach the last protein costs several times the count itself.
  */
 function binsInProteinOrder(
   colData: AnnotationData,
-  bins: Int32Array,
+  binCount: number,
+  filled: number,
   proteinCount: number,
   filteredIndices: ReadonlySet<number> | null,
 ): number[] {
-  const naBin = bins.length - 1;
-  let left = 0;
-  for (let bin = 0; bin <= naBin; bin++) if (bins[bin] > 0) left++;
-  const seen = new Uint8Array(bins.length);
+  const naBin = binCount - 1;
+  let left = filled;
+  const seen = new Uint8Array(binCount);
   const order: number[] = [];
-  for (let i = 0; i < proteinCount && left > 0; i++) {
-    if (filteredIndices !== null && !filteredIndices.has(i)) continue;
-    const hits = getProteinAnnotationCount(colData, i);
-    for (let k = 0; k < hits; k++) {
-      const code = getProteinAnnotationIndexAt(colData, i, k);
-      const bin = code >= 0 && code < naBin ? code : naBin;
-      if (seen[bin] === 0) {
-        seen[bin] = 1;
-        order.push(bin);
-        left--;
-      }
+  const meet = (code: number) => {
+    const bin = code >= 0 && code < naBin ? code : naBin;
+    if (seen[bin] === 0) {
+      seen[bin] = 1;
+      order.push(bin);
+      left--;
+    }
+  };
+
+  if (colData instanceof Int32Array) {
+    const limit = Math.min(proteinCount, colData.length);
+    for (let i = 0; i < limit && left > 0; i++) {
+      if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+      const code = colData[i];
+      if (code >= 0) meet(code);
+    }
+  } else if (isCsrAnnotationData(colData)) {
+    const { offsets, codes } = colData;
+    const limit = Math.min(proteinCount, colData.length);
+    for (let i = 0; i < limit && left > 0; i++) {
+      if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+      const stop = offsets[i + 1];
+      for (let j = offsets[i]; j < stop; j++) meet(codes[j]);
+    }
+  } else {
+    for (let i = 0; i < proteinCount && left > 0; i++) {
+      if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+      const hits = getProteinAnnotationCount(colData, i);
+      for (let k = 0; k < hits; k++) meet(getProteinAnnotationIndexAt(colData, i, k));
     }
   }
   return order;
@@ -130,9 +150,11 @@ export class LegendDataProcessor {
    * `[0, values.length)` inside a hit list resolves to `undefined` and lands in
    * the `__NA__` bucket, exactly as `toInternalValue(values[code])` did.
    *
-   * Keys come in storage order, `__NA__` last. With `proteinOrder` they come in the
-   * order the proteins first meet them, the order a per-protein list gives
-   * {@link countAnnotationFrequencies}. Sorting by count keeps ties in this order.
+   * Keys (after `knownValues`, which come first) are in the order the proteins first
+   * meet them, `__NA__` included: the order a per-protein list gives
+   * {@link countAnnotationFrequencies}, and so one order however the legend is fed or
+   * when it recounts. The sort keeps tied entries, and the "Other" list, in this order,
+   * which settles the rows and default colours of tied categories.
    */
   static countFromStorage(
     colData: AnnotationData,
@@ -140,7 +162,6 @@ export class LegendDataProcessor {
     proteinCount: number,
     filteredIndices: ReadonlySet<number> | null,
     knownValues: string[] = [],
-    proteinOrder = false,
   ): Map<string, number> {
     const valueCount = values.length;
     // One extra slot for every code that does not address a real value.
@@ -198,12 +219,18 @@ export class LegendDataProcessor {
       const key = bin === naBin ? NA_VALUE : toInternalValue(values[bin]);
       freq.set(key, (freq.get(key) ?? 0) + bins[bin]);
     };
-    if (proteinOrder) {
-      binsInProteinOrder(colData, bins, proteinCount, filteredIndices).forEach(add);
-    } else {
-      for (let bin = 0; bin <= naBin; bin++) {
-        if (bins[bin] > 0) add(bin);
+    let filled = 0;
+    let lastFilled = -1;
+    for (let bin = 0; bin <= naBin; bin++) {
+      if (bins[bin] > 0) {
+        filled++;
+        lastFilled = bin;
       }
+    }
+    // Only the relative order of two or more keys needs the walk over the proteins.
+    if (filled === 1) add(lastFilled);
+    else if (filled > 1) {
+      binsInProteinOrder(colData, bins.length, filled, proteinCount, filteredIndices).forEach(add);
     }
     return freq;
   }
