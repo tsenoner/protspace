@@ -254,30 +254,21 @@ export class ProtspacePublishModal extends LitElement {
 
   // ── Overlay ────────────────────────────────────────
 
+  /** The figure's plot and legend rects at `width` × `height`. */
+  private _layout(width: number, height: number) {
+    const visibleCount = this._legendItems.filter((it) => it.isVisible).length;
+    return computeLayout(width, height, this._state.legend, visibleCount);
+  }
+
   private _setupOverlay() {
     if (!this._previewCanvas) return;
+    const previewLayout = () => this._layout(this._previewCanvas.width, this._previewCanvas.height);
     this._overlayController = new PublishOverlayController(this._previewCanvas, {
-      getPlotRect: () => {
-        const { plotRect } = computeLayout(
-          this._previewCanvas.width,
-          this._previewCanvas.height,
-          this._state.legend,
-          this._legendItems.filter((it) => it.isVisible).length,
-        );
-        return plotRect;
-      },
+      getPlotRect: () => previewLayout().plotRect,
       getOverlays: () => this._state.overlays,
       getInsets: () => this._state.insets,
-      getLegendRect: () => {
-        if (this._state.legend.position !== 'free') return null;
-        const { legendRect } = computeLayout(
-          this._previewCanvas.width,
-          this._previewCanvas.height,
-          this._state.legend,
-          this._legendItems.filter((it) => it.isVisible).length,
-        );
-        return legendRect;
-      },
+      getLegendRect: () =>
+        this._state.legend.position === 'free' ? previewLayout().legendRect : null,
       onOverlayAdded: (a) => {
         this._state = {
           ...this._state,
@@ -338,30 +329,13 @@ export class ProtspacePublishModal extends LitElement {
     if (!this._previewCanvas || !this.plotElement) return;
 
     const s = this._state;
-    const aspect = s.heightPx / s.widthPx;
     const previewW = s.widthPx;
-    const previewH = Math.round(previewW * aspect);
-
     this._previewCanvas.width = previewW;
-    this._previewCanvas.height = previewH;
+    this._previewCanvas.height = s.heightPx;
 
-    // Capture plot (cache when dimensions and key state haven't changed)
-    const visibleCount = this._legendItems.filter((it) => it.isVisible).length;
-    const { plotRect } = computeLayout(previewW, previewH, s.legend, visibleCount);
+    const { plotRect } = this._layout(previewW, s.heightPx);
     const plotEl = this.plotElement as CaptureablePlotElement;
-    const bgColor = s.background === 'white' ? '#ffffff' : 'rgba(0,0,0,0)';
-
-    const cacheKey = `${plotRect.w}x${plotRect.h}|${bgColor}`;
-    if (cacheKey !== this._plotCacheKey || !this._cachedPlotCanvas) {
-      this._cachedPlotCanvas = capturePlotCanvas(plotEl, {
-        width: plotRect.w,
-        height: plotRect.h,
-        backgroundColor: bgColor,
-        // Always render the unzoomed, fit-all view in the editor (#294).
-        resetView: true,
-      });
-      this._plotCacheKey = cacheKey;
-    }
+    const bgColor = backgroundColor(s);
 
     // Geometric per-inset captures: each inset is a fresh WebGL render
     // scoped to its source data domain at the inset's target pixel size.
@@ -371,7 +345,7 @@ export class ProtspacePublishModal extends LitElement {
 
     composeFigure(this._previewCanvas, {
       state: s,
-      plotCanvas: this._cachedPlotCanvas,
+      plotCanvas: this._capturePlot(plotEl, plotRect, bgColor),
       legendItems: this._legendItems,
       legendTitle: this._legendTitle,
       highlightedItem: this._selectedItem,
@@ -388,62 +362,68 @@ export class ProtspacePublishModal extends LitElement {
     this._overlayController?.drawSelectionHandles(overlayCtx, annotScale);
   }
 
+  /**
+   * The unzoomed, fit-all plot (#294) at the plot rect's size. The preview draws at the figure's
+   * full size, so its capture is the export's too: cached by the only inputs it depends on.
+   */
+  private _capturePlot(
+    plotEl: CaptureablePlotElement,
+    plotRect: { w: number; h: number },
+    bgColor: string,
+  ): HTMLCanvasElement {
+    const cacheKey = `${plotRect.w}x${plotRect.h}|${bgColor}`;
+    if (cacheKey !== this._plotCacheKey || !this._cachedPlotCanvas) {
+      this._cachedPlotCanvas = capturePlotCanvas(plotEl, {
+        width: plotRect.w,
+        height: plotRect.h,
+        backgroundColor: bgColor,
+        resetView: true,
+      });
+      this._plotCacheKey = cacheKey;
+    }
+    return this._cachedPlotCanvas;
+  }
+
   // ── State mutations ────────────────────────────────
 
-  private _updateState(partial: Partial<PublishState>) {
+  /**
+   * Applies a sidebar edit. The plot capture needs no invalidating: its cache key (the plot
+   * rect's size and the background) changes exactly when the capture would.
+   */
+  private _edit(partial: Partial<PublishState>) {
     this._state = { ...this._state, ...partial };
-    // If user changes width/height, mark preset as custom
-    if ('widthPx' in partial || 'heightPx' in partial) {
-      this._state = { ...this._state, preset: 'custom' };
-    }
-    this._plotCacheKey = '';
     this._showResampleNote = false;
+  }
+
+  private _updateState(partial: Partial<PublishState>) {
+    // A width or height set here leaves the preset.
+    const custom = 'widthPx' in partial || 'heightPx' in partial;
+    this._edit(custom ? { ...partial, preset: 'custom' } : partial);
   }
 
   private _updateLegend(partial: Partial<PublishState['legend']>) {
-    this._state = { ...this._state, legend: { ...this._state.legend, ...partial } };
-    this._plotCacheKey = '';
-    this._showResampleNote = false;
+    this._edit({ legend: { ...this._state.legend, ...partial } });
   }
 
   private _updateWidthPx(widthPx: number) {
-    this._state = { ...this._state, ...computeWidthPxUpdate(this._state, widthPx) };
-    this._plotCacheKey = '';
-    this._showResampleNote = false;
+    this._edit(computeWidthPxUpdate(this._state, widthPx));
   }
 
   private _updateWidthMm(widthMm: number) {
-    this._state = { ...this._state, ...computeWidthMmUpdate(this._state, widthMm) };
-    this._plotCacheKey = '';
-    this._showResampleNote = false;
+    this._edit(computeWidthMmUpdate(this._state, widthMm));
   }
 
   private _updateHeightPx(heightPx: number) {
-    const constrained = this._constrainedHeightPatch(heightPx);
-    if (constrained) {
-      this._state = { ...this._state, ...constrained };
-    } else {
-      this._state = { ...this._state, ...computeHeightPxUpdate(this._state, heightPx) };
-    }
-    this._plotCacheKey = '';
-    this._showResampleNote = false;
+    this._edit(
+      this._constrainedHeightPatch(heightPx) ?? computeHeightPxUpdate(this._state, heightPx),
+    );
   }
 
   private _updateHeightMm(heightMm: number) {
-    const constraints = getActivePresetConstraints(this._state);
-    if (constraints) {
-      const heightPx = mmToPx(heightMm, this._state.dpi);
-      const constrained = this._constrainedHeightPatch(heightPx);
-      if (constrained) {
-        this._state = { ...this._state, ...constrained };
-        this._plotCacheKey = '';
-        this._showResampleNote = false;
-        return;
-      }
-    }
-    this._state = { ...this._state, ...computeHeightMmUpdate(this._state, heightMm) };
-    this._plotCacheKey = '';
-    this._showResampleNote = false;
+    const constrained = getActivePresetConstraints(this._state)
+      ? this._constrainedHeightPatch(mmToPx(heightMm, this._state.dpi))
+      : null;
+    this._edit(constrained ?? computeHeightMmUpdate(this._state, heightMm));
   }
 
   /**
@@ -460,9 +440,7 @@ export class ProtspacePublishModal extends LitElement {
   }
 
   private _updateDpi(dpi: number) {
-    this._state = { ...this._state, ...computeDpiUpdate(this._state, dpi) };
-    this._plotCacheKey = '';
-    this._showResampleNote = false;
+    this._edit(computeDpiUpdate(this._state, dpi));
   }
 
   private _applyPreset(presetId: PresetId) {
@@ -486,30 +464,20 @@ export class ProtspacePublishModal extends LitElement {
     if (preset?.widthMm === SIZE_MODE_WIDTH_MM['1-column']) sizeMode = '1-column';
     else if (preset?.widthMm === SIZE_MODE_WIDTH_MM['2-column']) sizeMode = '2-column';
     else if (preset?.widthMm === undefined) sizeMode = 'flexible';
-    this._state = {
-      ...this._state,
-      ...patch,
-      heightPx,
-      sizeMode,
-    };
-    this._plotCacheKey = '';
+    this._edit({ ...patch, heightPx, sizeMode });
     this._showResampleNote = wasResampleOff;
   }
 
   private _toggleResample() {
-    this._state = { ...this._state, resample: !this._state.resample };
-    this._plotCacheKey = '';
-    this._showResampleNote = false;
+    this._edit({ resample: !this._state.resample });
   }
 
   private _toggleAspectLock() {
-    this._state = { ...this._state, aspectLocked: !this._state.aspectLocked };
-    this._showResampleNote = false;
+    this._edit({ aspectLocked: !this._state.aspectLocked });
   }
 
-  private _setUnit(unit: 'px' | 'mm' | 'in' | 'cm') {
-    this._state = { ...this._state, unit };
-    this._showResampleNote = false;
+  private _setUnit(unit: PublishState['unit']) {
+    this._edit({ unit });
   }
 
   private _setTool(tool: OverlayTool) {
@@ -562,18 +530,10 @@ export class ProtspacePublishModal extends LitElement {
     if (!this.plotElement) return;
     await waitForFonts();
     const s = this._state;
-    const visibleCount = this._legendItems.filter((it) => it.isVisible).length;
-    const { plotRect } = computeLayout(s.widthPx, s.heightPx, s.legend, visibleCount);
+    const { plotRect } = this._layout(s.widthPx, s.heightPx);
     const plotEl = this.plotElement as CaptureablePlotElement;
-    const bgColor = s.background === 'white' ? '#ffffff' : 'rgba(0,0,0,0)';
-
-    const plotCanvas = capturePlotCanvas(plotEl, {
-      width: plotRect.w,
-      height: plotRect.h,
-      backgroundColor: bgColor,
-      // Export the unzoomed, fit-all view, matching the live preview (#294).
-      resetView: true,
-    });
+    const bgColor = backgroundColor(s);
+    const plotCanvas = this._capturePlot(plotEl, plotRect, bgColor);
 
     // Per-inset geometric renders for the export.
     const insetRenders = this._insetRenders.capture(plotEl, s, plotRect, bgColor, {
@@ -659,7 +619,6 @@ export class ProtspacePublishModal extends LitElement {
     this._setSelection(null);
     this._showFingerprintWarning = false;
     this._showResampleNote = false;
-    this._plotCacheKey = '';
     this._overlayController?.destroy();
     this._overlayController = null;
     this.updateComplete.then(() => {
@@ -744,6 +703,10 @@ export class ProtspacePublishModal extends LitElement {
       </ps-dialog>
     `;
   }
+}
+
+function backgroundColor(state: PublishState): string {
+  return state.background === 'white' ? '#ffffff' : 'rgba(0,0,0,0)';
 }
 
 function hasPlaced(state: PublishState): boolean {
