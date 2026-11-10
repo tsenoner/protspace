@@ -90,14 +90,19 @@ const DRILL_END_OPTIONS: SegmentedOption[] = [
 
 /**
  * Scrolls `scroller` the least that shows all of `element`, as `block: 'nearest'` does, without
- * scrolling the page around it.
+ * scrolling the page around it. Steps are whole pixels, rounded towards showing the element: a
+ * scroll offset snaps to device pixels, so at 1x a 0.4 px step would be dropped and leave a sliver
+ * of the element cut off.
  */
 function revealIn(scroller: HTMLElement, element: HTMLElement): void {
   const room = scroller.getBoundingClientRect();
   const box = element.getBoundingClientRect();
-  if (box.top < room.top) scroller.scrollTop -= room.top - box.top;
+  if (box.top < room.top) scroller.scrollTop -= Math.ceil(room.top - box.top);
   else if (box.bottom > room.bottom) {
-    scroller.scrollTop += Math.min(box.bottom - room.bottom, box.top - room.top);
+    scroller.scrollTop += Math.min(
+      Math.ceil(box.bottom - room.bottom),
+      Math.floor(box.top - room.top),
+    );
   }
 }
 

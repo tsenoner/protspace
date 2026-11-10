@@ -266,13 +266,21 @@ export async function settle(page: Page, capMs = 3_000): Promise<void> {
 /**
  * Screenshot of the plot, for before/after comparisons, less a 2 px frame: the plot sits at
  * a fractional y, so its 1 px border is anti-aliased across two rows and can differ by a
- * grey level between runs.
+ * grey level between runs. The controls floating over its top-left corner (the tool strip, the
+ * projection details and the shortcuts button) are masked: their rounded corners are
+ * anti-aliased over the canvas and come out a grey level apart depending on how the compositor
+ * layered them, which says nothing about the points.
  */
 async function plotPixels(page: Page): Promise<Buffer> {
   const box = await page.locator('#myPlot').boundingBox();
   if (!box) throw new Error('#myPlot is not visible');
   const clip = { x: box.x + 2, y: box.y + 2, width: box.width - 4, height: box.height - 4 };
-  return page.screenshot({ clip, animations: 'disabled', caret: 'hide' });
+  return page.screenshot({
+    clip,
+    animations: 'disabled',
+    caret: 'hide',
+    mask: [page.locator('[data-workbench="plot-corner"]')],
+  });
 }
 
 async function proteinCount(page: Page): Promise<number> {

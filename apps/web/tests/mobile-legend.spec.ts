@@ -125,8 +125,27 @@ test.describe('the legend on a phone', () => {
     );
     const row = rowMain(page, await rowValue(page, 1));
 
-    await row.tap();
-    await row.tap();
+    // Two taps 100 ms apart, stamped with the time the finger touched, as a phone stamps them.
+    // The legend times the gap from the events' timestamps. row.tap() twice, or
+    // touchscreen.tap(), stamps each tap when the page accepts it, so on a runner that draws
+    // WebGL in software the redraw the first tap starts pushes the second past the 300 ms window
+    // (CI failed 2/2; a 6x CPU throttle fails it locally). The mobile project is Chromium only.
+    const box = (await row.boundingBox())!;
+    const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const cdp = await page.context().newCDPSession(page);
+    const start = Date.now() / 1000;
+    for (const at of [0, 0.1]) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [point],
+        timestamp: start + at,
+      });
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchEnd',
+        touchPoints: [],
+        timestamp: start + at + 0.03,
+      });
+    }
 
     await expect(legend(page).locator('.legend-item-main[aria-pressed="true"]')).toHaveCount(1);
     await expect(row).toHaveAttribute('aria-pressed', 'true');
