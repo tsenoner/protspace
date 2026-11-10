@@ -438,8 +438,9 @@ describe('PersistenceController', () => {
 
       expect(result[0].zOrder).toBe(2); // cat1: 0 -> 2
       expect(result[1].zOrder).toBe(0); // cat2: 1 -> 0
-      expect(result[2].zOrder).toBe(2); // cat3: unchanged
-      expect(result[3].zOrder).toBe(3); // N/A: unchanged (not in persisted categories)
+      // Not stored: after every stored place (2), in their own order. The caller renumbers.
+      expect(result[2].zOrder).toBe(5); // cat3: 2 + 1 + 2
+      expect(result[3].zOrder).toBe(6); // N/A: 2 + 1 + 3
       // pendingCategories are NOT cleared - they're needed for _visibleValues in subsequent updates
       expect(controller.hasPendingCategories()).toBe(true);
     });

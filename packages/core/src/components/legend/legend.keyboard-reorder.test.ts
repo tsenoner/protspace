@@ -114,6 +114,64 @@ describe('legend keyboard reorder', () => {
     expect(legend.shadowRoot!.activeElement).toBe(handle('B'));
   });
 
+  it('keeps focus on the moved row once it renders, so a quick Space drops it', async () => {
+    const { legend } = await setup();
+    const handle = (v: string) =>
+      legend.shadowRoot!.querySelector<HTMLElement>(
+        `.legend-item[data-value="${v}"] .drag-handle`,
+      )!;
+    handle('B').focus();
+    handleKey(legend, 'B', ' ');
+    await settleLegend(legend);
+    handleKey(legend, 'B', 'ArrowDown');
+    // One render later, no frame: the next key goes to whatever holds focus now.
+    await legend.updateComplete;
+    expect(legend.shadowRoot!.activeElement).toBe(handle('B'));
+    (legend.shadowRoot!.activeElement as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: ' ', bubbles: true, composed: true, cancelable: true }),
+    );
+    await settleLegend(legend);
+    expect(status(legend)).toBe('Dropped B');
+    expect(legend._keyboard.pickedValue).toBeNull();
+  });
+
+  it('leaves focus elsewhere on the page alone when Escape cancels the reorder', async () => {
+    const { legend } = await setup();
+    const field = document.createElement('input');
+    document.body.append(field);
+    handleKey(legend, 'B', ' ');
+    await settleLegend(legend);
+    handleKey(legend, 'B', 'ArrowDown');
+    await settleLegend(legend);
+    field.focus();
+
+    field.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    await settleLegend(legend);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(order(legend).slice(0, 4)).toEqual(['__NA__', 'A', 'B', 'C']);
+    expect(document.activeElement).toBe(field);
+  });
+
+  it('ends a pick-up when a category is added from Other, so Escape cannot half-undo it', async () => {
+    const { legend } = await setup();
+    handleKey(legend, 'B', ' ');
+    await settleLegend(legend);
+    const max = legend.maxVisibleValues;
+
+    legend._actions.extractFromOther('K');
+    await settleLegend(legend);
+    handleKey(legend, 'B', 'Escape');
+    await settleLegend(legend);
+
+    expect(legend._keyboard.pickedValue).toBeNull();
+    expect(legend.maxVisibleValues).toBe(max + 1);
+    expect(order(legend)).toContain('K');
+    expect(legend._otherItems.map((item) => item.value)).not.toContain('K');
+  });
+
   it('moves the picked row up with ArrowUp', async () => {
     const { legend } = await setup();
     handleKey(legend, 'C', ' ');

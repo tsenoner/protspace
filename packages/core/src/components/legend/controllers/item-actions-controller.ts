@@ -106,6 +106,9 @@ export class ItemActionsController {
   }
 
   extractFromOther(value: string): void {
+    // A keyboard reorder's snapshot predates the extract: Escape would put the row back in Other
+    // but leave the raised item count. The pick-up ends here, its moves kept.
+    this.host._reorder.clear();
     // Set pending extract value - will be used by processor to add this item to visible set
     this.host._pendingExtractValue = value;
     this.keepVisibleWhileIsolated([value]);
@@ -121,13 +124,18 @@ export class ItemActionsController {
 
     this.host._announceStatus(`Extracted ${toDisplayValue(value)} from Other category`);
     this.host._dispatchItemAction(value, 'extract');
-    // Save settings after the update cycle completes
-    this.host.updateComplete.then(() => {
+    this.saveAfterUpdate();
+  }
+
+  /** Stores the settings once the update the new `maxVisibleValues` started has rebuilt the items. */
+  private saveAfterUpdate(): void {
+    void this.host.updateComplete.then(() => {
       this.host._persistenceController.saveSettings();
     });
   }
 
   extractAllFromOther(): void {
+    this.host._reorder.clear();
     const nonOtherCount = this.host._legendItems.filter(
       (i) => i.value !== LEGEND_VALUES.OTHER,
     ).length;
@@ -144,10 +152,7 @@ export class ItemActionsController {
       this.host._dispatchItemAction(item.value, 'extract');
     }
     this.host.maxVisibleValues = targetMaxVisibleValues;
-
-    this.host.updateComplete.then(() => {
-      this.host._persistenceController.saveSettings();
-    });
+    this.saveAfterUpdate();
   }
 
   /**
@@ -164,8 +169,16 @@ export class ItemActionsController {
   }
 
   mergeToOther(value: string): void {
+    this.host._reorder.clear();
     // Set pending merge value - will be used by processor to remove this item from visible set
     this.host._pendingMergeValue = value;
+    // While isolated the visible set is `_preIsolationVisibleValues`: the value leaves it, or the
+    // next rebuild (a filter edit, a projection switch) would list the row again.
+    if (this.host.isolationMode && this.host._preIsolationVisibleValues.has(value)) {
+      const kept = new Set(this.host._preIsolationVisibleValues);
+      kept.delete(value);
+      this.host._preIsolationVisibleValues = kept;
+    }
 
     // Decrease maxVisibleValues to remove space for the merged item
     // This triggers updated() which calls _updateLegendItems() with pending value still set
@@ -177,10 +190,7 @@ export class ItemActionsController {
     // respect the merge operation.
 
     this.host._announceStatus(`Moved ${toDisplayValue(value)} to Other category`);
-    // Save settings after the update cycle completes
-    this.host.updateComplete.then(() => {
-      this.host._persistenceController.saveSettings();
-    });
+    this.saveAfterUpdate();
   }
 
   async highlightDropped(value: string): Promise<void> {
@@ -228,11 +238,10 @@ export class ItemActionsController {
       currentMode === 'manual' &&
       !this.host._numericManualOrderIdsByAnnotation[this.host.selectedAnnotation]?.length
     ) {
+      // The order on screen, without Other and the pinned N/A, as a drag stores it.
       this.host._data.setNumericManualOrderIds(
         this.host.selectedAnnotation,
-        [...this.host._sortedLegendItems]
-          .filter((item) => item.value !== LEGEND_VALUES.OTHER)
-          .map((item) => item.value),
+        displayedOrder(this.host._sortedLegendItems, true),
       );
     }
 

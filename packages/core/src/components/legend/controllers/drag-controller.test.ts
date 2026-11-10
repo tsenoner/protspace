@@ -310,6 +310,41 @@ describe('DragController', () => {
       expect(rowOrder()).toEqual(['cat1', 'cat2', 'cat3', 'Other']);
     });
 
+    it("refuses a drop past a numeric legend's pinned N/A row, and the move over it", () => {
+      // A numeric legend: bins, then N/A pinned last, no Other.
+      const na = { ...mockLegendItems[2], value: '__NA__' };
+      const items = [mockLegendItems[0], mockLegendItems[1], na];
+      vi.mocked(mockCallbacks.getDisplayedItems).mockReturnValue(items);
+      mockCallbacks.canDrag = (item) => item.value !== '__NA__';
+      mockContainer.replaceChildren(
+        ...items.map((item) => {
+          const el = document.createElement('div');
+          el.className = 'legend-item';
+          el.setAttribute('data-value', item.value);
+          const handle = document.createElement('button');
+          handle.className = 'drag-handle';
+          handle.disabled = item.value === '__NA__';
+          el.append(handle);
+          return el;
+        }),
+      );
+
+      expect(
+        options().onMove!({ related: row('__NA__') } as Sortable.MoveEvent, new MouseEvent('m')),
+      ).toBe(false);
+      expect(
+        options().onMove!({ related: row('cat2') } as Sortable.MoveEvent, new MouseEvent('m')),
+      ).toBeUndefined();
+
+      drag('cat1', 0, 2);
+      for (const callback of stateCallbacks()) expect(callback).not.toHaveBeenCalled();
+      expect(rowOrder()).toEqual(['cat1', 'cat2', '__NA__']);
+
+      drag('cat1', 0, 1);
+      const reordered = vi.mocked(mockCallbacks.setLegendItems).mock.calls[0][0];
+      expect(reordered.map((i) => i.value)).toEqual(['cat2', 'cat1', '__NA__']);
+    });
+
     it.each([
       ['the same index', 'cat2', 1, 1],
       ['an undefined index', 'cat2', 1, undefined],

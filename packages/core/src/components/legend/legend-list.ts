@@ -183,11 +183,14 @@ export class LegendKeyboardController implements ReactiveController {
     const picked = this._picked;
     if (picked === null) return false;
     const snapshot = this._snapshot;
+    // Escape anywhere cancels the reorder (the layer stack); focus comes back only from the legend
+    // or from nowhere, never from a field elsewhere on the page.
+    const refocus = this._holdsFocus();
     if (snapshot) this.options.restore(snapshot);
     this.clear();
     this.options.announce('Reordering canceled.');
     // The restore re-renders the rows by index, so the focused handle now belongs to another row.
-    requestAnimationFrame(() => this.focusHandle(picked));
+    if (refocus) void this.host.updateComplete.then(() => this.focusHandle(picked));
     return true;
   }
 
@@ -209,6 +212,13 @@ export class LegendKeyboardController implements ReactiveController {
     this.host.shadowRoot
       ?.querySelector<HTMLElement>(`.legend-item[data-value="${CSS.escape(value)}"] .drag-handle`)
       ?.focus();
+  }
+
+  /** Focus is in the legend, or on nothing (the body). */
+  private _holdsFocus(): boolean {
+    if (this.host.shadowRoot?.activeElement) return true;
+    const active = document.activeElement;
+    return active === null || active === document.body || active === this.host;
   }
 
   private _pickUp(value: string): void {
@@ -234,8 +244,10 @@ export class LegendKeyboardController implements ReactiveController {
         ? `Moved ${label}. Switched ${this.options.annotationName()} to Manual order.`
         : `Moved ${label}.`,
     );
-    // Lit re-renders the moved row in another slot; focus follows it after the paint.
-    requestAnimationFrame(() => this.focusHandle(value));
+    // Lit re-renders the moved row in another slot, so the focused handle now belongs to the row
+    // it swapped with. Focus follows the moved row in the same task as the render, before the next
+    // key: a Space pressed in that gap would otherwise pick up the other row.
+    void this.host.updateComplete.then(() => this.focusHandle(value));
   }
 }
 
@@ -250,6 +262,9 @@ const LONG_PRESS_SLOP_PX = 10;
 
 /** The click a lifted long press makes arrives within this; a later click is the next tap. */
 const LONG_PRESS_CLICK_MS = 600;
+
+/** A tooltip's text, or how to read it when it shows. */
+type TooltipText = string | (() => string);
 
 /** A finger or pen held on a row's name. */
 interface NamePress {
@@ -353,7 +368,8 @@ export class TruncatedNameTooltip implements ReactiveController {
    */
   onControlEnter = (e: Event): void => {
     const trigger = e.currentTarget as HTMLElement;
-    const text = trigger.dataset.tooltip ?? '';
+    // Read when it shows: a click within the delay flips the eye from Hide to Show.
+    const text = () => trigger.dataset.tooltip ?? '';
     if (e.type === 'focus') {
       if (!trigger.matches(':focus-visible')) return;
       this.leave();
@@ -364,12 +380,7 @@ export class TruncatedNameTooltip implements ReactiveController {
     // A finger has no hover.
     if ((e as PointerEvent).pointerType === 'touch') return;
     this.leave();
-    this._trigger = trigger;
-    trigger.addEventListener('pointerleave', this._onLeave);
-    this._timer = setTimeout(() => {
-      this._timer = null;
-      void this._show(trigger, text);
-    }, NAME_TOOLTIP_DELAY_MS);
+    this._schedule(trigger, text);
   };
 
   hover(trigger: HTMLElement, textEl: HTMLElement): void {
@@ -379,7 +390,7 @@ export class TruncatedNameTooltip implements ReactiveController {
   }
 
   /** Shows `text` over `trigger` after the delay, unless the pointer leaves it first. */
-  private _schedule(trigger: HTMLElement, text: string): void {
+  private _schedule(trigger: HTMLElement, text: TooltipText): void {
     this._trigger = trigger;
     trigger.addEventListener('pointerleave', this._onLeave);
     this._timer = setTimeout(() => {
@@ -437,11 +448,26 @@ export class TruncatedNameTooltip implements ReactiveController {
     if (press.shown) this.leave();
   }
 
-  private async _show(trigger: HTMLElement, text: string): Promise<void> {
+  /**
+   * A row's eye was pressed: once the row re-renders, a tooltip open on it (keyboard focus keeps
+   * it open) says the eye's new action.
+   */
+  async controlToggled(): Promise<void> {
+    const trigger = this._trigger;
+    if (trigger?.dataset.tooltip === undefined) return;
+    await this.host.updateComplete;
     const tooltip = this._tooltip();
-    if (!tooltip || this._trigger !== trigger || !text) return;
+    if (tooltip && this._trigger === trigger && tooltip.text) {
+      tooltip.text = trigger.dataset.tooltip ?? '';
+    }
+  }
+
+  private async _show(trigger: HTMLElement, text: TooltipText): Promise<void> {
+    const tooltip = this._tooltip();
+    const label = typeof text === 'function' ? text() : text;
+    if (!tooltip || this._trigger !== trigger || !label) return;
     tooltip.anchor = trigger;
-    tooltip.text = text;
+    tooltip.text = label;
     // The tooltip binds to its new anchor in its own update; show() needs that target.
     await tooltip.updateComplete;
     if (this._trigger === trigger) tooltip.show();
