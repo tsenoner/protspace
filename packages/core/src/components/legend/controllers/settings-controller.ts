@@ -136,6 +136,8 @@ export class SettingsController {
   /**
    * Reset would change something: the annotation's settings differ from what `reset` leaves.
    * A stored record alone is no change: a bundle's settings and an edit undone both store one.
+   * Nor are a numeric annotation's manual-order ids: every save stores them (the bins' order as
+   * shown), and they order nothing unless the sort, compared here, is "Your order".
    */
   canReset(): boolean {
     const host = this.host;
@@ -153,8 +155,7 @@ export class SettingsController {
         ? normalizeNumericPaletteId(numeric?.paletteId ?? DEFAULT_NUMERIC_PALETTE_ID) ===
             DEFAULT_NUMERIC_PALETTE_ID &&
           (numeric?.strategy ?? DEFAULT_NUMERIC_STRATEGY) === DEFAULT_NUMERIC_STRATEGY &&
-          !numeric?.reverseGradient &&
-          !host._numericManualOrderIdsByAnnotation[annotation]?.length
+          !numeric?.reverseGradient
         : normalizeCategoricalPaletteId(host._selectedPaletteId) ===
             DEFAULT_CATEGORICAL_PALETTE_ID && this.itemsAtDefaults());
     return !atDefaults;

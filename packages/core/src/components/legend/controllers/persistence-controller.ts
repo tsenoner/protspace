@@ -396,12 +396,21 @@ export class PersistenceController
       return legendItems;
     }
 
+    // A row with no stored place (just taken out of Other) goes after every stored place, in its
+    // own order: its zOrder counts the rows shown, which an isolation or a filter narrows, so read
+    // against the stored places it could land between them. The caller renumbers from 0.
+    let after = -Infinity;
+    for (const category of Object.values(this._pendingCategories)) {
+      after = Math.max(after, category.zOrder);
+    }
     return legendItems.map((item) => {
       const persisted = this._pendingCategories[item.value];
       if (persisted !== undefined) {
         return { ...item, zOrder: persisted.zOrder };
       }
-      return item;
+      return item.value === LEGEND_VALUES.OTHER
+        ? item
+        : { ...item, zOrder: after + 1 + item.zOrder };
     });
   }
 }

@@ -106,6 +106,9 @@ export class ItemActionsController {
   }
 
   extractFromOther(value: string): void {
+    // A keyboard reorder's snapshot predates the extract: Escape would put the row back in Other
+    // but leave the raised item count. The pick-up ends here, its moves kept.
+    this.host._reorder.clear();
     // Set pending extract value - will be used by processor to add this item to visible set
     this.host._pendingExtractValue = value;
     this.keepVisibleWhileIsolated([value]);
@@ -132,6 +135,7 @@ export class ItemActionsController {
   }
 
   extractAllFromOther(): void {
+    this.host._reorder.clear();
     const nonOtherCount = this.host._legendItems.filter(
       (i) => i.value !== LEGEND_VALUES.OTHER,
     ).length;
@@ -165,8 +169,16 @@ export class ItemActionsController {
   }
 
   mergeToOther(value: string): void {
+    this.host._reorder.clear();
     // Set pending merge value - will be used by processor to remove this item from visible set
     this.host._pendingMergeValue = value;
+    // While isolated the visible set is `_preIsolationVisibleValues`: the value leaves it, or the
+    // next rebuild (a filter edit, a projection switch) would list the row again.
+    if (this.host.isolationMode && this.host._preIsolationVisibleValues.has(value)) {
+      const kept = new Set(this.host._preIsolationVisibleValues);
+      kept.delete(value);
+      this.host._preIsolationVisibleValues = kept;
+    }
 
     // Decrease maxVisibleValues to remove space for the merged item
     // This triggers updated() which calls _updateLegendItems() with pending value still set
