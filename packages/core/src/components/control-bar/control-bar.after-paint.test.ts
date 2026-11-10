@@ -295,6 +295,32 @@ describe('control-bar commits user picks after the paint', () => {
       expect(plot.selectedProteinIds).toEqual(['P1']);
     });
 
+    it('shows the pick again when a data change re-read the older plot selection first', async () => {
+      fromSearch('add-selection', { proteinId: 'P2' });
+      expect(controlBar.selectedIdsChips).toEqual(['P2']);
+
+      // A filter applied in the same frame: the plot still holds its old selection.
+      (controlBar as unknown as { _handleDataChange(event: Event): void })._handleDataChange(
+        new CustomEvent('data-change', {
+          detail: {
+            data: {
+              protein_ids: ['P1', 'P2', 'P3'],
+              projections: [{ name: 'UMAP' }, { name: 'PCA' }, { name: 't-SNE' }],
+              annotations: { alpha: { values: [] }, beta: { values: [] }, gamma: { values: [] } },
+              annotation_data: {},
+            },
+          },
+        }),
+      );
+      expect(controlBar.selectedIdsChips).toEqual([]);
+
+      await afterNextPaint();
+
+      expect(plot.selectedProteinIds).toEqual(['P2']);
+      expect(controlBar.selectedIdsChips).toEqual(['P2']);
+      expect(controlBar.selectedProteinsCount).toBe(1);
+    });
+
     it('is dropped by a selection committed at once elsewhere', async () => {
       fromSearch('add-selection', { proteinId: 'P1' });
       fromSearch('selection-change', { proteinIds: ['P3'] });

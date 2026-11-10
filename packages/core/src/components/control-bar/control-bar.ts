@@ -1599,16 +1599,22 @@ export class ProtspaceControlBar extends LitElement {
    * from drifting apart across the handlers that share them.
    *
    * The chips and count are set now either way, so the next pick builds on this one.
-   * `afterPaint` (search box picks, Clear) runs the rest after the cleared box is painted.
+   * `afterPaint` (search box picks, Clear) runs the rest after the cleared box is painted,
+   * and sets them again then: a `data-change` in between (a filter applied in the same
+   * frame) re-reads the plot's older selection into them.
    * `showProteinId` then loads into the structure viewers with that commit.
    */
   private _commitSelection(
     newSelection: string[],
     { afterPaint = false, showProteinId }: { afterPaint?: boolean; showProteinId?: string } = {},
   ) {
-    this.selectedIdsChips = newSelection;
-    this.selectedProteinsCount = newSelection.length;
+    const showSelection = () => {
+      this.selectedIdsChips = newSelection;
+      this.selectedProteinsCount = newSelection.length;
+    };
+    showSelection();
     const commit = () => {
+      showSelection();
       if (
         this.autoSync &&
         this._scatterplotElement &&
