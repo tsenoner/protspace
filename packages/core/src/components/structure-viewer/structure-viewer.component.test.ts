@@ -49,7 +49,7 @@ describe('protspace-structure-viewer resource links', () => {
       expect(link.getAttribute('rel')).toBe('noopener noreferrer');
       // The new tab is announced by a hidden hint, not a native title tooltip.
       expect(link.hasAttribute('title')).toBe(false);
-      expect(link.querySelector('.resource-links-hint')?.textContent).toBe(' (opens in a new tab)');
+      expect(link.querySelector('.sr-only')?.textContent).toBe(' (opens in a new tab)');
       // The links have their own row below the header, so a narrow panel wraps them.
       expect(link.parentElement?.matches('ul[part="links"] > li.resource-links-item')).toBe(true);
       expect(link.closest('.header')).toBeNull();

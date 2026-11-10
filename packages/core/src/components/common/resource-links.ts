@@ -73,7 +73,7 @@ export function renderResourceLinks(proteinId: string): TemplateResult {
             ><span class="header-link-label">${resource.label}</span>${icon(
               'external-link',
               14,
-            )}<span class="resource-links-hint"> (opens in a new tab)</span></a
+            )}<span class="sr-only"> (opens in a new tab)</span></a
           >
         </li>`,
     )}

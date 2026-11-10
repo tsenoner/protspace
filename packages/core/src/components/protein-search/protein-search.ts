@@ -7,7 +7,7 @@ import '../kit/button';
 import { icon } from '../kit/icon';
 import { pushLayer } from '../kit/layers';
 import { searchStyles } from './protein-search.styles';
-import { parsePastedIds, resolveProteinIds } from './resolve-ids';
+import { canonicalProteinId, parsePastedIds, resolveProteinIds } from './resolve-ids';
 import {
   copyAnnouncement,
   renderSearchReport,
@@ -206,6 +206,11 @@ export class ProtspaceProteinSearch extends LitElement {
     this._releaseLayer?.();
     this._releaseLayer = undefined;
     this._layerFor = null;
+    // The popup's layer and its blur timer are gone, so it must not come back open on a
+    // reconnect: nothing would close it on Escape, a press outside or the blur grace. The typed
+    // query stays.
+    this._report = null;
+    this._closeDropdown();
   }
 
   protected willUpdate(changed: PropertyValues<this>): void {
@@ -222,6 +227,9 @@ export class ProtspaceProteinSearch extends LitElement {
     // state also has zero suggestions. Track open state explicitly so dataset changes
     // refresh empty results without reopening after add, Escape, or blur.
     if (!this.isSuggestionDropdownOpen) return;
+    // A selection echo keeps the keyboard cursor. A new dataset's list is another list: a cursor
+    // kept by index would sit on a protein the user never moved to, and Enter would add it.
+    if (changed.has('availableProteinIds')) this.highlightedSuggestionIndex = -1;
     this._updateSuggestions(true);
   }
 
@@ -512,25 +520,10 @@ export class ProtspaceProteinSearch extends LitElement {
     );
   }
 
-  /**
-   * The dataset's own spelling of `id`, or `undefined` when it names no protein.
-   *
-   * Exact hit first — that is the path every suggestion activation takes, and `includes`
-   * stops at the match. Only a miss (a hand-typed ID in the wrong case, or one that is not
-   * in the dataset at all) pays for the case-insensitive sweep, and `id.toLowerCase()` is
-   * hoisted out of the predicate: inside it, a value that never changes was recomputed once
-   * per available protein — 573K throwaway strings per keystroke-committing Enter.
-   */
-  private _canonicalProteinId(id: string): string | undefined {
-    if (this.availableProteinIds.includes(id)) return id;
-    const lowerId = id.toLowerCase();
-    return this.availableProteinIds.find((p) => p.toLowerCase() === lowerId);
-  }
-
   private _addSelection(id: string, source: AddSource) {
     if (!id) return;
 
-    const validId = this._canonicalProteinId(id);
+    const validId = canonicalProteinId(id, this.availableProteinIds);
     // Nothing to add: say why, and keep the text so it can be corrected.
     if (!validId || this.selectedProteinIds.includes(validId)) {
       this._clearSuggestionDebounce();
@@ -594,9 +587,6 @@ export class ProtspaceProteinSearch extends LitElement {
   }
 
   /**
-   * Public API: Clear all selections
-   */
-  /**
    * Public API: focuses the text input without scrolling, as ⌘K does. The app's phone bar calls
    * it after it shows the field over the bar.
    */
@@ -606,6 +596,9 @@ export class ProtspaceProteinSearch extends LitElement {
       ?.focus({ preventScroll: true });
   }
 
+  /**
+   * Public API: Clear all selections
+   */
   public clearSelections() {
     if (this.selectedProteinIds.length > 0) {
       this.selectedProteinIds = [];

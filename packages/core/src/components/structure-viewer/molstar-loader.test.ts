@@ -348,6 +348,26 @@ describe('Mol* color theme adapter', () => {
     expect(requestCameraReset).toHaveBeenCalledWith({ snapshot: loaded, durationMs: 250 });
   });
 
+  it('a double-click returns the camera to where it was before a wheel zoom with no press first', async () => {
+    const { rawViewer } = installRawViewer(vi.fn(applyThemeUpdate));
+    const requestCameraReset = vi.fn();
+    let view = { position: [0, 0, 50] };
+    const loaded = view;
+    Object.assign(rawViewer.plugin, {
+      canvas3d: { setProps: vi.fn(), requestCameraReset, camera: { getSnapshot: () => view } },
+    });
+    const container = document.createElement('div');
+    await createMolstarViewer(container, domains);
+    const canvas = container.appendChild(document.createElement('canvas'));
+
+    canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100 }));
+    view = { position: [0, 0, 20] }; // the wheel zoomed in
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    expect(requestCameraReset).toHaveBeenCalledWith({ snapshot: loaded, durationMs: 250 });
+  });
+
   it('setBackground without canvas3d does nothing and says so', async () => {
     // A failed WebGL start leaves Mol* without a canvas, as does the e2e stub before this task.
     installRawViewer(vi.fn(applyThemeUpdate));
