@@ -195,6 +195,11 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._showAnnotationPicker = false;
     this._annotationSearch = '';
     this._annotationHighlightIndex = -1;
+    // Opened from the ⋯ menu, the picker would hand the focus back to that menu's item, hidden by
+    // then: it goes to the card's annotation trigger instead.
+    this._catchFocus(() =>
+      this.renderRoot.querySelector<HTMLElement>('.annotation-select-trigger'),
+    );
   }
 
   /** Closes this row's annotation and value pickers; `updated()` releases their layers. */
@@ -327,13 +332,19 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._showValuePicker = false;
     // Only "Any value" or N/A ticked: the card closes to "has any value" / "has no value", whose
     // render drops "+ value" and the list with it, so the focus they held would fall to the page.
-    // Hand it to the operator pill, which now says what the card does; a focus the user moved
-    // elsewhere stays there.
-    if (this.condition.kind !== 'categorical' || !isPresenceOperator(operatorOf(this.condition)))
-      return;
+    // The operator pill now says what the card does.
+    if (this.condition.kind === 'categorical' && isPresenceOperator(operatorOf(this.condition)))
+      this._catchFocus(() => this._operatorPillEl);
+  }
+
+  /**
+   * After this update, puts the focus on `target` if it fell to the page because the element
+   * holding it went or was hidden; a focus the user moved elsewhere stays there.
+   */
+  private _catchFocus(target: () => HTMLElement | null | undefined) {
     void this.updateComplete.then(() => {
       const active = deepActiveElement();
-      if (!active || active === document.body) this._operatorPillEl?.focus();
+      if (!active || active === document.body) target()?.focus();
     });
   }
 

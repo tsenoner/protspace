@@ -411,3 +411,43 @@ describe('protspace-query-builder: closing a value list that leaves only a prese
     await expectFocusOnOperator(row);
   });
 });
+
+describe('protspace-query-builder: the annotation picker opened from a card’s ⋯ menu', () => {
+  /** Opens the picker through ⋯ → Change annotation by keyboard; resolves with the row. */
+  async function openFromMenu() {
+    const builder = await mount([createCondition({ annotation: 'organism', values: ['Human'] })]);
+    builder.addEventListener('query-changed', (e) => {
+      builder.query = (e as CustomEvent<{ query: FilterQuery }>).detail.query;
+    });
+    const row = rows(builder)[0];
+    const trigger = row.shadowRoot!.querySelector<PsIconButton>('.condition-menu-trigger')!;
+    await trigger.updateComplete;
+    inner(trigger).focus();
+    await userEvent.keyboard('{Enter}');
+    const change = row.shadowRoot!.querySelector<HTMLElement>('ps-menu-item[value="change"]')!;
+    await expect.poll(() => deepActiveElement() === change).toBe(true);
+    await userEvent.keyboard('{Enter}');
+    // The test viewport is a phone's: the picker opens as a sheet, which focuses its title first.
+    const title = () => row.shadowRoot!.querySelector<HTMLElement>('.annotation-picker-title');
+    await expect.poll(() => !!title() && deepActiveElement() === title()).toBe(true);
+    row.shadowRoot!.querySelector<HTMLInputElement>('.annotation-picker-input')!.focus();
+    return row;
+  }
+
+  const trigger = (row: Row) =>
+    row.shadowRoot!.querySelector<HTMLElement>('.annotation-select-trigger');
+
+  it('picking an annotation leaves the focus on the card’s annotation trigger', async () => {
+    const row = await openFromMenu();
+    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.keyboard('{Enter}');
+    await expect.poll(() => deepActiveElement()).toBe(trigger(row));
+  });
+
+  it('Escape returns the focus to the ⋯ button it came from', async () => {
+    const row = await openFromMenu();
+    await userEvent.keyboard('{Escape}');
+    const menu = row.shadowRoot!.querySelector<PsIconButton>('.condition-menu-trigger')!;
+    await expect.poll(() => deepActiveElement()).toBe(inner(menu));
+  });
+});
