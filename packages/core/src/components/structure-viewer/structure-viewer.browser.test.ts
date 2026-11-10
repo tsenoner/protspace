@@ -169,9 +169,7 @@ describe('protspace-structure-viewer links row', () => {
       );
       expect(link.contains(hit)).toBe(true);
       // The new-tab hint is read, not seen.
-      expect(
-        link.querySelector('.resource-links-hint')!.getBoundingClientRect().width,
-      ).toBeLessThanOrEqual(1);
+      expect(link.querySelector('.sr-only')!.getBoundingClientRect().width).toBeLessThanOrEqual(1);
     }
   });
 });

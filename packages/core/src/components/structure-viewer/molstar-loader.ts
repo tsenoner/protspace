@@ -25,8 +25,10 @@ export interface MolstarViewer {
     options?: Record<string, unknown>,
   ) => Promise<void>;
   setColorTheme: (mode: StructureColorMode) => Promise<void>;
-  /** Paints the canvas behind the structure (a `0xRRGGBB` number); a no-op without a canvas. */
-  /** False when Mol* has no canvas to paint, so nothing was applied. */
+  /**
+   * Paints the canvas behind the structure (a `0xRRGGBB` number). False when Mol* has no canvas
+   * to paint, so nothing was applied.
+   */
   setBackground: (color: number) => boolean;
   /** Returns the camera to the view the structure loaded with; a double-click does it too. */
   resetCamera: () => void;

@@ -113,9 +113,7 @@ describe('resource-links', () => {
         expect(link.hasAttribute('title')).toBe(false);
         expect(link.getAttribute('target')).toBe('_blank');
         expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-        expect(link.querySelector('.resource-links-hint')?.textContent).toBe(
-          ' (opens in a new tab)',
-        );
+        expect(link.querySelector('.sr-only')?.textContent).toBe(' (opens in a new tab)');
         expect(link.querySelector('svg.ps-icon')!.getAttribute('aria-hidden')).toBe('true');
       }
     });

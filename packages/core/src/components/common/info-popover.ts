@@ -266,7 +266,7 @@ class ProtspaceInfoPopover extends LitElement {
                     target="_blank"
                     rel="noopener noreferrer"
                     @click=${(e: Event) => e.stopPropagation()}
-                    >Learn more${icon('external-link', 14)}<span class="popover-link-hint">
+                    >Learn more${icon('external-link', 14)}<span class="sr-only">
                       (opens in a new tab)</span
                     ></a
                   >`

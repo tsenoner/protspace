@@ -139,9 +139,10 @@ interface ExportRenderOptions {
 export class ExportRenderer {
   /**
    * The scales an export of `exportWidth` × `exportHeight` maps points with. By default the live
-   * plot's fit (design decision 3): the 5%-padded extent with one pixels-per-unit, centred inside
-   * margins scaled from a fixed reference, so a figure has the screen's shape; with
-   * `config.fillPlot` each axis fills the area inside those margins, as on screen (capped as
+   * plot's fit (design decision 3): the padded extent (DATA_EXTENT_PADDING) with one
+   * pixels-per-unit, centred inside margins scaled from a fixed reference, so a figure has the
+   * screen's shape; with `config.fillPlot` each axis fills the area inside those margins, as on
+   * screen (capped as
    * `config.fillMaxWidth` caps it there). A `dataDomain` (inset / geometric-zoom render) fills the
    * canvas edge to edge instead, each axis on its own: the caller picks a domain that already
    * matches its source rect.

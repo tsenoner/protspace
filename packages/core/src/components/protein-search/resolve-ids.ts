@@ -39,6 +39,17 @@ export function lowerCaseIndex(available: readonly string[]): ReadonlyMap<string
 }
 
 /**
+ * The dataset's own spelling of `id`, or `undefined` when it names no protein. An exact hit is
+ * one `includes` scan (the path a suggestion activation takes, which builds no index); only a
+ * miss — a hand-typed ID in another case, or one not in the dataset — reads the lower-case index,
+ * built once per dataset rather than lower-casing every protein on each Enter.
+ */
+export function canonicalProteinId(id: string, available: readonly string[]): string | undefined {
+  if (available.includes(id)) return id;
+  return lowerCaseIndex(available).get(id.toLowerCase());
+}
+
+/**
  * Which of `tokens` name a protein in `available`: exact spelling first, then case-insensitively,
  * always reported in the dataset's spelling and once per protein. `found` are not selected yet,
  * `alreadySelected` are, `missing` are the tokens as pasted. The lower-case index is built only

@@ -1,5 +1,5 @@
 import { css } from 'lit';
-import { focusRing } from '../kit/kit-shared.styles';
+import { focusRing, srOnly } from '../kit/kit-shared.styles';
 
 /**
  * The ⓘ trigger and the bubble's contents. The bubble's surface, border, radius and shadow are
@@ -7,6 +7,8 @@ import { focusRing } from '../kit/kit-shared.styles';
  */
 export const infoPopoverStyles = [
   focusRing,
+  // The "Learn more" link's "(opens in a new tab)", read by assistive technology only.
+  srOnly,
   css`
     :host {
       display: inline-flex;
@@ -80,19 +82,6 @@ export const infoPopoverStyles = [
 
     .popover-link:hover {
       text-decoration: underline;
-    }
-
-    /* Read by assistive technology only: the link opens a new tab. */
-    .popover-link-hint {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
     }
   `,
 ];

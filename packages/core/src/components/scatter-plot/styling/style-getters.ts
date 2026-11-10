@@ -4,9 +4,9 @@ import {
   getProteinAnnotationIndexAt,
   getProteinAnnotationValues,
   isMultilabelAnnotationDataCached,
-  isNAValue,
   isNumericAnnotation,
   NA_DEFAULT_COLOR,
+  NA_VALUE,
   normalizeShapeName,
   toInternalValue,
 } from '@protspace/utils';
@@ -171,18 +171,15 @@ export function createStyleGetters(
   };
 
   // An N/A value drawn in the default N/A grey takes the theme's grey; a user-picked or
-  // bundle-stored N/A colour is the data's and stays. Light needs no substitution, so a light
-  // view keeps the data's own colour strings.
+  // bundle-stored N/A colour is the data's and stays. Substituted once here, so the per-point
+  // lookups below stay plain map reads. Light needs no substitution, so a light view keeps the
+  // data's own colour strings.
   const naDefault = NA_DEFAULT_COLOR.toLowerCase();
-  const naSubstitute = neutrals.na.trim().toLowerCase() === naDefault ? null : neutrals.na;
-  const colorOfKey = (key: string): string => {
-    const color = valueToColor.get(key);
-    if (color === undefined) return neutrals.other;
-    if (naSubstitute !== null && isNAValue(key) && color.toLowerCase() === naDefault) {
-      return naSubstitute;
+  if (neutrals.na.trim().toLowerCase() !== naDefault) {
+    if (valueToColor.get(NA_VALUE)?.toLowerCase() === naDefault) {
+      valueToColor.set(NA_VALUE, neutrals.na);
     }
-    return color;
-  };
+  }
 
   const colorsOfValues = (annotationValueArray: readonly string[]): string[] => {
     // Defensive guard
@@ -197,7 +194,7 @@ export function createStyleGetters(
         const key = toInternalValue(v);
         if (hiddenKeysSet.has(key)) return undefined;
         if (otherValuesSet.has(v)) return neutrals.other;
-        return colorOfKey(key);
+        return valueToColor.get(key) ?? neutrals.other;
       })
       .filter((v) => v !== undefined);
 
