@@ -123,12 +123,24 @@ export interface VisibilityModel {
   /** This model with nothing selected, highlighted or focused. */
   readonly unmarked: VisibilityModel;
   /**
-   * Changes whenever which points are interactive can: with every opacity tier
-   * above 0 only hiding decides it, and this is the hidden mask's stash, the same
-   * object while (data, selectedAnnotation, hiddenAnnotationValues) are. With a
-   * tier at 0 it is this model.
+   * Changes whenever which points are interactive can: while every opacity tier
+   * a shown point can take is above 0 only hiding decides it, and this is the
+   * hidden mask's stash, the same object while (data, selectedAnnotation,
+   * hiddenAnnotationValues) are. Otherwise it is this model.
    */
   readonly interactivityKey: object;
+  /**
+   * Which of the first `count` slots of plot data with these `originalIndices`
+   * are interactive (`isInteractive`), read straight off the hidden mask: 1 where
+   * the slot's protein is not hidden, and how many. Null while some opacity tier
+   * a shown point can take (base without marks or focus, selected, faded) is not
+   * above 0, so the selection, highlight or focus decide it too: ask `opacityAt`
+   * per slot then.
+   */
+  interactiveSlots(
+    originalIndices: Int32Array | null,
+    count: number,
+  ): { visible: Uint8Array; count: number } | null;
 }
 
 /**
@@ -524,7 +536,37 @@ export function computeVisibilityModel(
           hiddenMask,
           idIndex,
         };
-  const tiersInteractive = opacities.base > 0 && opacities.selected > 0 && opacities.faded > 0;
+  // The tiers `baseOpacityAt` can give a point, a superset of those it does:
+  // `selected` for a mark or a focused point, `faded` for the rest under a
+  // selection or focus, `base` for every point otherwise. While each is above 0
+  // (NaN is not), a point is interactive iff it is not hidden.
+  const reachesSelected = anyMarked || unfocusedMask !== null;
+  const reachesFaded = hasSelection || unfocusedMask !== null;
+  const hiddenDecides =
+    (!reachesSelected || opacities.selected > 0) &&
+    (!reachesFaded || opacities.faded > 0) &&
+    (reachesFaded || opacities.base > 0);
+
+  const interactiveSlots = (
+    originalIndices: Int32Array | null,
+    count: number,
+  ): { visible: Uint8Array; count: number } | null => {
+    if (!hiddenDecides) return null;
+    const visible = new Uint8Array(count);
+    if (hiddenMode === 'all') return { visible, count: 0 };
+    if (hiddenMode === 'none') return { visible: visible.fill(1), count };
+    const mask = hiddenMask!; // hiddenMode === 'mask' guarantees non-null
+    const len = mask.length;
+    let shown = 0;
+    for (let s = 0; s < count; s++) {
+      const i = originalIndices ? originalIndices[s] : s;
+      // `isHiddenAt`, inlined: out of range is hidden.
+      if (i < 0 || i >= len || mask[i] === 1) continue;
+      visible[s] = 1;
+      shown++;
+    }
+    return { visible, count: shown };
+  };
 
   const model: VisibilityModel = {
     allHidden,
@@ -541,6 +583,7 @@ export function computeVisibilityModel(
       return table === undefined ? null : table !== null;
     },
     markedSlots,
+    interactiveSlots,
     marks,
     get unmarked() {
       unmarked ??=
@@ -553,7 +596,7 @@ export function computeVisibilityModel(
       return unmarked;
     },
     get interactivityKey() {
-      return tiersInteractive ? maskCache : model;
+      return hiddenDecides ? maskCache : model;
     },
   };
 
