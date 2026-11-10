@@ -17,6 +17,7 @@ import { pushLayer } from '../kit/layers';
 import { getPreset, type PresetId } from './journal-presets';
 import {
   createDefaultPublishState,
+  PUBLISH_FRAMING,
   type PublishState,
   type OverlayTool,
   type Overlay,
@@ -24,6 +25,7 @@ import {
 } from './publish-state';
 import { mmToPx, SIZE_MODE_WIDTH_MM } from './dimension-utils';
 import { sanitizePublishState } from './publish-state-validator';
+import { currentFraming, legacyFraming, reframePublishState } from './framing-migration';
 import {
   capturePlotCanvas,
   composeFigure,
@@ -156,6 +158,8 @@ export class ProtspacePublishModal extends LitElement {
     }
     this._showFingerprintWarning = this._isMisplaced(this._state);
     this._readLegend();
+    // After the legend: its rows size the plot area the positions are normalised over.
+    this._state = this._reframeSaved(this._state);
     window.addEventListener('keydown', this._onKeyDown);
   }
 
@@ -621,6 +625,29 @@ export class ProtspacePublishModal extends LitElement {
     this._applyStateAndRebuild(before);
     // The restored overlays may sit on another projection, like on open.
     this._showFingerprintWarning = this._isMisplaced(before);
+  }
+
+  /**
+   * `state` with positions saved under the plot's earlier framing moved onto the current one (see
+   * framing-migration.ts), so they mark the same proteins. Only on the view they were placed on:
+   * elsewhere they already show as misplaced, and wait, unmoved, until that view is back. Without
+   * the plot's extent there is nothing to move them by, and they wait too.
+   */
+  private _reframeSaved(state: PublishState): PublishState {
+    if (state.framing === PUBLISH_FRAMING) return state;
+    if (!hasPlaced(state)) return { ...state, framing: PUBLISH_FRAMING };
+    if (this._isMisplaced(state)) return state;
+    const plot = this.plotElement as CaptureablePlotElement | null;
+    const extent = plot?.getDataExtent?.();
+    const padded = plot?.getDataExtent?.({ padded: true });
+    const { plotRect } = this._layout(state.widthPx, state.heightPx);
+    const info = plot?.getRenderInfo?.(plotRect.w, plotRect.h);
+    if (!extent || !padded || !info || plotRect.w <= 0 || plotRect.h <= 0) return state;
+    return reframePublishState(
+      state,
+      legacyFraming(extent),
+      currentFraming(padded, info, plotRect.w, plotRect.h),
+    );
   }
 
   /** Whether `state` has overlays or insets placed on a view other than the current one. */

@@ -6,6 +6,7 @@
 
 import {
   createDefaultPublishState,
+  PUBLISH_FRAMING,
   type PublishState,
   type Overlay,
   type Inset,
@@ -223,5 +224,7 @@ export function sanitizePublishState(input: unknown): PublishState {
             dimensionality: input.viewFingerprint.dimensionality,
           }
         : undefined,
+    // Kept only as the current framing: anything else is a state to move onto it.
+    framing: input.framing === PUBLISH_FRAMING ? PUBLISH_FRAMING : undefined,
   };
 }

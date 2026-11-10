@@ -79,3 +79,18 @@ area, with no padding and no margins, and SHALL draw only the points inside it.
 
 - **WHEN** the user adds a zoom inset for a rectangle of the plot in the figure editor
 - **THEN** the inset shows that rectangle's points filling its area
+
+### Requirement: A figure saved before the new framing keeps its marks on the same data
+
+A figure state saved before this framing (no `framing` marker) SHALL have its overlays and inset
+source rectangles moved, when the figure editor opens it on the projection they were placed on,
+from the earlier framing (5 % padding, 40 px margins on an 800 × 600 reference, each axis stretched)
+onto the current one, so each still marks the same data. Inset targets and a free legend keep their
+place on the figure. On another projection the state stays unmoved and unmarked until that view is
+back.
+
+#### Scenario: Reopening a figure saved before the workbench
+
+- **WHEN** the figure editor opens a saved figure without the framing marker on its own projection
+- **THEN** every overlay and inset source sits over the data it marked before, and the state is
+  marked as in the current framing

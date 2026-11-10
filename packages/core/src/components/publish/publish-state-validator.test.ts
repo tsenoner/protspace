@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { sanitizePublishState } from './publish-state-validator';
-import { createDefaultPublishState, type LegendLayout } from './publish-state';
+import { createDefaultPublishState, PUBLISH_FRAMING, type LegendLayout } from './publish-state';
 
 describe('sanitizePublishState', () => {
   it('returns defaults for null/undefined/non-object', () => {
@@ -372,5 +372,18 @@ describe('sanitizePublishState legend', () => {
   it('accepts the boundary values widthPercent 100 and columns 1', () => {
     const boundary = { ...VALID_LEGEND, widthPercent: 100, columns: 1 };
     expect(sanitizePublishState({ legend: boundary }).legend).toEqual(boundary);
+  });
+});
+
+describe('sanitizePublishState framing', () => {
+  it('keeps the current framing, and a new figure starts in it', () => {
+    expect(sanitizePublishState({ framing: PUBLISH_FRAMING }).framing).toBe(PUBLISH_FRAMING);
+    expect(createDefaultPublishState().framing).toBe(PUBLISH_FRAMING);
+  });
+
+  it('leaves a state saved before it, or with an unknown framing, unmarked so it is moved', () => {
+    expect(sanitizePublishState({}).framing).toBeUndefined();
+    expect(sanitizePublishState({ framing: 1 }).framing).toBeUndefined();
+    expect(sanitizePublishState({ framing: '2' }).framing).toBeUndefined();
   });
 });
