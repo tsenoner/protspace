@@ -26,12 +26,20 @@ import {
 import type { LegendDisplaySettings } from './types';
 
 /**
- * A typed number commits this long after the last keystroke or arrow step, so "25" or a held arrow
- * re-bins the plot once, not once per key (design decision 12, Review Focus 3).
+ * A typed size commits this long after the last keystroke or arrow step, so "25" or a held arrow
+ * redraws the plot once, not once per key (design decision 12, Review Focus 3).
  */
 export const SETTINGS_INPUT_DEBOUNCE_MS = 300;
 
 type NumberField = 'maxVisibleValues' | 'shapeSize';
+
+/**
+ * Fields that commit only on Enter, on leaving the field or on closing the popover, never on a
+ * pause. Max legend items (Bins) is one: typing "10" passes through "1", and a commit of 1 in
+ * between would group every row but one into Other, freeing their colour slots and storing only
+ * the row shown, so colours and a manual order set on the others would be lost.
+ */
+const COMMIT_ON_LEAVE: ReadonlySet<NumberField> = new Set(['maxVisibleValues']);
 
 const NUMBER_FIELDS: readonly NumberField[] = ['maxVisibleValues', 'shapeSize'];
 
@@ -103,7 +111,8 @@ function fieldText(field: NumberField, settings: LegendDisplaySettings): string 
 
 /**
  * The legend's settings as a popover under its settings button (design decision 12). Every edit is
- * a `settings-change` the legend applies at once; there is no Save or Cancel. Reset is a
+ * a `settings-change` the legend applies at once (a typed size after a pause, Max legend items on
+ * Enter, on leaving the field or on closing); there is no Save or Cancel. Reset is a
  * `settings-reset`. The legend owns `open`: it sets it, and clears it on `ps-close`.
  */
 @customElement('protspace-legend-settings-popover')
@@ -214,7 +223,7 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
     super.disconnectedCallback();
   }
 
-  /** Dispatches a number edit still waiting on its debounce, at once. */
+  /** Dispatches a number edit still waiting on its debounce or commit, at once. */
   flush(): void {
     this._clearTimer();
     const pending = this._pending;
@@ -290,7 +299,9 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
     if (this._pending && this._pending.field !== field) this.flush();
     this._pending = { field, value };
     this._clearTimer();
-    this._timer = setTimeout(() => this.flush(), SETTINGS_INPUT_DEBOUNCE_MS);
+    if (!COMMIT_ON_LEAVE.has(field)) {
+      this._timer = setTimeout(() => this.flush(), SETTINGS_INPUT_DEBOUNCE_MS);
+    }
   }
 
   /** A positive whole number, null for an emptied size, undefined for anything else. */
@@ -376,7 +387,7 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
     if (this._invalid.size > 0) this._invalid = new Set();
   }
 
-  /** Drops a number edit still waiting on its debounce. */
+  /** Drops a number edit still waiting on its debounce or commit. */
   cancel(): void {
     this._clearTimer();
     this._pending = null;

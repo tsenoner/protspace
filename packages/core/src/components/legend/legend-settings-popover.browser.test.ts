@@ -176,21 +176,21 @@ describe('protspace-legend-settings-popover', () => {
     expect(radios(el).map((radio) => radio.tabIndex)).toEqual([0, -1, -1, -1, -1, -1]);
   });
 
-  it('typing 2 then 5 fires one settings-change {maxVisibleValues: 25} after 300 ms', async () => {
+  it('typing 2 then 5 in the size fires one settings-change {shapeSize: 25} after 300 ms', async () => {
     const { el, changes } = await mount();
-    const input = inner(field(el, 'max-visible-input'));
+    const input = inner(field(el, 'shape-size-input'));
     await userEvent.fill(input, '');
     await userEvent.keyboard('25');
     expect(input.value).toBe('25');
     expect(changes).toEqual([]);
-    await expect.poll(() => changes).toEqual([{ maxVisibleValues: 25 }]);
+    await expect.poll(() => changes).toEqual([{ shapeSize: 25 }]);
     await frame();
     expect(changes).toHaveLength(1);
   });
 
-  it('commits exactly SETTINGS_INPUT_DEBOUNCE_MS after the last input', async () => {
+  it('commits a size exactly SETTINGS_INPUT_DEBOUNCE_MS after the last input', async () => {
     const { el, changes } = await mount();
-    const input = inner(field(el, 'max-visible-input'));
+    const input = inner(field(el, 'shape-size-input'));
     // Synthetic input under fake timers: userEvent talks to the runner over real timers.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
@@ -201,22 +201,41 @@ describe('protspace-legend-settings-popover', () => {
       }
       expect(changes).toEqual([]);
       vi.advanceTimersByTime(1);
-      expect(changes).toEqual([{ maxVisibleValues: 25 }]);
+      expect(changes).toEqual([{ shapeSize: 25 }]);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('holding ArrowUp on the field fires one settings-change after the burst', async () => {
+  it('holding ArrowUp on the size fires one settings-change after the burst', async () => {
     const { el, changes } = await mount();
-    const input = inner(field(el, 'max-visible-input'));
+    const input = inner(field(el, 'shape-size-input'));
     input.focus();
     await userEvent.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}');
-    expect(input.value).toBe('13');
+    expect(input.value).toBe('15');
     expect(changes).toEqual([]);
-    await expect.poll(() => changes).toEqual([{ maxVisibleValues: 13 }]);
+    await expect.poll(() => changes).toEqual([{ shapeSize: 15 }]);
     await frame();
     expect(changes).toHaveLength(1);
+  });
+
+  it('Max legend items never commits on a pause: "1" on the way to "10" is not applied', async () => {
+    const { el, changes } = await mount({ settings: { maxVisibleValues: 8 } });
+    const input = inner(field(el, 'max-visible-input'));
+    await userEvent.fill(input, '');
+    await userEvent.keyboard('1');
+    await afterDebounce();
+    expect(changes).toEqual([]);
+    await userEvent.keyboard('0');
+    await userEvent.keyboard('{ArrowUp}{ArrowUp}');
+    await afterDebounce();
+    expect(changes).toEqual([]);
+    expect(input.value).toBe('12');
+    await userEvent.keyboard('{Enter}');
+    expect(changes).toEqual([{ maxVisibleValues: 12 }]);
+    await afterDebounce();
+    expect(changes).toHaveLength(1);
+    expect(el.open).toBe(true);
   });
 
   it('Enter or leaving the field fires at once', async () => {
@@ -272,7 +291,8 @@ describe('protspace-legend-settings-popover', () => {
     await userEvent.fill(input, '12');
     await settle(el);
     expect(host.invalid).toBe(false);
-    await expect.poll(() => changes).toEqual([{ maxVisibleValues: 12 }]);
+    await userEvent.keyboard('{Enter}');
+    expect(changes).toEqual([{ maxVisibleValues: 12 }]);
 
     const size = field(el, 'shape-size-input');
     await userEvent.fill(inner(size), '0');
