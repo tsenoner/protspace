@@ -2271,10 +2271,14 @@ export class ProtspaceScatterplot extends LitElement {
    * update, and render once the update settles. Called by isolateSelection() and
    * resetIsolation() — the only divergence (resetIsolation forgets the plot data's
    * build, forcing the full-rebuild path) stays at the call site, before this
-   * method runs.
+   * method runs. Every isolation change (isolate, reset, `popIsolation`) passes
+   * here, from the keyboard too, where no press on the plot ends a pin: a pin on
+   * a protein the new view leaves out ends here, or its card floats over nothing.
    */
   private _reprocessAndRefresh(): void {
     this._processData();
+    const pinned = this._pinnedTooltip;
+    if (pinned && !this.isProteinInCurrentView(pinned.point.originalIndex)) this._unpinTooltip();
     this._pointGrid.rebuildNow();
 
     if (this._webglRenderer) {
