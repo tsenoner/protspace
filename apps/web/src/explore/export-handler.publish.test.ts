@@ -96,4 +96,26 @@ describe('figure editor host', () => {
     expect(notify.error).not.toHaveBeenCalled();
     expect(modal.remove).not.toHaveBeenCalled();
   });
+
+  it('a second Export while one is running does nothing, and the next one runs', async () => {
+    const { modal } = await openEditor(plot);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const pending: ((b: Blob | null) => void)[] = [];
+    const canvas = { width: 10, height: 10, toBlob: vi.fn((done) => pending.push(done)) };
+    const exportOnce = () =>
+      modal.dispatchEvent(
+        new CustomEvent('publish-export', {
+          detail: { canvas, state: { format: 'png', dpi: 300 } },
+        }),
+      );
+
+    exportOnce();
+    exportOnce();
+    await vi.waitFor(() => expect(canvas.toBlob).toHaveBeenCalledOnce());
+    // The first fails; the guard lets the next export through.
+    pending[0](null);
+    await vi.waitFor(() => expect(modal.showExportError).toHaveBeenCalledOnce());
+    exportOnce();
+    await vi.waitFor(() => expect(canvas.toBlob).toHaveBeenCalledTimes(2));
+  });
 });
