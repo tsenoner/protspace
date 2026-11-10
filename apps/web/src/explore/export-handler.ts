@@ -26,7 +26,7 @@ interface ExportHandlerOptions {
   exportMenu: ProtspaceExportMenu;
   /** Adds a listener on the Export panel for as long as the runtime lives. */
   listen(type: string, listener: EventListener): void;
-  getSelectedProteins(): string[];
+  getSelectedProteins(): readonly string[];
   /** Proteins the loaded file holds that the dataset, and so a bundle export, leaves out. */
   getUnplacedProteinCount(): number;
   legendElement: ProtspaceLegend;

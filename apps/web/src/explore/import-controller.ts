@@ -16,7 +16,10 @@ interface ImportMenuOptions {
   listen(type: string, listener: EventListener): void;
   importMenu: Pick<ProtspaceImportMenu, 'lastFile' | 'shadowRoot'>;
   dataLoader: Pick<ProtspaceDataLoader, 'openFilePicker'>;
-  datasetController: Pick<DatasetController, 'loadChosenExample' | 'tryLoadPersistedAgain'>;
+  datasetController: Pick<
+    DatasetController,
+    'loadChosenExample' | 'tryLoadPersistedAgain' | 'hasDisplayedDataset'
+  >;
   /** The stored import's metadata (`readStoredImportSummary`), never its bytes. */
   readSummary(): Promise<StoredImportSummary | null>;
   /** The stored import itself (`loadLastImportedFile`). */
@@ -60,8 +63,12 @@ export function bindImportMenu({
       summary = null;
     }
     if (ticket !== refreshes) return;
+    // The recovery banner names the stored file on an empty page, where it is not on screen.
     const onScreen =
-      summary !== null && getCurrentExampleId() === null && summary.name === getShownName();
+      summary !== null &&
+      datasetController.hasDisplayedDataset() &&
+      getCurrentExampleId() === null &&
+      summary.name === getShownName();
     importMenu.lastFile =
       summary && !onScreen
         ? { name: summary.name, sizeLabel: formatMegabytes(summary.size) }
@@ -81,7 +88,14 @@ export function bindImportMenu({
       return;
     }
     // Through the recovery path: an OPFS load, which keeps the user's stored legend settings.
-    await datasetController.tryLoadPersistedAgain(file);
+    // A failed decode reports itself (data-error); this rejects only when the stored load status
+    // cannot be read or written, which would otherwise be an unhandled rejection and no word.
+    try {
+      await datasetController.tryLoadPersistedAgain(file);
+    } catch (error) {
+      console.error('Reopening the stored file failed:', error);
+      warn(STORED_FILE_UNREADABLE);
+    }
   };
 
   // This event name is part of the import menu's contract in @protspace/core.

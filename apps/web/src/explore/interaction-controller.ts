@@ -39,7 +39,7 @@ export interface InteractionController {
    */
   history: UndoHistory<UndoEntry>;
   updateLegend(): void;
-  getSelectedProteins(): string[];
+  getSelectedProteins(): readonly string[];
   /** The selection changed: remember it and offer it to the structure. */
   handleSelectionChange(proteinIds: readonly string[]): void;
   handleProteinClick(event: Event): void;
@@ -73,7 +73,7 @@ export function createInteractionController({
   requestStructure,
   showSelection,
 }: InteractionControllerOptions): InteractionController {
-  let selectedProteins: string[] = [];
+  let selectedProteins: readonly string[] = [];
   let activeProvenanceClick: ActiveProvenanceClick | null = null;
   let tracing = { trace: true, linesPerSource: 20 };
   const eatProvenance = new EatProvenanceResolver();
@@ -146,8 +146,10 @@ export function createInteractionController({
       return selectedProteins;
     },
     handleSelectionChange(proteinIds) {
-      selectedProteins = [...proteinIds];
-      showSelection(selectedProteins);
+      // Held, not copied: every selection is a fresh array nobody mutates (the undo history
+      // keeps the same ones), and a lasso can hold most of a 5M-point dataset.
+      selectedProteins = proteinIds;
+      showSelection(proteinIds);
     },
     handleProteinClick(event) {
       const detail = (event as CustomEvent<Partial<ProteinClickDetail>>).detail;

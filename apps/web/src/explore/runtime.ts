@@ -153,6 +153,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   let currentDatasetName = '';
   let currentExampleId: string | null = null;
   const setCurrentDatasetName = (name: string) => {
+    // The status is module-wide: a load that outlives this page (a route change mid-decode) must
+    // not name its dataset on the next one, after `resetWorkbenchStatus` ran.
+    if (lifecycle.isDisposed()) return;
     currentDatasetName = name;
     publishDatasetName(name);
   };

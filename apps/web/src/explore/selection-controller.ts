@@ -116,6 +116,12 @@ export function createSelectionController({
   const commit = new AfterPaintCommit();
   /** The waiting or landing commit's `afterLand`; a newer commit replaces it. */
   let pendingAfterLand: (() => void) | undefined;
+  /**
+   * An afterPaint commit is waiting: the box and the tools already show it, and the plot takes it
+   * when it lands, so a plot event in between (a data change, an isolation reset) that reports the
+   * plot's older selection leaves the display alone.
+   */
+  let waiting = false;
 
   /** Fit `ids` clear of the plot's edge chrome (tool strip, selection bar, status corner). */
   const zoomTo = (ids: readonly string[]) =>
@@ -151,8 +157,10 @@ export function createSelectionController({
       history.record({ kind: 'selection', before: selected, after: ids });
     }
     pendingAfterLand = afterLand;
+    // Shown at once either way, so the next pick builds on this one.
+    show(ids);
     const land = () => {
-      show(ids);
+      waiting = false;
       plotElement.selectedProteinIds = [...ids];
       interactionController.handleSelectionChange(ids);
       const then = pendingAfterLand;
@@ -160,12 +168,17 @@ export function createSelectionController({
       then?.();
     };
     if (afterPaint) {
-      show(ids);
+      waiting = true;
       commit.schedule(land);
     } else {
       commit.cancel();
       land();
     }
+  };
+
+  /** The plot changed its own selection: the display follows, unless a commit is about to land. */
+  const showPlotSelection = (ids: readonly string[]) => {
+    if (!waiting) show(ids);
   };
 
   const setTool = (next: PlotTool) => {
@@ -318,7 +331,7 @@ export function createSelectionController({
 
   /** The plot isolated or reset: it emptied its own selection, so only the display follows. */
   const onIsolation = (event: Event) => {
-    show([]);
+    showPlotSelection([]);
     // An undo can widen the subset again: with two proteins or more, selection works.
     if (((event as CustomEvent<{ dataSize?: number }>).detail?.dataSize ?? 0) > 1) {
       plotTools.selectionDisabled = false;
@@ -327,7 +340,7 @@ export function createSelectionController({
   };
 
   const onIsolationReset = () => {
-    show([]);
+    showPlotSelection([]);
     // Back to the full data: selection works again.
     plotTools.selectionDisabled = false;
     selectionBar.canIsolate = true;
@@ -353,7 +366,9 @@ export function createSelectionController({
     if (!data) return;
     const all = plotElement.data?.protein_ids ?? data.protein_ids;
     proteinSearch.availableProteinIds = Array.isArray(all) ? all : [];
-    show(Array.isArray(plotElement.selectedProteinIds) ? plotElement.selectedProteinIds : []);
+    showPlotSelection(
+      Array.isArray(plotElement.selectedProteinIds) ? plotElement.selectedProteinIds : [],
+    );
   };
 
   // Escape (decision 11), after the top layer and the plot's EAT connectors: one step per press.
@@ -388,6 +403,7 @@ export function createSelectionController({
   return {
     resetForNewDataset() {
       commit.cancel();
+      waiting = false;
       show([]);
       // The tool strip only: the data renderer resets the plot's own selection mode with its data.
       tool = 'pan';

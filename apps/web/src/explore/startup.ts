@@ -51,25 +51,41 @@ async function runPersistedOrDefaultFlow(
   // (null, 'startup') for this outcome, so a stale `?dataset=` from a
   // failed/unknown deep link doesn't linger in the URL while the recovery
   // banner (no example showing) is up.
+  //
+  // Any dataset landing later ends the banner: an import has replaced the stored file it names,
+  // which its Clear would then delete and its Try again could no longer read. A confirmation still
+  // open when that happens does nothing.
+  let current = true;
+  const unsubscribe = datasetController.subscribeToDatasetChanges(() => {
+    unsubscribe();
+    if (!current) return;
+    current = false;
+    dismissRecoveryBanner();
+  });
+  const end = () => {
+    current = false;
+    unsubscribe();
+    dismissRecoveryBanner();
+  };
   showRecoveryBanner({
     fileName: outcome.file.name,
     failedAttempts: outcome.failedAttempts,
     lastError: outcome.lastError,
     handlers: {
       onRetry: async () => {
-        dismissRecoveryBanner();
+        end();
         await datasetController.tryLoadPersistedAgain(outcome.file);
       },
       onLoadDefault: async () => {
         // The demo replaces the stored import, which cannot be restored: ask first.
-        if (!(await confirmClear(outcome.file.name, 'load-default'))) return;
-        dismissRecoveryBanner();
+        if (!(await confirmClear(outcome.file.name, 'load-default')) || !current) return;
+        end();
         await datasetController.loadDefaultDatasetAndClearPersistedFile();
       },
       onClear: async () => {
         // The OPFS copy cannot be restored: ask first, and leave the banner up on a no.
-        if (!(await confirmClear(outcome.file.name, 'clear'))) return;
-        dismissRecoveryBanner();
+        if (!(await confirmClear(outcome.file.name, 'clear')) || !current) return;
+        end();
         await clearLastImportedFile();
         await datasetController.loadDefaultDatasetAndClearPersistedFile();
       },
