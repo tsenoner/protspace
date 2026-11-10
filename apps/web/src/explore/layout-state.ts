@@ -116,6 +116,8 @@ export function updateLayout(patch: Partial<LayoutState>): void {
   const current = getLayout();
   const next = parseLayout({ ...current, ...patch });
   if (sameLayout(current, next)) return;
+  // The floating card's effect depends on the rect: an unchanged one keeps its identity.
+  if (sameRect(current.floatingRect, next.floatingRect)) next.floatingRect = current.floatingRect;
   layout = next;
   setStorageItem(LAYOUT_STORAGE_KEY, next);
   for (const listener of [...listeners]) listener();

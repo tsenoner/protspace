@@ -7,25 +7,24 @@ import type {
 import {
   annotationLabel,
   DEFAULT_EAT_RELIABILITY,
-  hasEatPredictions,
-  hasEatPredictionsForAnnotation,
   isSameReliability,
   type EatReliabilityState,
   type VisualizationData,
 } from '@protspace/utils';
 import { reliabilityLabel } from '@protspace/core';
 import type { notify as appNotify } from '../lib/notify';
+import { predictedAnnotations } from './eat-predictions';
 import type { FilterController } from './filter-controller';
 import { getExportFailureNotification, getExportSuccessNotification } from './notifications';
 import { setWorkbenchStatus, type EatAvailability } from './workbench-status';
 
 /**
  * Whether the EAT panel can open: whenever any annotation has predictions. On an annotation with
- * none it opens on its chooser of those that do. Stops at the first predicted cell, so it never
+ * none it opens on its chooser of those that do. Reads the scan made once per dataset, so it never
  * builds the panel's index.
  */
 export function eatAvailabilityFor(data: VisualizationData | null): EatAvailability {
-  return hasEatPredictions(data) ? { kind: 'available' } : { kind: 'dataset' };
+  return predictedAnnotations(data).length > 0 ? { kind: 'available' } : { kind: 'dataset' };
 }
 
 function sameColors(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>): boolean {
@@ -142,18 +141,22 @@ export function createEatPanelController({
   downloadIds(ids: readonly string[], fileName: string): void;
   notify: Pick<typeof appNotify, 'success' | 'error'>;
 }): EatPanelController {
-  let selection: readonly string[] = [];
+  /** The only selected protein; none for an empty selection or several. */
+  let onlySelected: string | null = null;
 
   /**
    * The card's protein: the single selected one, by index in the current data, while the panel is
    * on screen with predictions to show. A hidden panel looks nothing up, and gets the current one
-   * when it turns active.
+   * when it turns active. The index already shown is kept without a lookup: each `data-change`
+   * and layout change re-syncs, and a lookup is a pass over every id.
    */
   const syncFocus = () => {
     const data = plotElement.data;
     let focus: number | null = null;
-    if (data && selection.length === 1 && eatPanel.active && hasEatPredictions(data)) {
-      const index = data.protein_ids.indexOf(selection[0]);
+    if (data && onlySelected !== null && eatPanel.active && predictedAnnotations(data).length > 0) {
+      const shown = eatPanel.focusProtein;
+      if (shown !== null && data.protein_ids[shown] === onlySelected) return;
+      const index = data.protein_ids.indexOf(onlySelected);
       focus = index === -1 ? null : index;
     }
     if (eatPanel.focusProtein !== focus) eatPanel.focusProtein = focus;
@@ -219,7 +222,7 @@ export function createEatPanelController({
     setWorkbenchStatus({
       eatAvailability: eatAvailabilityFor(data),
       // The header names an annotation the panel describes; its chooser describes none.
-      eatAnnotationLabel: hasEatPredictionsForAnnotation(data, annotation)
+      eatAnnotationLabel: predictedAnnotations(data).includes(annotation)
         ? annotationLabel(annotation, data?.annotations[annotation])
         : '',
     });
@@ -350,7 +353,7 @@ export function createEatPanelController({
   return {
     handleAnnotationChange: syncData,
     setSelection(proteinIds) {
-      selection = [...proteinIds];
+      onlySelected = proteinIds.length === 1 ? proteinIds[0] : null;
       syncFocus();
     },
     colorByBase(annotation) {
