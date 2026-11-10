@@ -206,6 +206,11 @@ export class ProtspaceProteinSearch extends LitElement {
     this._releaseLayer?.();
     this._releaseLayer = undefined;
     this._layerFor = null;
+    // The popup's layer and its blur timer are gone, so it must not come back open on a
+    // reconnect: nothing would close it on Escape, a press outside or the blur grace. The typed
+    // query stays.
+    this._report = null;
+    this._closeDropdown();
   }
 
   protected willUpdate(changed: PropertyValues<this>): void {
@@ -222,6 +227,9 @@ export class ProtspaceProteinSearch extends LitElement {
     // state also has zero suggestions. Track open state explicitly so dataset changes
     // refresh empty results without reopening after add, Escape, or blur.
     if (!this.isSuggestionDropdownOpen) return;
+    // A selection echo keeps the keyboard cursor. A new dataset's list is another list: a cursor
+    // kept by index would sit on a protein the user never moved to, and Enter would add it.
+    if (changed.has('availableProteinIds')) this.highlightedSuggestionIndex = -1;
     this._updateSuggestions(true);
   }
 

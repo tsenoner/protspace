@@ -99,16 +99,24 @@ class ProtspaceInfoPopover extends LitElement {
     this.addEventListener('pointerenter', this._onPointerEnter);
     this.addEventListener('pointerleave', this._onPointerLeave);
     this.addEventListener('focusout', this._onFocusOut);
+    // A move in the DOM disconnects and reconnects, and firstUpdated does not run again.
+    if (this.hasUpdated) this._bindRow();
   }
 
   firstUpdated() {
-    // In side placement the path from the icon to the bubble crosses the row. The whole row (this
-    // element's parent) is the keep-open region: the bubble is a DOM descendant of it, so gliding
-    // from the ⓘ into the bubble never leaves it.
+    this._bindRow();
+  }
+
+  /**
+   * In side placement the path from the icon to the bubble crosses the row. The whole row (this
+   * element's parent) is the keep-open region: the bubble is a DOM descendant of it, so gliding
+   * from the ⓘ into the bubble never leaves it.
+   */
+  private _bindRow() {
     if (this.placement === 'side' && this.parentElement) {
       this._row = this.parentElement;
       this._row.addEventListener('pointerleave', this._onRowPointerLeave);
-      // The bubble's anchor reads `_row`, which the first render had not set yet.
+      // The bubble's anchor reads `_row`, which the render before this had not set.
       if (this.besideRow) this.requestUpdate();
     }
   }
@@ -120,7 +128,9 @@ class ProtspaceInfoPopover extends LitElement {
     this.removeEventListener('focusout', this._onFocusOut);
     this._row?.removeEventListener('pointerleave', this._onRowPointerLeave);
     this._row = null;
+    // The close timer goes with the hover it was ending; a reconnect starts unhovered.
     this._clearCloseTimer();
+    this.hovering = false;
   }
 
   private _onPointerEnter = () => {

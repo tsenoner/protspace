@@ -317,6 +317,37 @@ describe('protspace-protein-search feedback', () => {
     expect(inputOf(element).hasAttribute('aria-activedescendant')).toBe(false);
   });
 
+  it('a dataset change does not carry the keyboard cursor to a row of the new list', async () => {
+    const element = await setupSearch(['A0A1', 'A0A2', 'A0A3'], []);
+    await typeQuery(element, 'A0A');
+    press(element, 'ArrowDown', 2);
+    await element.updateComplete;
+    expect(rowsOf(element)[2].classList.contains('active')).toBe(true);
+
+    element.availableProteinIds = ['A0AX', 'A0AY', 'A0AZ'];
+    await element.updateComplete;
+    // No cursor on the new list (as for a refreshed empty result), never the third row by index.
+    expect(rowsOf(element).map(rowText)).toEqual(['A0AX', 'A0AY', 'A0AZ']);
+    expect(rowsOf(element).some((row) => row.classList.contains('active'))).toBe(false);
+
+    // Enter resolves the typed text, which names no protein: nothing the user never chose.
+    const added = captureIds(element, 'add-selection');
+    press(element, 'Enter');
+    expect(added).toEqual([]);
+  });
+
+  it('keeps the keyboard cursor when the selection echoes back', async () => {
+    const element = await setupSearch(['A0A1', 'A0A2', 'A0A3'], []);
+    await typeQuery(element, 'A0A');
+    press(element, 'ArrowDown', 2);
+    await element.updateComplete;
+
+    element.selectedProteinIds = ['A0A1'];
+    await element.updateComplete;
+
+    expect(rowsOf(element)[2].classList.contains('active')).toBe(true);
+  });
+
   it('emits remove-selection when a marked row is clicked', async () => {
     const element = await setupSearch([...FIVE, 'Q12345'], FIVE);
     await typeQuery(element, 'P0059');
@@ -558,6 +589,20 @@ describe('protspace-protein-search and the layer stack', () => {
     expect(inputOf(element).value).toBe('P0059');
     expect(topLayer()?.close).toBe(dialogClose);
     releaseDialog();
+  });
+
+  it('a disconnect closes the popup, so a reconnect does not show one nothing can close', async () => {
+    const element = await setupSearch(FIVE, []);
+    await typeQuery(element, 'P0059');
+    expect(rowsOf(element).length).toBeGreaterThan(0);
+
+    element.remove();
+    expect(topLayer()).toBeUndefined();
+    document.body.appendChild(element);
+    await element.updateComplete;
+
+    expect(element.shadowRoot!.querySelector('.search-suggestions')).toBeNull();
+    expect(inputOf(element).value).toBe('P0059');
   });
 
   it('Escape with nothing to close passes on to the page', async () => {

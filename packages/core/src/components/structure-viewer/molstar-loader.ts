@@ -457,21 +457,20 @@ export async function createMolstarViewer(
   let colorThemeQueue: Promise<void> = Promise.resolve();
 
   // Mol*'s own reset keeps the camera's turn, so Reset returns to the camera as it was at the
-  // first press on the model: the view the structure loaded with. Mol* binds no double-click,
-  // and its viewport buttons are hidden, so a double-click on the model resets.
+  // first press or wheel on the model: the view the structure loaded with. A wheel counts because
+  // it zooms (a trackpad pinch is a wheel too) with no press before it. Mol* binds no
+  // double-click, and its viewport buttons are hidden, so a double-click on the model resets.
   let loadedView: unknown;
   const resetCamera = () => {
     plugin.canvas3d?.requestCameraReset(
       loadedView === undefined ? undefined : { snapshot: loadedView, durationMs: 250 },
     );
   };
-  container.addEventListener(
-    'pointerdown',
-    () => {
-      loadedView ??= plugin.canvas3d?.camera?.getSnapshot();
-    },
-    { capture: true },
-  );
+  const rememberLoadedView = () => {
+    loadedView ??= plugin.canvas3d?.camera?.getSnapshot();
+  };
+  container.addEventListener('pointerdown', rememberLoadedView, { capture: true });
+  container.addEventListener('wheel', rememberLoadedView, { capture: true, passive: true });
   container.addEventListener('dblclick', resetCamera, { capture: true });
 
   return {
