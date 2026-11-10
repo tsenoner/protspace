@@ -57,18 +57,20 @@ jobs:
   #
   # Split across parallel shards. The suite is CPU-bound (SwiftShader WebGL), and 2 workers is
   # the most a 4-vCPU runner takes: 3 workers made every test ~35% slower (PR #423). More
-  # runners is what scales. Shards split by test count; at two, both carry about the same
-  # test time. Add a shard when one runs past ~5 min.
+  # runners is what scales. Shards split by test count, not time, and the tests at the end of
+  # the list (the mobile project) are the slowest per test, so the last shard carries ~1.2x
+  # the mean test time. At two shards each ran ~10 min. Add a shard when the slowest runs
+  # past ~7 min.
   e2e-chromium:
     name: E2E Tests (Chromium ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-26.04
-    # A normal shard is 4-6 min. Without this the default is 360 min.
+    # A normal shard is 5-7 min. Without this the default is 360 min.
     timeout-minutes: 20
     strategy:
       # Let every shard finish, so one red run reports all its failures.
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
