@@ -17,19 +17,22 @@ type Spot = { x: number; y: number };
 
 /**
  * Where the overlays go, as fractions of the preview canvas (0,0 its top-left corner). The legend
- * takes the right of the figure, so every spot stays in the left two thirds. Chosen against the
- * demo's curated view; if a capture frames empty space, move these and capture again.
+ * takes the right fifth of the figure, so every spot stays left of it. Chosen against the demo's
+ * curated view in the plot's fitted framing; if a capture frames empty space, move these and
+ * capture again.
  */
 const SPOTS = {
-  // A circle around the orange cluster below the centre, labelled to its right (a label is
-  // centred on its spot).
-  circle: { centre: { x: 0.467, y: 0.535 }, edge: { x: 0.503, y: 0.535 } },
-  circleLabel: { x: 0.6, y: 0.535 },
-  // An arrow into the purple cluster on the left, labelled at its tail.
-  arrow: { from: { x: 0.17, y: 0.34 }, to: { x: 0.27, y: 0.53 } },
-  arrowLabel: { x: 0.16, y: 0.3 },
-  insetSource: { from: { x: 0.38, y: 0.48 }, to: { x: 0.45, y: 0.54 } },
-  insetTarget: { from: { x: 0.06, y: 0.66 }, to: { x: 0.3, y: 0.66 } },
+  // A circle around the orange cluster right of centre, labelled in the empty space to its right
+  // (a label is centred on its spot).
+  circle: { centre: { x: 0.577, y: 0.542 }, edge: { x: 0.624, y: 0.542 } },
+  circleLabel: { x: 0.693, y: 0.542 },
+  // An arrow down into the large purple cluster on the left, labelled at its tail, above it.
+  arrow: { from: { x: 0.155, y: 0.383 }, to: { x: 0.12, y: 0.552 } },
+  arrowLabel: { x: 0.135, y: 0.328 },
+  // The mixed patch left of centre (beige, light blue, purple among grey), zoomed into the empty
+  // lower left; the target's height follows the source's shape.
+  insetSource: { from: { x: 0.378, y: 0.313 }, to: { x: 0.464, y: 0.438 } },
+  insetTarget: { from: { x: 0.022, y: 0.68 }, to: { x: 0.225, y: 0.68 } },
   empty: { x: 0.01, y: 0.01 },
 };
 

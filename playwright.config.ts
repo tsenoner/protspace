@@ -33,6 +33,8 @@ export default defineConfig({
     screenshot: 'off',
     // Headed on macOS for the system GPU's WebGL; CI runs headless on SwiftShader.
     headless: !!process.env.CI,
+    // The docs are English: numbers read 3.6, not the capturing machine's 3,6.
+    locale: 'en-US',
   },
 
   webServer: process.env.PLAYWRIGHT_BASE_URL
