@@ -17,6 +17,13 @@ export interface Layer {
   readonly dismissOnOutsidePress?: boolean;
 }
 
+/**
+ * Every kit overlay (dialog, popover) stops `ps-close` at the element around its slot: one from
+ * its content is a nested menu or dialog closing, not this overlay. The overlay dispatches its
+ * own `ps-close` on the host, outside that element, so its owner still hears it.
+ */
+export const stopNestedClose = (event: Event): void => event.stopPropagation();
+
 /** Order of the Escape fallbacks when no layer is open; lower runs first. */
 export const ESCAPE_ORDER = { connectors: 10, selection: 20, tool: 30 } as const;
 

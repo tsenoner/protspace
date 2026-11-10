@@ -4,7 +4,7 @@ import { customElement } from '../../utils/safe-custom-element';
 import './button';
 import { dialogStyles } from './dialog.styles';
 import { deepActiveElement } from './focus';
-import { pushLayer } from './layers';
+import { pushLayer, stopNestedClose } from './layers';
 
 /** `sheet`: a bottom sheet, full width on the window's bottom edge (the app's More sheet on phones). */
 export type DialogSize = 'sm' | 'md' | 'lg' | 'full' | 'sheet';
@@ -28,13 +28,6 @@ if (typeof window !== 'undefined') {
     true,
   );
 }
-
-/**
- * Every kit overlay (dialog, popover) stops `ps-close` at the element around its slot: one from
- * its content is a nested menu or dialog closing, not this overlay. The overlay dispatches its
- * own `ps-close` on the host, outside that element, so its owner still hears it.
- */
-const stopNestedClose = (event: Event) => event.stopPropagation();
 
 function focusOrigin(): HTMLElement | null {
   const active = deepActiveElement();
