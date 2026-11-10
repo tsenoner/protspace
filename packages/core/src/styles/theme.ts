@@ -35,7 +35,6 @@ const lightRoles = css`
   --ps-focus: #0284c7; /* sky-600, 4.1:1 on white; non-text needs 3:1 */
   --ps-danger: #b91c1c; /* red-700, 5.9:1 on the hover surface */
   --ps-warning: #b45309; /* amber-700 */
-  --ps-success: #15803d; /* green-700 */
   --ps-tooltip-bg: #0f172a;
   --ps-tooltip-text: #f8fafc;
   --ps-scrim: rgb(15 23 42 / 0.45);
@@ -71,7 +70,6 @@ const darkRoles = css`
   --ps-focus: #38bdf8;
   --ps-danger: #f87171; /* red-400 */
   --ps-warning: #fbbf24; /* amber-400 */
-  --ps-success: #4ade80; /* green-400 */
   --ps-tooltip-bg: #e2e8f0;
   --ps-tooltip-text: #0f172a;
   --ps-scrim: rgb(2 6 23 / 0.65);
