@@ -218,11 +218,6 @@ export class ProtspaceEatPanel extends LitElement {
     return this._outcome;
   }
 
-  /** The lower bound. */
-  get reliabilityThreshold(): number {
-    return this._eat.reliability.min;
-  }
-
   /**
    * Show on, the filter keeping everything, Hide, and the Drawing switches at their defaults:
    * Reset has nothing to do, the rail shows no dot.

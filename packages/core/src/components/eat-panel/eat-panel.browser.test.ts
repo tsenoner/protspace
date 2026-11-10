@@ -268,7 +268,7 @@ describe('protspace-eat-panel', () => {
     vi.advanceTimersByTime(EAT_THRESHOLD_COMMIT_DELAY_MS * 2);
     expect(details).toHaveLength(0);
     expect(el.reliability).toEqual({ min: 0.2, max: 0.7 });
-    expect(el.reliabilityThreshold).toBe(0.2);
+    expect(el.reliability.min).toBe(0.2);
   });
 
   it('reset() returns to the defaults and emits them once', async () => {

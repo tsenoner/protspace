@@ -195,10 +195,8 @@ export class EatReliabilityController implements ReactiveController {
     // neighbour on screen while the filter uses the clamped bound. Lit cannot do this
     // for us: a `.value` binding dirty-checks against the value Lit last committed, not
     // against the DOM, so once the clamp holds the state still the browser is free to
-    // keep driving the input and Lit sees nothing to write. (`live()` is the idiomatic
-    // fix, but this package externalizes only bare `lit`, so importing a directive
-    // bundles a second lit-html copy — which fails at runtime with
-    // `currentDirective._$initialize is not a function`.)
+    // keep driving the input and Lit sees nothing to write. (`live()` would not help: a
+    // clamp that holds the state still requests no render for it to run in.)
     const pinned = String(applied);
     if (slider.value !== pinned) slider.value = pinned;
   }

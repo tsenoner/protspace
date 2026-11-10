@@ -202,11 +202,19 @@ export function binOf(confidence: number): number {
   return Math.min(EAT_BIN_COUNT - 1, Math.floor(confidence * EAT_BIN_COUNT + 1e-9));
 }
 
+/** Everything in a summary the reliability range does not move: one context's totals. */
 interface ContextTotals {
   inView: number;
   curated: number;
   /** Curated proteins per label, in context. */
   labelCurated: Uint32Array;
+  predicted: number;
+  /** Predictions per label, in context. */
+  labelPredicted: Uint32Array;
+  /** Shared by every summary of this context: read-only. */
+  bins: Uint32Array;
+  medianReliability: number | null;
+  labelMedians: (number | null)[];
 }
 
 const contextCache = new WeakMap<
@@ -215,8 +223,9 @@ const contextCache = new WeakMap<
 >();
 
 /**
- * The O(n) part of a summary, cached per (index, context mask). A caller hands a new mask
- * whenever the context changes; a mask edited in place reads stale totals.
+ * The range-free part of a summary, cached per (index, context mask), so a handle drag only
+ * splits the predictions into kept and outside. A caller hands a new mask whenever the context
+ * changes; a mask edited in place reads stale totals.
  */
 function contextTotals(index: EatIndex, context: Uint8Array | null): ContextTotals {
   let entry = contextCache.get(index);
@@ -239,10 +248,37 @@ function contextTotals(index: EatIndex, context: Uint8Array | null): ContextTota
       labelCurated[index.curatedHits[h]]++;
     }
   }
-  const totals = { inView, curated, labelCurated };
+
+  const labelPredicted = new Uint32Array(index.labels.length);
+  const bins = new Uint32Array(EAT_BIN_COUNT);
+  let predicted = 0;
+  for (let k = 0; k < index.order.length; k++) {
+    if (context && !context[index.order[k]]) continue;
+    predicted++;
+    bins[binOf(index.confidence[k])]++;
+    for (let h = index.labelOffsets[k]; h < index.labelOffsets[k + 1]; h++) {
+      labelPredicted[index.labelHits[h]]++;
+    }
+  }
+
+  const totals: ContextTotals = {
+    inView,
+    curated,
+    labelCurated,
+    predicted,
+    labelPredicted,
+    bins,
+    medianReliability: contextMedian(index, context, predicted),
+    labelMedians: labelMedians(index, context, labelPredicted),
+  };
   if (context) entry.masks.set(context, totals);
   else entry.all = totals;
   return totals;
+}
+
+/** Proteins with a curated value and no prediction, over the whole dataset. */
+export function curatedTotal(index: EatIndex): number {
+  return contextTotals(index, null).curated;
 }
 
 /** Counts, histogram and per-label rows for `state`, restricted to `context` (null = all). */
@@ -255,52 +291,44 @@ export function summarizeEat(
   const totals = contextTotals(index, context);
   const labelCount = index.labels.length;
   const labelKept = new Uint32Array(labelCount);
-  const labelOutside = new Uint32Array(labelCount);
-  const bins = new Uint32Array(EAT_BIN_COUNT);
   let kept = 0;
-  let outside = 0;
 
   for (let k = 0; k < index.order.length; k++) {
     if (context && !context[index.order[k]]) continue;
-    const confidence = index.confidence[k];
-    const isIn = keeps(keeper, confidence);
-    if (isIn) kept++;
-    else outside++;
-    bins[binOf(confidence)]++;
-    const counts = isIn ? labelKept : labelOutside;
+    if (!keeps(keeper, index.confidence[k])) continue;
+    kept++;
     for (let h = index.labelOffsets[k]; h < index.labelOffsets[k + 1]; h++) {
-      counts[index.labelHits[h]]++;
+      labelKept[index.labelHits[h]]++;
     }
   }
 
-  const medians = labelMedians(index, context, labelKept, labelOutside);
   const rows: EatLabelRow[] = [];
   for (let label = 0; label < labelCount; label++) {
     const curated = totals.labelCurated[label];
-    const predictedHere = labelKept[label] + labelOutside[label];
+    const predictedHere = totals.labelPredicted[label];
     const total = curated + predictedHere;
     if (total === 0) continue;
     rows.push({
       label: index.labels[label],
       curated,
       kept: labelKept[label],
-      outside: labelOutside[label],
+      outside: predictedHere - labelKept[label],
       total,
       predictedShare: predictedHere / total,
-      medianReliability: medians[label],
+      medianReliability: totals.labelMedians[label],
     });
   }
 
-  const predicted = kept + outside;
+  const { predicted } = totals;
   return {
     inView: totals.inView,
     curated: totals.curated,
     predicted,
     kept,
-    outside,
+    outside: predicted - kept,
     none: totals.inView - totals.curated - predicted,
-    medianReliability: contextMedian(index, context, predicted),
-    bins,
+    medianReliability: totals.medianReliability,
+    bins: totals.bins,
     rows,
   };
 }
@@ -326,12 +354,9 @@ function contextMedian(index: EatIndex, context: Uint8Array | null, count: numbe
 function labelMedians(
   index: EatIndex,
   context: Uint8Array | null,
-  labelKept: Uint32Array,
-  labelOutside: Uint32Array,
+  counts: Uint32Array,
 ): (number | null)[] {
   const n = index.labels.length;
-  const counts = new Uint32Array(n);
-  for (let label = 0; label < n; label++) counts[label] = labelKept[label] + labelOutside[label];
   const seen = new Uint32Array(n);
   const lower = new Float64Array(n);
   const medians: (number | null)[] = new Array<number | null>(n).fill(null);
