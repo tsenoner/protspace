@@ -122,6 +122,9 @@ const Hero = () => {
                 id="hero-wordmark"
                 src="/wordmark.svg"
                 alt="ProtSpace"
+                // The SVG's viewBox: a box of the right shape before it loads (no layout shift).
+                width={870}
+                height={190}
                 className="-ml-[0.1em] block h-auto w-[9.6em] max-w-[calc(100%+0.1em)]"
               />
             </div>
