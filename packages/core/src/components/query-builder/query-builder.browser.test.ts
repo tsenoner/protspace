@@ -7,7 +7,8 @@ import './query-builder';
 import { createCondition, createGroup, createNumericCondition } from './query-types';
 import type { FilterQuery } from './query-types';
 import type { ProtspaceData } from './types';
-import { cdp, page } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
+import { deepActiveElement } from '../kit/focus';
 
 beforeAll(() => adoptTheme());
 afterEach(() => document.body.replaceChildren());
@@ -354,5 +355,59 @@ describe('protspace-query-builder: the footer', () => {
     const apply = box(builder, '.query-footer-apply');
     expect(apply.top).toBeGreaterThanOrEqual(host.top);
     expect(apply.bottom).toBeLessThanOrEqual(host.bottom);
+  });
+});
+
+describe('protspace-query-builder: closing a value list that leaves only a presence value', () => {
+  /** The builder with its host's part: an edited query comes back as its query. */
+  async function mountHosted(query: FilterQuery) {
+    const builder = await mount(query);
+    builder.addEventListener('query-changed', (e) => {
+      builder.query = (e as CustomEvent<{ query: FilterQuery }>).detail.query;
+    });
+    return builder;
+  }
+
+  /** Opens the card's value list, the focus in its search, and ticks "Any value" by keyboard. */
+  async function tickAnyValue(row: Row) {
+    row.shadowRoot!.querySelector<PsButton>('.value-add')!.click();
+    await row.updateComplete;
+    const picker = row.shadowRoot!.querySelector('protspace-query-value-picker')!;
+    // The test viewport is a phone's: the list opens as a sheet, which focuses its title first.
+    const title = () => picker.shadowRoot!.querySelector<HTMLElement>('.value-picker-title');
+    await expect.poll(() => deepActiveElement() === title()).toBe(true);
+    picker.shadowRoot!.querySelector<HTMLInputElement>('.value-picker-input')!.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.keyboard('{Enter}');
+    await expect
+      .poll(() => (row as Row & { condition: { values: string[] } }).condition.values)
+      .toEqual(['__ANY__']);
+    return picker;
+  }
+
+  /** The card now reads "has any value", with no "+ value": focus lands on its operator pill. */
+  async function expectFocusOnOperator(row: Row) {
+    const pill = row.shadowRoot!.querySelector<PsButton>('.operator-pill')!;
+    await expect.poll(() => pill.textContent!.includes('has any value')).toBe(true);
+    expect(row.shadowRoot!.querySelector('.value-add')).toBeNull();
+    await expect.poll(() => deepActiveElement()).toBe(inner(pill));
+  }
+
+  it('Escape hands focus to the operator pill', async () => {
+    const builder = await mountHosted([createCondition({ annotation: 'organism' })]);
+    const row = rows(builder)[0];
+    await tickAnyValue(row);
+    await userEvent.keyboard('{Escape}');
+    await expectFocusOnOperator(row);
+  });
+
+  it('Done hands focus to the operator pill', async () => {
+    const builder = await mountHosted([createCondition({ annotation: 'organism' })]);
+    const row = rows(builder)[0];
+    const picker = await tickAnyValue(row);
+    const done = picker.shadowRoot!.querySelector<PsButton>('.value-picker-footer ps-button')!;
+    done.focus();
+    await userEvent.keyboard('{Enter}');
+    await expectFocusOnOperator(row);
   });
 });

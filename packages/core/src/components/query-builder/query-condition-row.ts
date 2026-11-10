@@ -37,6 +37,7 @@ import '../kit/button';
 import '../kit/menu';
 import '../kit/popover';
 import type { PsPopover } from '../kit/popover';
+import { deepActiveElement } from '../kit/focus';
 import './query-value-picker';
 import './query-numeric-input';
 
@@ -324,6 +325,16 @@ class ProtspaceQueryConditionRow extends LitElement {
 
   private _handleValuePickerClose() {
     this._showValuePicker = false;
+    // Only "Any value" or N/A ticked: the card closes to "has any value" / "has no value", whose
+    // render drops "+ value" and the list with it, so the focus they held would fall to the page.
+    // Hand it to the operator pill, which now says what the card does; a focus the user moved
+    // elsewhere stays there.
+    if (this.condition.kind !== 'categorical' || !isPresenceOperator(operatorOf(this.condition)))
+      return;
+    void this.updateComplete.then(() => {
+      const active = deepActiveElement();
+      if (!active || active === document.body) this._operatorPillEl?.focus();
+    });
   }
 
   private _dispatchById(type: 'condition-removed' | 'condition-duplicated') {
