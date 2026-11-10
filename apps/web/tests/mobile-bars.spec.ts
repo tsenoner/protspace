@@ -110,15 +110,18 @@ for (const { label, viewport } of PHONES) {
       await expect(searchToggle(page)).toBeVisible();
       await expect(appBar(page).getByRole('button', { name: /^(Import|Export)$/ })).toHaveCount(0);
       await expect(appBar(page).getByRole('button', { name: 'Help', exact: true })).toBeHidden();
+      await expect(
+        appBar(page).getByRole('button', { name: 'Feedback', exact: true }),
+      ).toBeHidden();
       await expect(themeButton(page)).toBeHidden();
       // The figure editor is a row of the More sheet on a phone.
       await expect(figureEditorButton(page)).toBeHidden();
-      // The Help menu's popover host stays rendered: no display: none above a popover.
+      // The Help and Feedback menus' popover hosts stay rendered: no display: none above a popover.
       expect(
         await appBar(page)
           .locator('[data-workbench="app-bar-actions"] > ps-menu')
           .evaluateAll((menus) => menus.map((menu) => getComputedStyle(menu).display)),
-      ).toEqual(['contents']);
+      ).toEqual(['contents', 'contents']);
       // View bar: fixed at its last stage on a phone.
       await expect(viewBar(page)).toHaveAttribute('data-stage', '3');
       // View bar: Projection, Color by and More. The details sit in the plot's corner, without

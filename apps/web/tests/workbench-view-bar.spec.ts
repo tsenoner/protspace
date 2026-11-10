@@ -63,10 +63,17 @@ test.describe('the view bar', () => {
     expect(Math.abs(keys.x - details.x)).toBeLessThan(1);
     expect(keys.y).toBeGreaterThanOrEqual(details.y + details.height);
 
-    // The button opens the same dialog as Help → Keyboard shortcuts.
+    // The button opens the shortcuts dialog, with focus inside, outside every landmark.
     await shortcuts.click();
     const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
     await expect(dialog).toBeVisible();
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('PS-DIALOG');
+    await expect(page.getByRole('banner').locator('ps-dialog')).toHaveCount(0);
+    // The list is the dialog's slotted content, so it is found through the ps-dialog host.
+    const list = page.locator('ps-dialog', { has: dialog });
+    await expect(list.getByRole('heading', { name: 'Search' })).toBeVisible();
+    await expect(list.getByText('Focus the search box')).toBeVisible();
+    await expect(list.getByText(/^(⌘K|Ctrl\+K)$/)).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await expect(shortcuts).toBeFocused();

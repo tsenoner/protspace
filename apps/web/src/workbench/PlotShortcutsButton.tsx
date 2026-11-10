@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom';
 import { ShortcutsDialog } from './ShortcutsDialog';
 
 /**
- * The plot corner's keyboard button: opens the same shortcuts dialog as Help → Keyboard shortcuts,
- * one click from the plot they act on. Hidden on touch screens (workbench.css), where More →
- * Help & shortcuts keeps the list.
+ * The plot corner's keyboard button: opens the keyboard shortcuts dialog, one click from the plot
+ * they act on. Hidden on touch screens (workbench.css), where More → Help & shortcuts keeps the
+ * list.
  */
 export function PlotShortcutsButton() {
   const [open, setOpen] = useState(false);

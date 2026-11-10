@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { appBar, openExplore, plotArea } from './helpers/explore';
 
-/** The app bar's help menu (Task 2.4): documentation, keyboard shortcuts and the tour. */
+/** The app bar's help menu (Task 2.4): documentation and the tour; and the Feedback menu. */
 
 const help = (page: Page) => appBar(page).getByRole('button', { name: 'Help', exact: true });
 
@@ -17,8 +17,6 @@ test.describe('help menu', () => {
     await expect(menu).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Documentation' })).toBeFocused();
     await page.keyboard.press('ArrowDown');
-    await expect(page.getByRole('menuitem', { name: 'Keyboard shortcuts' })).toBeFocused();
-    await page.keyboard.press('End');
     await expect(page.getByRole('menuitem', { name: 'Take the tour' })).toBeFocused();
 
     await page.keyboard.press('Escape');
@@ -48,44 +46,12 @@ test.describe('help menu', () => {
     await docs.close();
   });
 
-  test('Keyboard shortcuts opens a dialog listing the search shortcut; Escape closes it and returns focus to Help', async ({
+  test("Help no longer lists the keyboard shortcuts, which have the plot corner's button", async ({
     page,
   }) => {
     await openExplore(page);
     await help(page).click();
-    await page.getByRole('menuitem', { name: 'Keyboard shortcuts' }).click();
-
-    const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
-    await expect(dialog).toBeVisible();
-    // The list is the dialog's slotted content, so it is found through the ps-dialog host.
-    const shortcuts = page.locator('ps-dialog', { has: dialog });
-    await expect(shortcuts.getByRole('heading', { name: 'Search' })).toBeVisible();
-    await expect(shortcuts.getByText('Focus the search box')).toBeVisible();
-    await expect(shortcuts.getByText(/^(⌘K|Ctrl\+K)$/)).toBeVisible();
-
-    await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
-    await expect(help(page)).toBeFocused();
-  });
-
-  test('Keyboard shortcuts opens from the keyboard with focus inside the dialog', async ({
-    page,
-  }) => {
-    await openExplore(page);
-    await help(page).focus();
-    await page.keyboard.press('Enter');
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Enter');
-
-    const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
-    await expect(dialog).toBeVisible();
-    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('PS-DIALOG');
-    // Rendered outside the app bar, so the modal is not announced as part of the banner.
-    await expect(page.getByRole('banner').locator('ps-dialog')).toHaveCount(0);
-
-    await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
-    await expect(help(page)).toBeFocused();
+    await expect(page.getByRole('menuitem')).toHaveText(['Documentation', 'Take the tour']);
   });
 
   test('Take the tour starts the tour', async ({ page }) => {
@@ -104,5 +70,39 @@ test.describe('help menu', () => {
     await openExplore(page);
     await expect(page.locator('protspace-tips')).toHaveCount(0);
     await expect(plotArea(page).getByRole('button', { name: 'Tips & shortcuts' })).toHaveCount(0);
+  });
+});
+
+test.describe('feedback menu', () => {
+  const feedback = (page: Page) =>
+    appBar(page).getByRole('button', { name: 'Feedback', exact: true });
+
+  test('Feedback offers email, the address to copy, and a GitHub issue', async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await openExplore(page);
+    await feedback(page).click();
+    await expect(page.getByRole('menu', { name: 'Feedback' })).toBeVisible();
+    await expect(page.getByRole('menuitem')).toHaveText([
+      'Email hello@protspace.app',
+      'Copy email address',
+      'Open a GitHub issue',
+    ]);
+
+    await page.getByRole('menuitem', { name: 'Copy email address' }).click();
+    await expect(page.getByText('Copied hello@protspace.app')).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('hello@protspace.app');
+
+    await context.route('https://github.com/**', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<title>issue</title>' }),
+    );
+    await feedback(page).click();
+    const newPage = context.waitForEvent('page');
+    await page.getByRole('menuitem', { name: 'Open a GitHub issue' }).click();
+    const issue = await newPage;
+    expect(issue.url()).toBe('https://github.com/tsenoner/protspace/issues/new');
+    await issue.close();
   });
 });

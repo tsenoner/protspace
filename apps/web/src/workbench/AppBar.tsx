@@ -8,7 +8,7 @@ import {
   type MouseEvent,
 } from 'react';
 import { flushSync } from 'react-dom';
-import { ChevronDown, Database, Github, Image as ImageIcon, MessageSquare } from 'lucide-react';
+import { ChevronDown, Database, Github, Image as ImageIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import type {
   ProtspaceExportMenu,
@@ -16,9 +16,10 @@ import type {
   ProtspaceProteinSearch,
 } from '@protspace/core';
 import { countNoun } from '@protspace/utils';
-import { FEEDBACK_HREF, GITHUB_REPO_URL } from '@/lib/support';
+import { GITHUB_REPO_URL } from '@/lib/support';
 import { hasStructureSheet } from '../explore/layout-mode';
 import { openFigureEditor } from './figure-editor-action';
+import { FeedbackMenu } from './FeedbackMenu';
 import { HelpMenu } from './HelpMenu';
 import { SearchToggle } from './SearchToggle';
 import { ThemeToggle } from './ThemeToggle';
@@ -246,10 +247,7 @@ export function AppBar() {
         <FigureEditorButton iconOnly={layoutMode === 'tablet'} />
         <ThemeToggle />
         <HelpMenu />
-        <a className="wb-icon-link" href={FEEDBACK_HREF} aria-label="Feedback">
-          <MessageSquare size={16} strokeWidth={1.75} aria-hidden="true" />
-        </a>
-        <ps-tooltip text="Feedback" namesTarget></ps-tooltip>
+        <FeedbackMenu />
         <a
           className="wb-icon-link"
           href={GITHUB_REPO_URL}

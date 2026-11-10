@@ -127,9 +127,12 @@ the structure viewer follow the theme; exported images and figures are always li
 
 ### Help
 
-**Help** opens **Documentation** (these pages), **Keyboard shortcuts** (every shortcut, grouped by
-where it works; the keyboard button in the plot's top-left corner opens the same list) and **Take
-the tour** (the guided tour of the page). On a phone they are under **More → Help & shortcuts**.
+**Help** opens **Documentation** (these pages) and **Take the tour** (the guided tour of the page).
+The keyboard button in the plot's top-left corner lists every shortcut, grouped by where it works.
+On a phone all three are under **More → Help & shortcuts**.
+
+**Feedback** offers **Email hello@protspace.app** (opens your mail app), **Copy email address**,
+for when no mail app is set up, and **Open a GitHub issue**.
 
 ## View bar
 
@@ -369,7 +372,7 @@ Clicking the Filtered chip opens the [Filter panel](/explore/filter).
 
 **⌘ Z** (Mac) / **Ctrl + Z** undoes the last selection, **Show only these** or filter step, and
 **⇧ ⌘ Z** / **Shift + Ctrl + Z** redoes it. Removing a filter also shows a notification with an
-**Undo** button. **Help → Keyboard shortcuts** lists every shortcut.
+**Undo** button. The keyboard button in the plot's corner lists every shortcut.
 
 ## Tips
 

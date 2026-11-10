@@ -2,15 +2,15 @@
 
 ### Requirement: A Help menu in the app bar
 
-The app bar SHALL hold a Help button that opens a menu with Documentation, Keyboard shortcuts and
-Take the tour, moved through with the arrow keys; Escape SHALL close it and return focus to Help.
+The app bar SHALL hold a Help button that opens a menu with Documentation and Take the tour, moved
+through with the arrow keys; Escape SHALL close it and return focus to Help.
 Documentation SHALL open the docs in a new tab that cannot reach back into the explore page. The
 plot SHALL carry no help button of its own.
 
 #### Scenario: Keyboard
 
 - **WHEN** the user opens Help and presses the arrow keys, then Escape
-- **THEN** focus moves through the three items, the menu closes and focus is on Help
+- **THEN** focus moves through the two items, the menu closes and focus is on Help
 
 #### Scenario: Documentation
 
@@ -19,18 +19,19 @@ plot SHALL carry no help button of its own.
 
 ### Requirement: The keyboard shortcuts are listed in one place
 
-Keyboard shortcuts SHALL open a dialog, with focus inside, listing every keyboard and pointer
+The keyboard button in the plot's corner (Keyboard shortcuts in More → Help & shortcuts on a
+phone) SHALL open a dialog, with focus inside, listing every keyboard and pointer
 shortcut of the explore page in titled groups, Mod written as ⌘ on Apple platforms and Ctrl
 elsewhere. The list SHALL name the search shortcut, the legend's I, undo and redo under History,
 the figure editor's Delete and its Escape that deselects before it closes, and the Escape steps in
-the order one press at a time takes them. Escape SHALL close the dialog and return focus to Help
-(to More on a phone).
+the order one press at a time takes them. Escape SHALL close the dialog and return focus to the keyboard
+button (to More on a phone).
 
 #### Scenario: Opening the list
 
-- **WHEN** the user picks Keyboard shortcuts
+- **WHEN** the user presses the plot corner's keyboard button
 - **THEN** a dialog lists the shortcuts, the search shortcut among them
-- **AND** Escape closes it and focus returns to Help
+- **AND** Escape closes it and focus returns to the button
 
 #### Scenario: The platform's modifier
 

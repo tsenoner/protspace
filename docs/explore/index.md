@@ -27,7 +27,7 @@ The Explore page is a workbench for protein embeddings: a map of your proteins i
 - **Figure editor** lays out the plot and its legend as a figure for a paper or a slide. See [Figure Editor](/explore/figure-editor).
 - **Theme** steps through System, Dark and Light, one click at a time; see [Light and dark](#light-and-dark).
 - **Help** has the documentation, the keyboard shortcuts and the tour; see [Help, shortcuts and the tour](#help-shortcuts-and-the-tour).
-- **Feedback** starts an email to the ProtSpace team, and **GitHub** opens the project's repository.
+- **Feedback** lets you email the ProtSpace team, copy their address or open a GitHub issue, and **GitHub** opens the project's repository.
 
 ## View bar
 

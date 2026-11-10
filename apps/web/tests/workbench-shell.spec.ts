@@ -182,7 +182,12 @@ test.describe('the anchors Home and Explore share', () => {
     return {
       bar: (await box(bar)).height,
       wordmark: await box(wordmark),
-      feedback: await box(bar.getByRole('link', { name: 'Feedback', exact: true })),
+      // A link on Home, a menu button in Explore.
+      feedback: await box(
+        bar
+          .getByRole('link', { name: 'Feedback', exact: true })
+          .or(bar.getByRole('button', { name: 'Feedback', exact: true })),
+      ),
       github: await box(bar.getByRole('link', { name: 'GitHub', exact: true })),
     };
   };
