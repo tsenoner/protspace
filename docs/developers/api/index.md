@@ -262,8 +262,10 @@ An empty slot takes no room. The demo app puts its Legend/Filter tabs in `header
 
 Settings and the "Other" categories open as popovers (`protspace-legend-settings-popover`,
 `protspace-legend-other-popover`) in the top layer, inside the legend's shadow root. Settings
-apply as they are edited: a typed number commits 300 ms after the last keystroke, or at once on
-Enter or when the field loses focus. The parts `dialog-overlay` and `dialog-content` are gone.
+apply as they are edited: a typed size commits 300 ms after the last keystroke, or at once on
+Enter or when the field loses focus. Max legend items commits only on Enter, when the field
+loses focus or when the popover closes, so a value typed digit by digit never applies in between
+(an in-between 1 would free the colours and order of every row it hides). The parts `dialog-overlay` and `dialog-content` are gone.
 
 On a touch screen a tap shows or hides a row, and a second tap on the same row within 300 ms
 isolates it, whether or not the browser sends a `dblclick` (one that follows touch taps is
@@ -365,7 +367,8 @@ the scatterplot (`auto-sync` and `scatterplot-selector` are gone): listen for th
 `selectedProteinIds`, `selectionMode` and `selectionTool` yourself, as the app's controllers in
 `apps/web/src/explore/*-controller.ts` do. `selection-disabled-notification` is replaced by the
 scatterplot's `auto-disable-selection`, and `eat-threshold-mirror` by the host's own filter, which
-calls the EAT panel's `setReliabilityState()`. The legend hears `annotation-change` and
+calls the EAT panel's `setReliabilityState()`. The control bar's `setEatConfidenceThreshold()` and
+`setEatReliability()` go with it: the host applies reliability conditions to its own filter. The legend hears `annotation-change` and
 `projection-change` from anywhere in its document.
 :::
 

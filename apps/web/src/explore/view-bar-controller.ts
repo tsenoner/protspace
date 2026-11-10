@@ -12,6 +12,7 @@ import {
   type ProjectionStatisticRow,
   type VisualizationData,
 } from '@protspace/utils';
+import { predictedAnnotations } from './eat-predictions';
 import type { InitialView } from './explore-controls';
 import type { InteractionController } from './interaction-controller';
 import type { ViewPickers } from './view-controller';
@@ -74,9 +75,7 @@ export function deriveViewOptions(
 ): { projections: string[]; annotations: string[]; eatAnnotations: string[] } {
   const projections = (data.projections ?? []).map((projection) => projection.name);
   const annotations = pickableAnnotations(data);
-  const eatAnnotations = Object.entries(capabilityData.annotation_predicted ?? {})
-    .filter(([, cells]) => cells.some(Boolean))
-    .map(([annotation]) => annotation);
+  const eatAnnotations = [...predictedAnnotations(capabilityData)];
   return { projections, annotations, eatAnnotations };
 }
 

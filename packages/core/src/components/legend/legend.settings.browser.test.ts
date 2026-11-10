@@ -5,6 +5,7 @@ import { adoptTheme } from '../kit/adopt-theme';
 import { deepActiveElement, flatContains } from '../kit/focus';
 import { pushLayer } from '../kit/layers';
 import { LEGEND_EVENTS } from './config';
+import { SETTINGS_INPUT_DEBOUNCE_MS } from './legend-settings-popover';
 import type { ProtspaceLegend } from './legend';
 import { categoricalData, numericData, TWELVE } from './test-support/legend-fixtures';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
@@ -157,11 +158,43 @@ describe('legend settings popover, mounted', () => {
 
     await userEvent.fill(page.getByRole('spinbutton', { name: 'Max legend items' }), '');
     await userEvent.keyboard('25');
+    await userEvent.keyboard('{Enter}');
     await expect.poll(() => stored()?.maxVisibleValues).toBe(25);
     await settle(legend);
 
     // One committed edit: one rebuild (`updated()` rebuilds once because maxVisibleValues changed).
     expect(rebuild).toHaveBeenCalledOnce();
+  });
+
+  it('typing 12 into Max legend items with a pause after the 1 keeps a recolour and a manual order', async () => {
+    const { legend } = await mount();
+    legend._settings.commitColor('E', '#123456');
+    legend._reorder.move('C', -1);
+    await settle(legend);
+    const order = () => legend._sortedLegendItems.map((item) => item.value).slice(0, 5);
+    expect(order()).toEqual(['A', 'C', 'B', 'D', 'E']);
+
+    await openSettings(legend);
+    await userEvent.fill(page.getByRole('spinbutton', { name: 'Max legend items' }), '');
+    await userEvent.keyboard('1');
+    // Longer than any debounce: "1" on the way to "12" must not apply.
+    await new Promise((resolve) => setTimeout(resolve, SETTINGS_INPUT_DEBOUNCE_MS + 150));
+    await settle(legend);
+    expect(legend.maxVisibleValues).toBe(10);
+    await userEvent.keyboard('2');
+    // An outside press closes the popover and commits what was typed.
+    await userEvent.click(document.body, { position: { x: 1, y: 1 } });
+    await settle(legend);
+
+    expect(popover(legend).open).toBe(false);
+    expect(legend.maxVisibleValues).toBe(12);
+    expect(stored()?.maxVisibleValues).toBe(12);
+    expect(order()).toEqual(['A', 'C', 'B', 'D', 'E']);
+    expect(legend._legendItems.find((item) => item.value === 'E')?.color).toBe('#123456');
+    const categories = stored()?.categories as Record<string, { color: string; zOrder: number }>;
+    expect(categories.E.color).toBe('#123456');
+    expect(categories.C.zOrder).toBeLessThan(categories.B.zOrder);
+    expect(Object.keys(categories)).toHaveLength(12);
   });
 
   it('Reset keeps the popover open with the defaults and focuses the checked swatch', async () => {

@@ -54,6 +54,7 @@ import { rankByFrequency, remapCsr } from '../visualization/csr.js';
 import { getProteinEvidence, getProteinScores } from '../visualization/plot-data-accessors.js';
 import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/eat-overlay.js';
 import { isNAValue } from '../visualization/missing-values.js';
+import { downloadBlob } from '../visualization/export-utils.js';
 import { ARROW_BOOLEAN_LABELS, PROTEIN_ID_COLUMN } from '../generated/shared-constants';
 
 const ENCODER = new TextEncoder();
@@ -740,15 +741,10 @@ export function exportParquetBundle(
   options: CreateBundleOptions = {},
 ): void {
   const buffer = createParquetBundle(data, options);
-  const blob = new Blob([buffer], { type: 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename.endsWith('.parquetbundle') ? filename : `${filename}.parquetbundle`;
-  link.click();
-
-  URL.revokeObjectURL(url);
+  downloadBlob(
+    new Blob([buffer], { type: 'application/octet-stream' }),
+    filename.endsWith('.parquetbundle') ? filename : `${filename}.parquetbundle`,
+  );
 }
 
 /**

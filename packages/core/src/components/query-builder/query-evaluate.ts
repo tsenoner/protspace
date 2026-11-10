@@ -7,44 +7,85 @@ import type {
 } from './query-types';
 import { isFilterGroup, ANY_VALUE } from './query-types';
 import { isNumericConditionReady, matchesNumericValue } from './query-numeric-helpers';
-import { toInternalValue } from '../legend/config';
 import {
-  getFirstAnnotationIndex,
+  NA_VALUE,
   getProteinAnnotationCount,
   getProteinAnnotationIndexAt,
   isNAValue,
   readNumericValue,
+  toInternalValue,
+  type AnnotationData,
 } from '@protspace/utils';
 
 /**
- * Resolve the FIRST string annotation value for a protein at the given index.
- * Handles both Int32Array and number[][] formats in annotation_data.
- * Multi-label-aware callers (matching, counting) must use
- * resolveAnnotationInternalValues instead — this sees only the primary label.
+ * An annotation's declared values, each `toInternalValue`-normalised once: `values[slot]` is a
+ * distinct internal value and `slotOf[idx]` the slot of declared index `idx`, so values that
+ * normalise alike (null and N/A) share one. `naSlot` is N/A's, present even when no declared value
+ * is N/A, because a protein with no label, or an index outside the list, reads as N/A.
+ *
+ * Built once per values array (a dataset swap brings a new one), so the per-protein walks compare
+ * integers instead of normalising, deduplicating and allocating for every label of every protein:
+ * at Swiss-Prot scale that is ~570K rows on every count the builder makes.
  */
-export function resolveAnnotationValue(
-  proteinIndex: number,
-  annotation: string,
-  data: ProtspaceData,
-): string | null {
-  const idxData = data.annotation_data?.[annotation];
-  const valuesArr = data.annotations?.[annotation]?.values;
+interface ValueSlots {
+  values: readonly string[];
+  slotOf: Int32Array;
+  naSlot: number;
+}
 
-  if (!idxData || !valuesArr) return null;
+const slotsCache = new WeakMap<readonly (string | null)[], ValueSlots>();
 
-  const idx = getFirstAnnotationIndex(idxData, proteinIndex);
-
-  if (idx < 0 || idx >= valuesArr.length) return null;
-
-  return valuesArr[idx] ?? null;
+export function valueSlots(declared: readonly (string | null)[]): ValueSlots {
+  const cached = slotsCache.get(declared);
+  if (cached) return cached;
+  const values: string[] = [];
+  const bySlot = new Map<string, number>();
+  const slotFor = (value: string) => {
+    let slot = bySlot.get(value);
+    if (slot === undefined) {
+      slot = values.length;
+      values.push(value);
+      bySlot.set(value, slot);
+    }
+    return slot;
+  };
+  const slotOf = new Int32Array(declared.length);
+  for (let v = 0; v < declared.length; v++) slotOf[v] = slotFor(toInternalValue(declared[v]));
+  const slots = { values, slotOf, naSlot: slotFor(NA_VALUE) };
+  slotsCache.set(declared, slots);
+  return slots;
 }
 
 /**
- * Normalize a resolved annotation value for consistent comparison.
- * Applies toInternalValue() to convert null/empty to '__NA__'.
+ * The slot of a protein's `k`-th label (`0 <= k < getProteinAnnotationCount`); an index outside
+ * the declared values reads as N/A.
  */
-function normalizeValue(value: string | null): string {
-  return toInternalValue(value);
+export function slotAt(
+  idxData: AnnotationData,
+  slots: ValueSlots,
+  proteinIndex: number,
+  k: number,
+): number {
+  const idx = getProteinAnnotationIndexAt(idxData, proteinIndex, k);
+  return idx >= 0 && idx < slots.slotOf.length ? slots.slotOf[idx] : slots.naSlot;
+}
+
+/**
+ * Whether a protein carries a value whose slot is set in `wanted` (one byte per slot); a protein
+ * with no label carries N/A. Multi-label aware: any one of its labels is enough.
+ */
+export function carriesWanted(
+  idxData: AnnotationData,
+  slots: ValueSlots,
+  wanted: Uint8Array,
+  proteinIndex: number,
+): boolean {
+  const count = getProteinAnnotationCount(idxData, proteinIndex);
+  if (count === 0) return wanted[slots.naSlot] === 1;
+  for (let k = 0; k < count; k++) {
+    if (wanted[slotAt(idxData, slots, proteinIndex, k)] === 1) return true;
+  }
+  return false;
 }
 
 /**
@@ -55,7 +96,8 @@ function normalizeValue(value: string | null): string {
  *
  * Matching semantics match the legend/visibility model: a multi-label protein
  * carries every one of its values, so it satisfies "annotation is X" when ANY
- * of its labels is X.
+ * of its labels is X. The evaluator and the value list apply this same rule
+ * through `valueSlots` rather than calling it once per protein.
  */
 export function resolveAnnotationInternalValues(
   proteinIndex: number,
@@ -65,21 +107,16 @@ export function resolveAnnotationInternalValues(
   const idxData = data.annotation_data?.[annotation];
   const valuesArr = data.annotations?.[annotation]?.values;
 
-  if (!idxData || !valuesArr) return [normalizeValue(null)];
+  if (!idxData || !valuesArr) return [NA_VALUE];
 
+  const slots = valueSlots(valuesArr);
   const count = getProteinAnnotationCount(idxData, proteinIndex);
-  if (count === 0) return [normalizeValue(null)];
+  if (count === 0) return [NA_VALUE];
 
-  const seen = new Set<string>();
   const out: string[] = [];
   for (let k = 0; k < count; k++) {
-    const idx = getProteinAnnotationIndexAt(idxData, proteinIndex, k);
-    const raw = idx >= 0 && idx < valuesArr.length ? (valuesArr[idx] ?? null) : null;
-    const normalized = normalizeValue(raw);
-    if (!seen.has(normalized)) {
-      seen.add(normalized);
-      out.push(normalized);
-    }
+    const value = slots.values[slotAt(idxData, slots, proteinIndex, k)];
+    if (!out.includes(value)) out.push(value);
   }
   return out;
 }
@@ -100,28 +137,25 @@ function evaluateCondition(
     return evaluateNumericCondition(condition, data, numProteins);
   }
 
-  if (!data.annotation_data?.[condition.annotation] || !data.annotations?.[condition.annotation]) {
-    return new Set();
-  }
+  const idxData = data.annotation_data?.[condition.annotation];
+  const valuesArr = data.annotations?.[condition.annotation]?.values;
+  if (!idxData || !valuesArr) return new Set();
 
-  const valuesSet = new Set(condition.values);
-  // ANY_VALUE means "carries a real label", so it is satisfied by any resolved
-  // value other than the N/A sentinel — including a multi-label protein whose
-  // labels are a mix of real values and nulls.
-  const wantsAnyValue = valuesSet.has(ANY_VALUE);
+  // Which slots match, decided once per distinct value rather than once per label per protein.
+  // ANY_VALUE means "carries a real label", so it is satisfied by any value other than the N/A
+  // sentinel — including a multi-label protein whose labels mix real values and nulls.
+  const slots = valueSlots(valuesArr);
+  const selected = new Set(condition.values);
+  const wantsAnyValue = selected.has(ANY_VALUE);
+  const wanted = new Uint8Array(slots.values.length);
+  slots.values.forEach((value, slot) => {
+    if (selected.has(value) || (wantsAnyValue && !isNAValue(value))) wanted[slot] = 1;
+  });
+
   const matches = new Set<number>();
-
   for (let i = 0; i < numProteins; i++) {
-    const resolved = resolveAnnotationInternalValues(i, condition.annotation, data);
-
-    for (const value of resolved) {
-      if (valuesSet.has(value) || (wantsAnyValue && !isNAValue(value))) {
-        matches.add(i);
-        break;
-      }
-    }
+    if (carriesWanted(idxData, slots, wanted, i)) matches.add(i);
   }
-
   return matches;
 }
 
@@ -161,35 +195,16 @@ function proteinsWithAnyValue(
       continue;
     }
 
-    // Hand-rolled rather than looping resolveAnnotationInternalValues: this runs
-    // once per protein per NOT, and only needs "is there ONE real label?" — so it
-    // hoists the two record lookups out of the loop and short-circuits on the
-    // first hit instead of allocating a deduplicated array per row. The
-    // normalization rule itself is still the shared toInternalValue/isNAValue pair.
     const idxData = data.annotation_data?.[annotation];
     const valuesArr = data.annotations?.[annotation]?.values;
     if (!idxData || !valuesArr) continue;
 
-    // Decide "is this a real value?" once per DECLARED value rather than once per
-    // label per protein: toInternalValue stringifies, so the per-label spelling
-    // allocated a throwaway string for all ~570K rows on every NOT evaluation
-    // (and the query builder re-evaluates once per condition on each keystroke).
-    // The table is as long as the category list, not the protein list.
-    const isRealValue = new Uint8Array(valuesArr.length);
-    for (let v = 0; v < valuesArr.length; v++) {
-      isRealValue[v] = isNAValue(toInternalValue(valuesArr[v] ?? null)) ? 0 : 1;
-    }
-
+    // Every slot but N/A's is a real value: one table per annotation, not a string per label.
+    const slots = valueSlots(valuesArr);
+    const real = new Uint8Array(slots.values.length).fill(1);
+    real[slots.naSlot] = 0;
     for (let i = 0; i < numProteins; i++) {
-      if (result.has(i)) continue;
-      for (let k = 0, count = getProteinAnnotationCount(idxData, i); k < count; k++) {
-        const idx = getProteinAnnotationIndexAt(idxData, i, k);
-        // Out-of-range indices normalize to null, i.e. NOT a real value.
-        if (idx >= 0 && idx < valuesArr.length && isRealValue[idx]) {
-          result.add(i);
-          break;
-        }
-      }
+      if (!result.has(i) && carriesWanted(idxData, slots, real, i)) result.add(i);
     }
   }
 

@@ -146,9 +146,7 @@ export class PointGridController {
     }
     // Every slot, hidden ones too: a change of what is visible then re-marks
     // `_visible` instead of rebuilding the grid.
-    const slots = new Uint32Array(pd.length);
-    for (let s = 0; s < slots.length; s++) slots[s] = s;
-    this._grid.rebuild(pd, slots);
+    this._grid.rebuild(pd, null);
     if (perfCounters) perfCounters.gridRebuild++;
     this._source = pd;
     this._mark();

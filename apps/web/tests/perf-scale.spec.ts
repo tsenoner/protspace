@@ -1,6 +1,13 @@
 import { test, type Browser, type CDPSession, type Page } from '@playwright/test';
 import fs from 'node:fs';
-import { readSnapshot, segment, settle, type SegmentSpec } from './helpers/perf/probes';
+import {
+  heapMB,
+  readSnapshot,
+  segment,
+  settle,
+  taskDuration,
+  type SegmentSpec,
+} from './helpers/perf/probes';
 import {
   buildSegments,
   importBundle,
@@ -128,19 +135,8 @@ const save = () => fs.writeFileSync(OUT, JSON.stringify(result, null, 1));
 /** Wall-clock marks, which perf/scale.mjs lines up with its memory samples. */
 const mark = (name: string) => result.marks.push({ name, t: Date.now() });
 
-async function heapMB(cdp: CDPSession | null): Promise<number | null> {
-  if (!cdp) return null;
-  await cdp.send('HeapProfiler.collectGarbage');
-  const { metrics } = await cdp.send('Performance.getMetrics');
-  return (metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? 0) / 2 ** 20;
-}
-
-/** Main-thread task time so far, ms (CDP `TaskDuration`). */
-async function taskDuration(cdp: CDPSession | null): Promise<number | null> {
-  if (!cdp) return null;
-  const { metrics } = await cdp.send('Performance.getMetrics');
-  return (metrics.find((m) => m.name === 'TaskDuration')?.value ?? 0) * 1000;
-}
+/** Chromium only: the other browsers have no CDP session. */
+const heapMBOf = async (cdp: CDPSession | null) => (cdp ? heapMB(cdp) : null);
 
 /** A fresh context and page on Explore with the demo dataset, its CDP session in Chromium. */
 async function openPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession | null }> {
@@ -188,8 +184,8 @@ async function coldLoad(
   const { page, cdp } = await openPage(browser);
   await settle(page, LOAD_CAP_MS);
   await page.waitForTimeout(FOOTPRINT_GAP_MS);
-  const heapBefore = await heapMB(cdp);
-  const busyBefore = await taskDuration(cdp);
+  const heapBefore = await heapMBOf(cdp);
+  const busyBefore = cdp ? await taskDuration(cdp) : null;
   await openImportMenu(page);
   const t0 = await page.evaluate(() => {
     const c = window.__protspacePerfCounters;
@@ -253,8 +249,8 @@ async function coldLoad(
     };
   }, t0);
   await page.waitForTimeout(FOOTPRINT_GAP_MS);
-  const busyMs = cdp ? (await taskDuration(cdp))! - busyBefore! : null;
-  const heapAfter = await heapMB(cdp);
+  const busyMs = cdp ? (await taskDuration(cdp)) - busyBefore! : null;
+  const heapAfter = await heapMBOf(cdp);
   const degraded = await page.evaluate(() => window.__scaleDegraded ?? []);
   result.degraded.push(...degraded);
   result.n = phases.n;
@@ -591,7 +587,7 @@ test(`scale ${DATASET.name}`, async ({ browser }) => {
       save();
     }
     mark('interactions:end');
-    result.heapAfterInteractionsMB = await heapMB(cdp);
+    result.heapAfterInteractionsMB = await heapMBOf(cdp);
     const drawnAtEnd = (await readSnapshot(page, true)).drawn;
     result.drawnAtEnd = Number.isNaN(drawnAtEnd) ? undefined : drawnAtEnd;
     result.toasts = await page.getByText(TOAST).count();

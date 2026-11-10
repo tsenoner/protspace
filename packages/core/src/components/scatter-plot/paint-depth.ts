@@ -2,6 +2,7 @@
  * The paint depth a point is sorted by, shared by the style passes that resolve
  * it and the renderer that draws in its order.
  */
+import { clamp01 } from '@protspace/utils';
 
 /** Opacity threshold at/above which a point counts as selected for the two-pass cut. */
 export const SELECTED_OPACITY_THRESHOLD = 0.99;
@@ -15,7 +16,7 @@ export const SELECTED_OPACITY_THRESHOLD = 0.99;
  * still orders categories and opacity inside each tier.
  */
 export function composePaintDepth(baseDepth: number, opacity: number, predicted: boolean): number {
-  const withinTier = Math.min(1, Math.max(0, baseDepth)) * 0.24;
+  const withinTier = clamp01(baseDepth) * 0.24;
   const selected = opacity >= SELECTED_OPACITY_THRESHOLD;
   if (selected) return (predicted ? 0 : 0.25) + withinTier;
   return (predicted ? 0.5 : 0.75) + withinTier;

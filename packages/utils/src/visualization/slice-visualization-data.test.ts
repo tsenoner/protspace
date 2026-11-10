@@ -164,6 +164,52 @@ describe('viewVisualizationDataByIndices', () => {
     expect(Object.keys(view.annotation_scores!)).toEqual(['fam']);
   });
 
+  it('slices projection coordinates equal to the eager slice, once', () => {
+    const src = baseViz();
+    const view = viewVisualizationDataByIndices(src, [3, 1]);
+    const eager = sliceVisualizationDataByIndices(src, [3, 1]);
+    view.projections.forEach((projection, p) => {
+      expect(projection.data).toEqual(eager.projections[p].data);
+      expect(projection.data).toBe(projection.data);
+      expect(projection.data).not.toBe(src.projections[p].data);
+      expect({ name: projection.name, dimension: projection.dimension }).toEqual({
+        name: eager.projections[p].name,
+        dimension: eager.projections[p].dimension,
+      });
+    });
+    expect(Object.keys(view.projections[0])).toEqual(Object.keys(eager.projections[0]));
+  });
+
+  it('never reads the coordinates of a projection nobody reads', () => {
+    const src = baseViz();
+    // Count the coordinate reads each source projection serves.
+    const reads = src.projections.map(() => 0);
+    src.projections.forEach((projection, p) => {
+      projection.data = new Proxy(projection.data, {
+        get: (target, key) => {
+          if (typeof key === 'string' && /^\d+$/.test(key)) reads[p]++;
+          return Reflect.get(target, key);
+        },
+      });
+    });
+    const view = viewVisualizationDataByIndices(src, [1, 3]);
+    expect(view.projections[1].name).toBe('pca3');
+    expect(view.projections[1].dimension).toBe(3);
+    expect(reads).toEqual([0, 0]);
+
+    expect(Array.from(view.projections[1].data)).toEqual([1, 1, 1, 3, 3, 3]);
+    void view.projections[1].data;
+    // One gather of 2 points x 3 axes; the second read hits the cache.
+    expect(reads).toEqual([0, 6]);
+  });
+
+  it('takes an assigned projection over the slice', () => {
+    const view = viewVisualizationDataByIndices(baseViz(), [1, 3]);
+    const replacement = new Float32Array([9, 9, 9, 9]);
+    view.projections[0].data = replacement;
+    expect(view.projections[0].data).toBe(replacement);
+  });
+
   it('takes an assigned column over the slice', () => {
     const view = viewVisualizationDataByIndices(baseViz(), [1, 3]);
     const replacement = new Float64Array([1, 2]);

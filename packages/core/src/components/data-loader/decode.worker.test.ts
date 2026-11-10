@@ -51,3 +51,15 @@ describe('decode worker dataset hash', () => {
     expect(generateDatasetHash(rehashed)).toBe(mainThreadHash);
   });
 });
+
+describe('decode worker failures', () => {
+  it('reports a bundle it cannot decode as refused', async () => {
+    scope.postMessage.mockClear();
+    const garbage = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer;
+    await scope.onmessage?.({ data: { type: 'decode-bundle', arrayBuffer: garbage } });
+    expect(scope.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ ok: false, rejected: true, error: expect.any(String) }),
+      [],
+    );
+  });
+});

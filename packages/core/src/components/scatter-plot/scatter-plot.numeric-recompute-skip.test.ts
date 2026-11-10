@@ -134,13 +134,16 @@ describe('numeric recompute: re-stage only when the materialized data changed', 
   it('re-stages when the selected annotation is rebinned', () => {
     build('score', { score: settings(3) });
     const plotData = sp._plotData;
+    const revision = sp._annotationRevision;
 
     sp.numericAnnotationSettings = { score: settings(5) };
     sp._runNumericRecomputeBody();
 
     expect(renderer.invalidateStyleCache).toHaveBeenCalledTimes(1);
     expect(requestRender).toHaveBeenCalledTimes(1);
-    expect(sp._plotData).not.toBe(plotData);
+    // The points keep their slots: same plot data, so the grid only re-marks.
+    expect(sp._plotData).toBe(plotData);
+    expect(sp._annotationRevision).toBe(revision + 1);
   });
 
   it('re-stages when the first settings for the selected annotation change its bins', () => {

@@ -6,21 +6,18 @@ import {
   type ExampleDataset,
 } from '../src/explore/example-datasets';
 import {
-  clickLegendItem,
   collectDefaultViewDriftWarnings,
   curatedViewOf,
   dismissTourIfPresent,
   expectUrlParam,
   getContoursMode,
   getCurrentDatasetName,
-  getFirstLegendItemValue,
   getProteinCount,
   getUrlParam,
   getViewState,
   holdNextRequest,
   importMenu,
   importUserFile,
-  isLegendItemHidden,
   openExplore,
   openImportMenu,
   pickExample,
@@ -42,6 +39,7 @@ import {
 } from './helpers/fixtures';
 import { eatPanel, openEatPanel } from './helpers/eat';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
+import { clickLegendItem, getFirstLegendItemValue, isLegendItemHidden } from './helpers/legend';
 
 /**
  * Covers `openspec/specs/example-datasets`: the Import menu's "Examples"

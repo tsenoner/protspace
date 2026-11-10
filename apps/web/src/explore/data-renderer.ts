@@ -149,9 +149,8 @@ export function createDataRenderer({
     await yieldToBrowser();
 
     console.log('Updating scatterplot with new data...');
-    // Only `syncLegendState` turns this back on. Until then the legend counts in protein
-    // order (`LegendDataController.computeAnnotationCounts`), which picks the rows and colours of tied
-    // categories, and `updateLegend` leaves the legend to its own sync.
+    // Only `syncLegendState` turns this back on. Until then `updateLegend` leaves the
+    // legend to its own sync.
     legendElement.autoSync = false;
 
     applyPlotState(plotElement, newData, resolvedInitialView);

@@ -47,7 +47,10 @@ function itemBase(
     (index === 0 && items.length > 1 && itemJoiner(items[1], 1) === 'OR');
   if (orJoined || !hasConfiguredCondition(items.filter((_, i) => i !== index))) return context;
   const rest = evaluateQueryExcluding(items, data, item.id);
-  return context ? new Set([...rest].filter((i) => context.has(i))) : rest;
+  if (!context) return rest;
+  const base = new Set<number>();
+  for (const i of rest) if (context.has(i)) base.add(i);
+  return base;
 }
 
 /** The group holds the card `id`, at any depth. */

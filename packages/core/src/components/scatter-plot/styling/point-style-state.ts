@@ -56,7 +56,6 @@ type VisibilityModelMemoKey = {
   baseOpacity: number;
   selectedOpacity: number;
   fadedOpacity: number;
-  eatOverlayEnabled: boolean;
   focusedValues: string[] | null;
   dimmedMask: Uint8Array | null;
 };
@@ -145,8 +144,9 @@ export class PointStyleState {
   // Which slots are INTERACTIVE (opacityOf > 0), how many, and their ids: the
   // point-count label, provenance and the point grid's marks share this one
   // pass. Keyed on the visibility model's `interactivityKey`, which a selection
-  // changes only while some opacity tier is 0 (a configured fadedOpacity of 0
-  // makes non-selected points non-interactive). Plot data is keyed by
+  // changes only while some opacity tier a shown point can take is 0 (a
+  // configured fadedOpacity of 0 makes non-selected points non-interactive).
+  // Otherwise the pass reads the hidden mask (`interactiveSlots`). Plot data is keyed by
   // (originalIndices ref + length), NOT the container ref: a projection switch
   // clones the plot data (new container, same originalIndices) and must reuse
   // the slots since interactivity is independent of x/y coordinates.
@@ -172,10 +172,11 @@ export class PointStyleState {
    * unattached elements where the lifecycle never runs, so a model recomputed
    * by the lifecycle would be stale there. It is memoized purely on input
    * identity instead: the materialized data, `selectedAnnotation`, the
-   * `hiddenAnnotationValues` ref, the selection and highlight refs,
-   * `eatOverlayEnabled`, the shift-focus values ref, and the three opacity
+   * `hiddenAnnotationValues` ref, the selection and highlight refs, the
+   * shift-focus values ref, and the three opacity
    * numbers (taken as numbers because the merged config is rebuilt on
-   * unrelated changes such as width/height/margin).
+   * unrelated changes such as width/height/margin). The EAT overlay reaches the
+   * model only through the materialized data, which it already rebuilds.
    *
    * Two-level: on a miss the previous model goes to `computeVisibilityModel`,
    * which reuses the O(N) hidden mask when (data, selectedAnnotation, hidden
@@ -191,7 +192,6 @@ export class PointStyleState {
     const hiddenAnnotationValues = host.hiddenAnnotationValues();
     const selectedProteinIds = host.selectedProteinIds();
     const highlightedProteinIds = host.highlightedProteinIds();
-    const eatOverlayEnabled = host.eatOverlayEnabled();
     const focusedValues = host.focusedValues();
     const dimmedMask = this.dimmedMask();
     // A lasso over another dataset's ids, until a swap releases it, marks
@@ -211,7 +211,6 @@ export class PointStyleState {
       key.baseOpacity === baseOpacity &&
       key.selectedOpacity === selectedOpacity &&
       key.fadedOpacity === fadedOpacity &&
-      key.eatOverlayEnabled === eatOverlayEnabled &&
       key.focusedValues === focusedValues &&
       key.dimmedMask === dimmedMask
     ) {
@@ -248,7 +247,6 @@ export class PointStyleState {
       baseOpacity,
       selectedOpacity,
       fadedOpacity,
-      eatOverlayEnabled,
       focusedValues,
       dimmedMask,
     };
@@ -335,14 +333,21 @@ export class PointStyleState {
     const model = this.model();
     const oi = pd.originalIndices;
     const proteinIds = pd.proteinIds;
-    const visible = new Uint8Array(pd.length);
+    // Read off the hidden mask while only hiding decides; a hide at 21M points
+    // then costs a byte gather, not an `opacityAt` and an id load per slot.
+    const byHidden = model.interactiveSlots(oi, pd.length);
+    let visible: Uint8Array;
     let count = 0;
-    for (let s = 0; s < pd.length; s++) {
-      const origIdx = oi ? oi[s] : s;
-      // isInteractive: opacityOf(point) > 0.
-      if (model.opacityAt(origIdx, proteinIds[origIdx]) > 0) {
-        visible[s] = 1;
-        count++;
+    if (byHidden) ({ visible, count } = byHidden);
+    else {
+      visible = new Uint8Array(pd.length);
+      for (let s = 0; s < pd.length; s++) {
+        const origIdx = oi ? oi[s] : s;
+        // isInteractive: opacityOf(point) > 0.
+        if (model.opacityAt(origIdx, proteinIds[origIdx]) > 0) {
+          visible[s] = 1;
+          count++;
+        }
       }
     }
     let ids: Set<string> | null = null;

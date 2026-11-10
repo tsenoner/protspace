@@ -64,10 +64,12 @@ describe('interaction controller structure requests', () => {
       showSelection,
     });
 
-    controller.handleSelectionChange(['p0', 'p1']);
+    const selection = ['p0', 'p1'];
+    controller.handleSelectionChange(selection);
     expect(showSelection).toHaveBeenCalledExactlyOnceWith(['p0', 'p1']);
-    // The controller's own copy, not a second one per change.
-    expect(showSelection.mock.calls[0][0]).toBe(controller.getSelectedProteins());
+    // The selection itself, never a copy per change.
+    expect(showSelection.mock.calls[0][0]).toBe(selection);
+    expect(controller.getSelectedProteins()).toBe(selection);
     expect(requestStructure).not.toHaveBeenCalled();
 
     // An empty selection still reaches the structure, which only clears its choices.

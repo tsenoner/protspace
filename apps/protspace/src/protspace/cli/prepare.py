@@ -46,6 +46,7 @@ from protspace.cli.common_options import (
     Opt_Verbose,
     build_embed_config,
     parse_refetch,
+    refuse_local_only_on_biocentral,
     require_similarity_extra,
     warn_unused_embed_options,
 )
@@ -356,6 +357,7 @@ def prepare(
         require_similarity_extra()
 
     embedders = _parse_embedders(embedder)
+    refuse_local_only_on_biocentral(embedders, backend)
 
     if embedders and not has_fasta and not query:
         raise typer.BadParameter("-e/--embedder requires FASTA input or -q/--query.")

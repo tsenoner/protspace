@@ -37,8 +37,24 @@ import '../kit/button';
 import '../kit/menu';
 import '../kit/popover';
 import type { PsPopover } from '../kit/popover';
+import { catchFallenFocus } from './focus-fallback';
 import './query-value-picker';
 import './query-numeric-input';
+
+/** Proteins with a value, per dataset and annotation, for the operator menu's counts. */
+const presenceCounts = new WeakMap<ProtspaceData, Map<string, number>>();
+
+/** Distinct values a categorical annotation holds, N/A left out, per values array. */
+const valueCounts = new WeakMap<readonly (string | null)[], number>();
+
+function distinctValues(values: readonly (string | null)[]): number {
+  let n = valueCounts.get(values);
+  if (n === undefined) {
+    n = values.filter((v) => v !== null && !isNAValue(v)).length;
+    valueCounts.set(values, n);
+  }
+  return n;
+}
 
 /**
  * Renders a single query condition row.
@@ -56,21 +72,6 @@ import './query-numeric-input';
  * - `eat-panel-open` — a locked EAT reliability card's "Edit in EAT ›", detail: `{ annotation }`
  *   (the base annotation, which the app makes the Color by one so the panel shows it)
  */
-/** Proteins with a value, per dataset and annotation, for the operator menu's counts. */
-const presenceCounts = new WeakMap<ProtspaceData, Map<string, number>>();
-
-/** Distinct values a categorical annotation holds, N/A left out, per values array. */
-const valueCounts = new WeakMap<readonly (string | null)[], number>();
-
-function distinctValues(values: readonly (string | null)[]): number {
-  let n = valueCounts.get(values);
-  if (n === undefined) {
-    n = values.filter((v) => v !== null && !isNAValue(v)).length;
-    valueCounts.set(values, n);
-  }
-  return n;
-}
-
 @customElement('protspace-query-condition-row')
 class ProtspaceQueryConditionRow extends LitElement {
   static styles = queryBuilderStyles;
@@ -194,6 +195,11 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._showAnnotationPicker = false;
     this._annotationSearch = '';
     this._annotationHighlightIndex = -1;
+    // Opened from the ⋯ menu, the picker would hand the focus back to that menu's item, hidden by
+    // then: it goes to the card's annotation trigger instead.
+    catchFallenFocus(this, () =>
+      this.renderRoot.querySelector<HTMLElement>('.annotation-select-trigger'),
+    );
   }
 
   /** Closes this row's annotation and value pickers; `updated()` releases their layers. */
@@ -324,6 +330,11 @@ class ProtspaceQueryConditionRow extends LitElement {
 
   private _handleValuePickerClose() {
     this._showValuePicker = false;
+    // Only "Any value" or N/A ticked: the card closes to "has any value" / "has no value", whose
+    // render drops "+ value" and the list with it, so the focus they held would fall to the page.
+    // The operator pill now says what the card does.
+    if (this.condition.kind === 'categorical' && isPresenceOperator(operatorOf(this.condition)))
+      catchFallenFocus(this, () => this._operatorPillEl);
   }
 
   private _dispatchById(type: 'condition-removed' | 'condition-duplicated') {

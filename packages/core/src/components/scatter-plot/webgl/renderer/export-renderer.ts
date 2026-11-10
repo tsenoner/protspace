@@ -52,7 +52,12 @@ import { createStageArrays, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
 import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 import { allocateLabelAtlas, uploadPlaceholderAtlas } from './label-atlas-texture';
-import { MIN_CAPACITY, drainGlErrors, readMaxTextureSize } from './device-limits';
+import {
+  MAX_EXPORT_DIMENSION,
+  MIN_CAPACITY,
+  drainGlErrors,
+  readMaxTextureSize,
+} from './device-limits';
 import { createPassScratch, stageInPaintOrder } from './pass-staging';
 import {
   POINT_VERTEX_SHADER,
@@ -69,8 +74,6 @@ import {
 // Anchoring to a fixed reference makes the export render reproducible.
 const EXPORT_MARGIN_REFERENCE_WIDTH = 800;
 const EXPORT_MARGIN_REFERENCE_HEIGHT = 600;
-
-const MAX_DIMENSION = 8192;
 
 /**
  * The plot margins at an export size: `config.margin` (20 px when unset) scaled from the fixed
@@ -101,6 +104,9 @@ function scaledFillMaxWidth(config: ScatterplotConfig, exportWidth: number): num
   if (!fillMaxWidth || !Number.isFinite(fillMaxWidth) || !width) return Infinity;
   return (fillMaxWidth / width) * exportWidth;
 }
+
+/** What an export reads of the style: it stages every point through one pass. */
+type ExportStyle = Pick<WebGLStyleGetters, 'createStylePass'>;
 
 /** Options for a single off-screen export render. */
 interface ExportRenderOptions {
@@ -136,9 +142,10 @@ interface ExportRenderOptions {
 export class ExportRenderer {
   /**
    * The scales an export of `exportWidth` × `exportHeight` maps points with. By default the live
-   * plot's fit (design decision 3): the 5%-padded extent with one pixels-per-unit, centred inside
-   * margins scaled from a fixed reference, so a figure has the screen's shape; with
-   * `config.fillPlot` each axis fills the area inside those margins, as on screen (capped as
+   * plot's fit (design decision 3): the padded extent (DATA_EXTENT_PADDING) with one
+   * pixels-per-unit, centred inside margins scaled from a fixed reference, so a figure has the
+   * screen's shape; with `config.fillPlot` each axis fills the area inside those margins, as on
+   * screen (capped as
    * `config.fillMaxWidth` caps it there). A `dataDomain` (inset / geometric-zoom render) fills the
    * canvas edge to edge instead, each axis on its own: the caller picks a domain that already
    * matches its source rect.
@@ -227,7 +234,7 @@ export class ExportRenderer {
   renderToCanvas(
     pd: PlotData | null,
     config: ScatterplotConfig,
-    style: WebGLStyleGetters,
+    style: ExportStyle,
     options: ExportRenderOptions,
   ): HTMLCanvasElement {
     const { width, height, dataDomain, pointSizeReference } = options;
@@ -237,7 +244,7 @@ export class ExportRenderer {
     const physicalWidth = Math.floor(width * dpr);
     const physicalHeight = Math.floor(height * dpr);
 
-    // MAX_DIMENSION alone was described as "the browser limit" but is a constant,
+    // MAX_EXPORT_DIMENSION alone was described as "the browser limit" but is a constant,
     // so on any device reporting less than 8192 the message named a limit that was
     // not the one being enforced — and the export failed later, in the driver.
     // Deliberately NOT `sanitizeMaxTextureSize`: its fallback is the 2048 spec
@@ -247,8 +254,8 @@ export class ExportRenderer {
     const deviceLimit = options.deviceMaxTextureSize;
     const effectiveMaxDimension =
       typeof deviceLimit === 'number' && Number.isFinite(deviceLimit) && deviceLimit >= 1
-        ? Math.min(MAX_DIMENSION, deviceLimit)
-        : MAX_DIMENSION;
+        ? Math.min(MAX_EXPORT_DIMENSION, deviceLimit)
+        : MAX_EXPORT_DIMENSION;
 
     if (physicalWidth > effectiveMaxDimension || physicalHeight > effectiveMaxDimension) {
       throw new Error(
@@ -339,7 +346,7 @@ export class ExportRenderer {
     scales: ScalePair,
     dpr: number,
     config: ScatterplotConfig,
-    style: WebGLStyleGetters,
+    style: ExportStyle,
     options: ExportRenderOptions,
     pointSizeReference?: { width: number; height: number },
   ): void {
@@ -601,7 +608,7 @@ export class ExportRenderer {
   private prepareOffscreenBufferData(
     pd: PlotData,
     scales: ScalePair,
-    style: WebGLStyleGetters,
+    style: ExportStyle,
     selectionActive: boolean,
     labelAtlas: LabelAtlasPlan | null = null,
   ): StagePointArrays & { pointCount: number; selectedStartIndex: number } {

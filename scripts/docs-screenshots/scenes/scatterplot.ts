@@ -5,15 +5,15 @@ import { PLA2, THREE_FINGER } from './demo';
 import { EXAMPLE_MANIFEST } from '../../../apps/web/src/explore/example-manifest';
 import {
   chooseTool,
-  clickLegendItem,
   plotArea,
-  selectProjection,
   selectionBar,
   selectionBarAction,
+  selectProjection,
   statusChip,
   toolButton,
 } from '../../../apps/web/tests/helpers/explore';
 import {
+  clickLegendItem,
   closeLegendSettings,
   legendRowValues,
   legendValueContaining,
@@ -212,10 +212,7 @@ async function duplicateBadgesSteps(page: Page, cap: CaptureApi): Promise<void> 
   await cap.moveTo(anchor.zoomAt, { steps: 20 });
   await cap.hold(300);
   // The zoom keys off the pointer, which now rests beside the stack.
-  for (let i = 0; i < 20; i++) {
-    await page.mouse.wheel(0, -50);
-    await cap.hold(50);
-  }
+  await wheel(page, cap, -50);
   // Stacks are rebuilt on every zoom; read the anchor's new position once it is back.
   const findAnchor = async () => (await duplicateStacks(page)).find((s) => s.key === anchor.key);
   await expect.poll(async () => (await findAnchor()) !== undefined).toBe(true);

@@ -287,6 +287,48 @@ describe('scatterplot tooltip actions', () => {
     expect(pinned(plot)).toBeNull();
   });
 
+  it('an isolation that leaves the pinned protein out ends the pin; one that keeps it does not', async () => {
+    const plot = await mountPlot();
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
+
+    // Isolate keeps the protein: the card stays at it.
+    plot.selectedProteinIds = ['P2', 'P3'];
+    plot.isolateSelection();
+    for (let i = 0; i < 3; i++) await frame();
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
+
+    // Isolate leaves it out (a keyboard shortcut, no press on the plot).
+    plot.selectedProteinIds = ['P3'];
+    plot.isolateSelection();
+    await plot.updateComplete;
+    expect(plot.getProteinClientPosition('P2')).toBeNull();
+    expect(pinned(plot)).toBeNull();
+    // Its layer went with it: Escape reaches the fallbacks again.
+    const fallback = vi.fn(() => true);
+    cleanups.push(onEscapeFallback(ESCAPE_ORDER.selection, fallback));
+    escape();
+    expect(fallback).toHaveBeenCalledOnce();
+  });
+
+  it('undoing an isolation step (popIsolation) keeps a pin on a protein still plotted', async () => {
+    const plot = await mountPlot();
+    plot.selectedProteinIds = ['P2', 'P3'];
+    plot.isolateSelection();
+    plot.selectedProteinIds = ['P3'];
+    plot.isolateSelection();
+    await gridReady(plot);
+    // Pin P3, then step back to P2 + P3 and on to the full view: P3 stays in both.
+    mouse(plot, 'click', at(plot, 'P3'));
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
+    plot.popIsolation();
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
+  });
+
   it('the action button dispatches tooltip-action with the protein id', async () => {
     const plot = await mountPlot();
     const actions = vi.fn();

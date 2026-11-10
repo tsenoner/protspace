@@ -18,23 +18,23 @@ import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { perfDatasetFile } from './datasets.mjs';
 import { promisify } from 'node:util';
+import {
+  ROOT,
+  children,
+  createUsage,
+  resolveDataset,
+  serve,
+  stopChildren,
+  stopChildrenOnSignals,
+} from './harness.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const APP = path.join(ROOT, 'apps/web');
 const exec = promisify(execFile);
+const usage = createUsage('perf:scale', import.meta.url);
 const CHROME_PATHS = {
   darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   linux: '/opt/google/chrome/chrome',
 };
-
-function usage(message) {
-  if (message) console.error(`perf:scale: ${message}\n`);
-  console.error(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\nimport ')[0]);
-  process.exit(message ? 2 : 0);
-}
 
 function parseArgs(argv) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -60,7 +60,10 @@ function parseArgs(argv) {
     };
     switch (flag) {
       case '--datasets':
-        opts.datasets = value().split(',').filter(Boolean).map(resolveDataset);
+        opts.datasets = value()
+          .split(',')
+          .filter(Boolean)
+          .map((spec) => resolveDataset(spec, usage));
         break;
       case '--cold':
       case '--reps':
@@ -112,74 +115,6 @@ function parseArgs(argv) {
     opts.browser = 'chromium';
   }
   return opts;
-}
-
-/** `name=path`, a path, or a dataset id of perf/datasets.manifest.json. */
-function resolveDataset(spec) {
-  const eq = spec.indexOf('=');
-  const named = eq > 0 ? spec.slice(eq + 1) : spec;
-  let file;
-  if (named.includes('/') || named.endsWith('.parquetbundle')) {
-    file = path.resolve(named);
-    if (!fs.existsSync(file)) usage(`no dataset file ${file}`);
-  } else {
-    const found = perfDatasetFile(named);
-    if (found.error) usage(found.error);
-    file = found.file;
-  }
-  const name = eq > 0 ? spec.slice(0, eq) : path.basename(file).replace(/\.parquetbundle$/, '');
-  return { name, file };
-}
-
-const children = new Set();
-
-function run(cmd, args, options = {}) {
-  return new Promise((resolve) => {
-    const child = spawn(cmd, args, { stdio: 'inherit', ...options });
-    children.add(child);
-    child.on('exit', (code, signal) => {
-      children.delete(child);
-      resolve(code ?? (signal ? 1 : 0));
-    });
-  });
-}
-
-async function waitForServer(url, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const up = await fetch(url, { signal: AbortSignal.timeout(2_000) }).then(
-      (r) => r.ok,
-      () => false,
-    );
-    if (up) return;
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  throw new Error(`${url} did not answer within ${timeoutMs / 1000} s`);
-}
-
-/** Build (unless --no-build) and serve this checkout with `vite preview`; returns its URL. */
-async function serve(opts) {
-  if (opts.build) {
-    const code = await run('pnpm', ['turbo', 'run', 'build', '--filter=@protspace/app'], {
-      cwd: ROOT,
-    });
-    if (code !== 0) throw new Error(`build failed (${code})`);
-  }
-  const url = `http://localhost:${opts.port}`;
-  const taken = await fetch(url, { signal: AbortSignal.timeout(2_000) }).then(
-    () => true,
-    () => false,
-  );
-  if (taken) throw new Error(`port ${opts.port} is in use; stop it or pass --url`);
-  const preview = spawn(
-    path.join(APP, 'node_modules/.bin/vite'),
-    ['preview', '--port', String(opts.port), '--strictPort'],
-    { cwd: APP, stdio: ['ignore', 'ignore', 'inherit'] },
-  );
-  children.add(preview);
-  preview.on('exit', () => children.delete(preview));
-  await waitForServer(url, 30_000);
-  return url;
 }
 
 /** Every process as { pid, ppid, rss (bytes), args }. */
@@ -616,21 +551,16 @@ function toCsv(datasets) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  for (const signal of ['SIGINT', 'SIGTERM']) {
-    process.on(signal, () => {
-      for (const child of children) child.kill('SIGTERM');
-      process.exit(130);
-    });
-  }
+  stopChildrenOnSignals();
   fs.mkdirSync(opts.out, { recursive: true });
-  const url = opts.url || (await serve(opts));
+  const url = opts.url || (await serve({ port: opts.port, build: opts.build }));
   const runs = [];
   try {
     for (let round = 0; round < opts.rounds; round++) {
       for (const dataset of opts.datasets) runs.push(await runDataset(opts, url, dataset, round));
     }
   } finally {
-    for (const child of children) child.kill('SIGTERM');
+    stopChildren();
   }
   const datasets = aggregate(runs);
   const meta = {
@@ -658,6 +588,6 @@ async function main() {
 
 main().catch((error) => {
   console.error(`perf:scale: ${error.message}`);
-  for (const child of children) child.kill('SIGTERM');
+  stopChildren();
   process.exit(1);
 });

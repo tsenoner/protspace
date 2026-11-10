@@ -16,8 +16,8 @@
  *     This is observable without connecting and without any `updateComplete`
  *     await (which hangs on an un-appended element).
  *
- *   - colorOnly guardrail: colorOnly=true skips `invalidateDepthOrder()`;
- *     colorOnly=false forces it.
+ *   - No re-sort guardrail: a colour/shape mapping change restyles categories
+ *     and never calls `invalidateDepthOrder()`.
  *
  *   - Key validation: a malformed/partial detail must NOT overwrite the
  *     mapping fields with `undefined`. The handlers check the detail with
@@ -127,7 +127,6 @@ describe('legend mapping handlers — single render path', () => {
       colorMappingEvent({
         colorMapping: { A: '#111111', B: '#222222' },
         shapeMapping: { A: 'circle', B: 'square' },
-        colorOnly: false,
       }),
     );
 
@@ -141,38 +140,23 @@ describe('legend mapping handlers — single render path', () => {
   });
 });
 
-describe('legend mapping handlers — colorOnly contract', () => {
-  it('colorOnly=true does NOT call invalidateDepthOrder', () => {
+describe('legend mapping handlers — no depth re-sort for colours and shapes', () => {
+  it('a colour/shape mapping change restyles categories without a re-sort', () => {
     const el = makeEl();
     vi.spyOn(el, '_renderPlot').mockImplementation(() => {});
 
     el._handleColorMappingChange(
       colorMappingEvent({
         colorMapping: { A: '#1' },
-        shapeMapping: { A: 'circle' },
-        colorOnly: true,
+        shapeMapping: { A: 'square' },
       }),
     );
 
+    // Paint depth reads no colour or shape; the legend's z-order has its own event.
     expect(el._webglRenderer.invalidateDepthOrder).not.toHaveBeenCalled();
     // Whole categories restyle: the renderer rewrites its per-record table.
     expect(el._webglRenderer.invalidateCategoryStyles).toHaveBeenCalledTimes(1);
     expect(el._webglRenderer.invalidateStyleCache).not.toHaveBeenCalled();
-  });
-
-  it('colorOnly=false DOES call invalidateDepthOrder', () => {
-    const el = makeEl();
-    vi.spyOn(el, '_renderPlot').mockImplementation(() => {});
-
-    el._handleColorMappingChange(
-      colorMappingEvent({
-        colorMapping: { A: '#1' },
-        shapeMapping: { A: 'circle' },
-        colorOnly: false,
-      }),
-    );
-
-    expect(el._webglRenderer.invalidateDepthOrder).toHaveBeenCalledTimes(1);
   });
 });
 

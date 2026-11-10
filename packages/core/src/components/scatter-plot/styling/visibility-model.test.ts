@@ -3,6 +3,7 @@ import type { VisualizationData, PlotDataPoint, AnnotationData } from '@protspac
 import { NA_VALUE } from '@protspace/utils';
 import type { VisibilityInputs, VisibilityModel } from './visibility-model';
 import { computeVisibilityModel } from './visibility-model';
+import { seededRandom } from '../../../test-support/seeded-random';
 
 /**
  * Unit contract for the pure visibility model.
@@ -676,8 +677,7 @@ describe('computeVisibilityModel', () => {
       Int32Array.from({ length: n }, (_, i) => i % 3),
     );
     const ids = data.protein_ids;
-    let seed = 7;
-    const random = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    const random = seededRandom(7);
     const pick = <T>(items: readonly T[], p: number) => items.filter(() => random() < p);
 
     // Marked slots and interactive slots as per-id set lookups decide them.
@@ -1027,7 +1027,7 @@ describe('interactivityKey', () => {
     expect(hidden.interactivityKey).not.toBe(first.interactivityKey);
   });
 
-  it('is the model itself while a tier is 0', () => {
+  it('is the model itself while a tier a shown point can take is 0', () => {
     const inputs = baseInputs({
       data,
       hiddenAnnotationValues,
@@ -1035,7 +1035,102 @@ describe('interactivityKey', () => {
     });
     const first = computeVisibilityModel(inputs);
     const selected = computeVisibilityModel({ ...inputs, selectedProteinIds: ['p0'] }, first);
-    expect(first.interactivityKey).toBe(first);
+    // Nothing selected or focused: no point fades, so the 0 is out of reach.
+    expect(first.interactivityKey).not.toBe(first);
     expect(selected.interactivityKey).toBe(selected);
+  });
+});
+
+describe('interactiveSlots', () => {
+  /** `isInteractive` per slot, the definition `interactiveSlots` must match. */
+  function perSlot(model: VisibilityModel, data: VisualizationData, oi: Int32Array | null) {
+    const count = oi ? oi.length : data.protein_ids.length;
+    const visible = new Uint8Array(count);
+    let shown = 0;
+    for (let s = 0; s < count; s++) {
+      const i = oi ? oi[s] : s;
+      if (model.opacityAt(i, data.protein_ids[i]) > 0) {
+        visible[s] = 1;
+        shown++;
+      }
+    }
+    return { visible, count: shown };
+  }
+
+  it('is null exactly while a reachable tier is 0', () => {
+    const data = makeData(['A', 'B'], Int32Array.of(0, 1, 0));
+    const at = (overrides: Partial<VisibilityInputs>) =>
+      computeVisibilityModel(baseInputs({ data, ...overrides })).interactiveSlots(null, 3);
+    const zero = (tier: keyof typeof OPACITIES) => ({ opacities: { ...OPACITIES, [tier]: 0 } });
+
+    expect(at({})).not.toBeNull();
+    expect(at(zero('base'))).toBeNull();
+    // Unmarked and unfocused: only base is reachable.
+    expect(at(zero('faded'))).not.toBeNull();
+    expect(at(zero('selected'))).not.toBeNull();
+    // A selection reaches selected and faded, not base.
+    expect(at({ ...zero('base'), selectedProteinIds: ['p0'] })).not.toBeNull();
+    expect(at({ ...zero('faded'), selectedProteinIds: ['p0'] })).toBeNull();
+    expect(at({ ...zero('selected'), selectedProteinIds: ['p0'] })).toBeNull();
+    // A highlight alone reaches selected and base.
+    expect(at({ ...zero('faded'), highlightedProteinIds: ['p0'] })).not.toBeNull();
+    expect(at({ ...zero('base'), highlightedProteinIds: ['p0'] })).toBeNull();
+    // Focus reaches selected and faded, not base.
+    expect(at({ ...zero('base'), focusedValues: ['A'] })).not.toBeNull();
+    expect(at({ ...zero('faded'), focusedValues: ['A'] })).toBeNull();
+    // A NaN tier is not above 0.
+    expect(at({ opacities: { ...OPACITIES, base: NaN } })).toBeNull();
+  });
+
+  it('matches isInteractive per slot on random data, hiding, marks, focus and opacities', () => {
+    const random = seededRandom(526);
+    const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)];
+    const values = ['A', 'B', 'C', null];
+    const tiers = [0, 0.2, 0.8, 1];
+    let fast = 0;
+    let fallback = 0;
+    for (let round = 0; round < 400; round++) {
+      const n = 1 + Math.floor(random() * 60);
+      // Codes past the values and below 0 included; multilabel rows may be empty.
+      const rows: AnnotationData =
+        random() < 0.5
+          ? Int32Array.from({ length: n }, () => Math.floor(random() * 6) - 1)
+          : Array.from({ length: n }, () =>
+              Array.from({ length: Math.floor(random() * 3) }, () => Math.floor(random() * 5)),
+            );
+      const data = makeData(values, rows);
+      const ids = data.protein_ids;
+      const some = () => ids.filter(() => random() < 0.2);
+      const inputs = baseInputs({
+        data,
+        selectedAnnotation: pick(['annot', 'annot', 'annot', '', 'missing']),
+        hiddenAnnotationValues: [...values.map((v) => v ?? NA_VALUE), 'Z'].filter(
+          () => random() < 0.4,
+        ),
+        selectedProteinIds: random() < 0.4 ? some() : [],
+        highlightedProteinIds: random() < 0.3 ? some() : [],
+        focusedValues: random() < 0.3 ? [pick(['A', 'B', NA_VALUE])] : null,
+        opacities: { base: pick(tiers), selected: pick(tiers), faded: pick(tiers) },
+      });
+      const model = computeVisibilityModel(inputs);
+      // Identity, or a subset in random order with an out-of-range index.
+      const oi =
+        random() < 0.5
+          ? null
+          : Int32Array.from(
+              ids.map((_, i) => i).filter(() => random() < 0.7),
+              (i) => (random() < 0.05 ? n + 3 : i),
+            ).sort(() => random() - 0.5);
+      const slots = model.interactiveSlots(oi, oi ? oi.length : n);
+      if (!slots) {
+        fallback++;
+        continue;
+      }
+      fast++;
+      expect(slots).toEqual(perSlot(model, data, oi));
+    }
+    // Both paths are exercised.
+    expect(fast).toBeGreaterThan(100);
+    expect(fallback).toBeGreaterThan(50);
   });
 });

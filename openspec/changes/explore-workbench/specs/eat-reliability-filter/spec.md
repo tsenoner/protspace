@@ -27,3 +27,18 @@ or removing the filter from its chip, SHALL return the control to its default po
 - **WHEN** the user edits the reliability condition in the draft
 - **THEN** the control does not move until the user applies the draft, and after a Reset it returns
   to its default position
+
+## MODIFIED Requirements
+
+### Requirement: A query matching nothing does not blank the plot
+
+Applying a query whose result is empty SHALL keep it as the applied filter, so the plot shows no
+proteins, the Filter chip stays, and removing the chip or undoing restores every protein. The query
+builder's Apply stays disabled at a count of 0; the reliability control can still reach an empty
+result, which is then shown as such rather than silently dropped.
+
+#### Scenario: A self-contradicting query
+
+- **WHEN** the applied query matches no proteins
+- **THEN** the plot shows no proteins and the Filter chip stays applied
+- **AND** removing the chip or undoing the change shows every protein again

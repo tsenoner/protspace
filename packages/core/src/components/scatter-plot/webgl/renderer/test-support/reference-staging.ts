@@ -9,6 +9,15 @@ import type { PointStylePass, ScalePair, WebGLStyleGetters } from '../../types';
 import { composePaintDepth } from '../../../paint-depth';
 import { packPointStyle, type StagePointArrays, type StagePointStyleArrays } from '../stage-point';
 
+/**
+ * The renderer's getters plus the two only the reference reads: a pass resolves
+ * shape and point size itself, so the renderer never asks for them per point.
+ */
+export interface ReferenceStyle extends WebGLStyleGetters {
+  getPointSize: (point: PlotDataPoint) => number;
+  getShape: (point: PlotDataPoint) => string;
+}
+
 /** Slot `slot` of `pd` as the getters see it, written into `sp`. */
 function pointAt(sp: PlotDataPoint, pd: PlotData, slot: number): PlotDataPoint {
   const origIdx = pd.originalIndices ? pd.originalIndices[slot] : slot;
@@ -25,7 +34,7 @@ function stagePointStyle(
   idx: number,
   sp: PlotDataPoint,
   opacity: number,
-  style: WebGLStyleGetters,
+  style: ReferenceStyle,
 ): void {
   packPointStyle(
     target,
@@ -39,7 +48,7 @@ function stagePointStyle(
 }
 
 export function referenceStage(
-  style: WebGLStyleGetters,
+  style: ReferenceStyle,
   pd: PlotData,
   scales: ScalePair,
   count: number,
@@ -71,7 +80,7 @@ export function referenceStage(
 
 /** The colour-only re-stage: style channels in the staged order. */
 export function referenceRestage(
-  style: WebGLStyleGetters,
+  style: ReferenceStyle,
   pd: PlotData,
   order: Uint32Array,
   count: number,
@@ -88,7 +97,7 @@ export function referenceRestage(
  * A pass over the getters, keyed as the scatter plot's pass is: a record per
  * distinct colours and shape, and one point size for the pass, the first point's.
  */
-export function referenceStylePass(style: WebGLStyleGetters): PointStylePass {
+export function referenceStylePass(style: ReferenceStyle): PointStylePass {
   const sp: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
   const records = { colors: [] as string[][], shapes: [] as string[], pointSize: 0 };
   const recordOf = new Map<string, number>();

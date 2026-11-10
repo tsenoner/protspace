@@ -48,11 +48,6 @@ export function exploreStorageState(
   return { cookies: [], origins: [{ origin: new URL(baseUrl).origin, localStorage }] };
 }
 
-/** The tour already seen, and nothing else: what every e2e context starts with. */
-export function tourCompletedStorageState(baseUrl: string): BrowserContextOptions['storageState'] {
-  return exploreStorageState(baseUrl);
-}
-
 /**
  * Marks the product tour as seen before any of the page's scripts run: for a page whose context
  * does not start from `exploreStorageState`, such as one a test opens with `browser.newContext`.

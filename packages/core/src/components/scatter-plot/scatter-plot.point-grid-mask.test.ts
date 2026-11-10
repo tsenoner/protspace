@@ -95,7 +95,8 @@ describe('point grid over every slot, masked to the visible ones', () => {
       [['A'], false],
     ] as const) {
       sp.hiddenAnnotationValues = [...hidden];
-      const opacityAt = vi.spyOn(sp._style.model(), 'opacityAt');
+      // With every tier above 0 the pass gathers the hidden mask instead of asking per slot.
+      const pass = vi.spyOn(sp._style.model(), 'interactiveSlots');
       const count = countFirst ? sp._getVisiblePointCount() : -1;
       sp._pointGrid.scheduleRemark();
       frames.flush();
@@ -103,7 +104,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
       expect(slots).toEqual(all.filter((s) => familyOf(sp, s) !== hidden[0]));
       expect(sp._getVisiblePointCount()).toBe(slots.length);
       if (countFirst) expect(count).toBe(slots.length);
-      expect(opacityAt).toHaveBeenCalledTimes(n);
+      expect(pass).toHaveBeenCalledTimes(1);
     }
   });
 

@@ -300,8 +300,9 @@ the Escape handling in `control-bar.ts` and the legend's own focus trap.
   that visible.
 - "Other · N categories" opens a searchable popover listing those categories with their counts and an
   "Add to legend" button each, replacing the "Extract from Other" modal.
-- Settings become a popover under the settings button. Changes apply as they are made (debounced), as the colour
-  picker already does, and "Reset" restores the defaults; the Save/Cancel pair goes. The palette is
+- Settings become a popover under the settings button. Changes apply as they are made (debounced; Max legend
+  items on Enter, blur or close, so an in-between value never drops the hidden rows' customisations), as the
+  colour picker already does, and "Reset" restores the defaults; the Save/Cancel pair goes. The palette is
   picked from swatches instead of a native `<select>`. Category order moves out of settings into the
   list itself (drag, or the sort button). Persistence keeps today's per-dataset, per-annotation key,
   so saved settings carry over.

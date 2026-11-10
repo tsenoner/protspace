@@ -7,7 +7,6 @@ import {
   evaluateQuery,
   evaluateQueryExcluding,
   hasConfiguredCondition,
-  resolveAnnotationValue,
   resolveAnnotationInternalValues,
 } from './query-evaluate';
 
@@ -36,31 +35,39 @@ function createTestData(): ProtspaceData {
   };
 }
 
-describe('resolveAnnotationValue', () => {
-  it('resolves value from number[][] format', () => {
-    const data = createTestData();
-    expect(resolveAnnotationValue(0, 'organism', data)).toBe('Human');
-    expect(resolveAnnotationValue(1, 'organism', data)).toBe('Mouse');
+describe('categorical storage shapes', () => {
+  const organism = (data: ProtspaceData['annotation_data']) =>
+    ({
+      protein_ids: ['P1', 'P2', 'P3', 'P4'],
+      annotations: { organism: { values: ['Human', 'Mouse', null] } },
+      annotation_data: data,
+    }) as ProtspaceData;
+  const is = (...values: string[]): FilterQuery => [
+    { id: 'c', kind: 'categorical', annotation: 'organism', values },
+  ];
+
+  it('reads Int32Array columns: -1, a null value and an index past the list are N/A', () => {
+    // P1=Human, P2=Mouse, P3=-1 (none), P4=index 7 (outside the declared values)
+    const data = organism({ organism: Int32Array.from([0, 1, -1, 7]) });
+    expect([...evaluateQuery(is('Human'), data)]).toEqual([0]);
+    expect([...evaluateQuery(is(NA_VALUE), data)]).toEqual([2, 3]);
+    expect([...evaluateQuery(is(ANY_VALUE), data)]).toEqual([0, 1]);
   });
 
-  it('returns null for missing annotation', () => {
-    const data = createTestData();
-    expect(resolveAnnotationValue(0, 'nonexistent', data)).toBeNull();
-  });
-
-  it('returns null for out-of-range index', () => {
-    const data = createTestData();
-    expect(resolveAnnotationValue(99, 'organism', data)).toBeNull();
-  });
-
-  it('handles Int32Array format (single-valued columns)', () => {
-    const data: ProtspaceData = {
-      protein_ids: ['P1', 'P2'],
-      annotations: { organism: { values: ['Human', 'Mouse'] } },
-      annotation_data: { organism: Int32Array.from([0, 1]) },
-    };
-    expect(resolveAnnotationValue(0, 'organism', data)).toBe('Human');
-    expect(resolveAnnotationValue(1, 'organism', data)).toBe('Mouse');
+  it('reads CSR columns, a declared null sharing the N/A value with an empty row', () => {
+    // P1=[Human, Mouse], P2=[], P3=[null], P4=[Mouse, Mouse]
+    const data = organism({
+      organism: {
+        kind: 'csr',
+        offsets: Int32Array.from([0, 2, 2, 3, 5]),
+        codes: Int32Array.from([0, 1, 2, 1, 1]),
+        length: 4,
+      },
+    });
+    expect([...evaluateQuery(is('Mouse'), data)]).toEqual([0, 3]);
+    expect([...evaluateQuery(is(NA_VALUE), data)]).toEqual([1, 2]);
+    expect(resolveAnnotationInternalValues(3, 'organism', data)).toEqual(['Mouse']);
+    expect(resolveAnnotationInternalValues(2, 'organism', data)).toEqual([NA_VALUE]);
   });
 });
 

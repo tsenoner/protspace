@@ -169,9 +169,7 @@ describe('protspace-structure-viewer links row', () => {
       );
       expect(link.contains(hit)).toBe(true);
       // The new-tab hint is read, not seen.
-      expect(
-        link.querySelector('.resource-links-hint')!.getBoundingClientRect().width,
-      ).toBeLessThanOrEqual(1);
+      expect(link.querySelector('.sr-only')!.getBoundingClientRect().width).toBeLessThanOrEqual(1);
     }
   });
 });
@@ -233,6 +231,25 @@ describe('protspace-structure-viewer protein choices', () => {
     await viewer.updateComplete;
     expect(viewer.proteinId).toBe('P22222');
     expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it('a menu open when the protein goes away does not open unasked with the next protein', async () => {
+    const viewer = await mount();
+    viewer.proteinChoices = ['P11111', 'P12345', 'P22222'];
+    await viewer.updateComplete;
+    await vi.waitFor(() => expect(pickButton(viewer).getAttribute('aria-haspopup')).toBe('menu'));
+    await open(viewer);
+
+    // The empty state drops the menu without its ps-close.
+    viewer.proteinId = null;
+    await viewer.updateComplete;
+    expect(viewer.shadowRoot!.querySelector('ps-menu')).toBeNull();
+
+    viewer.proteinId = 'P22222';
+    await viewer.updateComplete;
+    await vi.waitFor(() => expect(pickButton(viewer).getAttribute('aria-haspopup')).toBe('menu'));
+    expect(pickButton(viewer).getAttribute('aria-expanded')).toBe('false');
+    expect(items(viewer)).toHaveLength(0);
   });
 
   it('from the keyboard, focus lands on the checked item and Escape returns it to the id', async () => {

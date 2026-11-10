@@ -19,8 +19,8 @@ plot SHALL carry no help button of its own.
 
 ### Requirement: The keyboard shortcuts are listed in one place
 
-The keyboard button in the plot's corner (Keyboard shortcuts in More → Help & shortcuts on a
-phone) SHALL open a dialog, with focus inside, listing every keyboard and pointer
+The plot corner's keyboard button SHALL open a dialog (Keyboard shortcuts in More → Help &
+shortcuts on a phone), with focus inside, listing every keyboard and pointer
 shortcut of the explore page in titled groups, Mod written as ⌘ on Apple platforms and Ctrl
 elsewhere. The list SHALL name the search shortcut, the legend's I, undo and redo under History,
 the figure editor's Delete and its Escape that deselects before it closes, and the Escape steps in

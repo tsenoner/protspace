@@ -1342,3 +1342,215 @@ describe('<protspace-publish-modal> fingerprint warning', () => {
     });
   });
 });
+
+describe('<protspace-publish-modal> review fixes', () => {
+  let restoreGetContext: () => void;
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    restoreGetContext = stubCanvasGetContext();
+  });
+  afterEach(async () => {
+    // Removed while the environment is still up: ps-dialog's disconnect settles in a microtask.
+    document.body.innerHTML = '';
+    await Promise.resolve();
+    restoreGetContext();
+  });
+
+  type Internals = SelectionInternals & {
+    _tool: string;
+    _exportError: string | null;
+    _overlayController: { callbacks: { onInsetAdded(inset: unknown): void } } | null;
+  };
+  const shadow = (modal: HTMLElement) => modal.shadowRoot!;
+  const button = (modal: HTMLElement, name: string) =>
+    [...shadow(modal).querySelectorAll<HTMLElement>('ps-button, button')].find(
+      (each) => each.textContent?.trim() === name,
+    )!;
+
+  it('removing an earlier overlay keeps the selection on the same overlay', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as Internals;
+    const label = { type: 'label', x: 0.2, y: 0.2, text: 'B', fontSize: 14, color: '#000' };
+    internals._state = { ...internals._state, overlays: [sampleCircle, label] };
+    internals._selectedItem = { kind: 'overlay', index: 1 };
+    internals.requestUpdate();
+    await modal.updateComplete;
+
+    shadow(modal)
+      .querySelector<HTMLButtonElement>('[data-publish-item="overlay-0"] .delete-btn')!
+      .click();
+    await modal.updateComplete;
+
+    expect(internals._selectedItem).toEqual({ kind: 'overlay', index: 0 });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }));
+    await modal.updateComplete;
+    // Delete removes the label the selection still points at, not nothing.
+    expect(internals._state.overlays).toEqual([]);
+  });
+
+  it('removing a later inset leaves an earlier selection alone', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as Internals;
+    internals._state = { ...internals._state, insets: [sampleInset, sampleInset] };
+    internals._selectedItem = { kind: 'inset', index: 0 };
+    internals.requestUpdate();
+    await modal.updateComplete;
+
+    shadow(modal)
+      .querySelector<HTMLButtonElement>('[data-publish-item="inset-1"] .delete-btn')!
+      .click();
+    await modal.updateComplete;
+    expect(internals._selectedItem).toEqual({ kind: 'inset', index: 0 });
+  });
+
+  it('placing an inset hands the toolbar back to Select', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as Internals;
+    button(modal, 'Zoom Inset').click();
+    await modal.updateComplete;
+    expect(internals._tool).toBe('inset-source');
+
+    internals._overlayController!.callbacks.onInsetAdded(sampleInset);
+    await modal.updateComplete;
+    expect(internals._tool).toBe('select');
+    expect(button(modal, 'Select').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('Clear overlays in the view warning also drops the selection', async () => {
+    const modal = document.createElement('protspace-publish-modal') as ProtspacePublishModal;
+    modal.savedPublishState = {
+      viewFingerprint: { projection: 'PCA', dimensionality: 2 },
+      overlays: [sampleCircle],
+    };
+    modal.currentProjection = { projection: 'UMAP', dimensionality: 2 };
+    document.body.appendChild(modal);
+    await modal.updateComplete;
+    const internals = modal as unknown as Internals;
+    internals._selectedItem = { kind: 'overlay', index: 0 };
+    await modal.updateComplete;
+
+    shadow(modal).querySelector<HTMLAnchorElement>('.publish-warning a')!.click();
+    await modal.updateComplete;
+
+    expect(internals._state.overlays).toEqual([]);
+    expect(internals._selectedItem).toBeNull();
+    expect(shadow(modal).querySelector('.publish-warning')).toBeNull();
+  });
+
+  it('says in the dialog why drawing the figure failed, and dispatches nothing', async () => {
+    const modal = makeModal();
+    modal.plotElement = document.createElement('div');
+    await modal.updateComplete;
+    // What a lost WebGL context or a canvas past the browser's size limit throws mid-render.
+    (modal as unknown as { _renderFigure: () => never })._renderFigure = () => {
+      throw new Error('WebGL context lost');
+    };
+    const exported = vi.fn();
+    modal.addEventListener('publish-export', exported);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    button(modal, 'Export').click();
+    await vi.waitFor(() =>
+      expect((modal as unknown as Internals)._exportError).toBe(
+        'Export failed. WebGL context lost',
+      ),
+    );
+    await modal.updateComplete;
+    expect(shadow(modal).querySelector('.publish-export-error')?.textContent).toContain(
+      'WebGL context lost',
+    );
+    expect(exported).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('holds a typed legend size to the slider range, and the box shows it', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as { _state: { legend: { widthPercent: number } } };
+    const box = shadow(modal).querySelector<HTMLInputElement>(
+      'input[type="number"][aria-label="Legend size"]',
+    )!;
+    box.value = '500';
+    box.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    expect(internals._state.legend.widthPercent).toBe(100);
+    expect(box.value).toBe('100');
+
+    // Typed again past the clamp: the state does not move, the box still says 100.
+    box.value = '900';
+    box.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    expect(box.value).toBe('100');
+  });
+
+  it('puts a rejected size back in its box', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const width = shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="width"]')!;
+    const before = width.value;
+    width.value = '-5';
+    width.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    expect(width.value).toBe(before);
+  });
+
+  it('shows the clamped height when a preset caps it at the height it already has', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as PublishInternals;
+    [...shadow(modal).querySelectorAll<HTMLButtonElement>('.publish-preset-btn')]
+      .find((b) => /Nature.*1 col/i.test(b.textContent ?? ''))!
+      .click();
+    await modal.updateComplete;
+    const slider = shadow(modal).querySelector<HTMLInputElement>(
+      '[data-publish-input="height-slider"]',
+    )!;
+    slider.value = '8000';
+    slider.dispatchEvent(new Event('input'));
+    await modal.updateComplete;
+    expect(internals._state.heightPx).toBe(2917);
+
+    // In px the box speaks pixels; a second push past the cap leaves the state where it is.
+    internals._state = { ...internals._state, unit: 'px' };
+    await modal.updateComplete;
+    const box = shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="height"]')!;
+    box.value = '9999';
+    box.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    expect(internals._state.heightPx).toBe(2917);
+    expect(box.value).toBe('2917');
+  });
+
+  it('holds a typed resolution to the box range', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as PublishInternals;
+    // Resample off: only the print size follows, so the box's own range is the bound.
+    shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="resample"]')!.click();
+    await modal.updateComplete;
+    expect(internals._state.resample).toBe(false);
+    const dpi = shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="dpi"]')!;
+    dpi.value = '99999';
+    dpi.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    expect(internals._state.dpi).toBe(2400);
+    expect(dpi.value).toBe('2400');
+  });
+
+  it('with Resample on, holds a typed resolution to where the figure reaches the export cap', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as PublishInternals;
+    expect(internals._state).toMatchObject({ widthPx: 2048, heightPx: 1024, resample: true });
+    const dpi = shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="dpi"]')!;
+    dpi.value = '2400';
+    dpi.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    // 2048 px at 300 dpi is 173.4 mm, which spans MAX_EXPORT_DIMENSION px at 1200 dpi.
+    expect(internals._state).toMatchObject({ dpi: 1200, widthPx: 8192, heightPx: 4096 });
+    expect(dpi.value).toBe('1200');
+  });
+});

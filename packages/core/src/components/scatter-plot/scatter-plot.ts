@@ -167,6 +167,14 @@ function sameSlots(a: Int32Array | null, b: Int32Array | null): boolean {
 
 // Default configuration moved to config.ts
 
+/** What a plot data was built from (see `_plotDataBuild`). */
+interface PlotDataBuild {
+  data: VisualizationData;
+  projection: VisualizationData['projections'][number];
+  plane: 'xy' | 'xz' | 'yz';
+  culled: boolean;
+}
+
 /**
  * High-performance WebGL-based scatterplot component for large datasets.
  * Uses WebGL for rendering and SVG overlay for interactions.
@@ -229,6 +237,10 @@ export class ProtspaceScatterplot extends LitElement {
 
   // State
   @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
+  // Bumped when the selected annotation's values change under the same plot data (a
+  // numeric rebin), so the update cycle redraws what reads them; `_plotData` keeps its
+  // identity, which the point grid and the renderer key their staged work on.
+  @state() private _annotationRevision = 0;
   @state() private _tooltipData: {
     x: number;
     y: number;
@@ -336,13 +348,10 @@ export class ProtspaceScatterplot extends LitElement {
   });
   // The un-culled plot data and its point grid (both in `grid`), set aside while a query
   // filter or isolation culls the plot. Leaving the cull swaps them back instead of
-  // rebuilding both (see `_processData`). `projection`, `proteinIds` and `plane` are what
-  // the plot data was built from.
+  // rebuilding both (see `_processData`). `build` is what the plot data was built from.
   private _fullView: {
     grid: GridStash;
-    projection: VisualizationData['projections'][number];
-    proteinIds: readonly string[];
-    plane: 'xy' | 'xz' | 'yz';
+    build: PlotDataBuild;
   } | null = null;
   // Coalesced full renders and the projection glide.
   private _renderLoop = new RenderLoop({
@@ -425,13 +434,7 @@ export class ProtspaceScatterplot extends LitElement {
   // run over a culled build: it can never restore removed points, so clearing a filter
   // would leave the canvas showing the old subset while the legend (fed from
   // getCurrentData()) shows everything.
-  private _plotDataBuild: {
-    data: VisualizationData;
-    projection: VisualizationData['projections'][number];
-    proteinIds: readonly string[];
-    plane: 'xy' | 'xz' | 'yz';
-    culled: boolean;
-  } | null = null;
+  private _plotDataBuild: PlotDataBuild | null = null;
   private _numericRecompute = new NumericRecomputeRunner({
     hasData: () => !!this.data,
     getSelectedAnnotation: () => this.selectedAnnotation,
@@ -524,37 +527,22 @@ export class ProtspaceScatterplot extends LitElement {
   private _createWebglRenderer() {
     if (!this._canvas) return;
     const style = this._style;
-    type Getters = ReturnType<PointStyleState['getters']>;
-    // The per-point getters over the live getters (the theme's greys) or the export's light ones.
-    const pointStyles = (getters: () => Getters) => ({
-      getColors: (p: PlotDataPoint) => getters().getColors(p),
-      getPointSize: (p: PlotDataPoint) => getters().getPointSize(p),
-      getShape: (p: PlotDataPoint) => getters().getPointShape(p),
-      isPredicted: (p: PlotDataPoint) => getters().isPredicted(p),
-      isMultilabel: () => getters().isMultilabel(),
-    });
-    const exported = () => style.exportGetters();
     this._webglRenderer = new WebGLRenderer(this._canvas, {
       getScales: () => this._scales,
       getTransform: () => this._transform,
       getConfig: () => this._mergedConfig,
       // The live view stages nothing marked while it draws the marks on the GPU.
       style: {
-        ...pointStyles(() => style.getters()),
+        getColors: (p: PlotDataPoint) => style.getters().getColors(p),
+        isPredicted: (p: PlotDataPoint) => style.getters().isPredicted(p),
+        isMultilabel: () => style.getters().isMultilabel(),
         getOpacity: (p: PlotDataPoint) => style.stageModel().opacityOf(p),
         getDepth: (p: PlotDataPoint) => style.stageGetters().getDepth(p),
         createStylePass: () => style.stageGetters().createStylePass(style.stageModel()),
         getPointMarks: (pd: PlotData) => style.pointMarks(pd),
       },
       // An export stages the selection with every other style, in the light greys.
-      exportStyle: {
-        ...pointStyles(exported),
-        getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
-        getDepth: (p: PlotDataPoint) => exported().getDepth(p),
-        // The getters above resolve the visibility model per point; a pass
-        // resolves it once, for every point it stages.
-        createStylePass: () => exported().createStylePass(style.model()),
-      },
+      createExportStylePass: () => style.exportGetters().createStylePass(style.model()),
       getKnockoutColor: () => this._theme.background(),
       getNeutralColor: () => this._neutrals().other,
       onContextLost: this._handleWebglContextLost,
@@ -679,20 +667,15 @@ export class ProtspaceScatterplot extends LitElement {
     }
     this._colorMapping = detail.colorMapping;
     this._shapeMapping = detail.shapeMapping;
-    const colorOnly = detail.colorOnly ?? false;
 
     // Force fresh style getters to use new color/shape mapping
     this._style.invalidateGetters();
 
     if (this._plotData.length > 0) {
-      // Color-only changes skip the depth re-sort, and restyle whole
-      // categories (colour and shape) without re-staging.
-      if (colorOnly) {
-        this._webglRenderer?.invalidateCategoryStyles();
-      } else {
-        this._webglRenderer?.invalidateDepthOrder();
-        this._webglRenderer?.invalidateStyleCache();
-      }
+      // Paint depth reads no colour or shape (the legend's z-order has its own event),
+      // so a mapping change restyles whole categories without a re-sort. Where the
+      // record table cannot, the renderer restyles in the staged order.
+      this._webglRenderer?.invalidateCategoryStyles();
       this._renderLoop.request();
     }
   };
@@ -799,6 +782,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     if (
       changedProperties.has('_plotData') ||
+      changedProperties.has('_annotationRevision') ||
       changedProperties.has('selectedProjectionIndex') ||
       changedProperties.has('projectionPlane') ||
       changedProperties.has('filteredProteinIds') ||
@@ -874,18 +858,20 @@ export class ProtspaceScatterplot extends LitElement {
       const { length, originalIndices } = this._plotData;
       this._processData();
       this._pointGrid.scheduleRebuild();
-      this._webglRenderer?.invalidatePositionCache();
-      this._webglRenderer?.invalidateStyleCache();
       // A projection or plane switch keeps every point in its slot unless the new
       // projection lacks some point's coordinates; any other geometry change may
       // move them.
-      this._renderLoop.noteGeometry(
+      const slotsKept =
         !changedProperties.has('data') &&
-          !changedProperties.has('filteredProteinIds') &&
-          !changedProperties.has('filtersActive') &&
-          this._plotData.length === length &&
-          sameSlots(originalIndices, this._plotData.originalIndices),
-      );
+        !changedProperties.has('filteredProteinIds') &&
+        !changedProperties.has('filtersActive') &&
+        this._plotData.length === length &&
+        sameSlots(originalIndices, this._plotData.originalIndices);
+      this._webglRenderer?.invalidatePositionCache();
+      // Styles read no coordinate: points that kept their slots keep their styles,
+      // and the renderer only moves them.
+      if (!slotsKept) this._webglRenderer?.invalidateStyleCache();
+      this._renderLoop.noteGeometry(slotsKept);
       if (changedProperties.has('data')) {
         this.resetZoom();
         this._style.scheduleIdIndex();
@@ -1155,14 +1141,7 @@ export class ProtspaceScatterplot extends LitElement {
       // Entering a cull from the full view: set the full view aside with its grid.
       if (culling && build && !build.culled) {
         const grid = this._pointGrid.detach();
-        if (grid) {
-          this._fullView = {
-            grid,
-            projection: build.projection,
-            proteinIds: build.proteinIds,
-            plane: build.plane,
-          };
-        }
+        if (grid) this._fullView = { grid, build };
       }
 
       // Release old data references before allocating the new dataset.
@@ -1177,9 +1156,9 @@ export class ProtspaceScatterplot extends LitElement {
       if (!culling) this._fullView = null;
       if (
         kept &&
-        kept.projection === projection &&
-        kept.proteinIds === dataToUse.protein_ids &&
-        kept.plane === this.projectionPlane
+        kept.build.projection === projection &&
+        kept.build.data.protein_ids === dataToUse.protein_ids &&
+        kept.build.plane === this.projectionPlane
       ) {
         // Leaving the cull for the view it was entered from: what a rebuild would produce.
         this._plotData = kept.grid.plotData;
@@ -1200,7 +1179,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._plotDataBuild = {
       data: dataToUse,
       projection,
-      proteinIds: dataToUse.protein_ids,
       plane: this.projectionPlane,
       culled,
     };
@@ -1220,7 +1198,8 @@ export class ProtspaceScatterplot extends LitElement {
 
     // Style-getters read annotation values lazily via getProteinAnnotationValues —
     // changing the selected annotation only requires re-render + cache invalidation.
-    this._plotData = clonePlotData(this._plotData);
+    // The points and their slots stay as they are.
+    this._annotationRevision++;
     if (this._plotDataBuild) this._plotDataBuild = { ...this._plotDataBuild, data: dataToUse };
     this._style.invalidateGetters();
   }
@@ -1251,7 +1230,8 @@ export class ProtspaceScatterplot extends LitElement {
         this._processData();
       }
 
-      this._pointGrid.scheduleRebuild();
+      // Re-marks what is interactive; rebuilds on its own if `_processData` made new plot data.
+      this._pointGrid.scheduleRemark();
       this._webglRenderer?.invalidateStyleCache();
       this._renderLoop.request();
       this._updateSelectionOverlays();
@@ -1587,15 +1567,6 @@ export class ProtspaceScatterplot extends LitElement {
     // badge update is owned by the controller.
     overlayGroup.selectAll('.selected-overlay').remove();
     this._dupOverlay.updateSelectionOverlays(options);
-  }
-
-  private _getOpacity(point: PlotDataPoint): number {
-    // Facade: besides the WebGL renderer's getOpacity getter, webgl-render-perf.ts
-    // reaches into this private member (via a privacy cast, acknowledged debt).
-    // Do not rename or remove this method without migrating that caller first.
-    // Delegates to the shared visibility model, which is the single opacity
-    // authority.
-    return this._style.model().opacityOf(point);
   }
 
   /**
@@ -2300,10 +2271,14 @@ export class ProtspaceScatterplot extends LitElement {
    * update, and render once the update settles. Called by isolateSelection() and
    * resetIsolation() — the only divergence (resetIsolation forgets the plot data's
    * build, forcing the full-rebuild path) stays at the call site, before this
-   * method runs.
+   * method runs. Every isolation change (isolate, reset, `popIsolation`) passes
+   * here, from the keyboard too, where no press on the plot ends a pin: a pin on
+   * a protein the new view leaves out ends here, or its card floats over nothing.
    */
   private _reprocessAndRefresh(): void {
     this._processData();
+    const pinned = this._pinnedTooltip;
+    if (pinned && !this.isProteinInCurrentView(pinned.point.originalIndex)) this._unpinTooltip();
     this._pointGrid.rebuildNow();
 
     if (this._webglRenderer) {

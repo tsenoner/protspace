@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   REPORT_MISSING_LIMIT,
+  canonicalProteinId,
   lowerCaseIndex,
   parsePastedIds,
   resolveProteinIds,
@@ -62,5 +63,20 @@ describe('resolveProteinIds', () => {
 
   it('caps the report at 50 missing IDs', () => {
     expect(REPORT_MISSING_LIMIT).toBe(50);
+  });
+});
+
+describe('canonicalProteinId', () => {
+  const available = ['P12345', 'q9xyz1', 'Q9XYZ1'];
+
+  it('returns an exact spelling as is, and the first case-insensitive match otherwise', () => {
+    expect(canonicalProteinId('Q9XYZ1', available)).toBe('Q9XYZ1');
+    expect(canonicalProteinId('p12345', available)).toBe('P12345');
+    // Two spellings differ only in case: the first in dataset order wins, as `find` did.
+    expect(canonicalProteinId('Q9xyz1', available)).toBe('q9xyz1');
+  });
+
+  it('is undefined for an ID the dataset does not have', () => {
+    expect(canonicalProteinId('NOPE', available)).toBeUndefined();
   });
 });

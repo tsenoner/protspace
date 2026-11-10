@@ -23,6 +23,7 @@ import {
 } from '@protspace/utils';
 import {
   type PointMarks,
+  type PointStylePass,
   type WebGLStyleGetters,
   type ScalePair,
   type PointAttribLocations,
@@ -45,7 +46,12 @@ import {
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
 import { composePaintDepth } from '../../paint-depth';
-import { createPassScratch, restageStyles, stageInPaintOrder } from './pass-staging';
+import {
+  createPassScratch,
+  restageStyles,
+  stageInPaintOrder,
+  stagePositions,
+} from './pass-staging';
 import { RecordStyleTable, markedFirstDrawn, shownSlotCount } from './record-style-table';
 import { planRendererCapacity, shouldReplanCapacityResource } from './capacity-planner';
 import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
@@ -148,8 +154,11 @@ interface StageRequest {
   glide: boolean;
 }
 
-/** How a stage writes the points: re-sorted into a new paint order, or restyled in the old one. */
-type StagePlan = 'resort' | 'restyle';
+/**
+ * How a stage writes the points: re-sorted into a new paint order, restyled in the
+ * old one, or moved in the old one (new positions for the same slots, styles as staged).
+ */
+type StagePlan = 'resort' | 'restyle' | 'reposition';
 
 /** What the scatter plot hands its renderer. */
 interface WebGLRendererOptions {
@@ -161,8 +170,11 @@ interface WebGLRendererOptions {
    * point as if none were marked.
    */
   style: WebGLStyleGetters;
-  /** What an export stages, marks included: `style` unless the live view marks points on the GPU. */
-  exportStyle?: WebGLStyleGetters;
+  /**
+   * The pass an export stages through, marks included: `style`'s unless the live view
+   * marks points on the GPU.
+   */
+  createExportStylePass?: () => PointStylePass;
   /** White unless given. */
   getKnockoutColor?: () => readonly [number, number, number];
   /** The grey Other points are staged with, which keys the contours' tail slot. `NEUTRAL_VALUE_COLOR` unless given. */
@@ -321,7 +333,7 @@ export class WebGLRenderer {
   private readonly getTransform: () => d3.ZoomTransform;
   private readonly getConfig: () => ScatterplotConfig;
   private readonly style: WebGLStyleGetters;
-  private readonly exportStyle: WebGLStyleGetters;
+  private readonly exportStyle: Pick<WebGLStyleGetters, 'createStylePass'>;
   private readonly getKnockoutColor: () => readonly [number, number, number];
   private readonly getNeutralColor: () => string;
   private readonly onContextLost?: () => void;
@@ -335,7 +347,9 @@ export class WebGLRenderer {
     this.getTransform = options.getTransform;
     this.getConfig = options.getConfig;
     this.style = options.style;
-    this.exportStyle = options.exportStyle ?? options.style;
+    this.exportStyle = options.createExportStylePass
+      ? { createStylePass: options.createExportStylePass }
+      : options.style;
     this.getKnockoutColor = options.getKnockoutColor ?? (() => [1, 1, 1]);
     this.getNeutralColor = options.getNeutralColor ?? (() => NEUTRAL_VALUE_COLOR);
     this.onContextLost = options.onContextLost;
@@ -451,11 +465,10 @@ export class WebGLRenderer {
    *
    * Why this exists: the renderer uses painter's algorithm — points are sorted
    * once by depth, then position/style buffers are written in sorted order. A
-   * pure depth change (same points, same coords, new depth values) leaves the
-   * sample-based depth-changed detection unable to compare like-for-like
-   * (sampled point[i] is read from the input order; staged depths[i] is from the
-   * sorted order). Without an explicit signal, the renderer can keep the stale
-   * sort. This API is that signal.
+   * pure depth change (same points, same coords, new depth values) can miss the
+   * sample-based depth-changed detection, which reads only the first 100 staged
+   * slots. Without an explicit signal, the renderer can keep the stale sort. This
+   * API is that signal.
    */
   invalidateDepthOrder() {
     this.depthOrderDirty = true;
@@ -1393,18 +1406,20 @@ export class WebGLRenderer {
       return;
     }
 
-    const plan = this.planStage(pd, request.positions);
+    const plan = this.planStage(pd, request);
     let glideMoved = false;
     if (plan === 'resort') glideMoved = this.resortPoints(pd, scales, request.glide);
+    else if (plan === 'reposition') glideMoved = this.repositionPoints(pd, scales, request.glide);
     else this.restylePoints(pd);
     this.uploadStaged(gl, plan, glideMoved);
   }
 
   /**
    * Fit the staging arrays and the atlas to `pd`, then decide how to stage it:
-   * re-sort it into a fresh paint order, or restyle it in the staged one.
+   * re-sort it into a fresh paint order, restyle it in the staged one, or only
+   * move it there.
    */
-  private planStage(pd: PlotData, positions: boolean): StagePlan {
+  private planStage(pd: PlotData, request: StageRequest): StagePlan {
     // Grow to fit, and release a footprint that has become absurd for the data on
     // screen. Grow-only capacity would hold a 2M load's footprint through the 5K
     // demo opened after it, for the rest of the session. The planner owns both
@@ -1427,24 +1442,18 @@ export class WebGLRenderer {
     // the sample-based check (which can't reliably detect category-level swaps).
     const depthOrderDirty = this.depthOrderDirty;
     this.depthOrderDirty = false;
-    if (positions || resized || depthOrderDirty) return 'resort';
-
-    // Check if depths have actually changed by sampling first few slots
-    // If depths are the same, we can skip re-sorting (color-only update optimization)
-    const sampleSize = Math.min(100, pd.length);
-    for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
-      const sp = this.pointAt(pd, i);
-      const opacity = this.style.getOpacity(sp);
-      if (opacity === 0) continue;
-      const newDepth = composePaintDepth(
-        this.style.getDepth(sp),
-        opacity,
-        this.style.isPredicted(sp),
-      );
-      // Compare with stored depth (note: depths array is in sorted order after last render)
-      if (Math.abs(newDepth - this.stageArrays.depths[i]) > 1e-6) return 'resort';
+    if (resized || depthOrderDirty) return 'resort';
+    // Paint depth reads no coordinate, so new positions for the same slots keep the
+    // paint order and every staged style (a projection or plane switch).
+    if (request.positions) {
+      return !request.styles && this.slotsUnchanged(pd) ? 'reposition' : 'resort';
     }
-    return 'restyle';
+
+    // A restyle rewrites the slots staged from `sortedDataRef` in their paint order, so
+    // sample those (color-only update optimization): a moved depth needs a re-sort.
+    const src = this.sortedDataRef;
+    if (!src) return 'resort';
+    return this.stagedDepthsMoved(src) ? 'resort' : 'restyle';
   }
 
   /**
@@ -1489,9 +1498,9 @@ export class WebGLRenderer {
       scales,
       count,
       this.selectionActive,
-      (_slot, opacity) => this.countStagedSlot(opacity),
     );
     this.selectedStartIndex = staged.selectedStartIndex;
+    this.visibleCount = staged.visibleCount;
 
     const glideMoved = this.glide.afterResort(glideStart, glide, this.sortOrder, count);
 
@@ -1502,6 +1511,46 @@ export class WebGLRenderer {
     this.currentPointCount = count;
     // Staged through these scales, so drawn as they are: a glide carried by the
     // second stage a render may run (see render()) reads this.
+    this.stagedScales = snapshotScales(scales);
+    this.positionRescale = IDENTITY_RESCALE;
+    return glideMoved;
+  }
+
+  /**
+   * Whether `pd` holds the points staged last, slot for slot, in a paint order
+   * that is still current: then only their positions can differ.
+   */
+  private slotsUnchanged(pd: PlotData): boolean {
+    const src = this.sortedDataRef;
+    if (!src || !this.buffersInitialized || this.stagedOrderStale) return false;
+    if (pd.length !== this.currentPointCount || src.length !== pd.length) return false;
+    const a = pd.originalIndices;
+    const b = src.originalIndices;
+    if (a === b) return true;
+    if (!a || !b) return false;
+    for (let i = 0; i < pd.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  /**
+   * Stage `pd`'s positions in the paint order staged last, through `scales`, and
+   * glide there as {@link resortPoints} does. Styles, depths, the selection cut
+   * and the record table stay as staged. True when the glide's start positions
+   * changed.
+   */
+  private repositionPoints(pd: PlotData, scales: ScalePair, glide: boolean): boolean {
+    const count = this.currentPointCount;
+    const { dataPositions } = this.stageArrays;
+    const glideStart = this.glide.capture(
+      glide,
+      dataPositions,
+      this.positionRescale,
+      this.sortOrder,
+      count,
+    );
+    stagePositions(dataPositions, this.sortOrder, pd, scales, count);
+    const glideMoved = this.glide.afterResort(glideStart, glide, this.sortOrder, count);
+    this.sortedDataRef = pd;
     this.stagedScales = snapshotScales(scales);
     this.positionRescale = IDENTITY_RESCALE;
     return glideMoved;
@@ -1527,7 +1576,7 @@ export class WebGLRenderer {
       this.labelAtlasActive,
       this.maxTextureSize,
     );
-    const packed = restageStyles(
+    const { packed, visibleCount } = restageStyles(
       this.stageArrays,
       pass,
       this.passScratch,
@@ -1536,8 +1585,8 @@ export class WebGLRenderer {
       // The count that rebuild staged, so every slot sortOrder holds is resolved.
       src.length,
       count,
-      (_slot, opacity) => this.countStagedSlot(opacity),
     );
+    this.visibleCount = visibleCount;
     this.stagedOrderStale = this.orderOutOfDate(count);
     this.recordTable.keep(pass, table, packed, this.stageArrays.colors, count);
     this.currentPointCount = count;
@@ -1562,8 +1611,17 @@ export class WebGLRenderer {
 
     const { dataPositions, sizes, colors, depths, labelCounts, shapes, predicted } =
       this.stageArrays;
+    if (plan === 'reposition') {
+      // Only the positions moved: every other buffer, and the table, hold as uploaded.
+      this.updateBuffer(gl, this.resources.dataPositionBuffer, dataPositions, count * 2);
+      if (glideMoved) this.syncMorphAttribute(gl);
+      return;
+    }
+    // Only a re-sort moves points between slots, so only it changes positions and
+    // paint depths; a restyle keeps both as staged.
     if (plan === 'resort') {
       this.updateBuffer(gl, this.resources.dataPositionBuffer, dataPositions, count * 2);
+      this.updateBuffer(gl, this.resources.depthBuffer, depths, count);
     }
     if (glideMoved) this.syncMorphAttribute(gl);
 
@@ -1571,15 +1629,19 @@ export class WebGLRenderer {
     // slot order, a restyle in place.
     // Before the colours: if the table cannot be uploaded, they take the hiding back.
     this.uploadedBytes += this.recordTable.upload(gl, colors, count);
+    const table = !!this.recordTable.staged;
     // Only read through a table, but the attribute needs its storage regardless.
-    if (allocating || this.recordTable.staged) {
+    if (allocating || table) {
       this.updateBuffer(gl, this.resources.recordBuffer, this.recordTable.ids, count);
     }
-    this.updateBuffer(gl, this.resources.sizeBuffer, sizes, count);
+    // Through a table the shaders read size, shape and label count from the
+    // record's texels, so the per-point copies only need their storage.
+    if (allocating || !table) {
+      this.updateBuffer(gl, this.resources.sizeBuffer, sizes, count);
+      this.updateBuffer(gl, this.resources.labelCountBuffer, labelCounts, count);
+      this.updateBuffer(gl, this.resources.shapeBuffer, shapes, count);
+    }
     this.updateBuffer(gl, this.resources.colorBuffer, colors, count * 4);
-    this.updateBuffer(gl, this.resources.depthBuffer, depths, count);
-    this.updateBuffer(gl, this.resources.labelCountBuffer, labelCounts, count);
-    this.updateBuffer(gl, this.resources.shapeBuffer, shapes, count);
     this.updateBuffer(gl, this.resources.predictedBuffer, predicted, count);
 
     // One error check per capacity change, on the allocating (bufferData) path
@@ -1706,13 +1768,14 @@ export class WebGLRenderer {
    * would leave on screen.
    */
   private stagedDepthsMoved(pd: PlotData): boolean {
+    const { depths } = this.stageArrays;
     const n = Math.min(100, this.currentPointCount);
     for (let k = 0; k < n; k++) {
       const sp = this.pointAt(pd, this.sortOrder[k]);
       const opacity = this.style.getOpacity(sp);
       if (opacity === 0) continue;
       const depth = composePaintDepth(this.style.getDepth(sp), opacity, this.style.isPredicted(sp));
-      if (Math.abs(depth - this.stageArrays.depths[k]) > 1e-6) return true;
+      if (Math.abs(depth - depths[k]) > 1e-6) return true;
     }
     return false;
   }
@@ -1726,11 +1789,6 @@ export class WebGLRenderer {
     sp.y = pd.ys[slot];
     sp.originalIndex = origIdx;
     return sp;
-  }
-
-  /** Count a staged slot that will be drawn. */
-  private countStagedSlot(opacity: number): void {
-    if (opacity > 0) this.visibleCount++;
   }
 
   /**

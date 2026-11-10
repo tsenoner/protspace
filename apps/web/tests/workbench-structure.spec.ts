@@ -23,10 +23,10 @@ import {
   structurePanel,
   stubStructureRequests,
   watchPlotResizes,
+  workbenchRoot,
 } from './helpers/workbench';
 import { chooseTheme } from './helpers/theme';
 
-const workbench = (page: Page) => page.locator('.workbench');
 const footer = (page: Page) => structurePanel(page).locator('[data-workbench="structure-empty"]');
 const divider = (page: Page) =>
   page.getByRole('separator', { name: 'Resize legend and structure' });
@@ -69,7 +69,7 @@ test('before any click the sidebar shows the Structure footer under a full-heigh
   page,
 }) => {
   await openExplore(page);
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'none');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'none');
   await expect(footer(page)).toBeVisible();
   await expect(footer(page)).toContainText('Structure');
   await expect(footer(page)).toContainText('Click a protein to view it');
@@ -96,7 +96,7 @@ test('clicking a protein shows the structure under a divider and the plot keeps 
 
   const id = await clickProteinNearPlotCentre(page);
 
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'docked');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'docked');
   const viewer = page.locator('#myStructureViewer');
   await expect(viewer).toBeVisible();
   await expect(viewer).toHaveJSProperty('proteinId', id);
@@ -169,7 +169,7 @@ test('Close structure brings the footer back', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Close structure' }).click();
 
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'none');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'none');
   await expect(footer(page)).toBeVisible();
   await expect(page.locator('#myStructureViewer')).toBeHidden();
   await expect(page.locator('#myStructureViewer')).toHaveJSProperty('proteinId', null);
@@ -178,12 +178,12 @@ test('Close structure brings the footer back', async ({ page }) => {
 test('loading another dataset clears the structure', async ({ page }) => {
   await openExplore(page);
   await clickProteinNearPlotCentre(page);
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'docked');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'docked');
 
   await importUserFile(page, PHOSPHATASE_1587_FIXTURE);
   await waitForExploreDataLoad(page, { proteinCount: 1587 });
 
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'none');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'none');
   await expect(footer(page)).toBeVisible();
   await expect(page.locator('#myStructureViewer')).toHaveJSProperty('proteinId', null);
 });
@@ -216,7 +216,7 @@ test('Pop out floats the card over the plot without resizing it', async ({ page 
 
   // Closed, the section is the docked footer again, without the card's grip.
   await page.getByRole('button', { name: 'Close structure' }).click();
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'none');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'none');
   await expect(footer(page)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Resize structure' })).toHaveCount(0);
 });
@@ -328,7 +328,7 @@ test('the card drags and resizes, survives a reload, and a card stored outside t
   await page.reload();
   await waitForExploreDataLoad(page);
   await clickProteinNearPlotCentre(page);
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'floating');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'floating');
   const reloaded = (await card.boundingBox())!;
   expectNear(reloaded.x, resized.x);
   expectNear(reloaded.y, resized.y);
@@ -353,7 +353,7 @@ test('the card drags and resizes, survives a reload, and a card stored outside t
   await page.reload();
   await waitForExploreDataLoad(page);
   await clickProteinNearPlotCentre(page);
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'floating');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'floating');
   await expectCardInsidePlotArea(page);
 });
 
@@ -444,7 +444,7 @@ test('below 951 px there is no Pop out and a stored floating card shows docked',
   await openExplore(page);
   await clickProteinNearPlotCentre(page);
 
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'docked');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'docked');
   await expect(page.locator('#myStructureViewer')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pop out structure' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Dock structure' })).toHaveCount(0);
@@ -470,7 +470,7 @@ test('while collapsed and docked, View structure in the pinned tooltip opens the
 
   await action.click();
 
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'open');
   await expect(page.locator('#myStructureViewer')).toHaveJSProperty('proteinId', id);
   await expect(action).toBeHidden();
 });
@@ -591,8 +591,8 @@ test('docking from a collapsed sidebar opens it and keeps focus on the button', 
   await collapseSidebar(page);
   await page.getByRole('button', { name: 'Dock structure' }).focus();
   await page.keyboard.press('Enter');
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'docked');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'docked');
   await expect(page.locator('#myStructureViewer')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pop out structure' })).toBeFocused();
 });
@@ -604,7 +604,7 @@ test('View structure from the keyboard moves focus to the structure', async ({ p
   const action = page.locator('#myPlot').getByRole('button', { name: 'View structure' });
   await action.focus();
   await page.keyboard.press('Enter');
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'open');
   await expect(structurePanel(page)).toBeFocused();
 });
 
@@ -714,7 +714,7 @@ test('the TED link is clickable docked at 240 px and floating at 280 px', async 
   });
   await openExplore(page);
   await clickProteinNearPlotCentre(page);
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'floating');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'floating');
   expectNear((await structurePanel(page).boundingBox())!.width, 280);
   await expect(ted).toBeVisible();
   await ted.click({ trial: true });
@@ -765,7 +765,7 @@ test("the rail's Structure button hides and shows the structure, docked and floa
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await expect(viewer).toBeHidden();
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'open');
   await expect
     .poll(async () => (await page.locator('#myLegend').boundingBox())!.height)
     .toBeCloseTo(body.height, 0);
@@ -784,7 +784,7 @@ test("the rail's Structure button hides and shows the structure, docked and floa
   await expect(reloaded).toHaveAttribute('aria-pressed', 'true');
   await expect(viewer).toBeVisible();
   await expect(viewer).toHaveJSProperty('proteinId', reloadedId);
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'docked');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'docked');
 
   // Floating: hiding hides the card, showing brings back the card, not a docked section.
   await floatStructure(page);
@@ -793,7 +793,7 @@ test("the rail's Structure button hides and shows the structure, docked and floa
   await expect(structurePanel(page)).toBeHidden();
   await reloaded.click();
   await expect(reloaded).toHaveAttribute('aria-pressed', 'true');
-  await expect(workbench(page)).toHaveAttribute('data-structure', 'floating');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-structure', 'floating');
   await expect(structurePanel(page)).toBeVisible();
   await expectCardInsidePlotArea(page);
 
@@ -802,7 +802,7 @@ test("the rail's Structure button hides and shows the structure, docked and floa
   await collapseSidebar(page);
   await expect(reloaded).toHaveAttribute('aria-pressed', 'false');
   await reloaded.click();
-  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(workbenchRoot(page)).toHaveAttribute('data-sidebar', 'open');
   await expect(reloaded).toHaveAttribute('aria-pressed', 'true');
   await expect(viewer).toBeVisible();
 });

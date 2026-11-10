@@ -16,50 +16,75 @@ export function sliceVisualizationDataByIndices(
   data: VisualizationData,
   keptIndices: number[],
 ): VisualizationData {
-  return sliceWith(data, keptIndices, eagerColumns);
+  return sliceWith(data, keptIndices, false);
 }
 
 /**
- * `sliceVisualizationDataByIndices`, except that each per-annotation column is sliced on
- * its first read. For the scatter plot's filtered and isolated views: they are handed
- * around whole (`data-change`, `getCurrentData()`), but their readers mostly touch the
- * selected annotation's column, and slicing all of them up front cost ~100 ms per isolate
- * at Swiss-Prot scale. The view keeps `data` and `keptIndices` alive until every column
- * has been read, so `keptIndices` must not change afterwards.
+ * `sliceVisualizationDataByIndices`, except that each per-annotation column and each
+ * projection's coordinates are sliced on their first read. For the scatter plot's filtered
+ * and isolated views: they are handed around whole (`data-change`, `getCurrentData()`), but
+ * their readers mostly touch the selected annotation's column and the selected projection
+ * (the plot itself draws from the unsliced data). Slicing every column up front cost ~100 ms
+ * per isolate at Swiss-Prot scale, and every projection ~1 GB per isolate at 21M proteins
+ * with six 2-D projections.
+ *
+ * A deferred slice keeps its source (column or coordinates) and `keptIndices` alive until it
+ * is read, and drops them then; `keptIndices` must not change in the meantime. Everything
+ * that reads the whole view (a spread, `structuredClone`, an export) slices what it touches.
  */
 export function viewVisualizationDataByIndices(
   data: VisualizationData,
   keptIndices: readonly number[],
 ): VisualizationData {
-  return sliceWith(data, keptIndices, lazyColumns);
+  return sliceWith(data, keptIndices, true);
 }
 
-type ColumnMapper = <S, T>(src: Record<string, S>, slice: (column: S) => T) => Record<string, T>;
+/**
+ * Sets `target[key]` to `slice()`, or with `lazy` to an enumerable, assignable property that
+ * calls `slice` on its first read and hands that same value back on every later one (so
+ * readers can compare it by reference). An assignment replaces it. `slice` is dropped once
+ * it has run, releasing the source it closes over.
+ */
+function setSliced<T>(target: object, key: string, slice: () => T, lazy: boolean): void {
+  if (!lazy) {
+    (target as Record<string, T>)[key] = slice();
+    return;
+  }
+  let pending: (() => T) | null = slice;
+  let value: T;
+  Object.defineProperty(target, key, {
+    enumerable: true,
+    configurable: true,
+    get: () => {
+      if (pending) {
+        value = pending();
+        pending = null;
+      }
+      return value;
+    },
+    set: (next: T) => {
+      pending = null;
+      value = next;
+    },
+  });
+}
 
-const eagerColumns: ColumnMapper = (src, slice) =>
-  Object.fromEntries(Object.entries(src).map(([name, column]) => [name, slice(column)]));
-
-/** Enumerable, assignable properties that slice their column on the first read. */
-const lazyColumns: ColumnMapper = <S, T>(src: Record<string, S>, slice: (column: S) => T) => {
+function sliceColumns<S, T>(
+  src: Record<string, S>,
+  slice: (column: S) => T,
+  lazy: boolean,
+): Record<string, T> {
   const out: Record<string, T> = {};
   for (const [name, column] of Object.entries(src)) {
-    let sliced: { value: T } | null = null;
-    Object.defineProperty(out, name, {
-      enumerable: true,
-      configurable: true,
-      get: () => (sliced ??= { value: slice(column) }).value,
-      set: (value: T) => {
-        sliced = { value };
-      },
-    });
+    setSliced(out, name, () => slice(column), lazy);
   }
   return out;
-};
+}
 
 function sliceWith(
   data: VisualizationData,
   keptIndices: readonly number[],
-  columns: ColumnMapper,
+  lazy: boolean,
 ): VisualizationData {
   const sliceRows = <T>(rows: readonly T[]): T[] => {
     const out = new Array<T>(keptIndices.length);
@@ -68,7 +93,7 @@ function sliceWith(
   };
   const sliceRecord = <T>(
     src: Record<string, readonly T[]> | undefined,
-  ): Record<string, T[]> | undefined => (src ? columns(src, sliceRows) : undefined);
+  ): Record<string, T[]> | undefined => (src ? sliceColumns(src, sliceRows, lazy) : undefined);
 
   return {
     ...data,
@@ -83,27 +108,44 @@ function sliceWith(
     statisticsRows: undefined,
     protein_ids: keptIndices.map((index) => data.protein_ids[index]),
     projections: data.projections.map((projection) => {
-      const dim = projection.dimension;
-      const out = new Float32Array(keptIndices.length * dim);
-      for (let k = 0; k < keptIndices.length; k++) {
-        const base = keptIndices[k] * dim;
-        const o = k * dim;
-        out[o] = projection.data[base];
-        out[o + 1] = projection.data[base + 1];
-        if (dim === 3) out[o + 2] = projection.data[base + 2];
-      }
-      return { ...projection, data: out, dimension: dim };
+      // The other fields stay eager; setSliced replaces `data` in its key position.
+      const out = { ...projection };
+      setSliced(out, 'data', () => sliceCoordinates(projection, keptIndices), lazy);
+      return out;
     }),
-    annotation_data: columns(data.annotation_data, (rows) =>
-      sliceAnnotationData(rows, keptIndices),
+    annotation_data: sliceColumns(
+      data.annotation_data,
+      (rows) => sliceAnnotationData(rows, keptIndices),
+      lazy,
     ),
     numeric_annotation_data: data.numeric_annotation_data
-      ? columns(data.numeric_annotation_data, (values) => sliceFloat64(values, keptIndices))
+      ? sliceColumns(
+          data.numeric_annotation_data,
+          (values) => sliceFloat64(values, keptIndices),
+          lazy,
+        )
       : undefined,
     annotation_predicted: sliceRecord(data.annotation_predicted),
     annotation_scores: sliceRecord(data.annotation_scores),
     annotation_evidence: sliceRecord(data.annotation_evidence),
   };
+}
+
+/** Gather each kept point's `dimension` coordinates into a fresh Float32Array. */
+function sliceCoordinates(
+  projection: VisualizationData['projections'][number],
+  keptIndices: readonly number[],
+): Float32Array {
+  const { data: coords, dimension: dim } = projection;
+  const out = new Float32Array(keptIndices.length * dim);
+  for (let k = 0; k < keptIndices.length; k++) {
+    const base = keptIndices[k] * dim;
+    const o = k * dim;
+    out[o] = coords[base];
+    out[o + 1] = coords[base + 1];
+    if (dim === 3) out[o + 2] = coords[base + 2];
+  }
+  return out;
 }
 
 /**

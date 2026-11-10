@@ -9,21 +9,19 @@
 // which resolves --scenarios against the segments in apps/web/tests/helpers/perf/scenarios.ts.
 // Without --url it builds the app and serves it with `vite preview` on 8301, and stops
 // that server when the run ends or is interrupted.
-import { spawn } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { perfDatasetFile } from './datasets.mjs';
+import {
+  ROOT,
+  createUsage,
+  resolveDataset,
+  run,
+  serve,
+  stopChildren,
+  stopChildrenOnSignals,
+} from './harness.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const APP = path.join(ROOT, 'apps/web');
 const PREVIEW_PORT = 8301;
-
-function usage(message) {
-  if (message) console.error(`perf: ${message}\n`);
-  console.error(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\nimport ')[0]);
-  process.exit(message ? 2 : 0);
-}
+const usage = createUsage('perf', import.meta.url);
 
 function parseArgs(argv) {
   const opts = {
@@ -91,93 +89,14 @@ function parseArgs(argv) {
   return opts;
 }
 
-function resolveDataset(spec) {
-  if (spec === 'default') {
-    return { name: 'default', file: path.join(APP, 'public/data.parquetbundle') };
-  }
-  if (spec.includes('/') || spec.endsWith('.parquetbundle')) {
-    const file = path.resolve(spec);
-    if (!fs.existsSync(file)) usage(`no dataset file ${file}`);
-    return { name: path.basename(file).replace(/\.parquetbundle$/, ''), file };
-  }
-  const { file, error } = perfDatasetFile(spec);
-  if (error) usage(error);
-  return { name: spec, file };
-}
-
-const children = new Set();
-
-function run(cmd, args, options = {}) {
-  return new Promise((resolve) => {
-    const child = spawn(cmd, args, { stdio: 'inherit', ...options });
-    children.add(child);
-    child.on('exit', (code, signal) => {
-      children.delete(child);
-      resolve(code ?? (signal ? 1 : 0));
-    });
-  });
-}
-
-function stopChildren() {
-  for (const child of children) child.kill('SIGTERM');
-}
-
-async function waitForServer(url, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(2_000) });
-      if (res.ok) return;
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  throw new Error(`${url} did not answer within ${timeoutMs / 1000} s`);
-}
-
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  const datasets = opts.datasets.map(resolveDataset);
-
-  for (const signal of ['SIGINT', 'SIGTERM']) {
-    process.on(signal, () => {
-      stopChildren();
-      process.exit(130);
-    });
-  }
+  const datasets = opts.datasets.map((spec) => resolveDataset(spec, usage));
+  stopChildrenOnSignals();
 
   let url = opts.url;
   try {
-    if (!url) {
-      if (opts.build) {
-        const code = await run('pnpm', ['turbo', 'run', 'build', '--filter=@protspace/app'], {
-          cwd: ROOT,
-        });
-        if (code !== 0) throw new Error(`build failed (${code})`);
-      }
-      url = `http://localhost:${PREVIEW_PORT}`;
-      // Something already answering on the port would be measured instead of this build.
-      const taken = await fetch(url, { signal: AbortSignal.timeout(2_000) }).then(
-        () => true,
-        () => false,
-      );
-      if (taken) throw new Error(`port ${PREVIEW_PORT} is in use; stop it or pass --url`);
-      const preview = spawn(
-        path.join(APP, 'node_modules/.bin/vite'),
-        ['preview', '--port', String(PREVIEW_PORT), '--strictPort'],
-        { cwd: APP, stdio: ['ignore', 'ignore', 'inherit'] },
-      );
-      children.add(preview);
-      const exited = new Promise((_, reject) =>
-        preview.on('exit', (code, signal) => {
-          children.delete(preview);
-          reject(new Error(`vite preview exited early (${signal ?? code})`));
-        }),
-      );
-      exited.catch(() => {}); // only matters while racing below
-      await Promise.race([waitForServer(url, 30_000), exited]);
-    }
+    if (!url) url = await serve({ port: PREVIEW_PORT, build: opts.build });
 
     const env = {
       ...process.env,

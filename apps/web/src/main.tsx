@@ -3,6 +3,9 @@ import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import '@fontsource-variable/inter';
 import './index.css';
+import { reloadOnStaleChunk } from './lib/chunk-reload';
+
+reloadOnStaleChunk(window);
 
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>

@@ -139,6 +139,17 @@ describe('layout store', () => {
     expect(getLayout()).toBe(second);
   });
 
+  it('a change elsewhere keeps the floating rect object, so the floating card does not rebind', () => {
+    updateLayout({ floatingRect: { x: 40, y: 24, width: 360, height: 300 } });
+    const rect = getLayout().floatingRect;
+
+    updateLayout({ panel: 'filter' });
+    expect(getLayout().floatingRect).toBe(rect);
+
+    updateLayout({ floatingRect: { x: 41, y: 24, width: 360, height: 300 } });
+    expect(getLayout().floatingRect).not.toBe(rect);
+  });
+
   it('an equal patch neither notifies nor writes', () => {
     const listener = vi.fn();
     subscribeLayout(listener);

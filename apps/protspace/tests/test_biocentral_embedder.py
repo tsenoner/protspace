@@ -29,8 +29,8 @@ SHORTCUT_TO_HF_NAME = {
     "ankh_base": "ElnaggarLab/ankh-base",
     "ankh_large": "ElnaggarLab/ankh-large",
     "ankh3_large": "ElnaggarLab/ankh3-large",
-    "esmc_300m": "Synthyra/ESMplusplus_small",
-    "esmc_600m": "Synthyra/ESMplusplus_large",
+    "esmc_300m": "biohub/ESMC-300M",
+    "esmc_600m": "biohub/ESMC-600M",
 }
 
 
@@ -92,7 +92,7 @@ class TestDeriveH5CachePath:
             ("facebook/esm2_t6_8M_UR50D", "seqs_esm2_8m.h5"),
             ("Rostlab/prot_t5_xl_uniref50", "seqs_prot_t5.h5"),
             ("ElnaggarLab/ankh-base", "seqs_ankh_base.h5"),
-            ("Synthyra/ESMplusplus_small", "seqs_esmc_300m.h5"),
+            ("biohub/ESMC-300M", "seqs_esmc_300m.h5"),
             # An unknown model has no shortcut: its slashes are replaced
             ("custom/model_v2", "seqs_custom_model_v2.h5"),
         ],

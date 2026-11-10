@@ -4,18 +4,17 @@ import { e2eExample, serveExampleFixtures } from './helpers/example-fixtures';
 import {
   appBar,
   datasetSwitcher,
+  expectUrlParam,
   exportAction,
   exportDownload,
   exportFormats,
   exportKinds,
   exportMenu,
   exportPanel,
-  expectUrlParam,
   figureEditorButton,
   getCurrentDatasetName,
   getSelectedProteinIds,
   importMenu,
-  importTrigger,
   importUserFile,
   openExplore,
   openExportMenu,
@@ -41,7 +40,7 @@ test.describe('Import and Export menus', () => {
     // The tour's Import step finds the menu itself, in the light DOM.
     await expect(page.locator('[data-driver-id="import"]')).toHaveAttribute('id', 'myImportMenu');
 
-    const dataset = importTrigger(page);
+    const dataset = datasetSwitcher(page);
     await dataset.focus();
     await page.keyboard.press('Enter');
     const ownDataset = importMenu(page).locator('[data-driver-id="import-own-dataset"]');
@@ -266,8 +265,9 @@ test.describe('Import and Export menus', () => {
     await expect(exportFormats(page).getByRole('radio')).toHaveText(['PNG', 'PDF']);
     await expect(exportMenu(page).getByText(/without contours/)).toBeVisible();
     await expect(exportDownload(page)).toHaveAccessibleName('Download PNG');
-    // The figure editor is not in the panel: it has its own button.
-    await expect(exportPanel(page).getByText('Figure editor…')).toHaveCount(0);
+    // The figure editor is not in the panel: it has its own button. The panel's content is slotted
+    // into the popover, so it is found from the menu, not from inside the dialog's shadow root.
+    await expect(exportMenu(page).getByRole('button', { name: /Figure editor/ })).toHaveCount(0);
 
     // A bundle: whether it carries the legend settings, checked by default.
     await exportKinds(page).getByRole('radio', { name: 'Data bundle', exact: true }).click();

@@ -1,6 +1,5 @@
 /**
- * The dataset shape the query builder, its rows, the value picker and the numeric input read
- * (design decision 9 split the control bar these types served).
+ * The dataset shape the query builder, its rows, the value picker and the numeric input read.
  */
 
 import type {

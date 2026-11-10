@@ -1,7 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
-// The legend helpers live in helpers/legend.ts; these three are re-exported for their old callers.
-export { clickLegendItem, getFirstLegendItemValue, isLegendItemHidden } from './legend';
 import { getFirstLegendItemValue } from './legend';
 
 /** The first step of either tour; driver.js names its popover dialog after the step's title. */
@@ -283,10 +281,6 @@ export const projectionTrigger = (page: Page): Locator =>
 export const colorByTrigger = (page: Page): Locator =>
   annotationSelect(page).locator('button[aria-haspopup]').first();
 
-/** What opens the Import panel in the app bar: the dataset name (Import has no button of its own). */
-export const importTrigger = (page: Page): Locator =>
-  appBar(page).getByRole('button', { name: /, switch dataset$/ });
-
 /** The element that holds the Import panel. */
 export const importMenu = (page: Page): Locator => page.locator('#myImportMenu');
 
@@ -298,8 +292,8 @@ export const importPanel = (page: Page): Locator =>
   importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
 
 /**
- * The app bar's dataset name, which opens the Import panel (the dataset switcher). Its name reads
- * "{name}, {count} proteins, switch dataset".
+ * The app bar's dataset name, which opens the Import panel (the dataset switcher; Import has no
+ * button of its own). Its name reads "{name}, {count} proteins, switch dataset".
  */
 export const datasetSwitcher = (page: Page): Locator =>
   appBar(page).getByRole('button', { name: /, switch dataset$/ });
@@ -477,6 +471,54 @@ export async function searchProteins(page: Page, ids: readonly string[]): Promis
 export const toast = (page: Page, text: string | RegExp): Locator =>
   page.locator('[data-sonner-toast]').filter({ hasText: text });
 
+/** Waits two animation frames: long enough for a ResizeObserver callback and the paint after it. */
+export async function twoFrames(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+}
+
+/** The first `count` protein ids of the loaded dataset. */
+export function firstProteinIds(page: Page, count: number): Promise<string[]> {
+  return page
+    .locator('#myPlot')
+    .evaluate(
+      (plot, n) =>
+        ((plot as Element & { data?: { protein_ids?: string[] } }).data?.protein_ids ?? []).slice(
+          0,
+          n,
+        ),
+      count,
+    );
+}
+
+/**
+ * The modifier the app reads as Mod, decided as its isMacOrIos() decides it: from the user agent,
+ * which need not match the machine Playwright's ControlOrMeta reads.
+ */
+export function modKey(page: Page): Promise<'Meta' | 'Control'> {
+  return page.evaluate(() => {
+    const platform = (navigator as Navigator & { userAgentData?: { platform?: string } })
+      .userAgentData?.platform;
+    const mac = platform
+      ? platform === 'macOS' || platform === 'iOS'
+      : /Macintosh;.*Mac OS X/.test(navigator.userAgent) ||
+        /iPhone|iPad|iPod/.test(navigator.userAgent);
+    return mac ? 'Meta' : 'Control';
+  });
+}
+
+/** Mod+Z: the app's undo. */
+export const undo = async (page: Page): Promise<void> =>
+  page.keyboard.press(`${await modKey(page)}+KeyZ`);
+
+/** Mod+Shift+Z: the app's redo. */
+export const redo = async (page: Page): Promise<void> =>
+  page.keyboard.press(`${await modKey(page)}+Shift+KeyZ`);
+
 /** Resolves once every animation on `locator` and its subtree has finished (a toast's slide-in). */
 export async function animationsFinished(locator: Locator): Promise<void> {
   await locator.evaluate(async (el) => {
@@ -521,7 +563,7 @@ export async function openImportMenu(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
   const ownDataset = importMenu(page).locator('[data-driver-id="import-own-dataset"]');
   if (!(await ownDataset.isVisible().catch(() => false))) {
-    await importTrigger(page).click();
+    await datasetSwitcher(page).click();
   }
   await expect(importPanel(page)).toBeVisible();
   await expect(ownDataset).toBeVisible();
@@ -793,9 +835,8 @@ export async function selectProjection(page: Page, projection: number | string):
 const CONTOUR_MENU_LABELS = { off: 'Off', auto: 'Auto', on: 'Always' } as const;
 
 /** The view bar's More button; its name reads "More view options" (", N active" with its dot). */
-function moreButton(page: Page): Locator {
-  return viewBar(page).getByRole('button', { name: /^More view options/ });
-}
+export const moreButton = (page: Page): Locator =>
+  viewBar(page).getByRole('button', { name: /^More view options/ });
 
 /**
  * Sets the contour mode through the view bar's Contours menu, or through More while Contours sits
@@ -828,8 +869,8 @@ const TOOL_STATES = {
 
 type PlotToolName = keyof typeof TOOL_STATES;
 
-/** A tool's button on the plot's tool strip. */
-export const toolButton = (page: Page, tool: PlotToolName): Locator =>
+/** A button on the plot's tool strip: a tool, or Fit to view. */
+export const toolButton = (page: Page, tool: PlotToolName | 'Fit to view'): Locator =>
   page
     .getByRole('toolbar', { name: 'Plot tools' })
     .getByRole('button', { name: tool, exact: true });
@@ -857,7 +898,8 @@ export async function chooseTool(page: Page, tool: PlotToolName): Promise<void> 
     .toEqual(wanted);
 }
 
-async function isIsolated(page: Page): Promise<boolean> {
+/** Whether the plot shows only an isolated subset. */
+export async function isIsolated(page: Page): Promise<boolean> {
   return page.evaluate(() => {
     const plot = document.querySelector('#myPlot') as
       | (Element & { isIsolationMode?: () => boolean })

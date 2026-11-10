@@ -2,15 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
-  clickLegendItem,
   datasetSwitcher,
   dismissTourIfPresent,
   getCurrentDatasetName,
-  getFirstLegendItemValue,
   getProteinCount,
   importMenu,
   importUserFile,
-  isLegendItemHidden,
   openExplore,
   openImportMenu,
   pickExample,
@@ -28,6 +25,7 @@ import {
 import { e2eExample } from './helpers/example-fixtures';
 import { readStoredImport } from './helpers/opfs';
 import { seedTourSeen } from './helpers/tour-storage-state';
+import { clickLegendItem, getFirstLegendItemValue, isLegendItemHidden } from './helpers/legend';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;

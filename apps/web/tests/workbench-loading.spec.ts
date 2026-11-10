@@ -5,12 +5,15 @@ import {
   appBar,
   datasetSwitcher,
   dismissTourIfPresent,
+  getSelectedProteinIds,
   holdNextRequest,
   importMenu,
   importUserFile,
   openExplore,
   pickExample,
+  redo,
   sidebar,
+  undo,
   waitForExploreDataLoad,
   waitForProteinCount,
 } from './helpers/explore';
@@ -82,26 +85,12 @@ test.describe('loading overlay', () => {
     await openExplore(page);
     // A recorded selection step that an undo during the load would take back.
     const picked = await clickProteinNearPlotCentre(page);
-    const selected = () =>
-      page
-        .locator('#myPlot')
-        .evaluate((plot) => [
-          ...(plot as unknown as { selectedProteinIds: string[] }).selectedProteinIds,
-        ]);
+    const selected = () => getSelectedProteinIds(page);
     await expect.poll(selected).toEqual([picked]);
-    // The keys reach the undo controller here, so the check below means something. The app reads
-    // Mod from the user agent, which need not match the machine Playwright's ControlOrMeta reads.
-    const mod = await page.evaluate(() => {
-      const platform = (navigator as Navigator & { userAgentData?: { platform?: string } })
-        .userAgentData?.platform;
-      const mac = platform
-        ? platform === 'macOS' || platform === 'iOS'
-        : /Macintosh;.*Mac OS X|iPhone|iPad|iPod/.test(navigator.userAgent);
-      return mac ? 'Meta' : 'Control';
-    });
-    await page.keyboard.press(`${mod}+KeyZ`);
+    // The keys reach the undo controller here, so the check below means something.
+    await undo(page);
     await expect.poll(selected).toEqual([]);
-    await page.keyboard.press(`${mod}+Shift+KeyZ`);
+    await redo(page);
     await expect.poll(selected).toEqual([picked]);
 
     const other = e2eExample('other');
@@ -109,7 +98,7 @@ test.describe('loading overlay', () => {
     await pickExample(page, other.id);
     await expect(page.locator('#progressive-loading')).toBeVisible();
 
-    await page.keyboard.press(`${mod}+KeyZ`);
+    await undo(page);
     expect(await selected()).toEqual([picked]);
 
     release();

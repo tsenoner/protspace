@@ -1,4 +1,5 @@
 import { html, nothing, type TemplateResult } from 'lit';
+import { live } from 'lit/directives/live.js';
 import type { LegendLayout, LegendPosition } from '../publish-state';
 
 interface LegendModel {
@@ -10,7 +11,15 @@ interface LegendHandlers {
   updateLegend(partial: Partial<LegendLayout>): void;
 }
 
-/** A range slider with its number box (and unit); both report through `onChange`. */
+/** `value` within `min`..`max`. */
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+/**
+ * A range slider with its number box (and unit); both report through `onChange`. A typed number
+ * is held to the slider's range (a negative stroke, or a legend wider than the figure, would
+ * break the drawing), and one that is not a number keeps `value`. Every edit re-renders, and
+ * `live()` then puts a clamped or kept entry back to what applies.
+ */
 export function renderSliderInput(opts: {
   /** Names the slider and its number box; the row's `<label>` is not tied to them. */
   label: string;
@@ -24,6 +33,10 @@ export function renderSliderInput(opts: {
   const { label, min, max, step, value, unit, onChange } = opts;
   const stepAttr = step ?? 1;
   const parse = step && step < 1 ? parseFloat : parseInt;
+  const commit = (e: Event) => {
+    const parsed = parse((e.target as HTMLInputElement).value);
+    onChange(Number.isFinite(parsed) ? clamp(parsed, min, max) : value);
+  };
   return html`
     <div class="publish-input-group">
       <input
@@ -33,8 +46,8 @@ export function renderSliderInput(opts: {
         min=${min}
         max=${max}
         step=${stepAttr}
-        .value=${String(value)}
-        @input=${(e: Event) => onChange(parse((e.target as HTMLInputElement).value) || value)}
+        .value=${live(String(value))}
+        @input=${commit}
       />
       <input
         type="number"
@@ -43,8 +56,8 @@ export function renderSliderInput(opts: {
         min=${min}
         max=${max}
         step=${stepAttr}
-        .value=${String(value)}
-        @change=${(e: Event) => onChange(parse((e.target as HTMLInputElement).value) || value)}
+        .value=${live(String(value))}
+        @change=${commit}
       />
       ${unit ? html`<span class="publish-unit">${unit}</span>` : nothing}
     </div>
@@ -52,17 +65,24 @@ export function renderSliderInput(opts: {
 }
 
 /**
- * The legend font size in the unit the user edits. pt input keeps the float value so 8pt
- * round-trips as 8pt (rounding to integer px would clip 33.33 → 33 → 7.9pt); px input is
- * integer-only since that's what the user typed.
+ * The legend font size in the unit the user edits, held to the box's range. pt input keeps the
+ * float value so 8pt round-trips as 8pt (rounding to integer px would clip 33.33 → 33 → 7.9pt);
+ * px input is integer-only since that's what the user typed.
  */
-function onFontChange(event: Event, model: LegendModel, handlers: LegendHandlers): void {
-  const v = parseFloat((event.target as HTMLInputElement).value);
-  if (!Number.isFinite(v) || v <= 0) return;
-  const fontSizePx =
-    model.legend.fontSizeUnit === 'pt'
-      ? Math.max(0.1, (v / 72) * model.dpi)
-      : Math.max(1, Math.round(v));
+function onFontChange(
+  event: Event,
+  range: { min: number; max: number },
+  model: LegendModel,
+  handlers: LegendHandlers,
+): void {
+  const typed = parseFloat((event.target as HTMLInputElement).value);
+  // Not a number keeps the size; the edit still re-renders, which puts the box back.
+  if (!Number.isFinite(typed)) {
+    handlers.updateLegend({ fontSizePx: model.legend.fontSizePx });
+    return;
+  }
+  const v = clamp(typed, range.min, range.max);
+  const fontSizePx = model.legend.fontSizeUnit === 'pt' ? (v / 72) * model.dpi : Math.round(v);
   handlers.updateLegend({ fontSizePx });
 }
 
@@ -70,31 +90,31 @@ function renderFontInput(model: LegendModel, handlers: LegendHandlers) {
   const { fontSizePx, fontSizeUnit: unit } = model.legend;
   const isPt = unit === 'pt';
   const value = isPt ? ((fontSizePx / model.dpi) * 72).toFixed(1) : String(Math.round(fontSizePx));
-  const min = isPt ? 1 : 8;
-  const max = isPt ? 50 : 120;
+  const range = isPt ? { min: 1, max: 50 } : { min: 8, max: 120 };
   const step = isPt ? 0.5 : 1;
+  const onChange = (e: Event) => onFontChange(e, range, model, handlers);
   return html`
     <div class="publish-input-group">
       <input
         type="range"
         class="publish-slider"
         aria-label="Legend font size"
-        min=${min}
-        max=${max}
+        min=${range.min}
+        max=${range.max}
         step=${step}
-        .value=${value}
-        @input=${(e: Event) => onFontChange(e, model, handlers)}
+        .value=${live(value)}
+        @input=${onChange}
       />
       <input
         type="number"
         class="publish-row-input"
         data-publish-input="legend-font"
         aria-label="Legend font size"
-        min=${min}
-        max=${max}
+        min=${range.min}
+        max=${range.max}
         step=${step}
-        .value=${value}
-        @change=${(e: Event) => onFontChange(e, model, handlers)}
+        .value=${live(value)}
+        @change=${onChange}
       />
       <select
         class="publish-select publish-unit-select"

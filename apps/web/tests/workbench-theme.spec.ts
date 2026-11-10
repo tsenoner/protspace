@@ -14,6 +14,7 @@ import {
 } from './helpers/explore';
 import { figureEditorContent, figurePreviewCanvas } from './helpers/figure';
 import { chooseTheme, DARK_SURFACE, htmlTheme, seedTheme, themeButton } from './helpers/theme';
+import { workbenchRoot } from './helpers/workbench';
 
 /**
  * The explore page's theme (design decision 16): the stored choice, the first paint of a cold
@@ -22,7 +23,6 @@ import { chooseTheme, DARK_SURFACE, htmlTheme, seedTheme, themeButton } from './
 
 const WHITE = 'rgb(255, 255, 255)';
 
-const workbench = (page: Page) => page.locator('.workbench');
 const backgroundOf = (locator: Locator) =>
   locator.evaluate((element) => getComputedStyle(element).backgroundColor);
 
@@ -105,7 +105,7 @@ test.describe('theme choice', () => {
 
     release();
     await waitForExploreDataLoad(page);
-    await expect.poll(() => backgroundOf(workbench(page))).toBe(DARK_SURFACE);
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(DARK_SURFACE);
   });
 
   test('the GitHub Pages deep link /?/explore is themed', async ({ page }) => {
@@ -155,7 +155,7 @@ test.describe('theme choice on a dark OS', () => {
 
     release();
     await waitForExploreDataLoad(page);
-    await expect.poll(() => backgroundOf(workbench(page))).toBe(DARK_SURFACE);
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(DARK_SURFACE);
     expect(await htmlTheme(page)).toBe('system');
   });
 });
@@ -174,7 +174,7 @@ test.describe('the theme switch', () => {
     await chooseTheme(page, 'Dark');
 
     expect(await htmlTheme(page)).toBe('dark');
-    await expect.poll(() => backgroundOf(workbench(page))).toBe(DARK_SURFACE);
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(DARK_SURFACE);
     expect(await page.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY)).toBe(
       '"dark"',
     );
@@ -182,7 +182,7 @@ test.describe('the theme switch', () => {
     await page.reload();
     await waitForExploreDataLoad(page);
     expect(await htmlTheme(page)).toBe('dark');
-    await expect.poll(() => backgroundOf(workbench(page))).toBe(DARK_SURFACE);
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(DARK_SURFACE);
   });
 
   test('each press steps System, Dark, Light and back, and the name says the mode and the next', async ({
@@ -219,14 +219,14 @@ test.describe('the theme switch', () => {
     await openExplore(page);
     await chooseTheme(page, 'System');
     expect(await htmlTheme(page)).toBe('system');
-    await expect.poll(() => backgroundOf(workbench(page))).toBe(WHITE);
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(WHITE);
 
     await page.emulateMedia({ colorScheme: 'dark' });
-    await expect.poll(() => backgroundOf(workbench(page))).toBe(DARK_SURFACE);
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(DARK_SURFACE);
     expect(await htmlTheme(page)).toBe('system');
 
     await page.emulateMedia({ colorScheme: 'light' });
-    await expect.poll(() => backgroundOf(workbench(page))).toBe(WHITE);
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(WHITE);
   });
 
   test('Enter on the focused button switches the theme, keeps focus and announces it', async ({
@@ -255,7 +255,7 @@ test.describe('the theme switch on an 800 px tablet', () => {
     page,
   }) => {
     await openExplore(page);
-    await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'tablet');
     const sides = async (locator: Locator) => {
       const b = (await locator.boundingBox())!;
       return { left: b.x, right: b.x + b.width };
@@ -447,7 +447,7 @@ for (const colorScheme of ['dark', 'light'] as const) {
       release();
       await waitForExploreDataLoad(page);
       expect(await htmlTheme(page)).toBe('system');
-      await expect.poll(() => backgroundOf(workbench(page))).toBe(surface);
+      await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(surface);
     });
   });
 }
@@ -460,6 +460,6 @@ test.describe('Light stored on a dark OS', () => {
     await seedTheme(page, 'light');
     await openExplore(page);
     expect(await htmlTheme(page)).toBe('light');
-    await expect.poll(() => backgroundOf(workbench(page))).toBe(WHITE);
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(WHITE);
   });
 });

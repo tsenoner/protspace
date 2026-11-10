@@ -9,6 +9,7 @@ import { EXPORT_DEFAULTS, pxToMm } from '@protspace/core';
 import type { BundleSettings } from '@protspace/utils';
 import {
   createExporter,
+  downloadBlob,
   exportCanvasAsPdf,
   exportParquetBundle,
   generateBundleFilename,
@@ -26,7 +27,7 @@ interface ExportHandlerOptions {
   exportMenu: ProtspaceExportMenu;
   /** Adds a listener on the Export panel for as long as the runtime lives. */
   listen(type: string, listener: EventListener): void;
-  getSelectedProteins(): string[];
+  getSelectedProteins(): readonly string[];
   /** Proteins the loaded file holds that the dataset, and so a bundle export, leaves out. */
   getUnplacedProteinCount(): number;
   legendElement: ProtspaceLegend;
@@ -39,13 +40,6 @@ interface ExportHandlerOptions {
 function generateFilename(ext: string): string {
   const date = new Date().toISOString().split('T')[0];
   return `protspace_figure_${date}.${ext}`;
-}
-
-function downloadFile(url: string, filename: string): void {
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
 }
 
 /**
@@ -91,7 +85,10 @@ export function createExportHandler(options: ExportHandlerOptions): void {
         : null;
 
       // Handle export from the figure editor
+      // One export at a time: a double click on Export would otherwise download twice.
+      let exporting = false;
       modal.addEventListener('publish-export', (async (e: CustomEvent) => {
+        if (exporting) return;
         const { canvas, state } = e.detail as {
           canvas: HTMLCanvasElement;
           state: Record<string, unknown> & { format: string; dpi: number };
@@ -99,6 +96,7 @@ export function createExportHandler(options: ExportHandlerOptions): void {
 
         savePublishState(state);
 
+        exporting = true;
         try {
           const fname = generateFilename(state.format);
           if (state.format === 'pdf') {
@@ -112,13 +110,7 @@ export function createExportHandler(options: ExportHandlerOptions): void {
                 'image/png',
               );
             });
-            const withDpi = await pngWithDpi(blob, state.dpi);
-            const url = URL.createObjectURL(withDpi);
-            try {
-              downloadFile(url, fname);
-            } finally {
-              URL.revokeObjectURL(url);
-            }
+            downloadBlob(await pngWithDpi(blob, state.dpi), fname);
           }
           notify.success(getExportSuccessNotification(fname));
           modal.remove();
@@ -130,6 +122,8 @@ export function createExportHandler(options: ExportHandlerOptions): void {
             failure.description ? `${failure.title} ${failure.description}` : failure.title,
           );
           // Leave the modal open so the user can retry without losing context.
+        } finally {
+          exporting = false;
         }
       }) as EventListener);
 

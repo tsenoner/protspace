@@ -36,7 +36,7 @@ const navLinkClass =
     cn(base, isActive ? activeTextClass : textClass, hoverTextClass);
 const mutedTextClass = 'text-foreground/80';
 const dropdownClasses =
-  'absolute top-full right-0 mt-2 w-48 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border bg-background border-border/40';
+  'absolute top-full right-0 mt-2 w-48 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus-within:opacity-100 group-focus-within:visible transition-all duration-200 border bg-background border-border/40';
 /** Sized and spaced like Explore's icon buttons (config/site-bar.css): the background changes on
     hover, the colour stays. */
 const iconButtonClass =

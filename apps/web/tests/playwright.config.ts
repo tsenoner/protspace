@@ -7,7 +7,7 @@ import {
 } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { STARTUP_DATASET_URL } from './helpers/fixtures';
-import { tourCompletedStorageState } from './helpers/tour-storage-state';
+import { exploreStorageState } from './helpers/tour-storage-state';
 
 const TEST_DIR = fileURLToPath(new URL('.', import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -57,7 +57,8 @@ const appServerCommand = (port: number | string): string =>
         `NODE_ENV=development pnpm --filter @protspace/app exec vite build -c tests/vite.e2e.config.ts --mode development --outDir dist-e2e/${port}`,
         `pnpm --filter @protspace/app exec vite preview -c tests/vite.e2e.config.ts --outDir dist-e2e/${port} --port ${port} --strictPort`,
       ].join(' && ');
-const TOUR_COMPLETED_STORAGE_STATE = tourCompletedStorageState(BASE_URL);
+// The tour already seen, and nothing else: what every e2e context starts with.
+const TOUR_COMPLETED_STORAGE_STATE = exploreStorageState(BASE_URL);
 const EMPTY_STORAGE_STATE: BrowserContextOptions['storageState'] = { cookies: [], origins: [] };
 
 /**

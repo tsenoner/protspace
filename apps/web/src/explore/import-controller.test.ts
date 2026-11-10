@@ -34,6 +34,7 @@ function bind(
   const datasetController = {
     loadChosenExample: vi.fn().mockResolvedValue('loaded'),
     tryLoadPersistedAgain: vi.fn().mockResolvedValue(undefined),
+    hasDisplayedDataset: vi.fn(() => true),
   };
   const screen = { exampleId: 'demo' as string | null, name: 'Demo' };
   let changeListener: ChangeListener | null = null;
@@ -142,6 +143,17 @@ describe('the Import menu', () => {
     expect(readSummary).toHaveBeenCalledTimes(3);
   });
 
+  it('offers the stored file while the recovery banner names it on an empty page', async () => {
+    const { importMenu, screen, datasetController } = bind();
+    // Startup stopped at the banner: the app bar names the stored file, nothing is on screen.
+    datasetController.hasDisplayedDataset.mockReturnValue(false);
+    screen.exampleId = null;
+    screen.name = 'mine.parquetbundle';
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(importMenu.lastFile).toEqual({ name: 'mine.parquetbundle', sizeLabel: '12.3 MB' });
+  });
+
   it('open-last-file loads the stored file and retries it', async () => {
     const stored = new File(['x'], 'mine.parquetbundle');
     const { importMenu, datasetController, warn } = bind({ loadLastFile: async () => stored });
@@ -152,6 +164,17 @@ describe('the Import menu', () => {
       expect(datasetController.tryLoadPersistedAgain).toHaveBeenCalledWith(stored),
     );
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a reopen whose load status cannot be written warns instead of rejecting unhandled', async () => {
+    const { importMenu, datasetController, warn } = bind();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    datasetController.tryLoadPersistedAgain.mockRejectedValueOnce(new Error('quota'));
+
+    importMenu.dispatchEvent(new CustomEvent('open-last-file', { detail: {} }));
+
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('The stored file could not be read'));
+    expect(error).toHaveBeenCalled();
   });
 
   it('a null file warns and refreshes', async () => {

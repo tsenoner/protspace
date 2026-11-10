@@ -14,6 +14,7 @@ import {
   tap,
 } from './helpers/mobile';
 import { useSharedPage } from './helpers/shared-page';
+import { workbenchRoot } from './helpers/workbench';
 
 /**
  * Design decision 20 on phones: axe on the phone layout's own states in both themes, as
@@ -34,14 +35,12 @@ interface State {
   axe?: AxeOptions;
 }
 
-const workbench = (page: Page) => page.locator('.workbench');
-
 /** States that only open what they close again: one loaded page serves them all. */
 const SHARED_STATES: State[] = [
   {
     name: 'the idle phone screen',
     open: async (page) => {
-      await expect(workbench(page)).toHaveAttribute('data-layout', 'phone');
+      await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'phone');
     },
   },
   {
@@ -80,7 +79,7 @@ const FRESH_STATES: State[] = [
     name: 'the folded structure sheet after a tap',
     open: async (page) => {
       await tap(page, await proteinNearRightEdge(page));
-      await expect(workbench(page)).toHaveAttribute('data-sheet', 'folded');
+      await expect(workbenchRoot(page)).toHaveAttribute('data-sheet', 'folded');
       await expect(structureSheet(page)).toBeVisible();
       await expect(page.locator('#myStructureViewer .loading-overlay')).toHaveCount(0);
     },
@@ -125,7 +124,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       test('the idle landscape screen has no violations', async ({ page }) => {
         await openExplorePhone(page);
         await expectColorScheme(page, colorScheme);
-        await expect(workbench(page)).toHaveAttribute('data-layout', 'landscape');
+        await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'landscape');
         await expectNoAxeViolations(page);
       });
     });

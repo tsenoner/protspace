@@ -7,6 +7,7 @@
  * recording mock GL.
  */
 
+import { clamp01 } from '@protspace/utils';
 import type { PointUniformLocations } from '../types';
 import { IDENTITY_RESCALE, type Rescale } from './rescale';
 import { MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
@@ -173,8 +174,8 @@ export function bindPointDrawState(
   gl.uniform1i(uniforms.marks, MARK_TEXTURE_UNIT);
   gl.uniform1i(uniforms.marksOn, marks ? 1 : 0);
   if (marks) {
-    gl.uniform1f(uniforms.markedOpacity, Math.min(1, Math.max(0, marks.marked)));
-    gl.uniform1f(uniforms.unmarkedOpacity, Math.min(1, Math.max(0, marks.unmarked)));
+    gl.uniform1f(uniforms.markedOpacity, clamp01(marks.marked));
+    gl.uniform1f(uniforms.unmarkedOpacity, clamp01(marks.unmarked));
   }
 
   gl.activeTexture(gl.TEXTURE0 + LABEL_ATLAS_TEXTURE_UNIT);

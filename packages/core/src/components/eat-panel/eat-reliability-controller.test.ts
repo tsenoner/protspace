@@ -99,7 +99,7 @@ describe('EAT reliability controller: switch, handles and boxes', () => {
     const listener = listen(panel);
 
     drag(lower(panel), '0.62');
-    expect(panel.reliabilityThreshold).toBe(0.62);
+    expect(panel.reliability.min).toBe(0.62);
     await panel.updateComplete;
     expect(percents(panel)[0]!.value).toBe('62');
     expect(listener).not.toHaveBeenCalled();
@@ -185,7 +185,7 @@ describe('EAT reliability controller: switch, handles and boxes', () => {
     panel.setReliabilityState({ min: 0.42, max: 1 });
     await panel.updateComplete;
 
-    expect(panel.reliabilityThreshold).toBe(0.42);
+    expect(panel.reliability.min).toBe(0.42);
     expect(percents(panel)[0]!.value).toBe('42');
     expect(listener).not.toHaveBeenCalled();
   });

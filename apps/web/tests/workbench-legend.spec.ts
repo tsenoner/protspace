@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 import { SIDEBAR_WIDTH } from '../src/explore/layout-defaults';
 import {
   dismissTourIfPresent,
-  getFirstLegendItemValue,
   importUserFile,
   openExplore,
   openImportMenu,
@@ -17,11 +16,12 @@ import {
   addFromOther,
   closeLegendSettings,
   escapeRegex,
+  getFirstLegendItemValue,
   isLegendItemHidden,
   legend,
+  legendOtherDialog,
   legendRow,
   legendRowAction,
-  legendOtherDialog,
   legendRowValues,
   legendSettingsDialog,
   legendSortButton,

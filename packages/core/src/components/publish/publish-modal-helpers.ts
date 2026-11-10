@@ -11,6 +11,7 @@
 import type { PublishState } from './publish-state';
 import { getPreset, resolvePresetDimensions, type PresetId } from './journal-presets';
 import { adjustDpiForWidthMm, mmToPx, pxToMm } from './dimension-utils';
+import { MAX_EXPORT_DIMENSION } from '../scatter-plot/webgl/renderer/device-limits';
 
 type ViewFingerprint = { projection: string; dimensionality: number };
 
@@ -38,31 +39,51 @@ export function getActivePresetMaxHeightPx(state: PublishState): number | null {
 }
 
 /**
+ * A figure size held to what the export renders (`MAX_EXPORT_DIMENSION` a side), whole and at
+ * least 1 px. With the aspect linked both sides shrink by one factor, so the ratio survives.
+ */
+export function capFigureSize(
+  widthPx: number,
+  heightPx: number,
+  keepAspect: boolean,
+): { widthPx: number; heightPx: number } {
+  const scale = keepAspect ? Math.min(1, MAX_EXPORT_DIMENSION / Math.max(widthPx, heightPx)) : 1;
+  const cap = (px: number) => Math.min(MAX_EXPORT_DIMENSION, Math.max(1, Math.round(px * scale)));
+  return { widthPx: cap(widthPx), heightPx: cap(heightPx) };
+}
+
+/** A new width; with the aspect linked the height follows. Both held to the export cap. */
+function widthPatch(state: PublishState, widthPx: number): Partial<PublishState> {
+  if (!(state.aspectLocked && state.widthPx > 0)) {
+    return { widthPx: capFigureSize(widthPx, 1, false).widthPx, preset: 'custom' };
+  }
+  const sized = capFigureSize(widthPx, (widthPx * state.heightPx) / state.widthPx, true);
+  return { ...sized, preset: 'custom' };
+}
+
+/** A new height; with the aspect linked the width follows. Both held to the export cap. */
+function heightPatch(state: PublishState, heightPx: number): Partial<PublishState> {
+  if (!(state.aspectLocked && state.heightPx > 0)) {
+    return { heightPx: capFigureSize(1, heightPx, false).heightPx, preset: 'custom' };
+  }
+  const sized = capFigureSize((heightPx * state.widthPx) / state.heightPx, heightPx, true);
+  return { ...sized, preset: 'custom' };
+}
+
+/**
  * Width input in pixels. Caller is responsible for only invoking this when the UI
  * unit is 'px'; DPI is unaffected regardless of resample mode.
  */
 export function computeWidthPxUpdate(state: PublishState, widthPx: number): Partial<PublishState> {
   if (widthPx <= 0) return {};
-  const patch: Partial<PublishState> = { widthPx, preset: 'custom' };
-  if (state.aspectLocked && state.widthPx > 0) {
-    const ratio = state.heightPx / state.widthPx;
-    patch.heightPx = Math.max(1, Math.round(widthPx * ratio));
-  }
-  return patch;
+  return widthPatch(state, widthPx);
 }
 
 /** Width input in mm/in/cm. Branches on `state.resample`. */
 export function computeWidthMmUpdate(state: PublishState, widthMm: number): Partial<PublishState> {
   if (widthMm <= 0) return {};
-  if (state.resample) {
-    const widthPx = Math.max(1, mmToPx(widthMm, state.dpi));
-    const patch: Partial<PublishState> = { widthPx, preset: 'custom' };
-    if (state.aspectLocked && state.widthPx > 0) {
-      const ratio = state.heightPx / state.widthPx;
-      patch.heightPx = Math.max(1, Math.round(widthPx * ratio));
-    }
-    return patch;
-  }
+  // Resample=ON: mm fixed, pixels follow (held to the cap, so the box shows the mm that fit).
+  if (state.resample) return widthPatch(state, mmToPx(widthMm, state.dpi));
   // Resample=OFF: pixels locked, dpi recomputes.
   const dpi = Math.max(1, adjustDpiForWidthMm(state.widthPx, widthMm));
   return { dpi, preset: 'custom' };
@@ -77,12 +98,7 @@ export function computeHeightPxUpdate(
   heightPx: number,
 ): Partial<PublishState> {
   if (heightPx <= 0) return {};
-  const patch: Partial<PublishState> = { heightPx, preset: 'custom' };
-  if (state.aspectLocked && state.heightPx > 0) {
-    const ratio = state.widthPx / state.heightPx;
-    patch.widthPx = Math.max(1, Math.round(heightPx * ratio));
-  }
-  return patch;
+  return heightPatch(state, heightPx);
 }
 
 /** Height input in mm/in/cm. Branches on `state.resample`. */
@@ -91,29 +107,29 @@ export function computeHeightMmUpdate(
   heightMm: number,
 ): Partial<PublishState> {
   if (heightMm <= 0) return {};
-  if (state.resample) {
-    const heightPx = Math.max(1, mmToPx(heightMm, state.dpi));
-    const patch: Partial<PublishState> = { heightPx, preset: 'custom' };
-    if (state.aspectLocked && state.heightPx > 0) {
-      const ratio = state.widthPx / state.heightPx;
-      patch.widthPx = Math.max(1, Math.round(heightPx * ratio));
-    }
-    return patch;
-  }
+  if (state.resample) return heightPatch(state, mmToPx(heightMm, state.dpi));
   const dpi = Math.max(1, adjustDpiForWidthMm(state.heightPx, heightMm));
   return { dpi, preset: 'custom' };
 }
 
-/** DPI input. Branches on `state.resample`. Preserves the active preset (DPI is part of preset semantics). */
+/**
+ * DPI input. Branches on `state.resample`. Preserves the active preset (DPI is part of preset
+ * semantics). With Resample on the print size holds and the pixels follow, so the dpi is held
+ * to the highest at which the longer side still fits the export cap.
+ */
 export function computeDpiUpdate(state: PublishState, dpi: number): Partial<PublishState> {
   if (dpi <= 0) return {};
   if (state.resample) {
     const widthMm = pxToMm(state.widthPx, state.dpi);
     const heightMm = pxToMm(state.heightPx, state.dpi);
+    const maxDpi = Math.max(
+      1,
+      Math.floor(pxToMm(MAX_EXPORT_DIMENSION, 1) / Math.max(widthMm, heightMm)),
+    );
+    const applied = Math.min(dpi, maxDpi);
     return {
-      dpi,
-      widthPx: Math.max(1, mmToPx(widthMm, dpi)),
-      heightPx: Math.max(1, mmToPx(heightMm, dpi)),
+      dpi: applied,
+      ...capFigureSize(mmToPx(widthMm, applied), mmToPx(heightMm, applied), false),
     };
   }
   return { dpi };

@@ -1002,6 +1002,19 @@ function clickDownload(url: string, filename: string): void {
   link.click();
 }
 
+/**
+ * Downloads `blob` as `fileName`. The object URL outlives the click: revoking it at once can
+ * cancel a download the browser has not started reading yet.
+ */
+export function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  try {
+    clickDownload(url, fileName);
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL_MS);
+  }
+}
+
 /** A name made safe for a file name: letters, digits, `_` and `-` only, lower case. */
 export function fileNamePart(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
@@ -1011,13 +1024,7 @@ export function fileNamePart(name: string): string {
 export function downloadProteinIds(ids: readonly string[], fileName: string): void {
   // A Blob, not a data: URI: hundreds of thousands of IDs URI-encoded into one string cost
   // several megabytes of string building before the download even starts.
-  const blob = new Blob([ids.join('\n')], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  try {
-    clickDownload(url, fileName);
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL_MS);
-  }
+  downloadBlob(new Blob([ids.join('\n')], { type: 'text/plain;charset=utf-8' }), fileName);
 }
 
 const FLOAT32_MIN_NORMAL = 2 ** -126;

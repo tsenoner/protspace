@@ -10,10 +10,8 @@ export type { ScalePair } from '@protspace/utils';
 
 export interface WebGLStyleGetters {
   getColors: (point: PlotDataPoint) => string[];
-  getPointSize: (point: PlotDataPoint) => number;
   getOpacity: (point: PlotDataPoint) => number;
   getDepth: (point: PlotDataPoint) => number;
-  getShape: (point: PlotDataPoint) => string;
   isPredicted: (point: PlotDataPoint) => boolean;
   /**
    * Whether the selected annotation stores more than one value for any protein.
@@ -54,9 +52,9 @@ export interface PointMarks {
 export interface PointStyleRecords {
   /** `getColors` of a point with this record. */
   readonly colors: readonly (readonly string[])[];
-  /** `getShape` of a point with this record. */
+  /** The shape of a point with this record. */
   readonly shapes: readonly string[];
-  /** `getPointSize`, the same for every point of the pass. */
+  /** The point size, the same for every point of the pass. */
   readonly pointSize: number;
   /**
    * What the first `count` records are keyed by: record `c` is category code `c`

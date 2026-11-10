@@ -88,7 +88,14 @@ export class ProtspaceStructureViewer extends LitElement {
   @query('.viewer-content') private _viewerContainer!: HTMLElement;
 
   protected willUpdate(changed: PropertyValues<this>): void {
-    if (changed.has('proteinChoices') && this.proteinChoices.length <= 1) this._pickOpen = false;
+    // Another protein closes the menu: with none, the empty state drops the menu without its
+    // ps-close, and an open flag left behind would open it unasked on the next protein.
+    if (
+      changed.has('proteinId') ||
+      (changed.has('proteinChoices') && this.proteinChoices.length <= 1)
+    ) {
+      this._pickOpen = false;
+    }
   }
 
   protected updated(changedProperties: Map<string | number | symbol, unknown>) {

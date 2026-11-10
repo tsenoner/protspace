@@ -224,6 +224,25 @@ describe('protspace-info-popover on ps-popover', () => {
     await vi.waitFor(() => expect(isOpen(el)).toBe(false));
   });
 
+  it('side placement moved to another row closes when the pointer leaves the new row', async () => {
+    const stage = document.getElementById('stage')!;
+    stage.innerHTML = `<div id="row" style="display: flex; align-items: center; width: 240px">
+      <span style="flex: 1">Pfam</span></div>
+      <div id="row-2" style="display: flex; align-items: center; width: 240px">
+      <span style="flex: 1">CATH</span></div>`;
+    const el = await mount({ placement: 'side' }, document.getElementById('row')!);
+
+    // A keyed list reorder moves the element: it disconnects and reconnects.
+    document.getElementById('row-2')!.append(el);
+    await settle(el);
+    await userEvent.hover(trigger(el));
+    await settle(el);
+    expect(isOpen(el)).toBe(true);
+
+    await userEvent.hover(outside());
+    await vi.waitFor(() => expect(isOpen(el)).toBe(false));
+  });
+
   it('inside a translated, overflow-hidden ps-popover panel the bubble is fully on screen and topmost at its centre', async () => {
     const { row } = await openOuterPanel();
     const el = await mount({ placement: 'side', detail: 'A second paragraph.' }, row);

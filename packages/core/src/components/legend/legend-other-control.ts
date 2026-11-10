@@ -18,7 +18,7 @@ interface OtherControlOptions {
 /**
  * The legend's half of the Other popover (`protspace-legend-other-popover`): which View button it
  * hangs from, opening and closing, and where focus goes when Other empties. Not a registered
- * controller, like `LegendRowMenu`: the legend calls `willUpdate` and `updated` from its own.
+ * controller: the legend calls `willUpdate` and `updated` from its own.
  */
 export class OtherPopoverControl {
   private host: ReactiveControllerHost & HTMLElement;

@@ -131,7 +131,16 @@ def test_loader_backstop_raises_importerror_naming_the_extra():
 
 def test_embedder_help_list_matches_the_registry():
     """`common_options` copies the model list to keep biocentral off the
-    import path; this is what makes that copy safe."""
-    from protspace.data.embedding.biocentral import ALL_SHORT_KEYS
+    import path; this is what makes that copy safe.
 
-    assert set(EMBEDDER_MODELS) == set(ALL_SHORT_KEYS)
+    The CLI's list is the local backend's; without the local-only shortcuts it
+    is Biocentral's. A key Biocentral starts serving moves to EXTRA_SHORT_KEYS
+    and out of LOCAL_ONLY_EMBEDDERS, and this fails until both are done.
+    """
+    from protspace.cli.common_options import LOCAL_ONLY_EMBEDDERS
+    from protspace.data.embedding.biocentral import ALL_SHORT_KEYS
+    from protspace.data.embedding.local import LOCAL_CHECKPOINTS
+
+    assert set(EMBEDDER_MODELS) == set(LOCAL_CHECKPOINTS)
+    assert LOCAL_ONLY_EMBEDDERS <= set(EMBEDDER_MODELS)
+    assert set(EMBEDDER_MODELS) - LOCAL_ONLY_EMBEDDERS == set(ALL_SHORT_KEYS)

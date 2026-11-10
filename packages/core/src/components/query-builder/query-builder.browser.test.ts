@@ -7,7 +7,8 @@ import './query-builder';
 import { createCondition, createGroup, createNumericCondition } from './query-types';
 import type { FilterQuery } from './query-types';
 import type { ProtspaceData } from './types';
-import { cdp, page } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
+import { deepActiveElement } from '../kit/focus';
 
 beforeAll(() => adoptTheme());
 afterEach(() => document.body.replaceChildren());
@@ -354,5 +355,137 @@ describe('protspace-query-builder: the footer', () => {
     const apply = box(builder, '.query-footer-apply');
     expect(apply.top).toBeGreaterThanOrEqual(host.top);
     expect(apply.bottom).toBeLessThanOrEqual(host.bottom);
+  });
+});
+
+describe('protspace-query-builder: closing a value list that leaves only a presence value', () => {
+  /** The builder with its host's part: an edited query comes back as its query. */
+  async function mountHosted(query: FilterQuery) {
+    const builder = await mount(query);
+    builder.addEventListener('query-changed', (e) => {
+      builder.query = (e as CustomEvent<{ query: FilterQuery }>).detail.query;
+    });
+    return builder;
+  }
+
+  /** Opens the card's value list, the focus in its search, and ticks "Any value" by keyboard. */
+  async function tickAnyValue(row: Row) {
+    row.shadowRoot!.querySelector<PsButton>('.value-add')!.click();
+    await row.updateComplete;
+    const picker = row.shadowRoot!.querySelector('protspace-query-value-picker')!;
+    // The test viewport is a phone's: the list opens as a sheet, which focuses its title first.
+    const title = () => picker.shadowRoot!.querySelector<HTMLElement>('.value-picker-title');
+    await expect.poll(() => deepActiveElement() === title()).toBe(true);
+    picker.shadowRoot!.querySelector<HTMLInputElement>('.value-picker-input')!.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.keyboard('{Enter}');
+    await expect
+      .poll(() => (row as Row & { condition: { values: string[] } }).condition.values)
+      .toEqual(['__ANY__']);
+    return picker;
+  }
+
+  /** The card now reads "has any value", with no "+ value": focus lands on its operator pill. */
+  async function expectFocusOnOperator(row: Row) {
+    const pill = row.shadowRoot!.querySelector<PsButton>('.operator-pill')!;
+    await expect.poll(() => pill.textContent!.includes('has any value')).toBe(true);
+    expect(row.shadowRoot!.querySelector('.value-add')).toBeNull();
+    await expect.poll(() => deepActiveElement()).toBe(inner(pill));
+  }
+
+  it('Escape hands focus to the operator pill', async () => {
+    const builder = await mountHosted([createCondition({ annotation: 'organism' })]);
+    const row = rows(builder)[0];
+    await tickAnyValue(row);
+    await userEvent.keyboard('{Escape}');
+    await expectFocusOnOperator(row);
+  });
+
+  it('Done hands focus to the operator pill', async () => {
+    const builder = await mountHosted([createCondition({ annotation: 'organism' })]);
+    const row = rows(builder)[0];
+    const picker = await tickAnyValue(row);
+    const done = picker.shadowRoot!.querySelector<PsButton>('.value-picker-footer ps-button')!;
+    done.focus();
+    await userEvent.keyboard('{Enter}');
+    await expectFocusOnOperator(row);
+  });
+});
+
+describe('protspace-query-builder: removing with the keyboard', () => {
+  async function mountHosted(query: FilterQuery) {
+    const builder = await mount(query);
+    builder.addEventListener('query-changed', (e) => {
+      builder.query = (e as CustomEvent<{ query: FilterQuery }>).detail.query;
+    });
+    return builder;
+  }
+  const addCondition = (builder: ProtspaceQueryBuilder) =>
+    inner(builder.shadowRoot!.querySelector<PsButton>('.add-condition')!);
+
+  it('the last card’s ✕ hands the focus to "Add condition"', async () => {
+    const builder = await mountHosted([
+      createCondition({ annotation: 'organism', values: ['Human'] }),
+      createCondition({ annotation: 'organism', values: ['Mouse'], logicalOp: 'OR' }),
+    ]);
+    const remove = rows(builder)[1].shadowRoot!.querySelector<PsIconButton>('.condition-remove')!;
+    await remove.updateComplete;
+    inner(remove).focus();
+    await userEvent.keyboard('{Enter}');
+    await expect.poll(() => rows(builder).length).toBe(1);
+    await expect.poll(() => deepActiveElement()).toBe(addCondition(builder));
+  });
+
+  it('a group’s ✕ hands the focus to "Add condition"', async () => {
+    const builder = await mountHosted([
+      createCondition({ annotation: 'organism', values: ['Human'] }),
+      createGroup({ logicalOp: 'AND' }),
+    ]);
+    const remove = builder.shadowRoot!.querySelector<PsIconButton>('.group-remove')!;
+    await remove.updateComplete;
+    inner(remove).focus();
+    await userEvent.keyboard('{Enter}');
+    await expect.poll(() => builder.shadowRoot!.querySelector('.group-container')).toBeNull();
+    await expect.poll(() => deepActiveElement()).toBe(addCondition(builder));
+  });
+});
+
+describe('protspace-query-builder: the annotation picker opened from a card’s ⋯ menu', () => {
+  /** Opens the picker through ⋯ → Change annotation by keyboard; resolves with the row. */
+  async function openFromMenu() {
+    const builder = await mount([createCondition({ annotation: 'organism', values: ['Human'] })]);
+    builder.addEventListener('query-changed', (e) => {
+      builder.query = (e as CustomEvent<{ query: FilterQuery }>).detail.query;
+    });
+    const row = rows(builder)[0];
+    const trigger = row.shadowRoot!.querySelector<PsIconButton>('.condition-menu-trigger')!;
+    await trigger.updateComplete;
+    inner(trigger).focus();
+    await userEvent.keyboard('{Enter}');
+    const change = row.shadowRoot!.querySelector<HTMLElement>('ps-menu-item[value="change"]')!;
+    await expect.poll(() => deepActiveElement() === change).toBe(true);
+    await userEvent.keyboard('{Enter}');
+    // The test viewport is a phone's: the picker opens as a sheet, which focuses its title first.
+    const title = () => row.shadowRoot!.querySelector<HTMLElement>('.annotation-picker-title');
+    await expect.poll(() => !!title() && deepActiveElement() === title()).toBe(true);
+    row.shadowRoot!.querySelector<HTMLInputElement>('.annotation-picker-input')!.focus();
+    return row;
+  }
+
+  const trigger = (row: Row) =>
+    row.shadowRoot!.querySelector<HTMLElement>('.annotation-select-trigger');
+
+  it('picking an annotation leaves the focus on the card’s annotation trigger', async () => {
+    const row = await openFromMenu();
+    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.keyboard('{Enter}');
+    await expect.poll(() => deepActiveElement()).toBe(trigger(row));
+  });
+
+  it('Escape returns the focus to the ⋯ button it came from', async () => {
+    const row = await openFromMenu();
+    await userEvent.keyboard('{Escape}');
+    const menu = row.shadowRoot!.querySelector<PsIconButton>('.condition-menu-trigger')!;
+    await expect.poll(() => deepActiveElement()).toBe(inner(menu));
   });
 });

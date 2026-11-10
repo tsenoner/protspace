@@ -1,8 +1,6 @@
-import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import {
   chooseTool,
-  dismissTourIfPresent,
   exportMenu,
   getSelectedProteinIds,
   openExplore,
@@ -10,40 +8,17 @@ import {
   selectAnnotation,
   selectionBar,
   selectionBarAction,
-  waitForProteinCount,
+  toolButton,
+  twoFrames,
 } from './helpers/explore';
 import { figureEditorContent, figurePreviewCanvas } from './helpers/figure';
-import { STARTUP_URL_GLOB } from './helpers/fixtures';
-import { seedTourSeen } from './helpers/tour-storage-state';
 import { stubStructureRequests } from './helpers/workbench';
-
-const EAT_FIXTURE = fileURLToPath(
-  new URL('./fixtures/phosphatase_eat.parquetbundle', import.meta.url),
-);
-
-const toolButton = (page: Page, name: string) =>
-  page.getByRole('toolbar', { name: 'Plot tools' }).getByRole('button', { name, exact: true });
+import { loadPhosphataseEat } from './helpers/eat';
 
 test.beforeEach(async ({ page }) => {
   // A selection opens the structure viewer: answer its requests offline.
   await stubStructureRequests(page);
 });
-
-/** The EAT fixture, loaded through the data loader's file input as eat-visualization.spec.ts does. */
-async function loadEatFixture(page: Page): Promise<void> {
-  await seedTourSeen(page);
-  await page.route(STARTUP_URL_GLOB, (route) => route.abort());
-  await page.goto('/explore');
-  await dismissTourIfPresent(page);
-  await page.waitForFunction(() => {
-    const loader = document.querySelector('protspace-data-loader') as
-      | (Element & { loadFromFile?: unknown })
-      | null;
-    return typeof loader?.loadFromFile === 'function';
-  });
-  await page.locator('protspace-data-loader input[type="file"]').setInputFiles(EAT_FIXTURE);
-  await waitForProteinCount(page, 832);
-}
 
 /** Clicks the first protein with an EAT transfer, as a point click reports it, and returns its id. */
 function clickEatTransfer(page: Page): Promise<string> {
@@ -86,17 +61,11 @@ async function selectFirstBySearch(page: Page): Promise<string> {
   return id;
 }
 
-/** Two frames: a wrong clear shows at once in the search box and reaches the plot after the paint. */
-const twoFrames = (page: Page) =>
-  page.evaluate(
-    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-  );
-
 test.describe('the Escape order', () => {
   test('an EAT click: Escape 1 hides the connectors and keeps the selection, 2 clears the selection, 3 returns to Move', async ({
     page,
   }) => {
-    await loadEatFixture(page);
+    await loadPhosphataseEat(page);
     await selectAnnotation(page, 'ec');
     await chooseTool(page, 'Box select');
     const connectors = page.locator('#myPlot line.eat-provenance-connector');

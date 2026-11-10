@@ -25,6 +25,11 @@ export interface DragCallbacks {
   onSortModeChange?: (mode: LegendSortMode) => void;
   /** Called after a successful drop to highlight the dropped item */
   onDropComplete?: (value: string) => void;
+  /**
+   * Whether a row moves. The ones that do not (Other, a numeric legend's N/A) are pinned last, so
+   * a row is never dropped at or past them. Every row moves when absent.
+   */
+  canDrag?: (item: LegendItem) => boolean;
 }
 
 export class DragController implements ReactiveController {
@@ -132,6 +137,8 @@ export class DragController implements ReactiveController {
 
     // Moving over a normal item — clear any "Other" highlight
     this.clearOtherHighlight();
+    // A pinned row (its grip disabled: a numeric legend's N/A) keeps its place at the end.
+    if (relatedEl.querySelector('.drag-handle:disabled')) return false;
     return undefined;
   }
 
@@ -191,10 +198,13 @@ export class DragController implements ReactiveController {
       return;
     }
 
-    // Prevent dropping below "Other" (Other must stay at bottom)
-    const otherIndex = sortedItems.findIndex((i) => i.value === LEGEND_VALUES.OTHER);
-    if (otherIndex !== -1 && newIndex >= otherIndex && draggedValue !== LEGEND_VALUES.OTHER) {
-      // Restore DOM - can't drop at or after "Other"
+    // Prevent dropping at or below a pinned row: Other, or a numeric legend's N/A, stays at the end.
+    const canDrag = this.callbacks.canDrag;
+    const firstPinned = sortedItems.findIndex(
+      (i) =>
+        i.value !== draggedValue && (i.value === LEGEND_VALUES.OTHER || canDrag?.(i) === false),
+    );
+    if (firstPinned !== -1 && newIndex >= firstPinned) {
       this.restoreDom(evt.from);
       return;
     }

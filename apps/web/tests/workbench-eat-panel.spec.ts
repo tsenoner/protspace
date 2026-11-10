@@ -194,7 +194,8 @@ test('moving the EAT threshold filters the plot and the legend says so', async (
   await loadPhosphataseEat(page);
   await selectAnnotation(page, 'ec');
   await expect(legendEatNote(page)).toBeVisible();
-  await expect(legendEatNote(page)).not.toContainText('Filtered');
+  // The full 0–100 % range: the note names no range yet.
+  await expect(legendEatNote(page)).not.toContainText('outside');
 
   await openEatPanel(page);
   await eatThresholdBox(page).fill('50');

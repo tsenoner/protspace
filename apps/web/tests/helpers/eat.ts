@@ -16,6 +16,12 @@ export async function loadPhosphataseEat(page: Page): Promise<void> {
   await page.route(STARTUP_URL_GLOB, (route) => route.abort());
   await page.goto('/explore');
   await dismissTourIfPresent(page);
+  await page.waitForFunction(() => {
+    const loader = document.querySelector('protspace-data-loader') as
+      | (Element & { loadFromFile?: unknown })
+      | null;
+    return typeof loader?.loadFromFile === 'function';
+  });
   await page.locator('protspace-data-loader input[type="file"]').setInputFiles(PHOSPHATASE_EAT);
   await waitForProteinCount(page, 832);
 }

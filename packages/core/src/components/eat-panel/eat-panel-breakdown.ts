@@ -12,7 +12,7 @@ import '../kit/button';
 import { icon } from '../kit/icon';
 import '../kit/menu';
 import { formatPercent } from '../query-builder/eat-reliability';
-import { getEatIndex, type EatIndex, type EatLabelRow } from './eat-summary';
+import { curatedTotal, getEatIndex, type EatIndex, type EatLabelRow } from './eat-summary';
 
 export type EatLabelSort = 'share' | 'most-predicted' | 'least-reliable' | 'name';
 
@@ -264,18 +264,10 @@ export function renderBreakdown(view: EatBreakdownView): TemplateResult | typeof
   </section>`;
 }
 
-const curatedCounts = new WeakMap<EatIndex, number>();
-
 /** Predicted proteins among those with a value (curated or predicted), over the whole dataset. */
 function predictedShareOf(index: EatIndex): number {
-  let curated = curatedCounts.get(index);
-  if (curated === undefined) {
-    curated = 0;
-    for (let p = 0; p < index.total; p++) curated += index.curated[p];
-    curatedCounts.set(index, curated);
-  }
   const predicted = index.order.length;
-  return predicted / (predicted + curated);
+  return predicted / (predicted + curatedTotal(index));
 }
 
 /**
