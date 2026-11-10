@@ -86,10 +86,12 @@ test.describe('the Filter panel on a phone', () => {
     // The heading stays for screen readers but takes no room beside the tabs.
     const title = await box(page.locator('#wb-filter-title'));
     expect(title.width).toBeLessThanOrEqual(1);
-    // A first card has no joiner, so no blank select sits in front of its annotation.
+    // A first card has no joiner (nor a "not" pill), so nothing sits in front of its annotation.
     const builder = page.locator('#myQueryBuilder');
     await expect(builder.getByRole('button', { name: 'Choose annotation' })).toBeVisible();
-    await expect(builder.getByRole('combobox', { name: /condition 1/ })).toHaveCount(0);
+    await expect(
+      builder.getByRole('button', { name: /^(Joiner|Negation) for condition 1\b/ }),
+    ).toHaveCount(0);
   });
 });
 

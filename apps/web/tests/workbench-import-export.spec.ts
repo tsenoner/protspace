@@ -265,8 +265,9 @@ test.describe('Import and Export menus', () => {
     await expect(exportFormats(page).getByRole('radio')).toHaveText(['PNG', 'PDF']);
     await expect(exportMenu(page).getByText(/without contours/)).toBeVisible();
     await expect(exportDownload(page)).toHaveAccessibleName('Download PNG');
-    // The figure editor is not in the panel: it has its own button.
-    await expect(exportPanel(page).getByText('Figure editor…')).toHaveCount(0);
+    // The figure editor is not in the panel: it has its own button. The panel's content is slotted
+    // into the popover, so it is found from the menu, not from inside the dialog's shadow root.
+    await expect(exportMenu(page).getByRole('button', { name: /Figure editor/ })).toHaveCount(0);
 
     // A bundle: whether it carries the legend settings, checked by default.
     await exportKinds(page).getByRole('radio', { name: 'Data bundle', exact: true }).click();

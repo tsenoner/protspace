@@ -190,8 +190,11 @@ test.describe('the plot on a touch screen', () => {
     expect(sheet.y).toBeGreaterThanOrEqual(plot.y + plot.height - 1);
     expect(overlaps(await box(plotTooltip(page)), sheet)).toBe(false);
 
-    // Another protein leaves the sheet as it was.
+    // Another protein leaves the sheet as it was. The selection moves, so the tap landed: the
+    // tooltip and the folded sheet were already there before it.
+    const first = await getSelectedProteinIds(page);
     await tap(page, await proteinNear(page, 0.3, 0.4));
+    await expect.poll(() => getSelectedProteinIds(page)).not.toEqual(first);
     await expect(plotTooltip(page)).toHaveClass(/visible/);
     await expect(workbenchRoot(page)).toHaveAttribute('data-sheet', 'folded');
   });
@@ -218,8 +221,11 @@ test.describe('the plot on a touch screen', () => {
     expect(sheet.y).toBeGreaterThan(plot.y + 100);
     await expect(plotTooltip(page)).toHaveCount(0);
 
-    // A protein tapped above the open sheet is selected, and no tooltip opens over the plot.
+    // A protein tapped above the open sheet is selected (in place of the first), and no tooltip
+    // opens over the plot.
+    const first = await getSelectedProteinIds(page);
     await tap(page, await proteinNear(page, 0.3, 0.3, sheet.y - 20));
+    await expect.poll(() => getSelectedProteinIds(page)).not.toEqual(first);
     await expect.poll(() => selectedCount(page)).toBe(1);
     await expect(workbenchRoot(page)).toHaveAttribute('data-sheet', 'expanded');
     await expect(plotTooltip(page)).toHaveCount(0);
@@ -293,13 +299,18 @@ test.describe('the plot on a phone on its side', () => {
     await expect(plotTooltip(page)).toHaveClass(/visible/);
     // On a 360 px tall plot the pinned card is capped to the room above the selection bar.
     await expect(selectionBar(page)).toBeVisible();
-    expect(overlaps(await box(plotTooltip(page)), await box(selectionBar(page)))).toBe(false);
+    // The bar is placed a frame after it shows, and the card capped after that: poll the layout.
+    await expect
+      .poll(async () => overlaps(await box(plotTooltip(page)), await box(selectionBar(page))))
+      .toBe(false);
     const legend = await box(page.locator('#myLegend'));
     const folded = await box(structureSheet(page));
     // In the right column, under the legend.
     expect(folded.x).toBeGreaterThanOrEqual(legend.x - 1);
     expect(folded.y).toBeGreaterThanOrEqual(legend.y + legend.height - 1);
-    expect(overlaps(await box(plotTooltip(page)), folded)).toBe(false);
+    await expect
+      .poll(async () => overlaps(await box(plotTooltip(page)), await box(structureSheet(page))))
+      .toBe(false);
     // Folded, the viewer's body stays out of sight (Task 5.8's rule holds in landscape too).
     const body = page.locator('#myStructureViewer [part~="body"]');
     await expect(body).toBeHidden();

@@ -10,6 +10,7 @@ import {
   openFilter,
   queryBuilder,
   selectAnnotation,
+  twoFrames,
   waitForExploreDataLoad,
 } from './helpers/explore';
 import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
@@ -1108,6 +1109,7 @@ test('clicking a legend row toggles visibility without switching categorical sor
 
   const firstRow = page.locator('protspace-legend .legend-item-main').first();
   await firstRow.click();
+  await expect(firstRow).toHaveAttribute('aria-pressed', 'false');
 
   expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
@@ -1119,9 +1121,11 @@ test('same-slot pointer drag does not switch categorical sorting to manual', asy
   const initialLegend = await readLegendDisplay(page);
   await dragLegendHandle(page, 0, 0);
 
-  await expect
-    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
-    .toEqual(initialLegend.items.map((item) => item.value));
+  // Nothing may change, so a poll would pass on its first read: give a late reorder its frames.
+  await twoFrames(page);
+  expect((await readLegendDisplay(page)).items.map((item) => item.value)).toEqual(
+    initialLegend.items.map((item) => item.value),
+  );
 
   expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
@@ -1138,9 +1142,11 @@ test('dropping a pointer drag outside the legend keeps categorical sorting uncha
   await page.mouse.move(legendBounds.x - 80, legendBounds.y - 80, { steps: 10 });
   await page.mouse.up();
 
-  await expect
-    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
-    .toEqual(initialLegend.items.map((item) => item.value));
+  // Nothing may change, so a poll would pass on its first read: give a late reorder its frames.
+  await twoFrames(page);
+  expect((await readLegendDisplay(page)).items.map((item) => item.value)).toEqual(
+    initialLegend.items.map((item) => item.value),
+  );
 
   expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
@@ -1522,9 +1528,11 @@ test('keyboard pickup without movement keeps numeric sorting in value order', as
   await page.keyboard.press(' ');
   await page.keyboard.press(' ');
 
-  await expect
-    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
-    .toEqual(initialLegend.items.map((item) => item.value));
+  // Nothing may change, so a poll would pass on its first read: give a late reorder its frames.
+  await twoFrames(page);
+  expect((await readLegendDisplay(page)).items.map((item) => item.value)).toEqual(
+    initialLegend.items.map((item) => item.value),
+  );
 
   expect(await legendSortLabel(page)).toMatch(/^By value/);
 });
@@ -1541,9 +1549,11 @@ test('keyboard escape cancels pickup and keeps numeric sorting in value order', 
   await page.keyboard.press(' ');
   await page.keyboard.press('Escape');
 
-  await expect
-    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
-    .toEqual(initialLegend.items.map((item) => item.value));
+  // Nothing may change, so a poll would pass on its first read: give a late reorder its frames.
+  await twoFrames(page);
+  expect((await readLegendDisplay(page)).items.map((item) => item.value)).toEqual(
+    initialLegend.items.map((item) => item.value),
+  );
 
   const activeValue = await page.evaluate(() => {
     const legend = document.querySelector('protspace-legend') as HTMLElement & {

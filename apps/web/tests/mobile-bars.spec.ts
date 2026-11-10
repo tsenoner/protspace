@@ -167,8 +167,10 @@ test.describe('the bars on a phone', () => {
     }
     await expect(rows.getByRole('link', { name: /^Feedback/ })).toBeVisible();
     await expect(rows.getByRole('radiogroup', { name: 'Theme' })).toBeVisible();
-    // GitHub is not offered on a phone.
+    // GitHub is not offered on a phone: the sheet has no row for it, and the app bar's link goes
+    // with the other actions.
     await expect(rows.getByRole('link', { name: /GitHub/ })).toHaveCount(0);
+    await expect(appBar(page).getByRole('link', { name: 'GitHub', exact: true })).toBeHidden();
 
     // Contours applies in place: the sheet stays open.
     await rows.getByRole('radio', { name: 'Auto', exact: true }).tap();

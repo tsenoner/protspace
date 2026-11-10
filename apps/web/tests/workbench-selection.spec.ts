@@ -241,6 +241,8 @@ test.describe('plot tools and selection', () => {
     await openExplore(page);
     for (const width of [951, 1024, 1280, 1440]) {
       await page.setViewportSize({ width, height: 720 });
+      // The bar's side widths (--wb-app-bar-side) follow a ResizeObserver: measure after it ran.
+      await twoFrames(page);
       const bar = appBar(page);
       const box = (await bar.boundingBox())!;
       expect(box.height).toBe(48);

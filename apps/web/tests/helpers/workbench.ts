@@ -9,6 +9,7 @@ import {
   LAYOUT_STORAGE_KEY,
   type LayoutState,
 } from '../../src/explore/layout-defaults';
+import { twoFrames } from './explore';
 
 /** The workbench's root element, which carries the layout's data attributes. */
 export const workbenchRoot = (page: Page): Locator => page.locator('.workbench');
@@ -122,6 +123,9 @@ export async function clickProteinNearPlotCentre(page: Page): Promise<string> {
 /**
  * Starts counting changes of `#myPlot`'s size; the returned function reads the count. A layout
  * change that moves only panels must leave it at 0 (design decision 4).
+ *
+ * The read waits two frames first: a ResizeObserver reports a frame after the layout changed, so
+ * a count read right after the action that caused it would miss the resize it is there to catch.
  */
 export async function watchPlotResizes(page: Page): Promise<() => Promise<number>> {
   const counter = await page.locator('#myPlot').evaluateHandle((plot) => {
@@ -135,7 +139,10 @@ export async function watchPlotResizes(page: Page): Promise<() => Promise<number
     }).observe(plot);
     return state;
   });
-  return () => counter.evaluate((state) => state.count);
+  return async () => {
+    await twoFrames(page);
+    return counter.evaluate((state) => state.count);
+  };
 }
 
 /** The icon rail at the sidebar's right edge. */

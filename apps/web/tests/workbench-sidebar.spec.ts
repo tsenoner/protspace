@@ -360,17 +360,22 @@ test('a zoomed-in view keeps its centre protein across collapse and expand', asy
     .toBeGreaterThan(2);
   const start = await centreProtein(page);
 
-  await collapseSidebar(page);
-  const collapsed = await offsetOf(page, start.id);
+  // The plot refits in its own ResizeObserver, a frame after the sidebar's attribute changes, so
+  // each check polls until the refit has landed.
+  const drift = async (): Promise<number> => {
+    const now = await offsetOf(page, start.id);
+    const ratio = now.scale / start.scale;
+    return Math.max(Math.abs(now.dx - start.dx * ratio), Math.abs(now.dy - start.dy * ratio));
+  };
+
   // The data at the centre stays at the centre; offsets from it scale with the fit.
-  const ratio = collapsed.scale / start.scale;
-  expectNear(collapsed.dx, start.dx * ratio, 2);
-  expectNear(collapsed.dy, start.dy * ratio, 2);
+  await collapseSidebar(page);
+  await expect.poll(drift).toBeLessThanOrEqual(2);
 
   await expandSidebar(page);
+  await expect.poll(drift).toBeLessThanOrEqual(2);
   const back = await offsetOf(page, start.id);
-  expectNear(back.dx, start.dx, 2);
-  expectNear(back.dy, start.dy, 2);
+  expectNear(back.scale, start.scale, start.scale * 0.01);
 });
 
 test('the legend settings popover is fully visible after collapse and expand', async ({ page }) => {
