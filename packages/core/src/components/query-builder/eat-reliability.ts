@@ -173,7 +173,7 @@ export function reliabilityLabel(state: EatReliabilityInput): string | null {
   const { min, max } = normalizeReliability(state);
   const low = min > NEUTRAL_BOUND.min;
   const high = max < NEUTRAL_BOUND.max;
-  if (low && high) return `${Math.round(min * 100)}–${formatPercent(max)}`;
+  if (low && high) return rangeText(state);
   if (low) return `≥ ${formatPercent(min)}`;
   if (high) return `≤ ${formatPercent(max)}`;
   return null;
