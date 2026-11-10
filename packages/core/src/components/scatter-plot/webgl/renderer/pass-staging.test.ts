@@ -1,13 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as d3 from 'd3';
 import type { PlotData, PlotDataPoint } from '@protspace/utils';
-import type { ScalePair, WebGLStyleGetters } from '../types';
+import type { ScalePair } from '../types';
 import { createPassScratch, restageStyles, stageInPaintOrder } from './pass-staging';
 import { createStageArrays } from './stage-point';
 import {
   referenceRestage,
   referenceStage,
   referenceStylePass,
+  type ReferenceStyle,
 } from './test-support/reference-staging';
 
 vi.mock('../color-utils', () => ({
@@ -40,7 +41,7 @@ const stageArrays = (n: number) => createStageArrays(n, 4, new Uint8Array(n * 4 
  * Getters whose every output varies by point, but the point size: a pass has
  * one, so it varies by pass.
  */
-function perPointGetters(pointSize = 12): WebGLStyleGetters {
+function perPointGetters(pointSize = 12): ReferenceStyle {
   const colorSets = [['#102030'], ['#405060', '#708090'], [], ['#a0b0c0', '#d0e0f0', '#123456']];
   return {
     getColors: (p: PlotDataPoint) => colorSets[p.originalIndex % 4],
@@ -67,8 +68,7 @@ describe('staging through a pass over the getters', () => {
       const staged = stageArrays(n);
       const order = new Uint32Array(n);
       const pass = style.createStylePass();
-      const visible: number[] = [];
-      const { selectedStartIndex: cut } = stageInPaintOrder(
+      const { selectedStartIndex: cut, visibleCount } = stageInPaintOrder(
         staged,
         pass,
         createPassScratch(n),
@@ -77,9 +77,6 @@ describe('staging through a pass over the getters', () => {
         scales,
         n,
         true,
-        (slot, opacity) => {
-          if (opacity > 0) visible.push(slot);
-        },
       );
 
       // A record per colour set and shape: 4 x 3.
@@ -87,7 +84,7 @@ describe('staging through a pass over the getters', () => {
       expect(Array.from(order)).toEqual(Array.from(reference.order));
       expect(cut).toBe(reference.cut);
       expect(staged).toEqual(expected);
-      expect(visible).toHaveLength(Array.from(order).filter((s) => s % 4 !== 3).length);
+      expect(visibleCount).toBe(Array.from(order).filter((s) => s % 4 !== 3).length);
     }
   });
 
@@ -118,7 +115,7 @@ describe('staging through a pass over the getters', () => {
     const scratch = createPassScratch(n);
     stageInPaintOrder(staged, style.createStylePass(), scratch, order, pd, scales, n, false);
 
-    const restyled: WebGLStyleGetters = {
+    const restyled: ReferenceStyle = {
       ...perPointGetters(7),
       getColors: () => ['#ffffff', '#000000'],
     };

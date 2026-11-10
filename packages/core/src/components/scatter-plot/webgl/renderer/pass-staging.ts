@@ -7,7 +7,7 @@
  * copies its record's packed channels.
  */
 
-import type { PlotData } from '@protspace/utils';
+import { clamp01, type PlotData } from '@protspace/utils';
 import type { PointStylePass, PointStyleRecords, ScalePair, SlotStyleScratch } from '../types';
 import { linearAxis, mapLinear } from './rescale';
 import { buildPaintOrder } from './point-staging';
@@ -90,7 +90,7 @@ function stageSlotStyle(
   target.colors[c] = channels.colors[rc];
   target.colors[c + 1] = channels.colors[rc + 1];
   target.colors[c + 2] = channels.colors[rc + 2];
-  target.colors[c + 3] = Math.min(1, Math.max(0, opacity));
+  target.colors[c + 3] = clamp01(opacity);
   target.sizes[idx] = channels.sizes[r];
   target.labelCounts[idx] = channels.labelCounts[r];
   target.shapes[idx] = channels.shapes[r];
@@ -117,8 +117,8 @@ function stageSlotStyle(
 /**
  * Stage slots `[0, count)` of `pd` far -> near: resolve the pass, sort by paint
  * depth (see {@link buildPaintOrder}), then write each slot at its sorted index.
- * Returns the selection cut and the records as packed. `onStaged` sees every
- * slot once, in draw order.
+ * Returns the selection cut, the records as packed, and how many slots are drawn
+ * (opacity above 0).
  */
 export function stageInPaintOrder(
   target: StagePointArrays,
@@ -129,14 +129,14 @@ export function stageInPaintOrder(
   scales: ScalePair,
   count: number,
   selectionActive: boolean,
-  onStaged?: (slot: number, opacity: number) => void,
-): { selectedStartIndex: number; packed: PackedRecords } {
+): { selectedStartIndex: number; packed: PackedRecords; visibleCount: number } {
   pass.resolve(pd, count, scratch);
   const packed = packRecords(pass.records, target);
   const { opacity, depth } = scratch;
   const { xs, ys } = pd;
   const xAxis = linearAxis(scales.x);
   const yAxis = linearAxis(scales.y);
+  let visibleCount = 0;
 
   const plan = buildPaintOrder(
     order,
@@ -145,7 +145,7 @@ export function stageInPaintOrder(
     selectionActive,
     (k, slot) => {
       const slotOpacity = opacity[slot];
-      onStaged?.(slot, slotOpacity);
+      if (slotOpacity > 0) visibleCount++;
       // Positions are pre-scaled; depth is indexed by slot, NOT by k.
       target.dataPositions[k * 2] = mapLinear(xAxis, xs[slot]);
       target.dataPositions[k * 2 + 1] = mapLinear(yAxis, ys[slot]);
@@ -155,14 +155,14 @@ export function stageInPaintOrder(
     },
     scratch.sortScratch,
   );
-  return { selectedStartIndex: plan.selectedStartIndex, packed };
+  return { selectedStartIndex: plan.selectedStartIndex, packed, visibleCount };
 }
 
 /**
  * Re-write the style channels of the first `count` slots of an earlier
  * {@link stageInPaintOrder} over `src`, leaving positions and depths alone.
  * `slotCount` is the count that staging resolved, so every slot in `order` is
- * resolved again. Returns the records as packed.
+ * resolved again. Returns the records as packed and how many slots are drawn.
  */
 export function restageStyles(
   target: StagePointStyleArrays,
@@ -172,14 +172,15 @@ export function restageStyles(
   src: PlotData,
   slotCount: number,
   count: number,
-  onStaged?: (slot: number, opacity: number) => void,
-): PackedRecords {
+): { packed: PackedRecords; visibleCount: number } {
   pass.resolve(src, slotCount, scratch);
   const packed = packRecords(pass.records, target);
+  const { opacity } = scratch;
+  let visibleCount = 0;
   for (let i = 0; i < count; i++) {
     const slot = order[i];
-    onStaged?.(slot, scratch.opacity[slot]);
+    if (opacity[slot] > 0) visibleCount++;
     stageSlotStyle(target, i, scratch, packed, slot);
   }
-  return packed;
+  return { packed, visibleCount };
 }

@@ -11,12 +11,12 @@
  */
 import { vi, describe, it, expect } from 'vitest';
 import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
-import type { WebGLStyleGetters } from './webgl/types';
+import type { PointStylePass, WebGLStyleGetters } from './webgl/types';
 import { createPassScratch } from './webgl/renderer/pass-staging';
 
 /** The options of each renderer the plot built. */
 const constructed = vi.hoisted(
-  () => [] as { style: WebGLStyleGetters; exportStyle: WebGLStyleGetters }[],
+  () => [] as { style: WebGLStyleGetters; createExportStylePass: () => PointStylePass }[],
 );
 
 vi.mock('./webgl/color-utils', () => ({
@@ -97,17 +97,24 @@ function rendererStyles(el: Plot) {
   Object.defineProperty(el, '_canvas', { value: document.createElement('canvas') });
   el._createWebglRenderer();
   el._webglRenderer = stub;
-  const { style, exportStyle } = constructed.at(-1)!;
-  return { live: style, exported: exportStyle };
+  const { style, createExportStylePass } = constructed.at(-1)!;
+  return { live: style, exported: { createStylePass: createExportStylePass } };
 }
 
 const point = (i: number): PlotDataPoint => ({ id: IDS[i], x: i, y: i, originalIndex: i });
 
-/** The opacity a staging pass through `style` resolves for every slot of `pd`. */
-function stagedOpacities(style: WebGLStyleGetters, pd: PlotData): number[] {
+type StagingStyle = Pick<WebGLStyleGetters, 'createStylePass'>;
+
+/** What a staging pass through `style` resolves for every slot of `pd`. */
+function resolved(style: StagingStyle, pd: PlotData) {
   const scratch = createPassScratch(pd.length);
-  style.createStylePass!().resolve(pd, pd.length, scratch);
-  return Array.from(scratch.opacity);
+  style.createStylePass().resolve(pd, pd.length, scratch);
+  return scratch;
+}
+
+/** The opacity a staging pass through `style` resolves for every slot of `pd`. */
+function stagedOpacities(style: StagingStyle, pd: PlotData): number[] {
+  return Array.from(resolved(style, pd).opacity);
 }
 
 describe('selection drawn as GPU marks', () => {
@@ -150,14 +157,12 @@ describe('selection drawn as GPU marks', () => {
     const { live, exported } = rendererStyles(el);
     expect(live.getOpacity(point(0))).toBe(0.9);
     expect(live.getOpacity(point(1))).toBe(0.9);
-    expect(exported.getOpacity(point(0))).toBe(0.15);
-    expect(exported.getOpacity(point(1))).toBe(1);
     expect(live.getDepth(point(1))).toBe(live.getDepth(point(3)));
-    expect(exported.getDepth(point(1))).toBeLessThan(exported.getDepth(point(3)));
+    const exportedDepth = resolved(exported, el._plotData).depth;
+    expect(exportedDepth[1]).toBeLessThan(exportedDepth[3]);
     expect(stagedOpacities(live, el._plotData)).toEqual([0.9, 0.9, 0.9, 0.9, 0.9]);
     expect(stagedOpacities(exported, el._plotData)).toEqual([0.15, 1, 0.15, 0.15, 0.15]);
     expect(live.getPointMarks!(el._plotData)!.slots).toEqual(Uint8Array.of(0, 1, 0, 0, 0));
-    expect(exported.getPointMarks).toBeUndefined();
   });
 
   it('lets go of the marks and their getters with the dataset', () => {
@@ -219,7 +224,7 @@ describe('selection staged on the CPU', () => {
       expect(el._webglRenderer!.invalidateStyleCache).toHaveBeenCalledTimes(1);
       expect(el._style.pointMarks(el._plotData)).toBeNull();
       const { live, exported } = rendererStyles(el);
-      expect(live.getOpacity(point(0))).toBe(exported.getOpacity(point(0)));
+      expect(stagedOpacities(exported, el._plotData)).toEqual(stagedOpacities(live, el._plotData));
     }
   });
 });

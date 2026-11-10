@@ -1,4 +1,5 @@
 import type { CDPSession, Page } from '@playwright/test';
+import { getProteinCount } from '../explore';
 
 /**
  * Probes for the perf checks. Two sources, neither tied to a private method name:
@@ -275,15 +276,6 @@ async function plotPixels(page: Page): Promise<Buffer> {
   return page.screenshot({ clip, animations: 'disabled', caret: 'hide' });
 }
 
-async function proteinCount(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as
-      | (Element & { data?: { protein_ids?: string[] } })
-      | null;
-    return plot?.data?.protein_ids?.length ?? 0;
-  });
-}
-
 /**
  * Start (with the frames to keep) and stop the frame-gap recorder. 'glide' keeps a gap
  * only when the frame that ends it starts with the plot gliding (`data-morphing`).
@@ -324,9 +316,17 @@ interface TimingContext {
   cdp: CDPSession;
 }
 
-async function taskDuration(cdp: CDPSession): Promise<number> {
+/** Main-thread task time so far, ms (CDP `TaskDuration`). */
+export async function taskDuration(cdp: CDPSession): Promise<number> {
   const { metrics } = await cdp.send('Performance.getMetrics');
   return (metrics.find((m) => m.name === 'TaskDuration')?.value ?? 0) * 1000;
+}
+
+/** Used JS heap after a forced garbage collection, MB (CDP `JSHeapUsedSize`), unrounded. */
+export async function heapMB(cdp: CDPSession): Promise<number> {
+  await cdp.send('HeapProfiler.collectGarbage');
+  const { metrics } = await cdp.send('Performance.getMetrics');
+  return (metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? 0) / 2 ** 20;
 }
 
 function percentile(values: number[], p: number): number {
@@ -445,7 +445,7 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
     name: spec.name,
     delta,
     drawn: after.drawn,
-    proteinCount: await proteinCount(page),
+    proteinCount: await getProteinCount(page),
     pixelsSame,
     ...(pixelsSame === false ? { pixelDiff: { before: pixelsBefore!, after: pixelsAfter! } } : {}),
     ...(actPixels ? { actPixels } : {}),

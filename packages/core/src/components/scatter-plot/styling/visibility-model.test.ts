@@ -3,6 +3,7 @@ import type { VisualizationData, PlotDataPoint, AnnotationData } from '@protspac
 import { NA_VALUE } from '@protspace/utils';
 import type { VisibilityInputs, VisibilityModel } from './visibility-model';
 import { computeVisibilityModel } from './visibility-model';
+import { seededRandom } from '../../../test-support/seeded-random';
 
 /**
  * Unit contract for the pure visibility model.
@@ -628,8 +629,7 @@ describe('computeVisibilityModel', () => {
       Int32Array.from({ length: n }, (_, i) => i % 3),
     );
     const ids = data.protein_ids;
-    let seed = 7;
-    const random = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    const random = seededRandom(7);
     const pick = <T>(items: readonly T[], p: number) => items.filter(() => random() < p);
 
     // Marked slots and interactive slots as per-id set lookups decide them.

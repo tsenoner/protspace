@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  heapMB,
   segment,
   type SegmentResult,
   type SegmentSpec,
@@ -164,13 +165,6 @@ function record(target: Target, result: SegmentResult, keepPixels: boolean): voi
   if (keepPixels && result.actPixels) target.pixels[result.name] = result.actPixels;
 }
 
-async function heapMB(cdp: CDPSession): Promise<number> {
-  await cdp.send('HeapProfiler.collectGarbage');
-  const { metrics } = await cdp.send('Performance.getMetrics');
-  const bytes = metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? 0;
-  return Math.round(bytes / 1024 / 1024);
-}
-
 const mediansOf = (target: Target) =>
   Object.fromEntries(
     Object.entries(target.samples).map(([name, samples]) => [name, timingMedians(samples)]),
@@ -201,7 +195,7 @@ for (const dataset of DATASETS) {
           }
         }
       }
-      for (const target of targets) target.heapMB = await heapMB(target.cdp);
+      for (const target of targets) target.heapMB = Math.round(await heapMB(target.cdp));
     } finally {
       for (const target of targets) await target.context.close();
     }

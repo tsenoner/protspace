@@ -36,3 +36,14 @@ export function bindTextureAt(
   use?.();
   gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
 }
+
+/**
+ * Sample the bound TEXTURE_2D with `filter` (NEAREST for lookup tables, LINEAR
+ * for fields), clamped at the edges.
+ */
+export function setClampedFilter(gl: WebGL2RenderingContext, filter: number): void {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}

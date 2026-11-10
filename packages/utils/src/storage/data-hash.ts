@@ -93,17 +93,20 @@ function formatFNV1a64(state: Fnv1a64State): string {
 }
 
 /**
- * Hashes `values.join(separator)` without building that string: past about 48M
- * protein ids it would exceed V8's maximum string length.
+ * Hashes `values.join(separator)` (or the values at `order`, in that order) without
+ * building that string: past about 48M protein ids it would exceed V8's maximum string
+ * length.
  */
 function appendJoinedFNV1a64(
   state: Fnv1a64State,
   values: readonly string[],
   separator: string,
+  order?: readonly number[],
 ): void {
-  for (let i = 0; i < values.length; i++) {
+  const count = order ? order.length : values.length;
+  for (let i = 0; i < count; i++) {
     if (i > 0) appendFNV1a64(state, separator);
-    appendFNV1a64(state, values[i]);
+    appendFNV1a64(state, values[order ? order[i] : i]);
   }
 }
 
@@ -187,7 +190,6 @@ function appendDatasetFingerprint(
   proteinIds: readonly string[],
   proteinIndexOrder: readonly number[],
 ): void {
-  const sortedIds = proteinIndexOrder.map((index) => proteinIds[index]);
   const annotationFingerprint = Object.entries(data.annotations ?? {})
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
     .map(([annotationName, annotation]) => {
@@ -217,7 +219,7 @@ function appendDatasetFingerprint(
     })
     .join('\x01');
 
-  appendJoinedFNV1a64(state, sortedIds, '\x00');
+  appendJoinedFNV1a64(state, proteinIds, '\x00', proteinIndexOrder);
   appendFNV1a64(state, `\x02${annotationFingerprint}\x02`);
 }
 

@@ -840,11 +840,6 @@ export class ProtspaceLegend extends LitElement {
     );
   }
 
-  /** `autoSync` is off; its doc lists what that changes. */
-  private get _hostDriven(): boolean {
-    return !this.autoSync;
-  }
-
   /**
    * Display order for the legend list. Every mode but `silhouette-desc` has already been
    * applied upstream and is carried by `zOrder`; scores arrive too late for that path, so
@@ -1321,7 +1316,7 @@ export class ProtspaceLegend extends LitElement {
   private _applyEatOverlayEnabled(enabled: boolean): void {
     this._eatOverlayEnabled = enabled;
     const scatterplot = this._scatterplotController.scatterplot;
-    if (!this._hostDriven && scatterplot) {
+    if (this.autoSync && scatterplot) {
       scatterplot.eatOverlayEnabled = enabled;
     }
     this._emitEatOverlayChange();
@@ -1750,7 +1745,8 @@ export class ProtspaceLegend extends LitElement {
       source.proteinCount,
       filteredIndices,
       knownValues,
-      this._hostDriven,
+      // Host-driven (see `autoSync`): tie order follows protein order.
+      !this.autoSync,
     );
   }
 

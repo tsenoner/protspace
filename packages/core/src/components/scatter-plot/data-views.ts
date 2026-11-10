@@ -33,7 +33,8 @@ export class DataViews {
   //    is serialized; the staging loops reach this per point (getOpacity -> visibility
   //    model -> materialized data). numericAnnotationSettings is replaced wholesale, so
   //    comparing the selected annotation's settings ref is sound: a rebin yields a new ref.
-  // 2. The same data and numeric column with an equal JSON `key` return `value` too.
+  // 2. The same inputs with the selected annotation's settings equal as JSON (a new but
+  //    equal settings object) return `value` too.
   // 3. When only the numeric settings moved (same data, annotation and overlay) and they
   //    land on the bins the plot already has (the legend publishing the defaults), the
   //    rebuild keeps handing out the previous `value`. Everything keyed on its identity
@@ -42,10 +43,9 @@ export class DataViews {
   private _materialized: {
     source: VisualizationData;
     numericValues: Float64Array | null;
-    selectedAnnotation: string | null;
+    selectedAnnotation: string;
     eatOverlayEnabled: boolean;
     selectedSettings: NumericAnnotationDisplaySettingsMap[string] | undefined;
-    key: string;
     value: VisualizationData;
   } | null = null;
   // The materialized data through the query filter, kept while the materialized data
@@ -64,6 +64,8 @@ export class DataViews {
     proteinIds: readonly string[];
     indices: number[];
   } | null = null;
+  // `filterSet()`, kept while the filter's id list is the same reference.
+  private _filterSet: { ids: string[]; set: Set<string> } | null = null;
   // `current()`'s isolated view, reused until its inputs change.
   private _isolatedView: {
     materialized: VisualizationData;
@@ -94,37 +96,24 @@ export class DataViews {
       memo.source === sourceData &&
       memo.numericValues === selectedNumericValuesCacheRef;
 
-    // Tier 1 (see `_materialized`). The JSON key's selectedNumericType and
-    // selectedNumericValuesLength derive from data and selectedAnnotation, both compared here.
-    if (
+    // Same data, numeric column, annotation and overlay: only the settings can differ.
+    // Everything else materialization reads (column length and type, annotation keys)
+    // derives from these.
+    const sameInputs =
       sameColumn &&
       memo.selectedAnnotation === selectedAnnotation &&
-      memo.eatOverlayEnabled === eatOverlayEnabled &&
-      memo.selectedSettings === selectedNumericSettings
+      memo.eatOverlayEnabled === eatOverlayEnabled;
+
+    // Tier 1 (see `_materialized`).
+    if (sameInputs && memo.selectedSettings === selectedNumericSettings) return memo.value;
+    // Tier 2.
+    if (
+      sameInputs &&
+      JSON.stringify(memo.selectedSettings ?? null) ===
+        JSON.stringify(selectedNumericSettings ?? null)
     ) {
       return memo.value;
     }
-
-    const selectedNumericAnnotation = selectedAnnotation
-      ? sourceData.annotations[selectedAnnotation]
-      : undefined;
-    const selectedNumericType =
-      selectedNumericAnnotation?.numericType ??
-      selectedNumericAnnotation?.numericMetadata?.numericType ??
-      null;
-
-    const cacheKey = JSON.stringify({
-      dataRef: sourceData.protein_ids.length,
-      selectedAnnotation,
-      selectedNumericValuesLength: selectedNumericValues?.length ?? 0,
-      selectedNumericType,
-      numericAnnotationSettings: selectedNumericSettings ?? null,
-      annotationKeys: Object.keys(sourceData.annotations),
-      eatOverlayEnabled,
-    });
-
-    // Tier 2.
-    if (sameColumn && memo.key === cacheKey) return memo.value;
 
     const rematerialized = materializeEatOverlay(
       materializeVisualizationData(
@@ -136,22 +125,17 @@ export class DataViews {
       selectedAnnotation,
       eatOverlayEnabled,
     );
-    // Tier 3.
-    const onlySettingsMoved =
-      sameColumn &&
-      memo.selectedAnnotation === (selectedAnnotation ?? null) &&
-      memo.eatOverlayEnabled === eatOverlayEnabled;
+    // Tier 3: only the settings moved.
     const value =
-      onlySettingsMoved && sameMaterialization(memo.value, rematerialized, selectedAnnotation)
+      sameInputs && sameMaterialization(memo.value, rematerialized, selectedAnnotation)
         ? memo.value
         : rematerialized;
     this._materialized = {
       source: sourceData,
       numericValues: selectedNumericValuesCacheRef,
-      selectedAnnotation: selectedAnnotation ?? null,
+      selectedAnnotation,
       eatOverlayEnabled,
       selectedSettings: selectedNumericSettings,
-      key: cacheKey,
       value,
     };
     return value;
@@ -159,8 +143,16 @@ export class DataViews {
 
   /** The query filter's kept ids, or null while no filter is active. */
   filterSet(): Set<string> | null {
-    const ids = this.host.filteredProteinIds();
-    return ids ? new Set(ids) : null;
+    return this._idSet(this.host.filteredProteinIds());
+  }
+
+  private _idSet(ids: string[] | null): Set<string> | null {
+    if (!ids) {
+      this._filterSet = null;
+      return null;
+    }
+    if (this._filterSet?.ids !== ids) this._filterSet = { ids, set: new Set(ids) };
+    return this._filterSet.set;
   }
 
   /**
@@ -183,9 +175,10 @@ export class DataViews {
     }
     const layers = history.map((layer) => new Set(layer));
     const indices: number[] = [];
-    for (let index = 0; index < proteinIds.length; index++) {
+    outer: for (let index = 0; index < proteinIds.length; index++) {
       const id = proteinIds[index];
-      if (layers.every((layer) => layer.has(id))) indices.push(index);
+      for (const layer of layers) if (!layer.has(id)) continue outer;
+      indices.push(index);
     }
     this._isolatedIndices = { history, layers: history.length, proteinIds, indices };
     return indices;
@@ -227,8 +220,8 @@ export class DataViews {
       return memo.view;
     }
     let keptIndices = isolated;
-    if (filteredProteinIds) {
-      const visible = new Set(filteredProteinIds);
+    const visible = this._idSet(filteredProteinIds);
+    if (visible) {
       keptIndices = isolated.filter((index) => visible.has(materialized.protein_ids[index]));
     }
     const view = viewVisualizationDataByIndices(materialized, keptIndices);
@@ -243,6 +236,7 @@ export class DataViews {
    */
   releaseDataset(): void {
     this._filtered = null;
+    this._filterSet = null;
   }
 
   /** Drops the isolated indices and view when isolation ends. */
@@ -263,7 +257,7 @@ export class DataViews {
     ) {
       return memo.view;
     }
-    const visible = new Set(filteredProteinIds);
+    const visible = this._idSet(filteredProteinIds)!;
     const keptIndices: number[] = [];
     materialized.protein_ids.forEach((proteinId, index) => {
       if (visible.has(proteinId)) keptIndices.push(index);

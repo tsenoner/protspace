@@ -8,14 +8,18 @@ import {
 } from '@protspace/utils';
 import { createStyleGetters, type StyleConfig } from './style-getters';
 import { computeVisibilityModel, type VisibilityModel } from './visibility-model';
-import type { ScalePair, WebGLStyleGetters } from '../webgl/types';
+import type { ScalePair } from '../webgl/types';
 import {
   createPassScratch,
   restageStyles,
   stageInPaintOrder,
 } from '../webgl/renderer/pass-staging';
 import { createStageArrays } from '../webgl/renderer/stage-point';
-import { referenceRestage, referenceStage } from '../webgl/renderer/test-support/reference-staging';
+import {
+  referenceRestage,
+  referenceStage,
+  type ReferenceStyle,
+} from '../webgl/renderer/test-support/reference-staging';
 import { seededRandom } from '../../../test-support/seeded-random';
 
 // jsdom has no 2D canvas, so the real resolveColor maps every colour to white
@@ -151,7 +155,7 @@ const legendConfig: StyleConfig = {
 function rendererStyle(
   getters: ReturnType<typeof createStyleGetters>,
   opacityModel?: VisibilityModel,
-): Required<WebGLStyleGetters> {
+): Required<ReferenceStyle> {
   return {
     getColors: getters.getColors,
     getPointSize: getters.getPointSize,
@@ -165,7 +169,7 @@ function rendererStyle(
 }
 
 function expectSameStaging(
-  style: Required<WebGLStyleGetters>,
+  style: Required<ReferenceStyle>,
   pd: PlotData,
   { selectionActive = false, maxLabels = 8, atlas = true } = {},
 ) {
@@ -199,7 +203,7 @@ function expectSameStaging(
  * The renderer may apply the legend's hiding per record: every slot's opacity
  * must be its unhidden opacity, or 0 where its record is hidden.
  */
-function expectHidingPerRecord(style: Required<WebGLStyleGetters>, pd: PlotData) {
+function expectHidingPerRecord(style: Required<ReferenceStyle>, pd: PlotData) {
   const pass = style.createStylePass();
   const scratch = createPassScratch(pd.length);
   pass.resolve(pd, pd.length, scratch);
@@ -339,11 +343,17 @@ describe('category style pass', () => {
     expected.labelColorData!.set(target.labelColorData!);
     referenceRestage(hidden, pd, order, count, expected);
 
-    const seen: number[] = [];
-    restageStyles(target, hidden.createStylePass(), scratch, order, pd, count, count, (slot) =>
-      seen.push(slot),
+    const { visibleCount } = restageStyles(
+      target,
+      hidden.createStylePass(),
+      scratch,
+      order,
+      pd,
+      count,
+      count,
     );
-    expect(seen).toEqual(Array.from(order));
+    expect(visibleCount).toBe(Array.from(order).filter((slot) => scratch.opacity[slot] > 0).length);
+    expect(visibleCount).toBeLessThan(count);
     for (const channel of ['colors', 'sizes', 'labelCounts', 'shapes', 'predicted'] as const) {
       expect(target[channel]).toEqual(expected[channel]);
     }

@@ -44,7 +44,6 @@ type VisibilityModelMemoKey = {
   baseOpacity: number;
   selectedOpacity: number;
   fadedOpacity: number;
-  eatOverlayEnabled: boolean;
   focusedValues: string[] | null;
 };
 
@@ -128,10 +127,11 @@ export class PointStyleState {
    * unattached elements where the lifecycle never runs, so a model recomputed
    * by the lifecycle would be stale there. It is memoized purely on input
    * identity instead: the materialized data, `selectedAnnotation`, the
-   * `hiddenAnnotationValues` ref, the selection and highlight refs,
-   * `eatOverlayEnabled`, the shift-focus values ref, and the three opacity
+   * `hiddenAnnotationValues` ref, the selection and highlight refs, the
+   * shift-focus values ref, and the three opacity
    * numbers (taken as numbers because the merged config is rebuilt on
-   * unrelated changes such as width/height/margin).
+   * unrelated changes such as width/height/margin). The EAT overlay reaches the
+   * model only through the materialized data, which it already rebuilds.
    *
    * Two-level: on a miss the previous model goes to `computeVisibilityModel`,
    * which reuses the O(N) hidden mask when (data, selectedAnnotation, hidden
@@ -147,7 +147,6 @@ export class PointStyleState {
     const hiddenAnnotationValues = host.hiddenAnnotationValues();
     const selectedProteinIds = host.selectedProteinIds();
     const highlightedProteinIds = host.highlightedProteinIds();
-    const eatOverlayEnabled = host.eatOverlayEnabled();
     const focusedValues = host.focusedValues();
     // A lasso over another dataset's ids, until a swap releases it, marks
     // nothing here, and the model would keep it alive.
@@ -166,7 +165,6 @@ export class PointStyleState {
       key.baseOpacity === baseOpacity &&
       key.selectedOpacity === selectedOpacity &&
       key.fadedOpacity === fadedOpacity &&
-      key.eatOverlayEnabled === eatOverlayEnabled &&
       key.focusedValues === focusedValues
     ) {
       return this._visibilityModel;
@@ -196,7 +194,6 @@ export class PointStyleState {
       baseOpacity,
       selectedOpacity,
       fadedOpacity,
-      eatOverlayEnabled,
       focusedValues,
     };
     return model;

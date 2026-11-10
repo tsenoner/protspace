@@ -1598,17 +1598,17 @@ export class ProtspaceControlBar extends LitElement {
    * Each caller only derives `newSelection`; keeping the commit here stops the four steps
    * from drifting apart across the handlers that share them.
    *
-   * `afterPaint` (search box picks, Clear) also sets the chips and count now, so the next
-   * pick builds on this one, and runs the commit after the cleared box is painted.
+   * The chips and count are set now either way, so the next pick builds on this one.
+   * `afterPaint` (search box picks, Clear) runs the rest after the cleared box is painted.
    * `showProteinId` then loads into the structure viewers with that commit.
    */
   private _commitSelection(
     newSelection: string[],
     { afterPaint = false, showProteinId }: { afterPaint?: boolean; showProteinId?: string } = {},
   ) {
+    this.selectedIdsChips = newSelection;
+    this.selectedProteinsCount = newSelection.length;
     const commit = () => {
-      this.selectedIdsChips = newSelection;
-      this.selectedProteinsCount = newSelection.length;
       if (
         this.autoSync &&
         this._scatterplotElement &&
@@ -1626,8 +1626,6 @@ export class ProtspaceControlBar extends LitElement {
       if (showProteinId) this._loadIntoStructureViewers(showProteinId);
     };
     if (afterPaint) {
-      this.selectedIdsChips = newSelection;
-      this.selectedProteinsCount = newSelection.length;
       this._selectionCommit.schedule(commit);
     } else {
       this._selectionCommit.cancel();

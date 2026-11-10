@@ -75,7 +75,6 @@ describe('model() memo key', () => {
     ['baseOpacity', (i) => (i.config = { ...i.config, baseOpacity: 0.5 })],
     ['selectedOpacity', (i) => (i.config = { ...i.config, selectedOpacity: 0.9 })],
     ['fadedOpacity', (i) => (i.config = { ...i.config, fadedOpacity: 0.1 })],
-    ['eatOverlayEnabled', (i) => (i.eatOverlayEnabled = false)],
     ['focusedValues', (i) => (i.focusedValues = ['A'])],
   ];
   for (const [field, flip] of keyFlips) {
@@ -90,6 +89,8 @@ describe('model() memo key', () => {
   const otherFlips: Array<[string, (inputs: Inputs) => void]> = [
     ['otherAnnotationValues', (i) => (i.otherAnnotationValues = ['B'])],
     ['pointSize', (i) => (i.config = { ...i.config, pointSize: 200 })],
+    // The overlay reaches the model only through the materialized data (`data`).
+    ['eatOverlayEnabled alone', (i) => (i.eatOverlayEnabled = false)],
     ['a new config with the same opacities', (i) => (i.config = { ...i.config })],
     ['zOrderMapping', (i) => (i.zOrderMapping = { A: 1, B: 0 })],
     ['colorMapping', (i) => (i.colorMapping = { A: '#0000ff', B: '#00ff00' })],

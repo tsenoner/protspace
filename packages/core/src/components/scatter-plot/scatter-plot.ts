@@ -130,6 +130,14 @@ function sameSlots(a: Int32Array | null, b: Int32Array | null): boolean {
 
 // Default configuration moved to config.ts
 
+/** What a plot data was built from (see `_plotDataBuild`). */
+interface PlotDataBuild {
+  data: VisualizationData;
+  projection: VisualizationData['projections'][number];
+  plane: 'xy' | 'xz' | 'yz';
+  culled: boolean;
+}
+
 /**
  * High-performance WebGL-based scatterplot component for large datasets.
  * Uses WebGL for rendering and SVG overlay for interactions.
@@ -242,13 +250,10 @@ export class ProtspaceScatterplot extends LitElement {
   });
   // The un-culled plot data and its point grid (both in `grid`), set aside while a query
   // filter or isolation culls the plot. Leaving the cull swaps them back instead of
-  // rebuilding both (see `_processData`). `projection`, `proteinIds` and `plane` are what
-  // the plot data was built from.
+  // rebuilding both (see `_processData`). `build` is what the plot data was built from.
   private _fullView: {
     grid: GridStash;
-    projection: VisualizationData['projections'][number];
-    proteinIds: readonly string[];
-    plane: 'xy' | 'xz' | 'yz';
+    build: PlotDataBuild;
   } | null = null;
   // Coalesced full renders and the projection glide.
   private _renderLoop = new RenderLoop({
@@ -323,13 +328,7 @@ export class ProtspaceScatterplot extends LitElement {
   // run over a culled build: it can never restore removed points, so clearing a filter
   // would leave the canvas showing the old subset while the legend (fed from
   // getCurrentData()) shows everything.
-  private _plotDataBuild: {
-    data: VisualizationData;
-    projection: VisualizationData['projections'][number];
-    proteinIds: readonly string[];
-    plane: 'xy' | 'xz' | 'yz';
-    culled: boolean;
-  } | null = null;
+  private _plotDataBuild: PlotDataBuild | null = null;
   private _numericRecompute = new NumericRecomputeRunner({
     hasData: () => !!this.data,
     getSelectedAnnotation: () => this.selectedAnnotation,
@@ -412,34 +411,22 @@ export class ProtspaceScatterplot extends LitElement {
   private _createWebglRenderer() {
     if (!this._canvas) return;
     const style = this._style;
-    const styles = {
-      getColors: (p: PlotDataPoint) => style.getters().getColors(p),
-      getPointSize: (p: PlotDataPoint) => style.getters().getPointSize(p),
-      getShape: (p: PlotDataPoint) => style.getters().getPointShape(p),
-      isPredicted: (p: PlotDataPoint) => style.getters().isPredicted(p),
-      isMultilabel: () => style.getters().isMultilabel(),
-    };
     this._webglRenderer = new WebGLRenderer(this._canvas, {
       getScales: () => this._scales,
       getTransform: () => this._transform,
       getConfig: () => this._mergedConfig,
       // The live view stages nothing marked while it draws the marks on the GPU.
       style: {
-        ...styles,
+        getColors: (p: PlotDataPoint) => style.getters().getColors(p),
+        isPredicted: (p: PlotDataPoint) => style.getters().isPredicted(p),
+        isMultilabel: () => style.getters().isMultilabel(),
         getOpacity: (p: PlotDataPoint) => style.stageModel().opacityOf(p),
         getDepth: (p: PlotDataPoint) => style.stageGetters().getDepth(p),
         createStylePass: () => style.stageGetters().createStylePass(style.stageModel()),
         getPointMarks: (pd: PlotData) => style.pointMarks(pd),
       },
       // An export stages the selection with every other style.
-      exportStyle: {
-        ...styles,
-        getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
-        getDepth: (p: PlotDataPoint) => style.getters().getDepth(p),
-        // The getters above resolve the visibility model per point; a pass
-        // resolves it once, for every point it stages.
-        createStylePass: () => style.getters().createStylePass(style.model()),
-      },
+      createExportStylePass: () => style.getters().createStylePass(style.model()),
       getKnockoutColor: () => this._background.get(),
       onContextLost: this._handleWebglContextLost,
       onDegraded: (detail) =>
@@ -999,14 +986,7 @@ export class ProtspaceScatterplot extends LitElement {
       // Entering a cull from the full view: set the full view aside with its grid.
       if (culling && build && !build.culled) {
         const grid = this._pointGrid.detach();
-        if (grid) {
-          this._fullView = {
-            grid,
-            projection: build.projection,
-            proteinIds: build.proteinIds,
-            plane: build.plane,
-          };
-        }
+        if (grid) this._fullView = { grid, build };
       }
 
       // Release old data references before allocating the new dataset.
@@ -1021,9 +1001,9 @@ export class ProtspaceScatterplot extends LitElement {
       if (!culling) this._fullView = null;
       if (
         kept &&
-        kept.projection === projection &&
-        kept.proteinIds === dataToUse.protein_ids &&
-        kept.plane === this.projectionPlane
+        kept.build.projection === projection &&
+        kept.build.data.protein_ids === dataToUse.protein_ids &&
+        kept.build.plane === this.projectionPlane
       ) {
         // Leaving the cull for the view it was entered from: what a rebuild would produce.
         this._plotData = kept.grid.plotData;
@@ -1044,7 +1024,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._plotDataBuild = {
       data: dataToUse,
       projection,
-      proteinIds: dataToUse.protein_ids,
       plane: this.projectionPlane,
       culled,
     };
@@ -1362,15 +1341,6 @@ export class ProtspaceScatterplot extends LitElement {
     // badge update is owned by the controller.
     overlayGroup.selectAll('.selected-overlay').remove();
     this._dupOverlay.updateSelectionOverlays(options);
-  }
-
-  private _getOpacity(point: PlotDataPoint): number {
-    // Facade: besides the WebGL renderer's getOpacity getter, webgl-render-perf.ts
-    // reaches into this private member (via a privacy cast, acknowledged debt).
-    // Do not rename or remove this method without migrating that caller first.
-    // Delegates to the shared visibility model, which is the single opacity
-    // authority.
-    return this._style.model().opacityOf(point);
   }
 
   /**

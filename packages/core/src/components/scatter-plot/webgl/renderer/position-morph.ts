@@ -6,6 +6,7 @@
  * re-sorts it. The start positions therefore cross the re-sort by slot: read
  * out in the old order, written back in the new one.
  */
+import { clamp01 } from '@protspace/utils';
 import type { Rescale } from './rescale';
 
 /** Length of the glide, the same as the landing page's projection switch. */
@@ -34,7 +35,7 @@ export function frameTime(): number {
  * once it is over, eased in and out (cubic).
  */
 export function morphWeight(elapsed: number): number {
-  const t = Math.min(1, Math.max(0, elapsed / MORPH_MS));
+  const t = clamp01(elapsed / MORPH_MS);
   const eased = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
   return 1 - eased;
 }
