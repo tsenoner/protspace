@@ -885,51 +885,53 @@ export async function resetIsolation(page: Page): Promise<void> {
   await expect.poll(() => isIsolated(page)).toBe(false);
 }
 
+/**
+ * Wait until the last import is saved to OPFS and marked loadable, polling every 100 ms like the
+ * other load waits here.
+ */
 export async function waitForPersistedExploreDataset(page: Page, timeout = 30_000): Promise<void> {
   const supportsOpfs = await supportsExplorePersistedDataset(page);
   if (!supportsOpfs) {
     throw new Error('OPFS is unavailable in this browser.');
   }
 
-  const deadline = Date.now() + timeout;
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const storageWithDirectory = navigator.storage as StorageManager & {
+            getDirectory?: () => Promise<FileSystemDirectoryHandle>;
+          };
 
-  while (Date.now() < deadline) {
-    const hasReadyPersistedDataset = await page.evaluate(async () => {
-      const storageWithDirectory = navigator.storage as StorageManager & {
-        getDirectory?: () => Promise<FileSystemDirectoryHandle>;
-      };
+          if (typeof storageWithDirectory.getDirectory !== 'function') {
+            return false;
+          }
 
-      if (typeof storageWithDirectory.getDirectory !== 'function') {
-        return false;
-      }
+          const root = await storageWithDirectory.getDirectory();
+          try {
+            const dir = await root.getDirectoryHandle('protspace-last-import');
+            const metadataHandle = await dir.getFileHandle('metadata.json');
+            await dir.getFileHandle('dataset.bin');
+            const metadata = JSON.parse(await (await metadataHandle.getFile()).text()) as {
+              schemaVersion?: number;
+              lastLoadStatus?: string;
+            };
 
-      const root = await storageWithDirectory.getDirectory();
-      try {
-        const dir = await root.getDirectoryHandle('protspace-last-import');
-        const metadataHandle = await dir.getFileHandle('metadata.json');
-        await dir.getFileHandle('dataset.bin');
-        const metadata = JSON.parse(await (await metadataHandle.getFile()).text()) as {
-          schemaVersion?: number;
-          lastLoadStatus?: string;
-        };
-
-        // Schema v1 predates load-status tracking and represents a dataset that
-        // completed under the previous persistence implementation. Current
-        // schema entries are reload-safe only after finalization marks success.
-        return metadata.schemaVersion === 1 || metadata.lastLoadStatus === 'success';
-      } catch {
-        return false;
-      }
-    });
-
-    if (hasReadyPersistedDataset) {
-      return;
-    }
-
-    await page.waitForTimeout(250);
-  }
-
-  throw new Error('Timed out waiting for the persisted OPFS dataset load to finalize.');
+            // Schema v1 predates load-status tracking and represents a dataset that
+            // completed under the previous persistence implementation. Current
+            // schema entries are reload-safe only after finalization marks success.
+            return metadata.schemaVersion === 1 || metadata.lastLoadStatus === 'success';
+          } catch {
+            return false;
+          }
+        }),
+      {
+        message: 'Timed out waiting for the persisted OPFS dataset load to finalize.',
+        timeout,
+        intervals: [100],
+      },
+    )
+    .toBe(true);
 }
 
 export async function supportsExplorePersistedDataset(page: Page): Promise<boolean> {

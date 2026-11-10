@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Page, type Request, type Route } from '@playwright/test';
 import {
   EXAMPLE_DATASETS,
   EXAMPLES_DOCS_URL,
@@ -338,6 +338,14 @@ test.describe('Example datasets: Import menu and deep link', () => {
     // Hold the *next* fetch of the OTHER bundle — the one Back is
     // about to trigger — open until explicitly released.
     const releaseOther = await holdNextRequest(page, OTHER.glob);
+    // Settles once that fetch ends, whether it completes or the app aborts it.
+    const otherFetchEnded = new Promise<void>((resolve) => {
+      const ended = (request: Request) => {
+        if (request.url().endsWith(OTHER.entry.url.slice(1))) resolve();
+      };
+      page.on('requestfinished', ended);
+      page.on('requestfailed', ended);
+    });
 
     await page.goBack(); // -> dataset=OTHER, fetch held by the route above
     await expectUrlParam(page, 'dataset', OTHER.id);
@@ -349,8 +357,10 @@ test.describe('Example datasets: Import menu and deep link', () => {
     // Now let the stale OTHER fetch through. A correct implementation
     // must abandon it silently.
     releaseOther();
-    // Give any (incorrect) fallback a moment to happen, then assert nothing
-    // moved off the SMALL entry a Back landed on.
+    await otherFetchEnded;
+    // Nothing signals that the superseded load has settled, so give any
+    // (incorrect) fallback a moment once its fetch has ended, then assert
+    // nothing moved off the SMALL entry a Back landed on.
     await page.waitForTimeout(1_000);
     expect(await getProteinCount(page)).toBe(SMALL.count);
     await expectUrlParam(page, 'dataset', SMALL.id);
@@ -853,6 +863,8 @@ test.describe('Example datasets: a Back/Forward supersedes a load already under 
     // Nothing was on screen yet, so the startup load runs: the import it had
     // begun restoring, not a recovery banner over it.
     await waitForProteinCount(page, 40026);
+    // Nothing signals that the superseded restore has settled: give a late
+    // recovery banner or replacement a moment to show, then check none did.
     await page.waitForTimeout(1_000);
     await expect(page.locator('#protspace-recovery-banner')).toHaveCount(0);
     expect(await getProteinCount(page)).toBe(40026);
