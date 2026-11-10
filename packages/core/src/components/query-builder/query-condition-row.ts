@@ -37,7 +37,7 @@ import '../kit/button';
 import '../kit/menu';
 import '../kit/popover';
 import type { PsPopover } from '../kit/popover';
-import { deepActiveElement } from '../kit/focus';
+import { catchFallenFocus } from './focus-fallback';
 import './query-value-picker';
 import './query-numeric-input';
 
@@ -197,7 +197,7 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._annotationHighlightIndex = -1;
     // Opened from the ⋯ menu, the picker would hand the focus back to that menu's item, hidden by
     // then: it goes to the card's annotation trigger instead.
-    this._catchFocus(() =>
+    catchFallenFocus(this, () =>
       this.renderRoot.querySelector<HTMLElement>('.annotation-select-trigger'),
     );
   }
@@ -334,18 +334,7 @@ class ProtspaceQueryConditionRow extends LitElement {
     // render drops "+ value" and the list with it, so the focus they held would fall to the page.
     // The operator pill now says what the card does.
     if (this.condition.kind === 'categorical' && isPresenceOperator(operatorOf(this.condition)))
-      this._catchFocus(() => this._operatorPillEl);
-  }
-
-  /**
-   * After this update, puts the focus on `target` if it fell to the page because the element
-   * holding it went or was hidden; a focus the user moved elsewhere stays there.
-   */
-  private _catchFocus(target: () => HTMLElement | null | undefined) {
-    void this.updateComplete.then(() => {
-      const active = deepActiveElement();
-      if (!active || active === document.body) target()?.focus();
-    });
+      catchFallenFocus(this, () => this._operatorPillEl);
   }
 
   private _dispatchById(type: 'condition-removed' | 'condition-duplicated') {

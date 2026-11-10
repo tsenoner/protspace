@@ -11,6 +11,7 @@ import '../kit/dialog';
 import { pushLayer } from '../kit/layers';
 import { COMPACT_MEDIA } from '../../utils/breakpoints';
 import { AfterPaintCommit } from '../../utils/after-paint-commit';
+import { catchFallenFocus } from './focus-fallback';
 import type { FilterCondition, FilterGroup, FilterQuery, FilterQueryItem } from './query-types';
 import { createCondition, createGroup, isFilterGroup } from './query-types';
 import {
@@ -429,7 +430,16 @@ export class ProtspaceQueryBuilder extends LitElement {
 
   private _handleConditionRemoved(e: CustomEvent<{ id: string }>) {
     e.stopPropagation();
-    this._dispatchQueryChanged(removeCard(this.query, e.detail.id));
+    this._removeItem(e.detail.id);
+  }
+
+  /**
+   * Removes a card or a group. Its ✕ held the focus; when no card takes that ✕'s place (the last
+   * one went, or a whole group), the focus moves to "Add condition" rather than to the page.
+   */
+  private _removeItem(id: string) {
+    this._dispatchQueryChanged(removeCard(this.query, id));
+    catchFallenFocus(this, () => this.renderRoot.querySelector<HTMLElement>('.add-condition'));
   }
 
   // ─── Apply, Reset, Cancel, Close ──────────────────────────────────────────
@@ -644,7 +654,7 @@ export class ProtspaceQueryBuilder extends LitElement {
             icon="x"
             size="sm"
             label="Remove group"
-            @click=${() => this._dispatchQueryChanged(removeCard(this.query, group.id))}
+            @click=${() => this._removeItem(group.id)}
           ></ps-icon-button>
         </div>
         ${this._renderList(items, numbers)}

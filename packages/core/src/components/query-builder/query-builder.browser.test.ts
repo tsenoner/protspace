@@ -412,6 +412,44 @@ describe('protspace-query-builder: closing a value list that leaves only a prese
   });
 });
 
+describe('protspace-query-builder: removing with the keyboard', () => {
+  async function mountHosted(query: FilterQuery) {
+    const builder = await mount(query);
+    builder.addEventListener('query-changed', (e) => {
+      builder.query = (e as CustomEvent<{ query: FilterQuery }>).detail.query;
+    });
+    return builder;
+  }
+  const addCondition = (builder: ProtspaceQueryBuilder) =>
+    inner(builder.shadowRoot!.querySelector<PsButton>('.add-condition')!);
+
+  it('the last card’s ✕ hands the focus to "Add condition"', async () => {
+    const builder = await mountHosted([
+      createCondition({ annotation: 'organism', values: ['Human'] }),
+      createCondition({ annotation: 'organism', values: ['Mouse'], logicalOp: 'OR' }),
+    ]);
+    const remove = rows(builder)[1].shadowRoot!.querySelector<PsIconButton>('.condition-remove')!;
+    await remove.updateComplete;
+    inner(remove).focus();
+    await userEvent.keyboard('{Enter}');
+    await expect.poll(() => rows(builder).length).toBe(1);
+    await expect.poll(() => deepActiveElement()).toBe(addCondition(builder));
+  });
+
+  it('a group’s ✕ hands the focus to "Add condition"', async () => {
+    const builder = await mountHosted([
+      createCondition({ annotation: 'organism', values: ['Human'] }),
+      createGroup({ logicalOp: 'AND' }),
+    ]);
+    const remove = builder.shadowRoot!.querySelector<PsIconButton>('.group-remove')!;
+    await remove.updateComplete;
+    inner(remove).focus();
+    await userEvent.keyboard('{Enter}');
+    await expect.poll(() => builder.shadowRoot!.querySelector('.group-container')).toBeNull();
+    await expect.poll(() => deepActiveElement()).toBe(addCondition(builder));
+  });
+});
+
 describe('protspace-query-builder: the annotation picker opened from a card’s ⋯ menu', () => {
   /** Opens the picker through ⋯ → Change annotation by keyboard; resolves with the row. */
   async function openFromMenu() {
