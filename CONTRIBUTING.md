@@ -297,6 +297,36 @@ Locally Playwright reuses a dev server already listening on :8080, and one you s
 lacks that variable: stop it first (`lsof -iTCP:8080 -sTCP:LISTEN`), or the suite fails its
 "pinned startup demo" check.
 
+To iterate faster, keep one pinned dev server running and point the suite at it.
+`PLAYWRIGHT_BASE_URL` skips the web server entirely: nothing is started, built or stopped, so
+it also works for a server on another port. A plain `pnpm dev:app` (no pin) serves the product
+demo, and these fail against it: `example-datasets.spec.ts` (its pinned-demo check),
+`workbench-loading.spec.ts` (the empty-state tests, which abort the fixture's request) and
+`url-view-state.spec.ts` (it expects the fixture's columns and legend). Start the server with
+the pin and every spec runs:
+
+```bash
+# in one terminal, from the repo root
+VITE_STARTUP_DATASET_URL="/@fs$PWD/apps/web/tests/fixtures/demo_toxprot_7831.parquetbundle" pnpm dev:app
+# in another
+PLAYWRIGHT_BASE_URL=http://localhost:8080 pnpm test:e2e workbench-legend
+```
+
+Narrowing a run:
+
+- `pnpm test:e2e <file substring>` or `-g "<test title regex>"` picks tests;
+  `--project=<name>` picks a project (one per spec group, named in `playwright.config.ts`).
+- `--last-failed` reruns only what failed last time.
+- `--only-changed[=<ref>]` runs spec files changed since `<ref>` (default: uncommitted changes)
+  and specs importing a changed helper or module. A change to app or package source the spec
+  does not import (components, styles, anything reached only through the browser) selects
+  nothing, so it is for test edits, not app changes.
+- `E2E_BROWSERS=chromium` skips the Firefox/WebKit projects.
+- Workers default to 50% of your cores: headless WebGL (SwiftShader) is CPU-bound, so more
+  workers make every test slower. `--workers=2` gives a CI runner's per-test load, and
+  `E2E_BROWSERS=chromium pnpm test:e2e --shard=2/4 --workers=2` reproduces one of CI's four
+  Chromium shards.
+
 **Fixtures, examples and perf data are three different things:**
 
 - **Test fixtures** live in `apps/web/tests/fixtures/` and are the only bundles tests read

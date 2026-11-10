@@ -15,9 +15,12 @@ const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 /**
  * Playwright configuration for ProtSpace app e2e tests (product tour, etc.).
  *
- * The dev server on port 8080 is auto-started via the `webServer` block below
- * (and reused if already running locally). To run against an existing server,
- * just leave it up — Playwright will detect it.
+ * Which server the suite runs against:
+ * - default: `pnpm dev:app` on :8080 with VITE_STARTUP_DATASET_URL set (see `webServer`).
+ *   Locally a server already listening on :8080 is reused as is, env or not.
+ * - PLAYWRIGHT_PORT=<port>: builds this checkout's packages, then starts a fresh server there.
+ * - PLAYWRIGHT_BASE_URL=<url>: starts nothing and builds nothing; runs against that server.
+ * CONTRIBUTING.md ("E2E") lists the fast local workflows and the specs that need the env.
  *
  * Some projects are excluded from the default suite and gated on an env flag — see `optIn`
  * below, and each project's own comment for what it needs.
