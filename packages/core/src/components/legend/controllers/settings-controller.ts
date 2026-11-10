@@ -241,19 +241,8 @@ export class SettingsController {
     ></protspace-legend-settings-popover>`;
   }
 
-  commitColor(value: string, newColor: string): void {
-    // Update the color immediately
-    this.host._legendItems = this.host._legendItems.map((item) =>
-      item.value === value ? { ...item, color: newColor } : item,
-    );
-
-    // Sync to persistence
-    this.syncColorsToPersistence();
-
-    // Update scatterplot and save (color-only change, no z-order change)
-    this.host._scatterplotController.dispatchColorMappingChange();
-    this.host._persistenceController.saveSettings();
-    this.host.requestUpdate();
+  commitColor(value: string, color: string): void {
+    this.commitEncoding(value, { color });
   }
 
   /**
@@ -268,16 +257,17 @@ export class SettingsController {
     this.host.requestUpdate();
   }
 
-  commitShape(value: string, newShape: PointShape): void {
-    // Update the shape immediately
+  commitShape(value: string, shape: PointShape): void {
+    this.commitEncoding(value, { shape });
+  }
+
+  /** A row's new colour or shape: the stored categories, the plot and the record follow. */
+  private commitEncoding(value: string, patch: Pick<Partial<LegendItem>, 'color' | 'shape'>): void {
     this.host._legendItems = this.host._legendItems.map((item) =>
-      item.value === value ? { ...item, shape: newShape } : item,
+      item.value === value ? { ...item, ...patch } : item,
     );
-
-    // Sync to persistence
     this.syncColorsToPersistence();
-
-    // Update scatterplot and save (shape change, no z-order change)
+    // No z-order change: the colour mapping alone goes to the plot.
     this.host._scatterplotController.dispatchColorMappingChange();
     this.host._persistenceController.saveSettings();
     this.host.requestUpdate();

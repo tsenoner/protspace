@@ -364,12 +364,7 @@ export class TruncatedNameTooltip implements ReactiveController {
     // A finger has no hover.
     if ((e as PointerEvent).pointerType === 'touch') return;
     this.leave();
-    this._trigger = trigger;
-    trigger.addEventListener('pointerleave', this._onLeave);
-    this._timer = setTimeout(() => {
-      this._timer = null;
-      void this._show(trigger, text);
-    }, NAME_TOOLTIP_DELAY_MS);
+    this._schedule(trigger, text);
   };
 
   hover(trigger: HTMLElement, textEl: HTMLElement): void {

@@ -121,8 +121,12 @@ export class ItemActionsController {
 
     this.host._announceStatus(`Extracted ${toDisplayValue(value)} from Other category`);
     this.host._dispatchItemAction(value, 'extract');
-    // Save settings after the update cycle completes
-    this.host.updateComplete.then(() => {
+    this.saveAfterUpdate();
+  }
+
+  /** Stores the settings once the update the new `maxVisibleValues` started has rebuilt the items. */
+  private saveAfterUpdate(): void {
+    void this.host.updateComplete.then(() => {
       this.host._persistenceController.saveSettings();
     });
   }
@@ -144,10 +148,7 @@ export class ItemActionsController {
       this.host._dispatchItemAction(item.value, 'extract');
     }
     this.host.maxVisibleValues = targetMaxVisibleValues;
-
-    this.host.updateComplete.then(() => {
-      this.host._persistenceController.saveSettings();
-    });
+    this.saveAfterUpdate();
   }
 
   /**
@@ -177,10 +178,7 @@ export class ItemActionsController {
     // respect the merge operation.
 
     this.host._announceStatus(`Moved ${toDisplayValue(value)} to Other category`);
-    // Save settings after the update cycle completes
-    this.host.updateComplete.then(() => {
-      this.host._persistenceController.saveSettings();
-    });
+    this.saveAfterUpdate();
   }
 
   async highlightDropped(value: string): Promise<void> {
@@ -228,11 +226,10 @@ export class ItemActionsController {
       currentMode === 'manual' &&
       !this.host._numericManualOrderIdsByAnnotation[this.host.selectedAnnotation]?.length
     ) {
+      // The order on screen, without Other and the pinned N/A, as a drag stores it.
       this.host._data.setNumericManualOrderIds(
         this.host.selectedAnnotation,
-        [...this.host._sortedLegendItems]
-          .filter((item) => item.value !== LEGEND_VALUES.OTHER)
-          .map((item) => item.value),
+        displayedOrder(this.host._sortedLegendItems, true),
       );
     }
 

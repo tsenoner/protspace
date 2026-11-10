@@ -267,31 +267,12 @@ export class ProtspaceLegend extends LitElement {
    * N/A items use '__NA__' as their value.
    */
   get _visibleValues(): Set<string> {
-    const visible = new Set<string>();
-
-    // Collect visible values from current _legendItems (excluding "Other")
-    if (this._legendItems.length > 0) {
-      this._legendItems.forEach((item) => {
-        if (item.value !== LEGEND_VALUES.OTHER) {
-          visible.add(item.value);
-        }
-      });
-    }
-
-    // If visible is empty but we have pendingCategories, use those instead.
-    // This handles the case where _legendItems only has "Other" during restore.
-    if (visible.size === 0) {
-      const pendingCategories = this._persistenceController.pendingCategories;
-      if (Object.keys(pendingCategories).length > 0) {
-        for (const key of Object.keys(pendingCategories)) {
-          if (key !== LEGEND_VALUES.OTHER) {
-            visible.add(key);
-          }
-        }
-      }
-    }
-
-    return visible;
+    const fromItems = this._legendItems.map((item) => item.value);
+    // Empty, or only "Other" during a restore: the stored categories stand in.
+    const values = fromItems.some((value) => value !== LEGEND_VALUES.OTHER)
+      ? fromItems
+      : Object.keys(this._persistenceController.pendingCategories);
+    return new Set(values.filter((value) => value !== LEGEND_VALUES.OTHER));
   }
 
   /**
@@ -632,10 +613,9 @@ export class ProtspaceLegend extends LitElement {
    * @param datasetHash - The hash of the NEW dataset (used to clear its localStorage entries)
    */
   public clearForNewDataset(datasetHash: string, clearPersistedState: boolean = true): void {
-    // A value typed into the settings popover belongs to the dataset it was typed for.
-    this._settings.close();
-    // A colour still waiting for its delay lands on the dataset it was picked on, not the next one.
-    this._colorPicker.close();
+    // A value typed into the settings popover, or a colour still waiting for its delay, lands on
+    // the dataset it was made on, not the next one.
+    this._closeAnnotationOverlays();
 
     // Reset visual encoding state
     this._processorContext.slotTracker.reset();
