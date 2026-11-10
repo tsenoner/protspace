@@ -5,6 +5,7 @@ import '../../kit/tooltip';
 import { cmToMm, inToMm, mmToCm, mmToIn, pxToMm } from '../dimension-utils';
 import { getActivePresetMaxHeightPx, getActivePresetWidthPx } from '../publish-modal-helpers';
 import type { PublishState } from '../publish-state';
+import { MAX_EXPORT_DIMENSION } from '../../scatter-plot/webgl/renderer/device-limits';
 
 type Unit = PublishState['unit'];
 
@@ -46,7 +47,8 @@ function formatDimensionForUnit(px: number, mm: number, unit: Unit): string {
 
 /**
  * A typed width or height: whole pixels in px, else converted to mm. A non-positive entry is
- * ignored, and the box goes back to `shown`: nothing re-renders to put it back.
+ * ignored, and the box goes back to `shown`: nothing re-renders to put it back. A size past the
+ * export cap is held to it by the handlers; the edit re-renders, and `live()` shows the size kept.
  */
 function readSize(
   event: Event,
@@ -174,6 +176,7 @@ export function renderDimensions(
             class="publish-row-input publish-dim-value"
             data-publish-input="width"
             aria-label="Width"
+            max=${s.unit === 'px' ? MAX_EXPORT_DIMENSION : nothing}
             ?disabled=${dimsReadOnly || widthLocked}
             .value=${live(widthDisplay)}
             step=${s.unit === 'px' ? '1' : '0.1'}
@@ -222,6 +225,7 @@ export function renderDimensions(
             class="publish-row-input publish-dim-value"
             data-publish-input="height"
             aria-label="Height"
+            max=${s.unit === 'px' ? MAX_EXPORT_DIMENSION : nothing}
             ?disabled=${dimsReadOnly}
             .value=${live(heightDisplay)}
             step=${s.unit === 'px' ? '1' : '0.1'}

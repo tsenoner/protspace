@@ -4,6 +4,7 @@ import { adoptTheme } from '../kit/adopt-theme';
 import type { PsDialog } from '../kit/dialog';
 import { deepActiveElement } from '../kit/focus';
 import { ESCAPE_ORDER, onEscapeFallback } from '../kit/layers';
+import { MAX_EXPORT_DIMENSION } from '../scatter-plot/webgl/renderer/device-limits';
 import './publish-modal';
 
 type Selected = { kind: 'overlay' | 'inset'; index: number };
@@ -13,6 +14,8 @@ interface ModalInternals {
     overlays: unknown[];
     insets: unknown[];
     dpi: number;
+    widthPx: number;
+    heightPx: number;
     background: string;
   };
   _selectedItem: Selected | null;
@@ -164,6 +167,45 @@ describe('protspace-publish-modal dialog', () => {
     const dialog = second.modal.shadowRoot!.querySelector('ps-dialog')!;
     dialog.shadowRoot!.querySelector<HTMLElement>('ps-icon-button[label="Close"]')!.click();
     expect(document.activeElement).toBe(second.opener);
+  });
+});
+
+describe('protspace-publish-modal dimensions', () => {
+  /** Sets a control's value and fires the change a user's edit ends with. */
+  async function change(modal: HTMLElement, name: string, value: string): Promise<void> {
+    const control = modal.shadowRoot!.querySelector<HTMLInputElement | HTMLSelectElement>(
+      `[data-publish-input="${name}"]`,
+    )!;
+    control.value = value;
+    control.dispatchEvent(new Event('change', { bubbles: true }));
+    await (modal as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
+  }
+  const box = (modal: HTMLElement, name: string) =>
+    modal.shadowRoot!.querySelector<HTMLInputElement>(`[data-publish-input="${name}"]`)!.value;
+
+  it('a width typed past the export cap is held to it, and the boxes show what applies', async () => {
+    const { modal, internals } = await mount();
+    const max = MAX_EXPORT_DIMENSION;
+    await change(modal, 'unit', 'px');
+    await change(modal, 'width', '100000');
+    // The default figure is 2048 × 1024 with the aspect linked.
+    expect([internals._state.widthPx, internals._state.heightPx]).toEqual([max, max / 2]);
+    expect([box(modal, 'width'), box(modal, 'height')]).toEqual([String(max), String(max / 2)]);
+
+    // Unlinked, a height past the cap is held on its own.
+    modal
+      .shadowRoot!.querySelector<HTMLButtonElement>('[data-publish-input="aspect-lock"]')!
+      .click();
+    await (modal as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
+    await change(modal, 'height', '50000');
+    expect([internals._state.widthPx, internals._state.heightPx]).toEqual([max, max]);
+    expect(box(modal, 'height')).toBe(String(max));
+
+    // In mm the pixels the size comes to are held, and the box shows the mm that fit.
+    await change(modal, 'unit', 'mm');
+    await change(modal, 'height', '100000');
+    expect(internals._state.heightPx).toBe(max);
+    expect(box(modal, 'height')).toBe(((max * 25.4) / internals._state.dpi).toFixed(1));
   });
 });
 

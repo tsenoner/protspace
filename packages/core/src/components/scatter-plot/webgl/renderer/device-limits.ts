@@ -13,6 +13,12 @@
  */
 export const MIN_MAX_TEXTURE_SIZE = 2048;
 
+/**
+ * The widest or tallest figure an export renders, in physical pixels, whatever the device's
+ * texture limit (a lower device limit tightens it). The figure editor holds typed sizes to it.
+ */
+export const MAX_EXPORT_DIMENSION = 8192;
+
 /** The smallest capacity the renderer and the export plan. */
 export const MIN_CAPACITY = 1024;
 

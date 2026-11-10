@@ -1528,11 +1528,29 @@ describe('<protspace-publish-modal> review fixes', () => {
     const modal = makeModal();
     await modal.updateComplete;
     const internals = modal as unknown as PublishInternals;
+    // Resample off: only the print size follows, so the box's own range is the bound.
+    shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="resample"]')!.click();
+    await modal.updateComplete;
+    expect(internals._state.resample).toBe(false);
     const dpi = shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="dpi"]')!;
     dpi.value = '99999';
     dpi.dispatchEvent(new Event('change'));
     await modal.updateComplete;
     expect(internals._state.dpi).toBe(2400);
     expect(dpi.value).toBe('2400');
+  });
+
+  it('with Resample on, holds a typed resolution to where the figure reaches the export cap', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as PublishInternals;
+    expect(internals._state).toMatchObject({ widthPx: 2048, heightPx: 1024, resample: true });
+    const dpi = shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="dpi"]')!;
+    dpi.value = '2400';
+    dpi.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    // 2048 px at 300 dpi is 173.4 mm, which spans MAX_EXPORT_DIMENSION px at 1200 dpi.
+    expect(internals._state).toMatchObject({ dpi: 1200, widthPx: 8192, heightPx: 4096 });
+    expect(dpi.value).toBe('1200');
   });
 });

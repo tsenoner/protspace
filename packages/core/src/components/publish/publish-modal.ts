@@ -39,6 +39,7 @@ import {
   computeHeightMmUpdate,
   computeDpiUpdate,
   computePresetApplication,
+  capFigureSize,
   getActivePresetConstraints,
   getActivePresetMaxHeightPx,
   getActivePresetWidthPx,
@@ -437,7 +438,7 @@ export class ProtspacePublishModal extends LitElement {
     const widthPx = getActivePresetWidthPx(this._state);
     if (widthPx === null) return null;
     const maxPx = getActivePresetMaxHeightPx(this._state) ?? Infinity;
-    const clamped = Math.min(Math.max(1, Math.round(heightPx)), maxPx);
+    const clamped = Math.min(capFigureSize(1, heightPx, false).heightPx, maxPx);
     return { heightPx: clamped, widthPx };
   }
 
@@ -460,6 +461,8 @@ export class ProtspacePublishModal extends LitElement {
       const maxPx = mmToPx(preset.maxHeightMm, preset.dpi);
       heightPx = Math.min(heightPx, maxPx);
     }
+    // A tall figure at a preset's width can still pass the export cap.
+    heightPx = capFigureSize(1, heightPx, false).heightPx;
     // Match the preset's mm width to the corresponding sizeMode so the UI's
     // width-locked logic stays consistent with the dimensions being applied.
     let sizeMode = this._state.sizeMode;

@@ -52,7 +52,12 @@ import { createStageArrays, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
 import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 import { allocateLabelAtlas, uploadPlaceholderAtlas } from './label-atlas-texture';
-import { MIN_CAPACITY, drainGlErrors, readMaxTextureSize } from './device-limits';
+import {
+  MAX_EXPORT_DIMENSION,
+  MIN_CAPACITY,
+  drainGlErrors,
+  readMaxTextureSize,
+} from './device-limits';
 import { createPassScratch, stageInPaintOrder } from './pass-staging';
 import {
   POINT_VERTEX_SHADER,
@@ -69,8 +74,6 @@ import {
 // Anchoring to a fixed reference makes the export render reproducible.
 const EXPORT_MARGIN_REFERENCE_WIDTH = 800;
 const EXPORT_MARGIN_REFERENCE_HEIGHT = 600;
-
-const MAX_DIMENSION = 8192;
 
 /**
  * The plot margins at an export size: `config.margin` (20 px when unset) scaled from the fixed
@@ -241,7 +244,7 @@ export class ExportRenderer {
     const physicalWidth = Math.floor(width * dpr);
     const physicalHeight = Math.floor(height * dpr);
 
-    // MAX_DIMENSION alone was described as "the browser limit" but is a constant,
+    // MAX_EXPORT_DIMENSION alone was described as "the browser limit" but is a constant,
     // so on any device reporting less than 8192 the message named a limit that was
     // not the one being enforced — and the export failed later, in the driver.
     // Deliberately NOT `sanitizeMaxTextureSize`: its fallback is the 2048 spec
@@ -251,8 +254,8 @@ export class ExportRenderer {
     const deviceLimit = options.deviceMaxTextureSize;
     const effectiveMaxDimension =
       typeof deviceLimit === 'number' && Number.isFinite(deviceLimit) && deviceLimit >= 1
-        ? Math.min(MAX_DIMENSION, deviceLimit)
-        : MAX_DIMENSION;
+        ? Math.min(MAX_EXPORT_DIMENSION, deviceLimit)
+        : MAX_EXPORT_DIMENSION;
 
     if (physicalWidth > effectiveMaxDimension || physicalHeight > effectiveMaxDimension) {
       throw new Error(
