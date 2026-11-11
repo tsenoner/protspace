@@ -40,7 +40,7 @@ describe('point shaders', () => {
       'predictedInterior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);',
     );
     expect(POINT_FRAGMENT_SHADER).toContain(
-      'mix(finalColor * v_color.a, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior)',
+      'mix(finalColor * pointAlpha, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior)',
     );
     expect(POINT_FRAGMENT_SHADER).toContain('uniform vec3 u_knockoutColor;');
     // The hollow interior is the only thing that distinguishes the two glyph classes; the
@@ -85,8 +85,19 @@ describe('point shaders', () => {
   it('makes the predicted interior hollow via a single revertible flag', () => {
     expect(POINT_FRAGMENT_SHADER).toContain('const float PREDICTED_INTERIOR_FILL = 0.0;');
     expect(POINT_FRAGMENT_SHADER).toContain(
-      'mix(v_color.a, PREDICTED_INTERIOR_FILL, predictedInterior)',
+      'mix(pointAlpha, PREDICTED_INTERIOR_FILL, predictedInterior)',
     );
+  });
+
+  it('raises a faded hollow marker on a dark plot only, and keeps it under a shown point', () => {
+    expect(POINT_FRAGMENT_SHADER).toContain('bool darkPlot = bgLum < 0.05;');
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'if (darkPlot && v_predicted > 0.5 && pointAlpha < HOLLOW_DARK_FADE_CEILING) {',
+    );
+    expect(POINT_FRAGMENT_SHADER).toContain('const float HOLLOW_DARK_FADE_CEILING = 0.5;');
+    // Both the alpha and the premultiplied colour take the raised alpha.
+    expect(POINT_FRAGMENT_SHADER).toContain('mix(finalColor * pointAlpha,');
+    expect(POINT_FRAGMENT_SHADER).not.toContain('finalColor * v_color.a');
   });
 
   describe('outline (#369)', () => {

@@ -94,8 +94,10 @@ glyph's depth (its inradius), so the hole stays open; it is never wider than a s
 diameter once the sprite is 6 device pixels or wider. The interior SHALL be transparent, so
 markers painted earlier show through the hole rather than being masked by it. The plus's arms SHALL
 be 0.42 of its half-size wide, in the plot, the legend and every export. The legend's shape picker
-SHALL draw every shape filled, the plus included, since hollow means a transferred value.
-Multi-valued transferred cells SHALL retain every decoded label and use the existing multi-label
+SHALL draw every shape filled, the plus included, since hollow means a transferred value. On a
+dark plot, a transferred marker that a selection, a focus or EAT Dim fades SHALL be drawn at 2.5
+times its faded opacity, at most 0.5, since a thin ring at the faded opacity all but vanishes there;
+a light plot and every export keep the configured faded opacity. Multi-valued transferred cells SHALL retain every decoded label and use the existing multi-label
 marker segmentation. Disabling the overlay SHALL return transferred cells to their curated missing
 category.
 
@@ -137,12 +139,21 @@ category.
 
 - **WHEN** a user increases or decreases legend point size
 - **THEN** the hollow transferred outline remains visibly thicker than the anti-alias fringe
-- **AND** a visible hollow interior remains on every shape, the plus included, at shape size 10 at
-  2 device pixels per CSS pixel and at shape size 64, the default at 10,000 proteins and the largest
-  size from 10,000 proteins up; at the smallest sizes, the default on the largest datasets, the
-  interior may fall below one device pixel
+- **AND** a visible hollow interior remains on every shape, the plus included, wherever the point
+  lands within its pixel, at shape size 10 at 2 device pixels per CSS pixel and at shape size 64,
+  the default at 10,000 proteins and the largest size from 10,000 proteins up
+- **AND** at 1 device pixel per CSS pixel the circle, square and triangles keep a hole from shape
+  size 10, while a diamond or plus keeps one wherever it lands only from about shape size 32;
+  below that, and at the smallest sizes, the default on the largest datasets, the interior may
+  fall below one device pixel
 - **AND** its responsive thickness is bounded rather than required to scale linearly with marker
   diameter, with identical live and exported rendering at the same point scale
+
+#### Scenario: A faded transferred marker on a dark plot
+
+- **WHEN** the plot is dark and a selection, a focus or EAT Dim fades a transferred marker
+- **THEN** its ring is drawn at 2.5 times the faded opacity, at most 0.5, so it stays readable
+- **AND** on a light plot and in every export it keeps the configured faded opacity
 
 #### Scenario: The plus in the shape picker
 

@@ -164,11 +164,18 @@ const float PREDICTED_INTERIOR_FILL = 0.0; // 1.0 = filled knockout (old), 0.0 =
 const float PLUS_ARM = ${PLUS_ARM_RATIO.toFixed(2)};
 // A hollow marker's ring: 12% of the sprite's diameter (0.24 of its radius), as plotting
 // libraries stroke hollow markers (at most 1/8 of the diameter, never above 1/6), with a floor
-// of one device pixel so it never thins to nothing. The floor wins only below 6 device px.
+// of one device pixel. The floor (2 / gl_PointSize in sprite units) wins below about 8 device px
+// (2 / 0.24); from 6 device px up the ring is still at most a sixth of the diameter. The depth
+// cap below can take it under a pixel on the smallest plus, triangle and diamond sprites.
 const float HOLLOW_RING_DIAMETER_SHARE = 0.12;
 // The most of a glyph's depth the ring may take, so every shape keeps a hole; without it the
 // device-pixel floor closed the plus's thin arms.
 const float HOLLOW_RING_DEPTH_SHARE = 0.6;
+// A faded hollow marker (the points a selection, focus or EAT Dim fades) is a thin ring at a low
+// alpha. On white it stays readable; on a dark plot it all but vanishes, so there its alpha is
+// raised by this gain, up to HOLLOW_DARK_FADE_CEILING, still well under a shown point's.
+const float HOLLOW_DARK_FADE_GAIN = 2.5;
+const float HOLLOW_DARK_FADE_CEILING = 0.5;
 
 // Outline width. Two terms, and it needs both:
 //
@@ -310,6 +317,17 @@ void main() {
     finalColor = pow(max(texColor.rgb, vec3(0.0)), vec3(u_gamma));
   }
 
+  // The knockout colour is the live plot background (white in light and in every export).
+  vec3 linearKnockoutColor = pow(max(u_knockoutColor, vec3(0.0)), vec3(u_gamma));
+  vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+  float bgLum = dot(linearKnockoutColor, luma);
+  bool darkPlot = bgLum < 0.05;
+  // A faded hollow marker on a dark plot reads stronger (HOLLOW_DARK_FADE_GAIN).
+  float pointAlpha = v_color.a;
+  if (darkPlot && v_predicted > 0.5 && pointAlpha < HOLLOW_DARK_FADE_CEILING) {
+    pointAlpha = min(pointAlpha * HOLLOW_DARK_FADE_GAIN, HOLLOW_DARK_FADE_CEILING);
+  }
+
   // Darken near the edge to mimic a border/outline. Applied to BOTH filled dots and predicted
   // rings so the two glyph classes share one outline treatment (#369) — filled-vs-hollow stays
   // the encoding that tells them apart, which is a pre-attentive categorical difference and far
@@ -317,8 +335,6 @@ void main() {
   // Still skipped for faded points (low alpha), where the darkening is disproportionately visible.
   float outlineWidth =
     min(max(OUTLINE_RADIUS_FRACTION, OUTLINE_DEVICE_PX * fieldPerPixel), outlineBudget);
-  // The knockout colour is the live plot background (white in light and in every export).
-  vec3 linearKnockoutColor = pow(max(u_knockoutColor, vec3(0.0)), vec3(u_gamma));
   if (v_color.a > 0.5) {
     // Smooth the inner edge. The outer edge is already anti-aliased by shapeAlpha, so a hard
     // threshold here left the outline smooth outside and stepped inside. edgeDist is positive
@@ -334,10 +350,8 @@ void main() {
     // On a dark plot, a point below 2:1 against the background (Kelly #222222 and #2B3D26,
     // Okabe-Ito #000000) gets a light rim instead, or nothing would bound it. A light background
     // (the light theme, every export) always takes the darkened rim.
-    vec3 luma = vec3(0.2126, 0.7152, 0.0722);
-    float bgLum = dot(linearKnockoutColor, luma);
     float fgLum = dot(finalColor, luma);
-    bool lightRim = bgLum < 0.05 && fgLum + 0.05 < 2.0 * (bgLum + 0.05);
+    bool lightRim = darkPlot && fgLum + 0.05 < 2.0 * (bgLum + 0.05);
     vec3 rim = lightRim ? mix(finalColor, vec3(0.55), 0.7) : finalColor * 0.5;
     finalColor = mix(finalColor, rim, outlineMix);
   }
@@ -345,9 +359,9 @@ void main() {
   // Predicted interiors mix toward PREDICTED_INTERIOR_FILL (hollow=0.0, filled-knockout=1.0).
   // Mix premultiplied components explicitly so the ring/interior transition remains correct
   // for reliability-faded points.
-  float finalAlpha = mix(v_color.a, PREDICTED_INTERIOR_FILL, predictedInterior) * shapeAlpha;
+  float finalAlpha = mix(pointAlpha, PREDICTED_INTERIOR_FILL, predictedInterior) * shapeAlpha;
   vec3 premultipliedColor =
-    mix(finalColor * v_color.a, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior) *
+    mix(finalColor * pointAlpha, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior) *
     shapeAlpha;
   fragColor = vec4(premultipliedColor, finalAlpha);
 }`;
