@@ -17,7 +17,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { VIDEO_FILES, type VideoSidecar } from './capture-plan';
+import { THEMES, VIDEO_FILES, variantStem, type VideoSidecar } from './capture-plan';
 import { IMAGES_DIR, TEMP_VIDEOS_DIR } from './paths';
 
 /**
@@ -135,13 +135,14 @@ function main(): number {
         .filter((file) => file.endsWith('.webm'))
         .map((file) => file.slice(0, -'.webm'.length).split(path.sep).join('/'))
     : [];
+  // A name stands for both themes' recordings.
+  const isVariantOf = (stem: string, name: string) =>
+    THEMES.some((theme) => stem === variantStem(name, theme));
   const stems =
     named.length > 0
-      ? recorded.filter((stem) => named.some((name) => stem === name || stem === `${name}-dark`))
+      ? recorded.filter((stem) => named.some((name) => isVariantOf(stem, name)))
       : recorded;
-  const missing = named.filter(
-    (name) => !stems.some((stem) => stem === name || stem === `${name}-dark`),
-  );
+  const missing = named.filter((name) => !stems.some((stem) => isVariantOf(stem, name)));
   if (missing.length > 0) {
     console.error(
       `No recording for ${missing.join(', ')}: run \`pnpm docs:animations -g "<name>"\` first.`,

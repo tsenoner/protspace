@@ -34,13 +34,14 @@ import {
 } from '../../apps/web/src/explore/example-datasets.ts';
 import { EXAMPLE_MANIFEST } from '../../apps/web/src/explore/example-manifest.ts';
 import { exampleServedPath } from '../../apps/web/src/explore/example-served-path.ts';
+import { THEMES, variantStem, type Theme } from '../../scripts/docs-screenshots/capture-plan.ts';
 import { repoFileProblem } from '../../scripts/examples/pinned.ts';
 import { EXAMPLE_DETAILS, NO_BIOCENTRAL, type ExampleDetails } from './example-details.ts';
 import { MACHINE_PATH } from './machine-path.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const OUTPUT = join(REPO_ROOT, 'docs/explore/example-datasets.md');
-const THUMBNAIL_DIR = join(REPO_ROOT, 'docs/explore/images/examples');
+const IMAGES_DIR = join(REPO_ROOT, 'docs/explore/images');
 /** Hand-written pages that state facts about the examples: the check refuses their ‹…› too. */
 const PAGES_WITH_EXAMPLE_FACTS = ['docs/explore/eat.md', 'docs/explore/importing-data.md'];
 
@@ -88,8 +89,8 @@ interface Card {
 
 const code = (name: string) => `\`${name}\``;
 const count = (n: number) => n.toLocaleString('en-US');
-const thumbnailPath = (id: string, dark = false) =>
-  join(THUMBNAIL_DIR, `${id}${dark ? '-dark' : ''}.png`);
+/** An example's thumbnail for one theme, under docs/explore/images/: `examples/demo-dark.png`. */
+const thumbnail = (id: string, theme: Theme) => `${variantStem(`examples/${id}`, theme)}.png`;
 
 /** "a", "a and b", "a, b and c". */
 function list(items: readonly string[]): string {
@@ -145,9 +146,9 @@ function validate(): string[] {
         `"${id}" is not one of the paper's datasets: say what it was built to show (builtToShow).`,
       );
     }
-    for (const dark of [false, true]) {
-      if (existsSync(thumbnailPath(id, dark))) continue;
-      const file = `examples/${id}${dark ? '-dark' : ''}.png`;
+    for (const theme of THEMES) {
+      const file = thumbnail(id, theme);
+      if (existsSync(join(IMAGES_DIR, file))) continue;
       errors.push(
         `"${id}": docs/explore/images/${file} is missing; capture it with \`pnpm docs:screenshots -g "examples/${id}"\`.`,
       );
@@ -312,8 +313,8 @@ function renderCard({ entry, details, record }: Card): string[] {
   const { id } = entry;
   const lines = [`## ${details.title} {#${id}}`, ''];
   const alt = `${details.title}: ${entry.insight}`;
-  lines.push(`![${alt}](./images/examples/${id}.png){.light-only}`);
-  lines.push(`![${alt}](./images/examples/${id}-dark.png){.dark-only}`);
+  lines.push(`![${alt}](./images/${thumbnail(id, 'light')}){.light-only}`);
+  lines.push(`![${alt}](./images/${thumbnail(id, 'dark')}){.dark-only}`);
   lines.push('');
   lines.push(`_${details.tagline}_`, '', `**${entry.insight}**`, '');
   lines.push(`${details.lookAt} ${details.tryNext}`, '');
