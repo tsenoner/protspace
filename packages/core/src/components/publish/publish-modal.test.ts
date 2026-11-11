@@ -4,7 +4,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import './publish-modal';
 import type { ProtspacePublishModal } from './publish-modal';
-import { selectOptionStyles } from '../kit/field.styles';
 import { topLayer } from '../kit/layers';
 import { publishModalStyles } from './publish-modal.styles';
 import { PUBLISH_FRAMING } from './publish-state';
@@ -582,10 +581,6 @@ describe('<protspace-publish-modal> control names', () => {
       ['Close', 'secondary'],
       ['Export', 'primary'],
     ]);
-  });
-
-  it('gives its native selects the kit’s option colours, so their lists read in dark', () => {
-    expect(publishModalStyles).toContain(selectOptionStyles);
   });
 });
 

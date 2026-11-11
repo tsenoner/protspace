@@ -1,6 +1,5 @@
 import { css, unsafeCSS } from 'lit';
 import { LANDSCAPE_PHONE_MEDIA, PHONE_MEDIA } from '../../utils/breakpoints';
-import { selectOptionStyles } from '../kit/field.styles';
 import { focusRing, kitHost, reducedMotion } from '../kit/kit-shared.styles';
 
 /**
@@ -12,8 +11,6 @@ export const publishModalStyles = [
   kitHost,
   focusRing,
   reducedMotion,
-  // The editor's native selects: their lists stay readable in either theme.
-  selectOptionStyles,
   css`
     /* ─── Layout ────────────────────────────────────────────── */
     .publish-container {
@@ -266,41 +263,9 @@ export const publishModalStyles = [
       font-size: var(--ps-text-xs);
     }
 
-    /*
-     * Drawn by the page, not the platform: a native arrow differs between macOS, Windows and
-     * headless Chrome (where the docs are captured) and ignores the theme. The arrow is the kit
-     * select's chevron, two strokes in the muted text colour, each a diagonal band across one of
-     * two side-by-side squares.
-     */
+    /* The kit select (ps-select size="sm"); its text at the settings' size. */
     .publish-select {
-      appearance: none;
-      padding: var(--ps-space-0-5) calc(var(--ps-space-1-5) + 14px) var(--ps-space-0-5)
-        var(--ps-space-1-5);
-      border: 1px solid var(--ps-border-control);
-      border-radius: var(--ps-radius);
-      background-color: var(--ps-surface);
-      background-image:
-        linear-gradient(
-          45deg,
-          transparent calc(50% - 0.75px),
-          var(--ps-text-muted) calc(50% - 0.75px) calc(50% + 0.75px),
-          transparent calc(50% + 0.75px)
-        ),
-        linear-gradient(
-          -45deg,
-          transparent calc(50% - 0.75px),
-          var(--ps-text-muted) calc(50% - 0.75px) calc(50% + 0.75px),
-          transparent calc(50% + 0.75px)
-        );
-      background-position:
-        right calc(var(--ps-space-1-5) + 5px) center,
-        right var(--ps-space-1-5) center;
-      background-size: 5px 5px;
-      background-repeat: no-repeat;
-      color: var(--ps-text);
-      font-family: inherit;
       font-size: var(--ps-text-sm);
-      cursor: pointer;
     }
 
     .publish-checkbox-label {
@@ -594,12 +559,11 @@ export const publishModalStyles = [
       font-size: var(--ps-text-sm);
     }
 
-    /* Touch: the tools, presets and format toggles, the number fields and the selects are 40 px
-       targets. */
+    /* Touch: the tools, presets and format toggles and the number fields are 40 px targets, as
+       the kit selects are on their own. */
     @media (pointer: coarse) {
       .publish-toggle-btn,
-      .publish-row-input,
-      .publish-select {
+      .publish-row-input {
         min-height: var(--ps-touch-target);
       }
 
