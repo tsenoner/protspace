@@ -1,65 +1,132 @@
-import { getStorageItem, setStorageItem } from '@protspace/utils';
 import {
-  DEFAULT_THEME,
-  THEME_CHOICES,
+  chooseMode,
+  LEGACY_THEME_STORAGE_KEY,
+  parseStoredTheme,
+  resolveTheme,
+  storedTheme,
   THEME_STORAGE_KEY,
+  toggleTheme,
   type ThemeChoice,
+  type ThemeMode,
 } from './theme-defaults';
 
 /**
- * The explore page's theme choice (design decision 16): System, Light or Dark, kept under its own
- * key beside the layout store. The React shell subscribes with useSyncExternalStore. The choice
- * is written as is to data-theme on the root Explore applies it to, and only while it is applied:
- * 'system' stays 'system' and the token sheet's media query follows the OS. No cross-tab sync:
- * another tab keeps its theme until it reloads.
+ * The site's theme choice (design decision 16), shared with the docs under VitePress's key. The
+ * React pages subscribe with useSyncExternalStore. The choice is written as is to <html
+ * data-theme> on every page: 'system' stays 'system' and the token sheet's media query follows
+ * the OS. Subscribers also hear when the OS scheme changes (the shown mode may change with it) and
+ * when another tab, or the docs, store a new choice.
  */
 
-/** A choice from anything stored: one of THEME_CHOICES, else the default. */
-export function parseTheme(raw: unknown): ThemeChoice {
-  return THEME_CHOICES.includes(raw as ThemeChoice) ? (raw as ThemeChoice) : DEFAULT_THEME;
-}
+const OS_DARK_QUERY = '(prefers-color-scheme: dark)';
 
 let theme: ThemeChoice | null = null;
-let appliedRoot: HTMLElement | null = null;
 const listeners = new Set<() => void>();
+let stopWatching: (() => void) | null = null;
+
+/** Whether the OS prefers dark (false where matchMedia is missing). */
+function osDark(): boolean {
+  return typeof matchMedia === 'function' && matchMedia(OS_DARK_QUERY).matches;
+}
+
+/** The stored choice; moves a legacy value over first, as index.html's boot script does. */
+function readStored(): ThemeChoice {
+  try {
+    const legacy = localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+    if (legacy !== null) {
+      if (localStorage.getItem(THEME_STORAGE_KEY) === null && /^"(dark|light)"$/.test(legacy))
+        localStorage.setItem(THEME_STORAGE_KEY, legacy.slice(1, -1));
+      localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    }
+    return parseStoredTheme(localStorage.getItem(THEME_STORAGE_KEY));
+  } catch {
+    return parseStoredTheme(null);
+  }
+}
+
+function writeStored(choice: ThemeChoice): void {
+  try {
+    const value = storedTheme(choice);
+    if (value === null) localStorage.removeItem(THEME_STORAGE_KEY);
+    else localStorage.setItem(THEME_STORAGE_KEY, value);
+  } catch {
+    // Storage blocked: the choice lasts for this page.
+  }
+}
+
+function notify(): void {
+  for (const listener of [...listeners]) listener();
+}
 
 /** The choice: read from storage on the first call (a throwing storage gives the default). */
 export function getTheme(): ThemeChoice {
-  theme ??= parseTheme(getStorageItem<unknown>(THEME_STORAGE_KEY, null));
+  theme ??= readStored();
   return theme;
+}
+
+/** The mode the page shows: the choice, with System resolved against the OS. */
+export function getResolvedTheme(): ThemeMode {
+  return resolveTheme(getTheme(), osDark());
+}
+
+/** Writes the choice to <html data-theme>. The boot script already did on a cold load. */
+export function applyTheme(): void {
+  if (typeof document !== 'undefined') document.documentElement.dataset.theme = getTheme();
+}
+
+/** Commits a choice: stored, applied and announced; the same choice does nothing. */
+export function setTheme(choice: ThemeChoice): void {
+  if (choice === getTheme()) return;
+  theme = choice;
+  writeStored(choice);
+  applyTheme();
+  notify();
+}
+
+/** Shows `mode`: an override, or back to the system when the OS shows it already. */
+export function setThemeMode(mode: ThemeMode): void {
+  setTheme(chooseMode(mode, osDark()));
+}
+
+/** The theme button's press: the other mode. */
+export function toggleThemeMode(): void {
+  setTheme(toggleTheme(getTheme(), osDark()));
+}
+
+/** Listens to the OS scheme and to other tabs while anyone subscribes. */
+function watch(): () => void {
+  const media = typeof matchMedia === 'function' ? matchMedia(OS_DARK_QUERY) : null;
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== null && event.key !== THEME_STORAGE_KEY) return;
+    const next = readStored();
+    if (next === getTheme()) return;
+    theme = next;
+    applyTheme();
+    notify();
+  };
+  media?.addEventListener('change', notify);
+  if (typeof window !== 'undefined') window.addEventListener('storage', onStorage);
+  return () => {
+    media?.removeEventListener('change', notify);
+    if (typeof window !== 'undefined') window.removeEventListener('storage', onStorage);
+  };
 }
 
 export function subscribeTheme(listener: () => void): () => void {
   listeners.add(listener);
+  stopWatching ??= watch();
   return () => {
     listeners.delete(listener);
-  };
-}
-
-/** Commits a choice: stored, written to the applied root and announced; the same choice does nothing. */
-export function setTheme(choice: ThemeChoice): void {
-  if (choice === getTheme()) return;
-  theme = choice;
-  setStorageItem(THEME_STORAGE_KEY, choice);
-  if (appliedRoot) appliedRoot.dataset.theme = choice;
-  for (const listener of [...listeners]) listener();
-}
-
-/**
- * Writes the choice to `root`'s data-theme and keeps it there until the returned cleanup, which
- * removes the attribute: the landing, privacy and docs pages keep their look.
- */
-export function applyTheme(root: HTMLElement = document.documentElement): () => void {
-  root.dataset.theme = getTheme();
-  appliedRoot = root;
-  return () => {
-    delete root.dataset.theme;
-    if (appliedRoot === root) appliedRoot = null;
+    if (listeners.size === 0) {
+      stopWatching?.();
+      stopWatching = null;
+    }
   };
 }
 
 export function resetThemeForTests(): void {
+  stopWatching?.();
+  stopWatching = null;
   theme = null;
-  appliedRoot = null;
   listeners.clear();
 }

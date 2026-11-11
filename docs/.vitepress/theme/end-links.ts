@@ -1,5 +1,5 @@
 import { useData } from 'vitepress';
-import { defineComponent, h, nextTick, onMounted, ref } from 'vue';
+import { defineComponent, h, onMounted, ref } from 'vue';
 import { FEEDBACK_HREF, GITHUB_REPO_URL } from '../../../apps/web/src/lib/support';
 
 /**
@@ -27,98 +27,69 @@ const END_LINKS = [
 ] as const;
 
 /**
- * The theme button, Explore's (apps/web/src/workbench/ThemeToggle.tsx): one icon button that steps
- * System → Dark → Light, its icon the current choice. It stands where VitePress's slider stood,
- * before Feedback and GitHub; custom.css hides the slider. VitePress keeps the choice under its
- * own key ('auto' | 'dark' | 'light'), which its head script reads before the first paint.
+ * The theme button, Explore's (apps/web/src/workbench/ThemeToggle.tsx): one icon button that flips
+ * between light and dark, its icon the mode on screen. It stands where VitePress's slider stood,
+ * before Feedback and GitHub; custom.css hides the slider. VitePress's isDark keeps the choice
+ * under the key the app shares (config/theme.ts), and stores 'auto' when the pick matches the OS,
+ * so a press back to the OS's mode follows the system again, as in the app.
  */
-type ThemeChoice = 'auto' | 'dark' | 'light';
-const APPEARANCE_KEY = 'vitepress-theme-appearance';
-const THEME_ORDER: readonly ThemeChoice[] = ['auto', 'dark', 'light'];
-const THEME_LABELS: Record<ThemeChoice, string> = { auto: 'System', dark: 'Dark', light: 'Light' };
-/** Lucide's sun-moon, moon and sun, as Explore's kit draws them. */
-const THEME_ICONS: Record<ThemeChoice, readonly string[]> = {
-  auto: [
-    'M12 8a2.83 2.83 0 0 0 4 4 4 4 0 1 1-4-4',
-    'M12 2v2',
-    'M12 20v2',
-    'm4.9 4.9 1.4 1.4',
-    'm17.7 17.7 1.4 1.4',
-    'M2 12h2',
-    'M20 12h2',
-    'm6.3 17.7-1.4 1.4',
-    'm19.1 4.9-1.4 1.4',
-  ],
-  dark: ['M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'],
-  light: [
-    'M12 2v2',
-    'M12 20v2',
-    'm4.93 4.93 1.41 1.41',
-    'm17.66 17.66 1.41 1.41',
-    'M2 12h2',
-    'M20 12h2',
-    'm6.34 17.66-1.41 1.41',
-    'm19.07 4.93-1.41 1.41',
-  ],
-};
-
-function readChoice(): ThemeChoice {
-  try {
-    const stored = localStorage.getItem(APPEARANCE_KEY);
-    return stored === 'dark' || stored === 'light' ? stored : 'auto';
-  } catch {
-    return 'auto';
-  }
-}
+const THEME_LABELS = { light: 'Light', dark: 'Dark' } as const;
+/** Lucide's sun and moon, as Explore's kit draws them. */
+const SUN = [
+  'M12 2v2',
+  'M12 20v2',
+  'm4.93 4.93 1.41 1.41',
+  'm17.66 17.66 1.41 1.41',
+  'M2 12h2',
+  'M20 12h2',
+  'm6.34 17.66-1.41 1.41',
+  'm19.07 4.93-1.41 1.41',
+] as const;
+const MOON = ['M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'] as const;
 
 const ThemeButton = defineComponent({
   name: 'ThemeButton',
   props: { labelled: Boolean },
   setup(props) {
     const { isDark } = useData();
-    // 'auto' on the server and until mount, so the first client render matches the static HTML.
-    const choice = ref<ThemeChoice>('auto');
-    onMounted(() => (choice.value = readChoice()));
-    const cycle = async () => {
-      const next = THEME_ORDER[(THEME_ORDER.indexOf(choice.value) + 1) % THEME_ORDER.length];
-      choice.value = next;
-      isDark.value =
-        next === 'dark' ||
-        (next === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      // VitePress stores 'auto' for a choice that matches the OS; keep the one picked, after its
-      // own write.
-      await nextTick();
-      try {
-        localStorage.setItem(APPEARANCE_KEY, next);
-      } catch {
-        // Storage blocked: the choice lasts for this page.
-      }
+    // The static HTML cannot know the mode: both icons render and CSS shows one (html.dark), and
+    // the name waits for the mount, so the first client render matches the server's.
+    const mounted = ref(false);
+    onMounted(() => (mounted.value = true));
+    const toggle = () => {
+      isDark.value = !isDark.value;
     };
     return () => {
-      const current = choice.value;
-      const next = THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length];
-      const label = `Theme: ${THEME_LABELS[current]}. Switch to ${THEME_LABELS[next]}`;
+      const mode = isDark.value ? 'dark' : 'light';
+      const other = isDark.value ? 'light' : 'dark';
+      const label = mounted.value
+        ? `Theme: ${THEME_LABELS[mode]}. Switch to ${THEME_LABELS[other]}`
+        : 'Theme';
       return h(
         'button',
         {
           type: 'button',
           class: 'site-end-link site-theme-button',
-          onClick: cycle,
+          onClick: toggle,
           ...(props.labelled ? {} : { 'aria-label': label, title: label }),
         },
         [
-          icon(THEME_ICONS[current], current === 'light' ? 4 : 0),
-          props.labelled ? h('span', `Theme: ${THEME_LABELS[current]}`) : null,
+          icon(SUN, 4, 'site-theme-sun'),
+          icon(MOON, 0, 'site-theme-moon'),
+          props.labelled
+            ? h('span', mounted.value ? `Theme: ${THEME_LABELS[mode]}` : 'Theme')
+            : null,
         ],
       );
     };
   },
 });
 
-const icon = (paths: readonly string[], sunRadius = 0) =>
+const icon = (paths: readonly string[], sunRadius = 0, className?: string) =>
   h(
     'svg',
     {
+      class: className,
       xmlns: 'http://www.w3.org/2000/svg',
       width: 16,
       height: 16,

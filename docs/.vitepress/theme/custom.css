@@ -79,6 +79,12 @@
 
 /* ── The end links (theme/end-links.ts) ──────────────────────────────────── */
 
+/* The theme button draws both icons; the mode on screen picks one, before any script runs. */
+html.dark .site-theme-sun,
+html:not(.dark) .site-theme-moon {
+  display: none;
+}
+
 .VPNav .site-end-links {
   display: none;
   align-items: center;

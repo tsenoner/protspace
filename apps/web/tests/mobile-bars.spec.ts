@@ -847,6 +847,12 @@ test.describe('the More sheet', () => {
     const help = await box(rows.getByRole('button', { name: 'Help & shortcuts', exact: true }));
     expect(exported.y).toBeLessThan(theme.y);
     expect(theme.y).toBeLessThan(help.y);
+    // Two modes, the one on screen selected: the light OS's.
+    await expect(rows.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio')).toHaveText([
+      'Light',
+      'Dark',
+    ]);
+    await expect(themeSegment(page, 'Light')).toHaveAttribute('aria-checked', 'true');
 
     await themeSegment(page, 'Dark').tap();
     await expect.poll(() => htmlTheme(page)).toBe('dark');
@@ -857,6 +863,11 @@ test.describe('the More sheet', () => {
         workbenchRoot(page).evaluate((element) => getComputedStyle(element).backgroundColor),
       )
       .toBe(DARK_SURFACE);
+
+    // Back to the OS's own mode: the page follows the system again.
+    await themeSegment(page, 'Light').tap();
+    await expect.poll(() => htmlTheme(page)).toBe('system');
+    await expect(themeSegment(page, 'Light')).toHaveAttribute('aria-checked', 'true');
   });
 
   test('the theme never lights the More dot', async ({ page }) => {

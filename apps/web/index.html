@@ -79,25 +79,34 @@
     </script>
     <!-- End Single Page Apps for GitHub Pages -->
 
-    <!-- The explore page's theme before first paint (design decision 16), on /explore only and
-         after the redirect above, which turns /?/explore into /explore. theme-boot.test.ts pins
-         the key, the choices, the default and the colour to theme-defaults.ts and theme.ts. -->
+    <!-- The site's theme before first paint (design decision 16), on every page and after the
+         redirect above. A copy of THEME_BOOT_SCRIPT in config/theme.ts, which the docs run too;
+         theme-boot.test.ts pins the copy, and the style's colour to tokens.css. -->
     <script data-theme-boot>
       (function () {
-        if (!/^\/explore\/?$/.test(location.pathname)) return;
+        var key = 'vitepress-theme-appearance';
+        var legacyKey = 'protspace:theme';
         var theme = 'system';
         try {
-          var stored = JSON.parse(localStorage.getItem('protspace:theme'));
-          if (stored === 'system' || stored === 'light' || stored === 'dark') theme = stored;
+          var legacy = localStorage.getItem(legacyKey);
+          if (legacy !== null) {
+            var override = legacy === '"dark"' || legacy === '"light"';
+            if (override && localStorage.getItem(key) === null) {
+              localStorage.setItem(key, legacy.slice(1, -1));
+            }
+            localStorage.removeItem(legacyKey);
+          }
+          var stored = localStorage.getItem(key);
+          if (stored === 'dark' || stored === 'light') theme = stored;
         } catch (error) {
-          // No storage (private mode, blocked site data) or a value that is not JSON: the default.
+          // No storage (private mode, blocked site data): follow the system.
         }
         document.documentElement.setAttribute('data-theme', theme);
       })();
     </script>
     <style data-theme-boot>
-      /* The dark surface until the explore chunk adopts the tokens. Unlayered, so it beats the
-         landing's @layer base white body; #0f172a is dark --ps-surface. */
+      /* The dark surface until the stylesheet loads. Unlayered, so it beats the landing's
+         @layer base body; #0f172a is dark --ps-surface. */
       :root[data-theme='dark'],
       :root[data-theme='dark'] body {
         color-scheme: dark;

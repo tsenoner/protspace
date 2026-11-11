@@ -38,7 +38,7 @@ async function showStructure(page: Page): Promise<void> {
   await waitForStructureLoaded(page, proteinId, 90_000);
 }
 
-/** The Theme button's tooltip ("Theme: System. Switch to Dark"), inside the kit button. */
+/** The Theme button's tooltip ("Theme: Light. Switch to Dark"), inside the kit button. */
 const themeTooltip = (page: Page) =>
   appBar(page).locator('ps-icon-button[data-driver-id="theme"] ps-tooltip [part="tip"]');
 

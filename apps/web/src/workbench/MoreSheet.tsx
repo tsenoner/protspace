@@ -26,12 +26,12 @@ import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 
 import { flushSync } from 'react-dom';
 import { FEEDBACK_HREF } from '@/lib/support';
 import { focusFilterTitle, openPanel } from '../explore/layout-state';
-import { THEME_CHOICES, THEME_LABELS, type ThemeChoice } from '../explore/theme-defaults';
-import { setTheme } from '../explore/theme-state';
+import { THEME_MODE_LABELS, type ThemeMode } from '../explore/theme-defaults';
+import { setThemeMode } from '../explore/theme-state';
 import { openFigureEditor } from './figure-editor-action';
 import { openDocumentation, takeTheTour } from './help-actions';
 import { ShortcutsDialog } from './ShortcutsDialog';
-import { useTheme } from './use-theme';
+import { useResolvedTheme } from './use-theme';
 import { useWorkbenchStatus } from './use-workbench-status';
 
 /** The contour modes as the segmented control offers them, named as the Contours menu names them. */
@@ -40,8 +40,11 @@ const CONTOUR_OPTIONS = DENSITY_LAYER_MODES.map((mode) => ({
   label: DENSITY_MODE_LABELS[mode].label,
 }));
 
-/** The theme choices as the segmented control offers them, named as the app bar's button names them. */
-const THEME_OPTIONS = THEME_CHOICES.map((value) => ({ value, label: THEME_LABELS[value] }));
+/** The two modes, as the app bar's button names them; the selected one is the mode on screen. */
+const THEME_OPTIONS = (['light', 'dark'] as const).map((value) => ({
+  value,
+  label: THEME_MODE_LABELS[value],
+}));
 
 /** A row's Lucide icon: 16 px at the kit's stroke, decorative. */
 const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
@@ -69,7 +72,7 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
   const themeControl = useRef<HTMLElement>(null);
   const { densityLayer, appliedFilterConditions } = useWorkbenchStatus();
   // Not part of the More dot, which marks only what changes the view (Contours, a filter).
-  const theme = useTheme();
+  const theme = useResolvedTheme();
   const [helpOpen, setHelpOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
@@ -101,12 +104,13 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
     return () => element.removeEventListener('change', onChange);
   }, []);
 
-  // A theme applies at once, like Contours: the sheet stays open.
+  // A theme applies at once, like Contours: the sheet stays open. Picking the system's own mode
+  // follows the system again, as the app bar's button does.
   useEffect(() => {
     const element = themeControl.current;
     if (!element) return;
     const onChange = (event: Event) => {
-      setTheme((event as CustomEvent<{ value: ThemeChoice }>).detail.value);
+      setThemeMode((event as CustomEvent<{ value: ThemeMode }>).detail.value);
     };
     element.addEventListener('change', onChange);
     return () => element.removeEventListener('change', onChange);

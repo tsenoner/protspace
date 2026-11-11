@@ -30,7 +30,7 @@ async function phoneLayoutSteps(page: Page): Promise<void> {
 async function moreSheetSteps(page: Page): Promise<void> {
   await moreButton(page).tap();
   await expect(moreSheet(page)).toBeVisible();
-  await expect(themeSegment(page, 'System')).toBeVisible();
+  await expect(themeSegment(page, 'Light')).toBeVisible();
 }
 
 /**

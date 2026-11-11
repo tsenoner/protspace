@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitepress';
 import { getUrls, PORTS } from '../../config/urls';
 import { getNavigation } from '../../config/navigation';
+import { THEME_BOOT_SCRIPT } from '../../config/theme';
 
 const isDev = process.env.NODE_ENV !== 'production';
 const mode = isDev ? 'development' : 'production';
@@ -39,6 +40,10 @@ export default defineConfig({
 
   head: [
     ['link', { rel: 'icon', href: '/docs/favicon.svg' }],
+    // The app's theme boot (config/theme.ts): data-theme for the shared --ps-* tokens, and a move of
+    // the app's old key, before VitePress's own head script (added after these) reads the shared
+    // key for its .dark class.
+    ['script', { id: 'theme-boot' }, THEME_BOOT_SCRIPT],
     // Docs images come in light/dark pairs ({.light-only} then {.dark-only}, the dark twin lazy);
     // VitePress's appearance toggle puts .dark on <html>, so only one of each pair shows.
     ['style', {}, 'html.dark img.light-only,html:not(.dark) img.dark-only{display:none}'],

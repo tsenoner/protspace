@@ -133,7 +133,7 @@ const STEPS: Record<TourStepId, StepBuilder> = {
     id: 'more',
     title: 'More Options',
     description:
-      '<strong>More</strong> holds <strong>Contours</strong>, <strong>Filter</strong>, <strong>Import</strong>, <strong>Export</strong>, the <strong>Figure editor</strong>, the <strong>Theme</strong> (System, Light or Dark), <strong>Help &amp; shortcuts</strong> and <strong>Feedback</strong>. A dot on the button means contours or a filter are on.',
+      '<strong>More</strong> holds <strong>Contours</strong>, <strong>Filter</strong>, <strong>Import</strong>, <strong>Export</strong>, the <strong>Figure editor</strong>, the <strong>Theme</strong> (Light or Dark), <strong>Help &amp; shortcuts</strong> and <strong>Feedback</strong>. A dot on the button means contours or a filter are on.',
     target: driverId('more'),
   }),
 
@@ -216,8 +216,8 @@ const STEPS: Record<TourStepId, StepBuilder> = {
     title: 'Light or Dark',
     description:
       kind === 'whats-new'
-        ? 'ProtSpace now has a dark theme. Each click of this button moves from <strong>System</strong> (follows your device) to <strong>Dark</strong>, then <strong>Light</strong>, then back; its icon shows which is on. Exports and figures stay light.'
-        : 'Each click moves from <strong>System</strong> (follows your device) to <strong>Dark</strong>, then <strong>Light</strong>, then back; the icon shows which is on. The plot and the structure follow the theme; exports and figures are always light.',
+        ? 'ProtSpace now has a dark theme. It starts from your device setting; a click switches between <strong>Light</strong> and <strong>Dark</strong>, and choosing the mode your device uses follows the device again. The docs and the home page use the same choice. Exports and figures stay light.'
+        : 'ProtSpace starts from your device setting; a click switches between <strong>Light</strong> and <strong>Dark</strong>, and choosing the mode your device uses follows the device again. The plot and the structure follow the theme; exports and figures are always light.',
     target: driverId('theme'),
   }),
 
