@@ -87,7 +87,7 @@ describe('protspace-score-strip', () => {
     expect(svg.hasAttribute('viewBox')).toBe(false);
   });
 
-  it('emits strip-hover with the category on pointer enter, and null on leaving the strip', async () => {
+  it('emits strip-hover with the category on pointer enter, and null a frame after leaving a dot', async () => {
     const el = await setup();
     const seen: Array<string | null> = [];
     el.addEventListener('strip-hover', (event) =>
@@ -96,9 +96,13 @@ describe('protspace-score-strip', () => {
 
     const [first, second] = el.shadowRoot!.querySelectorAll('circle');
     first.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
-    // Dot to dot is one hover each, with no clear between them.
+    // Dot to dot is one hover each: entering the next dot cancels the clear leaving one queued.
+    first.dispatchEvent(new Event('mouseleave'));
     second.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
-    el.shadowRoot!.querySelector('svg')!.dispatchEvent(new Event('mouseleave'));
+    // Leaving onto the axis between dots clears it a frame later.
+    second.dispatchEvent(new Event('mouseleave'));
+    expect(seen).toEqual(['Elapidae', 'Viperidae']);
+    await new Promise(requestAnimationFrame);
 
     expect(seen).toEqual(['Elapidae', 'Viperidae', null]);
   });

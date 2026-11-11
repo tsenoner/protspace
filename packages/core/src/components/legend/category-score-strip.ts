@@ -112,12 +112,7 @@ class ProtspaceScoreStrip extends LitElement {
         <span>${this.higherIsBetter ? 'higher is better' : 'lower is better'}</span>
       </div>
       <div class="strip-body">
-        <svg
-          height="${STRIP_HEIGHT}"
-          role="img"
-          aria-label="${this.label} per category"
-          @mouseleave=${() => this._emitHover(null, false)}
-        >
+        <svg height="${STRIP_HEIGHT}" role="img" aria-label="${this.label} per category">
           <line
             class="axis"
             x1="${PADDING}%"
@@ -138,7 +133,8 @@ class ProtspaceScoreStrip extends LitElement {
             r="${DOT_RADIUS}"
             fill="${point.color}"
             @pointerenter=${(event: PointerEvent) =>
-              this._emitHover(point.category, event.pointerType === 'touch')}
+              this._enterDot(point.category, event.pointerType === 'touch')}
+            @mouseleave=${this._leaveDot}
             @click=${() => this._emitClick(point.category)}
           ><title>${point.label ?? point.category}: ${formatStatValue(point.value)}${
             point.embedding == null
@@ -179,12 +175,36 @@ class ProtspaceScoreStrip extends LitElement {
     return Number.isInteger(value) ? String(value) : value.toFixed(2);
   }
 
+  /** The clear that leaving a dot schedules for the next frame, if it has not run yet. */
+  private _pendingClear = 0;
+
   /**
-   * A dot reports its category on `pointerenter`, which says whether a tap began it; the strip
-   * clears it only on leaving the whole svg, so moving dot to dot is one hover, not a clear and a
-   * hover. The clear listens for `mouseleave`: a tap's compatibility mouse events keep its hover
-   * until the next tap elsewhere, where a touch `pointerleave` would end it on lift.
+   * A dot reports its category on `pointerenter`, which says whether a tap began it. Leaving a dot
+   * clears it a frame later, and entering the next dot cancels that clear, so moving dot to dot is
+   * one hover, not a clear and a hover, while resting on the axis between dots clears it. The
+   * clear listens for `mouseleave`: a tap's compatibility mouse events keep its hover until the
+   * next tap elsewhere, where a touch `pointerleave` would end it on lift.
    */
+  private _enterDot(category: string, touch: boolean): void {
+    cancelAnimationFrame(this._pendingClear);
+    this._pendingClear = 0;
+    this._emitHover(category, touch);
+  }
+
+  private _leaveDot = (): void => {
+    cancelAnimationFrame(this._pendingClear);
+    this._pendingClear = requestAnimationFrame(() => {
+      this._pendingClear = 0;
+      this._emitHover(null, false);
+    });
+  };
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    cancelAnimationFrame(this._pendingClear);
+    this._pendingClear = 0;
+  }
+
   private _emitHover(category: string | null, touch: boolean): void {
     this.dispatchEvent(
       new CustomEvent<StripHoverDetail>('strip-hover', {
