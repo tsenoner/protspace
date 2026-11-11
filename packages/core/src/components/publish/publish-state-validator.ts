@@ -6,6 +6,7 @@
 
 import {
   createDefaultPublishState,
+  PUBLISH_FRAMING,
   type PublishState,
   type Overlay,
   type Inset,
@@ -13,6 +14,7 @@ import {
   type LegendLayout,
   type LegendPosition,
 } from './publish-state';
+import { MAX_EXPORT_DIMENSION } from '../scatter-plot/webgl/renderer/device-limits';
 import { JOURNAL_PRESETS } from './journal-presets';
 
 const isFiniteNumber = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
@@ -29,11 +31,10 @@ function isValidPreset(value: unknown): value is PublishState['preset'] {
   return typeof value === 'string' && JOURNAL_PRESETS.some((p) => p.id === value);
 }
 
-/** Matches the UI's per-axis cap for figure dimensions. Anything larger is rejected
+/** The editor's and the export's per-axis cap for figure dimensions. Anything larger is rejected
  *  so corrupt state can't carry oversized canvases past the validator boundary. */
-const MAX_CANVAS_PIXEL_DIM = 8192;
 function isValidPixelDim(v: unknown): v is number {
-  return isFiniteNumber(v) && v > 0 && v <= MAX_CANVAS_PIXEL_DIM;
+  return isFiniteNumber(v) && v > 0 && v <= MAX_EXPORT_DIMENSION;
 }
 
 /** Max length for label text. Anything longer is truncated to keep state
@@ -223,5 +224,7 @@ export function sanitizePublishState(input: unknown): PublishState {
             dimensionality: input.viewFingerprint.dimensionality,
           }
         : undefined,
+    // Kept only as the current framing: anything else is a state to move onto it.
+    framing: input.framing === PUBLISH_FRAMING ? PUBLISH_FRAMING : undefined,
   };
 }

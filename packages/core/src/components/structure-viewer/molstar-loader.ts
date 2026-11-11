@@ -25,6 +25,13 @@ export interface MolstarViewer {
     options?: Record<string, unknown>,
   ) => Promise<void>;
   setColorTheme: (mode: StructureColorMode) => Promise<void>;
+  /**
+   * Paints the canvas behind the structure (a `0xRRGGBB` number). False when Mol* has no canvas
+   * to paint, so nothing was applied.
+   */
+  setBackground: (color: number) => boolean;
+  /** Returns the camera to the view the structure loaded with; a double-click does it too. */
+  resetCamera: () => void;
   dispose: () => void;
 }
 
@@ -125,6 +132,12 @@ interface MolstarPlugin {
       };
     };
   };
+  /** The 3D canvas. Absent when WebGL failed to start, and in the e2e stub. */
+  canvas3d?: {
+    setProps(props: { renderer: { backgroundColor: number } }): void;
+    requestCameraReset(options?: { snapshot?: unknown; durationMs?: number }): void;
+    camera?: { getSnapshot(): unknown };
+  };
 }
 
 interface RawMolstarViewer {
@@ -149,6 +162,9 @@ declare global {
             viewportShowExpand?: boolean;
             viewportShowSelectionMode?: boolean;
             viewportShowAnimation?: boolean;
+            viewportShowControls?: boolean;
+            viewportShowSettings?: boolean;
+            viewportShowTrajectoryControls?: boolean;
             pdbProvider?: string;
             emdbProvider?: string;
             validationProvider?: string;
@@ -228,6 +244,34 @@ async function ensureMolstarResourcesLoaded(): Promise<void> {
   }
 }
 
+let prefetched = false;
+
+/**
+ * Ask the browser to download Mol* in the background so the first structure opens from the HTTP
+ * cache instead of waiting on ~1.3 MB from the CDN. A resource hint only: nothing is parsed or
+ * executed and the normal load path above is untouched, so a failed or skipped prefetch costs
+ * nothing (it is silent and `createMolstarViewer` simply downloads as before). Runs at most once,
+ * and not when Mol* is already loading or the user has asked to save data.
+ */
+export function prefetchMolstar(): void {
+  if (prefetched || typeof document === 'undefined') return;
+  prefetched = true;
+  if (document.getElementById('molstar-script')) return;
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+  if (connection?.saveData) return;
+
+  for (const [href, as] of [
+    [MOLSTAR_SCRIPT_URL, 'script'],
+    [MOLSTAR_CSS_URL, 'style'],
+  ]) {
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.as = as;
+    link.href = href;
+    document.head.appendChild(link);
+  }
+}
+
 // Install a global fetch interceptor once to silently block Molstar validation server requests.
 // Molstar tries to fetch validation data from localhost:9000 by default, which doesn't exist
 // in our setup. This interceptor prevents console errors without affecting functionality.
@@ -265,6 +309,27 @@ function installValidationInterceptor(): void {
   validationInterceptorInstalled = true;
 }
 
+/**
+ * A CSS colour as Mol*'s `Color` (a `0xRRGGBB` number): `#rrggbb`, `#rgb`, `rgb(r g b)` or
+ * `rgb(r, g, b)`. Anything else (a keyword, an alpha, a colour function) is `null`.
+ */
+export function molstarColor(css: string): number | null {
+  const value = css.trim().toLowerCase();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(value);
+  if (hex) {
+    const digits =
+      hex[1].length === 3 ? [...hex[1]].map((digit) => digit + digit).join('') : hex[1];
+    return parseInt(digits, 16);
+  }
+  const rgb = /^rgb\(\s*(\d{1,3})(?:\s*,\s*|\s+)(\d{1,3})(?:\s*,\s*|\s+)(\d{1,3})\s*\)$/.exec(
+    value,
+  );
+  if (!rgb) return null;
+  const [r, g, b] = rgb.slice(1, 4).map(Number);
+  if (r > 255 || g > 255 || b > 255) return null;
+  return (r << 16) | (g << 8) | b;
+}
+
 export async function createMolstarViewer(
   container: HTMLElement,
   tedDomains: TedDomain[],
@@ -284,6 +349,9 @@ export async function createMolstarViewer(
     viewportShowExpand: false,
     viewportShowSelectionMode: false,
     viewportShowAnimation: false,
+    viewportShowControls: false,
+    viewportShowSettings: false,
+    viewportShowTrajectoryControls: false,
   });
 
   if (!viewer) {
@@ -388,6 +456,23 @@ export async function createMolstarViewer(
   // Theme updates are serialized so the most recently requested mode is applied last
   let colorThemeQueue: Promise<void> = Promise.resolve();
 
+  // Mol*'s own reset keeps the camera's turn, so Reset returns to the camera as it was at the
+  // first press or wheel on the model: the view the structure loaded with. A wheel counts because
+  // it zooms (a trackpad pinch is a wheel too) with no press before it. Mol* binds no
+  // double-click, and its viewport buttons are hidden, so a double-click on the model resets.
+  let loadedView: unknown;
+  const resetCamera = () => {
+    plugin.canvas3d?.requestCameraReset(
+      loadedView === undefined ? undefined : { snapshot: loadedView, durationMs: 250 },
+    );
+  };
+  const rememberLoadedView = () => {
+    loadedView ??= plugin.canvas3d?.camera?.getSnapshot();
+  };
+  container.addEventListener('pointerdown', rememberLoadedView, { capture: true });
+  container.addEventListener('wheel', rememberLoadedView, { capture: true, passive: true });
+  container.addEventListener('dblclick', resetCamera, { capture: true });
+
   return {
     loadStructureFromUrl: (...args) => viewer.loadStructureFromUrl(...args),
     setColorTheme: (mode) => {
@@ -395,6 +480,12 @@ export async function createMolstarViewer(
       colorThemeQueue = colorThemeQueue.then(apply, apply);
       return colorThemeQueue;
     },
+    setBackground: (color) => {
+      if (!plugin.canvas3d) return false;
+      plugin.canvas3d.setProps({ renderer: { backgroundColor: color } });
+      return true;
+    },
+    resetCamera,
     dispose: () => viewer.dispose(),
   };
 }

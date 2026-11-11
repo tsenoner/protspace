@@ -57,11 +57,10 @@ describe('settings-validation', () => {
       expect(isValidSortMode('alpha-desc')).toBe(true);
       expect(isValidSortMode('manual')).toBe(true);
       expect(isValidSortMode('manual-reverse')).toBe(true);
+      // The retired "By separation" sort, both ways. Older settings and bundles hold it, and an
+      // invalid sortMode makes `sanitizeLegendSettingsEntry` discard the WHOLE entry — colours,
+      // shapes, z-order, hidden values — so dropping these here would be silent data loss.
       expect(isValidSortMode('silhouette-desc')).toBe(true);
-      // The legend header's reverse button derives its result by string surgery on the
-      // current mode, so this is what it produces from `silhouette-desc`. An invalid
-      // sortMode makes `sanitizeLegendSettingsEntry` discard the WHOLE entry — colours,
-      // shapes, z-order, hidden values — so a missing mode here is silent data loss.
       expect(isValidSortMode('silhouette-asc')).toBe(true);
     });
 
@@ -336,6 +335,31 @@ describe('settings-validation', () => {
         eatConfidenceThreshold: undefined,
         publishState: undefined,
       });
+    });
+  });
+
+  describe('EAT outcome', () => {
+    it('keeps hide or dim and drops anything else', () => {
+      const base = { legendSettings: {}, exportOptions: {}, eatConfidenceThreshold: 0.5 };
+      expect(normalizeBundleSettings({ ...base, eatOutcome: 'dim' })?.eatOutcome).toBe('dim');
+      expect(normalizeBundleSettings({ ...base, eatOutcome: 'hide' })?.eatOutcome).toBe('hide');
+      expect(isNormalizedBundleSettings({ ...base, eatOutcome: 'fade' })).toBe(false);
+      const dropped = normalizeBundleSettings({ ...base, eatOutcome: 'fade' });
+      expect(dropped?.eatOutcome).toBeUndefined();
+      expect(dropped?.eatConfidenceThreshold).toBe(0.5);
+    });
+  });
+
+  describe('EAT upper bound', () => {
+    it('keeps an upper bound in 0…1 and drops anything else', () => {
+      const base = { legendSettings: {}, exportOptions: {}, eatConfidenceThreshold: 0 };
+      expect(normalizeBundleSettings({ ...base, eatConfidenceMax: 0.5 })?.eatConfidenceMax).toBe(
+        0.5,
+      );
+      expect(isNormalizedBundleSettings({ ...base, eatConfidenceMax: 1.5 })).toBe(false);
+      const dropped = normalizeBundleSettings({ ...base, eatConfidenceMax: 1.5 });
+      expect(dropped?.eatConfidenceMax).toBeUndefined();
+      expect(dropped?.eatConfidenceThreshold).toBe(0);
     });
   });
 

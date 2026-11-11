@@ -28,7 +28,8 @@ Figure numbers refer to the ProtSpace web-server paper and may differ from its p
 
 ## Venom toxins (demo) {#demo}
 
-![Venom toxins (demo): Toxin families such as three-finger toxins and phospholipase A2 form their own clusters.](./images/examples/demo.png)
+![Venom toxins (demo): Toxin families such as three-finger toxins and phospholipase A2 form their own clusters.](./images/examples/demo.png){.light-only}
+![Venom toxins (demo): Toxin families such as three-finger toxins and phospholipase A2 form their own clusters.](./images/examples/demo-dark.png){.dark-only}
 
 _The small dataset ProtSpace opens with: reviewed animal venom proteins._
 
@@ -62,13 +63,14 @@ build_showcase.py build --only demo --cli-root $CLI
 
 ## Snake three-finger toxins (EAT) {#three-finger-toxins}
 
-![Snake three-finger toxins (EAT): Rings are toxin classes EAT transferred from the nearest reviewed toxin; held-out reviewed toxins get the right class back 94 % of the time.](./images/examples/three-finger-toxins.png)
+![Snake three-finger toxins (EAT): Rings are toxin classes EAT transferred from the nearest reviewed toxin; held-out reviewed toxins get the right class back 94 % of the time.](./images/examples/three-finger-toxins.png){.light-only}
+![Snake three-finger toxins (EAT): Rings are toxin classes EAT transferred from the nearest reviewed toxin; held-out reviewed toxins get the right class back 94 % of the time.](./images/examples/three-finger-toxins-dark.png){.dark-only}
 
 _Annotation transfer on a real case: toxin classes for snake venom toxins that UniProt has not classified._
 
 **Rings are toxin classes EAT transferred from the nearest reviewed toxin; held-out reviewed toxins get the right class back 94 % of the time.**
 
-Coloured by `toxin_class`, each colour is one functional class of three-finger toxin. The reviewed toxins carry the class UniProt curators give them. The unreviewed ones, 552 toxins mostly sequenced from venom glands, have none, and [EAT](/explore/eat) transferred one from the nearest reviewed toxin; they are drawn as hollow rings. A fifth of the reviewed toxins, 107, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` in the tooltip shows the truth, so you can check each of those transfers yourself. The transferred class is right for 101 of them (94 %), and for all 95 that EAT transferred at a reliability of 0.5 or more. The reliability filter starts at 0, so every transfer is shown and the [separation score](/explore/separation-scores) strips stay visible. Drag the reliability filter to 50 % (a reliability of 0.5): the least certain transfers, the rings between the islands, disappear first. Then colour by `eat_split` to see the references, the held-out toxins and the unreviewed queries.
+Coloured by `toxin_class`, each colour is one functional class of three-finger toxin. The reviewed toxins carry the class UniProt curators give them. The unreviewed ones, 552 toxins mostly sequenced from venom glands, have none, and [EAT](/explore/eat) transferred one from the nearest reviewed toxin; they are drawn as hollow rings. A fifth of the reviewed toxins, 107, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` in the tooltip shows the truth, so you can check each of those transfers yourself. The transferred class is right for 101 of them (94 %), and for all 95 that EAT transferred at a reliability of 0.5 or more. The reliability filter starts at 0, so every transfer is shown and the [separation score](/explore/separation-scores) strips stay visible. In the EAT panel, set the reliability range to 50–100 % (a reliability of 0.5 or more): the least certain transfers, the rings between the islands, disappear first. Then colour by `eat_split` to see the references, the held-out toxins and the unreviewed queries.
 
 - **Opens on:** `ProtT5 — UMAP 2`, coloured by `toxin_class`; the tooltip adds `toxin_class_withheld`, `species` and `eat_split`.
 - **Source:** UniProtKB query `(xref:interpro-IPR003571 OR family:"three-finger toxin family") AND (taxonomy_id:8570)`: the three-finger toxins of snakes, reviewed and unreviewed. `toxin_class` groups the subfamily and sub-subfamily that UniProt curators record for each reviewed toxin into functional classes such as the type I, II and III α-neurotoxins, the cytotoxins and the κ-neurotoxins. The held-out fifth was drawn within each class with a recorded seed, and `eat_split` records the draw.
@@ -104,7 +106,8 @@ build_showcase.py build --only three-finger-toxins --cli-root $CLI
 
 ## Human + fly {#human-fly}
 
-![Human + fly: Most families overlap across species (about 2,000 protein kinases). Recolour by protein family to find human-only MHC class I/II, β-defensins and CC chemokines and fly-only odorant-binding proteins.](./images/examples/human-fly.png)
+![Human + fly: Most families overlap across species (about 2,000 protein kinases). Recolour by protein family to find human-only MHC class I/II, β-defensins and CC chemokines and fly-only odorant-binding proteins.](./images/examples/human-fly.png){.light-only}
+![Human + fly: Most families overlap across species (about 2,000 protein kinases). Recolour by protein family to find human-only MHC class I/II, β-defensins and CC chemokines and fly-only odorant-binding proteins.](./images/examples/human-fly-dark.png){.dark-only}
 
 _Two reference proteomes in one layout._
 
@@ -142,7 +145,8 @@ build_showcase.py build --only human-fly --cli-root $CLI
 
 ## β-lactamases {#beta-lactamase}
 
-![β-lactamases: The serine β-lactamase classes A, C and D sit apart from the metallo-β-lactamases that fill most of the map. Q02940, curated as class C, sits away from the other class-C proteins.](./images/examples/beta-lactamase.png)
+![β-lactamases: The serine β-lactamase classes A, C and D sit apart from the metallo-β-lactamases that fill most of the map. Q02940, curated as class C, sits away from the other class-C proteins.](./images/examples/beta-lactamase.png){.light-only}
+![β-lactamases: The serine β-lactamase classes A, C and D sit apart from the metallo-β-lactamases that fill most of the map. Q02940, curated as class C, sits away from the other class-C proteins.](./images/examples/beta-lactamase-dark.png){.dark-only}
 
 _One enzyme superfamily across all of life._
 
@@ -178,7 +182,8 @@ build_showcase.py build --only beta-lactamase --cli-root $CLI
 
 ## Swiss-Prot {#swissprot}
 
-![Swiss-Prot: Bacterial and eukaryotic proteins fill the two halves of the dense core; archaeal proteins form small patches of their own among the bacterial ones.](./images/examples/swissprot.png)
+![Swiss-Prot: Bacterial and eukaryotic proteins fill the two halves of the dense core; archaeal proteins form small patches of their own among the bacterial ones.](./images/examples/swissprot.png){.light-only}
+![Swiss-Prot: Bacterial and eukaryotic proteins fill the two halves of the dense core; archaeal proteins form small patches of their own among the bacterial ones.](./images/examples/swissprot-dark.png){.dark-only}
 
 _Every reviewed UniProtKB protein in one map._
 

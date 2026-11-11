@@ -36,6 +36,7 @@ describe('ScatterplotSyncController', () => {
         { value: 'cat2', zOrder: 1, color: '#0f0', shape: 'square' },
       ]),
       getOtherConcreteValues: vi.fn().mockReturnValue([]),
+      getAutoHide: vi.fn().mockReturnValue(true),
     };
 
     mockScatterplot = createMockScatterplot();
@@ -55,21 +56,12 @@ describe('ScatterplotSyncController', () => {
   });
 
   describe('hostConnected', () => {
-    it('attempts to discover scatterplot when autoSync is true', () => {
+    it('discovers the scatterplot', () => {
       document.body.appendChild(mockScatterplot as unknown as Node);
       controller = new ScatterplotSyncController(mockHost, mockCallbacks);
       controller.hostConnected();
 
       expect(controller.scatterplot).toBe(mockScatterplot);
-    });
-
-    it('does not discover scatterplot when autoSync is false', () => {
-      document.body.appendChild(mockScatterplot as unknown as Node);
-      controller = new ScatterplotSyncController(mockHost, mockCallbacks);
-      controller.autoSync = false;
-      controller.hostConnected();
-
-      expect(controller.scatterplot).toBe(null);
     });
 
     it('retries discovery when scatterplot not immediately available', () => {
@@ -101,18 +93,14 @@ describe('ScatterplotSyncController', () => {
       );
     });
 
-    it('removes the control bar listeners, including projection-change, on disconnect', () => {
-      // The scatterplot-listener spy above cannot see this: the control bar is a separate
-      // element, discovered and listened to independently (`_onScatterplotDiscovered`).
-      // Never removing `PROJECTION_CHANGE` here would leak a listener on every legend
-      // disconnect/reconnect cycle.
+    it('removes the root listeners, including projection-change, on disconnect', () => {
+      // The view pickers' events reach the legend on its root node. Never removing
+      // PROJECTION_CHANGE there would leak a listener on every disconnect/reconnect cycle.
       document.body.appendChild(mockScatterplot as unknown as Node);
-      const controlBar = document.createElement('protspace-control-bar');
-      document.body.appendChild(controlBar);
       controller = new ScatterplotSyncController(mockHost, mockCallbacks);
       controller.hostConnected();
 
-      const removeEventListenerSpy = vi.spyOn(controlBar, 'removeEventListener');
+      const removeEventListenerSpy = vi.spyOn(document, 'removeEventListener');
       controller.hostDisconnected();
 
       expect(removeEventListenerSpy).toHaveBeenCalledWith(
@@ -123,6 +111,7 @@ describe('ScatterplotSyncController', () => {
         LEGEND_EVENTS.PROJECTION_CHANGE,
         expect.any(Function),
       );
+      removeEventListenerSpy.mockRestore();
     });
 
     it('stops discovery retries', () => {
@@ -317,7 +306,7 @@ describe('ScatterplotSyncController', () => {
     });
 
     it('does nothing when autoHide is false', () => {
-      controller.autoHide = false;
+      mockCallbacks.getAutoHide = vi.fn().mockReturnValue(false);
       mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['hidden1']);
 
       controller.syncHiddenValues();
@@ -360,16 +349,31 @@ describe('ScatterplotSyncController', () => {
       expect(mockScatterplot.hiddenAnnotationValues).toEqual(['hidden1', 'hidden2']);
     });
 
-    it('treats a reordering as a change', () => {
+    // The plot reads both lists only as sets, so a recount that reorders them changes nothing.
+    it('treats a reordering as no change', () => {
       mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['a', 'b']);
+      mockCallbacks.getOtherConcreteValues = vi.fn().mockReturnValue(['x', 'y']);
       controller.syncHiddenValues();
-      const first = mockScatterplot.hiddenAnnotationValues;
+      const hidden = mockScatterplot.hiddenAnnotationValues;
+      const other = mockScatterplot.otherAnnotationValues;
 
       mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['b', 'a']);
+      mockCallbacks.getOtherConcreteValues = vi.fn().mockReturnValue(['y', 'x']);
+      controller.syncHiddenValues();
+      controller.syncOtherValues();
+
+      expect(mockScatterplot.hiddenAnnotationValues).toBe(hidden);
+      expect(mockScatterplot.otherAnnotationValues).toBe(other);
+    });
+
+    it('still replaces the array when a member is swapped for another', () => {
+      mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['a', 'b']);
       controller.syncHiddenValues();
 
-      expect(mockScatterplot.hiddenAnnotationValues).not.toBe(first);
-      expect(mockScatterplot.hiddenAnnotationValues).toEqual(['b', 'a']);
+      mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['a', 'c']);
+      controller.syncHiddenValues();
+
+      expect(mockScatterplot.hiddenAnnotationValues).toEqual(['a', 'c']);
     });
   });
 
@@ -506,7 +510,6 @@ describe('ScatterplotSyncController', () => {
           detail: {
             colorMapping: { cat1: '#f00', cat2: '#0f0' },
             shapeMapping: { cat1: 'circle', cat2: 'square' },
-            colorOnly: false,
           },
         }),
       );
@@ -609,20 +612,28 @@ describe('ScatterplotSyncController', () => {
       expect(mockCallbacks.onDataChange).toHaveBeenCalled();
     });
 
-    it('handles annotation-change events from control bar', () => {
-      const controlBar = document.createElement('protspace-control-bar');
-      document.body.appendChild(controlBar);
+    it('re-syncs on annotation-change and projection-change dispatched anywhere in the document', () => {
+      const picker = document.createElement('div');
+      document.body.appendChild(picker);
 
-      // Reconnect to pick up the control bar
-      controller.hostDisconnected();
-      controller.hostConnected();
-
-      const event = new CustomEvent(LEGEND_EVENTS.ANNOTATION_CHANGE, {
-        detail: { annotation: 'new-annotation' },
-      });
-      controlBar.dispatchEvent(event);
-
+      picker.dispatchEvent(
+        new CustomEvent(LEGEND_EVENTS.ANNOTATION_CHANGE, {
+          detail: { annotation: 'new-annotation' },
+          bubbles: true,
+          composed: true,
+        }),
+      );
       expect(mockCallbacks.onAnnotationChange).toHaveBeenCalledWith('new-annotation');
+
+      vi.mocked(mockCallbacks.onDataChange).mockClear();
+      picker.dispatchEvent(
+        new CustomEvent(LEGEND_EVENTS.PROJECTION_CHANGE, {
+          detail: { projection: 'PCA' },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      expect(mockCallbacks.onDataChange).toHaveBeenCalled();
     });
   });
 

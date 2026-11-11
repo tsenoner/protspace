@@ -106,50 +106,38 @@ describe('EAT overlay helpers', () => {
 });
 
 describe('normalizeReliability', () => {
-  it('blanks the bound its mode does not use', () => {
-    // Both mirror directions compare states for equality, and the query round-trip
-    // always reads back the canonical spelling. A caller that leaves the unused bound
-    // at its previous value would never compare equal, so the de-dupe guard would
-    // never fire and every repeat call would rewrite the query.
+  it('reads a legacy mode as its range and drops the mode', () => {
+    // States written while the control had three modes still load. A one-sided mode ignored
+    // its other bound whatever it held, so that bound goes back to its neutral position.
     expect(normalizeReliability({ mode: 'atLeast', min: 0.3, max: 0.7 })).toEqual({
-      mode: 'atLeast',
       min: 0.3,
       max: 1,
     });
     expect(normalizeReliability({ mode: 'atMost', min: 0.3, max: 0.7 })).toEqual({
-      mode: 'atMost',
       min: 0,
+      max: 0.7,
+    });
+    expect(normalizeReliability({ mode: 'between', min: 0.3, max: 0.7 })).toEqual({
+      min: 0.3,
       max: 0.7,
     });
   });
 
   it('orders an inverted band instead of emitting an unsatisfiable one', () => {
-    // The two sliders move independently, so the lower can be dragged past the upper.
-    // `between 0.8..0.5` evaluates as `v >= 0.8 && v <= 0.5`, which nothing satisfies.
-    expect(normalizeReliability({ mode: 'between', min: 0.8, max: 0.5 })).toEqual({
-      mode: 'between',
-      min: 0.5,
-      max: 0.8,
-    });
+    // The two handles move independently, so the lower can be dragged past the upper.
+    // `0.8..0.5` evaluates as `v >= 0.8 && v <= 0.5`, which nothing satisfies.
+    expect(normalizeReliability({ min: 0.8, max: 0.5 })).toEqual({ min: 0.5, max: 0.8 });
   });
 
   it('clamps a non-finite bound rather than propagating NaN', () => {
-    expect(normalizeReliability({ mode: 'atLeast', min: Number.NaN, max: 1 })).toEqual({
-      mode: 'atLeast',
-      min: 0,
-      max: 1,
-    });
+    expect(normalizeReliability({ min: Number.NaN, max: 1 })).toEqual({ min: 0, max: 1 });
   });
 
   it('falls a non-finite bound back to its OWN neutral position', () => {
     // An emptied upper box means "no constraint above", i.e. 1. Defaulting it to 0 —
     // the LOWER bound's neutral position — turned it into `<= 0`, which hides every
     // prediction: the exact opposite filter.
-    expect(normalizeReliability({ mode: 'atMost', min: 0, max: Number.NaN })).toEqual({
-      mode: 'atMost',
-      min: 0,
-      max: 1,
-    });
+    expect(normalizeReliability({ min: 0, max: Number.NaN })).toEqual({ min: 0, max: 1 });
   });
 
   it('leaves the canonical default untouched', () => {

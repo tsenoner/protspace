@@ -8,7 +8,7 @@ import { WorkflowOverview } from '@/landing/WorkflowOverview';
 const Index = () => {
   return (
     <div className="min-h-screen bg-background">
-      <Header />
+      <Header heroLogoId="hero-wordmark" />
       <main>
         <Hero />
         <FeatureShowcase />

@@ -88,23 +88,49 @@ export function calculatePointSize(shapeSize: number): number {
   return Math.max(10, Math.round(shapeSize * LEGEND_DEFAULTS.symbolSizeMultiplier));
 }
 
-/** Datasets up to this many proteins keep the base default shape size. */
+/** The protein count where the default shape size is the base 10. */
 const DEFAULT_SHAPE_SIZE_REFERENCE_COUNT = 10_000;
+/** How fast the default grows below the reference count: gently, so 1,000 proteins get 18. */
+const SMALL_DATASET_EXPONENT = 1 / 4;
+/** How fast it shrinks above: dot area falls faster than the count grows. */
+const LARGE_DATASET_EXPONENT = 2 / 3;
+/** The largest default, ~12 px dots: tiny datasets stop growing here. */
+const MAX_DEFAULT_SHAPE_SIZE = 40;
 
 /**
- * The default shape size for a dataset of `proteinCount` proteins:
- * `clamp(round(10 · (10000 / N)^⅔), 1, 10)`. Dot area grows linearly with the shape size, so
- * the total ink still grows as `N^⅓` and a larger dataset looks denser without the category
- * drawn on top covering the others. 10 up to 10,000 proteins (and for an empty dataset), 2 at
- * ~105K, 1 at Swiss-Prot.
+ * The default shape size for a dataset of `proteinCount` proteins, one continuous curve through
+ * 10 at 10,000 proteins: `min(40, round(10 · (10000 / N)^¼))` below it and
+ * `max(1, round(10 · (10000 / N)^⅔))` above. Dot area grows linearly with the shape size, so a
+ * small dataset opens with dots large enough to read, and on a large one the total ink still grows
+ * as `N^⅓`, so it looks denser without the category drawn on top covering the others. 40 at 10
+ * proteins, 32 at 100, 18 at 1,000, 2 at ~105K, 1 at Swiss-Prot; 10 for an empty dataset.
  */
 export function defaultShapeSize(proteinCount: number): number {
   const base = LEGEND_DEFAULTS.symbolSize;
   // Negated so a NaN count gives the base size too, not NaN.
-  if (!(proteinCount > DEFAULT_SHAPE_SIZE_REFERENCE_COUNT)) return base;
-  return Math.max(
-    1,
-    Math.round(base * (DEFAULT_SHAPE_SIZE_REFERENCE_COUNT / proteinCount) ** (2 / 3)),
+  if (!(proteinCount > 0)) return base;
+  const ratio = DEFAULT_SHAPE_SIZE_REFERENCE_COUNT / proteinCount;
+  if (ratio >= 1) {
+    return Math.min(MAX_DEFAULT_SHAPE_SIZE, Math.round(base * ratio ** SMALL_DATASET_EXPONENT));
+  }
+  return Math.max(1, Math.round(base * ratio ** LARGE_DATASET_EXPONENT));
+}
+
+/** The ink budget for the largest size: 10,000 proteins at 64, in protein-shape-size units. */
+const MAX_SHAPE_SIZE_INK = DEFAULT_SHAPE_SIZE_REFERENCE_COUNT * LEGEND_DEFAULTS.maxSymbolSize;
+
+/**
+ * The largest shape size the legend accepts for a dataset of `proteinCount` proteins: 64 from
+ * 10,000 proteins up, rising as `640000 / N` below that to 128 at 5,000 proteins and fewer. The
+ * GPU fills every dot's pixels each frame, so a size above 64 is only offered while the dataset
+ * draws no more ink than 10,000 proteins at 64. The ceiling 128 while the count is unknown (no
+ * dataset yet): the cap tightens once it is known, so a stored size is never cut short early.
+ */
+export function maxShapeSize(proteinCount: number): number {
+  if (!(proteinCount > 0)) return LEGEND_DEFAULTS.smallDatasetMaxSymbolSize;
+  return Math.min(
+    LEGEND_DEFAULTS.smallDatasetMaxSymbolSize,
+    Math.max(LEGEND_DEFAULTS.maxSymbolSize, Math.floor(MAX_SHAPE_SIZE_INK / proteinCount)),
   );
 }
 
@@ -163,11 +189,12 @@ export function getDefaultSortMode(annotationName: string): LegendSortMode {
 /**
  * Determines CSS classes for a legend item.
  */
-export function getItemClasses(item: LegendItem, isSelected: boolean, isDragging: boolean): string {
+export function getItemClasses(item: LegendItem, isSelected: boolean, isPicked: boolean): string {
   const classes = ['legend-item'];
 
   if (!item.isVisible) classes.push('hidden');
-  if (isDragging) classes.push('dragging');
+  // Picked up with the keyboard (Space on its handle) and moving with the arrow keys.
+  if (isPicked) classes.push('picked');
   if (isSelected) classes.push('selected');
   // Add class for "Other" item to prevent dragging (used by Sortable filter)
   if (item.value === LEGEND_VALUES.OTHER) classes.push('legend-item-other');
@@ -269,4 +296,82 @@ export function isolateItem(
   const hiddenValues = updatedItems.filter((item) => !item.isVisible).map((item) => item.value);
 
   return { items: updatedItems, hiddenValues };
+}
+
+/** The mouse click that toggled an item: the legend before it and as it left it. */
+export interface FirstClick {
+  valueKey: string;
+  itemsBefore: LegendItem[];
+  itemsAfter: LegendItem[];
+}
+
+/**
+ * A mouse double-click arrives as click (detail 1), click (detail 2), dblclick, the last two in
+ * one task. True for that second click: toggling on it only to isolate right after would hand the
+ * plot the item's hide, show and isolate as separate states, so it is left to the dblclick. Touch
+ * and pen clicks keep toggling: not every engine sends a dblclick for a double tap.
+ */
+export function isSecondClickOfDouble(
+  firstClick: FirstClick | null,
+  valueKey: string,
+  click: { detail: number; pointerType?: string },
+): boolean {
+  return (
+    click.detail === 2 &&
+    firstClick?.valueKey === valueKey &&
+    click.pointerType !== 'touch' &&
+    click.pointerType !== 'pen'
+  );
+}
+
+/**
+ * The items a dblclick isolates from: the legend as it stood before the first click, so that
+ * click's hide or show does not leak into the result and double-clicking the isolated item
+ * restores the full set, as `isolateItem` intends. The current items when the first click was
+ * on another item or something else has moved the legend since.
+ */
+export function isolationBase(
+  firstClick: FirstClick | null,
+  valueKey: string,
+  items: LegendItem[],
+): LegendItem[] {
+  return firstClick?.valueKey === valueKey && firstClick.itemsAfter === items
+    ? firstClick.itemsBefore
+    : items;
+}
+
+/** Two taps on the same row this close together isolate it, as a double-click does. */
+export const DOUBLE_TAP_MS = 300;
+
+/** A click this soon after a pointerdown on a row came from that press. */
+const CLICK_AFTER_PRESS_MS = 1000;
+
+/**
+ * True for the second of two touch or pen taps on the same row within DOUBLE_TAP_MS. Not every
+ * engine sends a dblclick for a double tap (iOS Safari does not), so the legend counts the taps
+ * itself; mouse double-clicks keep `isSecondClickOfDouble` and the dblclick.
+ */
+export function isDoubleTap(
+  previous: { valueKey: string; time: number } | null,
+  current: { valueKey: string; time: number; pointerType: string },
+): boolean {
+  if (current.pointerType !== 'touch' && current.pointerType !== 'pen') return false;
+  if (!previous || previous.valueKey !== current.valueKey) return false;
+  const gap = current.time - previous.time;
+  return gap >= 0 && gap <= DOUBLE_TAP_MS;
+}
+
+/**
+ * The pointer behind a click: its own `pointerType` (a click is a PointerEvent in current
+ * engines), else the row press just before it, else a mouse (a script's or a screen reader's click).
+ */
+export function clickPointerType(
+  click: { pointerType?: string; timeStamp: number },
+  lastDown: { pointerType: string; time: number } | null,
+): string {
+  if (click.pointerType) return click.pointerType;
+  if (lastDown && click.timeStamp - lastDown.time <= CLICK_AFTER_PRESS_MS) {
+    return lastDown.pointerType;
+  }
+  return 'mouse';
 }

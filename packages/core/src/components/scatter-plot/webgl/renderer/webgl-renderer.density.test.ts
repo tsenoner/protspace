@@ -4,9 +4,11 @@ import * as d3 from 'd3';
 import type { DensityLayerMode } from '@protspace/utils';
 import type { WebGLStyleGetters } from '../types';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
-import type { GLResources } from './gl-resources';
-import { makeRendererWithStyle, plotData, styleGetters } from './test-support/renderer-fixture';
+import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
+import { internalsOf } from './test-support/renderer-internals';
 import type { MockGLOptions } from './test-support/mock-webgl2';
+import { createMockCanvas } from './test-support/mock-webgl2';
+import { WebGLRenderer } from './webgl-renderer';
 
 type Config = {
   width: number;
@@ -20,7 +22,9 @@ function setup(
   getTransform: () => d3.ZoomTransform = () => d3.zoomIdentity,
   style: WebGLStyleGetters = styleGetters(),
 ) {
-  const { renderer, gl, degraded } = makeRendererWithStyle(style, opts, {
+  const { renderer, gl, degraded, setContextLost } = makeRenderer({
+    ...opts,
+    style,
     getConfig: () => config as never,
     getTransform,
   });
@@ -29,7 +33,8 @@ function setup(
     gl,
     glRecord: gl as unknown as Record<string, (...a: unknown[]) => unknown>,
     degraded,
-    resources: (renderer as unknown as { resources: GLResources }).resources,
+    setContextLost,
+    resources: internalsOf(renderer).resources,
   };
 }
 
@@ -392,6 +397,43 @@ describe('density layer, contour', () => {
     ]);
     on.renderer.destroy();
   });
+
+  it("the contour palette uses getNeutralColor's key", () => {
+    // Sixteen reds and the dark Other grey over 50 points: past the 16-slot cap, so the palette
+    // pools the least populous colours into the neutral grey's tail slot.
+    const reds = Array.from(
+      { length: 16 },
+      (_, i) => `#${(i + 1).toString(16).padStart(2, '0')}0000`,
+    );
+    const { pd, style } = categories([...reds, '#64748b']);
+    const paletteWith = (getNeutralColor?: () => string) => {
+      const { canvas } = createMockCanvas();
+      const renderer = new WebGLRenderer(canvas, {
+        getScales: () => ({
+          x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
+          y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
+        }),
+        getTransform: () => d3.zoomIdentity,
+        getConfig: () => contour as never,
+        style,
+        getNeutralColor,
+      });
+      renderer.render(pd);
+      const palette = internalsOf(renderer).contourPalette!;
+      renderer.destroy();
+      return palette;
+    };
+    const slotRgb = (p: { keys: Float32Array }, s: number) =>
+      [0, 1, 2].map((c) => Math.round(p.keys[s * 3 + c] * 255));
+
+    const themed = paletteWith(() => '#64748b');
+    expect(themed.tailSlot).toBe(0);
+    expect(slotRgb(themed, 0)).toEqual([0x64, 0x74, 0x8b]);
+    // Without the option the light grey keys the tail slot, as before.
+    const light = paletteWith();
+    expect(light.tailSlot).toBe(0);
+    expect(slotRgb(light, 0)).toEqual([0x88, 0x88, 0x88]);
+  });
 });
 
 describe('density layer, auto', () => {
@@ -435,9 +477,11 @@ describe('N_visible', () => {
     const pd = plotData(10);
     pd.proteinIds = Array.from({ length: 10 }, (_, i) => `p${i}`);
     let hideOdd = true;
-    const { renderer } = makeRendererWithStyle({
-      ...styleGetters(),
-      getOpacity: (sp) => (hideOdd && Number(sp.id.slice(1)) % 2 === 1 ? 0 : 1),
+    const { renderer } = makeRenderer({
+      style: {
+        ...styleGetters(),
+        getOpacity: (sp) => (hideOdd && Number(sp.id.slice(1)) % 2 === 1 ? 0 : 1),
+      },
     });
 
     renderer.render(pd);
@@ -476,11 +520,12 @@ describe('density layer failure is not a gamma failure', () => {
   });
 });
 
-// A dead GL handle (`isProgram` false) rebuilds the context state through
-// resetRendererState, the same reset a context loss runs. A real loss is
-// permanent for the renderer (F-39), so the reset is only observable here.
-describe('stale-handle reset', () => {
-  it('clears the density latch so the rebuilt state can try again', () => {
+// main's stale-handle reset tests cleared this latch on a dead GL handle. The
+// renderer no longer checks its handles per frame, and a context loss latches
+// the renderer for good (the host builds a new instance, which tries afresh),
+// so only the latch itself is left to pin.
+describe('density latch', () => {
+  it('holds after the device recovers', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const on = setup({ width: 800, height: 600, densityLayer: 'on' });
     // Density latches off while the gamma pipeline keeps working.
@@ -496,27 +541,7 @@ describe('stale-handle reset', () => {
     on.renderer.invalidateStyleCache();
     on.renderer.render(plotData(50));
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
-
-    vi.spyOn(on.gl as unknown as WebGL2RenderingContext, 'isProgram').mockReturnValueOnce(false);
-    on.renderer.render(plotData(50));
-    expect(countOf(calls, 'blendFunc(1,1)')).toBe(1);
-    expect(on.resources.density).not.toBeNull();
+    expect(reasons(on.degraded)).toEqual(['density-unavailable']);
     on.renderer.destroy();
-  });
-
-  it('re-arms the density-unavailable report', () => {
-    const { renderer, gl, degraded } = makeRendererWithStyle(
-      styleGetters(),
-      { missingFloatExtensions: true },
-      { getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never },
-    );
-    renderer.render(plotData(50));
-    renderer.render(plotData(50));
-    expect(reasons(degraded)).toEqual(['density-unavailable']);
-
-    vi.spyOn(gl as unknown as WebGL2RenderingContext, 'isProgram').mockReturnValueOnce(false);
-    renderer.render(plotData(50));
-    expect(reasons(degraded)).toEqual(['density-unavailable', 'density-unavailable']);
-    renderer.destroy();
   });
 });

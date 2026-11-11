@@ -87,18 +87,52 @@ describe('protspace-score-strip', () => {
     expect(svg.hasAttribute('viewBox')).toBe(false);
   });
 
-  it('emits strip-hover with the category on pointer enter, and null on leave', async () => {
+  it('emits strip-hover with the category on pointer enter, and null a frame after leaving a dot', async () => {
     const el = await setup();
     const seen: Array<string | null> = [];
     el.addEventListener('strip-hover', (event) =>
       seen.push((event as CustomEvent<{ category: string | null }>).detail.category),
     );
 
-    const dot = el.shadowRoot!.querySelector('circle')!;
-    dot.dispatchEvent(new Event('mouseenter', { bubbles: false }));
-    dot.dispatchEvent(new Event('mouseleave', { bubbles: false }));
+    const [first, second] = el.shadowRoot!.querySelectorAll('circle');
+    first.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    // Dot to dot is one hover each: entering the next dot cancels the clear leaving one queued.
+    first.dispatchEvent(new Event('mouseleave'));
+    second.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    // Leaving onto the axis between dots clears it a frame later.
+    second.dispatchEvent(new Event('mouseleave'));
+    expect(seen).toEqual(['Elapidae', 'Viperidae']);
+    await new Promise(requestAnimationFrame);
 
-    expect(seen).toEqual(['Elapidae', null]);
+    expect(seen).toEqual(['Elapidae', 'Viperidae', null]);
+  });
+
+  it('flags a hover that a tap began, so the legend does not fade the plot for it', async () => {
+    const el = await setup();
+    const seen: Array<{ category: string | null; touch: boolean }> = [];
+    el.addEventListener('strip-hover', (event) =>
+      seen.push((event as CustomEvent<{ category: string | null; touch: boolean }>).detail),
+    );
+
+    const dot = el.shadowRoot!.querySelector('circle')!;
+    // A tap, and its lift: the hover lingers until the next tap elsewhere.
+    dot.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'touch' }));
+    dot.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'touch' }));
+    // Then a mouse.
+    dot.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+
+    expect(seen).toEqual([
+      { category: 'Elapidae', touch: true },
+      { category: 'Elapidae', touch: false },
+    ]);
+  });
+
+  it('names each dot as the legend does', async () => {
+    const el = await setup();
+    el.points = [{ category: '-', label: 'No CATH label', value: 0.2, color: '#123456' }];
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('circle title')!.textContent).toBe('No CATH label: 0.20');
+    expect(el.shadowRoot!.querySelector('.sr-only li')!.textContent).toBe('No CATH label: 0.20');
   });
 
   it('emits strip-click with the category on dot click', async () => {

@@ -7,6 +7,8 @@
 **/.turbo
 
 **/build
+# The e2e suite's app build (apps/web/tests/vite.e2e.config.ts)
+apps/web/dist-e2e
 /.pnp
 .pnp.*
 .yarn/*
@@ -61,6 +63,9 @@ docs/superpowers/
 /temp-videos
 **/playwright-report
 .playwright-mcp
+# Vitest browser mode: failure screenshots and attachments
+packages/core/src/**/__screenshots__/
+packages/core/.vitest-attachments/
 
 # Anchored on purpose: Claude Code and Codex put worktrees inside these dirs, and
 # knip matches ignores against absolute paths, so a bare `.claude` would ignore
@@ -105,5 +110,6 @@ graphify-out/
 # Visual harness output (apps/web/tests/glyph-outline.spec.ts) — regenerated on demand
 apps/web/tests/__screens__/
 
-# Raw perf runs are machine-specific; the numbers live in perf/baselines/README.md
+# Per-machine timing baselines (`pnpm perf --save-baseline`) and raw `pnpm perf:webgl` runs;
+# see perf/baselines/README.md
 perf/baselines/*.json

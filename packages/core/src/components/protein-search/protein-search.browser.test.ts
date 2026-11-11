@@ -1,0 +1,149 @@
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { cdp, page, userEvent } from 'vitest/browser';
+import { adoptTheme } from '../kit/adopt-theme';
+import './protein-search';
+
+beforeAll(() => adoptTheme());
+afterEach(() => document.body.replaceChildren());
+
+describe('protspace-protein-search focus', () => {
+  it('draws the kit focus ring around the field while the input has focus', async () => {
+    const element = document.createElement('protspace-protein-search');
+    document.body.append(element);
+    await element.updateComplete;
+    const field = element.shadowRoot!.querySelector('.search-chips')!;
+    expect(getComputedStyle(field).outlineStyle).toBe('none');
+
+    await userEvent.keyboard('{Control>}k{/Control}');
+    expect(element.shadowRoot!.activeElement?.id).toBe('protein-search-input');
+    expect(getComputedStyle(field).outlineStyle).toBe('solid');
+  });
+});
+
+describe('protspace-protein-search report', () => {
+  it('the report is topmost and inside the viewport at 1280 × 720', async () => {
+    await page.viewport(1280, 720);
+    const element = document.createElement('protspace-protein-search') as HTMLElement & {
+      availableProteinIds: string[];
+      updateComplete: Promise<unknown>;
+    };
+    element.style.cssText = 'display: block; width: 420px; margin: 8px auto';
+    element.availableProteinIds = ['P1', 'P2'];
+    document.body.append(element);
+    await element.updateComplete;
+    const input = element.shadowRoot!.querySelector<HTMLInputElement>('#protein-search-input')!;
+    input.focus();
+    await userEvent.keyboard('NOPE{Enter}');
+    await element.updateComplete;
+
+    const report = element.shadowRoot!.querySelector<HTMLElement>('.search-report')!;
+    const box = report.getBoundingClientRect();
+    expect(box.top).toBeGreaterThanOrEqual(0);
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.bottom).toBeLessThanOrEqual(720);
+    expect(box.right).toBeLessThanOrEqual(1280);
+    // Topmost at its centre: the point hits the search's own shadow tree, inside the report.
+    const hit = element.shadowRoot!.elementFromPoint(
+      box.left + box.width / 2,
+      box.top + box.height / 2,
+    );
+    expect(hit && report.contains(hit)).toBe(true);
+  });
+
+  it('Escape on the report while Copy has focus returns focus to the field', async () => {
+    const element = document.createElement('protspace-protein-search') as HTMLElement & {
+      availableProteinIds: string[];
+      updateComplete: Promise<unknown>;
+    };
+    element.availableProteinIds = ['P1', 'P2'];
+    document.body.append(element);
+    await element.updateComplete;
+    const input = element.shadowRoot!.querySelector<HTMLInputElement>('#protein-search-input')!;
+    input.focus();
+    const data = new DataTransfer();
+    data.setData('text/plain', 'P1\nNOPE1\nNOPE2');
+    input.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+    );
+    await element.updateComplete;
+    element.shadowRoot!.querySelector<HTMLElement>('.search-report-copy')!.focus();
+    expect(element.shadowRoot!.activeElement?.closest('.search-popup')).not.toBeNull();
+
+    await userEvent.keyboard('{Escape}');
+    await element.updateComplete;
+
+    expect(element.shadowRoot!.querySelector('.search-report')).toBeNull();
+    expect(element.shadowRoot!.activeElement?.id).toBe('protein-search-input');
+    // Back in the field, not reopened: the suggestion list stays closed.
+    expect(element.shadowRoot!.querySelector('.search-suggestions')).toBeNull();
+  });
+});
+
+describe('protspace-protein-search under a coarse pointer', () => {
+  it('each suggestion is a 40 px row', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      const element = document.createElement('protspace-protein-search') as HTMLElement & {
+        availableProteinIds: string[];
+        updateComplete: Promise<unknown>;
+      };
+      element.style.cssText = 'display: block; width: 320px';
+      element.availableProteinIds = ['P11111', 'P12222', 'P13333'];
+      document.body.append(element);
+      await element.updateComplete;
+      element.shadowRoot!.querySelector<HTMLInputElement>('#protein-search-input')!.focus();
+      await userEvent.keyboard('P1');
+      await element.updateComplete;
+
+      const rows = element.shadowRoot!.querySelectorAll('.search-suggestion');
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(row.getBoundingClientRect().height).toBeGreaterThanOrEqual(40 - 0.5);
+      }
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
+  });
+});
+
+describe('protspace-protein-search narrow field', () => {
+  it('a field under 200 px drops the shortcut hint and fits a short placeholder', async () => {
+    const element = document.createElement('protspace-protein-search') as HTMLElement & {
+      placeholder: string;
+      updateComplete: Promise<unknown>;
+    };
+    element.style.cssText = 'display: block; width: 170px';
+    element.placeholder = 'Search or paste IDs';
+    document.body.append(element);
+    await element.updateComplete;
+    const root = element.shadowRoot!;
+    const input = root.querySelector<HTMLInputElement>('#protein-search-input')!;
+
+    expect(input.placeholder).toBe('Search or paste IDs');
+    expect(getComputedStyle(root.querySelector('.search-keyboard-shortcut-hint')!).display).toBe(
+      'none',
+    );
+    const context = document.createElement('canvas').getContext('2d')!;
+    context.font = getComputedStyle(input).font;
+    expect(context.measureText(input.placeholder).width).toBeLessThanOrEqual(input.clientWidth);
+
+    // Removing the attribute (a host leaving its narrow layout) brings the default back.
+    element.setAttribute('placeholder', 'x');
+    element.removeAttribute('placeholder');
+    await element.updateComplete;
+    expect(input.placeholder).toBe('Search proteins or paste IDs');
+
+    // A wide field keeps the hint and the full placeholder by default.
+    element.remove();
+    const wide = document.createElement('protspace-protein-search');
+    wide.style.cssText = 'display: block; width: 300px';
+    document.body.append(wide);
+    await wide.updateComplete;
+    const hint = wide.shadowRoot!.querySelector('.search-keyboard-shortcut-hint')!;
+    expect(getComputedStyle(hint).display).not.toBe('none');
+    expect(wide.shadowRoot!.querySelector('input')!.placeholder).toBe(
+      'Search proteins or paste IDs',
+    );
+  });
+});

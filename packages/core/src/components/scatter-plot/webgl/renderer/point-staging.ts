@@ -1,38 +1,17 @@
 /**
- * Canonical painter-order staging shared by the live render path
- * (`WebGLRenderer.populateBuffers`) and the off-screen export path
- * (`ExportRenderer.prepareOffscreenBufferData`).
+ * The painter order `stageInPaintOrder` (pass-staging.ts) stages both the live
+ * points and the export in, so the two cannot drift.
  *
- * The live path is canonical: it stages EVERY slot (including opacity-0 slots,
- * which are invisible but kept so the sort order is stable across visibility
- * toggles), sorts indices far->near via {@link sortIndicesByDepthDescending}
- * (descending depth, ties broken by ascending original slot index), and derives
- * the two-pass selection cut (`selectedStartIndex`) from the FIRST sorted slot
- * whose opacity is >= 0.99 when a selection is active.
- *
- * Extracting it here makes export == live structural rather than
- * hand-maintained: both consume {@link buildPaintOrder}.
+ * EVERY slot is ordered, opacity-0 ones included: they are invisible but kept
+ * so the sort order is stable across visibility toggles. Indices sort far->near
+ * via {@link sortIndicesByDepthDescending} (descending depth, ties broken by
+ * ascending original slot index), and the two-pass selection cut
+ * (`selectedStartIndex`) is the FIRST sorted slot whose opacity is >= 0.99 when
+ * a selection is active.
  */
 
 import { sortIndicesByDepthDescending } from './depth-sort';
-
-/** Opacity threshold at/above which a point counts as selected for the two-pass cut. */
-const SELECTED_OPACITY_THRESHOLD = 0.99;
-
-/**
- * Encode semantic painter tiers into the existing normalized depth channel.
- *
- * Far -> near order is: unselected observed, unselected predicted, selected observed, selected
- * predicted. This keeps the selected run contiguous for the two-pass blend while ensuring an EAT
- * knockout/outline is not subsequently covered by a coincident ordinary point. The source depth
- * still orders categories and opacity inside each tier.
- */
-export function composePaintDepth(baseDepth: number, opacity: number, predicted: boolean): number {
-  const withinTier = Math.min(1, Math.max(0, baseDepth)) * 0.24;
-  const selected = opacity >= SELECTED_OPACITY_THRESHOLD;
-  if (selected) return (predicted ? 0 : 0.25) + withinTier;
-  return (predicted ? 0.5 : 0.75) + withinTier;
-}
+import { SELECTED_OPACITY_THRESHOLD } from '../../paint-depth';
 
 /** Result of computing the canonical painter-order staging plan. */
 interface PaintOrderPlan {
@@ -60,8 +39,9 @@ interface PaintOrderPlan {
  * @param selectionActive Whether a selection is active (enables the two-pass cut).
  * @param getOpacityAtSortedSlot Returns the opacity of the slot drawn at sorted
  *                     position `k` (i.e. for `order[k]`). Called once per slot in
- *                     sorted order; lets the caller hook per-slot side effects
- *                     (e.g. tracking rendered IDs) while we locate `firstSelected`.
+ *                     sorted order, so the caller can stage each slot there while
+ *                     we locate `firstSelected`.
+ * @param sortScratch  Caller-owned scratch (length >= count); the depth sort's second buffer.
  */
 export function buildPaintOrder(
   order: Uint32Array,
@@ -69,8 +49,9 @@ export function buildPaintOrder(
   count: number,
   selectionActive: boolean,
   getOpacityAtSortedSlot: (sortedIndex: number, srcSlot: number) => number,
+  sortScratch: Uint32Array,
 ): PaintOrderPlan {
-  sortIndicesByDepthDescending(order, depths, count);
+  sortIndicesByDepthDescending(order, depths, count, sortScratch);
 
   let firstSelected = -1;
   for (let k = 0; k < count; k++) {

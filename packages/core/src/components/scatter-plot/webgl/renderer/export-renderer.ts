@@ -4,14 +4,14 @@
  * This is a behavior-preserving extraction of the off-screen subsystem that
  * previously lived inline on `WebGLRenderer`. It owns the export pipeline:
  * create a throwaway WebGL2 context sized to the requested export dimensions,
- * stage the points (painter's-algorithm depth sort + F-15 two-pass selection
+ * stage the points (painter's-algorithm depth sort + two-pass selection
  * blend), render through the gamma-correct pipeline when the float extensions
  * are available (falling back to direct rendering otherwise), and copy the
  * result into a 2D canvas for safe export.
  *
- * It consumes the B3 substrate (`resolvePointLocations`, `setupAttributes`,
+ * It consumes the shared renderer primitives (`resolvePointLocations`, `setupAttributes`,
  * `createLinearFramebuffer`, `destroyFramebuffer`, `bindAndClearTarget`,
- * `setPointBlendState`, `drawGammaQuad`, `QUAD_VERTICES`, `stagePoint`,
+ * `setPointBlendState`, `drawGammaQuad`, `QUAD_VERTICES`, `stageInPaintOrder`,
  * `drawPoints`) and the live point/gamma shader sources, so it shares no
  * resource state with the live render pipeline.
  *
@@ -23,13 +23,13 @@
  */
 
 import * as d3 from 'd3';
-import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
+import { fitRect, fitScales, formatCount } from '@protspace/utils';
+import type { DataDomain, PlotData, PlotMargin, ScatterplotConfig } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
   type FramebufferResources,
   type PointUniformLocations,
-  MAX_RENDERABLE_POINTS,
 } from '../types';
 import { createProgramFromSources } from '../shader-utils';
 import { resolvePointLocations } from './point-locations';
@@ -48,25 +48,23 @@ import {
   DEFAULT_VIEWPORT_WIDTH,
   DEFAULT_VIEWPORT_HEIGHT,
 } from './viewport-defaults';
-import { stagePoint, type StagePointArrays } from './stage-point';
+import { createStageArrays, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
 import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
+import { allocateLabelAtlas, uploadPlaceholderAtlas } from './label-atlas-texture';
 import {
-  readMaxTextureSize,
+  MAX_EXPORT_DIMENSION,
+  MIN_CAPACITY,
   drainGlErrors,
-  allocateLabelAtlas,
-  uploadPlaceholderAtlas,
-} from './label-atlas-texture';
-import { buildPaintOrder, composePaintDepth } from './point-staging';
+  readMaxTextureSize,
+} from './device-limits';
+import { createPassScratch, stageInPaintOrder } from './pass-staging';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
   GAMMA_VERTEX_SHADER,
   GAMMA_FRAGMENT_SHADER,
-} from './export-shaders';
-
-// Constants (moved verbatim from webgl-renderer.ts).
-const MIN_CAPACITY = 1024;
+} from './point-shaders';
 
 // Stable reference dimensions for margin scaling at export time. Tying margin
 // scaling to the live display canvas (via `config.width/height`, which track
@@ -77,15 +75,38 @@ const MIN_CAPACITY = 1024;
 const EXPORT_MARGIN_REFERENCE_WIDTH = 800;
 const EXPORT_MARGIN_REFERENCE_HEIGHT = 600;
 
-const MAX_DIMENSION = 8192;
-
-/** A data-coordinate viewport rectangle. */
-interface DataDomain {
-  xMin: number;
-  xMax: number;
-  yMin: number;
-  yMax: number;
+/**
+ * The plot margins at an export size: `config.margin` (20 px when unset) scaled from the fixed
+ * reference size, so an export does not depend on the browser window.
+ */
+function scaledExportMargin(
+  config: ScatterplotConfig,
+  exportWidth: number,
+  exportHeight: number,
+): PlotMargin {
+  const margin = config.margin ?? { top: 20, right: 20, bottom: 20, left: 20 };
+  const scaleX = exportWidth / EXPORT_MARGIN_REFERENCE_WIDTH;
+  const scaleY = exportHeight / EXPORT_MARGIN_REFERENCE_HEIGHT;
+  return {
+    top: margin.top * scaleY,
+    right: margin.right * scaleX,
+    bottom: margin.bottom * scaleY,
+    left: margin.left * scaleX,
+  };
 }
+
+/**
+ * `config.fillMaxWidth` at an export size: the same share of the width as on screen, so an export
+ * of a filled plot keeps the screen's cap. No cap when unset or before the plot is measured.
+ */
+function scaledFillMaxWidth(config: ScatterplotConfig, exportWidth: number): number {
+  const { fillMaxWidth, width } = config;
+  if (!fillMaxWidth || !Number.isFinite(fillMaxWidth) || !width) return Infinity;
+  return (fillMaxWidth / width) * exportWidth;
+}
+
+/** What an export reads of the style: it stages every point through one pass. */
+type ExportStyle = Pick<WebGLStyleGetters, 'createStylePass'>;
 
 /** Options for a single off-screen export render. */
 interface ExportRenderOptions {
@@ -94,7 +115,7 @@ interface ExportRenderOptions {
   dpr?: number;
   dataDomain?: DataDomain;
   pointSizeReference?: { width: number; height: number };
-  /** Live selection state, forwarded to preserve the F-15 two-pass blend. */
+  /** Live selection state, forwarded to preserve the two-pass selection blend. */
   selectionActive: boolean;
   /** Current live transform; scaled to the export dimensions internally. */
   transform: d3.ZoomTransform;
@@ -120,15 +141,14 @@ interface ExportRenderOptions {
 
 export class ExportRenderer {
   /**
-   * Create scales appropriate for export dimensions.
-   * Scales the margin proportionally to maintain visual consistency.
-   *
-   * Replicates the inline `WebGLRenderer.createExportScales` exactly: when a
-   * `dataDomain` is supplied (inset / geometric-zoom render) the domain fills
-   * the canvas edge-to-edge (full bleed, no 5% padding, no margins); otherwise
-   * the data extent gets 5% padding and the margins are scaled from a fixed
-   * reference. The config + optional dataDomain are passed in (replacing the
-   * former `this.getConfig()` / inline `pd` reads).
+   * The scales an export of `exportWidth` × `exportHeight` maps points with. By default the live
+   * plot's fit (design decision 3): the padded extent (DATA_EXTENT_PADDING) with one
+   * pixels-per-unit, centred inside margins scaled from a fixed reference, so a figure has the
+   * screen's shape; with `config.fillPlot` each axis fills the area inside those margins, as on
+   * screen (capped as
+   * `config.fillMaxWidth` caps it there). A `dataDomain` (inset / geometric-zoom render) fills the
+   * canvas edge to edge instead, each axis on its own: the caller picks a domain that already
+   * matches its source rect.
    */
   static createExportScales(
     config: ScatterplotConfig,
@@ -138,81 +158,57 @@ export class ExportRenderer {
     dataDomain?: DataDomain,
   ): ScalePair | null {
     if (pd.length === 0) return null;
-
-    // Default margin if not specified
-    const margin = config.margin ?? { top: 20, right: 20, bottom: 20, left: 20 };
-
-    // Scale margins from a fixed reference instead of the live display size,
-    // so the export render is reproducible across browser-window resizes.
-    const scaleX = exportWidth / EXPORT_MARGIN_REFERENCE_WIDTH;
-    const scaleY = exportHeight / EXPORT_MARGIN_REFERENCE_HEIGHT;
-
-    const scaledMargin = {
-      top: margin.top * scaleY,
-      right: margin.right * scaleX,
-      bottom: margin.bottom * scaleY,
-      left: margin.left * scaleX,
-    };
-
-    let xDomMin: number;
-    let xDomMax: number;
-    let yDomMin: number;
-    let yDomMax: number;
-    let useFullBleed = false;
     if (dataDomain) {
-      // Caller supplied an exact viewport — used by inset (geometric zoom)
-      // rendering. Skip the 5% padding AND skip margins so the data domain
-      // fills the canvas edge-to-edge. The caller is responsible for picking
-      // a domain that already accounts for the source plot's margins, so the
-      // inset's data fills aligns 1:1 with the source rect's data region.
-      xDomMin = dataDomain.xMin;
-      xDomMax = dataDomain.xMax;
-      yDomMin = dataDomain.yMin;
-      yDomMax = dataDomain.yMax;
-      useFullBleed = true;
-    } else {
-      // Compute data extent + 5% padding (ScaleManager.createScales convention).
-      const e = computePaddedExtent(pd.xs, pd.ys, pd.length);
-      xDomMin = e.xMin;
-      xDomMax = e.xMax;
-      yDomMin = e.yMin;
-      yDomMax = e.yMax;
+      return {
+        x: d3.scaleLinear().domain([dataDomain.xMin, dataDomain.xMax]).range([0, exportWidth]),
+        y: d3.scaleLinear().domain([dataDomain.yMin, dataDomain.yMax]).range([exportHeight, 0]),
+      };
     }
-
-    const xRangeStart = useFullBleed ? 0 : scaledMargin.left;
-    const xRangeEnd = useFullBleed ? exportWidth : exportWidth - scaledMargin.right;
-    const yRangeStart = useFullBleed ? exportHeight : exportHeight - scaledMargin.bottom;
-    const yRangeEnd = useFullBleed ? 0 : scaledMargin.top;
-
-    const xScale = d3.scaleLinear().domain([xDomMin, xDomMax]).range([xRangeStart, xRangeEnd]);
-    const yScale = d3.scaleLinear().domain([yDomMin, yDomMax]).range([yRangeStart, yRangeEnd]);
-
-    return { x: xScale, y: yScale };
+    return fitScales(
+      computePaddedExtent(pd.xs, pd.ys, pd.length),
+      exportWidth,
+      exportHeight,
+      scaledExportMargin(config, exportWidth, exportHeight),
+      config.fillPlot,
+      scaledFillMaxWidth(config, exportWidth),
+    );
   }
 
   /**
-   * Display configuration the renderer would apply to a render at the given
-   * export dimensions. Returned values are in *export pixel space* (i.e.
-   * `marginLeft` is the pixel offset of the data area's left edge inside an
-   * `exportWidth × exportHeight` canvas). Used by the publish modal to
-   * translate inset source rects (canvas-norm) into data-coord viewports
-   * with margin-aware accuracy. Static so it is unit-testable.
+   * Where the data area of a default export sits, as margins in export pixels: the fitted
+   * rectangle's edges, centring slack included. With the padded extent,
+   * `marginLeft + (x − xMin) / (xMax − xMin) × (exportWidth − marginLeft − marginRight)` is then
+   * exactly the export's x scale, and likewise for y, which is how the publish modal turns inset
+   * source rects into data domains. Without data there is no fit: the scaled margins.
    */
   static getRenderInfo(
     config: ScatterplotConfig,
+    pd: PlotData | null,
     exportWidth: number,
     exportHeight: number,
   ): { marginLeft: number; marginRight: number; marginTop: number; marginBottom: number } {
-    const margin = config.margin ?? { top: 20, right: 20, bottom: 20, left: 20 };
-    // Match createExportScales: anchor to the same fixed reference so insets'
-    // data-domain inversion stays consistent with the export render.
-    const scaleX = exportWidth / EXPORT_MARGIN_REFERENCE_WIDTH;
-    const scaleY = exportHeight / EXPORT_MARGIN_REFERENCE_HEIGHT;
+    const margin = scaledExportMargin(config, exportWidth, exportHeight);
+    if (!pd || pd.length === 0) {
+      return {
+        marginLeft: margin.left,
+        marginRight: margin.right,
+        marginTop: margin.top,
+        marginBottom: margin.bottom,
+      };
+    }
+    const rect = fitRect(
+      computePaddedExtent(pd.xs, pd.ys, pd.length),
+      exportWidth,
+      exportHeight,
+      margin,
+      config.fillPlot,
+      scaledFillMaxWidth(config, exportWidth),
+    );
     return {
-      marginLeft: margin.left * scaleX,
-      marginRight: margin.right * scaleX,
-      marginTop: margin.top * scaleY,
-      marginBottom: margin.bottom * scaleY,
+      marginLeft: rect.left,
+      marginRight: exportWidth - rect.left - rect.width,
+      marginTop: rect.top,
+      marginBottom: exportHeight - rect.top - rect.height,
     };
   }
 
@@ -238,7 +234,7 @@ export class ExportRenderer {
   renderToCanvas(
     pd: PlotData | null,
     config: ScatterplotConfig,
-    style: WebGLStyleGetters,
+    style: ExportStyle,
     options: ExportRenderOptions,
   ): HTMLCanvasElement {
     const { width, height, dataDomain, pointSizeReference } = options;
@@ -248,7 +244,7 @@ export class ExportRenderer {
     const physicalWidth = Math.floor(width * dpr);
     const physicalHeight = Math.floor(height * dpr);
 
-    // MAX_DIMENSION alone was described as "the browser limit" but is a constant,
+    // MAX_EXPORT_DIMENSION alone was described as "the browser limit" but is a constant,
     // so on any device reporting less than 8192 the message named a limit that was
     // not the one being enforced — and the export failed later, in the driver.
     // Deliberately NOT `sanitizeMaxTextureSize`: its fallback is the 2048 spec
@@ -258,8 +254,8 @@ export class ExportRenderer {
     const deviceLimit = options.deviceMaxTextureSize;
     const effectiveMaxDimension =
       typeof deviceLimit === 'number' && Number.isFinite(deviceLimit) && deviceLimit >= 1
-        ? Math.min(MAX_DIMENSION, deviceLimit)
-        : MAX_DIMENSION;
+        ? Math.min(MAX_EXPORT_DIMENSION, deviceLimit)
+        : MAX_EXPORT_DIMENSION;
 
     if (physicalWidth > effectiveMaxDimension || physicalHeight > effectiveMaxDimension) {
       throw new Error(
@@ -350,7 +346,7 @@ export class ExportRenderer {
     scales: ScalePair,
     dpr: number,
     config: ScatterplotConfig,
-    style: WebGLStyleGetters,
+    style: ExportStyle,
     options: ExportRenderOptions,
     pointSizeReference?: { width: number; height: number },
   ): void {
@@ -396,13 +392,11 @@ export class ExportRenderer {
     // Get attribute and uniform locations
     const { attribs, uniforms } = resolvePointLocations(gl, pointProgram);
 
-    const maxPoints = Math.min(pd.length, MAX_RENDERABLE_POINTS);
-
     // This context is not the live one, so it must be asked its own limit — but
     // the stride is inherited, so the exported figure segments its markers exactly
     // the way the screen did. A null stride is the live view saying it has no atlas.
     const labelAtlas = planLabelAtlas(
-      Math.max(MIN_CAPACITY, maxPoints),
+      Math.max(MIN_CAPACITY, pd.length),
       readMaxTextureSize(gl),
       options.labelStride === undefined ? MAX_LABELS : options.labelStride,
     );
@@ -419,14 +413,7 @@ export class ExportRenderer {
       labelColorData,
       pointCount,
       selectedStartIndex,
-    } = this.prepareOffscreenBufferData(
-      pd,
-      scales,
-      maxPoints,
-      style,
-      options.selectionActive,
-      labelAtlas,
-    );
+    } = this.prepareOffscreenBufferData(pd, scales, style, options.selectionActive, labelAtlas);
 
     // Create and upload buffers. The flag has to start clean for the check after
     // them to mean "these uploads failed": this context is fresh, but program
@@ -471,7 +458,7 @@ export class ExportRenderer {
     // error path, and a figure that is quietly wrong is worse than one that failed.
     if (gl.getError() !== gl.NO_ERROR) {
       throw new Error(
-        `The graphics driver could not allocate memory for ${pointCount.toLocaleString()} points ` +
+        `The graphics driver could not allocate memory for ${formatCount(pointCount)} points ` +
           `at ${physicalWidth}×${physicalHeight}. Export at smaller dimensions, or with fewer points visible.`,
       );
     }
@@ -621,116 +608,40 @@ export class ExportRenderer {
   private prepareOffscreenBufferData(
     pd: PlotData,
     scales: ScalePair,
-    maxPoints: number,
-    style: WebGLStyleGetters,
+    style: ExportStyle,
     selectionActive: boolean,
     labelAtlas: LabelAtlasPlan | null = null,
-  ): {
-    dataPositions: Float32Array;
-    sizes: Float32Array;
-    colors: Float32Array;
-    depths: Float32Array;
-    labelCounts: Float32Array;
-    shapes: Float32Array;
-    predicted: Float32Array;
-    labelColorData: Uint8Array | null;
-    pointCount: number;
-    selectedStartIndex: number;
-  } {
-    const capacity = Math.max(MIN_CAPACITY, maxPoints);
-    const dataPositions = new Float32Array(capacity * 2);
-    const sizes = new Float32Array(capacity);
-    const colors = new Float32Array(capacity * 4);
-    const depths = new Float32Array(capacity);
-    const labelCounts = new Float32Array(capacity);
-    const shapes = new Float32Array(capacity);
-    const predicted = new Float32Array(capacity);
-    // Sized from the plan, which already accounts for the device limit and the
-    // stride inherited from the live view. Null when no atlas is in play — the
-    // export then costs nothing for a feature it is not using.
-    const labelColorData = labelAtlas ? new Uint8Array(labelAtlas.byteLength) : null;
-
-    // Stage slots by depth using the SAME canonical painter-order plan as the
-    // live path (buildPaintOrder): the live path is canonical, so the export
-    // includes opacity-0 slots (invisible — F-15 pixels unchanged) and uses the
-    // identical stable far->near sort and the same sorted-k selectedStartIndex.
-    const { xs, ys } = pd;
-    const oi = pd.originalIndices;
-    const sp: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
-    const count = maxPoints;
-
-    const target: StagePointArrays = {
-      dataPositions,
-      sizes,
-      colors,
-      depths,
-      labelCounts,
-      shapes,
-      predicted,
-      labelColorData,
-      maxLabels: labelAtlas?.stride ?? MAX_LABELS,
-    };
-
-    // Per-slot depth scratch indexed by ORIGINAL slot index, then the index order
-    // sorted far->near in place. Sized to the staged count (export has no persistent
-    // scratch, so allocate locally per call).
-    const order = new Uint32Array(count);
-    const depthScratch = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const origIdx = oi ? oi[i] : i;
-      sp.id = pd.proteinIds[origIdx];
-      sp.x = xs[i];
-      sp.y = ys[i];
-      sp.originalIndex = origIdx;
-      depthScratch[i] = composePaintDepth(
-        style.getDepth(sp),
-        style.getOpacity(sp),
-        style.isPredicted(sp),
-      );
-    }
-
-    const { selectedStartIndex } = buildPaintOrder(
-      order,
-      depthScratch,
-      count,
-      selectionActive,
-      (k, srcSlot) => {
-        const origIdx = oi ? oi[srcSlot] : srcSlot;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = xs[srcSlot];
-        sp.y = ys[srcSlot];
-        sp.originalIndex = origIdx;
-        const opacity = style.getOpacity(sp);
-
-        // Depth uses depthScratch[srcSlot] (indexed by original slot), NOT
-        // depthScratch[k], matching the live path.
-        stagePoint(
-          target,
-          k,
-          sp,
-          scales.x(xs[srcSlot]),
-          scales.y(ys[srcSlot]),
-          opacity,
-          depthScratch[srcSlot],
-          style,
-        );
-
-        return opacity;
-      },
+  ): StagePointArrays & { pointCount: number; selectedStartIndex: number } {
+    const target = createStageArrays(
+      Math.max(MIN_CAPACITY, pd.length),
+      labelAtlas?.stride ?? MAX_LABELS,
+      // Sized from the plan, which already accounts for the device limit and the
+      // stride inherited from the live view. Null when no atlas is in play — the
+      // export then costs nothing for a feature it is not using.
+      labelAtlas ? new Uint8Array(labelAtlas.byteLength) : null,
     );
 
-    return {
-      dataPositions,
-      sizes,
-      colors,
-      depths,
-      labelCounts,
-      shapes,
-      predicted,
-      labelColorData,
-      pointCount: count,
-      selectedStartIndex,
-    };
+    // Stage slots by depth through the SAME staging as the live path
+    // (stageInPaintOrder): the live path is canonical, so the export includes
+    // opacity-0 slots (invisible — two-pass selection pixels unchanged) and uses the identical
+    // stable far->near sort and the same sorted-k selectedStartIndex.
+    const count = pd.length;
+
+    // The index order and the per-slot pass scratch, sized to the staged count
+    // (export has no persistent scratch, so allocate locally per call).
+    const order = new Uint32Array(count);
+    const { selectedStartIndex } = stageInPaintOrder(
+      target,
+      style.createStylePass(),
+      createPassScratch(count),
+      order,
+      pd,
+      scales,
+      count,
+      selectionActive,
+    );
+
+    return { ...target, pointCount: count, selectedStartIndex };
   }
 
   /**

@@ -3,6 +3,7 @@ import { property, state } from 'lit/decorators.js';
 import type { PropertyValues } from 'lit';
 import { customElement } from '../../../utils/safe-custom-element';
 import type {
+  Annotation,
   AnnotationStatMetric,
   AnnotationStatSummary,
   ClusterAgreement,
@@ -16,6 +17,8 @@ import {
   annotationStatSummary,
   autoClusterScoreCaveat,
   clusterAgreement,
+  countNoun,
+  formatCount,
   formatStatValue,
   hasAnnotationStats,
   isAutoClusterColumnName,
@@ -23,16 +26,11 @@ import {
   metricDisplay,
 } from '@protspace/utils';
 import { projectionMetadataStyles } from './projection-metadata.styles';
+import { modalCoverage, splitMetadata, type MetadataRow } from './projection-metadata-format';
 import '../../common/info-popover';
-
-/** One rendered `<dt>/<dd>` pair. An empty `description` renders no ⓘ. */
-interface MetadataRow {
-  label: string;
-  value: string;
-  description: string;
-  /** Faithfulness scope ("local" / "global"), rendered as a group heading. Null groups first. */
-  scope?: string | null;
-}
+import { icon } from '../../kit/icon';
+import { pushLayer } from '../../kit/layers';
+import { anchorTo } from '../../kit/position';
 
 /**
  * The two agreement metrics, in the order the columns appear. Fixed rather than derived from the
@@ -85,41 +83,8 @@ const SEPARATION_SCOPE_DESCRIPTION =
   'A projection can also score higher than its embedding, when flattening happens to pull ' +
   'the categories apart; that describes the layout, not the proteins.';
 
-/** A faithfulness metric before display: the raw key is kept so it can be looked up. */
-interface QualityEntry {
-  metric: string;
-  scope: string | null;
-  value: unknown;
-  /** Proteins the comparison ran over. Shared by every faithfulness metric in a projection. */
-  sampleSize: number | null;
-  /** Whether that was a subsample rather than everything — a real caveat, previously hidden. */
-  sampled: boolean;
-}
-
-/**
- * The coverage most annotations in a block share. Modal, not maximal: the interesting case is the
- * one annotation that covers far fewer proteins than the rest, and comparing against the majority
- * is what makes it stand out. Null when nothing carries coverage.
- */
-function modalCoverage(entries: readonly ClusterAgreementEntry[]): number | null {
-  const counts = new Map<number, number>();
-  for (const entry of entries) {
-    if (entry.scored === null) continue;
-    counts.set(entry.scored, (counts.get(entry.scored) ?? 0) + 1);
-  }
-  let best: number | null = null;
-  let bestCount = 0;
-  for (const [value, count] of counts) {
-    if (count > bestCount) {
-      best = value;
-      bestCount = count;
-    }
-  }
-  return best;
-}
-
 @customElement('protspace-projection-metadata')
-class ProtspaceProjectionMetadata extends LitElement {
+export class ProtspaceProjectionMetadata extends LitElement {
   @property({ type: Object }) projection: Projection | null = null;
   /** Rows of the optional `statistics.parquet` part; absent unless prepared with `--stats`. */
   @property({ type: Array }) statisticsRows?: readonly ProjectionStatisticRow[];
@@ -131,6 +96,9 @@ class ProtspaceProjectionMetadata extends LitElement {
    * so this only changes how the scope line describes them, never the numbers.
    */
   @property({ type: Boolean }) viewIsSubset = false;
+  /** The dataset's annotation definitions: runtime columns (EAT confidence) are named by them. */
+  @property({ attribute: false })
+  annotationDefinitions: Readonly<Record<string, Pick<Annotation, 'runtime'>>> = {};
 
   /** Whether the Recovers list is showing every annotation or just the best `RECOVERS_COLLAPSED`. */
   @state() private _recoversExpanded = false;
@@ -148,106 +116,142 @@ class ProtspaceProjectionMetadata extends LitElement {
    * reading a metric's ⓘ, or selecting a number, means travelling outside the card.
    */
   @state() private _pinned = false;
+  // While pinned the card is a layer (decision 11): Escape and a press outside close it before
+  // the page's own Escape (the selection) hears the press.
+  private _releaseLayer: (() => void) | null = null;
+
+  /**
+   * The region the card stays inside, such as the plot it describes. Unset, the viewport. The card
+   * scrolls when it is taller than the room it has there, so it never spills onto its neighbours.
+   */
+  @property({ attribute: false }) boundary: Element | null = null;
+
+  /** The pointer is over the button or the card (only for a pointer that can hover). */
+  @state() private _hovered = false;
+  /** The button has keyboard focus (:focus-visible), which shows the card as hover does. */
+  @state() private _focusVisible = false;
 
   static styles = projectionMetadataStyles;
 
-  /** Smallest card worth showing before scrolling; below this a "scrollable" card is unusable. */
-  private static readonly MIN_CARD_HEIGHT = 200;
-  /** Breathing room kept between the bottom of the card and the plot's edge. */
-  private static readonly CARD_MARGIN = 8;
-
+  /** Gap between the button and the card; the card's hover bridge spans it (--card-gap). */
+  private static readonly CARD_GAP = 8;
   /**
-   * Created lazily and guarded: `ResizeObserver` is absent in jsdom and under SSR, and as a
-   * field initializer its constructor ran before the element could render at all. The measured
-   * cap still applies without it; only tracking a later resize is lost.
+   * How long the card waits after the pointer leaves before it closes, so a pointer crossing the
+   * gap, or a card that flipped away from the button, does not drop it on the way.
    */
-  private _resize: ResizeObserver | null = null;
+  private static readonly HOVER_CLOSE_DELAY = 120;
 
-  firstUpdated() {
-    // No measurement here: Lit runs `updated()` immediately after this in the same pass, and
-    // it already writes the cap.
-    // The plot host resizes with the window and with the side panels opening/closing.
-    if (typeof ResizeObserver === 'undefined' || !this.offsetParent) return;
-    this._resize = new ResizeObserver(() => this._updateMaxHeight());
-    this._resize.observe(this.offsetParent);
+  private _stopPositioning: (() => void) | null = null;
+  private _hoverCloseTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private get _open(): boolean {
+    return this._pinned || this._hovered || this._focusVisible;
   }
 
   updated(changed: PropertyValues) {
-    // Only when the content that sets the natural height can actually have changed. This reads
-    // the host's clientHeight and writes an inline maxHeight, so running it on every update
-    // forces a synchronous layout — free today, a per-frame cost the moment anything on this
-    // card gains hover state. `_pinned` counts: the card has no measurable box until it opens.
     if (
-      changed.has('projection') ||
-      changed.has('statisticsRows') ||
-      changed.has('selectedAnnotation') ||
       changed.has('_pinned') ||
-      changed.has('_recoversExpanded')
+      changed.has('_hovered') ||
+      changed.has('_focusVisible') ||
+      changed.has('boundary')
     ) {
-      this._updateMaxHeight();
+      this._syncTopLayer();
     }
   }
 
   /**
-   * Cap the card at the space actually left inside the scatter-plot, which clips its overflow.
-   *
-   * Measured rather than expressed in CSS. The constraint is the plot host's height, and this
-   * card cannot reach it: percentages resolve against its own `:host`, which is only as tall as
-   * the 32px trigger. Viewport units miss by however far down the page the plot begins —
-   * measured at 209px, i.e. a 974px cap where only 827px fits. `container-type: size` on the
-   * host would express it exactly but also makes the host the containing block for
-   * `position: fixed` descendants, which would strand the side-placed ⓘ popovers.
+   * The open card lives in the top layer (as the ⓘ bubbles inside it do), so nothing on the page
+   * paints over it: the plot corner it opens from is one stacking context among the legend, the
+   * status chips and the sidebar, and each of them drew through the card. Placed with the kit's
+   * anchoring, below the button, inside `boundary`, and capped at the height left there.
    */
-  private _updateMaxHeight(): void {
-    const host = this.offsetParent as HTMLElement | null;
+  private _syncTopLayer(): void {
     const content = this.shadowRoot?.querySelector('.content') as HTMLElement | null;
-    if (!host || !content) return;
-    const { MIN_CARD_HEIGHT, CARD_MARGIN } = ProtspaceProjectionMetadata;
-    // Measured, not reconstructed from the trigger's box plus a copy of the stylesheet's gap:
-    // that copy had to be kept in step with `--card-gap` by hand, and a drift between them
-    // would silently mis-size the cap.
-    const cardTop = content.getBoundingClientRect().top - host.getBoundingClientRect().top;
-    const available = host.clientHeight - cardTop - CARD_MARGIN;
-    content.style.maxHeight = `${Math.max(MIN_CARD_HEIGHT, available)}px`;
+    const trigger = this.shadowRoot?.querySelector('.trigger');
+    this._stopPositioning?.();
+    this._stopPositioning = null;
+    // No top layer (jsdom): the card stays where it is laid out, shown and hidden by its classes.
+    if (!content || !trigger || typeof content.showPopover !== 'function') return;
+    if (!this._open) {
+      if (content.matches(':popover-open')) content.hidePopover();
+      return;
+    }
+    if (!content.matches(':popover-open')) content.showPopover();
+    this._stopPositioning = anchorTo(
+      trigger,
+      content,
+      'bottom-start',
+      ProtspaceProjectionMetadata.CARD_GAP,
+      this.boundary ?? undefined,
+    );
+  }
+
+  private _onPointerEnter = (event: PointerEvent) => {
+    if (event.pointerType === 'touch' || !matchMedia('(hover: hover)').matches) return;
+    clearTimeout(this._hoverCloseTimer);
+    this._hovered = true;
+  };
+
+  private _onPointerLeave = () => {
+    clearTimeout(this._hoverCloseTimer);
+    this._hoverCloseTimer = setTimeout(
+      () => (this._hovered = false),
+      ProtspaceProjectionMetadata.HOVER_CLOSE_DELAY,
+    );
+  };
+
+  private _onTriggerFocus = (event: FocusEvent) => {
+    this._focusVisible = (event.target as HTMLElement).matches(':focus-visible');
+  };
+
+  private _onTriggerBlur = () => {
+    this._focusVisible = false;
+  };
+
+  connectedCallback() {
+    super.connectedCallback();
+    // On the host, so the card counts too: it stays in this shadow tree in the top layer.
+    this.addEventListener('pointerenter', this._onPointerEnter);
+    this.addEventListener('pointerleave', this._onPointerLeave);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._resize?.disconnect();
-    this._resize = null;
+    this.removeEventListener('pointerenter', this._onPointerEnter);
+    this.removeEventListener('pointerleave', this._onPointerLeave);
+    clearTimeout(this._hoverCloseTimer);
+    this._hovered = false;
+    this._focusVisible = false;
+    this._stopPositioning?.();
+    this._stopPositioning = null;
     this._setPinned(false);
   }
 
   private _setPinned(pinned: boolean): void {
     if (this._pinned === pinned) return;
     this._pinned = pinned;
-    // Bound once per toggle rather than kept for the element's lifetime: an always-on
-    // document listener on a component that exists per scatter-plot is a cost for a state
-    // that is off almost always.
     if (pinned) {
-      document.addEventListener('pointerdown', this._onDocumentPointerDown, true);
-      document.addEventListener('keydown', this._onDocumentKeydown, true);
+      this._releaseLayer = pushLayer({ close: () => this._closeFromLayer(), elements: [this] });
     } else {
-      document.removeEventListener('pointerdown', this._onDocumentPointerDown, true);
-      document.removeEventListener('keydown', this._onDocumentKeydown, true);
+      this._releaseLayer?.();
+      this._releaseLayer = null;
     }
   }
 
-  /** `composedPath` rather than `contains`: the click may originate inside a nested shadow root. */
-  private _onDocumentPointerDown = (event: Event) => {
-    if (!event.composedPath().includes(this)) this._setPinned(false);
-  };
-
-  private _onDocumentKeydown = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape') return;
-    // Let a pinned ⓘ inside the panel take Escape first; it closes on its own keydown handler
-    // and stopping here would leave the user pressing Escape twice with nothing happening.
+  /**
+   * Escape or a press outside the card. Focus goes back to the trigger only when it was in the
+   * card: a press outside leaves it on what the user pressed.
+   */
+  private _closeFromLayer(): void {
+    const focusWasInside = this.shadowRoot?.activeElement != null;
     this._setPinned(false);
-    (this.shadowRoot?.querySelector('.trigger') as HTMLElement | null)?.focus();
-  };
+    if (focusWasInside) {
+      (this.shadowRoot?.querySelector('.trigger') as HTMLElement | null)?.focus();
+    }
+  }
 
   render() {
-    const { parameters, quality, qualityScope } = this._splitMetadata();
+    const { parameters, quality, qualityScope } = splitMetadata(this.projection?.metadata);
     // `stats`: validity scored for this exact projection, so it is scoped by the panel it sits
     // in. `agreement` (below) is deliberately not scoped that way: ARI/NMI describe the
     // clustering itself, not whichever projection the panel happens to be open on, and the
@@ -286,23 +290,19 @@ class ProtspaceProjectionMetadata extends LitElement {
         aria-expanded=${this._pinned}
         aria-describedby="projection-metadata-content"
         @click=${() => this._setPinned(!this._pinned)}
+        @focus=${this._onTriggerFocus}
+        @blur=${this._onTriggerBlur}
       >
-        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M7 14v4" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M11 10v8" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15 6v12" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19 8v10" />
-        </svg>
+        ${icon('info', 16)}
       </button>
 
       <div
-        class="content ${this._pinned ? 'is-pinned' : ''}"
+        class="content ${this._pinned ? 'is-pinned' : ''} ${this._open ? 'is-open' : ''}"
         id="projection-metadata-content"
         role="tooltip"
-        data-info-popover-boundary
+        popover="manual"
       >
-        <!-- The projection's own name, which the panel never showed: _splitMetadata skips
+        <!-- The projection's own name, which the panel never showed: splitMetadata skips
              the "name" key, so a card describing one projection out of several did not say
              which. It also replaces the second header bar the stats block used to print
              (the annotation name), which duplicated the legend panel's own title and made
@@ -400,7 +400,10 @@ class ProtspaceProjectionMetadata extends LitElement {
                 <span
                   >Separation, scored on
                   <span class="stat-annotation-chip"
-                    >${annotationLabel(this.selectedAnnotation)}</span
+                    >${annotationLabel(
+                      this.selectedAnnotation,
+                      this.annotationDefinitions[this.selectedAnnotation],
+                    )}</span
                   ></span
                 >
                 <protspace-info-popover
@@ -513,7 +516,10 @@ class ProtspaceProjectionMetadata extends LitElement {
       <div class="stat-metric">
         <span class="stat-metric-label">
           <span class="stat-metric-name"
-            >${annotationLabel(entry.annotation)}${entry.categories === null
+            >${annotationLabel(
+              entry.annotation,
+              this.annotationDefinitions[entry.annotation],
+            )}${entry.categories === null
               ? nothing
               : html`<span class="recovers-meta"> · ${entry.categories} cat</span>`}</span
           >
@@ -529,8 +535,11 @@ class ProtspaceProjectionMetadata extends LitElement {
              coverage reads identically to a high number on all of it. -->
         ${entry.scored !== null && entry.scored !== this._recoversPopulation
           ? html`<span class="recovers-coverage"
-              >${entry.scored.toLocaleString()} of
-              ${this._recoversPopulation?.toLocaleString() ?? 'the dataset'} scored</span
+              >${formatCount(entry.scored)} of
+              ${this._recoversPopulation === null
+                ? 'the dataset'
+                : formatCount(this._recoversPopulation)}
+              scored</span
             >`
           : nothing}
       </div>
@@ -594,216 +603,19 @@ class ProtspaceProjectionMetadata extends LitElement {
       // K. Saying "categories" there hid that, and left K unstated in the one section whose
       // numbers are about the clusters themselves.
       const isClustering = isAutoClusterColumnName(this.selectedAnnotation);
-      const noun = isClustering
-        ? categories === 1
-          ? 'cluster'
-          : 'clusters'
-        : categories === 1
-          ? 'category'
-          : 'categories';
-      parts.push(`${categories} ${noun}`);
+      parts.push(
+        isClustering
+          ? countNoun(categories, 'cluster', 'clusters')
+          : countNoun(categories, 'category', 'categories'),
+      );
     }
     if (scored !== null) {
-      parts.push(`${scored.toLocaleString()} ${scored === 1 ? 'protein' : 'proteins'} scored`);
+      parts.push(`${countNoun(scored, 'protein', 'proteins')} scored`);
     }
     // Deliberately NOT "full dataset" here. That is true of the faithfulness numbers too —
     // both blocks are computed once at prepare time and neither recomputes on a filter — so
     // stating it per section would repeat it. It is a card-level footer instead.
     return parts.join(' · ');
-  }
-
-  /**
-   * Reduction parameters and projection quality, kept apart. They answer different
-   * questions: the parameters are what was asked for, the quality is what came out, and
-   * a single flat list invites reading `n_neighbors` and `trustworthiness` as peers.
-   */
-  private _splitMetadata(): {
-    parameters: MetadataRow[];
-    quality: MetadataRow[];
-    /** One line under the faithfulness heading saying what it was computed over. */
-    qualityScope: string;
-  } {
-    if (!this.projection?.metadata) return { parameters: [], quality: [], qualityScope: '' };
-
-    const rawMetadata = this.projection.metadata;
-    const parameterEntries: Array<[string, unknown]> = [];
-    const qualityEntries: QualityEntry[] = [];
-
-    for (const [key, value] of Object.entries(rawMetadata)) {
-      const lowerKey = key.toLowerCase();
-      if (lowerKey === 'dimension' || lowerKey === 'dimensions' || lowerKey === 'name') {
-        continue;
-      }
-
-      if (this._isJsonField(lowerKey) && typeof value === 'string') {
-        const parsed = this._tryParseJson(value);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          for (const [innerKey, innerValue] of Object.entries(parsed)) {
-            if (
-              innerKey.toLowerCase() === 'quality' &&
-              !!innerValue &&
-              typeof innerValue === 'object' &&
-              !Array.isArray(innerValue)
-            ) {
-              qualityEntries.push(...this._qualityEntries(innerValue as Record<string, unknown>));
-            } else {
-              parameterEntries.push([innerKey, innerValue]);
-            }
-          }
-          continue;
-        }
-      }
-
-      if (lowerKey === 'quality' && !!value && typeof value === 'object' && !Array.isArray(value)) {
-        qualityEntries.push(...this._qualityEntries(value as Record<string, unknown>));
-        continue;
-      }
-
-      parameterEntries.push([key, value]);
-    }
-
-    const parameters: MetadataRow[] = parameterEntries.map(([key, value]) => ({
-      label: this._formatMetadataKey(key),
-      value: this._formatMetadataValue(value, key),
-      // Reduction parameters are the reducer's own knobs, documented by the reducer; only
-      // the metrics below have a registry entry to explain them.
-      description: '',
-    }));
-
-    const quality: MetadataRow[] = qualityEntries.map(({ metric, scope, value }) => {
-      const display = metricDisplay(metric);
-      // A description is exactly what "the registry knows this metric" means, so it also
-      // decides whether the registry's spelling ("kNN Overlap") beats the prettified key.
-      const known = display.description.length > 0;
-      return {
-        // The scope is a group heading now, not a suffix on every row. "(local)" / "(global)"
-        // on each of five labels cost more width than the panel has — "Spearman Distance
-        // (global) ⓘ" pushed its own value onto a second line.
-        label: known ? display.label : this._formatMetadataKey(metric),
-        // These are statistics, so they follow `formatStatValue` like every other score in
-        // the app rather than the generic metadata formatter's own rounding — which is still
-        // right for reduction parameters, and still handles the `value: null` a skipped
-        // metric is written as.
-        value:
-          typeof value === 'number' && Number.isFinite(value)
-            ? formatStatValue(value)
-            : this._formatMetadataValue(value, metric),
-        description: display.description,
-        scope,
-      };
-    });
-
-    return { parameters, quality, qualityScope: this._qualityScopeLine(qualityEntries) };
-  }
-
-  /**
-   * One entry per faithfulness metric, tagged with its scope ("local" neighbourhoods vs "global"
-   * layout). The shared provenance each metric carries (k, seed, sampling, source embedding) is
-   * dropped: it repeats per metric and would bury the five numbers worth reading.
-   */
-  private _qualityEntries(quality: Record<string, unknown>): QualityEntry[] {
-    return Object.entries(quality).map(([metric, entry]): QualityEntry => {
-      if (!entry || typeof entry !== 'object' || !('value' in entry)) {
-        return { metric, scope: null, value: entry, sampleSize: null, sampled: false };
-      }
-      const {
-        value,
-        scope,
-        sample_size: sampleSize,
-        sampled,
-      } = entry as {
-        value: unknown;
-        scope?: unknown;
-        sample_size?: unknown;
-        sampled?: unknown;
-      };
-      return {
-        metric,
-        scope: typeof scope === 'string' ? scope : null,
-        value,
-        sampleSize:
-          typeof sampleSize === 'number' && Number.isFinite(sampleSize) ? sampleSize : null,
-        sampled: sampled === true,
-      };
-    });
-  }
-
-  /**
-   * What the faithfulness numbers were computed over, which the panel dropped entirely: the
-   * provenance repeats identically on every metric, so it belongs once under the section
-   * rather than on each row. `sampled` is the part that matters — above a threshold the
-   * backend compares a subsample, and nothing said so.
-   */
-  private _qualityScopeLine(entries: QualityEntry[]): string {
-    const withSize = entries.find((entry) => entry.sampleSize !== null);
-    if (!withSize) return '';
-    const proteins = `${withSize.sampleSize!.toLocaleString()} proteins compared`;
-    return entries.some((entry) => entry.sampled) ? `${proteins} · subsampled` : proteins;
-  }
-
-  /**
-   * Check if a key indicates a JSON field
-   */
-  private _isJsonField(key: string): boolean {
-    return key === 'info' || key === 'info_json' || key.includes('json');
-  }
-
-  /**
-   * Safely parse JSON string
-   */
-  private _tryParseJson(value: string): unknown {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Format metadata key to Title Case
-   */
-  private _formatMetadataKey(key: string): string {
-    return key
-      .replace(/_/g, ' ')
-      .replace(/([A-Z])/g, ' $1')
-      .split(' ')
-      .filter((word) => word.length > 0)
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  }
-
-  /**
-   * Format metadata value with appropriate precision
-   */
-  private _formatMetadataValue(value: unknown, key: string): string {
-    if (value == null) return NA_DISPLAY;
-
-    const lowerKey = key.toLowerCase();
-    const isVarianceRatio =
-      lowerKey.includes('explained_variance') || lowerKey.includes('variance_ratio');
-
-    if (Array.isArray(value)) {
-      return value.map((item) => this._formatSingleValue(item, isVarianceRatio)).join(', ');
-    }
-
-    return this._formatSingleValue(value, isVarianceRatio);
-  }
-
-  /**
-   * Format a single metadata value
-   */
-  private _formatSingleValue(value: unknown, isVarianceRatio: boolean): string {
-    if (typeof value === 'number') {
-      if (Number.isInteger(value)) return value.toString();
-      return value.toFixed(isVarianceRatio ? 2 : 3);
-    }
-    if (typeof value === 'boolean') {
-      return value ? 'Yes' : 'No';
-    }
-    if (typeof value === 'object' && value !== null) {
-      return JSON.stringify(value);
-    }
-    return String(value);
   }
 }
 

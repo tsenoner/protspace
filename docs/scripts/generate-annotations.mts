@@ -45,7 +45,7 @@ const SOURCE_HEADINGS: Record<AnnotationSource, string> = {
 // Fallback one-liners used only when `annotation-details.ts` has no expanded intro for a source.
 const SOURCE_BLURB: Record<AnnotationSource, string> = {
   Biocentral:
-    'Machine-learning predictions (not experimentally curated). Marked with a ⚡ Predicted badge in the app.',
+    'Machine-learning predictions (not experimentally curated). Marked with a PRED badge in the app.',
   UniProt: 'Curated annotations from the UniProt knowledgebase.',
   InterPro: 'Signature-database matches aggregated by InterPro.',
   Taxonomy: 'Taxonomic lineage of the source organism.',
@@ -105,7 +105,9 @@ function build(): string {
       'note these encoding rules:',
   );
   lines.push('');
-  lines.push('- **Reserved characters** (`%`, `;`, `|`, control chars) are percent-encoded as `%XX` (uppercase hex)');
+  lines.push(
+    '- **Reserved characters** (`%`, `;`, `|`, control chars) are percent-encoded as `%XX` (uppercase hex)',
+  );
   lines.push('  - `%` → `%25` (for names/labels containing percent signs)');
   lines.push('  - `;` → `%3B` (field separator)');
   lines.push('  - `|` → `%7C` (score/evidence separator)');
@@ -131,7 +133,7 @@ function build(): string {
   lines.push(
     'ProtSpace annotations come from several sources. **Computational predictions**, from a ' +
       'machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius ' +
-      '`signal_peptide`, and TED), are flagged with a ⚡ Predicted badge in the app; reference ' +
+      '`signal_peptide`, and TED), are flagged with a PRED badge in the app; reference ' +
       'signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) ' +
       'are not. For each annotation, the **bold lead line** is the same short summary shown in the ' +
       "app's info popover, and the paragraph beneath it is a fuller explanation of what the value " +
@@ -159,7 +161,7 @@ function build(): string {
       // not match the `#<column>` anchors stored in the registry's `docsUrl`.
       lines.push(`### \`${column}\` {#${column}}`);
       lines.push('');
-      lines.push(`**${meta.label}**${meta.isPredicted ? ' · ⚡ Predicted' : ''}`);
+      lines.push(`**${meta.label}**${meta.isPredicted ? ' · PRED' : ''}`);
       lines.push('');
       lines.push(meta.description);
       lines.push('');

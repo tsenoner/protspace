@@ -74,6 +74,12 @@ export function normalizeShapeName(shape: string | null | undefined): PointShape
 // ============================================================================
 
 /**
+ * Half-width of the plus's arms, as a share of the marker's half-size. Shared with the WebGL
+ * shader. Wide enough that a hollow (EAT) plus keeps a hole inside its ring at the default size.
+ */
+export const PLUS_ARM_RATIO = 0.42;
+
+/**
  * Custom SVG path generators that match WebGL shader geometry exactly.
  * These replicate the fragment shader math from webgl-renderer.ts for visual consistency.
  *
@@ -100,9 +106,8 @@ export const SHAPE_PATH_GENERATORS: Record<string, (size: number) => string> = {
   },
 
   plus: (size: number) => {
-    // Match WebGL: thickness = 0.35 (relative to -1..1 range)
     const s = size / 2;
-    const t = s * 0.35; // arm thickness matches shader
+    const t = s * PLUS_ARM_RATIO; // the shader's arm half-width
     return `M ${-t},${-s} L ${t},${-s} L ${t},${-t} L ${s},${-t} L ${s},${t} L ${t},${t} L ${t},${s} L ${-t},${s} L ${-t},${t} L ${-s},${t} L ${-s},${-t} L ${-t},${-t} Z`;
   },
 

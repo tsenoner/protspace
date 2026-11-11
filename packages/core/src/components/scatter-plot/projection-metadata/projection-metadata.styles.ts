@@ -1,95 +1,74 @@
 import { css } from 'lit';
-import { srOnlyMixin } from '../../../styles/mixins';
+import { srOnly } from '../../kit/kit-shared.styles';
 
 export const projectionMetadataStyles = [
-  srOnlyMixin,
+  srOnly,
   css`
     :host {
-      position: absolute;
-      top: 0.5rem;
-      left: 0.5rem;
-      z-index: 10;
-
-      /* protspace-info-popover is shared with the legend and themes itself from these two
-         hooks, defaulting to a neutral grey (#6b7280). This panel is built on the cool slate
-         ramp below, so an unthemed info icon sat a whole hue family away from the label
-         beside it. Set them here rather than restyling the popover: the component already
-         exposes the seam, and the legend keeps its own values. */
-      --legend-text-secondary: #64748b;
-      --legend-text-color: var(--text-primary);
+      /* Placed by its host (the plot corner). The open card is in the top layer, above
+         everything, so the host needs no z-index of its own. */
+      position: relative;
+      display: inline-flex;
 
       /* Gap between the trigger and the card. Read by the card's top offset and by the
-         invisible hover bridge that spans it, which previously had to be kept in step by
-         hand. _updateMaxHeight() no longer restates it at all: it measures the card's
-         real offset instead. */
+         invisible hover bridge that spans it. */
       --card-gap: 0.5rem;
     }
 
+    /* The kit's ghost icon-button look (ps-icon-button size sm). */
     .trigger {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 2rem;
-      height: 2rem;
+      width: var(--ps-control-sm);
+      height: var(--ps-control-sm);
       padding: 0;
-      background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
-      border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
-      border-radius: 0.375rem;
+      border: 1px solid transparent;
+      border-radius: var(--ps-radius);
+      background: transparent;
+      color: var(--ps-text-muted);
       cursor: pointer;
-      box-shadow: var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08));
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      transition:
+        background-color var(--ps-duration-fast) var(--ps-ease),
+        color var(--ps-duration-fast) var(--ps-ease);
     }
 
-    .trigger:hover {
-      background: rgba(255, 255, 255, 1);
-      border-color: var(--protspace-highlight-color, #00a3e0);
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-      transform: scale(1.05);
+    @media (pointer: coarse) {
+      .trigger {
+        width: var(--ps-touch-target);
+        height: var(--ps-touch-target);
+      }
+    }
+
+    .trigger:hover,
+    .trigger[aria-expanded='true'] {
+      background: var(--ps-surface-hover);
+      color: var(--ps-text);
     }
 
     .trigger:focus-visible {
-      outline: 2px solid var(--primary-alpha-30);
-      outline-offset: 2px;
+      outline: var(--ps-focus-width) solid var(--ps-focus);
+      outline-offset: var(--ps-focus-offset);
     }
 
-    .trigger .icon {
-      width: 1rem;
-      height: 1rem;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 1.5;
-      color: #475569;
-      transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .trigger:hover .icon,
-    .trigger:focus-visible .icon {
-      color: var(--protspace-highlight-color, #00a3e0);
-    }
-
+    /* A top-layer panel (popover="manual"), so nothing on the page paints over it. anchorTo
+       (kit/position.ts) sets top and left below the button, inside the component's boundary,
+       and publishes the room left there as --available-height. The fallbacks are for a
+       browser without the top layer, where the card stays at its place in the flow. */
     .content {
-      position: absolute;
-      top: calc(100% + var(--card-gap));
-      left: 0;
-      /* An explicit width, because max-width never applied. :host is position:absolute with
-         no width, so it shrink-to-fits around the 32px trigger; this box then shrink-to-fits
-         inside that, resolves below the floor, and min-width wins — measured in Chrome at
-         242-258px, never the 320px the max-width implies. That is what squeezed the
-         metric-name column and forced Calinski-Harabasz onto two lines. */
-      width: 20rem;
+      position: fixed;
+      inset: auto;
+      margin: 0;
+      padding: 0;
+      color: inherit;
+      /* An explicit width: as a shrink-to-fit box the card resolved below its floor and
+         squeezed the metric-name column (Calinski-Harabasz went onto two lines). */
+      width: min(20rem, calc(100vw - 16px));
       min-width: 15rem;
       max-width: 20rem;
-      /* The card runs ~700px tall, ~1030px for a cluster column, from a 48px top offset —
-         and the scatter-plot host is overflow:hidden (scatter-plot.styles.ts), so the
-         overrun was hard-clipped and unreachable rather than merely spilling. The clipped
-         region was the annotation-stats block: exactly what the dropdown's STATS badge
-         sends people here to read. Safe for the side-placed info popovers, which are
-         position:fixed and anchor to this element via data-info-popover-boundary. */
-      /* Fallback only. The real cap is measured and set inline by _updateMaxHeight(), because
-         the binding constraint is the scatter-plot host's height, not the viewport's: the plot
-         starts partway down the page (209px measured at 1102px tall), so a viewport rule
-         over-allocates by exactly that much and the tallest cards get clipped again. */
-      max-height: calc(100vh - 8rem);
+      /* The card runs ~700px tall, ~1030px for a cluster column: capped at the room left
+         below the button in its region, it scrolls rather than spill onto the legend. */
+      max-height: var(--available-height, calc(100vh - 8rem));
       overflow-y: auto;
       overscroll-behavior: contain;
       /* Reserve the scrollbar's width up front. Without it the bar is laid over the content
@@ -97,22 +76,55 @@ export const projectionMetadataStyles = [
          lost their last characters. Stable also means the layout does not shift by ~15px at
          the moment a section appears and tips the card into scrolling. */
       scrollbar-gutter: stable;
-      background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
-      border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
+      background: var(--ps-surface-raised);
+      border: 1px solid var(--ps-border);
       border-radius: 0.5rem;
-      box-shadow:
-        var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08)),
-        0 10px 40px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--ps-shadow-md);
       pointer-events: none;
       opacity: 0;
       visibility: hidden;
-      /* Deliberately NOT animated with a transform. Any non-none transform makes this element
-         the containing block for position:fixed descendants, which is how the side-placed
-         info popovers escape the card to sit beside it — a slide-in here would silently
-         anchor them to this box instead of the viewport. Fade only. */
+      /* Fade only. */
       transition:
         opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
         visibility 0.2s;
+    }
+
+    /* An always-visible scrollbar. macOS draws a scrollbar as an overlay that only appears
+       while scrolling, so a card cut off by its region gave no sign of more below. The
+       ::-webkit-scrollbar pseudo-elements (Chromium, Safari) replace it with a classic bar that
+       takes layout space, and only exists while the card overflows. That also makes the bar
+       itself the reserved gutter scrollbar-gutter asks for above. The thumb carries a
+       transparent border clipped by background-clip so it reads as a slim pill inside the track.
+       The standard scrollbar-width / scrollbar-color are NOT set here: in Chromium 121+ they
+       switch these pseudo-elements off, so Firefox, which only knows the standard pair, gets
+       them in the @supports block below. */
+    .content::-webkit-scrollbar {
+      width: 0.75rem;
+      height: 0.75rem;
+    }
+
+    .content::-webkit-scrollbar-track {
+      background: var(--ps-surface-muted);
+      border-left: 1px solid var(--ps-border);
+    }
+
+    .content::-webkit-scrollbar-thumb {
+      min-height: 2rem;
+      border: 3px solid transparent;
+      border-radius: var(--ps-radius-full);
+      background-color: var(--ps-text-faint);
+      background-clip: padding-box;
+    }
+
+    .content::-webkit-scrollbar-thumb:hover {
+      background-color: var(--ps-text-muted);
+    }
+
+    @supports not selector(::-webkit-scrollbar) {
+      .content {
+        scrollbar-width: thin;
+        scrollbar-color: var(--ps-text-faint) var(--ps-surface-muted);
+      }
     }
 
     /* Invisible bridge that covers the gap between trigger and popover so
@@ -127,21 +139,28 @@ export const projectionMetadataStyles = [
       height: var(--card-gap);
     }
 
-    :host(:hover) .content,
-    .content.is-pinned,
-    .trigger:focus-visible + .content {
+    /* Open while pinned, hovered (a pointer that can hover only: after a tap a touch screen
+       keeps :hover on the button) or focused from the keyboard; the component decides. */
+    .content.is-open {
       pointer-events: auto;
       opacity: 1;
       visibility: visible;
     }
 
+    /* Fades in from the moment the top layer shows it. */
+    @starting-style {
+      .content.is-open {
+        opacity: 0;
+      }
+    }
+
     .header {
       padding: 0.625rem 0.75rem;
-      font-size: 0.8125rem;
-      font-weight: 600;
-      color: var(--text-primary);
-      border-bottom: 1px solid #e2e8f0;
-      background: #f8fafc;
+      font-size: var(--ps-text-base);
+      font-weight: var(--ps-weight-semibold);
+      color: var(--ps-text);
+      border-bottom: 1px solid var(--ps-border);
+      background: var(--ps-surface-muted);
       border-radius: 0.5rem 0.5rem 0 0;
     }
 
@@ -158,7 +177,7 @@ export const projectionMetadataStyles = [
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 0.75rem;
       margin-bottom: 0.5rem;
-      font-size: 0.75rem;
+      font-size: var(--ps-text-sm);
       line-height: 1.5;
       align-items: baseline;
     }
@@ -175,7 +194,7 @@ export const projectionMetadataStyles = [
       gap: 0.25rem;
       min-width: 0;
       font-weight: 500;
-      color: #475569;
+      color: var(--ps-text-muted);
     }
 
     .item-label {
@@ -184,7 +203,7 @@ export const projectionMetadataStyles = [
 
     dd {
       margin: 0;
-      color: #64748b;
+      color: var(--ps-text-muted);
       text-align: right;
       /* Never break a number across lines. */
       white-space: nowrap;
@@ -197,8 +216,8 @@ export const projectionMetadataStyles = [
     .scope-heading,
     .section-scope,
     .card-scope {
-      color: var(--text-muted);
-      font-size: var(--text-caption);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
       line-height: 1.35;
     }
 
@@ -234,9 +253,9 @@ export const projectionMetadataStyles = [
       grid-template-columns: minmax(min-content, 1fr) auto auto;
       gap: 0.15rem 0.5rem;
       padding: 0.625rem 0.75rem;
-      font-size: 0.75rem;
+      font-size: var(--ps-text-sm);
       line-height: 1.5;
-      color: #475569;
+      color: var(--ps-text-muted);
     }
 
     .stat-heading,
@@ -251,7 +270,7 @@ export const projectionMetadataStyles = [
       gap: 0.25rem;
       margin-top: 0.35rem;
       font-weight: 500;
-      color: var(--text-primary);
+      color: var(--ps-text);
       overflow-wrap: anywhere;
     }
 
@@ -265,16 +284,16 @@ export const projectionMetadataStyles = [
       display: inline-block;
       padding: 0.05rem 0.3rem;
       border-radius: 0.25rem;
-      background: #eef2f7;
-      color: var(--text-primary);
+      background: var(--ps-surface-hover);
+      color: var(--ps-text);
       font-weight: 600;
       overflow-wrap: anywhere;
     }
 
     .stat-group-label,
     .stat-caveat {
-      color: var(--text-muted);
-      font-size: var(--text-caption);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
     }
 
     .stat-group-label {
@@ -294,7 +313,7 @@ export const projectionMetadataStyles = [
      thing sizing this track, but the heading is one word now, so a 4.5rem floor would start
      binding and take the width straight back off the metric-name column. */
     .stat-metric-embedding {
-      color: var(--text-muted);
+      color: var(--ps-text-muted);
     }
 
     /* Same reason as the dt rule above: as an inline element the ⓘ was pushed onto its own line
@@ -319,15 +338,15 @@ export const projectionMetadataStyles = [
     /* The category count, inside the name cell rather than a fourth column: it must be able to
        wrap under a long annotation name instead of squeezing the numbers. */
     .recovers-meta {
-      color: var(--panel-text-muted, #94a3b8);
+      color: var(--ps-text-muted);
     }
 
     /* Coverage, on its own line under the row it qualifies, spanning the full grid. */
     .recovers-coverage {
       grid-column: 1 / -1;
       padding-left: 0.6rem;
-      color: var(--panel-text-muted, #94a3b8);
-      font-size: var(--text-caption, 0.6875rem);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
     }
 
     .recovers-more {
@@ -337,9 +356,9 @@ export const projectionMetadataStyles = [
       padding: 0;
       border: none;
       background: none;
-      color: var(--protspace-highlight-color, #00a3e0);
+      color: var(--ps-accent-text);
       font: inherit;
-      font-size: var(--text-caption, 0.6875rem);
+      font-size: var(--ps-text-xs);
       cursor: pointer;
     }
 
@@ -381,16 +400,16 @@ export const projectionMetadataStyles = [
 
     .stat-direction {
       margin-left: 0.15rem;
-      color: var(--text-muted);
+      color: var(--ps-text-muted);
     }
 
     .section-heading {
       padding: 0 0.75rem;
-      font-size: var(--text-caption);
+      font-size: var(--ps-text-xs);
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      color: var(--text-secondary);
+      color: var(--ps-text-muted);
       margin-top: 0.625rem;
       margin-bottom: 0.25rem;
     }
@@ -404,8 +423,8 @@ export const projectionMetadataStyles = [
     }
 
     .stat-columns span {
-      font-size: var(--text-caption);
-      color: var(--text-secondary);
+      font-size: var(--ps-text-xs);
+      color: var(--ps-text-muted);
     }
 
     .stat-columns span:not(:first-child) {

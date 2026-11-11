@@ -48,6 +48,21 @@ jobs:
       - name: Run quality checks
         run: pnpm quality:ci
 
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      # Same key as e2e.yml, so each workflow restores the browser the others cached.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-shell-${{ steps.pw.outputs.version }}
+
+      - name: Install Chromium for the core browser tests
+        timeout-minutes: 5
+        run: pnpm exec playwright install --only-shell chromium
+
       - name: Run test suite
         run: pnpm test:ci
 
@@ -93,6 +108,12 @@ jobs:
 
       - name: Check generated example datasets page
         run: pnpm docs:examples:check
+
+      # The pre-commit hook runs it too, but a commit made with --no-verify or from the web
+      # editor skips the hook: every image on disk from the capture manifest, within budget and
+      # shown by its pages; the light/dark pairs, #anchor links and user-guide wording.
+      - name: Check docs images against the capture manifest
+        run: pnpm docs:images:check
 
       - name: Build documentation
         run: pnpm docs:build

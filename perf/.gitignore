@@ -179,3 +179,7 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
 
+
+# Timing-mode output (perf/perf.mjs) and per-machine baselines
+/results/
+/baselines/*.local.json

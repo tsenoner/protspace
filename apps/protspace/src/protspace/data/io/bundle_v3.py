@@ -31,7 +31,7 @@ guessing its grammar; a caller that holds v1 cells migrates them first
 :func:`~protspace.data.annotations.encoding.upgrade_cell_grammar`).
 
 The classification rules below intentionally mirror the browser's v2 reader
-(``packages/core/src/components/data-loader/utils/conversion.ts``) so a v3
+(``packages/core/src/components/data-loader/legacy/conversion.ts``) so a v3
 bundle and its v2 equivalent produce identical colours, code order and legend
 entries.  Deviations are documented on the constants they come from.
 """

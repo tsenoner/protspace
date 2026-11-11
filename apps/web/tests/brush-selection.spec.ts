@@ -80,7 +80,7 @@ async function brushSelect(
       if (!plot) return { brushCreated: false, selectionMode: false };
 
       const selectionMode = !!plot.selectionMode;
-      // B8/F-07: brush + brushGroup moved into PlotInteractionController.
+      // brush + brushGroup moved into PlotInteractionController.
       const brushGroup = plot._interaction?._brushGroup;
       const brush = plot._interaction?._brush;
       const brushCreated = !!brush;
@@ -130,7 +130,7 @@ async function setZoomTransform(page: Page, k: number, tx: number, ty: number): 
   await page.evaluate(
     ({ k, tx, ty }) => {
       const plot = document.querySelector('#myPlot') as any;
-      // B8/F-07: zoom behavior + svg selection moved into PlotInteractionController.
+      // zoom behavior + svg selection moved into PlotInteractionController.
       const ix = plot?._interaction;
       if (!ix?._svgSelection || !ix._zoom) return;
 

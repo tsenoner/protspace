@@ -1,16 +1,13 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { test, expect } from '@playwright/test';
-import {
-  dismissTourIfPresent,
-  waitForExploreDataLoad,
-  getFirstLegendItemValue,
-} from './helpers/explore';
+import { dismissTourIfPresent, openImportMenu, waitForExploreDataLoad } from './helpers/explore';
 import {
   distinctCanvasColors,
   simulateTextureLimit,
   simulatedGlStats,
 } from './helpers/gl-simulation';
+import { getFirstLegendItemValue } from './helpers/legend';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 // The Swiss-Prot bundle from the perf-datasets release, fetched by
@@ -56,10 +53,7 @@ test.describe('large bundle load (Swiss-Prot, 573k proteins)', () => {
     await dismissTourIfPresent(page);
 
     // Open the import menu and set the file via the file input inside the data loader.
-    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
-    await expect(
-      page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]'),
-    ).toBeVisible();
+    await openImportMenu(page);
 
     await page
       .locator('protspace-data-loader')
@@ -215,7 +209,7 @@ test.describe('label atlas at Swiss-Prot scale on a floor-limit device', () => {
     await page.goto('/explore');
     await dismissTourIfPresent(page);
 
-    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
+    await openImportMenu(page);
     await page
       .locator('protspace-data-loader')
       .locator('input[type="file"]')

@@ -5,13 +5,14 @@ const mockedToast = vi.hoisted(() => ({
   info: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
+  dismiss: vi.fn(),
 }));
 
 vi.mock('../components/ui/sonner', () => ({
   toast: mockedToast,
 }));
 
-import { notify, resetNotifyStateForTests } from './notify';
+import { notify, resetNotifyStateForTests, setNotifyTarget } from './notify';
 
 describe('notify', () => {
   afterEach(() => {
@@ -107,5 +108,54 @@ describe('notify', () => {
 
     const [, payload] = mockedToast.success.mock.calls[0];
     expect(payload).not.toHaveProperty('action');
+  });
+  it('returns the toast id; undefined when deduped', () => {
+    mockedToast.info.mockReturnValueOnce(7);
+
+    expect(notify.info({ title: 'Saved.', dedupeKey: 'saved' })).toBe(7);
+    expect(notify.info({ title: 'Saved.', dedupeKey: 'saved' })).toBeUndefined();
+    expect(mockedToast.info).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismiss forwards to toast.dismiss', () => {
+    notify.dismiss('toast-3');
+    expect(mockedToast.dismiss).toHaveBeenCalledWith('toast-3');
+  });
+
+  it('setNotifyTarget routes toasts to that toaster id and null stops it', () => {
+    setNotifyTarget('workbench');
+    notify.warning({ title: 'Selection mode disabled.' });
+    expect(mockedToast.warning.mock.calls[0][1]).toMatchObject({ toasterId: 'workbench' });
+
+    setNotifyTarget(null);
+    notify.warning({ title: 'Selection mode disabled.' });
+    expect(mockedToast.warning.mock.calls[1][1]).not.toHaveProperty('toasterId');
+  });
+
+  it('undoable runs onUndo once and dismisses', () => {
+    mockedToast.info.mockReturnValueOnce('undo-1');
+    const onUndo = vi.fn();
+
+    const handle = notify.undoable({ title: 'Filter removed', onUndo });
+
+    const [title, payload] = mockedToast.info.mock.calls[0];
+    expect(title).toBe('Filter removed');
+    expect(payload).toMatchObject({ duration: 8_000, action: { label: 'Undo' } });
+    payload.action.onClick();
+    payload.action.onClick();
+    expect(onUndo).toHaveBeenCalledTimes(1);
+
+    handle.dismiss();
+    expect(mockedToast.dismiss).toHaveBeenCalledWith('undo-1');
+  });
+
+  it('undoable calls onClose on dismiss and on auto-close', () => {
+    const onClose = vi.fn();
+    notify.undoable({ title: 'Filter removed', onUndo: vi.fn(), onClose });
+
+    const [, payload] = mockedToast.info.mock.calls[0];
+    payload.onDismiss();
+    payload.onAutoClose();
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 });

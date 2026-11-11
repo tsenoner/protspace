@@ -78,6 +78,26 @@
       })(window.location);
     </script>
     <!-- End Single Page Apps for GitHub Pages -->
+
+    <!-- The site's theme before first paint (design decision 16): vite.config.ts injects
+         config/theme.ts's THEME_BOOT_SCRIPT, which the docs run too, at the end of <head>, after
+         the redirect above. theme-boot.test.ts pins this style's colour to tokens.css. -->
+    <style data-theme-boot>
+      /* The dark surface until the stylesheet loads. Unlayered, so it beats the landing's
+         @layer base body; #0f172a is dark --ps-surface. */
+      :root[data-theme='dark'],
+      :root[data-theme='dark'] body {
+        color-scheme: dark;
+        background: #0f172a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root[data-theme='system'],
+        :root[data-theme='system'] body {
+          color-scheme: dark;
+          background: #0f172a;
+        }
+      }
+    </style>
   </head>
 
   <body>

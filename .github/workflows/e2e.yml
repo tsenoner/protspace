@@ -57,18 +57,20 @@ jobs:
   #
   # Split across parallel shards. The suite is CPU-bound (SwiftShader WebGL), and 2 workers is
   # the most a 4-vCPU runner takes: 3 workers made every test ~35% slower (PR #423). More
-  # runners is what scales. Shards split by test count; at two, both carry about the same
-  # test time. Add a shard when one runs past ~5 min.
+  # runners is what scales. Shards split by test count, not time, and the tests at the end of
+  # the list (the mobile project) are the slowest per test, so the last shard carries ~1.2x
+  # the mean test time. At two shards each ran ~10 min. Add a shard when the slowest runs
+  # past ~7 min.
   e2e-chromium:
     name: E2E Tests (Chromium ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-26.04
-    # A normal shard is 4-6 min. Without this the default is 360 min.
+    # A normal shard is 5-7 min. Without this the default is 360 min.
     timeout-minutes: 20
     strategy:
       # Let every shard finish, so one red run reports all its failures.
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -122,9 +124,9 @@ jobs:
       - name: Runner hardware
         run: nproc && lscpu | grep 'Model name'
 
-      # Only the packages the dev server resolves through node_modules. The tests are served
-      # by `pnpm dev:app` (a Vite dev server, see webServer in playwright.config.ts), so
-      # `@protspace/app#build` produced an 89MB bundle nothing here reads.
+      # Only the packages the app resolves through node_modules. The web server in
+      # playwright.config.ts builds the app itself (a development-mode build that pins the startup
+      # fixture) and serves it with `vite preview`, so `@protspace/app#build` would go unused.
       - name: Build workspace packages
         run: pnpm build --filter=@protspace/core --filter=@protspace/utils
 
@@ -132,6 +134,19 @@ jobs:
         run: pnpm test:e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
           E2E_BROWSERS: chromium
+
+      # The counts gate runs alone, on its own server (perf/README.md), on one shard only. Its own
+      # output and report folders keep it from overwriting the e2e run's. Its import-no-settings
+      # segment imports phosphatase, a dataset of the public perf-datasets release.
+      - name: Fetch the perf counts dataset
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        run: pnpm perf:fetch --only phosphatase
+
+      - name: Run perf counts
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: apps/web/playwright-report/perf-counts
+        run: pnpm perf:counts --output=apps/web/test-results/perf-counts
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}

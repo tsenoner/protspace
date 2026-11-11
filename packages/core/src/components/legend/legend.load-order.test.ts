@@ -1,0 +1,137 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getProteinAnnotationIndices, type VisualizationData } from '@protspace/utils';
+import type { OtherItem } from './types';
+import { getVisualEncoding } from './visual-encoding';
+import {
+  mountLegendWithScatterplot,
+  settleLegend,
+} from './test-support/legend-scatterplot-harness';
+import { createLocalStorageMock } from './test-support/local-storage-mock';
+
+vi.stubGlobal('localStorage', createLocalStorageMock());
+
+// Twelve families of two proteins each, two more than get a row. Storage lists them A to L
+// and the proteins meet them L to A, so the order of the tie picks the rows.
+const FAMILIES = [...'ABCDEFGHIJKL'];
+
+function makeData(): VisualizationData {
+  const met = FAMILIES.map((_, code) => code).reverse();
+  const codes = Int32Array.from([...met, ...met]);
+  return {
+    protein_ids: Array.from(codes, (_, i) => `p${i}`),
+    projections: [{ name: 'UMAP 2', dimension: 2, data: new Float32Array(codes.length * 2) }],
+    annotations: {
+      family: {
+        kind: 'categorical',
+        values: FAMILIES,
+        colors: FAMILIES.map(() => '#000000'),
+        shapes: FAMILIES.map(() => 'circle'),
+      },
+      phylum: {
+        kind: 'categorical',
+        values: ['X', 'Y'],
+        colors: ['#000000', '#000000'],
+        shapes: ['circle', 'circle'],
+      },
+    },
+    annotation_data: { family: codes, phylum: Int32Array.from(codes, (code) => code % 2) },
+  };
+}
+
+/** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
+/**
+ * A dataset load as `data-renderer.ts` runs it: auto-sync off while the plot takes the data,
+ * then back on and a forced sync. `feed` also hands the legend the per-protein
+ * `annotationValues`, the list the app built for that window.
+ */
+async function load(feed: boolean) {
+  const data = makeData();
+  const { legend, plot } = await mountLegendWithScatterplot(data, 'family');
+  await settleLegend(legend);
+
+  legend.clearForNewDataset('dataset');
+  legend.autoSync = false;
+  plot.dispatchEvent(new CustomEvent('data-change', { detail: { data } }));
+  if (feed) {
+    const rows = data.annotation_data.family;
+    legend.annotationValues = data.protein_ids.flatMap((_, i) =>
+      getProteinAnnotationIndices(rows, i).map((code) => data.annotations.family.values[code]),
+    );
+  }
+  await settleLegend(legend);
+  legend.autoSync = true;
+  legend.forceSync();
+  await settleLegend(legend);
+
+  return { legend, plot, view: view(legend) };
+}
+
+function view(legend: ProtspaceLegend) {
+  return {
+    items: legend.getLegendExportData().items,
+    other: (legend as unknown as { _otherItems: OtherItem[] })._otherItems.map((o) => o.value),
+  };
+}
+
+const countedKeys = (legend: ProtspaceLegend) => [
+  ...(
+    legend._data as unknown as {
+      computeAnnotationCounts(knownValues: string[]): ReadonlyMap<string, number>;
+    }
+  )
+    .computeAnnotationCounts([])
+    .keys(),
+];
+
+describe('legend after a dataset load', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    localStorage.clear();
+  });
+
+  it('counts the synced storage as a per-protein feed would', async () => {
+    const counted = (await load(false)).view;
+    document.body.innerHTML = '';
+    localStorage.clear();
+    const fed = (await load(true)).view;
+
+    expect(counted).toEqual(fed);
+    // The proteins meet L to A, so L to C get the rows and the colours in that order, and the
+    // sync once auto-sync is back on keeps them there.
+    const slot = (value: string) => FAMILIES.length - 1 - FAMILIES.indexOf(value);
+    expect(counted.items.map(({ value, color }) => [value, color])).toEqual([
+      ...FAMILIES.slice(2)
+        .reverse()
+        .map((value) => [value, getVisualEncoding(slot(value), value).color]),
+      ['Other', getVisualEncoding(-1, 'Other').color],
+    ]);
+    expect(counted.other).toEqual(['B', 'A']);
+  });
+
+  it('orders tied counts the same with auto-sync on as with it off', async () => {
+    const { legend } = await load(false);
+
+    const synced = countedKeys(legend);
+    legend.autoSync = false;
+    const hostDriven = countedKeys(legend);
+
+    expect(synced).toEqual(hostDriven);
+    expect(synced).toEqual([...FAMILIES].reverse());
+  });
+
+  it('keeps the rows and colours of tied categories across an annotation round trip', async () => {
+    const { legend, plot, view: loaded } = await load(false);
+
+    plot.selectedAnnotation = 'phylum';
+    legend.forceSync();
+    await settleLegend(legend);
+    expect(legend.getLegendExportData().items.map((item) => item.value)).toEqual(['Y', 'X']);
+
+    plot.selectedAnnotation = 'family';
+    legend.forceSync();
+    await settleLegend(legend);
+
+    expect(view(legend)).toEqual(loaded);
+  });
+});

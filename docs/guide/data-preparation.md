@@ -175,7 +175,7 @@ embedding space, with a reliability score attached. The
 [Transfer notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ProtSpace_Transfer.ipynb)
 runs the same transfer on its own, using the `protspace transfer` CLI.
 
-Transferred values get their own legend section and their own marker style in the plot, so you can
+Transferred values get their own panel and their own marker style in the plot, so you can
 always tell them apart from curated ones. See [Transferred Annotations (EAT)](/explore/eat).
 
 ## Step 5: Visualize in ProtSpace

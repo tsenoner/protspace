@@ -319,6 +319,12 @@ describe('DataProcessor.processVisualizationData — missing coordinates', () =>
   });
 });
 
+// A 2% padded domain is not exact in binary floating point, so pixel ends carry ~1e-13 noise.
+function expectRange(actual: number[], expected: [number, number]) {
+  expect(actual[0]).toBeCloseTo(expected[0], 9);
+  expect(actual[1]).toBeCloseTo(expected[1], 9);
+}
+
 describe('DataProcessor.createScales', () => {
   const margin = { top: 10, right: 20, bottom: 30, left: 40 };
 
@@ -328,41 +334,24 @@ describe('DataProcessor.createScales', () => {
   });
 
   it('returns correct domain and range for a known fixture', () => {
-    // x in [0, 10], y in [-5, 5]
+    // x in [0, 10], y in [-5, 5]: padded by 2% (0.2), a 10.4 × 10.4 domain.
     const plotData = makePlotData([0, 10], [-5, 5]);
-    const width = 800;
-    const height = 600;
-    const scales = DataProcessor.createScales(plotData, width, height, margin);
+    const scales = DataProcessor.createScales(plotData, 800, 600, margin);
     expect(scales).not.toBeNull();
 
-    // xRange = 10 - 0 = 10, xPadding = 0.5
-    const xDomainMin = 0 - 0.5;
-    const xDomainMax = 10 + 0.5;
-    expect(scales!.x.domain()).toEqual([xDomainMin, xDomainMax]);
-    expect(scales!.x.range()).toEqual([margin.left, width - margin.right]);
-
-    // yRange = 5 - (-5) = 10, yPadding = 0.5
-    const yDomainMin = -5 - 0.5;
-    const yDomainMax = 5 + 0.5;
-    expect(scales!.y.domain()).toEqual([yDomainMin, yDomainMax]);
-    expect(scales!.y.range()).toEqual([height - margin.bottom, margin.top]);
-
-    // spot-check: x(0) should map near margin.left (but slightly inside due to padding)
-    const xAtMin = scales!.x(0);
-    expect(xAtMin).toBeGreaterThan(margin.left);
-    expect(xAtMin).toBeLessThan(width - margin.right);
-
-    // spot-check: x(10) should map near width - margin.right
-    const xAtMax = scales!.x(10);
-    expect(xAtMax).toBeGreaterThan(margin.left);
-    expect(xAtMax).toBeLessThan(width - margin.right);
+    expect(scales!.x.domain()).toEqual([-0.2, 10.2]);
+    expect(scales!.y.domain()).toEqual([-5.2, 5.2]);
+    // Inner area 740 × 560 from (40, 10). y sets one scale for both axes (560 / 10.4 px per
+    // unit), so the domain becomes a 560 px square, centred in x.
+    expectRange(scales!.x.range(), [130, 690]);
+    expectRange(scales!.y.range(), [570, 10]);
   });
 
   it('handles single point (min === max) — zero padding, domain equals the point value', () => {
     const plotData = makePlotData([7], [3]);
     const scales = DataProcessor.createScales(plotData, 800, 600, margin);
     expect(scales).not.toBeNull();
-    // padding = abs(7 - 7) * 0.05 = 0
+    // padding = abs(7 - 7) * 0.02 = 0
     expect(scales!.x.domain()).toEqual([7, 7]);
     expect(scales!.y.domain()).toEqual([3, 3]);
     // construction must not throw — scale still returned
@@ -388,11 +377,11 @@ describe('DataProcessor.createScales', () => {
     expect(domain2X).toEqual(domain1X);
     expect(domain2Y).toEqual(domain1Y);
 
-    // Range must reflect new dimensions
-    expect(scales1!.x.range()).toEqual([margin1.left, 800 - margin1.right]);
-    expect(scales2!.x.range()).toEqual([margin1.left, 1200 - margin1.right]);
-    expect(scales1!.y.range()).toEqual([600 - margin1.bottom, margin1.top]);
-    expect(scales2!.y.range()).toEqual([900 - margin1.bottom, margin1.top]);
+    // Range follows the new dimensions, fitted with one scale and centred.
+    expectRange(scales1!.x.range(), [130, 690]);
+    expectRange(scales1!.y.range(), [570, 10]);
+    expectRange(scales2!.x.range(), [180, 1040]);
+    expectRange(scales2!.y.range(), [870, 10]);
   });
 
   it('different PlotData objects with different coordinate ranges → different domains', () => {
@@ -412,9 +401,9 @@ describe('DataProcessor.createScales', () => {
     expect(scales1!.y.domain()).not.toEqual(scales2!.y.domain());
 
     // Verify exact domains for each
-    // plotData1: x in [0,10] → padding 0.5 → domain [-0.5, 10.5]
-    expect(scales1!.x.domain()).toEqual([-0.5, 10.5]);
-    // plotData2: x in [100,300] → range 200 → padding 10 → domain [90, 310]
-    expect(scales2!.x.domain()).toEqual([90, 310]);
+    // plotData1: x in [0,10] → padding 0.2 → domain [-0.2, 10.2]
+    expect(scales1!.x.domain()).toEqual([-0.2, 10.2]);
+    // plotData2: x in [100,300] → range 200 → padding 4 → domain [96, 304]
+    expect(scales2!.x.domain()).toEqual([96, 304]);
   });
 });

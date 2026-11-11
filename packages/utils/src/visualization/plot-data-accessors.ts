@@ -9,6 +9,7 @@ import {
   getProteinAnnotationIndexAt,
   isCsrAnnotationData,
 } from './annotation-data-access.js';
+import { annotationLabel } from './annotation-metadata.js';
 import { isAutoClusterColumnName } from './annotation-statistics.js';
 import { getPredictedCell, getPredictedCellValues } from './eat-overlay.js';
 import { getNumericBinLabelMap } from './numeric-binning.js';
@@ -133,6 +134,8 @@ export function getProteinEvidence(
  */
 export interface AnnotationBlock {
   key: string;
+  /** The annotation's display name (`annotationLabel`); `key` stays the column name. */
+  label: string;
   displayValues: string[];
   numericValue: number | null;
   numericType: NumericAnnotationType;
@@ -190,6 +193,7 @@ function buildAnnotationBlock(
   }
   return {
     key,
+    label: annotationLabel(key, data.annotations[key]),
     displayValues: predicted
       ? [...getPredictedCellValues(predicted)]
       : getProteinDisplayValues(data, proteinIdx, key),

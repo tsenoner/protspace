@@ -3,8 +3,12 @@ import {
   bindAndClearTarget,
   setPointBlendState,
   drawPoints,
+  drawMarkedPoints,
   bindPointDrawState,
+  setCameraUniforms,
 } from './render-target';
+import { MARK_TEXTURE_UNIT, RECORD_STYLE_TEXTURE_UNIT } from './texture-units';
+import { HOLLOW_DARK_FADE_GAIN, pointKnockoutUniforms } from './point-shaders';
 import type { PointUniformLocations } from '../types';
 
 function mockGL() {
@@ -35,6 +39,7 @@ function mockGL() {
     blendFunc: (...a: number[]) => calls.push(`blendFunc:${a.join(',')}`),
     depthMask: (b: boolean) => calls.push(`depthMask:${b}`),
     drawArrays: (...a: number[]) => calls.push(`drawArrays:${a.join(',')}`),
+    uniform1i: (loc: { n: string }, v: number) => calls.push(`${loc.n}:${v}`),
   } as unknown as WebGL2RenderingContext;
   return { gl, calls };
 }
@@ -129,6 +134,47 @@ describe('drawPoints', () => {
   });
 });
 
+describe('drawMarkedPoints', () => {
+  const markPass = { n: 'markPass' } as unknown as WebGLUniformLocation;
+  const hook = (calls: string[]) => ({
+    run: () => calls.push('hook'),
+    program: {} as WebGLProgram,
+    vao: {} as WebGLVertexArrayObject,
+    labelTexture: {} as WebGLTexture,
+  });
+
+  it('draws the unmarked points blend off, then the marked range blend on', () => {
+    const { gl, calls } = mockGL();
+    drawMarkedPoints(gl, markPass, 100, { first: 40, end: 52 }, hook(calls));
+    expect(calls).toEqual([
+      'markPass:0',
+      'disable:1',
+      'drawArrays:0,0,100',
+      'hook',
+      'useProgram:prog',
+      'bindVAO:vao',
+      `activeTexture:${0x84c1}`,
+      'bindTex:tex',
+      'markPass:1',
+      'enable:1',
+      'blendFunc:1,771',
+      'drawArrays:0,40,12',
+    ]);
+  });
+
+  it('draws every point in one blended pass without a drawn marked point', () => {
+    const { gl, calls } = mockGL();
+    drawMarkedPoints(gl, markPass, 100, null, hook(calls));
+    expect(calls).toEqual([
+      'markPass:-1',
+      'enable:1',
+      'blendFunc:1,771',
+      'drawArrays:0,0,100',
+      'hook',
+    ]);
+  });
+});
+
 describe('bindPointDrawState label-atlas uniforms', () => {
   function uniformMockGL() {
     const pushed: Record<string, unknown> = {};
@@ -155,18 +201,34 @@ describe('bindPointDrawState label-atlas uniforms', () => {
       uniform3f: (loc: { n: string }, a: number, b: number, c: number) => {
         pushed[loc.n] = [a, b, c];
       },
+      uniform4f: (loc: { n: string }, a: number, b: number, c: number, d: number) => {
+        pushed[loc.n] = [a, b, c, d];
+      },
+      ALIASED_POINT_SIZE_RANGE: 0x846d,
+      getParameter: () => new Float32Array([1, 511]),
     } as unknown as WebGL2RenderingContext;
     const uniforms = {
       resolution: { n: 'resolution' },
       transform: { n: 'transform' },
       dpr: { n: 'dpr' },
+      morph: { n: 'morph' },
       pointScale: { n: 'pointScale' },
       gamma: { n: 'gamma' },
+      maxPointSize: { n: 'maxPointSize' },
       knockoutColor: { n: 'knockoutColor' },
+      hollowFadeGain: { n: 'hollowFadeGain' },
+      lightRimBound: { n: 'lightRimBound' },
       labelColors: { n: 'labelColors' },
       labelTextureSize: { n: 'labelTextureSize' },
       maxLabels: { n: 'maxLabels' },
       labelAtlasCapacity: { n: 'labelAtlasCapacity' },
+      recordStyle: { n: 'recordStyle' },
+      recordStyleOn: { n: 'recordStyleOn' },
+      marks: { n: 'marks' },
+      marksOn: { n: 'marksOn' },
+      markPass: { n: 'markPass' },
+      markedOpacity: { n: 'markedOpacity' },
+      unmarkedOpacity: { n: 'unmarkedOpacity' },
     } as unknown as PointUniformLocations;
     return { gl, uniforms, pushed };
   }
@@ -208,6 +270,62 @@ describe('bindPointDrawState label-atlas uniforms', () => {
     // The remaining three describe the 1x1 placeholder that stands in for the atlas.
     expect(pushed.labelTextureSize).toEqual([1, 1]);
   });
+
+  it('points the record-style sampler at its own unit, on only with a table', () => {
+    const { gl, uniforms, pushed } = uniformMockGL();
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      labelAtlas: null,
+    });
+    expect(pushed.recordStyle).toBe(RECORD_STYLE_TEXTURE_UNIT);
+    expect(pushed.recordStyleOn).toBe(0);
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      labelAtlas: null,
+      recordStyle: {} as WebGLTexture,
+    });
+    expect(pushed.recordStyleOn).toBe(1);
+  });
+
+  it('points the mark sampler at its own unit, with the opacities clamped as staged', () => {
+    const { gl, uniforms, pushed } = uniformMockGL();
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      labelAtlas: null,
+    });
+    expect(pushed.marks).toBe(MARK_TEXTURE_UNIT);
+    expect(pushed.marksOn).toBe(0);
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      labelAtlas: null,
+      marks: { texture: {} as WebGLTexture, marked: 1.5, unmarked: 0.15 },
+    });
+    expect(pushed).toMatchObject({ marksOn: 1, markedOpacity: 1, unmarkedOpacity: 0.15 });
+  });
+
+  it("caps sprites at the context's point-size range, read once", () => {
+    const { gl, uniforms, pushed } = uniformMockGL();
+    let reads = 0;
+    (gl as unknown as { getParameter: () => Float32Array }).getParameter = () => {
+      reads++;
+      return new Float32Array([1, 255]);
+    };
+    const params = { ...baseParams, labelAtlas: null };
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, params);
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, params);
+    expect(pushed.maxPointSize).toBe(255);
+    expect(reads).toBe(1);
+  });
+
+  it('pushes the background linear, with the light-plot gain and no light rim', () => {
+    const { gl, uniforms, pushed } = uniformMockGL();
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      knockoutColor: [1, 1, 1],
+      labelAtlas: null,
+    });
+    expect(pushed).toMatchObject({ knockoutColor: [1, 1, 1], hollowFadeGain: 1, lightRimBound: 0 });
+  });
 });
 
 describe('bindPointDrawState point scale', () => {
@@ -228,6 +346,8 @@ describe('bindPointDrawState point scale', () => {
       uniform1i: () => {},
       uniform2f: () => {},
       uniform3f: () => {},
+      uniform4f: () => {},
+      getParameter: () => null,
     } as unknown as WebGL2RenderingContext;
     const uniforms = new Proxy({}, { get: (_t, key) => ({ n: String(key) }) }) as never;
     bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
@@ -241,5 +361,53 @@ describe('bindPointDrawState point scale', () => {
       labelAtlas: null,
     });
     expect(pushed).toMatchObject({ dpr: 2, pointScale: 2.5 });
+  });
+});
+
+describe('pointKnockoutUniforms', () => {
+  it('leaves a light plot alone', () => {
+    expect(pointKnockoutUniforms([1, 1, 1], 2.2)).toEqual({
+      linearColor: [1, 1, 1],
+      hollowFadeGain: 1,
+      lightRimBound: 0,
+    });
+  });
+
+  it('raises faded hollow markers and bounds the light rim on a dark plot', () => {
+    const dark = pointKnockoutUniforms([15 / 255, 23 / 255, 42 / 255], 2.2);
+    const luminance =
+      0.2126 * (15 / 255) ** 2.2 + 0.7152 * (23 / 255) ** 2.2 + 0.0722 * (42 / 255) ** 2.2;
+    expect(dark.linearColor[2]).toBeCloseTo((42 / 255) ** 2.2, 10);
+    expect(dark.hollowFadeGain).toBe(HOLLOW_DARK_FADE_GAIN);
+    expect(dark.lightRimBound).toBeCloseTo(2 * (luminance + 0.05), 10);
+  });
+
+  it('linearises with the gamma it is given (1 without the gamma pipeline)', () => {
+    expect(pointKnockoutUniforms([0.5, 0.5, 0.5], 1).linearColor).toEqual([0.5, 0.5, 0.5]);
+  });
+});
+
+describe('setCameraUniforms morph', () => {
+  function pushedMorph(morph?: number) {
+    const pushed: Record<string, number> = {};
+    const gl = {
+      uniform1f: (loc: { n: string }, v: number) => {
+        pushed[loc.n] = v;
+      },
+      uniform2f: () => {},
+      uniform4f: () => {},
+    } as unknown as WebGL2RenderingContext;
+    const loc = new Proxy({}, { get: (_t, key) => ({ n: String(key) }) }) as never;
+    const camera = { width: 800, height: 600, transform: { x: 0, y: 0, k: 1 }, dpr: 1 };
+    setCameraUniforms(gl, loc, morph === undefined ? camera : { ...camera, morph });
+    return pushed.morph;
+  }
+
+  it('pushes u_morph 0 without a weight, so a draw that passes none shows the staged positions', () => {
+    expect(pushedMorph()).toBe(0);
+  });
+
+  it('pushes the weight it is given', () => {
+    expect(pushedMorph(0.25)).toBe(0.25);
   });
 });

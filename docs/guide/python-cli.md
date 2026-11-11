@@ -682,7 +682,7 @@ Score the quality of the projections in an existing project directory and write 
 [`.parquetbundle`](/guide/data-format).
 
 Folding it in with `bundle -s` fills the bundle's statistics slot, and the web app reads that table: it
-draws separation-score strips in the legend, adds a `By separation` legend sort mode and fills the
+draws separation-score strips in the legend and fills the
 Separation section of the projection metadata panel. See
 [Separation Scores](/explore/separation-scores) for how the scores read in the app, and
 [Data Format Reference](/guide/data-format#statistics-optional-5th-part) for the bundle parts. The
@@ -871,8 +871,8 @@ protspace transfer \
 | `--skip-distant`        | Leave distant queries unpredicted (needs `--max-distance`).             | label every query            |
 | `--report`              | Also write a TSV of each query's neighbours, see below.                 | -                            |
 
-A bundle carrying these columns renders the transferred proteins as ringed markers with their own
-legend section, see [Transferred Annotations (EAT)](/explore/eat).
+A bundle carrying these columns renders the transferred proteins as ringed markers, with their
+controls in the EAT panel, see [Transferred Annotations (EAT)](/explore/eat).
 
 The output is always a format v3 bundle. A v1 or v2 input is read the way
 [`protspace convert`](#protspace-convert) reads it, protein IDs included, so the transfer runs

@@ -2,9 +2,8 @@
  * How far retained capacity may exceed the requirement before it is released.
  *
  * Retaining is normally right — it is what stops progressively larger datasets reallocating every
- * time — but grow-only retention was only harmless while the clamp bounded capacity at 1,000,000.
- * At a 2,000,000 cap, "load 2M then open the 5K demo" would hold the larger footprint for the rest
- * of the session. 4x is wide enough that ordinary dataset switches still reuse their buffers.
+ * time — but grow-only, "load 2M then open the 5K demo" would hold the larger footprint for the
+ * rest of the session. 4x is wide enough that ordinary dataset switches still reuse their buffers.
  */
 const CAPACITY_SHRINK_FACTOR = 4;
 
@@ -19,10 +18,9 @@ const CAPACITY_SHRINK_FACTOR = 4;
  * - Rounded UP to a whole `capacityGranularity` block, so SoA arrays aren't oversized to the next
  *   power of two (which wasted ~83% at 573K) and the label atlas has no partial-row waste at its
  *   narrowest supported width.
- * - Bounded by `maxCapacity`, the largest point count the renderer will ever draw. Without this
- *   the 1.5x growth allocates for points that can never be rendered — and, because the label
- *   atlas is sized from capacity, pushes its height past `gl.MAX_TEXTURE_SIZE` at point counts
- *   well under the cap (900k then 950k used to plan 1,350,144).
+ * - Bounded by `maxCapacity`, what the device holds. Without this the 1.5x growth overshoots it
+ *   for points that would have fit — and, because the mark texture and the label atlas are sized
+ *   from capacity, pushes them past `gl.MAX_TEXTURE_SIZE` (900k then 950k used to plan 1,350,144).
  *
  * The bound never starves a load: it is floored at the snapped requirement, so asking for more
  * than `maxCapacity` still returns enough capacity for the request.

@@ -82,7 +82,7 @@ be an input to that module, not a separate opacity path.
 
 The system SHALL assign opacity exactly `0` (not merely a small value) to
 annotation-hidden points: consumers gate with a mix of comparisons (`=== 0` at export
-culling and hover/click, `> 0` at tracking and the point grid, `< 0.001` at the shader
+culling and hover/click, `> 0` at the drawn count and the point grid, `< 0.001` at the shader
 discard) that agree on "invisible and non-interactive" only at exactly `0`.
 
 #### Scenario: Hidden value yields exact zero
@@ -96,8 +96,7 @@ discard) that agree on "invisible and non-interactive" only at exactly `0`.
 The system SHALL define interactivity as `opacity > 0` using the configured opacity
 values (a `fadedOpacity` of `0` makes faded points non-interactive), and SHALL evaluate
 it against current inputs at event time so hit-testing is correct even while the
-point grid rebuild is rAF-deferred. The renderer-capacity gate (`isPointRendered`) remains
-a separate check outside the model.
+point grid rebuild is rAF-deferred.
 
 #### Scenario: Faded points are clickable under default config
 

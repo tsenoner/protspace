@@ -17,6 +17,10 @@ entry point. It wraps the toast layer, applies per-severity durations, and de-du
 messages within a 5-second window via `dedupeKey`. `apps/web/src/explore/notifications.ts` maps
 normalized component events onto those `notify` calls.
 
+On `/explore` the workbench mounts its own toaster and routes every toast to it
+(`setNotifyTarget`), so notifications sit at the plot's bottom edge and never cover the legend. A
+removed filter offers Undo (`notify.undoable`) for as long as it is the latest undoable step.
+
 ### Blocking and progress UI
 
 Use dedicated progress UI for long-running or stateful operations.
@@ -29,8 +33,24 @@ Do not replace this layer with toasts.
 
 Keep dialogs and focused workflow surfaces inside the component that owns the workflow.
 
-- Example: legend settings dialog
-- Example: legend "Other" extraction dialog
+- Example: legend settings popover
+- Example: legend "Other" popover (search and "Add to legend")
+
+### Escape and closing
+
+Every open overlay is a layer on the kit's one stack (`packages/core/src/components/kit/layers.ts`):
+popovers, menus, dialogs, the figure editor, the pinned projection details, a pinned tooltip and an
+expanded duplicate stack. Escape closes the top layer in the window's capture phase. With no layer
+open, a component that acts on Escape (the search box emptying a typed query, a shown tooltip
+hiding) calls `preventDefault()`, and then the fallbacks run in the window's bubble phase in
+`ESCAPE_ORDER`: the EAT connectors (`connectors`, registered by the scatterplot), the selection
+(`selection`) and the selection tool (`tool`, both registered by the app's selection controller).
+The first that acts takes the press, so one press takes one step.
+
+A `ps-dialog` with `size="sheet"` is a bottom sheet: full width on the window's bottom edge, its
+body scrolling under its header. It closes as every dialog does, on Escape, its close button and a
+press on the backdrop, and returns focus to the control that opened it (the app's More sheet on
+phones).
 
 ### Component-owned inline states
 
@@ -44,6 +64,14 @@ Keep empty, loading, and error states inline when the message is part of the com
 Use `aria-live` and related accessibility primitives for assistive feedback without requiring a visible global notification.
 
 - Example: legend status announcements
+
+### Plot status
+
+The scatterplot reports what a status display shows instead of every host reading its state:
+`view-status-change` (`{ count, zoomedIn }`, when either changed) and `hidden-values-change`
+(`{ count }`, when the number of hidden category values changed). The app shows them, with the
+isolation and the applied filter, in `protspace-plot-status`; an embedder without it keeps the
+plot's own count (`hide-status` off).
 
 ## Event Contract
 
@@ -59,12 +87,15 @@ Host-consumed warning and error events share the `HostMessageEventDetail` shape 
 Each event narrows the generic parameters to the source, severity, and context it actually emits.
 Current normalized host-facing events:
 
-| Event                             | Source                                                                   | Severity  | Emitted by         |
-| --------------------------------- | ------------------------------------------------------------------------ | --------- | ------------------ |
-| `selection-disabled-notification` | `control-bar`                                                            | `warning` | `control-bar`      |
-| `data-error`                      | `data-loader`                                                            | `error`   | `data-loader`      |
-| `legend-error`                    | one of `data-processing`, `persistence`, `scatterplot-sync`, `rendering` | `error`   | `legend`           |
-| `structure-error`                 | `structure-viewer`                                                       | `error`   | `structure-viewer` |
+| Event             | Source                                                                   | Severity | Emitted by         |
+| ----------------- | ------------------------------------------------------------------------ | -------- | ------------------ |
+| `data-error`      | `data-loader`                                                            | `error`  | `data-loader`      |
+| `legend-error`    | one of `data-processing`, `persistence`, `scatterplot-sync`, `rendering` | `error`  | `legend`           |
+| `structure-error` | `structure-viewer`                                                       | `error`  | `structure-viewer` |
+
+Selection mode turning itself off is the scatterplot's `auto-disable-selection` (`{ reason,
+dataSize }`, not a `HostMessageEventDetail`); `apps/web/src/explore/notifications.ts` maps it to a
+warning toast.
 
 ## Host Responsibilities
 

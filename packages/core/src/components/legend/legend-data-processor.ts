@@ -1,7 +1,14 @@
 import type { AnnotationData } from '@protspace/utils';
-import { isCsrAnnotationData, isSparseMultiValueAnnotationData } from '@protspace/utils';
+import {
+  DEFAULT_CATEGORICAL_PALETTE_ID,
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
+  isCsrAnnotationData,
+  isSparseMultiValueAnnotationData,
+} from '@protspace/utils';
 import type { LegendItem, OtherItem, LegendSortMode, PersistedCategoryData } from './types';
 import { getVisualEncoding, SlotTracker } from './visual-encoding';
+import { renumberKeepingOtherLast } from './legend-items-state';
 import {
   LEGEND_VALUES,
   NA_DEFAULT_COLOR,
@@ -32,11 +39,113 @@ export function createProcessorContext(): LegendProcessorContext {
 }
 
 /**
+ * The `filled` bins of a {@link LegendDataProcessor.countFromStorage} count, in the order a walk
+ * over the proteins first hits them. A second walk rather than bookkeeping in the count, which
+ * would slow every count down; it stops once it has met every filled bin. The two storage kinds
+ * large datasets use read their arrays directly: through the generic accessors a walk that has
+ * to reach the last protein costs several times the count itself.
+ */
+function binsInProteinOrder(
+  colData: AnnotationData,
+  binCount: number,
+  filled: number,
+  proteinCount: number,
+  filteredIndices: ReadonlySet<number> | null,
+): number[] {
+  const naBin = binCount - 1;
+  let left = filled;
+  const seen = new Uint8Array(binCount);
+  const order: number[] = [];
+  const meet = (code: number) => {
+    const bin = code >= 0 && code < naBin ? code : naBin;
+    if (seen[bin] === 0) {
+      seen[bin] = 1;
+      order.push(bin);
+      left--;
+    }
+  };
+
+  if (colData instanceof Int32Array) {
+    const limit = Math.min(proteinCount, colData.length);
+    for (let i = 0; i < limit && left > 0; i++) {
+      if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+      const code = colData[i];
+      if (code >= 0) meet(code);
+    }
+  } else if (isCsrAnnotationData(colData)) {
+    const { offsets, codes } = colData;
+    const limit = Math.min(proteinCount, colData.length);
+    for (let i = 0; i < limit && left > 0; i++) {
+      if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+      const stop = offsets[i + 1];
+      for (let j = offsets[i]; j < stop; j++) meet(codes[j]);
+    }
+  } else {
+    for (let i = 0; i < proteinCount && left > 0; i++) {
+      if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+      const hits = getProteinAnnotationCount(colData, i);
+      for (let k = 0; k < hits; k++) meet(getProteinAnnotationIndexAt(colData, i, k));
+    }
+  }
+  return order;
+}
+
+/**
+ * `color` (the palette's colour for `slot` unless given) when `claimed` does not hold it;
+ * otherwise the first free colour of the next slots. The probe stops after 30 slots, past Kelly's
+ * 21 colours, so it always ends, on the last colour probed if none is free.
+ */
+function firstFreeColor(
+  slot: number,
+  category: string,
+  paletteId: string,
+  claimed: ReadonlySet<string>,
+  color: string = getVisualEncoding(slot, category, paletteId).color,
+): string {
+  for (let alt = slot + 1; claimed.has(color) && alt <= slot + 30; alt++) {
+    color = getVisualEncoding(alt, category, paletteId).color;
+  }
+  return color;
+}
+
+/** What `createLegendItems` needs to know about the view besides its rows. */
+interface LegendItemsViewOptions {
+  /**
+   * A filter or an isolation narrows the view. Its rows keep their slots, and so do the
+   * categories it leaves out: a slot is freed only in an unconstrained view.
+   */
+  constrained?: boolean;
+  /** The values the view counted. A stored colour of a value it left out stays taken. */
+  presentValues?: { has(value: string): boolean };
+  /** The categorical palette that colours each slot. */
+  paletteId?: string;
+}
+
+/** What `processLegendItems` needs besides the counted view. */
+interface LegendProcessOptions {
+  /** A value Other is giving up to a row of its own (N/A is '__NA__'). */
+  pendingExtract?: string;
+  /** A row's value going into Other (N/A is '__NA__'). */
+  pendingMerge?: string;
+  /** The annotation is numeric: its N/A row keeps the fixed N/A colour and shape. */
+  isNumericSource?: boolean;
+  /** The categorical palette that colours each slot. */
+  paletteId?: string;
+  /**
+   * The counts without the filter or isolation. A constrained view of an annotation that has no
+   * slots yet (just selected, or Reset) takes its slots from these, so each category gets the
+   * colour the unfiltered view gives it. Called only then.
+   */
+  unfilteredFrequencies?: () => ReadonlyMap<string, number>;
+}
+
+/**
  * Processes legend data with slot-based visual encoding.
  *
  * Slot assignment:
  * - Initial: slots 0, 1, 2, ... assigned by frequency (most frequent = slot 0)
- * - Subsequent: existing slots persist; only freed when items move to "Other"
+ * - Subsequent: existing slots persist; only freed when items move to "Other" in an
+ *   unconstrained view. A filter or isolation frees none, so it never recolours a category.
  * - Extracted items reuse freed slots or get the next available
  *
  * Note: All methods that need slot tracking now require a context parameter
@@ -92,6 +201,12 @@ export class LegendDataProcessor {
    * means "no annotation" and contributes nothing, while any code outside
    * `[0, values.length)` inside a hit list resolves to `undefined` and lands in
    * the `__NA__` bucket, exactly as `toInternalValue(values[code])` did.
+   *
+   * Keys (after `knownValues`, which come first) are in the order the proteins first
+   * meet them, `__NA__` included: the order a per-protein list gives
+   * {@link countAnnotationFrequencies}, and so one order however the legend is fed or
+   * when it recounts. The sort keeps tied entries, and the "Other" list, in this order,
+   * which settles the rows and default colours of tied categories.
    */
   static countFromStorage(
     colData: AnnotationData,
@@ -152,12 +267,23 @@ export class LegendDataProcessor {
     }
 
     const freq = new Map<string, number>(knownValues.map((value) => [value, 0] as const));
-    for (let i = 0; i < valueCount; i++) {
-      if (bins[i] === 0) continue;
-      const key = toInternalValue(values[i]);
-      freq.set(key, (freq.get(key) ?? 0) + bins[i]);
+    const add = (bin: number) => {
+      const key = bin === naBin ? NA_VALUE : toInternalValue(values[bin]);
+      freq.set(key, (freq.get(key) ?? 0) + bins[bin]);
+    };
+    let filled = 0;
+    let lastFilled = -1;
+    for (let bin = 0; bin <= naBin; bin++) {
+      if (bins[bin] > 0) {
+        filled++;
+        lastFilled = bin;
+      }
     }
-    if (bins[naBin] > 0) freq.set(NA_VALUE, (freq.get(NA_VALUE) ?? 0) + bins[naBin]);
+    // Only the relative order of two or more keys needs the walk over the proteins.
+    if (filled === 1) add(lastFilled);
+    else if (filled > 1) {
+      binsInProteinOrder(colData, bins.length, filled, proteinCount, filteredIndices).forEach(add);
+    }
     return freq;
   }
 
@@ -276,6 +402,9 @@ export class LegendDataProcessor {
         ...sortedVisible.slice(0, maxVisibleValues),
         ...sortedNonVisible.slice(0, remainingSlots),
       ].slice(0, maxVisibleValues);
+      // The visible set decides which rows show, not their order: a sort lists them all in its
+      // own order. "Your order" keeps the promoted rows after the ones the user placed.
+      if (sortMode !== 'manual' && sortMode !== 'manual-reverse') topItems.sort(sortFn);
     } else {
       // Initial load: sort all and take top N
       const sorted = [...entries].sort(sortFn);
@@ -306,23 +435,19 @@ export class LegendDataProcessor {
     passedZOrders: Map<string, number> = new Map(),
     persistedCategories: Record<string, PersistedCategoryData> = {},
     isNumericSource: boolean = false,
+    view: LegendItemsViewOptions = {},
   ): LegendItem[] {
-    // Use passed zOrders if available, otherwise extract from existingLegendItems
+    const { constrained = false, presentValues, paletteId = DEFAULT_CATEGORICAL_PALETTE_ID } = view;
+    // Use passed zOrders if available, otherwise extract from existingLegendItems. Other's own
+    // zOrder is never read: it always goes last.
     let existingZOrders: Map<string, number>;
-    let existingOtherZOrder: number | null = null;
 
     if (passedZOrders.size > 0) {
       existingZOrders = passedZOrders;
-      const existingOther = existingLegendItems.find((i) => i.value === LEGEND_VALUES.OTHER);
-      existingOtherZOrder = existingOther?.zOrder ?? null;
     } else {
       existingZOrders = new Map();
       existingLegendItems.forEach((item) => {
-        if (item.value === LEGEND_VALUES.OTHER) {
-          existingOtherZOrder = item.zOrder;
-        } else {
-          existingZOrders.set(item.value, item.zOrder);
-        }
+        if (item.value !== LEGEND_VALUES.OTHER) existingZOrders.set(item.value, item.zOrder);
       });
     }
 
@@ -339,13 +464,11 @@ export class LegendDataProcessor {
 
     if (ctx.slotTracker.isEmpty()) {
       ctx.slotTracker.reassignSlots(visibleCategoryNames);
-    } else {
+    } else if (!constrained) {
+      // Every category holding a slot without a row went to Other: its slot is free again. A
+      // constrained view frees none, so a category it leaves out keeps its colour.
       const currentVisibleSet = new Set(visibleCategoryNames);
-      const previousVisible = existingLegendItems
-        .filter((i) => i.value !== LEGEND_VALUES.OTHER)
-        .map((i) => toDisplayValue(i.value));
-
-      for (const category of previousVisible) {
+      for (const category of ctx.slotTracker.assignedCategories()) {
         if (!currentVisibleSet.has(category)) {
           ctx.slotTracker.freeSlot(category);
         }
@@ -366,34 +489,38 @@ export class LegendDataProcessor {
           }
         });
 
-        newItems.sort((a, b) => b.targetIndex - a.targetIndex);
+        newItems.sort((a, b) => a.targetIndex - b.targetIndex);
         for (const newItem of newItems) {
           existingZOrders.forEach((zOrder, key) => {
             if (zOrder >= newItem.targetIndex) {
               existingZOrders.set(key, zOrder + 1);
             }
           });
-          if (existingOtherZOrder !== null && existingOtherZOrder >= newItem.targetIndex) {
-            existingOtherZOrder = existingOtherZOrder + 1;
-          }
         }
       }
     }
 
-    // Pre-scan: collect colors already claimed by items with persisted or existing values
-    const claimedColors = new Set<string>();
+    // Pre-scan: collect colors already claimed by items with persisted or existing values, and
+    // by categories holding a slot or a stored colour that the view leaves out.
+    const claimedColors = new Set<string>(ctx.slotTracker.rememberedColors());
     for (const [value] of topItems) {
       const persisted = persistedCategories[value];
       const existing = existingColors.get(value);
       claimedColors.add((persisted?.color || existing?.color) ?? '');
     }
+    if (presentValues) {
+      for (const [value, persisted] of Object.entries(persistedCategories)) {
+        if (persisted.color && !presentValues.has(value)) claimedColors.add(persisted.color);
+      }
+    }
 
+    const keepsZOrder = sortMode === 'manual';
     const items: LegendItem[] = topItems.map(([value, count], index) => {
       const displayName = toDisplayValue(value);
-      const zOrder = sortMode === 'manual' ? (existingZOrders.get(value) ?? index) : index;
+      const zOrder = keepsZOrder ? (existingZOrders.get(value) ?? index) : index;
       const slot = ctx.slotTracker.getSlot(displayName);
 
-      let encoding = getVisualEncoding(slot, displayName);
+      let encoding = getVisualEncoding(slot, displayName, paletteId);
 
       // Numeric NA is locked: ignore persisted/existing overrides, force defaults.
       if (isNumericSource && isNAValue(value)) {
@@ -407,9 +534,10 @@ export class LegendDataProcessor {
         };
       }
 
-      // Priority: persisted > existing > default encoding (with conflict resolution)
+      // Priority: persisted > existing > remembered > default encoding (with conflict resolution)
       const persisted = persistedCategories[value];
       const existing = existingColors.get(value);
+      const remembered = ctx.slotTracker.rememberedColor(displayName);
 
       if (persisted?.color || persisted?.shape) {
         encoding = {
@@ -418,6 +546,8 @@ export class LegendDataProcessor {
         };
       } else if (existing) {
         encoding = { color: existing.color, shape: encoding.shape };
+      } else if (remembered) {
+        encoding = { color: remembered, shape: encoding.shape };
       } else {
         // Default encoding — categorical NA gets NA_DEFAULT_COLOR instead of slot color.
         let { color, shape } = encoding;
@@ -426,19 +556,11 @@ export class LegendDataProcessor {
         }
         // Conflict resolution applies to NA too — if NA_DEFAULT_COLOR is already
         // claimed by another category, NA gets bumped via slot probing.
-        if (claimedColors.has(color)) {
-          // Probe subsequent slots for an unclaimed color (cap at 30 to exceed
-          // Kelly's 21-color palette and guarantee termination)
-          let altSlot = slot + 1;
-          color = getVisualEncoding(altSlot, displayName).color;
-          while (claimedColors.has(color) && altSlot < slot + 30) {
-            altSlot++;
-            color = getVisualEncoding(altSlot, displayName).color;
-          }
-        }
+        color = firstFreeColor(slot, displayName, paletteId, claimedColors, color);
         encoding = { color, shape };
         claimedColors.add(color);
       }
+      ctx.slotTracker.rememberColor(displayName, encoding.color);
 
       return {
         value,
@@ -450,11 +572,9 @@ export class LegendDataProcessor {
       };
     });
 
-    // Add "Other" if there are items beyond the cap
+    // Add "Other" if there are items beyond the cap: a bucket, not a place, so always last.
     if (otherCount > 0) {
       const encoding = getVisualEncoding(-1, LEGEND_VALUES.OTHER);
-      const otherZOrder =
-        sortMode === 'manual' ? (existingOtherZOrder ?? items.length) : items.length;
 
       items.push({
         value: LEGEND_VALUES.OTHER,
@@ -462,11 +582,14 @@ export class LegendDataProcessor {
         shape: encoding.shape,
         count: otherCount,
         isVisible: true,
-        zOrder: otherZOrder,
+        zOrder: items.length,
       });
     }
 
-    return items;
+    // "Your order" keeps each row's place, but a row merged into Other leaves a gap, and a row
+    // taken out of it takes its list index, which can equal a kept row's zOrder or pass Other's.
+    // Numbered 0..n-1 in that order, the rows stay apart and Other stays after them.
+    return keepsZOrder ? renumberKeepingOtherLast(items) : items;
   }
 
   /**
@@ -486,10 +609,9 @@ export class LegendDataProcessor {
     visibleValues: Set<string> = new Set(),
     numericOrderValues: Map<string, number> = new Map(),
     useOtherBucket: boolean = true,
-    pendingExtract?: string,
-    pendingMerge?: string,
-    isNumericSource: boolean = false,
+    options: LegendProcessOptions = {},
   ): { legendItems: LegendItem[]; otherItems: OtherItem[] } {
+    const { pendingExtract, pendingMerge, isNumericSource = false } = options;
     this.resetIfAnnotationChanged(ctx, annotationName);
 
     // Build existing zOrder map for manual sorting
@@ -505,11 +627,40 @@ export class LegendDataProcessor {
       }
     });
 
+    // A categorical "Your order, reversed" holds its zOrders in display order (the legend's
+    // `ItemActionsController.reverseZOrder` writes them so): it buckets and numbers exactly as
+    // "Your order". A numeric one re-derives from its manual bin ids each pass.
+    const orderMode: LegendSortMode =
+      sortMode === 'manual-reverse' && !isNumericSource ? 'manual' : sortMode;
+
+    // A constrained view of an annotation with no slots yet takes them from the unfiltered view,
+    // so a category's colour does not depend on the filter it was first seen under.
+    if (
+      isolationMode &&
+      !isNumericSource &&
+      ctx.slotTracker.isEmpty() &&
+      options.unfilteredFrequencies
+    ) {
+      const seedVisible =
+        visibleValues.size > 0 ? visibleValues : new Set(Object.keys(persistedCategories));
+      const { topItems: unfilteredTop } = this.sortAndLimitItems(
+        options.unfilteredFrequencies(),
+        maxVisibleValues,
+        false,
+        orderMode,
+        existingZOrders,
+        seedVisible,
+        numericOrderValues,
+        useOtherBucket,
+      );
+      ctx.slotTracker.reassignSlots(unfilteredTop.map(([value]) => toDisplayValue(value)));
+    }
+
     const { topItems, otherItems, otherCount } = this.sortAndLimitItems(
       frequencyMap,
       maxVisibleValues,
       isolationMode,
-      sortMode,
+      orderMode,
       existingZOrders,
       visibleValues,
       numericOrderValues,
@@ -524,11 +675,22 @@ export class LegendDataProcessor {
       topItems,
       otherCount,
       existingLegendItems,
-      sortMode,
+      orderMode,
       new Map(existingZOrders),
       persistedCategories,
       isNumericSource,
+      {
+        constrained: isolationMode,
+        presentValues: frequencyMap,
+        paletteId: options.paletteId,
+      },
     );
+
+    // List a reversed order bottom-up, as its sort did before. Other stays last.
+    if (orderMode !== sortMode) {
+      const isOther = (item: LegendItem) => Number(item.value === LEGEND_VALUES.OTHER);
+      items.sort((a, b) => isOther(a) - isOther(b) || b.zOrder - a.zOrder);
+    }
 
     // Filter "Other" items to exclude any that are already shown
     const shownValues = new Set(items.map((i) => i.value).filter((v) => v !== LEGEND_VALUES.OTHER));
@@ -545,5 +707,54 @@ export class LegendDataProcessor {
     }
 
     return { legendItems: items, otherItems: filteredOther };
+  }
+
+  /**
+   * The colour the last palette pick gave a category holding a slot (see `recolorBySlot`), or
+   * undefined while it holds none. `value` is internal (N/A is '__NA__').
+   */
+  static pickedColor(ctx: LegendProcessorContext, value: string): string | undefined {
+    return ctx.slotTracker.rememberedColor(toDisplayValue(value));
+  }
+
+  /**
+   * A palette pick: each row takes the palette's colour for its slot, so colours follow the
+   * categories, not the rows' positions. Other and N/A keep theirs. Every category holding a
+   * slot remembers its new colour, the ones the view leaves out too.
+   *
+   * Slots are not compact under a filter (none is freed), so two slots a palette length apart
+   * would share a colour. As in `createLegendItems`, a category whose slot colour is taken
+   * probes the next slots for a free one: the rows first, in slot order, then the categories
+   * the view leaves out, so the rows stay distinct whenever the palette has enough colours.
+   */
+  static recolorBySlot(
+    ctx: LegendProcessorContext,
+    items: readonly LegendItem[],
+    paletteId: string,
+  ): LegendItem[] {
+    const tracker = ctx.slotTracker;
+    const keepsColor = (item: LegendItem) =>
+      item.value === LEGEND_VALUES.OTHER || isNAValue(item.value);
+    const naName = toDisplayValue(NA_VALUE);
+    const bySlot = (a: string, b: string) => tracker.getSlot(a) - tracker.getSlot(b);
+
+    const rows = items.filter((item) => !keepsColor(item)).map((i) => toDisplayValue(i.value));
+    const rowSet = new Set(rows);
+    const leftOut = tracker
+      .assignedCategories()
+      .filter((category) => category !== naName && !rowSet.has(category));
+
+    const claimed = new Set(items.filter(keepsColor).map((item) => item.color));
+    const picked = new Map<string, string>();
+    for (const category of [...rows.sort(bySlot), ...leftOut.sort(bySlot)]) {
+      const color = firstFreeColor(tracker.getSlot(category), category, paletteId, claimed);
+      claimed.add(color);
+      picked.set(category, color);
+      tracker.rememberColor(category, color);
+    }
+
+    return items.map((item) =>
+      keepsColor(item) ? item : { ...item, color: picked.get(toDisplayValue(item.value))! },
+    );
   }
 }

@@ -18,9 +18,10 @@ import {
   type BundleSettings,
   type VisualizationData,
 } from '@protspace/utils';
-import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
+import { decodeParquetBundle } from './bundle';
+import { extractRowsFromParquetBundle } from '../legacy/bundle';
 import { splitBundleParts } from './bundle-parts';
-import { convertParquetToVisualizationData } from './conversion';
+import { convertParquetToVisualizationData } from '../legacy/conversion';
 
 const repoFile = (path: string): ArrayBuffer => {
   const file = readFileSync(resolve(__dirname, '../../../../../..', path));
@@ -416,7 +417,9 @@ describe('v3 export: round trip through decodeParquetBundle', () => {
     const settings: BundleSettings = {
       legendSettings: {},
       exportOptions: {},
-      eatConfidenceThreshold: 0.75,
+      eatConfidenceThreshold: 0.25,
+      eatConfidenceMax: 0.75,
+      eatOutcome: 'dim',
       shapeSize: 12,
     };
     const original = { ...handBuilt(), statistics: statistics.slice().buffer as ArrayBuffer };

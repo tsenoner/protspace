@@ -60,7 +60,7 @@ function float32Bits(v: number): number {
  * across the full data extent. Synchronous by design — captureAtResolution is
  * a synchronous public API. Solos are skipped entirely (never materialized);
  * an idToKey map is deliberately NOT built (the badge cull/draw path reads
- * only key/px/py/points.length — research doc 02).
+ * only key/px/py/points.length).
  */
 export function computeFullExtentDuplicateStacks(
   pd: PlotData,

@@ -26,15 +26,15 @@ In a legacy (v1/v2) bundle, format version 2 is marked in the parquet metadata o
 
 ## Sources
 
-ProtSpace annotations come from several sources. **Computational predictions**, from a machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius `signal_peptide`, and TED), are flagged with a ⚡ Predicted badge in the app; reference signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) are not. For each annotation, the **bold lead line** is the same short summary shown in the app's info popover, and the paragraph beneath it is a fuller explanation of what the value means, how it is produced, and what it looks like, with a link to the authoritative source.
+ProtSpace annotations come from several sources. **Computational predictions**, from a machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius `signal_peptide`, and TED), are flagged with a PRED badge in the app; reference signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) are not. For each annotation, the **bold lead line** is the same short summary shown in the app's info popover, and the paragraph beneath it is a fuller explanation of what the value means, how it is produced, and what it looks like, with a link to the authoritative source.
 
 ## Predicted (Biocentral)
 
-Biocentral columns are machine-learning predictions served by the [Biocentral API](https://biocentral.rostlab.org) (Rost lab, TUM). ProtSpace fetches the protein sequence from UniProt, submits it to the Biocentral models, and stores the returned per-protein prediction; all four columns are flagged ⚡ Predicted to distinguish them from experimental annotations. The underlying models (LightAttention, TMbed) take protein language model embeddings (ProtT5) as input rather than multiple sequence alignments, so predictions are available for any sequence regardless of homology to characterized proteins.
+Biocentral columns are machine-learning predictions served by the [Biocentral API](https://biocentral.rostlab.org) (Rost lab, TUM). ProtSpace fetches the protein sequence from UniProt, submits it to the Biocentral models, and stores the returned per-protein prediction; all four columns carry the PRED badge to distinguish them from experimental annotations. The underlying models (LightAttention, TMbed) take protein language model embeddings (ProtT5) as input rather than multiple sequence alignments, so predictions are available for any sequence regardless of homology to characterized proteins.
 
 ### `predicted_membrane` {#predicted_membrane}
 
-**Membrane** · ⚡ Predicted
+**Membrane** · PRED
 
 Membrane vs. soluble prediction from the LightAttention model.
 
@@ -42,7 +42,7 @@ This is the binary membrane-bound vs water-soluble task originally introduced al
 
 ### `predicted_signal_peptide` {#predicted_signal_peptide}
 
-**Signal peptide** · ⚡ Predicted
+**Signal peptide** · PRED
 
 Signal-peptide presence predicted by the TMbed model (from topology).
 
@@ -50,7 +50,7 @@ TMbed labels every residue as transmembrane helix (H), transmembrane beta strand
 
 ### `predicted_subcellular_location` {#predicted_subcellular_location}
 
-**Subcellular location** · ⚡ Predicted
+**Subcellular location** · PRED
 
 10-class subcellular localization predicted by the LightAttention model.
 
@@ -58,7 +58,7 @@ LightAttention is a lightweight neural network that uses softmax-weighted aggreg
 
 ### `predicted_transmembrane` {#predicted_transmembrane}
 
-**Transmembrane** · ⚡ Predicted
+**Transmembrane** · PRED
 
 Transmembrane type (non-transmembrane / alpha-helical / beta-barrel) predicted by TMbed.
 
@@ -182,7 +182,7 @@ This flag reflects whether the entry has at least one cross-reference to the [Pr
 
 ## InterPro
 
-[InterPro](https://www.ebi.ac.uk/interpro/) integrates predictive models ("signatures") from a consortium of member databases into a single classification of protein families, domains, and functional sites. ProtSpace queries the InterPro Matches API by MD5 sequence hash and exposes the per-member-database hits directly, one ProtSpace column per member database. The API also returns matches that InterPro-N, an AI model, predicts for these databases; ProtSpace leaves them out, so every column holds only the matches of its own database. Each value is a semicolon-separated list of `accession (name)|score` entries, where the score is the value reported by that database's own tool (a bit score for the HMMER-based members such as Pfam); higher means a stronger match, and scores are not comparable across different databases. Most members match a sequence against curated reference models of known families and domains, so ProtSpace treats them as reference annotations; the exception is Phobius (`signal_peptide`), a de-novo topology predictor, which carries the ⚡ Predicted badge.
+[InterPro](https://www.ebi.ac.uk/interpro/) integrates predictive models ("signatures") from a consortium of member databases into a single classification of protein families, domains, and functional sites. ProtSpace queries the InterPro Matches API by MD5 sequence hash and exposes the per-member-database hits directly, one ProtSpace column per member database. The API also returns matches that InterPro-N, an AI model, predicts for these databases; ProtSpace leaves them out, so every column holds only the matches of its own database. Each value is a semicolon-separated list of `accession (name)|score` entries, where the score is the value reported by that database's own tool (a bit score for the HMMER-based members such as Pfam); higher means a stronger match, and scores are not comparable across different databases. Most members match a sequence against curated reference models of known families and domains, so ProtSpace treats them as reference annotations; the exception is Phobius (`signal_peptide`), a de-novo topology predictor, which carries the PRED badge.
 
 ### `cath` {#cath}
 
@@ -242,7 +242,7 @@ This column reports PROSITE pattern matches: short regular-expression motifs (ty
 
 ### `signal_peptide` {#signal_peptide}
 
-**Signal peptide (Phobius)** · ⚡ Predicted
+**Signal peptide (Phobius)** · PRED
 
 Signal peptide prediction from Phobius.
 
@@ -346,8 +346,8 @@ TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) provides structure
 
 ### `ted_domains` {#ted_domains}
 
-**TED domains** · ⚡ Predicted
+**TED domains** · PRED
 
 Structure-based domains with CATH classification and pLDDT confidence, from TED (AlphaFold).
 
-TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) segments AlphaFold structures into domains by taking a consensus of three structure-based parsers (Chainsaw, Merizo, and UniDoc) and matches each against [CATH](https://www.cathdb.info/), whose four hierarchical levels are Class, Architecture, Topology, and Homologous superfamily (the four numbers in a code such as `2.60.40.720`). Each domain carries a pLDDT score, AlphaFold's per-residue model confidence on a 0–100 scale, here averaged over the domain's residues. ProtSpace fetches these per accession from the AlphaFold Database API and joins multiple domains with `;`, formatting each as `code (name)|pLDDT`, or `-|{plddt}` when no CATH superfamily is assigned; bundles prepared by older versions spell that unassigned case `unclassified`. The underlying resource was published by Lau, Bordin, Kandathil, Orengo, Jones et al. in [Science (2024)](https://doi.org/10.1126/science.adq4946), describing nearly 365 million domains across the AlphaFold Database, of which roughly 77% of nonredundant domains match a known CATH superfamily.
+TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) segments AlphaFold structures into domains by taking a consensus of three structure-based parsers (Chainsaw, Merizo, and UniDoc) and matches each against [CATH](https://www.cathdb.info/), whose four hierarchical levels are Class, Architecture, Topology, and Homologous superfamily (the four numbers in a code such as `2.60.40.720`). Each domain carries a pLDDT score, AlphaFold's per-residue model confidence on a 0–100 scale, here averaged over the domain's residues. ProtSpace fetches these per accession from the AlphaFold Database API and joins multiple domains with `;`, formatting each as `code (name)|pLDDT`, or `-|{plddt}` when no CATH superfamily is assigned. That `-` is a domain TED found but could not classify, not missing data: the web app shows it as `No CATH label`, while a protein with no TED domains at all reads `N/A`. Bundles prepared by older versions spell the unassigned case `unclassified`. The underlying resource was published by Lau, Bordin, Kandathil, Orengo, Jones et al. in [Science (2024)](https://doi.org/10.1126/science.adq4946), describing nearly 365 million domains across the AlphaFold Database, of which roughly 77% of nonredundant domains match a known CATH superfamily.

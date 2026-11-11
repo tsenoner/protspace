@@ -98,7 +98,13 @@ function migrateMetadata(raw: Record<string, unknown>): StoredDatasetMetadata {
   };
 }
 
-async function readMetadata(): Promise<StoredDatasetMetadata | null> {
+/**
+ * Reads the stored metadata. Corrupt metadata throws `StoredDatasetCorruptError` and, unless
+ * `clearCorrupt` is false, clears the store first. Only the startup restore and status updates
+ * clear: the Import menu's summary can run before the restore, and clearing there would drop the
+ * store without the "Saved dataset was cleared." warning.
+ */
+async function readMetadata({ clearCorrupt = true } = {}): Promise<StoredDatasetMetadata | null> {
   const directory = await getStoreDirectory(false);
   if (!directory) return null;
 
@@ -114,12 +120,12 @@ async function readMetadata(): Promise<StoredDatasetMetadata | null> {
   try {
     parsed = JSON.parse(metadataText);
   } catch {
-    await clearStoreDirectory();
+    if (clearCorrupt) await clearStoreDirectory();
     throw new StoredDatasetCorruptError('Stored dataset metadata could not be parsed.');
   }
 
   if (!isValidMetadata(parsed)) {
-    await clearStoreDirectory();
+    if (clearCorrupt) await clearStoreDirectory();
     throw new StoredDatasetCorruptError('Stored dataset metadata is invalid.');
   }
 
@@ -137,17 +143,6 @@ async function writeTextFile(
   directory: FileSystemDirectoryHandle,
   filename: string,
   content: string,
-): Promise<void> {
-  const handle = await directory.getFileHandle(filename, { create: true });
-  const writable = await handle.createWritable();
-  await writable.write(content);
-  await writable.close();
-}
-
-async function writeBlobFile(
-  directory: FileSystemDirectoryHandle,
-  filename: string,
-  content: Blob,
 ): Promise<void> {
   const handle = await directory.getFileHandle(filename, { create: true });
   const writable = await handle.createWritable();
@@ -176,34 +171,68 @@ export function isSupported(): boolean {
   return typeof navigator !== 'undefined' && hasStorageDirectoryApi(navigator.storage);
 }
 
-export async function saveLastImportedFile(file: File): Promise<void> {
-  if (!isSupported()) {
-    throw buildSupportError();
-  }
+/** A copy of an imported file into OPFS, kept only once the file has loaded. */
+export interface PendingImportedFileSave {
+  /** Stores the copy as the last import; on failure clears the store and rejects. */
+  commit(): Promise<void>;
+  /** Drops the copy, leaving the stored dataset as it was. */
+  abort(): Promise<void>;
+}
 
-  const directory = await getStoreDirectory(true);
-  if (!directory) {
-    throw new Error('Unable to access the Origin Private File System.');
-  }
+/**
+ * Starts copying `file` into OPFS at once, so the copy runs while the file decodes. The
+ * bytes go to the writable's swap file, which replaces the stored dataset only on commit.
+ */
+export function beginSaveImportedFile(file: File): PendingImportedFileSave {
+  const directory = (async () => {
+    if (!isSupported()) {
+      throw buildSupportError();
+    }
+    const opened = await getStoreDirectory(true);
+    if (!opened) {
+      throw new Error('Unable to access the Origin Private File System.');
+    }
+    return opened;
+  })();
+  const copy = directory.then(async (opened) => {
+    const handle = await opened.getFileHandle(DATA_FILENAME, { create: true });
+    const writable = await handle.createWritable();
+    await writable.write(file);
+    return writable;
+  });
+  // commit() or abort() reports the outcome; until then a failure is not unhandled.
+  copy.catch(() => {});
 
-  const metadata: StoredDatasetMetadata = {
-    schemaVersion: SCHEMA_VERSION,
-    name: file.name,
-    type: file.type,
-    size: file.size,
-    lastModified: file.lastModified,
-    storedAt: new Date().toISOString(),
-    lastLoadStatus: 'pending',
-    failedAttempts: 0,
+  return {
+    async commit() {
+      const opened = await directory;
+      const metadata: StoredDatasetMetadata = {
+        schemaVersion: SCHEMA_VERSION,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        lastModified: file.lastModified,
+        storedAt: new Date().toISOString(),
+        lastLoadStatus: 'pending',
+        failedAttempts: 0,
+      };
+
+      try {
+        await (await copy).close();
+        await writeMetadata(opened, metadata);
+      } catch (error) {
+        await clearStoreDirectory();
+        throw error instanceof Error ? error : new Error('Failed to save imported dataset.');
+      }
+    },
+    async abort() {
+      try {
+        await (await copy).abort();
+      } catch {
+        // The copy failed or never started: nothing to drop.
+      }
+    },
   };
-
-  try {
-    await writeBlobFile(directory, DATA_FILENAME, file);
-    await writeMetadata(directory, metadata);
-  } catch (error) {
-    await clearStoreDirectory();
-    throw error instanceof Error ? error : new Error('Failed to save imported dataset.');
-  }
 }
 
 export async function loadLastImportedFile(): Promise<File | null> {
@@ -332,6 +361,46 @@ export async function readLastLoadStatus(): Promise<{
   };
 }
 
+/**
+ * The stored import's name, size and save time, for the Import menu's "Last file" row. Reads the
+ * metadata only, never the bytes: it runs on every dataset change. Null when nothing is stored,
+ * OPFS is missing, or the metadata is corrupt. It never clears a corrupt store: that is the startup
+ * restore's job, which also warns the user.
+ */
+export async function readStoredImportSummary(): Promise<{
+  name: string;
+  size: number;
+  storedAt: string;
+} | null> {
+  try {
+    const metadata = await readMetadata({ clearCorrupt: false });
+    return metadata
+      ? { name: metadata.name, size: metadata.size, storedAt: metadata.storedAt }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function clearLastImportedFile(): Promise<void> {
   await clearStoreDirectory();
+}
+
+/**
+ * Removes the stored import saved at `expectedStoredAt` (the Import menu's "Last file" ×). An
+ * import saved since then is kept, and this resolves false; otherwise the store is cleared.
+ */
+export async function removeLastImportedFile(expectedStoredAt: string): Promise<boolean> {
+  const summary = await readStoredImportSummary();
+  if (summary && summary.storedAt !== expectedStoredAt) return false;
+  const root = await getRootDirectory();
+  if (!root) return true;
+  try {
+    await root.removeEntry(STORE_DIRECTORY_NAME, { recursive: true });
+  } catch (error) {
+    // Nothing stored is removed already. Anything else (a copy still being written holds the
+    // directory, quota, permissions) left the copy in place, which the caller must say.
+    if ((error as { name?: unknown } | null)?.name !== 'NotFoundError') throw error;
+  }
+  return true;
 }

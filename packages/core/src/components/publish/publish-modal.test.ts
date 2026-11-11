@@ -1,9 +1,24 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import './publish-modal';
 import type { ProtspacePublishModal } from './publish-modal';
+import { topLayer } from '../kit/layers';
+import { publishModalStyles } from './publish-modal.styles';
+import { PUBLISH_FRAMING } from './publish-state';
+
+// jsdom 27 has no HTMLDialogElement.showModal or close. The editor's ps-dialog only needs the
+// calls to exist here; what the dialog does is pinned in publish-modal.browser.test.ts.
+beforeAll(() => {
+  const proto = HTMLDialogElement.prototype as unknown as Record<string, unknown>;
+  proto.showModal ??= function (this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  proto.close ??= function (this: HTMLDialogElement) {
+    this.removeAttribute('open');
+  };
+});
 
 interface PublishInternals {
   _state: {
@@ -63,9 +78,44 @@ describe('<protspace-publish-modal> legend reader', () => {
     await modal.updateComplete;
 
     const internals = modal as unknown as PublishInternals;
-    expect(internals._legendTitle).toBe('family');
+    expect(internals._legendTitle).toBe('Family');
     expect(internals._legendItems).toHaveLength(1);
     expect(internals._legendItems[0].value).toBe('A');
+  });
+
+  it('the default legend title is the display name', async () => {
+    const legend = document.createElement('div') as unknown as HTMLElement & {
+      getLegendExportData: () => unknown;
+      data: { annotations: Record<string, unknown> };
+    };
+    legend.getLegendExportData = () => ({
+      annotation: 'ec',
+      otherItemsCount: 0,
+      items: [{ value: 'A', color: '#fff', shape: 'circle', count: 1, isVisible: true }],
+    });
+    legend.data = { annotations: {} };
+
+    const modal = makeModal();
+    (modal as unknown as { legendElement: HTMLElement }).legendElement = legend;
+    await modal.updateComplete;
+    expect((modal as unknown as PublishInternals)._legendTitle).toBe('EC number');
+
+    // A user's column named like an EAT confidence one is labelled by its own name.
+    legend.getLegendExportData = () => ({
+      annotation: 'score__eat_confidence',
+      otherItemsCount: 0,
+      items: [],
+    });
+    legend.data = {
+      annotations: {
+        score__eat_confidence: { kind: 'numeric', values: [], colors: [], shapes: [] },
+      },
+    };
+    (modal as unknown as { legendElement: HTMLElement | null }).legendElement = null;
+    await modal.updateComplete;
+    (modal as unknown as { legendElement: HTMLElement }).legendElement = legend;
+    await modal.updateComplete;
+    expect((modal as unknown as PublishInternals)._legendTitle).toBe('Score eat confidence');
   });
 });
 
@@ -315,7 +365,7 @@ describe('<protspace-publish-modal> dimensions section', () => {
     expect(internals._state.aspectLocked).toBe(true);
     expect(chainBtn.disabled).toBe(true);
     expect(chainBtn.classList.contains('locked')).toBe(false);
-    expect(chainBtn.title).toMatch(/journal preset/i);
+    expect(chainBtn.nextElementSibling?.getAttribute('text')).toMatch(/journal preset/i);
 
     // Clicking the disabled chain must not flip aspectLocked.
     chainBtn.click();
@@ -364,16 +414,18 @@ interface InsetInternals {
       pointSizeScale?: number;
     }>;
   };
-  _captureInsetRenders: (
-    plotEl: unknown,
-    state: unknown,
-    plotRect: { w: number; h: number },
-    bgColor: string,
-  ) => Array<HTMLCanvasElement | null>;
-  _lastInsetCanvases: Array<HTMLCanvasElement | null>;
-  _lastInsetRenderAt: number;
-  _insetRenderCache: Map<string, HTMLCanvasElement>;
-  _settleTimer: ReturnType<typeof setTimeout> | null;
+  _insetRenders: {
+    capture: (
+      plotEl: unknown,
+      state: unknown,
+      plotRect: { w: number; h: number },
+      bgColor: string,
+    ) => Array<HTMLCanvasElement | null>;
+    lastCanvases: Array<HTMLCanvasElement | null>;
+    lastRenderAt: number;
+    renders: Map<string, HTMLCanvasElement>;
+    settleTimer: ReturnType<typeof setTimeout> | null;
+  };
   _scheduleRedraw: () => void;
 }
 
@@ -462,7 +514,77 @@ describe('<protspace-publish-modal> Dot size slider', () => {
   });
 });
 
-describe('<protspace-publish-modal> _captureInsetRenders', () => {
+describe('<protspace-publish-modal> control names', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('names every input and select (the rows’ <label>s are not tied to them)', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as { _state: Record<string, unknown> };
+    internals._state = {
+      ...internals._state,
+      overlays: [
+        {
+          type: 'circle',
+          cx: 0.5,
+          cy: 0.5,
+          rx: 0.1,
+          ry: 0.1,
+          rotation: 0,
+          color: '#000000',
+          strokeWidth: 2,
+        },
+        { type: 'arrow', x1: 0.1, y1: 0.1, x2: 0.2, y2: 0.2, color: '#000000', width: 2 },
+        {
+          type: 'label',
+          x: 0.3,
+          y: 0.3,
+          text: 'Label',
+          fontSize: 14,
+          rotation: 0,
+          color: '#000000',
+        },
+      ],
+      insets: [
+        {
+          sourceRect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 },
+          targetRect: { x: 0.5, y: 0.5, w: 0.2, h: 0.2 },
+          border: 2,
+          connector: 'lines',
+        },
+      ],
+    };
+    (modal as unknown as { requestUpdate: () => void }).requestUpdate();
+    await modal.updateComplete;
+
+    const controls = Array.from(
+      modal.shadowRoot!.querySelectorAll<HTMLElement>('input, select'),
+    ).filter((el) => el.closest('label') === null);
+    expect(controls.length).toBeGreaterThan(10);
+    expect(
+      controls.filter((el) => !el.getAttribute('aria-label')).map((el) => el.outerHTML),
+    ).toEqual([]);
+  });
+
+  it('draws New figure and Reset as danger buttons, Close and Export as they were', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const variants = Array.from(
+      modal.shadowRoot!.querySelectorAll<HTMLElement>('.publish-footer > ps-button'),
+      (button) => [button.textContent!.trim(), button.getAttribute('variant')],
+    );
+    expect(variants).toEqual([
+      ['New figure', 'danger'],
+      ['Reset', 'danger'],
+      ['Close', 'secondary'],
+      ['Export', 'primary'],
+    ]);
+  });
+});
+
+describe('<protspace-publish-modal> inset renders', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -477,7 +599,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
     await modal.updateComplete;
     const internals = modal as unknown as InsetInternals;
     const plot = makeStubPlot();
-    const renders = internals._captureInsetRenders(
+    const renders = internals._insetRenders.capture(
       plot.element,
       { insets: [] },
       { w: 1000, h: 800 },
@@ -499,7 +621,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
       connector: 'lines',
       pointSizeScale: 1,
     };
-    const [canvas] = internals._captureInsetRenders(
+    const [canvas] = internals._insetRenders.capture(
       plot.element,
       { insets: [inset] },
       { w: 1000, h: 800 },
@@ -524,9 +646,9 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
       pointSizeScale: 1,
     };
     const args = [plot.element, { insets: [inset] }, { w: 1000, h: 800 }, '#ffffff'] as const;
-    internals._captureInsetRenders(...args);
+    internals._insetRenders.capture(...args);
     expect(plot.callCount()).toBe(1);
-    internals._captureInsetRenders(...args);
+    internals._insetRenders.capture(...args);
     expect(plot.callCount()).toBe(1); // cache hit, no new WebGL pass
   });
 
@@ -543,8 +665,8 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
       connector: 'lines',
       pointSizeScale: 1,
     };
-    // First call: full render establishes _lastInsetRenderAt
-    internals._captureInsetRenders(
+    // First call: full render establishes lastRenderAt
+    internals._insetRenders.capture(
       plot.element,
       { insets: [baseInset] },
       { w: 1000, h: 800 },
@@ -553,10 +675,10 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
     expect(plot.callCount()).toBe(1);
 
     // Within the 80 ms fast-path window, simulate the user dragging — change
-    // target dims a few times. Each call should reuse _lastInsetCanvases[0]
+    // target dims a few times. Each call should reuse lastCanvases[0]
     // instead of triggering a fresh WebGL pass.
     for (let i = 0; i < 5; i++) {
-      internals._captureInsetRenders(
+      internals._insetRenders.capture(
         plot.element,
         {
           insets: [
@@ -574,7 +696,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
 
     // Once the 80 ms window has elapsed the next resize renders fresh again.
     now.mockReturnValue(1080);
-    internals._captureInsetRenders(
+    internals._insetRenders.capture(
       plot.element,
       { insets: [{ ...baseInset, targetRect: { x: 0.5, y: 0.5, w: 0.3, h: 0.3 } }] },
       { w: 1000, h: 800 },
@@ -592,7 +714,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
     // _redraw itself bails out here (no plotElement), so watch the request instead.
     const scheduleRedraw = vi.spyOn(internals, '_scheduleRedraw').mockImplementation(() => {});
 
-    // The first call renders fresh (_lastInsetRenderAt starts at 0), seeding the canvases.
+    // The first call renders fresh (lastRenderAt starts at 0), seeding the canvases.
     const plot = makeStubPlot();
     const baseInset = {
       sourceRect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 },
@@ -601,7 +723,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
       connector: 'lines',
       pointSizeScale: 1,
     };
-    internals._captureInsetRenders(
+    internals._insetRenders.capture(
       plot.element,
       { insets: [baseInset] },
       { w: 1000, h: 800 },
@@ -610,8 +732,8 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
     expect(plot.callCount()).toBe(1);
 
     // Trigger fastPath: change target dims while we're still inside the
-    // 80 ms window since the fresh render. This should arm _settleTimer.
-    internals._captureInsetRenders(
+    // 80 ms window since the fresh render. This should arm settleTimer.
+    internals._insetRenders.capture(
       plot.element,
       {
         insets: [{ ...baseInset, targetRect: { x: 0.5, y: 0.5, w: 0.25, h: 0.25 } }],
@@ -619,13 +741,13 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
       { w: 1000, h: 800 },
       '#ffffff',
     );
-    expect(internals._settleTimer).not.toBeNull();
+    expect(internals._insetRenders.settleTimer).not.toBeNull();
     vi.advanceTimersByTime(119);
     expect(scheduleRedraw).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(1);
     expect(scheduleRedraw).toHaveBeenCalledTimes(1);
-    expect(internals._settleTimer).toBeNull();
+    expect(internals._insetRenders.settleTimer).toBeNull();
   });
 
   it('returns null per inset when plotEl lacks captureAtResolution / getDataExtent', async () => {
@@ -633,7 +755,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
     await modal.updateComplete;
     const internals = modal as unknown as InsetInternals;
     const stub = document.createElement('div'); // no API surface
-    const renders = internals._captureInsetRenders(
+    const renders = internals._insetRenders.capture(
       stub,
       {
         insets: [
@@ -804,7 +926,7 @@ describe('<protspace-publish-modal> selection + keyboard delete', () => {
     expect(internals._selectedItem).toEqual({ kind: 'overlay', index: 0 });
   });
 
-  it('Escape clears selection without removing the item', async () => {
+  it('Delete with a slider, checkbox or button focused keeps the selected overlay', async () => {
     const modal = makeModal();
     await modal.updateComplete;
     const internals = modal as unknown as SelectionInternals;
@@ -813,11 +935,32 @@ describe('<protspace-publish-modal> selection + keyboard delete', () => {
     internals.requestUpdate();
     await modal.updateComplete;
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    const root = modal.shadowRoot!;
+    const controls = [
+      root.querySelector('[data-publish-item="overlay-0"] input[type="range"]'),
+      root.querySelector('input[type="checkbox"]'),
+      root.querySelector('[data-publish-item="overlay-0"] .delete-btn'),
+    ];
+    for (const control of controls) {
+      expect(control).not.toBeNull();
+      for (const key of ['Delete', 'Backspace']) {
+        control!.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true, composed: true }),
+        );
+      }
+    }
     await modal.updateComplete;
 
     expect(internals._state.overlays).toHaveLength(1);
-    expect(internals._selectedItem).toBeNull();
+    expect(internals._selectedItem).toEqual({ kind: 'overlay', index: 0 });
+  });
+
+  it('is a layer while connected and releases it on removal', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    expect(topLayer()).toBeDefined();
+    modal.remove();
+    expect(topLayer()).toBeUndefined();
   });
 
   it('keydown is a no-op when nothing is selected', async () => {
@@ -929,26 +1072,28 @@ describe('<protspace-publish-modal> plot cache key', () => {
     const modal = document.createElement('protspace-publish-modal') as HTMLElement & {
       plotElement: HTMLElement;
       _state: Record<string, unknown>;
-      _lastInsetRenderAt: number;
-      _lastInsetCanvases: Array<HTMLCanvasElement | undefined>;
-      _captureInsetRenders: (
-        plotEl: unknown,
-        state: unknown,
-        plotRect: { w: number; h: number },
-        bgColor: string,
-        opts?: { forExport?: boolean },
-      ) => Array<HTMLCanvasElement | null>;
+      _insetRenders: {
+        lastRenderAt: number;
+        lastCanvases: Array<HTMLCanvasElement | null>;
+        capture: (
+          plotEl: unknown,
+          state: unknown,
+          plotRect: { w: number; h: number },
+          bgColor: string,
+          opts?: { forExport?: boolean },
+        ) => Array<HTMLCanvasElement | null>;
+      };
     };
     modal.plotElement = fakePlotEl;
     document.body.appendChild(modal);
-    modal._lastInsetRenderAt = performance.now();
+    modal._insetRenders.lastRenderAt = performance.now();
     // Simulate a prior preview-resolution render sitting in the cache. Without
     // the export bypass this is what _handleExport would silently return at
     // tiny preview dims instead of a fresh export-resolution render.
     const previewCanvas = document.createElement('canvas');
     previewCanvas.width = 100;
     previewCanvas.height = 60;
-    modal._lastInsetCanvases = [previewCanvas];
+    modal._insetRenders.lastCanvases = [previewCanvas];
     modal._state = {
       ...(modal._state as Record<string, unknown>),
       insets: [
@@ -962,7 +1107,7 @@ describe('<protspace-publish-modal> plot cache key', () => {
     };
     captures.length = 0;
 
-    modal._captureInsetRenders(fakePlotEl, modal._state, { w: 1000, h: 600 }, '#ffffff', {
+    modal._insetRenders.capture(fakePlotEl, modal._state, { w: 1000, h: 600 }, '#ffffff', {
       forExport: true,
     });
 
@@ -1116,5 +1261,373 @@ describe('<protspace-publish-modal> fingerprint warning', () => {
     } finally {
       restoreGetContext();
     }
+  });
+
+  describe('with a saved state from another projection', () => {
+    type FingerprintModal = HTMLElement & {
+      savedPublishState: Record<string, unknown>;
+      currentProjection: { projection: string; dimensionality: number };
+      updateComplete: Promise<unknown>;
+      shadowRoot: ShadowRoot;
+      _state: { viewFingerprint?: { projection: string; dimensionality: number } };
+    };
+    const circle = {
+      type: 'circle',
+      cx: 0.5,
+      cy: 0.5,
+      rx: 0.1,
+      ry: 0.1,
+      rotation: 0,
+      color: '#000',
+      strokeWidth: 2,
+    };
+    let origGetContext: typeof HTMLCanvasElement.prototype.getContext;
+    beforeEach(() => {
+      origGetContext = HTMLCanvasElement.prototype.getContext;
+      const stubCtx = new Proxy({}, { get: () => () => undefined });
+      HTMLCanvasElement.prototype.getContext = function () {
+        return stubCtx;
+      } as unknown as typeof HTMLCanvasElement.prototype.getContext;
+      return () => {
+        HTMLCanvasElement.prototype.getContext = origGetContext;
+      };
+    });
+
+    async function open(overlays: unknown[]): Promise<FingerprintModal> {
+      const modal = document.createElement('protspace-publish-modal') as FingerprintModal;
+      modal.savedPublishState = {
+        viewFingerprint: { projection: 'PCA', dimensionality: 2 },
+        overlays,
+      };
+      modal.currentProjection = { projection: 'UMAP', dimensionality: 2 };
+      document.body.appendChild(modal);
+      await modal.updateComplete;
+      return modal;
+    }
+
+    const clickButton = (modal: FingerprintModal, name: string) =>
+      [...modal.shadowRoot.querySelectorAll<HTMLElement>('ps-button')]
+        .find((each) => each.textContent?.trim() === name)!
+        .click();
+
+    it('with nothing placed, it adopts the current view and does not warn', async () => {
+      const modal = await open([]);
+      expect(modal.shadowRoot.querySelector('.publish-warning')).toBeNull();
+      expect(modal._state.viewFingerprint).toEqual({ projection: 'UMAP', dimensionality: 2 });
+      modal.remove();
+    });
+
+    it('with an overlay placed, it names both projections', async () => {
+      const modal = await open([circle]);
+      const warning = modal.shadowRoot.querySelector('.publish-warning');
+      expect(warning?.textContent).toContain('PCA');
+      expect(warning?.textContent).toContain('UMAP');
+      modal.remove();
+    });
+
+    it('Undo after New figure brings the warning back with the overlays', async () => {
+      const modal = await open([circle]);
+      clickButton(modal, 'New figure');
+      await modal.updateComplete;
+      expect(modal.shadowRoot.querySelector('.publish-warning')).toBeNull();
+
+      clickButton(modal, 'Undo');
+      await modal.updateComplete;
+      expect(modal.shadowRoot.querySelector('.publish-warning')?.textContent).toContain('PCA');
+      modal.remove();
+    });
+  });
+});
+
+describe('<protspace-publish-modal> review fixes', () => {
+  let restoreGetContext: () => void;
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    restoreGetContext = stubCanvasGetContext();
+  });
+  afterEach(async () => {
+    // Removed while the environment is still up: ps-dialog's disconnect settles in a microtask.
+    document.body.innerHTML = '';
+    await Promise.resolve();
+    restoreGetContext();
+  });
+
+  type Internals = SelectionInternals & {
+    _tool: string;
+    _exportError: string | null;
+    _overlayController: { callbacks: { onInsetAdded(inset: unknown): void } } | null;
+  };
+  const shadow = (modal: HTMLElement) => modal.shadowRoot!;
+  const button = (modal: HTMLElement, name: string) =>
+    [...shadow(modal).querySelectorAll<HTMLElement>('ps-button, button')].find(
+      (each) => each.textContent?.trim() === name,
+    )!;
+
+  it('removing an earlier overlay keeps the selection on the same overlay', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as Internals;
+    const label = { type: 'label', x: 0.2, y: 0.2, text: 'B', fontSize: 14, color: '#000' };
+    internals._state = { ...internals._state, overlays: [sampleCircle, label] };
+    internals._selectedItem = { kind: 'overlay', index: 1 };
+    internals.requestUpdate();
+    await modal.updateComplete;
+
+    shadow(modal)
+      .querySelector<HTMLButtonElement>('[data-publish-item="overlay-0"] .delete-btn')!
+      .click();
+    await modal.updateComplete;
+
+    expect(internals._selectedItem).toEqual({ kind: 'overlay', index: 0 });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }));
+    await modal.updateComplete;
+    // Delete removes the label the selection still points at, not nothing.
+    expect(internals._state.overlays).toEqual([]);
+  });
+
+  it('removing a later inset leaves an earlier selection alone', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as Internals;
+    internals._state = { ...internals._state, insets: [sampleInset, sampleInset] };
+    internals._selectedItem = { kind: 'inset', index: 0 };
+    internals.requestUpdate();
+    await modal.updateComplete;
+
+    shadow(modal)
+      .querySelector<HTMLButtonElement>('[data-publish-item="inset-1"] .delete-btn')!
+      .click();
+    await modal.updateComplete;
+    expect(internals._selectedItem).toEqual({ kind: 'inset', index: 0 });
+  });
+
+  it('placing an inset hands the toolbar back to Select', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as Internals;
+    button(modal, 'Zoom Inset').click();
+    await modal.updateComplete;
+    expect(internals._tool).toBe('inset-source');
+
+    internals._overlayController!.callbacks.onInsetAdded(sampleInset);
+    await modal.updateComplete;
+    expect(internals._tool).toBe('select');
+    expect(button(modal, 'Select').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('Clear overlays in the view warning also drops the selection', async () => {
+    const modal = document.createElement('protspace-publish-modal') as ProtspacePublishModal;
+    modal.savedPublishState = {
+      viewFingerprint: { projection: 'PCA', dimensionality: 2 },
+      overlays: [sampleCircle],
+    };
+    modal.currentProjection = { projection: 'UMAP', dimensionality: 2 };
+    document.body.appendChild(modal);
+    await modal.updateComplete;
+    const internals = modal as unknown as Internals;
+    internals._selectedItem = { kind: 'overlay', index: 0 };
+    await modal.updateComplete;
+
+    shadow(modal).querySelector<HTMLAnchorElement>('.publish-warning a')!.click();
+    await modal.updateComplete;
+
+    expect(internals._state.overlays).toEqual([]);
+    expect(internals._selectedItem).toBeNull();
+    expect(shadow(modal).querySelector('.publish-warning')).toBeNull();
+  });
+
+  it('says in the dialog why drawing the figure failed, and dispatches nothing', async () => {
+    const modal = makeModal();
+    modal.plotElement = document.createElement('div');
+    await modal.updateComplete;
+    // What a lost WebGL context or a canvas past the browser's size limit throws mid-render.
+    (modal as unknown as { _renderFigure: () => never })._renderFigure = () => {
+      throw new Error('WebGL context lost');
+    };
+    const exported = vi.fn();
+    modal.addEventListener('publish-export', exported);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    button(modal, 'Export').click();
+    await vi.waitFor(() =>
+      expect((modal as unknown as Internals)._exportError).toBe(
+        'Export failed. WebGL context lost',
+      ),
+    );
+    await modal.updateComplete;
+    expect(shadow(modal).querySelector('.publish-export-error')?.textContent).toContain(
+      'WebGL context lost',
+    );
+    expect(exported).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('holds a typed legend size to the slider range, and the box shows it', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as { _state: { legend: { widthPercent: number } } };
+    const box = shadow(modal).querySelector<HTMLInputElement>(
+      'input[type="number"][aria-label="Legend size"]',
+    )!;
+    box.value = '500';
+    box.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    expect(internals._state.legend.widthPercent).toBe(100);
+    expect(box.value).toBe('100');
+
+    // Typed again past the clamp: the state does not move, the box still says 100.
+    box.value = '900';
+    box.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    expect(box.value).toBe('100');
+  });
+
+  it('puts a rejected size back in its box', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const width = shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="width"]')!;
+    const before = width.value;
+    width.value = '-5';
+    width.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    expect(width.value).toBe(before);
+  });
+
+  it('shows the clamped height when a preset caps it at the height it already has', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as PublishInternals;
+    [...shadow(modal).querySelectorAll<HTMLButtonElement>('.publish-preset-btn')]
+      .find((b) => /Nature.*1 col/i.test(b.textContent ?? ''))!
+      .click();
+    await modal.updateComplete;
+    const slider = shadow(modal).querySelector<HTMLInputElement>(
+      '[data-publish-input="height-slider"]',
+    )!;
+    slider.value = '8000';
+    slider.dispatchEvent(new Event('input'));
+    await modal.updateComplete;
+    expect(internals._state.heightPx).toBe(2917);
+
+    // In px the box speaks pixels; a second push past the cap leaves the state where it is.
+    internals._state = { ...internals._state, unit: 'px' };
+    await modal.updateComplete;
+    const box = shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="height"]')!;
+    box.value = '9999';
+    box.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    expect(internals._state.heightPx).toBe(2917);
+    expect(box.value).toBe('2917');
+  });
+
+  it('holds a typed resolution to the box range', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as PublishInternals;
+    // Resample off: only the print size follows, so the box's own range is the bound.
+    shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="resample"]')!.click();
+    await modal.updateComplete;
+    expect(internals._state.resample).toBe(false);
+    const dpi = shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="dpi"]')!;
+    dpi.value = '99999';
+    dpi.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    expect(internals._state.dpi).toBe(2400);
+    expect(dpi.value).toBe('2400');
+  });
+
+  it('with Resample on, holds a typed resolution to where the figure reaches the export cap', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as PublishInternals;
+    expect(internals._state).toMatchObject({ widthPx: 2048, heightPx: 1024, resample: true });
+    const dpi = shadow(modal).querySelector<HTMLInputElement>('[data-publish-input="dpi"]')!;
+    dpi.value = '2400';
+    dpi.dispatchEvent(new Event('change'));
+    await modal.updateComplete;
+    // 2048 px at 300 dpi is 173.4 mm, which spans MAX_EXPORT_DIMENSION px at 1200 dpi.
+    expect(internals._state).toMatchObject({ dpi: 1200, widthPx: 8192, heightPx: 4096 });
+    expect(dpi.value).toBe('1200');
+  });
+});
+
+describe('figures saved before the workbench framing', () => {
+  const EXTENT = { xMin: 0, xMax: 40, yMin: 0, yMax: 10 };
+  const PADDED = { xMin: -0.8, xMax: 40.8, yMin: -0.2, yMax: 10.2 };
+  const INFO = { marginLeft: 20, marginRight: 20, marginTop: 300, marginBottom: 300 };
+  const LABEL = {
+    type: 'label',
+    x: 0.3,
+    y: 0.4,
+    text: 't',
+    fontSize: 14,
+    rotation: 0,
+    color: '#000',
+  };
+
+  type FramedModal = HTMLElement & {
+    savedPublishState: Record<string, unknown>;
+    currentProjection: { projection: string; dimensionality: number };
+    plotElement: HTMLElement;
+    _state: { framing?: number; overlays: Array<{ x?: number; y?: number }> };
+  };
+
+  function plot(): HTMLElement {
+    const el = document.createElement('div') as HTMLElement & Record<string, unknown>;
+    el.getDataExtent = (options?: { padded?: boolean }) => (options?.padded ? PADDED : EXTENT);
+    el.getRenderInfo = () => INFO;
+    return el;
+  }
+
+  function open(saved: Record<string, unknown>, projection = 'umap'): FramedModal {
+    const modal = document.createElement('protspace-publish-modal') as FramedModal;
+    modal.savedPublishState = saved;
+    modal.currentProjection = { projection, dimensionality: 2 };
+    modal.plotElement = plot();
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  let restoreGetContext: () => void;
+  beforeEach(() => {
+    restoreGetContext = stubCanvasGetContext();
+  });
+  afterEach(() => {
+    document.body.innerHTML = '';
+    restoreGetContext();
+  });
+
+  it('moves an unmarked state onto the current framing and marks it', () => {
+    const modal = open({
+      viewFingerprint: { projection: 'umap', dimensionality: 2 },
+      overlays: [LABEL],
+    });
+    const [label] = modal._state.overlays;
+    expect(modal._state.framing).toBe(PUBLISH_FRAMING);
+    expect(label.x).not.toBeCloseTo(0.3, 5);
+    expect(label.y).not.toBeCloseTo(0.4, 5);
+  });
+
+  it('leaves a state already in the current framing where it is', () => {
+    const modal = open({
+      viewFingerprint: { projection: 'umap', dimensionality: 2 },
+      overlays: [LABEL],
+      framing: PUBLISH_FRAMING,
+    });
+    expect(modal._state.overlays[0]).toMatchObject({ x: 0.3, y: 0.4 });
+  });
+
+  it('waits, unmoved and unmarked, while the figure is open on another projection', () => {
+    const modal = open(
+      { viewFingerprint: { projection: 'umap', dimensionality: 2 }, overlays: [LABEL] },
+      'pca',
+    );
+    expect(modal._state.framing).toBeUndefined();
+    expect(modal._state.overlays[0]).toMatchObject({ x: 0.3, y: 0.4 });
+  });
+
+  it('marks a state with nothing placed without needing the plot', () => {
+    const modal = open({ overlays: [] });
+    expect(modal._state.framing).toBe(PUBLISH_FRAMING);
   });
 });
