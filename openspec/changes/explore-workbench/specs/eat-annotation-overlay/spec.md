@@ -88,10 +88,13 @@ When the overlay is enabled and an EAT base annotation is active, the effective 
 the curated value when present and otherwise the transferred value. Observed cells SHALL remain
 filled. Transferred cells SHALL use the same category mapping but render as hollow, anti-aliased
 markers with a clearly legible, bounded outline that remains responsive to point size while
-preserving a visible hollow interior. The interior SHALL use an opaque plot-surface knockout so
-overlapping observed or transferred markers cannot fill the hollow cue by showing through it. The
-knockout SHALL be the plot's background on screen, which follows the theme, and white in every
-export, since exports are always light.
+preserving a visible hollow interior on every shape, the plus included. The ring SHALL be 12% of
+the marker's sprite diameter, at least one device pixel, and SHALL take at most 60% of the
+glyph's depth (its inradius), so the hole stays open; it is never wider than a sixth of the
+diameter once the sprite is 6 device pixels or wider. The interior SHALL be transparent, so
+markers painted earlier show through the hole rather than being masked by it. The plus's arms SHALL
+be 0.42 of its half-size wide, in the plot, the legend and every export. The legend's shape picker
+SHALL draw every shape filled, the plus included, since hollow means a transferred value.
 Multi-valued transferred cells SHALL retain every decoded label and use the existing multi-label
 marker segmentation. Disabling the overlay SHALL return transferred cells to their curated missing
 category.
@@ -134,21 +137,27 @@ category.
 
 - **WHEN** a user increases or decreases legend point size
 - **THEN** the hollow transferred outline remains visibly thicker than the anti-alias fringe
-- **AND** a visible hollow interior remains at shape sizes 10 and 64, the default for datasets of up
-  to 10,000 proteins and the maximum; at the smallest sizes, the default on the largest datasets,
-  the interior may fall below one device pixel
+- **AND** a visible hollow interior remains on every shape, the plus included, at shape size 10 at
+  2 device pixels per CSS pixel and at shape size 64, the default at 10,000 proteins and the largest
+  size from 10,000 proteins up; at the smallest sizes, the default on the largest datasets, the
+  interior may fall below one device pixel
 - **AND** its responsive thickness is bounded rather than required to scale linearly with marker
   diameter, with identical live and exported rendering at the same point scale
 
-#### Scenario: Hollow cue survives overlapping markers
+#### Scenario: The plus in the shape picker
+
+- **WHEN** the user opens a legend row's colour and shape picker
+- **THEN** the plus is drawn filled like the other shapes
+
+#### Scenario: Hollow cue over overlapping markers
 
 - **WHEN** a transferred marker is painted over one or more observed or transferred markers
-- **THEN** its opaque plot-surface interior masks the earlier marker pixels
-- **AND** the final composited live and exported marker remains visibly hollow
+- **THEN** its transparent interior lets the earlier marker pixels show through
+- **AND** its ring stays drawn in its own colour over them
 - **AND** the canonical painter order places transferred markers after ordinary markers within the
   same interaction tier while preserving selected points as the top tier
-- **AND** transparent export keeps non-marker pixels transparent while filling transferred markers'
-  interiors with white, the light plot surface every export uses
+- **AND** a transparent export keeps non-marker pixels and an isolated transferred marker's
+  interior transparent
 
 #### Scenario: Overlay disabled
 

@@ -913,10 +913,10 @@ export class ProtspaceEatPanel extends LitElement {
             <circle
               cx="4.5"
               cy="4.5"
-              r="3.5"
+              r="4"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1"
               pathLength="12"
               stroke-dasharray="1.2 0.8"
             />

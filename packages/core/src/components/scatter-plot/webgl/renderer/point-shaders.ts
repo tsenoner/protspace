@@ -3,6 +3,7 @@
  * export: the point and gamma programs, and the camera, glide and record-table
  * snippets the density shaders reuse.
  */
+import { PLUS_ARM_RATIO } from '@protspace/utils';
 
 /**
  * Where a projection switch drew each point, for a vertex shader with
@@ -159,6 +160,15 @@ out vec4 fragColor;
 const float PI = 3.14159265359;
 const float SQRT3 = 1.73205080757;
 const float PREDICTED_INTERIOR_FILL = 0.0; // 1.0 = filled knockout (old), 0.0 = hollow
+// The plus's arm half-width, shared with the SVG path (PLUS_ARM_RATIO).
+const float PLUS_ARM = ${PLUS_ARM_RATIO.toFixed(2)};
+// A hollow marker's ring: 12% of the sprite's diameter (0.24 of its radius), as plotting
+// libraries stroke hollow markers (at most 1/8 of the diameter, never above 1/6), with a floor
+// of one device pixel so it never thins to nothing. The floor wins only below 6 device px.
+const float HOLLOW_RING_DIAMETER_SHARE = 0.12;
+// The most of a glyph's depth the ring may take, so every shape keeps a hole; without it the
+// device-pixel floor closed the plus's thin arms.
+const float HOLLOW_RING_DEPTH_SHARE = 0.6;
 
 // Outline width. Two terms, and it needs both:
 //
@@ -190,6 +200,10 @@ void main() {
   // Positive = inside, zero = on boundary, negative = outside.
   // This single computation drives both anti-aliasing and the outline effect.
   float edgeDist;
+  // The deepest edgeDist inside the glyph, and edgeDist's gradient per sprite unit: what a
+  // hollow ring is sized against.
+  float depth = 1.0;
+  float fieldGradient = 1.0;
 
   if (v_shape < 0.5) { // Circle
     edgeDist = 1.0 - length(coord);
@@ -198,20 +212,23 @@ void main() {
   } else if (v_shape < 2.5) { // Diamond
     // Match d3.symbolDiamond proportions (same mapping as D3's "tan30" constant, i.e. sqrt(1/3))
     edgeDist = 1.0 - (abs(coord.x) * SQRT3 + abs(coord.y));
+    fieldGradient = 2.0;
   } else if (v_shape < 3.5) { // Triangle Up
     // Inside region: abs(x)*SQRT3 <= 1 + y, clipped to point quad [-1,1]^2.
     float eSides = (1.0 + coord.y - abs(coord.x) * SQRT3) / 2.0;
     float eBottom = 1.0 - coord.y;
     float eLR = 1.0 - abs(coord.x);
     edgeDist = min(eSides, min(eBottom, eLR));
+    depth = 2.0 / 3.0;
   } else if (v_shape < 4.5) { // Triangle Down
     // Inside region: abs(x)*SQRT3 <= 1 - y, clipped to point quad [-1,1]^2.
     float eSides = (1.0 - coord.y - abs(coord.x) * SQRT3) / 2.0;
     float eTop = 1.0 + coord.y;
     float eLR = 1.0 - abs(coord.x);
     edgeDist = min(eSides, min(eTop, eLR));
+    depth = 2.0 / 3.0;
   } else { // Plus — SDF as union of vertical and horizontal arms
-    float thickness = 0.35;
+    float thickness = PLUS_ARM;
     // SDF for vertical arm (half-extents: thickness x 1.0)
     vec2 dV = abs(coord) - vec2(thickness, 1.0);
     float sdfV = length(max(dV, 0.0)) + min(max(dV.x, dV.y), 0.0);
@@ -220,6 +237,7 @@ void main() {
     float sdfH = length(max(dH, 0.0)) + min(max(dH.x, dH.y), 0.0);
     // Union of both arms; negate so positive = inside
     edgeDist = -min(sdfV, sdfH);
+    depth = PLUS_ARM;
   }
 
   // Anti-aliased shape edge: smooth alpha over ~1 screen pixel using
@@ -244,13 +262,16 @@ void main() {
   // below stays class-free.
   float outlineBudget = OUTLINE_DOT_BUDGET;
   if (v_predicted > 0.5) {
-    // Keep the ring legible at every sprite size without allowing derivative scaling to consume
-    // the interior. With PREDICTED_INTERIOR_FILL = 1.0 the opaque surface-color knockout would
-    // prevent earlier overlapping points from showing through the hole; at 0.0 (hollow) that
-    // show-through is allowed for densely overlapping markers — an accepted trade-off.
-    float ringWidth = clamp(pixelScale * 1.75, 0.30, 0.55);
+    // The ring in sprite units (a share of the diameter, at least a device pixel), converted to
+    // edgeDist units and capped by the glyph's depth, so the same rule holds on every shape. With
+    // PREDICTED_INTERIOR_FILL = 1.0 an opaque surface-color knockout would hide earlier
+    // overlapping points behind the hole; at 0.0 (hollow) they show through it — an accepted
+    // trade-off for dense EAT regions.
+    float ringWidth = min(
+      fieldGradient * max(HOLLOW_RING_DIAMETER_SHARE * 2.0, pixelScale),
+      HOLLOW_RING_DEPTH_SHARE * depth);
     outlineBudget = ringWidth * OUTLINE_RING_BUDGET;
-    float interiorAa = min(pixelScale, (1.0 - ringWidth) * 0.5);
+    float interiorAa = min(fieldGradient * pixelScale, (depth - ringWidth) * 0.5);
     predictedInterior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);
   }
   if (shapeAlpha < 0.001) discard;
@@ -305,7 +326,7 @@ void main() {
     //
     // The feather spans pixelScale, NOT fieldPerPixel, even though the width above uses
     // fieldPerPixel. On a ring, outlineBudget caps the band below one device pixel
-    // (ringWidth * 0.35 <= 0.19), so feathering over fieldPerPixel would make the ramp wider
+    // (ringWidth * 0.35 <= 0.21), so feathering over fieldPerPixel would make the ramp wider
     // than the band it is supposed to soften and wash the outline out instead — on a diamond,
     // whose gradient is 2, that cost a predicted glyph ~3x of its darkening at default point
     // sizes. Widening the band is safe; widening the feather past the band is not.

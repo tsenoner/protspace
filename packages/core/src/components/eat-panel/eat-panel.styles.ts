@@ -165,8 +165,9 @@ export const eatPanelStyles = [
       background: var(--eat-ink);
     }
 
+    /* A hollow marker's ring is about 12% of its width: 1 px of this 9 px mark. */
     .eat-key-mark[data-part='kept'] {
-      border: 2px solid var(--eat-line);
+      border: 1px solid var(--eat-line);
     }
 
     /* An SVG ring of six dashes: a 9 px CSS dashed border draws two arcs that read as a spinner. */

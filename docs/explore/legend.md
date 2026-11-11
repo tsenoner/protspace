@@ -263,7 +263,7 @@ If an imported bundle or saved browser state references an unsupported numeric g
 
 ### Shapes
 
-Every category renders as a circle by default. To give a category another colour or shape (square, diamond, plus, triangle-up, triangle-down), click its colour in the legend row (its tooltip reads `Change colour and shape`): the popover has a Shape section underneath the colour picker. Click the colour again, press **Escape** or click elsewhere to close it.
+Every category renders as a circle by default. To give a category another colour or shape (square, diamond, plus, triangle-up, triangle-down), click its colour in the legend row (its tooltip reads `Change colour and shape`): the popover has a Shape section underneath the colour picker. Its shapes are drawn filled, as the plot draws curated proteins; a hollow marker in the plot means an [EAT prediction](/explore/eat#telling-them-apart-in-the-plot). Click the colour again, press **Escape** or click elsewhere to close it.
 
 Numeric and multi-label annotations always render as circles; per-category shape assignment is not available for those.
 

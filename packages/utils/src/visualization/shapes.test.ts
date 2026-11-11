@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toDisplayValue, LEGEND_VALUES, SHAPE_PATH_GENERATORS } from './shapes';
+import { toDisplayValue, LEGEND_VALUES, SHAPE_PATH_GENERATORS, PLUS_ARM_RATIO } from './shapes';
 import { NA_VALUE, NA_DISPLAY } from './missing-values';
 
 describe('toDisplayValue', () => {
@@ -49,6 +49,12 @@ describe('SHAPE_PATH_GENERATORS', () => {
     const path = SHAPE_PATH_GENERATORS.plus(testSize);
     expect((path.match(/L/g) || []).length).toBe(11);
     expect(path).toContain('Z');
+  });
+
+  it('plus arms are the shared half-width, 0.42 of the half-size', () => {
+    expect(PLUS_ARM_RATIO).toBe(0.42);
+    // size 100: half-size 50, arm half-width 21.
+    expect(SHAPE_PATH_GENERATORS.plus(100)).toMatch(/^M -21,-50 L 21,-50 L 21,-21 L 50,-21 /);
   });
 
   it('triangle-up generates closed 3-point path', () => {

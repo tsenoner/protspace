@@ -45,8 +45,27 @@ describe('point shaders', () => {
     expect(POINT_FRAGMENT_SHADER).toContain('uniform vec3 u_knockoutColor;');
     // The hollow interior is the only thing that distinguishes the two glyph classes; the
     // outline applies to both (#369, see the outline describe block).
-    expect(POINT_FRAGMENT_SHADER).toContain('clamp(pixelScale * 1.75, 0.30, 0.55)');
-    expect(POINT_FRAGMENT_SHADER).toContain('min(pixelScale, (1.0 - ringWidth) * 0.5)');
+  });
+
+  it('sizes the ring as a share of the diameter, a device-pixel floor and a depth cap', () => {
+    expect(POINT_FRAGMENT_SHADER).toContain('const float HOLLOW_RING_DIAMETER_SHARE = 0.12;');
+    expect(POINT_FRAGMENT_SHADER).toContain('const float HOLLOW_RING_DEPTH_SHARE = 0.6;');
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'fieldGradient * max(HOLLOW_RING_DIAMETER_SHARE * 2.0, pixelScale),',
+    );
+    expect(POINT_FRAGMENT_SHADER).toContain('HOLLOW_RING_DEPTH_SHARE * depth);');
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'min(fieldGradient * pixelScale, (depth - ringWidth) * 0.5)',
+    );
+  });
+
+  it('gives each shape its depth and gradient, so the plus and triangles keep a hole', () => {
+    expect(POINT_FRAGMENT_SHADER).toContain('const float PLUS_ARM = 0.42;');
+    expect(POINT_FRAGMENT_SHADER).toContain('float thickness = PLUS_ARM;');
+    expect(POINT_FRAGMENT_SHADER).toContain('depth = PLUS_ARM;');
+    expect(POINT_FRAGMENT_SHADER.match(/depth = 2\.0 \/ 3\.0;/g)).toHaveLength(2);
+    // The diamond's edgeDist has gradient 2.
+    expect(POINT_FRAGMENT_SHADER).toContain('fieldGradient = 2.0;');
   });
 
   it('sizes the ring from an isotropic pixel scale so the hole stays round', () => {
