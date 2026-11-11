@@ -9,7 +9,7 @@ The Explore page is a workbench for protein embeddings: a map of your proteins i
 
 | Area         | Where             | What it holds                                                        |
 | ------------ | ----------------- | -------------------------------------------------------------------- |
-| **App bar**  | Top               | The dataset name, search, the Figure editor, the theme and Help      |
+| **App bar**  | Top               | The dataset name, search, Export, the Figure editor, theme and Help  |
 | **View bar** | Below the app bar | Projection, Color by and Contours                                    |
 | **Plot**     | Centre            | The scatterplot, its tools, the selection bar and the status chips   |
 | **Sidebar**  | Right             | The Legend, Structure, Filter and EAT panels, switched from the rail |
@@ -19,11 +19,12 @@ The Explore page is a workbench for protein embeddings: a map of your proteins i
 ![The app bar's left side: the ProtSpace logo, the dataset name with its protein count, and the search box](./images/app-bar-start.png){.light-only}
 ![The app bar's left side: the ProtSpace logo, the dataset name with its protein count, and the search box](./images/app-bar-start-dark.png){.dark-only}
 
-![The app bar's right side: the Figure editor button, then the Theme, Help, Feedback and GitHub buttons](./images/app-bar-actions.png){.light-only}
-![The app bar's right side: the Figure editor button, then the Theme, Help, Feedback and GitHub buttons](./images/app-bar-actions-dark.png){.dark-only}
+![The app bar's right side: the Export and Figure editor buttons, then the Theme, Help, Feedback and GitHub buttons](./images/app-bar-actions.png){.light-only}
+![The app bar's right side: the Export and Figure editor buttons, then the Theme, Help, Feedback and GitHub buttons](./images/app-bar-actions-dark.png){.dark-only}
 
-- **Dataset name** shows what is loaded and how many proteins it holds. Click it for the [dataset menu](/explore/controls#dataset-menu): the example datasets, your last file, **Open a file…** and **Export…**, which saves an image, the protein IDs, a table or the data bundle. See [Importing Data](/explore/importing-data) and [Exporting Results](/explore/exporting).
+- **Dataset name** shows what is loaded and how many proteins it holds. Click it for the [dataset menu](/explore/controls#dataset-menu): the example datasets, your last file and **Open a file…**. With nothing loaded it reads **Import**. See [Importing Data](/explore/importing-data).
 - **Search** finds proteins by ID; paste a list of IDs to select them all at once. See [Search](/explore/controls#search).
+- **Export** saves an image, the protein IDs, a table or the data bundle. See [Exporting Results](/explore/exporting).
 - **Figure editor** lays out the plot and its legend as a figure for a paper or a slide. See [Figure Editor](/explore/figure-editor).
 - **Theme** steps through System, Dark and Light, one click at a time; see [Light and dark](#light-and-dark).
 - **Help** has the documentation, the keyboard shortcuts and the tour; see [Help, shortcuts and the tour](#help-shortcuts-and-the-tour).
@@ -148,6 +149,9 @@ ProtSpace picks a layout from the window's size, and the same page works with to
 <img src="./images/phone-structure-sheet.png" alt="A pinned tooltip and the folded structure sheet on a phone" width="224" height="456" class="light-only" loading="lazy" />
 <img src="./images/phone-structure-sheet-dark.png" alt="A pinned tooltip and the folded structure sheet on a phone" width="224" height="456" class="dark-only" loading="lazy" />
 </p>
+
+On a tablet narrower than 800 px the search box folds into a search button, which opens search over
+the app bar, so the dataset's name and the buttons keep their room.
 
 On a phone:
 

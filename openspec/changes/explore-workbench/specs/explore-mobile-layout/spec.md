@@ -93,7 +93,9 @@ every control in both bars SHALL be at least 40 × 40 px. The search button (nam
 proteins") and Ctrl+K or ⌘K SHALL open the search over the app bar with focus in its field; Ctrl+K
 or ⌘K SHALL do nothing while a modal dialog is open. "Close search", Escape once nothing else takes
 it, and focus leaving the overlay by keyboard SHALL close it, and "Close search" SHALL return focus
-to the search button. A tablet SHALL keep the desktop bars.
+to the search button. A tablet SHALL keep the desktop bars, except that below 800 px wide its
+search field SHALL fold into the same search button, placed just before the actions, which opens
+the search over the whole app bar as on a phone.
 
 #### Scenario: The bars on a phone
 
@@ -122,8 +124,15 @@ to the search button. A tablet SHALL keep the desktop bars.
 #### Scenario: A tablet keeps the desktop bars
 
 - **WHEN** the window is an 800 × 1280 px tablet
-- **THEN** the app bar shows the Figure editor as an icon, the Theme button and Help, with the
-  dataset name and the search field unclipped
+- **THEN** the app bar shows Export and the Figure editor as icons, the Theme button and Help, with
+  the dataset name and the search field unclipped
+
+#### Scenario: A narrow tablet folds search into its button
+
+- **WHEN** the window is a 700 px wide tablet
+- **THEN** the app bar shows the search button instead of the field, keeps Export, the Figure
+  editor, Theme, Help, Feedback and GitHub in one row without overflow, and the search button opens
+  the search over the whole app bar
 
 ### Requirement: The More sheet holds what a phone's bars leave out
 

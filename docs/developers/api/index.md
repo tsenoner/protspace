@@ -600,9 +600,10 @@ toggling it keeps the menu open) and the note "Quick exports leave out contours.
 | `hasFileSettings` | `boolean` | The loaded file carries settings a Parquet export can keep; `has-file-settings` |
 
 Methods: `reset()` checks **Include legend settings** again, as for a new dataset.
-`openFrom(anchor: HTMLElement)` opens the menu under `anchor` with focus on its first item, as the
-Export button does; when it closes, focus returns to `anchor` and the menu belongs to the Export
-button again. CSS part: `trigger`, the Export button; hide it with `::part(trigger)` and open the
+`openFrom(anchor: HTMLElement, placement = 'bottom-end')` opens the menu under `anchor` with focus
+on its first item, as the Export button does; when it closes, focus returns to `anchor` and the
+menu belongs to the Export button again. `toggleFrom(anchor, placement)` closes the menu when it is
+open from that anchor and opens it there otherwise, as the app bar's own Export button does. CSS part: `trigger`, the Export button; hide it with `::part(trigger)` and open the
 menu from your own control, as the app's phone layout does from More.
 
 | Event                 | Detail              | Description                 |
