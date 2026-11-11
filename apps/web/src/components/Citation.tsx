@@ -148,7 +148,7 @@ const Citation = () => (
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`DOI ${ref.doi} (opens in a new tab)`}
-                className="break-all rounded-sm font-mono text-[13px] text-primary underline-offset-4 hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="break-all rounded-sm font-mono text-[13px] text-primary underline-offset-4 hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 {ref.doi}
               </a>

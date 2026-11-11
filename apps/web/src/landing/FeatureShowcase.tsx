@@ -221,7 +221,7 @@ function ChipGroup({
           aria-pressed={i === active}
           onClick={() => onSelect(i)}
           className={cn(
-            'rounded-[4px] border px-2 py-0.5 font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+            'rounded-[4px] border px-2 py-0.5 font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
             i === active
               ? 'border-foreground bg-foreground text-background'
               : 'border-border bg-card text-foreground hover:border-muted-foreground',

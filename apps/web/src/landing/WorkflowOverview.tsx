@@ -17,7 +17,7 @@ const CLI_DOCS = `${DOCS_URL}guide/python-cli`;
 const PRIVACY_DOCS = `${DOCS_URL}guide/faq#is-my-data-uploaded-to-a-server`;
 
 const focusRing =
-  'rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+  'rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
 type StoryLine = { kind: 'comment' | 'command' | 'output'; text: string };
 

@@ -21,8 +21,8 @@
   line-height: var(--ps-leading-tight);
 }
 
-/* The page behind the workbench (overscroll, landscape scrolling). The explore page sets
-   data-theme on <html> only while it is mounted; index.css's white body would show otherwise. */
+/* The page behind the workbench (overscroll, landscape scrolling): every page sets data-theme on
+   <html>, and this keeps what shows past the workbench on its surface. */
 :root[data-theme] body {
   background: var(--ps-surface);
 }

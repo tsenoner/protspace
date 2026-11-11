@@ -6,7 +6,7 @@ import Index from './pages/Index';
 import NotFound from './pages/NotFound';
 import Privacy from './pages/Privacy';
 
-// The explore page loads on demand: its kit, tokens, shell and runtime never reach the landing page.
+// The explore page loads on demand: its kit, shell and runtime never reach the landing page.
 const Explore = lazy(() => import('./pages/Explore'));
 
 // Development-only review page for the kit; production builds drop the import entirely.

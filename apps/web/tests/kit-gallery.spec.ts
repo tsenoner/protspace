@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { htmlTheme, seedTheme } from './helpers/theme';
 
 const KIT = [
   'ps-button',
@@ -57,4 +58,25 @@ test('the kit gallery shows every control in light and dark without errors', asy
   await page.getByRole('button', { name: 'Dark' }).click();
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
   expect(errors).toEqual([]);
+});
+
+test("leaving the gallery in the app puts back the site's stored theme", async ({ page }) => {
+  await page.route('https://static.cloudflareinsights.com/**', (route) =>
+    route.fulfill({ contentType: 'text/javascript', body: '' }),
+  );
+  await seedTheme(page, 'dark');
+  await page.goto('/');
+  expect(await htmlTheme(page)).toBe('dark');
+  // Into the gallery and back without a page load, as a router link and Back do.
+  await page.evaluate(() => {
+    history.pushState({}, '', '/dev/kit');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page.getByRole('heading', { name: 'Kit' })).toBeVisible();
+  await page.getByRole('button', { name: 'Light' }).click();
+  expect(await htmlTheme(page)).toBe('light');
+
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Kit' })).toBeHidden();
+  expect(await htmlTheme(page)).toBe('dark');
 });
