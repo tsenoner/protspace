@@ -66,6 +66,7 @@ function makeEl(): Plot {
   el._processData();
   el._webglRenderer = {
     invalidateStyleCache: vi.fn(),
+    invalidateDepthOrder: vi.fn(),
     setSelectionActive: vi.fn(),
     clear: vi.fn(),
     render: vi.fn(),
@@ -202,6 +203,8 @@ describe('selection staged on the CPU', () => {
     el._focusedValues = null;
     el.updated(changed('_focusedValues'));
     expect(el._webglRenderer!.invalidateStyleCache).toHaveBeenCalledTimes(3);
+    // Each moves categories between paint depths, which the renderer's sampled check can miss.
+    expect(el._webglRenderer!.invalidateDepthOrder).toHaveBeenCalledTimes(3);
   });
 
   it('while the renderer cannot draw marks for the dataset', () => {

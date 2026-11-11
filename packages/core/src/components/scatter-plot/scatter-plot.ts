@@ -1032,6 +1032,12 @@ export class ProtspaceScatterplot extends LitElement {
       // and moves the selection between the GPU and staging.
       if (changedProperties.has('_focusedValues') || !this._style.marksOnGpu()) {
         this._webglRenderer?.invalidateStyleCache();
+        // A staged focus or selection moves whole categories between the opacity tiers, and so
+        // between paint depths: re-sort, so the focused points draw on top. The renderer's own
+        // check samples only the rearmost points, which a switch from one focused category to
+        // another leaves faded both times: it would restyle in the old order, leaving the new
+        // focus under faded points and the old one, faded, on top.
+        this._webglRenderer?.invalidateDepthOrder();
       }
       // With an opacity tier at 0, the change also moves which points are interactive.
       // The point-count label may have counted them already: compare the grid's marks.
