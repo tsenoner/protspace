@@ -4,6 +4,7 @@ import { LEGEND_VALUES, NA_VALUE } from './config';
 import {
   applyDerivedNumericColors,
   applyNumericDisplayLabels,
+  applyValueLabels,
   applyPaletteColors,
   displayedOrder,
   normalizeCategoricalPaletteId,
@@ -251,6 +252,26 @@ describe('applyNumericDisplayLabels', () => {
       undefined,
       undefined,
     ]);
+  });
+});
+
+describe('applyValueLabels', () => {
+  it("names TED's '-' and keeps its value, N/A and Other as they are", () => {
+    const labelled = applyValueLabels(
+      [item('-', 0), item('3.40.50.300', 1), item(OTHER, 2), item(NA_VALUE, 3)],
+      'ted_domains',
+    );
+    expect(labelled.map((each) => [each.value, each.displayValue])).toEqual([
+      ['-', 'No CATH label'],
+      ['3.40.50.300', undefined],
+      [OTHER, undefined],
+      [NA_VALUE, undefined],
+    ]);
+  });
+
+  it("returns the same items for an annotation without labels, '-' included", () => {
+    const items = [item('-', 0), item('PF00001', 1)];
+    expect(applyValueLabels(items, 'pfam')).toBe(items);
   });
 });
 

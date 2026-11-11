@@ -17,6 +17,7 @@
 
 import type { Annotation } from '../types.js';
 import { getEatBaseAnnotationKey, getEatNeighborBaseKey } from './eat-overlay.js';
+import { toDisplayValue } from './shapes.js';
 
 export type AnnotationSource = 'UniProt' | 'InterPro' | 'Taxonomy' | 'TED' | 'Biocentral' | 'Other';
 
@@ -35,6 +36,11 @@ export interface AnnotationMeta {
   description: string;
   /** Optional link to the fuller documentation entry (site-relative). */
   docsUrl?: string;
+  /**
+   * Words for values that are real categories but read badly as written, by raw value. Display
+   * only: filters, settings and exports keep the raw value.
+   */
+  valueLabels?: Readonly<Record<string, string>>;
 }
 
 /** Prefix marking ML-predicted annotation columns (backend convention). */
@@ -327,6 +333,8 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
     description:
       'Structure-based domains with CATH classification and pLDDT confidence, from TED (AlphaFold).',
     docsUrl: docs('ted_domains'),
+    // TED's own mark for a domain it found but could not assign a CATH superfamily: not missing.
+    valueLabels: { '-': 'No CATH label' },
   },
 
   // --- Biocentral (ML predictions) ---
@@ -457,4 +465,24 @@ export function annotationSource(
   annotation?: Pick<Annotation, 'runtime'>,
 ): AnnotationSource {
   return getAnnotationMeta(column, annotation).source;
+}
+
+/**
+ * The words an annotation shows for one of its values, when its registry entry names them (TED's
+ * `-` reads "No CATH label"); undefined otherwise. `value` is the internal value.
+ */
+export function annotationValueLabel(column: string, value: string): string | undefined {
+  return ANNOTATION_METADATA[column]?.valueLabels?.[value];
+}
+
+/**
+ * A value as the app shows it for this annotation: its registry label when there is one, else
+ * {@link toDisplayValue} (N/A, the Other count). `value` is the internal value.
+ */
+export function displayAnnotationValue(
+  column: string,
+  value: string,
+  otherItemsCount?: number,
+): string {
+  return annotationValueLabel(column, value) ?? toDisplayValue(value, otherItemsCount);
 }

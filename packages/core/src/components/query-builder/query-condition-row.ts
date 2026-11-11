@@ -507,7 +507,9 @@ class ProtspaceQueryConditionRow extends LitElement {
     )
       return nothing;
     return html`
-      ${this.condition.values.map((v) => renderValueChip(v, () => this._removeValue(v)))}
+      ${this.condition.values.map((v) =>
+        renderValueChip(v, () => this._removeValue(v), undefined, this.condition.annotation),
+      )}
       <ps-button
         class="value-add"
         variant="ghost"
@@ -712,7 +714,7 @@ class ProtspaceQueryConditionRow extends LitElement {
         k === 0
           ? ', no value chosen'
           : k === 1
-            ? ` ${displayFilterValue(c.values[0])}`
+            ? ` ${displayFilterValue(c.values[0], c.annotation)}`
             : ` ${k} values`;
     }
     return `${name}: ${label} ${operatorText(c)}${what}${tail}`;

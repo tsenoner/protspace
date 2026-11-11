@@ -90,6 +90,33 @@ describe('protspace-protein-tooltip links', () => {
     expect(header.textContent).toBe('EC number');
   });
 
+  it("names TED's domain without a CATH label, and keeps a real label", async () => {
+    const tooltip = document.createElement('protspace-protein-tooltip');
+    tooltip.view = {
+      ...VIEW,
+      blocks: [
+        {
+          key: 'ted_domains',
+          label: 'TED domains',
+          displayValues: ['-', '3.40.50.300'],
+          numericValue: null,
+          numericType: 'float',
+          scores: [],
+          evidence: [],
+          predicted: null,
+        },
+      ],
+    };
+    tooltip.className = 'visible';
+    document.body.append(tooltip);
+    await tooltip.updateComplete;
+
+    const values = [...tooltip.shadowRoot!.querySelectorAll('.tooltip-annotation-label')].map(
+      (each) => each.textContent,
+    );
+    expect(values).toEqual(['No CATH label', '3.40.50.300']);
+  });
+
   it('a compact card shows the protein, its colour-by value and the actions, and nothing else', async () => {
     const tooltip = document.createElement('protspace-protein-tooltip');
     const block = (key: string, label: string, value: string) => ({

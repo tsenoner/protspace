@@ -1,6 +1,7 @@
 import {
   DEFAULT_CATEGORICAL_PALETTE_ID,
   COLOR_SCHEMES,
+  annotationValueLabel,
   getNumericBinLabelMap,
   isGradientPalette,
   resolveNumericAnnotationDisplaySettings,
@@ -153,6 +154,20 @@ export function applyNumericDisplayLabels(
       ? each
       : { ...each, displayValue: labels.get(each.value) ?? each.displayValue ?? each.value },
   );
+}
+
+/**
+ * The registry's words for a category, as its display value (TED's `-` reads "No CATH label");
+ * the value itself, which filters and settings key on, is unchanged.
+ */
+export function applyValueLabels(items: readonly LegendItem[], annotation: string): LegendItem[] {
+  if (!items.some((each) => annotationValueLabel(annotation, each.value) !== undefined)) {
+    return items as LegendItem[];
+  }
+  return items.map((each) => {
+    const label = annotationValueLabel(annotation, each.value);
+    return label === undefined ? each : { ...each, displayValue: label };
+  });
 }
 
 /** Each numeric bin's colour from the annotation's gradient; Other and N/A keep theirs. */

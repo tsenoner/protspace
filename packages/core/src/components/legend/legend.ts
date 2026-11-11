@@ -439,6 +439,7 @@ export class ProtspaceLegend extends LitElement {
 
   _otherPopover = new OtherPopoverControl(this, {
     getItems: () => this._otherItems,
+    getAnnotation: () => this.selectedAnnotation,
     add: (value) => this._actions.extractFromOther(value),
     addAll: () => this._actions.extractAllFromOther(),
     focusFirstRow: () => this._keyboard.focusItem(0),

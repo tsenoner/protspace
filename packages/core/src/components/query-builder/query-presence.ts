@@ -1,5 +1,5 @@
 import { html, nothing } from 'lit';
-import { toDisplayValue } from '@protspace/utils';
+import { displayAnnotationValue, toDisplayValue } from '@protspace/utils';
 import { ANY_VALUE } from './query-types';
 import { icon } from '../kit/icon';
 
@@ -18,10 +18,12 @@ const ANY_DISPLAY = 'Any value';
  * Display text for a filter value: either presence sentinel, or a real value.
  *
  * The N/A half delegates to `toDisplayValue`, the codebase's existing
- * internal → display mapping, so filter chips and the legend stay in step.
+ * internal → display mapping, and an `annotation` adds its value labels (TED's
+ * `-` reads "No CATH label"), so filter chips and the legend stay in step.
  */
-export function displayFilterValue(value: string): string {
-  return value === ANY_VALUE ? ANY_DISPLAY : toDisplayValue(value);
+export function displayFilterValue(value: string, annotation?: string): string {
+  if (value === ANY_VALUE) return ANY_DISPLAY;
+  return annotation ? displayAnnotationValue(annotation, value) : toDisplayValue(value);
 }
 
 /**
@@ -32,10 +34,16 @@ export function displayFilterValue(value: string): string {
  * categorical row omits it and Lit's `nothing` drops the attribute entirely
  * rather than stamping a meaningless one.
  */
-export function renderValueChip(value: string, onRemove: () => void, presenceTag?: string) {
+export function renderValueChip(
+  value: string,
+  onRemove: () => void,
+  presenceTag?: string,
+  annotation?: string,
+) {
+  const label = displayFilterValue(value, annotation);
   return html`
     <span class="value-chip">
-      <span class="value-chip-text">${displayFilterValue(value)}</span>
+      <span class="value-chip-text">${label}</span>
       <button
         type="button"
         class="value-chip-remove"
@@ -47,7 +55,7 @@ export function renderValueChip(value: string, onRemove: () => void, presenceTag
           e.preventDefault();
           onRemove();
         }}
-        aria-label=${`Remove ${displayFilterValue(value)}`}
+        aria-label=${`Remove ${label}`}
       >
         ${icon('x', 14)}
       </button>

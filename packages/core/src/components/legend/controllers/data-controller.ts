@@ -27,6 +27,7 @@ import {
 import {
   applyDerivedNumericColors,
   applyNumericDisplayLabels,
+  applyValueLabels,
   applyPaletteColors,
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
@@ -422,11 +423,17 @@ export class LegendDataController {
             this.host.annotationData,
           );
         }
-      } else if (this.host._selectedPaletteId !== DEFAULT_CATEGORICAL_PALETTE_ID) {
-        this.host._legendItems = applyPaletteColors(
+      } else {
+        this.host._legendItems = applyValueLabels(
           this.host._legendItems,
-          this.host._selectedPaletteId,
+          this.host.selectedAnnotation,
         );
+        if (this.host._selectedPaletteId !== DEFAULT_CATEGORICAL_PALETTE_ID) {
+          this.host._legendItems = applyPaletteColors(
+            this.host._legendItems,
+            this.host._selectedPaletteId,
+          );
+        }
       }
 
       // Clear pending extract/merge values after they've been applied
