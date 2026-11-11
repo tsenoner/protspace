@@ -406,6 +406,22 @@ describe('docs lint: videos', () => {
     );
   });
 
+  it('keeps a tag in page order among the images around it', () => {
+    const page = lintPage(
+      'explore/a.md',
+      '![A](./images/a.png)',
+      `![B](./images/b.png) ${tag} ![C](./images/c.png)`,
+      '![D](./images/d.png)',
+    );
+    expect(imageRefs(page).map((ref) => ref.file)).toEqual([
+      'a.png',
+      'b.png',
+      ...videoFiles('zoom'),
+      'c.png',
+      'd.png',
+    ]);
+  });
+
   it('passes a tag whose files are all on disk', () => {
     expect(lintDocs([lintPage('explore/a.md', tag)], zoom)).toEqual([]);
   });

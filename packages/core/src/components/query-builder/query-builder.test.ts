@@ -118,6 +118,19 @@ describe('query-builder Apply gating', () => {
     expect(reason()).toBe('');
   });
 
+  it('marks the count line busy while the count is pending', async () => {
+    builder.query = [human()];
+    await builder.updateComplete;
+    expect(countLine().getAttribute('aria-busy')).toBe('true');
+
+    await settle();
+    expect(countLine().getAttribute('aria-busy')).toBe('false');
+
+    builder.query = [mouseOr()];
+    await builder.updateComplete;
+    expect(countLine().getAttribute('aria-busy')).toBe('true');
+  });
+
   it('does not dispatch query-apply for an unconfigured query (defense for non-click paths)', async () => {
     builder.query = [createCondition()];
     await settle();

@@ -295,11 +295,8 @@ async function recordVideo(
   // saveAs copies: drop the original from test-results.
   await video.delete();
   const sidecar: VideoSidecar = {
-    stem,
     trimStartMs,
     budgetBytes: entry.budgetBytes ?? DEFAULT_VIDEO_BUDGET,
-    width: options.viewport.width,
-    height: options.viewport.height,
   };
   fs.writeFileSync(recording(stem, 'json'), `${JSON.stringify(sidecar, null, 2)}\n`);
 }
