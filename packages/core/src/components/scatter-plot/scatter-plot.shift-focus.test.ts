@@ -161,3 +161,73 @@ describe('category-focus, the event the legend lights its rows from', () => {
     expect(events).toEqual([]);
   });
 });
+
+describe('focusCategories, the focus a legend score strip asks for', () => {
+  let frames: ReturnType<typeof fakeFrames>;
+
+  beforeEach(() => {
+    frames = fakeFrames();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function listen(sp: PlotInternals): (string[] | null)[] {
+    const values: (string[] | null)[] = [];
+    (sp as unknown as HTMLElement).addEventListener('category-focus', (event) =>
+      values.push((event as CustomEvent<CategoryFocusDetail>).detail.values),
+    );
+    return values;
+  }
+
+  it('focuses the categories without Shift, tells the legend, and ends on null', () => {
+    const sp = makeScatter();
+    const events = listen(sp);
+    sp.focusCategories(['B']);
+    expect(sp._focusedValues).toEqual(['B']);
+    sp.focusCategories(null);
+    expect(sp._focusedValues).toBeNull();
+    expect(events).toEqual([['B'], null]);
+  });
+
+  it('Shift + hover on the plot wins, and the asked focus returns when it ends', () => {
+    const sp = makeScatter();
+    sp.focusCategories(['B']);
+    sp._handleCanvasMouseMove(move(true));
+    frames.run();
+    expect(sp._focusedValues).toEqual(['A']);
+    sp._handleShiftKey(shiftKey('keyup'));
+    expect(sp._focusedValues).toEqual(['B']);
+  });
+
+  it('a hover without Shift keeps the asked focus', () => {
+    const sp = makeScatter();
+    sp.focusCategories(['B']);
+    sp._handleCanvasMouseMove(move(false));
+    frames.run();
+    expect(sp._focusedValues).toEqual(['B']);
+  });
+
+  it('a selection outranks it', () => {
+    const sp = makeScatter();
+    sp.selectedProteinIds = ['p0'];
+    sp.focusCategories(['B']);
+    expect(sp._focusedValues).toBeNull();
+  });
+
+  it('a window blur, a new dataset or a new annotation ends it', () => {
+    const sp = makeScatter();
+    sp.focusCategories(['B']);
+    sp._handleWindowBlur();
+    expect(sp._focusedValues).toBeNull();
+
+    sp.focusCategories(['B']);
+    sp._reconcileFocus(new Map([['data', null]]));
+    expect(sp._focusedValues).toBeNull();
+
+    sp.focusCategories(['B']);
+    sp._reconcileFocus(new Map([['selectedAnnotation', 'other']]));
+    expect(sp._focusedValues).toBeNull();
+  });
+});

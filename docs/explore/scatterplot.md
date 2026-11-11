@@ -165,7 +165,7 @@ outside the plot, the next click, or a pan or zoom.
 
 ### Focusing a Category
 
-Hold **Shift** while hovering a point to see where its category sits: every protein sharing one of its values in the current annotation stays bright, everything else fades. Move to another point to switch category; release **Shift** or move off the point to go back.
+Hold **Shift** while hovering a point to see where its category sits: every protein sharing one of its values in the current annotation stays bright, everything else fades. Move to another point to switch category; release **Shift** or move off the point to go back. When the annotation has [separation scores](/explore/separation-scores), hovering a dot in a score strip focuses its category the same way, and so does hovering its legend row with **Shift** held.
 
 - Hovering a point in the legend's **Other** group focuses the whole group
 - Hidden legend values stay hidden, and the tooltip is hidden while focusing

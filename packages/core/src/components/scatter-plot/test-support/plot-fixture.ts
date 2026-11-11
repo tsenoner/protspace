@@ -73,6 +73,7 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _processData: Host['_processData'];
   _rebuildStyle: Host['_rebuildStyle'];
   _reconcileConfigMerge: Host['_reconcileConfigMerge'];
+  _reconcileFocus: Host['_reconcileFocus'];
   _reconcileProvenanceConnectors: Host['_reconcileProvenanceConnectors'];
   _reconcileSelectionOverlays: Host['_reconcileSelectionOverlays'];
   _refreshSelectedAnnotationValues: Host['_refreshSelectedAnnotationValues'];

@@ -187,12 +187,20 @@ SHALL survive a reload.
 
 When the projection has separation scores, the legend SHALL show the score strips beside its rows,
 with the cluster caveat (stats-auto-clustering) where it applies, and hovering a row with a mouse
-SHALL mark that row's values on both strips; a touch SHALL NOT.
+SHALL mark that row's values on both strips; a touch SHALL NOT. Hovering a strip's dot SHALL mark
+its row and focus its category in the plot, and hovering a row while Shift is held SHALL focus the
+plot on that row's category (category-focus); hovering a row without Shift SHALL NOT change the
+plot.
 
 #### Scenario: Hovering a scored row
 
 - **WHEN** the mouse hovers a legend row of a scored annotation
-- **THEN** both strips mark that row's values
+- **THEN** both strips mark that row's values, and the plot does not change
+
+#### Scenario: Hovering a strip dot
+
+- **WHEN** the mouse hovers category A's dot on a score strip
+- **THEN** A's row is marked and the plot fades every category but A
 
 ### Requirement: The plot's category focus lights its legend row
 
