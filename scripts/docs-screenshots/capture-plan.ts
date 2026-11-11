@@ -181,12 +181,9 @@ export function validateManifest(entries: readonly CaptureEntry[]): string[] {
 
 /**
  * What the runner writes beside a video's recording (`temp-videos/<stem>.json`) for `video.ts`:
- * where the scene starts in the recording, the size limit and the frame size.
+ * where the scene starts in the recording and the size limit of each encoding.
  */
 export interface VideoSidecar {
-  stem: string;
   trimStartMs: number;
   budgetBytes: number;
-  width: number;
-  height: number;
 }

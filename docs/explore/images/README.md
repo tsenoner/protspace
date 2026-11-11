@@ -126,7 +126,7 @@ never fetched. Under `prefers-reduced-motion` it shows the poster with controls 
 autoplays; when the browser refuses to autoplay, the controls show too.
 
 An animation entry is recorded as a `.webm` per theme in `temp-videos/` (git-ignored), with a JSON
-sidecar holding where the scene starts (the end of the entry's setup) and the frame size.
+sidecar holding where the scene starts (the end of the entry's setup) and the entry's budget.
 `pnpm docs:videos [--keep] [name…]` encodes each recording (only the named ones when names are
 given; a name encodes both themes) at a fixed quality: VP9 at CRF 40, H.264 at CRF 28, both
 `yuv420p` without audio, and the poster as a JPEG. The WebM and the MP4 must each fit the entry's
