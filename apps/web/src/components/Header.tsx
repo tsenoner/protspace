@@ -2,18 +2,16 @@ import { ChevronDown, Github, Menu, MessageSquare, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ICON } from '@/lib/icon';
+import { notifyCopied } from '@/lib/notify';
 import { FEEDBACK_MENU_ITEMS, GITHUB_REPO_URL, runFeedbackAction } from '@/lib/support';
 import { cn } from '@/lib/utils';
-import { notifyCopied } from '@/workbench/FeedbackMenu';
 import { getNavigation } from '../../../../config/navigation';
 import { SiteFeedbackMenu } from './SiteFeedbackMenu';
 import { SiteThemeChoice, SiteThemeToggle } from './SiteThemeToggle';
 
 const mode = import.meta.env.MODE === 'production' ? 'production' : 'development';
 const navItems = getNavigation(mode);
-
-/** A 16 px icon at the kit's stroke, as in Explore's app bar; decorative. */
-const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
 
 const newTabProps = { target: '_blank', rel: 'noopener noreferrer' } as const;
 

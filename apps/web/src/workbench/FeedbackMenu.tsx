@@ -1,18 +1,7 @@
 import type { PsMenu } from '@protspace/core';
 import { useEffect, useRef } from 'react';
-import { notify } from '@/lib/notify';
-import {
-  FEEDBACK_MENU_ITEMS,
-  runFeedbackAction,
-  SUPPORT_EMAIL,
-  type FeedbackAction,
-} from '@/lib/support';
-
-/** A copy's outcome, as a notification. */
-export function notifyCopied(copied: boolean): void {
-  if (copied) notify.success({ title: `Copied ${SUPPORT_EMAIL}` });
-  else notify.error({ title: 'Could not copy to clipboard', description: SUPPORT_EMAIL });
-}
+import { notifyCopied } from '@/lib/notify';
+import { FEEDBACK_MENU_ITEMS, runFeedbackAction, type FeedbackAction } from '@/lib/support';
 
 /**
  * The app bar's Feedback menu, with the entries Home's header and the docs' nav offer too

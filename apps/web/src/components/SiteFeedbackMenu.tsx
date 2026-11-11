@@ -1,12 +1,11 @@
 import { MessageSquare } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ICON } from '@/lib/icon';
+import { handleMenuKey, isOutsidePress } from '@/lib/menu-keys';
+import { notifyCopied } from '@/lib/notify';
 import { FEEDBACK_MENU_ITEMS, runFeedbackAction, type FeedbackAction } from '@/lib/support';
 import { cn } from '@/lib/utils';
-import { notifyCopied } from '@/workbench/FeedbackMenu';
-
-/** A 16 px icon at the kit's stroke, as in Explore's app bar; decorative. */
-const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
 
 /**
  * Home's Feedback menu, with Explore's entries (FEEDBACK_MENU_ITEMS): email, the address to copy,
@@ -25,8 +24,7 @@ export function SiteFeedbackMenu({ className }: { className: string }) {
     if (!open) return;
     items()[0]?.focus();
     const onPointer = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!menu.current?.contains(target) && !button.current?.contains(target)) setOpen(false);
+      if (isOutsidePress(event, menu.current, button.current)) setOpen(false);
     };
     document.addEventListener('pointerdown', onPointer);
     return () => document.removeEventListener('pointerdown', onPointer);
@@ -38,21 +36,8 @@ export function SiteFeedbackMenu({ className }: { className: string }) {
     runFeedbackAction(action, notifyCopied);
   };
 
-  const onMenuKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    const entries = items();
-    const at = entries.indexOf(document.activeElement as HTMLElement);
-    const move = (index: number) => entries[(index + entries.length) % entries.length]?.focus();
-    if (event.key === 'ArrowDown') move(at + 1);
-    else if (event.key === 'ArrowUp') move(at - 1);
-    else if (event.key === 'Home') move(0);
-    else if (event.key === 'End') move(entries.length - 1);
-    else if (event.key === 'Escape') {
-      setOpen(false);
-      button.current?.focus();
-    } else if (event.key === 'Tab') setOpen(false);
-    else return;
-    if (event.key !== 'Tab') event.preventDefault();
-  };
+  const onMenuKey = (event: KeyboardEvent<HTMLDivElement>) =>
+    handleMenuKey(event, items(), () => setOpen(false), button.current);
 
   return (
     <div className="relative">

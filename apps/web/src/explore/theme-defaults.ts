@@ -16,6 +16,9 @@ export type ThemeMode = 'light' | 'dark';
 /** The choice with nothing (or nothing valid) stored: follow the OS. */
 export const DEFAULT_THEME: ThemeChoice = 'system';
 
+/** The modes in the order a Light/Dark pair shows them. */
+export const THEME_MODES = ['light', 'dark'] as const satisfies readonly ThemeMode[];
+
 export const THEME_MODE_LABELS: Record<ThemeMode, string> = { light: 'Light', dark: 'Dark' };
 
 /** The choice a stored raw value means: 'dark' or 'light', else (VueUse's 'auto', nothing) the system. */
