@@ -332,7 +332,9 @@ The query builder becomes the sidebar's Filter panel (rail icon), so the plot st
 filter is built. A live count shows how many proteins the draft matches, computed off the render
 path. Edits are a draft until Apply; Cancel discards the draft and returns to the applied filter
 (today Cancel keeps the edits). When Apply is disabled the panel says why ("Choose a value for
-condition 2"). Removing the filter is one click on the Filter chip's ✕.
+condition 2"). Removing the filter is one click on the Filter chip's ✕. "Add condition" and "Add
+group" sit side by side below the cards, so a group is one visible click away; the header's ⋯ keeps
+only Clear all, and a group adds cards but not groups.
 
 The modal used to stop the EAT reliability slider and the query builder from being edited at the
 same time; the side panel allows both. The slider stays an immediate control: it changes the

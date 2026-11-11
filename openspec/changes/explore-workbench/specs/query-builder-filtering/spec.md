@@ -170,3 +170,27 @@ comes on screen SHALL count the latest data and draft.
 
 - **WHEN** the data changes while the Filter panel is not shown, and the panel is then opened
 - **THEN** the builder received no data while hidden, and gets the latest when it is shown
+
+### Requirement: Conditions and groups are added below the cards
+
+The Filter panel SHALL show an "Add condition" and an "Add group" button, side by side and equally
+wide, below the last card. Add condition SHALL append an empty card; Add group SHALL append a group
+holding one empty card. Either new item SHALL be joined like the last item ("and" when it is the
+first joiner). Each group SHALL offer its own Add condition, which adds a card to that group, and
+no Add group: a group inside a group comes only from the "Group these?" prompt. The ⋯ menu in the
+panel's header SHALL hold only Clear all.
+
+#### Scenario: Adding a group
+
+- **WHEN** the user clicks "Add group" below the cards
+- **THEN** a group card appears after the last item, holding one empty condition
+
+#### Scenario: Adding a card inside a group
+
+- **WHEN** the user clicks the group's own "Add condition"
+- **THEN** the group holds one more card, and the cards outside the group are unchanged
+
+#### Scenario: The header menu
+
+- **WHEN** the user opens the ⋯ menu in the Filter panel's header
+- **THEN** it lists only "Clear all"
