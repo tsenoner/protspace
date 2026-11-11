@@ -549,6 +549,32 @@ test('a press, a cancelled drag or a key that moves nothing leaves the default c
   ).toBe(0);
 });
 
+test('a plot resize while an arrow key is down keeps the move and stores it on release', async ({
+  page,
+}) => {
+  await openExplore(page);
+  await clickProteinNearPlotCentre(page);
+  await floatStructure(page);
+  const card = structurePanel(page);
+  const start = (await card.boundingBox())!;
+  await card.focus();
+
+  await page.keyboard.down('ArrowLeft');
+  await expect.poll(async () => (await card.boundingBox())!.x).toBeLessThan(start.x - 8);
+  const moved = (await card.boundingBox())!.x;
+  // A taller window resizes the plot area while the key is down.
+  const viewport = page.viewportSize()!;
+  await page.setViewportSize({ width: viewport.width, height: viewport.height + 40 });
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  );
+  expectNear((await card.boundingBox())!.x, moved);
+  await page.keyboard.up('ArrowLeft');
+
+  await expect.poll(async () => (await readLayout(page))!.floatingRect).not.toBeNull();
+  expectNear((await card.boundingBox())!.x, moved);
+});
+
 test('the floating card tells how its keys work and its grip is a 24 px target', async ({
   page,
 }) => {

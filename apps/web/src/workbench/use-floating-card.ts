@@ -73,11 +73,11 @@ export function useFloatingCard(
       });
 
     paint(rect);
-    // The window and the sidebar resize the plot area: keep the stored card inside it. Not during a
-    // drag or a key press: the observer also reports once after each commit re-runs this effect,
-    // and painting the stored rect then would undo a key step that is down.
+    // The window and the sidebar resize the plot area: keep the stored card inside it. While arrow
+    // keys are down the painted rect is newer than the stored one, so it is the one kept inside.
+    // A new observer always reports once, and a key pressed before that report must not be undone.
     const observer = new ResizeObserver(() => {
-      if (!gesture && !keyStart) paint(clampFloatRect(stored, bounds()));
+      if (!gesture) paint(clampFloatRect(keyStart ? rect : stored, bounds()));
     });
     observer.observe(plot);
 
