@@ -38,24 +38,12 @@ const UNKNOWN_IDS = ['X00001', 'X00002'];
 
 /**
  * Waits until the Filter panel's count has caught up with the draft: its count runs 300 ms after
- * the last edit, and its "since last edit" change compares with the count before. Two reads of
- * the count line half a second apart that agree mean no count is pending, so the scene's next
- * edit is counted on its own and the picture's change reads the same in every run and theme.
+ * the last edit, and its "since last edit" change compares with the count before. The count line
+ * is `aria-busy` while a count is pending (set in the same update as the edit), so the scene's
+ * next edit is counted on its own and the picture's change reads the same in every run and theme.
  */
 async function countSettled(page: Page): Promise<void> {
-  const line = queryBuilder(page).locator('.match-line');
-  let last: string | null = null;
-  await expect
-    .poll(
-      async () => {
-        const now = await line.innerText();
-        const settled = now === last;
-        last = now;
-        return settled;
-      },
-      { intervals: [500] },
-    )
-    .toBe(true);
+  await expect(queryBuilder(page).locator('.match-count')).toHaveAttribute('aria-busy', 'false');
 }
 
 /**

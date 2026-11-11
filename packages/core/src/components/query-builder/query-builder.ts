@@ -789,7 +789,12 @@ export class ProtspaceQueryBuilder extends LitElement {
 
         <div class="query-footer">
           <div class="match-line">
-            <p class="match-count" role="status" aria-live="polite">
+            <p
+              class="match-count"
+              role="status"
+              aria-live="polite"
+              aria-busy=${this._counting ? 'true' : 'false'}
+            >
               ${total > 0
                 ? html`<span class="match-number">${formatCount(matched)}</span
                     ><span class="match-total"
