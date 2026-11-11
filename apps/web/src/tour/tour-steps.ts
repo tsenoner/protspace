@@ -16,6 +16,11 @@ export interface TourContext {
   coarse: boolean;
   /** ⌘ on Mac and iOS, Ctrl elsewhere. */
   mac: boolean;
+  /**
+   * The app bar shows a search button instead of the field: a phone, either way up, or a tablet
+   * narrower than 800 px (its header carries `data-search-folded`).
+   */
+  searchFolded: boolean;
 }
 
 type TourStepId =
@@ -79,6 +84,8 @@ const tourHome = (ctx: TourContext): string =>
 const homeSpotlight = (ctx: TourContext): string =>
   driverId(hasStructureSheet(ctx.mode) ? 'more' : 'help');
 
+const searchFolded = (ctx: TourContext): boolean => ctx.searchFolded || hasStructureSheet(ctx.mode);
+
 type StepBuilder = (ctx: TourContext, kind: TourKind) => TourStepSpec;
 
 const STEPS: Record<TourStepId, StepBuilder> = {
@@ -140,10 +147,10 @@ const STEPS: Record<TourStepId, StepBuilder> = {
   search: (ctx) => ({
     id: 'search',
     title: 'Search Proteins',
-    description: hasStructureSheet(ctx.mode)
+    description: searchFolded(ctx)
       ? `${press(ctx)} the search button to search over the app bar. Type a protein ID to find it, or <strong>paste</strong> a list of IDs to select them all at once; a message says how many were found and which were not.`
       : `${ctx.coarse ? 'Tap here' : `Press ${chord(ctx, 'K')} or click here`} to search. Type a protein ID to find it, or <strong>paste</strong> a list of IDs to select them all at once; a message says how many were found and which were not.`,
-    target: driverId(hasStructureSheet(ctx.mode) ? 'search-toggle' : 'search'),
+    target: driverId(searchFolded(ctx) ? 'search-toggle' : 'search'),
   }),
 
   plot: (ctx) => ({

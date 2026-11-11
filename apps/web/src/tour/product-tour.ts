@@ -323,6 +323,7 @@ function drive(kind: TourKind): void {
     mode: getLayoutMode(),
     coarse: matchMedia(COARSE_POINTER).matches,
     mac: isMacOrIos(),
+    searchFolded: document.querySelector('header[data-search-folded]') !== null,
   }).filter((step) => isShown(step.target));
   if (steps.length === 0) return;
 
