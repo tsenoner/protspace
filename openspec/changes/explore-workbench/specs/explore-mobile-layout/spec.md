@@ -130,7 +130,7 @@ to the search button. A tablet SHALL keep the desktop bars.
 On a phone, upright or on its side, More SHALL open a bottom sheet: a modal dialog named "More" with
 a close button, which Escape or a press on its backdrop also closes, returning focus to More. The
 sheet SHALL hold, in order: Contours as a radio group (Off, Auto, Always), Filter with its applied
-condition count, Import data, Export, Figure editor, Theme as a radio group (System, Dark, Light),
+condition count, Import data, Export, Figure editor, Theme as a radio group (Light, Dark: the mode on screen selected),
 Help & shortcuts and Feedback; it SHALL NOT offer GitHub. Contours and Theme SHALL apply at once and
 keep the sheet open. Every other row SHALL close the sheet first and then act: Filter shows the
 Filter tab and focuses its heading, Import data opens the Import panel under the dataset name,
@@ -168,6 +168,11 @@ accessible name SHALL gain ", N active"; the theme SHALL never light the dot.
 - **WHEN** the user picks Dark in the sheet's Theme group
 - **THEN** the page turns dark while the sheet stays open, and after it closes More still reads
   "More view options" without a dot
+
+#### Scenario: Back to the system's mode
+
+- **WHEN** the OS is light, the user has picked Dark in the sheet, and then picks Light
+- **THEN** the stored override is removed and the page follows the OS again
 
 #### Scenario: A short screen
 

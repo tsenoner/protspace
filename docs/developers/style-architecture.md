@@ -102,7 +102,10 @@ export const layoutStyles = css`
 ### Design tokens
 
 Colours, font sizes, spacing, radii, shadows and durations are `--ps-*` tokens, declared only in
-`packages/core/src/styles/tokens.css` (light values on `:root`, dark values under
+`packages/core/src/styles/tokens.css`, a plain CSS file that core reads into its Lit sheet, the
+landing page imports in `apps/web/src/index.css` (where Tailwind's shadcn colours map onto it), and
+the docs import in `docs/.vitepress/theme/custom.css` (where VitePress's `--vp-c-*` colours map
+onto it), so all three share one palette (light values on `:root`, dark values under
 `[data-theme='dark']`, and under `[data-theme='system']` while the OS prefers dark, so a
 `system` page follows the OS live). Stylesheets read these tokens and declare none:
 `packages/core/src/styles/style-lint.test.ts` checks every core stylesheet, with no exemptions.

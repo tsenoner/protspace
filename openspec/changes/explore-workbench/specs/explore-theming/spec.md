@@ -37,42 +37,84 @@ own origin; no font SHALL be loaded from a third-party font service.
 - **THEN** the root font size is 16 px, Inter is available, and every font request goes to the
   app's own origin
 
-### Requirement: The user chooses System, Light or Dark
+### Requirement: The user switches between Light and Dark
 
-The app bar SHALL offer a Theme button that steps System → Dark → Light → System, one press per
-step, applying each at once. Its icon SHALL show the current choice, and its accessible name and
-tooltip SHALL name the current choice and the next ("Theme: System. Switch to Dark"). The choice SHALL be stored as JSON under
-the localStorage key `protspace:theme`; with nothing valid stored, or a storage that throws, it
-SHALL be System. System SHALL follow the operating system's colour scheme, live; Light and Dark
-SHALL ignore it. The choice SHALL apply only to /explore (also when reached through the GitHub
-Pages deep link `/?/explore`), and the stored choice SHALL paint before the explore code runs, so
-a cold load never flashes the other theme.
+The app bar SHALL offer a Theme button that switches between light and dark, starting from the
+operating system's colour scheme. With nothing valid stored, or a storage that throws, the page
+SHALL follow the OS, live. A press SHALL show the other mode at once: when that mode differs from
+the OS's it SHALL be stored as an override that later OS changes do not undo, and when it equals
+the OS's the stored override SHALL be removed, so the page follows the OS again. Its icon SHALL
+show the mode on screen (a sun for light, a moon for dark), and its accessible name and tooltip
+SHALL name that mode and the other ("Theme: Light. Switch to Dark"). The choice SHALL be stored
+under VitePress's key `vitepress-theme-appearance` with the raw value `dark` or `light` (`auto`
+or nothing meaning the OS), and a value stored by earlier versions under `protspace:theme` SHALL
+move to it once. The stored choice SHALL paint before any page code runs, so a cold load never
+flashes the other theme, and a choice made in another tab SHALL apply without a reload.
 
-#### Scenario: The button steps through the choices
+#### Scenario: A press flips the mode
 
-- **WHEN** nothing is stored and the user presses Theme three times
-- **THEN** the page goes Dark, then Light, then back to System, and the button's name says each
-  choice and the next
+- **WHEN** nothing is stored, the OS is light, and the user presses Theme
+- **THEN** the page turns dark, `vitepress-theme-appearance` holds `dark`, and the button reads
+  "Theme: Dark. Switch to Light"
 
-#### Scenario: Choosing Dark
+#### Scenario: Back to the system
 
-- **WHEN** the user picks Dark and reloads
-- **THEN** the page is dark, and `protspace:theme` holds `"dark"`
+- **WHEN** the user presses Theme again
+- **THEN** the page is light, nothing is stored, and when the OS turns dark the page follows it
+
+#### Scenario: Choosing Dark survives a reload
+
+- **WHEN** the user picks Dark on a light OS and reloads
+- **THEN** the page is dark
 
 #### Scenario: First paint
 
-- **WHEN** /explore loads cold with Dark stored, or with System stored on a dark OS
-- **THEN** the dark surface is painted before the explore code runs
+- **WHEN** a page loads cold with Dark stored, or with nothing stored on a dark OS
+- **THEN** the dark surface is painted before the page's code runs
 
-#### Scenario: System follows the OS
+#### Scenario: The old key
 
-- **WHEN** System is chosen and the OS switches between light and dark
-- **THEN** the page follows without a reload
+- **WHEN** `protspace:theme` holds `"dark"` and the user opens any page
+- **THEN** the page is dark, `vitepress-theme-appearance` holds `dark`, and `protspace:theme` is
+  gone
 
-#### Scenario: Other pages stay light
+### Requirement: Home, Explore and the docs share one theme
 
-- **WHEN** Dark is stored and the user opens a page other than /explore
-- **THEN** that page is not themed
+Every page of the site SHALL follow the one stored theme choice: the landing page, the privacy
+page, the not-found page, /explore (also when reached through the GitHub Pages deep link
+`/?/explore`) and the docs. Each SHALL offer the Theme button in its top bar (Home's and the docs'
+phone menus as a row, the explore page's More sheet as a Light | Dark pair), and moving between
+them SHALL keep the mode.
+
+#### Scenario: Dark everywhere
+
+- **WHEN** Dark is stored and the user opens the landing page, the privacy page or a missing page
+- **THEN** that page is dark from its first paint, and its wordmark is inverted
+
+#### Scenario: Home and Explore share the choice
+
+- **WHEN** the user picks Dark with Home's Theme button and opens /explore
+- **THEN** /explore is dark, and picking Light there makes Home light again
+
+### Requirement: One palette for the app, the landing page and the docs
+
+The landing page and the docs SHALL take their colours from the same `--ps-*` tokens as the
+explore page, defined once in a plain CSS file that core's sheet, the landing page and the docs
+all import. On the landing page, the background, text, borders, cards, buttons and links SHALL be
+the tokens' (the accent `#007ab5` in light and `#38bdf8` in dark), and its illustration panels and
+canvases SHALL follow the mode. In the docs, the background, text, borders, links, buttons, code
+and custom blocks SHALL be the tokens', so their dark background is the app's slate `#0f172a` and
+a filled button in dark is the accent with dark text.
+
+#### Scenario: The docs in dark
+
+- **WHEN** a docs page is shown in dark
+- **THEN** its background is `#0f172a` and its links are `#38bdf8`
+
+#### Scenario: Home in light
+
+- **WHEN** the landing page is shown in light
+- **THEN** its primary button is filled with `#007ab5`
 
 ### Requirement: Everything on screen follows the theme
 
