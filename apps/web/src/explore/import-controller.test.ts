@@ -3,7 +3,7 @@ import { EXAMPLE_DATASETS } from './example-datasets';
 import { bindImportMenu } from './import-controller';
 import type { DatasetChangeSource } from './types';
 
-type LastFile = { name: string; sizeLabel: string } | null;
+type LastFile = { name: string; sizeLabel: string; storedAt: string } | null;
 type ChangeListener = (exampleId: string | null, source: DatasetChangeSource) => void;
 
 const STORED = {
@@ -24,6 +24,8 @@ function bind(
   overrides: {
     readSummary?: () => Promise<typeof STORED | null>;
     loadLastFile?: () => Promise<File | null>;
+    confirmRemove?: (name: string) => Promise<boolean>;
+    removeLastFile?: (storedAt: string) => Promise<boolean>;
   } = {},
 ) {
   const importMenu = Object.assign(new EventTarget(), {
@@ -43,6 +45,9 @@ function bind(
     overrides.loadLastFile ?? (async () => new File(['x'], 'mine.parquetbundle')),
   );
   const warn = vi.fn();
+  const success = vi.fn();
+  const confirmRemove = vi.fn(overrides.confirmRemove ?? (async () => true));
+  const removeLastFile = vi.fn(overrides.removeLastFile ?? (async () => true));
   const binding = bindImportMenu({
     listen: (type, listener) => importMenu.addEventListener(type, listener),
     importMenu,
@@ -59,6 +64,9 @@ function bind(
     getCurrentExampleId: () => screen.exampleId,
     getShownName: () => screen.name,
     warn,
+    success,
+    confirmRemove,
+    removeLastFile,
   });
   const emitChange: ChangeListener = (id, source) => changeListener?.(id, source);
   return {
@@ -69,6 +77,9 @@ function bind(
     readSummary,
     loadLastFile,
     warn,
+    success,
+    confirmRemove,
+    removeLastFile,
     binding,
     emitChange,
   };
@@ -114,7 +125,11 @@ describe('the Import menu', () => {
   it('shows the stored import as the last file while an example is on screen', async () => {
     const { importMenu } = bind();
     await vi.waitFor(() =>
-      expect(importMenu.lastFile).toEqual({ name: 'mine.parquetbundle', sizeLabel: '12.3 MB' }),
+      expect(importMenu.lastFile).toEqual({
+        name: 'mine.parquetbundle',
+        sizeLabel: '12.3 MB',
+        storedAt: STORED.storedAt,
+      }),
     );
   });
 
@@ -151,7 +166,11 @@ describe('the Import menu', () => {
     screen.name = 'mine.parquetbundle';
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(importMenu.lastFile).toEqual({ name: 'mine.parquetbundle', sizeLabel: '12.3 MB' });
+    expect(importMenu.lastFile).toEqual({
+      name: 'mine.parquetbundle',
+      sizeLabel: '12.3 MB',
+      storedAt: STORED.storedAt,
+    });
   });
 
   it('open-last-file loads the stored file and retries it', async () => {
@@ -216,6 +235,99 @@ describe('the Import menu', () => {
     await vi.waitFor(() => expect(readSummary).toHaveBeenCalledTimes(2));
     await Promise.resolve();
     expect(readSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it('remove-last-file asks first, then removes that stored copy, refreshes and says so', async () => {
+    let stored: typeof STORED | null = STORED;
+    const { importMenu, confirmRemove, removeLastFile, success, warn } = bind({
+      readSummary: async () => stored,
+      removeLastFile: async () => {
+        stored = null;
+        return true;
+      },
+    });
+    await vi.waitFor(() => expect(importMenu.lastFile).not.toBeNull());
+
+    importMenu.dispatchEvent(
+      new CustomEvent('remove-last-file', {
+        detail: { name: STORED.name, storedAt: STORED.storedAt },
+      }),
+    );
+
+    await vi.waitFor(() => expect(importMenu.lastFile).toBeNull());
+    expect(confirmRemove).toHaveBeenCalledWith('mine.parquetbundle');
+    expect(removeLastFile).toHaveBeenCalledWith(STORED.storedAt);
+    expect(success).toHaveBeenCalledWith('Removed "mine.parquetbundle" from this browser');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a cancelled remove keeps the stored copy', async () => {
+    const { importMenu, removeLastFile, success } = bind({ confirmRemove: async () => false });
+    await vi.waitFor(() => expect(importMenu.lastFile).not.toBeNull());
+
+    importMenu.dispatchEvent(
+      new CustomEvent('remove-last-file', {
+        detail: { name: STORED.name, storedAt: STORED.storedAt },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(removeLastFile).not.toHaveBeenCalled();
+    expect(success).not.toHaveBeenCalled();
+    expect(importMenu.lastFile?.name).toBe('mine.parquetbundle');
+  });
+
+  it('a newer import saved during the question is kept, with a warning', async () => {
+    const newer = {
+      name: 'newer.parquetbundle',
+      size: 2_000_000,
+      storedAt: '2026-10-02T00:00:00.000Z',
+    };
+    let stored: typeof STORED = STORED;
+    const { importMenu, success, warn } = bind({
+      readSummary: async () => stored,
+      confirmRemove: async () => {
+        stored = newer;
+        return true;
+      },
+      removeLastFile: async (storedAt) => storedAt === stored.storedAt,
+    });
+    await vi.waitFor(() => expect(importMenu.lastFile).not.toBeNull());
+
+    importMenu.dispatchEvent(
+      new CustomEvent('remove-last-file', {
+        detail: { name: STORED.name, storedAt: STORED.storedAt },
+      }),
+    );
+
+    await vi.waitFor(() => expect(importMenu.lastFile?.name).toBe('newer.parquetbundle'));
+    expect(warn).toHaveBeenCalledWith(
+      'Kept the stored file: a newer import replaced "mine.parquetbundle"',
+    );
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it('a removal that fails warns and refreshes', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { importMenu, readSummary, success, warn } = bind({
+      removeLastFile: async () => {
+        throw new Error('locked');
+      },
+    });
+    await vi.waitFor(() => expect(readSummary).toHaveBeenCalledOnce());
+
+    importMenu.dispatchEvent(
+      new CustomEvent('remove-last-file', {
+        detail: { name: STORED.name, storedAt: STORED.storedAt },
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(warn).toHaveBeenCalledWith('The stored file could not be removed'),
+    );
+    expect(error).toHaveBeenCalled();
+    expect(success).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(readSummary).toHaveBeenCalledTimes(2));
   });
 
   it('dispose stops the refreshes', async () => {

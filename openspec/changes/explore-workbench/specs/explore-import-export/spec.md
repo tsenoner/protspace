@@ -28,6 +28,33 @@ button that opened it.
 - **WHEN** the user picks Open a file…
 - **THEN** the panel closes and the file chooser opens
 
+### Requirement: Last file can be removed from the browser
+
+Last file SHALL carry a red × beside its row, named "Remove {file} from this browser", that asks
+before it deletes the copy of that file stored in the browser. Delete or Backspace on the focused
+row SHALL ask the same (the row announces them as its key shortcuts); the × SHALL be a Tab stop
+outside the arrow-key order. The question SHALL be a dialog that names the file, says the stored
+copy is deleted and cannot be undone and that the file's legend settings are kept, with a red
+Remove button and Cancel focused; the Import panel SHALL stay open behind it. On Remove the stored
+copy SHALL be deleted, the legend settings and the dataset on screen SHALL stay, Last file SHALL
+no longer be offered (also after a reload, which then opens the startup demo), a notification
+SHALL name the removed file, and focus SHALL move to the next item of the panel. Cancel SHALL keep
+the file and return focus to the control that asked. A file imported after the question was asked
+SHALL never be removed by it: it stays, and a warning says so. As before, Last file and its × SHALL
+not show while that file is on screen.
+
+#### Scenario: Removing Last file
+
+- **WHEN** the user imported a file, loaded an example, presses the × beside Last file and
+  confirms Remove
+- **THEN** the stored copy is deleted, a notification names the file, and Last file is no longer
+  offered, also after a reload
+
+#### Scenario: Cancelling the removal
+
+- **WHEN** the user presses Delete on the focused Last file row and then Cancel
+- **THEN** the stored copy stays, Last file is still offered and focus is back on its row
+
 ### Requirement: The Export panel asks what, then how
 
 Export… in the dataset name's Import panel (on a phone, Export in the More sheet) SHALL open a

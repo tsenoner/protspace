@@ -291,6 +291,10 @@ export const exportMenu = (page: Page): Locator => page.locator('#myExportMenu')
 export const importPanel = (page: Page): Locator =>
   importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
 
+/** The red × beside the Import panel's Last file row, which asks to remove `fileName`'s stored copy. */
+export const removeLastFileButton = (page: Page, fileName: string): Locator =>
+  importMenu(page).getByRole('button', { name: `Remove ${fileName} from this browser` });
+
 /**
  * The app bar's dataset name, which opens the Import panel (the dataset switcher; Import has no
  * button of its own). Its name reads "{name}, {count} proteins, switch dataset".

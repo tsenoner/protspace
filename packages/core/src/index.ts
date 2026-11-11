@@ -40,7 +40,7 @@ export { ProtspaceExportMenu, type ExportEventDetail } from './components/export
 export { EXPORT_DEFAULTS } from './components/export-menu/export-defaults';
 export * from './components/data-loader/data-loader';
 export * from './components/kit';
-export type { ExampleDatasetSummary } from './components/import-menu/types';
+export type { ExampleDatasetSummary, LastFile } from './components/import-menu/types';
 export type { DataLoadedEventDetail } from './components/data-loader/data-loader';
 export type {
   DataErrorContext,

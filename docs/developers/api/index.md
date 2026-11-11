@@ -542,12 +542,12 @@ The Import button and any control the host passes to `openFrom` or `toggleFrom` 
 panel, a dialog named "Import": "Open a file…" with the formats it accepts and where each goes,
 the last imported file, and the example catalog.
 
-| Property           | Type                                          | Description                                                                                          |
-| ------------------ | --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `exampleDatasets`  | `readonly ExampleDatasetSummary[]`            | Example catalog, listed in the "Examples" section; JavaScript-only                                   |
-| `examplesDocsUrl`  | `string`                                      | Page linked as "About these examples"; `examples-docs-url`                                           |
-| `currentExampleId` | `string \| null`                              | Example on screen, `null` for a user import; its item is disabled with a check; `current-example-id` |
-| `lastFile`         | `{ name: string; sizeLabel: string } \| null` | The stored import, offered as "Last file"; `null` hides the row; JavaScript-only                     |
+| Property           | Type                               | Description                                                                                                          |
+| ------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `exampleDatasets`  | `readonly ExampleDatasetSummary[]` | Example catalog, listed in the "Examples" section; JavaScript-only                                                   |
+| `examplesDocsUrl`  | `string`                           | Page linked as "About these examples"; `examples-docs-url`                                                           |
+| `currentExampleId` | `string \| null`                   | Example on screen, `null` for a user import; its item is disabled with a check; `current-example-id`                 |
+| `lastFile`         | `LastFile \| null`                 | The stored import, offered as "Last file" with a red × that asks to remove it; `null` hides the row; JavaScript-only |
 
 ::: warning BREAKING
 `currentDatasetName` (`current-dataset-name`) and the panel's "Current dataset" block are removed.
@@ -566,6 +566,9 @@ bar's dataset name does.
 | `docsUrl?`    | `string`  | The popover's "Learn more" link                             |
 | `large?`      | `boolean` | A "Large" badge on the item                                 |
 
+`LastFile` has `name` and `sizeLabel` (shown on the row) and `storedAt`, the host's save time,
+which `remove-last-file` hands back.
+
 Methods: `openFrom(anchor: HTMLElement)` opens the panel under `anchor` and sets
 `aria-haspopup="dialog"` and `aria-expanded` on it; focus returns to it when the panel closes.
 `toggleFrom(anchor)` closes the panel when it is open from that anchor and opens it there
@@ -575,14 +578,18 @@ CSS part: `trigger`, the Import button. A host that opens the panel only from it
 it with `::part(trigger) { display: none }` and keeps the element rendered (a `display: none`
 element takes its panel with it), as the app's phone layout does.
 
-| Event                  | Detail           | Description                   |
-| ---------------------- | ---------------- | ----------------------------- |
-| `load-example-dataset` | `{ id: string }` | An example dataset was chosen |
-| `open-file-dialog`     | `{}`             | "Open a file…" was chosen     |
-| `open-last-file`       | `{}`             | "Last file" was chosen        |
+| Event                  | Detail                               | Description                                                  |
+| ---------------------- | ------------------------------------ | ------------------------------------------------------------ |
+| `load-example-dataset` | `{ id: string }`                     | An example dataset was chosen                                |
+| `open-file-dialog`     | `{}`                                 | "Open a file…" was chosen                                    |
+| `open-last-file`       | `{}`                                 | "Last file" was chosen                                       |
+| `remove-last-file`     | `{ name: string; storedAt: string }` | Last file's × was pressed, or Delete or Backspace on its row |
 
-Each fires inside the user's click, after the panel has closed: call the data loader's
-`openFilePicker()` from the `open-file-dialog` listener and the browser lets the file chooser open.
+Each but `remove-last-file` fires inside the user's click, after the panel has closed: call the data
+loader's `openFilePicker()` from the `open-file-dialog` listener and the browser lets the file
+chooser open. `remove-last-file` leaves the panel open: ask in a dialog (the panel stays while
+focus is in it), then delete the stored copy and set `lastFile` to `null`, and focus moves to the
+next item.
 
 ### Export Menu
 

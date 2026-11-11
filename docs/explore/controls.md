@@ -59,7 +59,10 @@ Click the [dataset name](#dataset-menu) to open the panel:
   [Importing Data](/explore/importing-data) for the full flow, size limits, and privacy
   implications. You can also drop either file type anywhere on the page.
 - **Last file** reopens the file you imported last, which ProtSpace keeps in your browser. It
-  shows only while another dataset is on screen.
+  shows only while another dataset is on screen. The red **×** beside it, or **Delete** (or
+  **Backspace**) on the row, removes that copy from your browser after you confirm. This cannot be
+  undone: if you have no other copy, reopen it and export it first. Your legend settings for it
+  are kept, so importing the file again brings them back.
 - **Examples** lists the startup demo and the datasets behind the ProtSpace paper's figures;
   [Example Datasets](/explore/example-datasets) describes each one. Each item's label gives the
   protein count and download size, and its **ⓘ** icon says what the example is and what its
