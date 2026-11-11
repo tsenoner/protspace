@@ -119,7 +119,7 @@ test.describe('theme choice', () => {
     await seedTheme(page, 'dark');
     const { first, release } = await loadWithExploreChunkHeld(page, '/?/explore');
 
-    // The redirect ran first: the path the boot script checked was already /explore.
+    // The redirect ran first, and the boot script themed the page before the first frame.
     expect(new URL(page.url()).pathname).toBe('/explore');
     expect(first).toBe(DARK_SURFACE);
     expect(await htmlTheme(page)).toBe('dark');
@@ -127,25 +127,71 @@ test.describe('theme choice', () => {
     await waitForExploreDataLoad(page);
   });
 
-  test('only /explore is themed', async ({ page }) => {
+  test('every page follows the choice: Home, Privacy and a missing page are dark too', async ({
+    page,
+  }) => {
     await seedTheme(page, 'dark');
-    for (const path of ['/', '/privacy']) {
+    // The first frame of a cold load of Home: no flash of the light page.
+    await page.addInitScript(() => {
+      const sample = () => {
+        if (!document.body) return requestAnimationFrame(sample);
+        (window as unknown as { __firstPaint?: string }).__firstPaint = getComputedStyle(
+          document.body,
+        ).backgroundColor;
+      };
+      requestAnimationFrame(sample);
+    });
+    await page.goto('/');
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { __firstPaint?: string }).__firstPaint),
+      )
+      .toBe(DARK_SURFACE);
+    for (const path of ['/', '/privacy', '/no-such-page']) {
       await page.goto(path);
-      expect(await htmlTheme(page)).toBeNull();
-      await expect.poll(() => backgroundOf(page.locator('body'))).toBe(WHITE);
+      expect(await htmlTheme(page)).toBe('dark');
+      await expect.poll(() => backgroundOf(page.locator('body'))).toBe(DARK_SURFACE);
+      expect(
+        await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
+      ).toBe('dark');
     }
+    // The header's wordmark turns light, as Explore's does.
+    await page.goto('/privacy');
+    await expect(page.getByRole('banner').locator('img[src="/wordmark.svg"]')).toHaveCSS(
+      'filter',
+      'invert(1) hue-rotate(180deg)',
+    );
+  });
 
-    await openExplore(page);
+  test("Home's theme button flips the page, and Explore opens in the same mode", async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const header = page.getByRole('banner');
+    const button = header.getByRole('button', { name: /^Theme: / });
+    await expect(button).toHaveAccessibleName('Theme: Light. Switch to Dark');
+    await expect.poll(() => backgroundOf(page.locator('body'))).toBe(WHITE);
+
+    await button.click();
     expect(await htmlTheme(page)).toBe('dark');
+    await expect(button).toHaveAccessibleName('Theme: Dark. Switch to Light');
+    await expect.poll(() => backgroundOf(page.locator('body'))).toBe(DARK_SURFACE);
+    expect(await page.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY)).toBe('dark');
 
-    // Leaving through the wordmark's SPA link: Explore unmounts and takes the attribute with it.
+    // Explore through the SPA link, then back through the wordmark: one choice throughout.
+    await header.getByRole('link', { name: 'Explore', exact: true }).first().click();
+    await waitForExploreDataLoad(page);
+    expect(await htmlTheme(page)).toBe('dark');
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(DARK_SURFACE);
+    await chooseTheme(page, 'Light');
+
     await appBar(page).getByRole('link', { name: 'ProtSpace home' }).click();
     await page.waitForURL((url) => url.pathname === '/');
-    await expect.poll(() => htmlTheme(page)).toBeNull();
-    expect(
-      await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
-    ).not.toBe('dark');
+    expect(await shownTheme(page)).toBe('light');
     await expect.poll(() => backgroundOf(page.locator('body'))).toBe(WHITE);
+    await expect(
+      page.getByRole('banner').getByRole('button', { name: /^Theme: / }),
+    ).toHaveAccessibleName('Theme: Light. Switch to Dark');
   });
 });
 

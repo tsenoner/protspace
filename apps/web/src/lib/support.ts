@@ -142,3 +142,40 @@ export function buildBugContext({
 
 /** The app bar's and the More sheet's Feedback link: a mail to the support inbox. */
 export const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
+
+/** A blank new issue on the repository: the Feedback menu's third way to reach us. */
+const FEEDBACK_ISSUE_URL = `${GITHUB_REPO_URL}/issues/new`;
+
+/**
+ * The Feedback menu's entries, the same on Home, in Explore and in the docs. A bare mailto: link
+ * does nothing in a browser with no mail app set up, so the menu also offers the address to copy
+ * and a GitHub issue, one of which always works.
+ */
+export const FEEDBACK_MENU_ITEMS = [
+  { value: 'email', label: `Email ${SUPPORT_EMAIL}` },
+  { value: 'copy', label: 'Copy email address' },
+  { value: 'issue', label: 'Open a GitHub issue' },
+] as const;
+
+export type FeedbackAction = (typeof FEEDBACK_MENU_ITEMS)[number]['value'];
+
+/**
+ * Runs a Feedback menu entry. Synchronous, inside the user's click or key press, so the browser
+ * allows the new tab. `onCopied` hears whether the address reached the clipboard.
+ */
+export function runFeedbackAction(
+  action: FeedbackAction,
+  onCopied: (copied: boolean) => void,
+): void {
+  if (action === 'email') window.location.href = FEEDBACK_HREF;
+  if (action === 'issue') window.open(FEEDBACK_ISSUE_URL, '_blank', 'noopener,noreferrer');
+  if (action === 'copy') {
+    // Through a promise, so a missing clipboard (an insecure page) fails the same way.
+    Promise.resolve()
+      .then(() => navigator.clipboard.writeText(SUPPORT_EMAIL))
+      .then(
+        () => onCopied(true),
+        () => onCopied(false),
+      );
+  }
+}

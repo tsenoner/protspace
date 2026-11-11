@@ -1,11 +1,14 @@
 import { Toaster as Sonner, toast } from 'sonner';
+import { useResolvedTheme } from '@/workbench/use-theme';
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
 const Toaster = ({ ...props }: ToasterProps) => {
+  // The site's mode, not the OS's: an override on the page holds for its toasts too.
+  const theme = useResolvedTheme();
   return (
     <Sonner
-      theme="system"
+      theme={theme}
       className="toaster group"
       toastOptions={{
         classNames: {
