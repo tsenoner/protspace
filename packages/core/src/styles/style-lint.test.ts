@@ -196,6 +196,52 @@ describe('style lint', () => {
     expect(css).toContain("@import '../../../packages/core/src/styles/tokens.css'");
   });
 
+  // The docs' VitePress colours are the app's (no #1b1b1f), in light and dark from one block.
+  it("the docs' custom.css maps VitePress's colours onto --ps-* tokens", () => {
+    const css = readFileSync(
+      join(CORE_SRC, '../../../docs/.vitepress/theme/custom.css'),
+      'utf8',
+    ).replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css).toContain("@import '../../../packages/core/src/styles/tokens.css'");
+    const block = css.match(/:root,\s*\.dark\s*\{([^}]*)\}/)?.[1] ?? '';
+    const mapped = new Map(
+      [...block.matchAll(/(--vp-[\w-]+)\s*:\s*([^;]+);/g)].map(([, name, value]) => [
+        name,
+        value.trim(),
+      ]),
+    );
+    for (const name of [
+      '--vp-c-bg',
+      '--vp-c-bg-alt',
+      '--vp-c-bg-elv',
+      '--vp-c-bg-soft',
+      '--vp-c-text-1',
+      '--vp-c-text-2',
+      '--vp-c-text-3',
+      '--vp-c-divider',
+      '--vp-c-border',
+      '--vp-c-gutter',
+      '--vp-c-default-soft',
+      '--vp-c-brand-1',
+      '--vp-c-brand-3',
+      '--vp-c-brand-soft',
+      '--vp-button-brand-text',
+      '--vp-c-warning-1',
+      '--vp-c-danger-1',
+      '--vp-code-bg',
+      '--vp-code-block-bg',
+    ])
+      expect(mapped.get(name), name).toMatch(/var\(--ps-[\w-]+\)/);
+    // No colour literal anywhere in the mapping, and every token it reads exists.
+    for (const [name, value] of mapped) {
+      expect(COLOUR.test(value.replace(/color-mix\(in srgb,/g, '')), name).toBe(false);
+      for (const [, token] of value.matchAll(/var\((--ps-[\w-]+)\)/g))
+        expect(DEFINED.has(token), token).toBe(true);
+    }
+    // Nothing else in the file sets a VitePress colour back to a literal.
+    expect(css.replace(block, '')).not.toMatch(/--vp-c-[\w-]+\s*:/);
+  });
+
   it.each(WEB_CSS)('%s reads colours from tokens', (file) => {
     expect(webCssViolations(readFileSync(join(WEB_SRC, file), 'utf8'))).toEqual([]);
   });

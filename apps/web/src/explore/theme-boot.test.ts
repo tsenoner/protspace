@@ -20,6 +20,14 @@ const TOKENS_CSS = raw(
   }),
 );
 
+const DOCS_CONFIG = raw(
+  import.meta.glob('../../../../docs/.vitepress/config.mts', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }),
+);
+
 const BOOT_SCRIPT = INDEX_HTML.match(/<script data-theme-boot>([\s\S]*?)<\/script>/)?.[1] ?? '';
 const BOOT_STYLE = INDEX_HTML.match(/<style data-theme-boot>([\s\S]*?)<\/style>/)?.[1] ?? '';
 
@@ -73,6 +81,12 @@ describe('the first-paint boot', () => {
   it("index.html's script is config/theme.ts's, up to whitespace", () => {
     const squash = (text: string) => text.replace(/\s+/g, '');
     expect(squash(BOOT_SCRIPT)).toBe(squash(THEME_BOOT_SCRIPT));
+  });
+
+  it("the docs run the same script in their head, before VitePress's own", () => {
+    // VitePress appends its check-dark-mode script after the configured head entries.
+    expect(DOCS_CONFIG).toMatch(/\['script', \{ id: 'theme-boot' \}, THEME_BOOT_SCRIPT\]/);
+    expect(DOCS_CONFIG).toContain("import { THEME_BOOT_SCRIPT } from '../../config/theme'");
   });
 
   it('the boot script comes after the GitHub Pages redirect script', () => {

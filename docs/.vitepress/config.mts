@@ -50,11 +50,8 @@ export default defineConfig({
   ],
 
   themeConfig: {
-    logo: {
-      light: '/wordmark.svg',
-      dark: '/wordmark-black.svg',
-      alt: 'ProtSpace',
-    },
+    // One wordmark; custom.css inverts it in dark with the app's --ps-logo-filter.
+    logo: { src: '/wordmark.svg', alt: 'ProtSpace' },
     siteTitle: false,
 
     // Feedback and GitHub end the bar as icons (theme/end-links.ts), not as nav or social links.
@@ -85,6 +82,8 @@ export default defineConfig({
         text: item.text,
         link,
         ...(item.link && item.text !== 'Docs' && { target: '_self' }), // Only set target for non-Docs items
+        // Every docs page is under Docs: it stays marked, as Home's header marks its current page.
+        ...(item.text === 'Docs' && { activeMatch: '^/' }),
         // Home and Explore are the site's own pages, opened in the same tab: no ↗ (as on Home).
         noIcon: true,
       };
