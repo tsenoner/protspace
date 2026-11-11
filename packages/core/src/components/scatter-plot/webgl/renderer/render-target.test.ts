@@ -8,6 +8,7 @@ import {
   setCameraUniforms,
 } from './render-target';
 import { MARK_TEXTURE_UNIT, RECORD_STYLE_TEXTURE_UNIT } from './texture-units';
+import { HOLLOW_DARK_FADE_GAIN, pointKnockoutUniforms } from './point-shaders';
 import type { PointUniformLocations } from '../types';
 
 function mockGL() {
@@ -203,6 +204,8 @@ describe('bindPointDrawState label-atlas uniforms', () => {
       uniform4f: (loc: { n: string }, a: number, b: number, c: number, d: number) => {
         pushed[loc.n] = [a, b, c, d];
       },
+      ALIASED_POINT_SIZE_RANGE: 0x846d,
+      getParameter: () => new Float32Array([1, 511]),
     } as unknown as WebGL2RenderingContext;
     const uniforms = {
       resolution: { n: 'resolution' },
@@ -211,7 +214,10 @@ describe('bindPointDrawState label-atlas uniforms', () => {
       morph: { n: 'morph' },
       pointScale: { n: 'pointScale' },
       gamma: { n: 'gamma' },
+      maxPointSize: { n: 'maxPointSize' },
       knockoutColor: { n: 'knockoutColor' },
+      hollowFadeGain: { n: 'hollowFadeGain' },
+      lightRimBound: { n: 'lightRimBound' },
       labelColors: { n: 'labelColors' },
       labelTextureSize: { n: 'labelTextureSize' },
       maxLabels: { n: 'maxLabels' },
@@ -296,6 +302,30 @@ describe('bindPointDrawState label-atlas uniforms', () => {
     });
     expect(pushed).toMatchObject({ marksOn: 1, markedOpacity: 1, unmarkedOpacity: 0.15 });
   });
+
+  it("caps sprites at the context's point-size range, read once", () => {
+    const { gl, uniforms, pushed } = uniformMockGL();
+    let reads = 0;
+    (gl as unknown as { getParameter: () => Float32Array }).getParameter = () => {
+      reads++;
+      return new Float32Array([1, 255]);
+    };
+    const params = { ...baseParams, labelAtlas: null };
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, params);
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, params);
+    expect(pushed.maxPointSize).toBe(255);
+    expect(reads).toBe(1);
+  });
+
+  it('pushes the background linear, with the light-plot gain and no light rim', () => {
+    const { gl, uniforms, pushed } = uniformMockGL();
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      knockoutColor: [1, 1, 1],
+      labelAtlas: null,
+    });
+    expect(pushed).toMatchObject({ knockoutColor: [1, 1, 1], hollowFadeGain: 1, lightRimBound: 0 });
+  });
 });
 
 describe('bindPointDrawState point scale', () => {
@@ -317,6 +347,7 @@ describe('bindPointDrawState point scale', () => {
       uniform2f: () => {},
       uniform3f: () => {},
       uniform4f: () => {},
+      getParameter: () => null,
     } as unknown as WebGL2RenderingContext;
     const uniforms = new Proxy({}, { get: (_t, key) => ({ n: String(key) }) }) as never;
     bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
@@ -330,6 +361,29 @@ describe('bindPointDrawState point scale', () => {
       labelAtlas: null,
     });
     expect(pushed).toMatchObject({ dpr: 2, pointScale: 2.5 });
+  });
+});
+
+describe('pointKnockoutUniforms', () => {
+  it('leaves a light plot alone', () => {
+    expect(pointKnockoutUniforms([1, 1, 1], 2.2)).toEqual({
+      linearColor: [1, 1, 1],
+      hollowFadeGain: 1,
+      lightRimBound: 0,
+    });
+  });
+
+  it('raises faded hollow markers and bounds the light rim on a dark plot', () => {
+    const dark = pointKnockoutUniforms([15 / 255, 23 / 255, 42 / 255], 2.2);
+    const luminance =
+      0.2126 * (15 / 255) ** 2.2 + 0.7152 * (23 / 255) ** 2.2 + 0.0722 * (42 / 255) ** 2.2;
+    expect(dark.linearColor[2]).toBeCloseTo((42 / 255) ** 2.2, 10);
+    expect(dark.hollowFadeGain).toBe(HOLLOW_DARK_FADE_GAIN);
+    expect(dark.lightRimBound).toBeCloseTo(2 * (luminance + 0.05), 10);
+  });
+
+  it('linearises with the gamma it is given (1 without the gamma pipeline)', () => {
+    expect(pointKnockoutUniforms([0.5, 0.5, 0.5], 1).linearColor).toEqual([0.5, 0.5, 0.5]);
   });
 });
 

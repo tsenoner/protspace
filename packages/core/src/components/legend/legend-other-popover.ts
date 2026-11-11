@@ -2,7 +2,7 @@ import { LitElement, html, nothing, type PropertyValues } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import {
-  annotationValueLabel,
+  annotationValueSearchKey,
   countNoun,
   displayAnnotationValue,
   formatCount,
@@ -182,8 +182,7 @@ export class ProtspaceLegendOtherPopover extends LitElement {
     if (!cache || cache.items !== this.items || cache.annotation !== this.annotation) {
       const rows = this.items.map((item) => {
         const name = displayAnnotationValue(this.annotation, item.value);
-        const named = annotationValueLabel(this.annotation, item.value) !== undefined;
-        const key = (named ? `${name}\n${item.value}` : name).toLowerCase();
+        const key = annotationValueSearchKey(this.annotation, item.value, name);
         return { value: item.value, name, key, count: item.count };
       });
       rows.sort(byCountThenName);

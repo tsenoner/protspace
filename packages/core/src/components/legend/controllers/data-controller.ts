@@ -19,7 +19,6 @@ import {
   SHAPE_SIZE_FILLER,
   calculatePointSize,
   defaultShapeSize,
-  maxShapeSize,
   getDefaultSortMode,
   valueToKey,
 } from '../legend-helpers';
@@ -74,6 +73,13 @@ function annotationDataFor(
  */
 export class LegendDataController {
   constructor(private readonly host: ProtspaceLegend) {}
+
+  /** The last unfiltered counts, and the counted source and known values they are for. */
+  private _unfilteredCounts: {
+    source: object;
+    known: string;
+    counts: ReadonlyMap<string, number>;
+  } | null = null;
 
   /** The record `PersistenceController` stores for the selected annotation. */
   currentSettings(): ReturnType<PersistenceCallbacks['getCurrentSettings']> {
@@ -190,6 +196,22 @@ export class LegendDataController {
   }
 
   /**
+   * The counts without the filter or isolation. They change only with what is counted, not with
+   * the isolation state, so they are kept per count source (the synced storage, or the fed
+   * `annotationValues` array) and known values: a constrained rebuild or a Reset preview reuses
+   * them instead of scanning every protein again.
+   */
+  private unfilteredFrequencies(knownValues: string[]): ReadonlyMap<string, number> {
+    const source = this.host._countSource ?? this.host.annotationValues;
+    const known = knownValues.join('\u0000');
+    const memo = this._unfilteredCounts;
+    if (memo && memo.source === source && memo.known === known) return memo.counts;
+    const counts = this.computeAnnotationCounts(knownValues, true);
+    this._unfilteredCounts = { source, known, counts };
+    return counts;
+  }
+
+  /**
    * Legend counts, isolation applied: from the synced storage, or from the public
    * `annotationValues` array when there is none. Either way the processor only ever
    * sees the counted map.
@@ -253,10 +275,7 @@ export class LegendDataController {
       this.host.isolationMode ? this.host._preIsolationVisibleValues : new Set<string>(),
       getNumericBinLowerBoundMap(this.host.annotationData),
       true,
-      undefined,
-      undefined,
-      false,
-      { unfilteredFrequencies: () => this.computeAnnotationCounts([], true) },
+      { unfilteredFrequencies: () => this.unfilteredFrequencies([]) },
     );
     return legendItems;
   }
@@ -365,22 +384,26 @@ export class LegendDataController {
       // When none of these apply (true initial load), use empty set so maxVisibleValues is respected.
       const hasPendingOps = pendingExtract !== undefined || pendingMerge !== undefined;
       const hasExistingItems = this.host._legendItems.some((i) => i.value !== LEGEND_VALUES.OTHER);
-      // Leaving a filter or isolation brings back the rows shown before it, with the edits made
-      // under it, not just the rows it left: a row it hid would otherwise lose its place.
-      const leavingIsolation =
-        !this.host.isolationMode && this.host._preIsolationVisibleValues.size > 0;
-      const visibleValues =
-        this.host.isolationMode || leavingIsolation
-          ? new Set([
-              ...this.host._preIsolationVisibleValues,
-              ...(leavingIsolation ? this.host._visibleValues : []),
-            ])
-          : this.host._persistenceController.hasPersistedSettings() ||
-              hasPendingOps ||
-              hasExistingItems
-            ? this.host._visibleValues
-            : new Set<string>();
-      if (leavingIsolation) this.host._preIsolationVisibleValues = new Set<string>();
+      let visibleValues: Set<string>;
+      if (this.host.isolationMode) {
+        visibleValues = new Set(this.host._preIsolationVisibleValues);
+      } else if (this.host._preIsolationVisibleValues.size > 0) {
+        // Leaving a filter or isolation brings back the rows shown before it, with the edits made
+        // under it, not just the rows it left: a row it hid would otherwise lose its place.
+        visibleValues = new Set([
+          ...this.host._preIsolationVisibleValues,
+          ...this.host._visibleValues,
+        ]);
+        this.host._preIsolationVisibleValues = new Set<string>();
+      } else if (
+        this.host._persistenceController.hasPersistedSettings() ||
+        hasPendingOps ||
+        hasExistingItems
+      ) {
+        visibleValues = this.host._visibleValues;
+      } else {
+        visibleValues = new Set<string>();
+      }
       const numericOrderValues = getNumericBinLowerBoundMap(this.host.annotationData);
       const numericDisplayLabels = getNumericBinLabelMap(this.host.annotationData);
       const numericManualOrderIds = isNumericAnnotation
@@ -413,14 +436,14 @@ export class LegendDataController {
         visibleValues,
         numericOrderValues,
         !isNumericAnnotation,
-        pendingExtract,
-        pendingMerge,
-        isNumericAnnotation,
         {
+          pendingExtract,
+          pendingMerge,
+          isNumericSource: isNumericAnnotation,
           paletteId: isNumericAnnotation
             ? undefined
             : normalizeCategoricalPaletteId(this.host._selectedPaletteId),
-          unfilteredFrequencies: () => this.computeAnnotationCounts(knownValues, true),
+          unfilteredFrequencies: () => this.unfilteredFrequencies(knownValues),
         },
       );
 
@@ -522,14 +545,13 @@ export class LegendDataController {
 
   /**
    * The dataset's stored size (picked, or a bundle's top-level size), else the annotation's own,
-   * else the default from the dataset's protein count; capped at the dataset's largest size.
+   * else the default from the dataset's protein count. `shapeSize` caps it when it is set.
    */
   resolveShapeSize(): number {
-    return Math.min(
+    return (
       this.host._persistenceController.loadShapeSize() ??
-        this.host._annotationShapeSize ??
-        defaultShapeSize(this.host._datasetProteinCount),
-      maxShapeSize(this.host._datasetProteinCount),
+      this.host._annotationShapeSize ??
+      defaultShapeSize(this.host._datasetProteinCount)
     );
   }
 

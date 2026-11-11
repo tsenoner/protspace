@@ -51,6 +51,12 @@ export function topLayer(): Layer | undefined {
   return stack[stack.length - 1];
 }
 
+/** Whether a layer opened after `layer` is still open, such as a dialog its content opened. */
+export function hasLayerAbove(layer: Layer): boolean {
+  const index = stack.indexOf(layer);
+  return index !== -1 && index < stack.length - 1;
+}
+
 /** Registers what Escape does when no layer is open. `handle` returns true when it acted. */
 export function onEscapeFallback(
   order: number,

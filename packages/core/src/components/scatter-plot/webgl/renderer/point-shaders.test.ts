@@ -40,11 +40,17 @@ describe('point shaders', () => {
       'predictedInterior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);',
     );
     expect(POINT_FRAGMENT_SHADER).toContain(
-      'mix(finalColor * pointAlpha, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior)',
+      'mix(finalColor * pointAlpha, u_knockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior)',
     );
     expect(POINT_FRAGMENT_SHADER).toContain('uniform vec3 u_knockoutColor;');
     // The hollow interior is the only thing that distinguishes the two glyph classes; the
     // outline applies to both (#369, see the outline describe block).
+  });
+
+  it("clamps the sprite to the context's point-size range, not only to 1", () => {
+    expect(POINT_VERTEX_SHADER).toContain(
+      'gl_PointSize = clamp(pointSize * u_pointScale * u_dpr, 1.0, u_maxPointSize);',
+    );
   });
 
   it('sizes the ring as a share of the diameter, a device-pixel floor and a depth cap', () => {
@@ -90,10 +96,16 @@ describe('point shaders', () => {
   });
 
   it('raises a faded hollow marker on a dark plot only, and keeps it under a shown point', () => {
-    expect(POINT_FRAGMENT_SHADER).toContain('bool darkPlot = bgLum < 0.05;');
+    // The gain is worked out on the CPU (pointKnockoutUniforms): 1 on a light plot.
+    expect(POINT_FRAGMENT_SHADER).toContain('uniform float u_hollowFadeGain;');
     expect(POINT_FRAGMENT_SHADER).toContain(
-      'if (darkPlot && v_predicted > 0.5 && pointAlpha < HOLLOW_DARK_FADE_CEILING) {',
+      'if (v_predicted > 0.5 && pointAlpha < HOLLOW_DARK_FADE_CEILING) {',
     );
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'pointAlpha = min(pointAlpha * u_hollowFadeGain, HOLLOW_DARK_FADE_CEILING);',
+    );
+    // No per-fragment pow or luminance of the background.
+    expect(POINT_FRAGMENT_SHADER).not.toContain('pow(max(u_knockoutColor');
     expect(POINT_FRAGMENT_SHADER).toContain('const float HOLLOW_DARK_FADE_CEILING = 0.5;');
     // Both the alpha and the premultiplied colour take the raised alpha.
     expect(POINT_FRAGMENT_SHADER).toContain('mix(finalColor * pointAlpha,');

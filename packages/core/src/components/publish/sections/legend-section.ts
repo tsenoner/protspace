@@ -1,6 +1,21 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { live } from 'lit/directives/live.js';
+import '../../kit/select';
+import type { PsSelect, SelectOption } from '../../kit/select';
 import type { LegendLayout, LegendPosition } from '../publish-state';
+
+const FONT_UNIT_OPTIONS: SelectOption[] = [
+  { value: 'pt', label: 'pt' },
+  { value: 'px', label: 'px' },
+];
+
+const POSITION_OPTIONS: SelectOption[] = [
+  { value: 'right', label: 'Right' },
+  { value: 'left', label: 'Left' },
+  { value: 'top', label: 'Top' },
+  { value: 'bottom', label: 'Bottom' },
+  { value: 'free', label: 'Free (drag to move)' },
+];
 
 interface LegendModel {
   legend: LegendLayout;
@@ -116,20 +131,19 @@ function renderFontInput(model: LegendModel, handlers: LegendHandlers) {
         .value=${live(value)}
         @change=${onChange}
       />
-      <select
+      <ps-select
         class="publish-select publish-unit-select"
+        size="sm"
         data-publish-input="legend-font-unit"
-        aria-label="Legend font unit"
+        label="Legend font unit"
+        .options=${FONT_UNIT_OPTIONS}
         .value=${unit}
         @change=${(e: Event) => {
           handlers.updateLegend({
-            fontSizeUnit: (e.target as HTMLSelectElement).value as 'pt' | 'px',
+            fontSizeUnit: (e.target as PsSelect).value as 'pt' | 'px',
           });
         }}
-      >
-        <option value="pt">pt</option>
-        <option value="px">px</option>
-      </select>
+      ></ps-select>
     </div>
   `;
 }
@@ -157,22 +171,18 @@ export function renderLegendSection(model: LegendModel, handlers: LegendHandlers
         ? html`
             <div class="publish-row">
               <label>Position</label>
-              <select
+              <ps-select
                 class="publish-select"
-                aria-label="Legend position"
+                size="sm"
+                label="Legend position"
+                .options=${POSITION_OPTIONS}
                 .value=${leg.position}
                 @change=${(e: Event) => {
                   handlers.updateLegend({
-                    position: (e.target as HTMLSelectElement).value as LegendPosition,
+                    position: (e.target as PsSelect).value as LegendPosition,
                   });
                 }}
-              >
-                <option value="right">Right</option>
-                <option value="left">Left</option>
-                <option value="top">Top</option>
-                <option value="bottom">Bottom</option>
-                <option value="free">Free (drag to move)</option>
-              </select>
+              ></ps-select>
             </div>
 
             <div class="publish-row">

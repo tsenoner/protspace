@@ -1526,8 +1526,6 @@ describe('legend-data-processor', () => {
           ['10 - 20', 10],
         ]),
         false,
-        undefined,
-        undefined,
       );
 
       expect(result.legendItems).toEqual([
@@ -1609,8 +1607,7 @@ describe('legend-data-processor', () => {
           visible,
           new Map(),
           true,
-          pending.extract,
-          pending.merge,
+          { pendingExtract: pending.extract, pendingMerge: pending.merge },
         ).legendItems;
       };
       const order = (items: LegendItem[]) =>
@@ -1724,7 +1721,7 @@ describe('legend-data-processor', () => {
         visibleValues,
         new Map(),
         true,
-        'c',
+        { pendingExtract: 'c' },
       );
       const legendValues = result.legendItems
         .filter((i) => i.value !== 'Other')
@@ -1748,8 +1745,7 @@ describe('legend-data-processor', () => {
         visibleValues,
         new Map(),
         true,
-        undefined,
-        'b',
+        { pendingMerge: 'b' },
       );
       const legendValues = result.legendItems
         .filter((i) => i.value !== 'Other')
@@ -1986,9 +1982,6 @@ describe('legend-data-processor', () => {
         visible,
         new Map(),
         true,
-        undefined,
-        undefined,
-        false,
         { paletteId: extra.paletteId, unfilteredFrequencies: () => counts() },
       ).legendItems;
 
@@ -2041,8 +2034,7 @@ describe('legend-data-processor', () => {
         new Set(['a', 'b', 'c']),
         new Map(),
         true,
-        undefined,
-        'b',
+        { pendingMerge: 'b' },
       ).legendItems;
       items = LegendDataProcessor.processLegendItems(
         ctx,
@@ -2056,7 +2048,7 @@ describe('legend-data-processor', () => {
         new Set(['a', 'c']),
         new Map(),
         true,
-        'e',
+        { pendingExtract: 'e' },
       ).legendItems;
 
       expect(colorsOf(items)).toEqual({ a: original.a, c: original.c, e: original.b });
@@ -2198,9 +2190,6 @@ describe('legend-data-processor', () => {
         new Set(['b']),
         new Map(),
         true,
-        undefined,
-        undefined,
-        false,
         { paletteId: 'okabeIto' },
       ).legendItems;
 
@@ -2230,7 +2219,8 @@ describe('legend-data-processor', () => {
           'size-desc',
         ).legendItems;
       }
-      expect(ctx.slotTracker.peekSlot('c21')! % kellys.length).toBe(ctx.slotTracker.peekSlot('c0'));
+      expect(ctx.slotTracker.assignedCategories()).toEqual(expect.arrayContaining(['c0', 'c21']));
+      expect(ctx.slotTracker.getSlot('c21') % kellys.length).toBe(ctx.slotTracker.getSlot('c0'));
       const before = Object.values(colorsOf(items));
       expect(new Set(before).size).toBe(10);
 

@@ -157,11 +157,10 @@ describe('visual-encoding', () => {
         expect([...tracker.rememberedColors()]).toEqual([]);
       });
 
-      it('lists the categories holding a slot and peeks without assigning', () => {
+      it('lists the categories holding a slot', () => {
         tracker.reassignSlots(['a', 'b']);
         expect(tracker.assignedCategories()).toEqual(['a', 'b']);
-        expect(tracker.peekSlot('b')).toBe(1);
-        expect(tracker.peekSlot('z')).toBeUndefined();
+        expect(tracker.getSlot('b')).toBe(1);
         expect(tracker.assignedCategories()).toEqual(['a', 'b']);
       });
     });

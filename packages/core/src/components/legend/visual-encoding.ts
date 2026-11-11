@@ -175,11 +175,6 @@ export class SlotTracker {
     this.colors.clear();
   }
 
-  /** The slot a category holds, without assigning one. */
-  peekSlot(categoryName: string): number | undefined {
-    return this.slots.get(categoryName);
-  }
-
   /** The categories holding a slot. */
   assignedCategories(): string[] {
     return [...this.slots.keys()];

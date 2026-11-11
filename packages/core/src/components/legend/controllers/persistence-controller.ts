@@ -317,8 +317,8 @@ export class PersistenceController
       a: [string, PersistedCategoryData],
       b: [string, PersistedCategoryData],
     ): number => a[1].zOrder - b[1].zOrder;
+    if (!Object.keys(this._pendingCategories).some(isHeldBack)) return categories;
     const stored = Object.entries(this._pendingCategories).sort(byPlace);
-    if (!stored.some(([value]) => isHeldBack(value))) return categories;
 
     const shown = Object.entries(categories).sort(byPlace);
     const merged: Array<[string, PersistedCategoryData]> = [];

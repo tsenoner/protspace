@@ -200,10 +200,11 @@ describe('legend shape size', () => {
     expect(el.getAllPersistedSettings().a.shapeSize).toBe(128);
   });
 
-  it('caps a host-set size in the settings popover and when it is committed', async () => {
+  it('caps a host-set size where it is set, in the settings popover and when committed', async () => {
     const { el, pointSizes, switchTo } = makeLegend();
     switchTo('a');
     el.shapeSize = 200;
+    expect(el.shapeSize).toBe(64);
     // The popover renders only inside a connected legend.
     document.body.appendChild(el);
     try {

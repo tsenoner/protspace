@@ -13,21 +13,6 @@ import { importMenuStyles } from './import-menu.styles';
 import type { ExampleDatasetSummary, LastFile } from './types';
 
 /**
- * Focus went into an open dialog, such as the host's confirmation of Remove. The panel then stays,
- * so focus can come back to it. A focusout's target is retargeted, often to the ps-dialog host.
- */
-function movedIntoDialog(next: Node): boolean {
-  for (let node: Node | null = next; node; ) {
-    if (node instanceof HTMLDialogElement && node.open) return true;
-    if (node instanceof Element && node.localName === 'ps-dialog' && node.hasAttribute('open')) {
-      return true;
-    }
-    node = (node as Element).assignedSlot ?? node.parentNode ?? (node as ShadowRoot).host ?? null;
-  }
-  return false;
-}
-
-/**
  * The Import panel: "Open a file…", the last imported file and the host's example catalog
  * (design decisions 1 and 15). Its own Import button opens it, and so does any control the host
  * passes to `openFrom`/`toggleFrom` (the app bar's dataset name, the empty plot's "Pick an
@@ -312,12 +297,14 @@ export class ProtspaceImportMenu extends LitElement {
    * retargeted to the host itself; a null target (a press on the panel's background, or the
    * window losing focus) leaves it open. The anchor counts as inside, as for the popover's
    * outside press: a press on it focuses it first, and its own click then toggles the panel.
+   * Focus that went into a layer opened above the panel (the host's confirmation of Remove) keeps
+   * it open, so focus can come back to it.
    */
   private onFocusOut = (event: FocusEvent) => {
     const next = event.relatedTarget as Node | null;
     if (!this.open || !next || flatContains(this, next)) return;
     if (this.anchorEl && flatContains(this.anchorEl, next)) return;
-    if (movedIntoDialog(next)) return;
+    if (this.panelPopover?.hasLayerAbove()) return;
     this.close();
   };
 

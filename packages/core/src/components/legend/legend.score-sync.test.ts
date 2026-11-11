@@ -186,7 +186,6 @@ describe('legend score hover focuses the plot', () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => {
     document.body.innerHTML = '';
-    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' }));
   });
 
   async function mountWithSpy(data: VisualizationData = makeData()) {
@@ -203,14 +202,12 @@ describe('legend score hover focuses the plot', () => {
       );
   const row = (legend: ProtspaceLegend, value: string) =>
     legend.shadowRoot!.querySelector(`[data-value="${value}"]`)!;
-  const shift = (type: 'keydown' | 'keyup') =>
-    window.dispatchEvent(new KeyboardEvent(type, { key: 'Shift' }));
 
   it('a strip dot focuses its category in the plot, and leaving it ends the focus', async () => {
     const { legend, focusCategories } = await mountWithSpy();
     hoverStrip(legend, 'Elapidae');
     hoverStrip(legend, null);
-    expect(focusCategories.mock.calls).toEqual([[['Elapidae']], [null]]);
+    expect(focusCategories.mock.calls).toEqual([[['Elapidae'], 'strip'], [null]]);
   });
 
   it('a tapped strip dot marks its row but leaves the plot alone', async () => {
@@ -232,38 +229,31 @@ describe('legend score hover focuses the plot', () => {
       makeData([statRow({ category: 'NotInTheLegend', value: 0.4 })]),
     );
     hoverStrip(legend, 'NotInTheLegend');
-    expect(focusCategories).toHaveBeenLastCalledWith(['NotInTheLegend']);
+    expect(focusCategories).toHaveBeenLastCalledWith(['NotInTheLegend'], 'strip');
   });
 
-  it('a row does nothing new without Shift', async () => {
-    const { legend, focusCategories } = await mountWithSpy();
-    row(legend, 'Viperidae').dispatchEvent(
-      new PointerEvent('pointerenter', { pointerType: 'mouse' }),
-    );
-    expect(focusCategories).not.toHaveBeenCalled();
-  });
-
-  it('a scored row focuses its category while Shift is held', async () => {
+  it('a scored row reports its category as a row, which the plot focuses only with Shift', async () => {
     const { legend, focusCategories } = await mountWithSpy();
     const viperidae = row(legend, 'Viperidae');
     viperidae.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
-    shift('keydown');
-    expect(focusCategories).toHaveBeenLastCalledWith(['Viperidae']);
-    shift('keyup');
-    expect(focusCategories).toHaveBeenLastCalledWith(null);
-
-    shift('keydown');
+    expect(focusCategories).toHaveBeenLastCalledWith(['Viperidae'], 'row');
     viperidae.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
     expect(focusCategories).toHaveBeenLastCalledWith(null);
     row(legend, 'Elapidae').dispatchEvent(
       new PointerEvent('pointerenter', { pointerType: 'mouse' }),
     );
-    expect(focusCategories).toHaveBeenLastCalledWith(['Elapidae']);
+    expect(focusCategories).toHaveBeenLastCalledWith(['Elapidae'], 'row');
+  });
+
+  it('the legend leaves Shift to the plot: it listens for no key', async () => {
+    const { focusCategories } = await mountWithSpy();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift' }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' }));
+    expect(focusCategories).not.toHaveBeenCalled();
   });
 
   it('rows of an annotation without scores never focus the plot', async () => {
     const { legend, focusCategories } = await mountWithSpy({ ...makeData(), statisticsRows: [] });
-    shift('keydown');
     row(legend, 'Viperidae').dispatchEvent(
       new PointerEvent('pointerenter', { pointerType: 'mouse' }),
     );

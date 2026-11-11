@@ -90,6 +90,24 @@ function binsInProteinOrder(
   return order;
 }
 
+/**
+ * `color` (the palette's colour for `slot` unless given) when `claimed` does not hold it;
+ * otherwise the first free colour of the next slots. The probe stops after 30 slots, past Kelly's
+ * 21 colours, so it always ends, on the last colour probed if none is free.
+ */
+function firstFreeColor(
+  slot: number,
+  category: string,
+  paletteId: string,
+  claimed: ReadonlySet<string>,
+  color: string = getVisualEncoding(slot, category, paletteId).color,
+): string {
+  for (let alt = slot + 1; claimed.has(color) && alt <= slot + 30; alt++) {
+    color = getVisualEncoding(alt, category, paletteId).color;
+  }
+  return color;
+}
+
 /** What `createLegendItems` needs to know about the view besides its rows. */
 interface LegendItemsViewOptions {
   /**
@@ -98,13 +116,19 @@ interface LegendItemsViewOptions {
    */
   constrained?: boolean;
   /** The values the view counted. A stored colour of a value it left out stays taken. */
-  presentValues?: ReadonlySet<string>;
+  presentValues?: { has(value: string): boolean };
   /** The categorical palette that colours each slot. */
   paletteId?: string;
 }
 
 /** What `processLegendItems` needs besides the counted view. */
 interface LegendProcessOptions {
+  /** A value Other is giving up to a row of its own (N/A is '__NA__'). */
+  pendingExtract?: string;
+  /** A row's value going into Other (N/A is '__NA__'). */
+  pendingMerge?: string;
+  /** The annotation is numeric: its N/A row keeps the fixed N/A colour and shape. */
+  isNumericSource?: boolean;
   /** The categorical palette that colours each slot. */
   paletteId?: string;
   /**
@@ -532,16 +556,7 @@ export class LegendDataProcessor {
         }
         // Conflict resolution applies to NA too — if NA_DEFAULT_COLOR is already
         // claimed by another category, NA gets bumped via slot probing.
-        if (claimedColors.has(color)) {
-          // Probe subsequent slots for an unclaimed color (cap at 30 to exceed
-          // Kelly's 21-color palette and guarantee termination)
-          let altSlot = slot + 1;
-          color = getVisualEncoding(altSlot, displayName, paletteId).color;
-          while (claimedColors.has(color) && altSlot < slot + 30) {
-            altSlot++;
-            color = getVisualEncoding(altSlot, displayName, paletteId).color;
-          }
-        }
+        color = firstFreeColor(slot, displayName, paletteId, claimedColors, color);
         encoding = { color, shape };
         claimedColors.add(color);
       }
@@ -594,11 +609,9 @@ export class LegendDataProcessor {
     visibleValues: Set<string> = new Set(),
     numericOrderValues: Map<string, number> = new Map(),
     useOtherBucket: boolean = true,
-    pendingExtract?: string,
-    pendingMerge?: string,
-    isNumericSource: boolean = false,
     options: LegendProcessOptions = {},
   ): { legendItems: LegendItem[]; otherItems: OtherItem[] } {
+    const { pendingExtract, pendingMerge, isNumericSource = false } = options;
     this.resetIfAnnotationChanged(ctx, annotationName);
 
     // Build existing zOrder map for manual sorting
@@ -668,7 +681,7 @@ export class LegendDataProcessor {
       isNumericSource,
       {
         constrained: isolationMode,
-        presentValues: new Set(frequencyMap.keys()),
+        presentValues: frequencyMap,
         paletteId: options.paletteId,
       },
     );
@@ -734,12 +747,7 @@ export class LegendDataProcessor {
     const claimed = new Set(items.filter(keepsColor).map((item) => item.color));
     const picked = new Map<string, string>();
     for (const category of [...rows.sort(bySlot), ...leftOut.sort(bySlot)]) {
-      const slot = tracker.getSlot(category);
-      let color = getVisualEncoding(slot, category, paletteId).color;
-      // Cap at 30 probes, past Kelly's 21 colours, so the walk always ends.
-      for (let alt = slot + 1; claimed.has(color) && alt < slot + 30; alt++) {
-        color = getVisualEncoding(alt, category, paletteId).color;
-      }
+      const color = firstFreeColor(tracker.getSlot(category), category, paletteId, claimed);
       claimed.add(color);
       picked.set(category, color);
       tracker.rememberColor(category, color);

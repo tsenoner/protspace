@@ -408,8 +408,9 @@ test.describe('exports stay light in Dark', () => {
     // A white figure covers the paper; a transparent one lets it show through.
     await expect.poll(cornerAlpha).toBe(255);
     await modal
-      .locator('select.publish-select')
+      .locator('ps-select.publish-select')
       .filter({ has: page.locator('option[value="transparent"]') })
+      .locator('select')
       .selectOption('transparent');
     await expect.poll(cornerAlpha).toBe(0);
 

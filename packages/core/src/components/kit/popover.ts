@@ -3,7 +3,7 @@ import { property, query } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { COMPACT_MEDIA } from '../../utils/breakpoints';
 import { deepActiveElement, flatContains } from './focus';
-import { pushLayer, stopNestedClose } from './layers';
+import { hasLayerAbove, pushLayer, stopNestedClose, type Layer } from './layers';
 import { popoverStyles } from './popover.styles';
 import { anchorTo, type Placement } from './position';
 
@@ -33,6 +33,8 @@ export class PsPopover extends LitElement {
 
   @query('.panel') private panel!: HTMLElement;
   private releaseLayer?: () => void;
+  /** The popover's entry on the layer stack while it is open. */
+  private layer?: Layer;
   private stopPositioning?: () => void;
   private returnFocusTo: HTMLElement | null = null;
   private announcedOpen = false;
@@ -85,6 +87,14 @@ export class PsPopover extends LitElement {
     this.teardown();
   }
 
+  /**
+   * Whether a layer opened above this open popover is still open: a dialog or menu its content
+   * opened. Focus that leaves the popover for it has not left for good.
+   */
+  hasLayerAbove(): boolean {
+    return !!this.layer && hasLayerAbove(this.layer);
+  }
+
   /** Closes the popover and tells the owner. */
   dismiss(): void {
     if (!this.open) return;
@@ -111,12 +121,13 @@ export class PsPopover extends LitElement {
     this.stopPositioning = docked ? undefined : anchorTo(this.anchor, this.panel, this.placement);
     // Read at each press, so a replaced anchor still counts as inside.
     const elements = (): Element[] => (this.anchor ? [this, this.anchor] : [this]);
-    this.releaseLayer = pushLayer({
+    this.layer = {
       close: () => this.dismiss(),
       get elements() {
         return elements();
       },
-    });
+    };
+    this.releaseLayer = pushLayer(this.layer);
     // A move while open shows the panel again but is not a new opening.
     if (this.announcedOpen) return;
     this.announcedOpen = true;
@@ -166,6 +177,7 @@ export class PsPopover extends LitElement {
     this.stopPositioning = undefined;
     this.releaseLayer?.();
     this.releaseLayer = undefined;
+    this.layer = undefined;
     if (this.panel?.matches(':popover-open')) this.panel.hidePopover();
   }
 

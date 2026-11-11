@@ -25,7 +25,10 @@ export interface ScoreStripPoint {
   other?: true;
 }
 
-/** `strip-hover`: the dot's category, or null on leaving it; `touch` when a tap entered it. */
+/**
+ * `strip-hover`: the dot's category, or null once the pointer leaves the strip; `touch` when a
+ * tap entered the dot.
+ */
 export interface StripHoverDetail {
   category: string | null;
   touch: boolean;
@@ -77,12 +80,6 @@ class ProtspaceScoreStrip extends LitElement {
 
   static styles = categoryScoreStripStyles;
 
-  /**
-   * The pointer type of the last `pointerover`, which precedes the dot's `mouseenter`: a tap
-   * fires a compatibility `mouseenter` too, and its hover lasts until the next tap elsewhere.
-   */
-  private _pointerType = 'mouse';
-
   render() {
     if (this.points.length === 0) return nothing;
 
@@ -119,9 +116,7 @@ class ProtspaceScoreStrip extends LitElement {
           height="${STRIP_HEIGHT}"
           role="img"
           aria-label="${this.label} per category"
-          @pointerover=${(event: PointerEvent) => {
-            this._pointerType = event.pointerType;
-          }}
+          @mouseleave=${() => this._emitHover(null, false)}
         >
           <line
             class="axis"
@@ -142,8 +137,8 @@ class ProtspaceScoreStrip extends LitElement {
             cy="${AXIS_Y}"
             r="${DOT_RADIUS}"
             fill="${point.color}"
-            @mouseenter=${() => this._emitHover(point.category)}
-            @mouseleave=${() => this._emitHover(null)}
+            @pointerenter=${(event: PointerEvent) =>
+              this._emitHover(point.category, event.pointerType === 'touch')}
             @click=${() => this._emitClick(point.category)}
           ><title>${point.label ?? point.category}: ${formatStatValue(point.value)}${
             point.embedding == null
@@ -184,10 +179,16 @@ class ProtspaceScoreStrip extends LitElement {
     return Number.isInteger(value) ? String(value) : value.toFixed(2);
   }
 
-  private _emitHover(category: string | null): void {
+  /**
+   * A dot reports its category on `pointerenter`, which says whether a tap began it; the strip
+   * clears it only on leaving the whole svg, so moving dot to dot is one hover, not a clear and a
+   * hover. The clear listens for `mouseleave`: a tap's compatibility mouse events keep its hover
+   * until the next tap elsewhere, where a touch `pointerleave` would end it on lift.
+   */
+  private _emitHover(category: string | null, touch: boolean): void {
     this.dispatchEvent(
       new CustomEvent<StripHoverDetail>('strip-hover', {
-        detail: { category, touch: this._pointerType === 'touch' },
+        detail: { category, touch },
         bubbles: true,
       }),
     );

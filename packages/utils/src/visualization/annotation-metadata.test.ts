@@ -9,6 +9,7 @@ import {
   annotationValueLabel,
   compareTaxonomyRank,
   displayAnnotationValue,
+  annotationValueSearchKey,
   getAnnotationMeta,
   isPredictedAnnotation,
   prettifyAnnotationName,
@@ -227,6 +228,12 @@ describe('annotation value labels', () => {
     expect(annotationValueLabel('pfam', '-')).toBeUndefined();
     expect(displayAnnotationValue('pfam', '-')).toBe('-');
     expect(displayAnnotationValue('ted_domains', '3.40.50.300')).toBe('3.40.50.300');
+  });
+
+  it('searches a named value by its name and by the value itself', () => {
+    expect(annotationValueSearchKey('ted_domains', '-')).toBe('no cath label\n-');
+    expect(annotationValueSearchKey('pfam', 'PF00001')).toBe('pf00001');
+    expect(annotationValueSearchKey('ted_domains', '-', 'Shown')).toBe('shown\n-');
   });
 
   it('still counts the Other bucket', () => {

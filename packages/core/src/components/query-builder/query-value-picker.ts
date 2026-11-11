@@ -6,7 +6,7 @@ import { ANY_VALUE } from './query-types';
 import { carriesWanted, slotAt, valueSlots } from './query-evaluate';
 import {
   annotationLabel,
-  annotationValueLabel,
+  annotationValueSearchKey,
   formatCount,
   getProteinAnnotationCount,
   isNAValue,
@@ -287,10 +287,7 @@ class ProtspaceQueryValuePicker extends LitElement {
         value,
         label,
         // A value the registry names is found by its words and by the value itself.
-        lower: (annotationValueLabel(this.annotation, value) === undefined
-          ? label
-          : `${label}\n${value}`
-        ).toLowerCase(),
+        lower: annotationValueSearchKey(this.annotation, value, label),
         count: this._counts().counts.get(value) ?? 0,
       };
       (isSentinel(value) ? sentinels : real).push(entry);

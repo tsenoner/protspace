@@ -152,13 +152,15 @@ export function applyNumericDisplayLabels(
  * the value itself, which filters and settings key on, is unchanged.
  */
 export function applyValueLabels(items: readonly LegendItem[], annotation: string): LegendItem[] {
-  if (!items.some((each) => annotationValueLabel(annotation, each.value) !== undefined)) {
-    return items as LegendItem[];
-  }
-  return items.map((each) => {
+  let labelled = false;
+  const next = items.map((each) => {
     const label = annotationValueLabel(annotation, each.value);
-    return label === undefined ? each : { ...each, displayValue: label };
+    if (label === undefined) return each;
+    labelled = true;
+    return { ...each, displayValue: label };
   });
+  // Unchanged items keep their identity, so nothing downstream sees a new array.
+  return labelled ? next : (items as LegendItem[]);
 }
 
 /** Each numeric bin's colour from the annotation's gradient; Other and N/A keep theirs. */
