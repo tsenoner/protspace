@@ -10,7 +10,7 @@ does.
 
 From left to right: the ProtSpace wordmark (back to the home page), the dataset menu (which opens
 [Import](#import)), the search box, [**Export**](#export) and **Figure editor**, then past a thin
-divider **Theme**, **Help**, **Feedback** and **GitHub**. In a window narrower than 1200 px,
+divider (left out below 820 px) **Theme**, **Help**, **Feedback** and **GitHub**. In a window narrower than 1200 px,
 **Export** and **Figure editor** show only their icons (Export keeps a small chevron); hover one for
 its name. On a tablet narrower than 800 px the search box folds into a search button that opens it
 over the bar. On a phone the search box opens from that button too, and Export, the Figure editor,

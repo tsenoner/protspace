@@ -169,9 +169,11 @@ width changes, and points under an opaque sidebar are drawn for nothing).
 
 ### 5. Design tokens on the document root
 
-- One stylesheet in core, `packages/core/src/styles/theme.ts` (a Lit `css` module, so the existing
-  ESLint rule and `styles-integrity.test.ts` cover it), is the single source of the design values.
-  Every variable is prefixed `--ps-`, so nothing clashes with the shadcn names the landing page uses.
+- One stylesheet in core, `packages/core/src/styles/tokens.css`, is the single source of the design
+  values: plain CSS, which core adopts as a Lit sheet (`theme.ts` reads it raw), the landing page
+  imports in `apps/web/src/index.css` and the docs in their custom CSS (decision 16), so all three
+  share one palette. Every variable is prefixed `--ps-`, so nothing clashes with the shadcn names
+  the landing page's own classes use.
   It has two kinds of token: roles, which the themes set (surfaces, borders, text, accent fill, accent
   text, accent tint, danger, warning, success, focus, scrim, shadows, and later the plot background
   and neutral point greys); and sizes (control heights 28/32 px, list row 28 px, radii, the type
@@ -187,9 +189,9 @@ width changes, and points under an opaque sidebar are drawn for nothing).
 - Tailwind 4 in `apps/web` maps the same variables in `@theme inline` (e.g. `bg-ps-surface`), so
   React code and Lit code draw from one list.
 - A unit test fails when a core stylesheet contains a raw colour, a literal font size, a `--ps-*`
-  declaration or a `var(--…)` that neither `theme.ts` nor the stylesheet itself declares (a
+  declaration or a `var(--…)` that neither `tokens.css` nor the stylesheet itself declares (a
   component may read its own size properties, such as the scatter plot's `--protspace-height`),
-  and when `theme.ts` defines a token nothing uses.
+  and when `tokens.css` defines a token nothing uses.
 
 Alternatives considered: keeping per-component tokens (the cause of the drift), and generating CSS
 from a TypeScript token module (a build step for no gain: the CSS file is readable on its own, and
@@ -273,9 +275,10 @@ position, active panel, the structure's docked/floating mode and floating rectan
 shell subscribes with `useSyncExternalStore`; the runtime reads and writes it through the same
 module. It persists to one localStorage key, `protspace:layout:v1`, wrapped in try/catch so private
 windows still work. Layout is never written to the URL, so a shared link never imposes the sharer's
-layout. The theme choice has its own store, `apps/web/src/explore/theme-state.ts`, and its own key,
-`protspace:theme`, which an inline script in `apps/web/index.html` reads before first paint
-(decision 16).
+layout. The theme choice has its own store, `apps/web/src/explore/theme-state.ts`, under the key
+the docs use too, `vitepress-theme-appearance`, which the pre-paint script (`config/theme.ts`, a copy
+inline in `apps/web/index.html`) reads before first paint; the earlier `protspace:theme` value is
+migrated once (decision 16).
 
 ### 11. One layer stack for Escape and closing
 
@@ -478,7 +481,7 @@ is superseded.
 ### 19. Docs media pipeline
 
 `pnpm docs:images` (Playwright captures in `scripts/docs-screenshots/`, about 3,600 lines, plus
-`convert-to-gif.ts`) is rewritten for the new layout:
+`convert-to-gif.ts`) is rewritten for the new layout, and its GIFs become looping videos:
 
 - One set of page helpers ("open the filter panel", "select these proteins") shared by the e2e tests
   (`apps/web/tests/helpers/`) and the captures, so a layout change is fixed in one place.
@@ -486,16 +489,19 @@ is superseded.
   140 hand-written `shadowRoot` and `evaluate` lookups.
 - Captures wait for signals (the plot has drawn, the dialog is open, the animation has ended)
   instead of the about 100 fixed `waitForTimeout` pauses.
-- Each image is one entry (name, viewport, theme, steps, PNG or GIF); one runner handles file names,
-  light and dark variants and the GIF conversion, with a size budget per GIF.
-- Every screenshot and GIF (51 PNG and 10 GIF files, dark twins included) and the 5 example
-  thumbnails are regenerated. The thumbnails move here from the `examples-live` e2e suite, so every
-  docs image comes from one pipeline. New captures cover the sidebar fold and resize, the floating
-  structure, the selection bar, the filter panel, search messages, the theme switch and the phone
-  layout. Images named after the old layout (`control-bar-*.png`) are replaced and deleted. The main
-  screenshots get dark variants, shown when the docs are in dark mode.
-- `pnpm docs:images:check` runs in `pnpm precommit` (local only, no browser): every image comes from
-  an entry, dark twins come in pairs and GIFs stay within budget.
+- Each image is one entry (name, viewport, steps, kind `png` or `video`); one runner handles file
+  names and captures every entry in light and in dark. `pnpm docs:screenshots` writes the PNGs;
+  `pnpm docs:animations` records the videos and `pnpm docs:videos` encodes each recording as a
+  looping WebM (VP9) and MP4 (H.264) with a JPEG poster, each encoding within a 1.25 MiB budget.
+  Pages show them through `<DocsVideo>`, which plays the twin of the theme on screen.
+- Every screenshot and recording is regenerated: 82 PNG files (the 5 example thumbnails included)
+  and 24 recordings, dark twins included. The thumbnails move here from the `examples-live` e2e
+  suite, so every docs image comes from one pipeline. New captures cover the sidebar fold and
+  resize, the floating structure, the selection bar, the filter panel, search messages, the theme
+  switch and the phone layout. Images named after the old layout (`control-bar-*.png`) and the old
+  GIFs are replaced and deleted. The docs show the dark twin in dark mode.
+- `pnpm docs:images:check` runs in `pnpm precommit` (local only, no browser): every file comes from
+  an entry, and it fails on a missing light or dark twin.
 
 ### 20. Testing
 
@@ -554,7 +560,9 @@ is superseded.
 
 - No data migration. URL parameters (`dataset`, `annotation`, `projection`, `tooltip`, `density`)
   are unchanged.
-- localStorage: new keys `protspace:layout:v1` and `protspace:theme`. Per-dataset legend settings
+- localStorage: new key `protspace:layout:v1`; the theme is stored under the docs' existing
+  `vitepress-theme-appearance`, and the earlier `protspace:theme` value is migrated once into it
+  and removed. Per-dataset legend settings
   keep their key and format. The figure editor's saved state keeps its key.
 - The tour gets a new storage key. New visitors get the full tour; returning visitors (the old key is
   present) get a short "What's new" tour once, covering the new layout, the sidebar and the theme

@@ -231,7 +231,7 @@ export async function duplicateStacks(
  * Both proteins stand more than `clearancePx` from every other plotted protein, so a click on one
  * picks it: the plot picks the nearest point, and the default 4 px leaves room for rounding. A
  * caller that checks what its click picked (by counting connectors) may pass less. Read at call
- * time, not hard-coded, so a rebuilt bundle cannot silently give an empty GIF. Throws when nothing
+ * time, not hard-coded, so a rebuilt bundle cannot silently give an empty video. Throws when nothing
  * qualifies.
  */
 export async function provenancePair(

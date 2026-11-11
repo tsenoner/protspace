@@ -68,13 +68,16 @@ not show while that file is on screen.
 
 The app bar SHALL show an Export button after search and just before the Figure editor, and a thin
 divider SHALL separate these two task buttons from the theme switch, Help, Feedback and GitHub,
-which keep their places. From 1200 px wide the button SHALL show a download icon, the label Export
+which keep their places; below 820 px the divider SHALL be left out, so search keeps the room to
+show its placeholder whole. From 1200 px wide the button SHALL show a download icon, the label Export
 and a chevron; below it, the download icon and a small chevron, named Export by its tooltip. It
 SHALL open the Export panel under itself, its right edge lined up with the button's, and a second
 press SHALL close it; Escape SHALL return focus to it. While no dataset is loaded it SHALL stay in
 the bar and in the Tab order, greyed through `aria-disabled` rather than `disabled`, open nothing,
 and be described by the tooltip "Load a dataset to export". It SHALL have no keyboard shortcut of
-its own. On a phone, upright or on its side, the More sheet's Export row SHALL take its place.
+its own. On a phone, upright or on its side, the More sheet's Export row SHALL take its place, and
+while no dataset is loaded it SHALL likewise be greyed through `aria-disabled`, say "Load a dataset
+to export" and open nothing.
 
 #### Scenario: Export from the app bar
 

@@ -11,7 +11,8 @@ interface SearchToggleProps {
 /**
  * The phone app bar's search button (design decision 17): below 641 px search does not fit beside
  * the wordmark and the dataset name, so this opens it over the bar. workbench.css shows it in the
- * phone layouts and on a tablet narrower than 760 px, whose actions leave search too little room.
+ * phone layouts and on a tablet narrower than 800 px (AppBar.tsx's NARROW_TABLET_QUERY), whose
+ * actions leave search too little room.
  */
 export function SearchToggle({ ref, open, onOpen }: SearchToggleProps) {
   return (

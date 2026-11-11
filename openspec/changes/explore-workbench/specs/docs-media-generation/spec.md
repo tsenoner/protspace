@@ -34,7 +34,7 @@ The capture scenes SHALL reach the app through the same helpers as the end-to-en
 controls by role, accessible name or tag and never reach into a shadow root, and SHALL wait for
 signals (a dialog visible, a structure loaded, the plot settled) rather than for time. A scene SHALL
 hold no timer and SHALL NOT evaluate code in the page; the only pause in capture code SHALL be the
-runner's hold, which paces a GIF. Every timer inside the shared helpers a scene imports SHALL be
+runner's hold, which paces a video recording. Every timer inside the shared helpers a scene imports SHALL be
 counted by a test, so a new one shows in review. Before taking a picture the runner SHALL wait for
 the data and for the plot to settle, park the pointer and check that no tooltip is open.
 
