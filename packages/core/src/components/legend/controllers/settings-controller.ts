@@ -76,10 +76,10 @@ export class SettingsController {
         // An emptied size field returns the dataset to its default, as Reset does for the size.
         this.host._data.clearShapeSize();
       } else {
-        const size = Math.min(patch.shapeSize, maxShapeSize(this.host._datasetProteinCount));
-        if (size !== this.host.shapeSize) {
-          this.host._persistenceController.saveShapeSize(size);
-          this.host.shapeSize = size;
+        const previous = this.host.shapeSize;
+        this.host.shapeSize = patch.shapeSize;
+        if (this.host.shapeSize !== previous) {
+          this.host._persistenceController.saveShapeSize(this.host.shapeSize);
         }
       }
     }
@@ -190,8 +190,8 @@ export class SettingsController {
   }
 
   /**
-   * The size the size field shows: the live one, capped at the field's bound, or null while it
-   * is the dataset's default, which the empty field stands for (its placeholder names it).
+   * The size the size field shows: the live one (capped where it is set), or null while it is
+   * the dataset's default, which the empty field stands for (its placeholder names it).
    */
   private fieldShapeSize(): number | null {
     // The storage read last: this runs at every legend render, the popover closed or not.
@@ -199,9 +199,7 @@ export class SettingsController {
       this.host._annotationShapeSize === null &&
       this.host.shapeSize === defaultShapeSize(this.host._datasetProteinCount) &&
       this.host._persistenceController.loadShapeSize() === null;
-    return isDefault
-      ? null
-      : Math.min(this.host.shapeSize, maxShapeSize(this.host._datasetProteinCount));
+    return isDefault ? null : this.host.shapeSize;
   }
 
   /**

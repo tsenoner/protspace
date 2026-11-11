@@ -116,7 +116,18 @@ export class ProtspaceLegend extends LitElement {
   @property({ type: Array }) isolationHistory: string[][] = [];
   @property({ type: Object }) data: LegendDataInput | null = null;
   @property({ type: String, reflect: true }) selectedAnnotation = '';
-  @property({ type: Number, reflect: true }) shapeSize: number = LEGEND_DEFAULTS.symbolSize;
+  /**
+   * The dataset's shape size. Capped here, where it is set, at the largest the dataset allows
+   * (`maxShapeSize` of its protein count), so no caller caps it on its own.
+   */
+  @property({ type: Number, reflect: true })
+  get shapeSize(): number {
+    return this._shapeSize;
+  }
+  set shapeSize(size: number) {
+    this._shapeSize = Math.min(size, maxShapeSize(this._datasetProteinCount));
+  }
+  private _shapeSize: number = LEGEND_DEFAULTS.symbolSize;
 
   @property({ type: String, attribute: 'scatterplot-selector' })
   scatterplotSelector: string = LEGEND_DEFAULTS.scatterplotSelector;
@@ -713,10 +724,9 @@ export class ProtspaceLegend extends LitElement {
    * component's own hash is not computed from the new data yet.
    */
   public applyShapeSize(shapeSize: number, datasetHash?: string): void {
-    const size = Math.min(shapeSize, maxShapeSize(this._datasetProteinCount));
-    this._persistenceController.saveShapeSize(size, datasetHash);
-    this.shapeSize = size;
-    this._scatterplotController.updateConfig({ pointSize: calculatePointSize(size) });
+    this.shapeSize = shapeSize;
+    this._persistenceController.saveShapeSize(this.shapeSize, datasetHash);
+    this._scatterplotController.updateConfig({ pointSize: calculatePointSize(this.shapeSize) });
   }
 
   /**
