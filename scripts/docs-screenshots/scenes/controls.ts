@@ -1,6 +1,6 @@
 /**
  * Captures for docs/explore/controls.md (Bars and Tools) and docs/explore/filter.md: each view-bar
- * menu open beside its trigger, the search report, the Export menu, the Filter panel holding a
+ * menu open beside its trigger, the search report, the Export panel, the Filter panel holding a
  * two-condition draft and its value list, the plot with contours, and the EAT badge in Color by.
  */
 import { expect, type Page } from '@playwright/test';
@@ -13,7 +13,7 @@ import {
   contoursTrigger,
   draftFilterCondition,
   exportPanel,
-  datasetSwitcher,
+  exportTrigger,
   filterPanel,
   openExportMenu,
   pasteIntoSearch,
@@ -142,7 +142,8 @@ export const CONTROLS_CAPTURES: CaptureEntry[] = [
     steps: async (page) => {
       await openExportMenu(page);
     },
-    target: (page) => around([datasetSwitcher(page), exportPanel(page)]),
+    // The panel under the app bar's Export button, which it opens from.
+    target: (page) => around([exportTrigger(page), exportPanel(page)]),
   },
   {
     name: 'search-messages',

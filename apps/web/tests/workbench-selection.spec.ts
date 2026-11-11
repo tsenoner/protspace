@@ -1,9 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   appBar,
+  appBarTextFits,
   chooseTool,
   clearStatusChip,
   closeFilterPanel,
+  exportTrigger,
+  figureEditorButton,
   filterPanel,
   firstProteinIds,
   getSelectedProteinIds,
@@ -235,11 +238,11 @@ test.describe('plot tools and selection', () => {
     ).toBe('solid');
   });
 
-  test('the app bar keeps one row without overflow at 951, 1024, 1280 and 1440 px', async ({
+  test('the app bar keeps one row without overflow at 951, 1024, 1199, 1200, 1280 and 1440 px', async ({
     page,
   }) => {
     await openExplore(page);
-    for (const width of [951, 1024, 1280, 1440]) {
+    for (const width of [951, 1024, 1199, 1200, 1280, 1440]) {
       await page.setViewportSize({ width, height: 720 });
       // The bar's side widths (--wb-app-bar-side) follow a ResizeObserver: measure after it ran.
       await twoFrames(page);
@@ -268,11 +271,81 @@ test.describe('plot tools and selection', () => {
         200,
       );
 
-      // Import and Export live in the dataset name's menu, not in the bar.
-      await expect(appBar(page).getByRole('button', { name: /^(Import|Export)$/ })).toHaveCount(0);
+      // Import is the dataset name's menu; Export is a button of its own before the Figure
+      // editor. Both tasks are labelled from 1200 px and icons below, where the labels and the
+      // count would leave search less than 200 px.
+      await expect(appBar(page).getByRole('button', { name: 'Import', exact: true })).toHaveCount(
+        0,
+      );
+      await expect(exportTrigger(page)).toBeVisible();
+      await expect(figureEditorButton(page)).toBeVisible();
+      const iconOnly = width < 1200;
+      for (const task of [exportTrigger(page), figureEditorButton(page)]) {
+        const { width: taskWidth } = (await task.boundingBox())!;
+        if (iconOnly) expect(taskWidth).toBeLessThanOrEqual(44);
+        else expect(taskWidth).toBeGreaterThan(80);
+      }
       if (width < 1024) await expect(page.locator('.wb-dataset-count')).toBeHidden();
       else await expect(page.locator('.wb-dataset-count')).toBeVisible();
     }
+  });
+
+  test('a tablet folds search into its button below 800 px and the bar keeps one row', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    for (const width of [641, 700, 799, 800, 950]) {
+      await page.setViewportSize({ width, height: 900 });
+      await twoFrames(page);
+      const bar = appBar(page);
+      await expect(page.locator('[data-layout]').first()).toHaveAttribute('data-layout', 'tablet');
+      expect(await bar.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+
+      const folded = width < 800;
+      const toggle = bar.getByRole('button', { name: 'Search proteins', exact: true });
+      if (folded) {
+        await expect(toggle).toBeVisible();
+        await expect(searchInput(page)).toBeHidden();
+      } else {
+        await expect(toggle).toBeHidden();
+        await expect(searchInput(page)).toBeVisible();
+        // From 800 px the field shows the dataset name and its placeholder whole.
+        expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
+      }
+      // Export (an icon with a chevron) and the Figure editor stay in the bar, before the divider.
+      await expect(exportTrigger(page)).toBeVisible();
+      await expect(figureEditorButton(page)).toBeVisible();
+
+      // Left to right and never overlapping: the dataset, search or its button, the actions.
+      const boxes = await Promise.all(
+        [
+          bar.locator('[data-workbench="app-bar-start"]'),
+          folded ? toggle : page.locator('#myProteinSearch'),
+          bar.locator('[data-workbench="app-bar-actions"]'),
+        ].map(async (locator) => (await locator.boundingBox())!),
+      );
+      expect(boxes[0].x + boxes[0].width).toBeLessThanOrEqual(boxes[1].x + 1);
+      expect(boxes[1].x + boxes[1].width).toBeLessThanOrEqual(boxes[2].x + 1);
+      expect(boxes[2].x + boxes[2].width).toBeLessThanOrEqual(width);
+    }
+
+    // Folded, the button opens search over the whole bar, and Escape closes it again.
+    await page.setViewportSize({ width: 700, height: 900 });
+    const toggle = appBar(page).getByRole('button', { name: 'Search proteins', exact: true });
+    await toggle.click();
+    await expect(searchInput(page)).toBeFocused();
+    const overlay = (await appBar(page)
+      .locator('[data-workbench="app-bar-center"]')
+      .boundingBox())!;
+    expect(Math.round(overlay.width)).toBe(700);
+    // The first Escape closes the suggestion list (a layer), the next one search.
+    const suggestions = page.locator('protspace-protein-search').getByRole('listbox');
+    await expect(suggestions).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(suggestions).toBeHidden();
+    await page.keyboard.press('Escape');
+    await expect(searchInput(page)).toBeHidden();
+    await expect(toggle).toBeFocused();
   });
 
   test('Show only these shows the isolation chip with its size and 1 step; its ✕ returns the full view', async ({

@@ -98,14 +98,22 @@ export class ProtspaceExportMenu extends LitElement {
   /**
    * Opens the panel under `anchor`, focus on its first choice, as its own trigger does. When it
    * closes, focus returns to `anchor` and the panel belongs to its trigger again. The app's More
-   * sheet opens it this way on phones; the dataset name's Import panel, from that name's left
-   * edge (`bottom-start`).
+   * sheet opens it this way on phones.
    */
   openFrom(anchor: HTMLElement, placement: Placement = 'bottom-end'): void {
     if (this.open && this.anchorEl === anchor) return;
     this.anchorEl = anchor;
     this.placement = placement;
     this.open = true;
+  }
+
+  /**
+   * Closes the panel when it is open from `anchor`, otherwise opens it there: for a host button
+   * that stands in for the trigger (the app bar's Export). Closing leaves focus on `anchor`.
+   */
+  toggleFrom(anchor: HTMLElement, placement: Placement = 'bottom-end'): void {
+    if (this.open && this.anchorEl === anchor) this.panelPopover.dismiss();
+    else this.openFrom(anchor, placement);
   }
 
   /**
@@ -144,7 +152,7 @@ export class ProtspaceExportMenu extends LitElement {
     anchor.setAttribute('aria-expanded', String(this.open));
   }
 
-  /** Puts back what the marked anchor had: More and the dataset name keep their own state. */
+  /** Puts back what the marked anchor had: More and the app bar's Export keep their own state. */
   private unmarkAnchor(): void {
     if (!this.marked) return;
     const { el, hasPopup, expanded } = this.marked;

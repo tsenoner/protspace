@@ -4,10 +4,10 @@ ProtSpace allows you to export publication-ready figures, raw data, protein IDs 
 
 ## Export Panel
 
-Click the **dataset name** in the app bar and choose **Export…** (on a phone: **More**, then
+Click **Export** in the app bar, just before **Figure editor** (on a phone: **More**, then
 **Export**). The Export panel asks what to export first, then shows only that choice's options:
 
-![The Export panel open under the dataset name, with Image and PNG chosen](./images/export-menu.png)
+![The Export panel open under the Export button, with Image and PNG chosen](./images/export-menu.png)
 
 | Choose          | Then                               | Download saves                                              |
 | --------------- | ---------------------------------- | ----------------------------------------------------------- |
@@ -30,7 +30,8 @@ Images have two paths:
 ### Figure Editor (Recommended)
 
 Click **Figure editor** at the right of the app bar to open a full-screen editor with live preview
-(on a tablet the button shows its image icon only; on a phone: **More**, then **Figure editor**).
+(in a window narrower than 1200 px the button shows its image icon only; on a phone: **More**,
+then **Figure editor**).
 This is the primary workflow for creating publication-quality figures. See the
 [Figure Editor guide](./figure-editor) for full documentation.
 

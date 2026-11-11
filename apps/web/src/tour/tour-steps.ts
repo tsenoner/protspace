@@ -101,7 +101,7 @@ const STEPS: Record<TourStepId, StepBuilder> = {
   data: (ctx) => ({
     id: 'data',
     title: 'Your Data',
-    description: `${press(ctx)} the <strong>dataset name</strong> to load one of the <strong>examples</strong>, reopen your <strong>last file</strong>, or choose <strong>Open a file…</strong>. You can also drop a file anywhere on the page. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is sent to our server to be embedded first. Its <strong>Export…</strong> saves an image (PNG or PDF), the protein IDs, a table or the <code>.parquetbundle</code>. ${link('/docs/guide/data-preparation', 'Learn how to prepare your data')}.`,
+    description: `${press(ctx)} the <strong>dataset name</strong> to load one of the <strong>examples</strong>, reopen your <strong>last file</strong>, or choose <strong>Open a file…</strong>. You can also drop a file anywhere on the page. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is sent to our server to be embedded first. The <strong>Export</strong> button at the right saves an image (PNG or PDF), the protein IDs, a table or the <code>.parquetbundle</code>. ${link('/docs/guide/data-preparation', 'Learn how to prepare your data')}.`,
     target: driverId('dataset'),
   }),
 

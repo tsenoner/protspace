@@ -509,7 +509,7 @@ test('with the sidebar open, the legend settings popover and the Import and Expo
     await open(page);
     const panel = panelOf(page);
     const box = (await panel.boundingBox())!;
-    // Both open under the dataset name: the panel reaches over the view bar into the plot, and
+    // Each opens under its app-bar control: the panel reaches over the view bar into the plot, and
     // nothing of the shell paints over it.
     const viewBarBox = (await viewBar(page).boundingBox())!;
     expect(box.y).toBeLessThan(viewBarBox.y + viewBarBox.height);

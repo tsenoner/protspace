@@ -2,8 +2,8 @@
 
 ### Requirement: Choosing an example from the Import menu
 
-The Import panel SHALL be one dialog in the app bar, opened by Import, by the dataset name, and on a
-phone by the More sheet's Import data. It SHALL offer "Open a file…" first, with the formats it
+The Import panel SHALL be one dialog in the app bar, opened by the dataset name (which reads Import
+while nothing is loaded), and on a phone by the More sheet's Import data. It SHALL offer "Open a file…" first, with the formats it
 reads; then, while an imported file is stored and is not the dataset on screen, a "Last file" row
 that reopens it; then every catalog entry under an "Examples" heading: the demo first, then the rest
 by ascending protein count. The heading SHALL carry an "About these examples" link to the Example

@@ -8,7 +8,7 @@ import {
   type MouseEvent,
 } from 'react';
 import { flushSync } from 'react-dom';
-import { ChevronDown, Database, Github, Image as ImageIcon } from 'lucide-react';
+import { ChevronDown, Database, Download, Github, Image as ImageIcon, Upload } from 'lucide-react';
 import { Link } from 'react-router';
 import type {
   ProtspaceExportMenu,
@@ -25,10 +25,24 @@ import { SearchToggle } from './SearchToggle';
 import { ThemeToggle } from './ThemeToggle';
 import { useAppBarSides } from './use-app-bar-sides';
 import { useLayoutMode } from './use-layout-mode';
+import { useMediaQuery } from './use-media-query';
 import { useWorkbenchStatus } from './use-workbench-status';
 
 /** A tablet's bar leaves search about 160 px, too little for "Search proteins or paste IDs". */
 const TABLET_SEARCH_PLACEHOLDER = 'Search or paste IDs';
+
+/**
+ * Below 800 px a tablet's bar leaves search too little room for even that placeholder beside the
+ * dataset name and the actions: search folds into the phone's search button, which opens it over
+ * the bar. At 800 px a touch tablet's search still shows the placeholder whole.
+ */
+const NARROW_TABLET_QUERY = '(max-width: 799px)';
+
+/**
+ * Below 1200 px Export and the figure editor are icons, as on a tablet: their labels and the
+ * dataset's count would leave search less than its 200 px on a narrow desktop window.
+ */
+const ICON_TASKS_QUERY = '(max-width: 1199px)';
 
 /** An example's label reads "name · proteins · size"; the bar shows the name and its own count. */
 function shownName(datasetName: string): string {
@@ -51,7 +65,8 @@ function datasetButtonLabel(datasetName: string, count: number | null): string {
 
 /**
  * The dataset name opens the shared Import panel under itself (design decision 1): the import menu
- * marks it as the panel's disclosure button and returns focus to it on close.
+ * marks it as the panel's disclosure button and returns focus to it on close. With nothing loaded
+ * the same button reads "Import".
  */
 function toggleImportMenu(event: MouseEvent<HTMLButtonElement>): void {
   (document.getElementById('myImportMenu') as ProtspaceImportMenu | null)?.toggleFrom(
@@ -59,45 +74,72 @@ function toggleImportMenu(event: MouseEvent<HTMLButtonElement>): void {
   );
 }
 
+/** The app bar's Export button opens the Export panel under itself, or closes it again. */
+function toggleExportMenu(event: MouseEvent<HTMLElement>): void {
+  (document.getElementById('myExportMenu') as ProtspaceExportMenu | null)?.toggleFrom(
+    event.currentTarget,
+    'bottom-end',
+  );
+}
+
 /**
  * The runtime's Import and Export panels, without buttons of their own: the dataset name opens the
- * Import panel, and its "Export…" opens the Export panel under the same name (the More sheet opens
- * both on a phone). Memoised and without props, so a status change never re-renders them; the
- * runtime finds them by id.
+ * Import panel and the Export button the Export panel (the More sheet opens both on a phone).
+ * Memoised and without props, so a status change never re-renders them; the runtime finds them
+ * by id.
  */
 const DataActions = memo(function DataActions() {
-  const importMenu = useRef<ProtspaceImportMenu>(null);
-  useEffect(() => {
-    const panel = importMenu.current;
-    if (!panel) return;
-    const openExport = (event: Event) => {
-      const { anchor } = (event as CustomEvent<{ anchor: HTMLElement }>).detail;
-      (document.getElementById('myExportMenu') as ProtspaceExportMenu | null)?.openFrom(
-        anchor,
-        'bottom-start',
-      );
-    };
-    panel.addEventListener('open-export-menu', openExport);
-    return () => panel.removeEventListener('open-export-menu', openExport);
-  }, []);
   return (
     <div className="wb-data-actions" data-driver-id="data-actions">
-      <protspace-import-menu
-        ref={importMenu}
-        id="myImportMenu"
-        data-driver-id="import"
-        exportable=""
-      ></protspace-import-menu>
+      <protspace-import-menu id="myImportMenu" data-driver-id="import"></protspace-import-menu>
       <protspace-export-menu id="myExportMenu"></protspace-export-menu>
     </div>
   );
 });
 
 /**
+ * Export, the bar's other task beside the figure editor (the dataset name imports): labelled with
+ * a chevron on a wide desktop, a download icon with a small chevron below 1200 px, whose tooltip
+ * names it. The chevron says it opens a panel rather than downloading at once. With nothing
+ * loaded it stays in the bar and in the Tab order, greyed through aria-disabled, and its tooltip
+ * says why. On a phone More's Export row takes over.
+ */
+function ExportButton({ iconOnly, disabled }: { iconOnly: boolean; disabled: boolean }) {
+  const tooltip = disabled ? 'Load a dataset to export' : iconOnly ? 'Export' : null;
+  return (
+    <>
+      <ps-button
+        className="wb-export"
+        data-driver-id="export"
+        data-icon-only={iconOnly ? '' : undefined}
+        variant={iconOnly ? 'ghost' : 'secondary'}
+        // Attributes, not the hasPopup/expanded properties: the Export panel marks this button as
+        // its disclosure button while open and restores the attributes it found.
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        disabled={disabled}
+        focusableWhenDisabled
+        onClick={toggleExportMenu}
+      >
+        <span slot="start" className="wb-icon" aria-hidden="true">
+          <Download size={16} strokeWidth={1.75} />
+        </span>
+        <span className={iconOnly ? 'sr-only' : undefined}>Export</span>
+        <span slot="end" className="wb-icon wb-export-chevron" aria-hidden="true">
+          <ChevronDown size={iconOnly ? 12 : 14} strokeWidth={1.75} />
+        </span>
+      </ps-button>
+      {/* The icon shows no label, so the tooltip names it; off, the tooltip says why. */}
+      {tooltip !== null && <ps-tooltip text={tooltip} namesTarget={!disabled}></ps-tooltip>}
+    </>
+  );
+}
+
+/**
  * The figure editor, one of ProtSpace's main tools, has a button of its own rather than a place
- * in the Export panel: labelled on a desktop, an icon whose tooltip names it on a tablet, where
- * the bar has less room. On a phone the actions leave the bar and More's Figure editor row takes
- * over.
+ * in the Export panel: labelled on a wide desktop, an icon whose tooltip names it below 1200 px,
+ * where the bar has less room. On a phone the actions leave the bar and More's Figure editor row
+ * takes over.
  */
 function FigureEditorButton({ iconOnly }: { iconOnly: boolean }) {
   return iconOnly ? (
@@ -121,14 +163,23 @@ function FigureEditorButton({ iconOnly }: { iconOnly: boolean }) {
  * The 48 px app bar (design decision 1): the wordmark and the dataset on screen, search in the
  * centre, and the actions. The site's navigation stays on the other pages. On a phone (decision
  * 17) it keeps the wordmark, the dataset and a search button that shows search over the bar; the
- * actions move into the view bar's More sheet, and their menus stay mounted here, unseen.
+ * actions move into the view bar's More sheet, and their menus stay mounted here, unseen. A tablet
+ * narrower than 800 px keeps its actions and takes the phone's search button instead of the field.
  */
 export function AppBar() {
-  const { datasetName, proteinCount } = useWorkbenchStatus();
+  const { datasetName, proteinCount, datasetPhase } = useWorkbenchStatus();
   const layoutMode = useLayoutMode();
-  const compact = hasStructureSheet(layoutMode);
+  const narrowTablet = useMediaQuery(NARROW_TABLET_QUERY) && layoutMode === 'tablet';
+  const iconTasks = useMediaQuery(ICON_TASKS_QUERY);
+  // A phone, either way up, and a narrow tablet show a search button rather than the field.
+  const compact = hasStructureSheet(layoutMode) || narrowTablet;
   const [searchWanted, setSearchWanted] = useState(false);
   const searchOpen = compact && searchWanted;
+  const noDataset = datasetName === null;
+  // Once startup has ended with nothing on screen, the dataset's place reads Import, also while a
+  // load started from there runs (the startup load itself shows nothing there).
+  const [importOffered, setImportOffered] = useState(false);
+  if (datasetPhase === 'empty' && !importOffered) setImportOffered(true);
   const barRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLElement>(null);
   const centerRef = useRef<HTMLDivElement>(null);
@@ -187,6 +238,7 @@ export function AppBar() {
       ref={barRef}
       className="wb-app-bar"
       data-workbench="app-bar"
+      data-search-folded={compact ? '' : undefined}
       data-search-open={searchOpen ? '' : undefined}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
@@ -203,16 +255,16 @@ export function AppBar() {
           data-driver-id="dataset"
           data-dataset-name={datasetName ?? ''}
           aria-haspopup="dialog"
-          aria-label={
-            datasetName === null ? undefined : datasetButtonLabel(datasetName, proteinCount)
-          }
-          hidden={datasetName === null}
+          aria-label={noDataset ? undefined : datasetButtonLabel(datasetName, proteinCount)}
+          hidden={noDataset && !importOffered}
           onClick={toggleImportMenu}
         >
-          <Database className="wb-dataset-icon" size={16} strokeWidth={1.75} aria-hidden="true" />
-          {datasetName !== null && (
-            <span className="wb-dataset-name">{shownName(datasetName)}</span>
+          {noDataset ? (
+            <Upload className="wb-dataset-icon" size={16} strokeWidth={1.75} aria-hidden="true" />
+          ) : (
+            <Database className="wb-dataset-icon" size={16} strokeWidth={1.75} aria-hidden="true" />
           )}
+          <span className="wb-dataset-name">{noDataset ? 'Import' : shownName(datasetName)}</span>
           {proteinCount !== null && (
             <span className="wb-dataset-count">· {proteinsText(proteinCount)}</span>
           )}
@@ -240,11 +292,15 @@ export function AppBar() {
           onClick={() => closeSearch(true)}
         ></ps-icon-button>
       </div>
+      {/* Before the actions: where it shows (a phone, a narrow tablet) it sits where search was. */}
+      <SearchToggle ref={toggleRef} open={searchOpen} onOpen={openSearch} />
       <div data-workbench="app-bar-actions">
         <DataActions />
-        {/* The figure editor, the theme switch, Help, Feedback, GitHub; Import and Export live in
-            the dataset menu. */}
-        <FigureEditorButton iconOnly={layoutMode === 'tablet'} />
+        {/* The two tasks, Export and the figure editor, then past a divider the theme switch, Help,
+            Feedback and GitHub, where Home and the docs have them; the dataset name imports. */}
+        <ExportButton iconOnly={iconTasks} disabled={noDataset} />
+        <FigureEditorButton iconOnly={iconTasks} />
+        <span className="wb-actions-sep" aria-hidden="true" />
         <ThemeToggle />
         <HelpMenu />
         <FeedbackMenu />
@@ -259,7 +315,6 @@ export function AppBar() {
         </a>
         <ps-tooltip text="GitHub" namesTarget></ps-tooltip>
       </div>
-      <SearchToggle ref={toggleRef} open={searchOpen} onOpen={openSearch} />
     </header>
   );
 }

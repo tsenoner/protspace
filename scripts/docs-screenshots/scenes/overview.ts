@@ -79,7 +79,7 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     name: 'app-bar-actions',
     kind: 'png',
     viewport: 'desktop',
-    // The Figure editor, Theme, Help, Feedback and GitHub.
+    // Export and the Figure editor, then past the divider Theme, Help, Feedback and GitHub.
     target: (page) => {
       const actions = appBar(page).locator('[data-workbench="app-bar-actions"]');
       return barSpan(appBar(page), actions, actions);
