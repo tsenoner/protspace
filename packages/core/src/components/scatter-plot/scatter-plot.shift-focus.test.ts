@@ -244,6 +244,27 @@ describe('focusCategories, the focus a legend score strip asks for', () => {
     expect(sp._focusedValues).toBeNull();
   });
 
+  it('covers the Other bucket the same way for a point, a legend row and a strip dot', () => {
+    const sp = makeScatter();
+    // 'A' (point p0's category) and 'C' sit under Other.
+    sp.otherAnnotationValues = ['A', 'C'];
+    sp._handleShiftKey(shiftKey('keydown'));
+    sp._handleCanvasMouseMove(move(true));
+    frames.run();
+    const byPoint = sp._focusedValues;
+    expect(byPoint).toEqual(['A', 'C']);
+    sp._hoveredPoint = null;
+
+    // The Other row, as a legend value, and a strip dot of one of its categories cover the same.
+    sp.focusCategories(['Other'], 'row');
+    expect(sp._focusedValues).toEqual(byPoint);
+    sp.focusCategories(['C'], 'strip');
+    expect(sp._focusedValues).toEqual(['C', 'A']);
+    // A category with its own row covers just itself.
+    sp.focusCategories(['B'], 'strip');
+    expect(sp._focusedValues).toEqual(['B']);
+  });
+
   it('a window blur, a new dataset or a new annotation ends it', () => {
     const sp = makeScatter();
     sp.focusCategories(['B']);

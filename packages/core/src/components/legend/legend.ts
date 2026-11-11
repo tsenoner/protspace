@@ -849,30 +849,24 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /**
-   * Tells the plot which category the pointer is on: a score strip's dot, or any legend row (the
-   * Other row stands for every category under it). The plot owns Shift: it focuses a dot's
-   * category as is and a row's only while Shift is held, so crossing rows never fades the plot.
-   * A pointer on neither withdraws an earlier report, and only that. A report equal to the last
-   * one is not sent again.
+   * Tells the plot which category the pointer is on, a score strip's dot or any legend row, as a
+   * legend value (`Other` for the Other row). The plot focuses it with the same function as Shift +
+   * hover on a point, which decides what it covers, and owns Shift: a dot's category is focused
+   * without it, a row's only while it is held, so crossing rows never fades the plot. A pointer on
+   * neither withdraws an earlier report, and only that; a report equal to the last is not resent.
    */
   private _syncPlotFocus(): void {
-    let report: { values: readonly string[]; source: 'strip' | 'row' } | null = null;
-    if (this._stripFocusCategory !== null) {
-      report = { values: [this._stripFocusCategory], source: 'strip' };
-    } else if (this._rowUnderPointer !== null) {
-      report = {
-        values:
-          this._rowUnderPointer === LEGEND_VALUES.OTHER
-            ? computeOtherConcreteValues(this._otherItems)
-            : [this._rowUnderPointer],
-        source: 'row',
-      };
-    }
-    const key = report ? `${report.source}\u0001${report.values.join('\u0000')}` : null;
+    const report: { value: string; source: 'strip' | 'row' } | null =
+      this._stripFocusCategory !== null
+        ? { value: this._stripFocusCategory, source: 'strip' }
+        : this._rowUnderPointer !== null
+          ? { value: this._rowUnderPointer, source: 'row' }
+          : null;
+    const key = report ? `${report.source}\u0001${report.value}` : null;
     if (key === this._reportedPlotFocus) return;
     this._reportedPlotFocus = key;
     const plot = this._scatterplotController.scatterplot;
-    if (report) plot?.focusCategories?.(report.values, report.source);
+    if (report) plot?.focusCategories?.([report.value], report.source);
     else plot?.focusCategories?.(null);
   }
 

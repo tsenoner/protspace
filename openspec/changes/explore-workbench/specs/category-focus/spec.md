@@ -43,9 +43,9 @@ only change focus makes outside the plot: the legend lights the focused rows fro
 
 The plot SHALL focus a category, exactly as Shift + hover over one of its points does, while the
 pointer is on that category's dot in a separation-score strip, and while the pointer is on its legend
-row with Shift held, for every annotation, scored or not; the Other row SHALL focus every category
-under it. No
-Shift is needed on a strip dot, and a dot of a category under Other SHALL focus only that category.
+row with Shift held, for every annotation, scored or not. The plot SHALL decide what each covers with
+the one rule Shift + hover on a point uses: the category itself, and the whole Other bucket when the
+category is Other or grouped under it. No Shift is needed on a strip dot.
 A tap on a strip dot SHALL mark its row without focusing the plot, since a tap's hover lasts until
 the next tap elsewhere.
 Shift + hover over a point in the plot SHALL take precedence, a selection SHALL outrank the focus as
@@ -64,6 +64,12 @@ The plot SHALL report this focus through category-focus like its own.
 - **WHEN** the user holds Shift with the pointer on category B's legend row, for an annotation with
   or without separation scores
 - **THEN** every point outside B fades until Shift is released or the pointer leaves the row
+
+#### Scenario: Other covers the same bucket from the plot and the legend
+
+- **WHEN** the user holds Shift over a point grouped under Other, holds Shift over the Other row, or
+  hovers the strip dot of a category grouped under Other
+- **THEN** each focuses the same categories: every category under Other
 
 #### Scenario: Tapping a strip dot
 

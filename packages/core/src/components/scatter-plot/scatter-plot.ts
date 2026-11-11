@@ -23,6 +23,7 @@ import {
   countNoun,
   annotationLabel,
   formatCount,
+  LEGEND_VALUES,
 } from '@protspace/utils';
 import type { DataDomain, ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
@@ -371,7 +372,8 @@ export class ProtspaceScatterplot extends LitElement {
   @state() private _focusedValues: string[] | null = null;
   /**
    * The categories the legend's pointer is on (`focusCategories`), used while Shift + hover is
-   * not: a score strip's dot focuses them as is, a legend row only while Shift is held.
+   * not: a score strip's dot focuses them without Shift, a legend row only while Shift is held.
+   * Either way {@link _focusFor} decides what they cover, as for a point.
    */
   private _externalFocus: { values: string[]; needsShift: boolean } | null = null;
   // The scales and what they were built at: the plot data's length and `_scalesKey()`.
@@ -1834,11 +1836,12 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Focuses these categories as Shift + hover does: the legend reports what its pointer is on, a
-   * score strip's dot (`'strip'`, focused as is) or a legend row (`'row'`, focused only while
-   * Shift is held, by the plot's own Shift state). Null ends it. Shift + hover on the plot wins,
-   * a selection outranks it, and a new dataset or annotation ends it; the window losing focus
-   * ends a strip's.
+   * Focuses a category from the legend exactly as Shift + hover on one of its points does, through
+   * the same {@link _focusFor}: the legend reports what its pointer is on, a score strip's dot
+   * (`'strip'`, focused without Shift) or a legend row (`'row'`, focused only while Shift is held,
+   * by the plot's own Shift state). The values are legend values; `Other` stands for its bucket.
+   * Null ends it. Shift + hover on the plot wins, a selection outranks it, and a new dataset or
+   * annotation ends it; the window losing focus ends a strip's.
    */
   focusCategories(values: readonly string[] | null, source: 'strip' | 'row' = 'strip'): void {
     this._externalFocus =
@@ -1846,33 +1849,41 @@ export class ProtspaceScatterplot extends LitElement {
     this._updateFocus(this._shiftDown);
   }
 
-  /** Shift+hover focus: keep the hovered point's category, fade everything else. */
+  /**
+   * What focusing these categories covers, for a point, a legend row and a score strip's dot
+   * alike: the categories themselves, and the whole "Other" bucket, as the legend shows it, when
+   * one of them is in it (or is `Other` itself). Null when there is nothing to focus.
+   */
+  private _focusFor(values: readonly string[]): string[] | null {
+    const other = this.otherAnnotationValues;
+    const own = values.filter((value) => value !== LEGEND_VALUES.OTHER);
+    const inOther = own.length < values.length || own.some((value) => other.includes(value));
+    const next = inOther ? [...new Set([...own, ...other])] : own;
+    return next.length > 0 ? next : null;
+  }
+
+  /**
+   * The category focus: the Shift-hovered point's categories, else the legend's (`focusCategories`),
+   * both through {@link _focusFor}; every other point fades. A selection outranks it.
+   */
   private _updateFocus(shift: boolean): void {
+    if (this.selectedProteinIds.length) {
+      this._setFocusedValues(null);
+      return;
+    }
     const point = this._hoveredPoint;
     let next: string[] | null = null;
-    // A selection outranks focus, so skip the O(N) focus mask while one is active.
-    // The materialized data is what the visibility model reads: numeric bins and EAT
-    // predictions exist only there, not in the raw `this.data`.
-    const data =
-      shift && point && this.selectedAnnotation && !this.selectedProteinIds.length
-        ? this._views.materialized()
-        : null;
+    // The materialized data is what the visibility model reads: numeric bins and EAT predictions
+    // exist only there, not in the raw `this.data`.
+    const data = shift && point && this.selectedAnnotation ? this._views.materialized() : null;
     if (point && data) {
-      const values = getProteinAnnotationValues(data, point.originalIndex, this.selectedAnnotation);
-      if (values.length > 0) {
-        // A point in the "Other" bucket focuses the whole bucket, as the legend shows it.
-        const inOther = values.some((v) => this.otherAnnotationValues.includes(v));
-        next = inOther ? [...values, ...this.otherAnnotationValues] : values;
-      }
+      next = this._focusFor(
+        getProteinAnnotationValues(data, point.originalIndex, this.selectedAnnotation),
+      );
     }
     const external = this._externalFocus;
-    if (
-      next === null &&
-      external &&
-      (!external.needsShift || this._shiftDown) &&
-      !this.selectedProteinIds.length
-    ) {
-      next = external.values;
+    if (next === null && external && (!external.needsShift || this._shiftDown)) {
+      next = this._focusFor(external.values);
     }
     this._setFocusedValues(next);
   }
