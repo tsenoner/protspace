@@ -131,6 +131,8 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
       await themeButton(page).hover();
       await expect(themeTooltip(page)).toBeVisible();
     },
+    // The tooltip shows only while the pointer stays on the button.
+    keepPointer: true,
     target: (page) => around([themeButton(page), themeTooltip(page)]),
     docs: ['explore/index.md'],
   },

@@ -43,7 +43,8 @@ Paste several IDs at once (separated by newlines or spaces) and every matching p
 Pasting a list only ever adds. When something does not go as asked, a short report opens under the
 box:
 
-![The search box with its report after pasting five IDs: "3 of 5 found", and the two unknown IDs listed under Not found](./images/search-messages.png)
+![The search box with its report after pasting five IDs: "3 of 5 found", and the two unknown IDs listed under Not found](./images/search-messages.png){.light-only}
+![The search box with its report after pasting five IDs: "3 of 5 found", and the two unknown IDs listed under Not found](./images/search-messages-dark.png){.dark-only}
 
 | Report                                      | When                                                                    |
 | ------------------------------------------- | ----------------------------------------------------------------------- |
@@ -104,7 +105,8 @@ Click **Export** in the app bar to save your visualization or its data (on a pho
 Export panel asks what first, then shows only the options for it, and one **Download** button that
 names the file:
 
-![The Export panel open under the Export button: Image, Protein IDs, Table and Data bundle, with Image and PNG chosen and Download PNG](./images/export-menu.png)
+![The Export panel open under the Export button: Image, Protein IDs, Table and Data bundle, with Image and PNG chosen and Download PNG](./images/export-menu.png){.light-only}
+![The Export panel open under the Export button: Image, Protein IDs, Table and Data bundle, with Image and PNG chosen and Download PNG](./images/export-menu-dark.png){.dark-only}
 
 | Choose          | Then                        | Saves                                                       |
 | --------------- | --------------------------- | ----------------------------------------------------------- |
@@ -195,7 +197,8 @@ recompute the projection with the 2D method (e.g. `umap2`). Otherwise `protspace
 
 Choose which annotation colours the points:
 
-![The Color by menu open under its button: a search field and the annotations grouped by source](./images/color-by-menu.png)
+![The Color by menu open under its button: a search field and the annotations grouped by source](./images/color-by-menu.png){.light-only}
+![The Color by menu open under its button: a search field and the annotations grouped by source](./images/color-by-menu-dark.png){.dark-only}
 
 - **Grouped categories**: annotations are organized into sections, one per source (Biocentral,
   InterPro, TED, Taxonomy, UniProt, Other)
@@ -236,7 +239,8 @@ annotation and open the [projection details](/explore/scatterplot#projection-met
 numbers, or see [Separation Scores](/explore/separation-scores) for what they mean.
 :::
 
-![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge.png)
+![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge.png){.light-only}
+![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge-dark.png){.dark-only}
 
 ::: info EAT badge
 An **EAT** badge marks an annotation in which some proteins carry a value **transferred from a
@@ -258,7 +262,8 @@ even where its points pile on top of each other. The button names the current mo
 **Contours Off** or **Contours Auto**. When the window is narrow it shows only the mode, and on a
 narrower one the modes move into **More**.
 
-![The Contours menu open under its button, with Always checked among Off, Auto and Always](./images/contours-menu.png)
+![The Contours menu open under its button, with Always checked among Off, Auto and Always](./images/contours-menu.png){.light-only}
+![The Contours menu open under its button, with Always checked among Off, Auto and Always](./images/contours-menu-dark.png){.dark-only}
 
 | Mode              | What it does                                                        |
 | ----------------- | ------------------------------------------------------------------- |
@@ -270,7 +275,8 @@ Auto and Always draw the same rings and fill; only their strength differs. Auto 
 many points are visible, how large the plot is and how far you have zoomed in. It does not check
 whether points actually overlap.
 
-![The demo dataset with Contours set to Always: each protein family's cluster is outlined by rings in its legend colour](./images/scatterplot-contours.png)
+![The demo dataset with Contours set to Always: each protein family's cluster is outlined by rings in its legend colour](./images/scatterplot-contours.png){.light-only}
+![The demo dataset with Contours set to Always: each protein family's cluster is outlined by rings in its legend colour](./images/scatterplot-contours-dark.png){.dark-only}
 
 How to read them:
 

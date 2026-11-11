@@ -7,7 +7,6 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { AWAITING_RECAPTURE } from './awaiting-recapture';
 import {
   lintDocs,
   lintManifest,
@@ -46,9 +45,9 @@ const files: ImageFile[] = walk(IMAGES_DIR)
   .filter((file) => MEDIA_FILE.test(file))
   .map((file) => ({ file: posix(path.relative(IMAGES_DIR, file)), bytes: fs.statSync(file).size }));
 
-const { outputs, problems: standInProblems } = manifestOutputs(MANIFEST, AWAITING_RECAPTURE);
-const manifestProblems = [...standInProblems, ...lintManifest(outputs, files, pages)];
-const problems = [...lintDocs(pages, files, AWAITING_RECAPTURE), ...manifestProblems];
+const outputs = manifestOutputs(MANIFEST);
+const manifestProblems = lintManifest(outputs, files, pages);
+const problems = [...lintDocs(pages, files), ...manifestProblems];
 if (problems.length > 0) {
   console.error(`docs:images:check: ${problems.length} problem(s)`);
   for (const problem of problems) console.error(`  ${problem}`);
@@ -59,8 +58,6 @@ if (problems.length > 0) {
     );
   process.exit(1);
 }
-const waiting =
-  AWAITING_RECAPTURE.length > 0 ? `; ${AWAITING_RECAPTURE.length} await recapture` : '';
 console.log(
-  `✓ ${files.length} docs media files match the manifest (${outputs.length} outputs${waiting}) and ${pages.length} pages.`,
+  `✓ ${files.length} docs media files match the manifest (${outputs.length} outputs) and ${pages.length} pages.`,
 );

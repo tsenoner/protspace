@@ -37,6 +37,28 @@ const EAT_ANNOTATION = 'toxin_class';
 const UNKNOWN_IDS = ['X00001', 'X00002'];
 
 /**
+ * Waits until the Filter panel's count has caught up with the draft: its count runs 300 ms after
+ * the last edit, and its "since last edit" change compares with the count before. Two reads of
+ * the count line half a second apart that agree mean no count is pending, so the scene's next
+ * edit is counted on its own and the picture's change reads the same in every run and theme.
+ */
+async function countSettled(page: Page): Promise<void> {
+  const line = queryBuilder(page).locator('.match-line');
+  let last: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        const now = await line.innerText();
+        const settled = now === last;
+        last = now;
+        return settled;
+      },
+      { intervals: [500] },
+    )
+    .toBe(true);
+}
+
+/**
  * Builds a draft in the Filter panel and leaves it unapplied: the colouring annotation is one of
  * the two largest legend categories, AND length is between 60 and 120 in its range card. The
  * header counts the unapplied changes; Apply is enabled.
@@ -47,6 +69,7 @@ async function draftTwoConditions(page: Page): Promise<void> {
   await draftFilterCondition(page, 0, annotation, values);
   const second = await draftFilterCondition(page, 1, 'length');
   await second.getByLabel('Minimum value').fill('60');
+  await countSettled(page);
   await second.getByLabel('Maximum value').fill('120');
   // No focus ring on the last field in the picture.
   await second.getByLabel('Maximum value').blur();
@@ -57,6 +80,7 @@ async function draftTwoConditions(page: Page): Promise<void> {
   // The range card's own count lands after a debounce.
   await expect(second.locator('.numeric-match-count')).toHaveText(/^[1-9][\d,]* proteins?/);
   await expect(filterPanel(page).getByText(/^2 unapplied changes$/)).toBeVisible();
+  await countSettled(page);
 }
 
 /** Opens the value list of the first card, on the colouring annotation, with two values ticked. */
@@ -87,10 +111,12 @@ async function draftGroup(page: Page): Promise<void> {
   const builder = queryBuilder(page);
   await builder.getByRole('button', { name: /^Joiner for condition 2/ }).click();
   await page.getByRole('menuitemradio', { name: /^or/ }).click();
+  await countSettled(page);
   await builder.getByRole('button', { name: 'Group these', exact: true }).click();
   await expect(builder.locator('.group-container')).toHaveCount(1);
   await expect(builder.locator('.group-label')).toHaveText('Any of these');
   await expect(length.locator('.numeric-match-count')).toHaveText(/^[1-9][\d,]* proteins?/);
+  await countSettled(page);
 }
 
 /** The open value list's panel. */

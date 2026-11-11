@@ -68,7 +68,7 @@ are unavailable while the view holds fewer than two points.
 
 ### Single & Multi-Select
 
-![Clicking a protein selects it; Ctrl/⌘ + click adds two more; Esc clears the selection](./images/select-single.gif)
+<DocsVideo name="select-single" alt="Clicking a protein selects it; Ctrl/⌘ + click adds two more; Esc clears the selection" width="1280" height="720" />
 
 - **Click** a point to select it, and show its structure
 - **⌘ + click** (Mac) or **Ctrl + click** (Windows, Linux) to add a point to the selection, or
@@ -79,7 +79,7 @@ are unavailable while the view holds fewer than two points.
 
 ### Box Selection
 
-![Box select drags a box over the phospholipase A2 cluster, Show only these isolates it, and the chip's ✕ shows every protein again](./images/select-box.gif)
+<DocsVideo name="select-box" alt="Box select drags a box over the phospholipase A2 cluster, Show only these isolates it, and the chip's ✕ shows every protein again" width="1280" height="720" />
 
 1. Pick **Box select** in the tool strip
 2. Drag to draw a rectangle
@@ -178,7 +178,7 @@ once **Show duplicate counts and spread overlaps** is on in the [legend settings
 Click a stacked point to spread it into a spider layout showing each protein; click a protein in
 the spider to select it, and click anywhere outside it (its badge, for example) or press **Escape** to fold it again.
 
-![A duplicate stack opened into a spider, one of its proteins selected, then folded from its badge](./images/duplicate-badges.gif)
+<DocsVideo name="duplicate-badges" alt="A duplicate stack opened into a spider, one of its proteins selected, then folded from its badge" width="1280" height="720" />
 
 ### Projection Metadata
 

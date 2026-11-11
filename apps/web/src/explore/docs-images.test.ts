@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { AWAITING_RECAPTURE } from '../../../../scripts/docs-screenshots/awaiting-recapture';
 import {
   captureVariants,
   DEFAULT_VIDEO_BUDGET,
@@ -129,8 +128,8 @@ describe('validateManifest', () => {
 });
 
 describe('the video budget', () => {
-  it('defaults to 1.5 MiB per encoding', () => {
-    expect(DEFAULT_VIDEO_BUDGET).toBe(1_572_864);
+  it('defaults to 1.25 MiB per encoding', () => {
+    expect(DEFAULT_VIDEO_BUDGET).toBe(1_310_720);
   });
 });
 
@@ -353,11 +352,6 @@ describe('docs lint: light and dark pairs', () => {
     ]);
   });
 
-  it('leaves an inline display alone on a stand-in, which has no dark twin', () => {
-    const page = lintPage('explore/a.md', '<img src="./images/b.png" style="display: block">');
-    expect(lintDocs([page], onDisk('b.png'), ['b.png'])).toEqual([]);
-  });
-
   it('fails a -dark image shown without its light twin before it', () => {
     const pages = [lintPage('explore/a.md', ...PAIR), lintPage('explore/b.md', PAIR[1])];
     expect(lintDocs(pages, files)).toEqual([
@@ -378,12 +372,7 @@ describe('docs lint: light and dark pairs', () => {
     ]);
   });
 
-  it('lets a stand-in awaiting recapture show alone, light only', () => {
-    const page = lintPage('explore/a.md', '![B](./images/b.png)', '![Z](./images/z.gif)');
-    expect(lintDocs([page], onDisk('b.png', 'z.gif'), ['b.png', 'z.gif'])).toEqual([]);
-  });
-
-  it('fails a GIF that is no stand-in: animations are videos', () => {
+  it('fails a GIF: animations are videos', () => {
     const page = lintPage('explore/a.md', '![Z](./images/z.gif)', '![Z](./images/z-dark.gif)');
     expect(lintDocs([page], onDisk('z.gif', 'z-dark.gif'))).toEqual([
       expect.stringMatching(/^explore\/a\.md:1: z\.gif: animations are looping videos now/),
@@ -453,26 +442,30 @@ describe('docs lint: videos', () => {
 
 describe('docs lint: image size', () => {
   it('fails a raw image with a width but no height, which shifts the page as it loads', () => {
-    const page = lintPage('explore/a.md', '<img src="./images/a.png" alt="A" width="240" />');
-    expect(lintDocs([page], onDisk('a.png'), ['a.png'])).toEqual([
+    const page = lintPage(
+      'explore/a.md',
+      '<img src="./images/a.png" class="light-only" alt="A" width="240" />',
+      '<img src="./images/a-dark.png" class="dark-only" alt="A" width="240" height="480" loading="lazy" />',
+    );
+    expect(lintDocs([page], onDisk('a.png', 'a-dark.png'))).toEqual([
       'explore/a.md:1: a.png sets a width but no height; give both, or the page shifts as it loads',
     ]);
   });
 
   it('passes a raw image with both, or with neither', () => {
-    const both = '<img src="./images/a.png" alt="A" width="240" height="480" />';
-    const neither = '<img src="./images/b.png" alt="B" />';
-    const files = onDisk('a.png', 'b.png');
-    expect(lintDocs([lintPage('explore/a.md', both, neither)], files, ['a.png', 'b.png'])).toEqual(
-      [],
-    );
+    const both = '<img src="./images/a.png" class="light-only" alt="A" width="240" height="480" />';
+    const neither = '<img src="./images/a-dark.png" class="dark-only" alt="A" loading="lazy" />';
+    expect(
+      lintDocs([lintPage('explore/a.md', both, neither)], onDisk('a.png', 'a-dark.png')),
+    ).toEqual([]);
   });
 });
 
 describe('docs lint: files', () => {
   it('fails a file no page shows', () => {
-    expect(lintDocs([], onDisk('a.png'), ['a.png'])).toEqual([
+    expect(lintDocs([], onDisk('a.png', 'a-dark.png'))).toEqual([
       'a.png: no docs page shows it; delete it or show it on a page',
+      'a-dark.png: no docs page shows it; delete it or show it on a page',
     ]);
   });
 
@@ -613,8 +606,7 @@ describe('docs lint: manifestOutputs', () => {
   const entries = [entry({ name: 'shot' }), entry({ name: 'zoom', kind: 'video' })];
 
   it("lists every entry's light and dark files, a video's budget and its frame size", () => {
-    const { outputs, problems } = manifestOutputs(entries);
-    expect(problems).toEqual([]);
+    const outputs = manifestOutputs(entries);
     expect(outputs.map((output) => output.file)).toEqual([
       'shot.png',
       'shot-dark.png',
@@ -626,18 +618,6 @@ describe('docs lint: manifestOutputs', () => {
       size: { width: 1280, height: 720 },
     });
     expect(outputs.find((output) => output.file === 'zoom.jpg')?.budgetBytes).toBeUndefined();
-  });
-
-  it('lists only the stand-in of an entry awaiting recapture', () => {
-    const { outputs } = manifestOutputs(entries, ['shot.png', 'zoom.gif']);
-    expect(outputs.map((output) => output.file)).toEqual(['shot.png', 'zoom.gif']);
-  });
-
-  it('fails a stand-in no entry has', () => {
-    expect(manifestOutputs(entries, ['zoom.png', 'gone.gif']).problems).toEqual([
-      'zoom.png: awaits recapture, but no entry of that name and kind exists',
-      'gone.gif: awaits recapture, but no entry of that name and kind exists',
-    ]);
   });
 });
 
@@ -666,7 +646,7 @@ describe('docs lint: the real docs', () => {
   });
 
   it('passes every page and image', () => {
-    expect(lintDocs(REAL_PAGES, REAL_FILES, AWAITING_RECAPTURE)).toEqual([]);
+    expect(lintDocs(REAL_PAGES, REAL_FILES)).toEqual([]);
   });
 });
 

@@ -184,6 +184,12 @@ export const FIGURE_EDITOR_CAPTURES: CaptureEntry[] = [
         figureEditorContent(page).getByText('Zoom Insets (1)', { exact: true }),
       ).toBeVisible();
       await deselect(page, cap);
+      // The inset's own section, with its Dot size and Border controls, at the sidebar's top.
+      await scrollSidebarTo(
+        page,
+        cap,
+        figureEditorContent(page).locator('.publish-section-title', { hasText: /^Zoom Insets/ }),
+      );
       // The inset renders from the plot in a separate pass; the perf counters settle after it.
       await plotSettled(page);
     },

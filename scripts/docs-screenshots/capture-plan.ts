@@ -82,8 +82,8 @@ export const DESKTOP_VIEWPORT = { width: 1280, height: 720 };
 export const TABLET_VIEWPORT = { width: 800, height: 1280 };
 /** Playwright's Pixel 7, which the runner emulates for `phone`. */
 export const PHONE_VIEWPORT = { width: 412, height: 839 };
-/** 1.5 MiB, per encoding. */
-export const DEFAULT_VIDEO_BUDGET = 1.5 * 1024 * 1024;
+/** 1.25 MiB, per encoding: the largest video (duplicate-badges, 0.96 MiB) with room to spare. */
+export const DEFAULT_VIDEO_BUDGET = 1.25 * 1024 * 1024;
 
 /** An entry's file stem for one theme: `x`, `x-dark`, `examples/demo-dark`. */
 export function variantStem(name: string, theme: Theme): string {

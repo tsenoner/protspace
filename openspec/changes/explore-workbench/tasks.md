@@ -179,4 +179,4 @@ previous phase left. A phase ends with the app working and every test green.
 - [x] Docs media: every image and animation captured in light and dark, headless; animations as
       looping videos (`<DocsVideo>`), the GIF tooling removed; the figure editor's selects draw
       their own arrow
-- [ ] Docs media: the full recapture, after which `awaiting-recapture.ts` is deleted
+- [x] Docs media: the full recapture on the new layout, every page showing light/dark pairs

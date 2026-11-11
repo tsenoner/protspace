@@ -171,7 +171,8 @@ For a dataset with transferred annotations, the reliability range in the [EAT pa
 writes one condition into this filter while it hides the predictions outside the range (**Hide**).
 The condition shows here as a locked row, such as `Toxin class — reliability ≥ 50 %`:
 
-![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row.png)
+![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row.png){.light-only}
+![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row-dark.png){.dark-only}
 
 You cannot edit it here, or join it with **and not**. **Edit in EAT ›** opens the EAT panel, and
 the ✕ puts the range back to 0–100 %. **Fade** writes no condition. See

@@ -8,9 +8,9 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * Every capture runs headless, so nothing takes focus. Screenshots use the installed Google Chrome
  * (`channel: 'chrome'`), whose headless mode still draws WebGL on the system GPU. Videos use
- * Playwright's headless Chromium: Chrome's headless mode on macOS records only the top 632 px of a
- * 720 px viewport (its screencast leaves room for a toolbar it does not draw), the headless shell
- * records all of it. CI, which never captures docs media, would use the headless shell for both.
+ * Playwright's headless Chromium (on the GPU through ANGLE's Metal backend): Chrome's headless mode
+ * on macOS records only the top 632 px of a 720 px viewport (its screencast leaves room for a
+ * toolbar it does not draw), the headless shell records all of it. CI, which never captures docs media, would use the headless shell for both.
  *
  * It starts its own dev server on DOCS_CAPTURE_PORT (default 8096), with this checkout's packages
  * built first and without VITE_STARTUP_DATASET_URL, so the captures show the product demo, never
@@ -69,8 +69,14 @@ export default defineConfig({
     },
     {
       // Videos: one test per video and theme; runner.ts records each in a context of its own.
+      // On a Mac the headless shell draws WebGL on the GPU through ANGLE's Metal backend; its
+      // SwiftShader default cannot start Mol*'s context beside the plot's, so the structure
+      // viewer would show "WebGL does not seem to be available".
       name: 'docs-video',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(process.platform === 'darwin' && { launchOptions: { args: ['--use-angle=metal'] } }),
+      },
       testMatch: /capture-video\.spec\.ts$/,
     },
   ],

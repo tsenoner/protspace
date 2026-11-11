@@ -387,11 +387,7 @@ function videoTagProblems(tag: VideoTag): string[] {
   return problems;
 }
 
-function imageProblems(
-  pages: readonly DocsPage[],
-  files: readonly ImageFile[],
-  standIns: ReadonlySet<string>,
-): string[] {
+function imageProblems(pages: readonly DocsPage[], files: readonly ImageFile[]): string[] {
   const problems: string[] = [];
   const onDisk = new Set(files.map((file) => file.file));
   const twinless = new Set(
@@ -401,7 +397,7 @@ function imageProblems(
     problems.push(`${file}: a -dark file needs its light twin ${lightTwinOf(file)}`);
   }
   for (const file of onDisk) {
-    if (DARK.test(file) || standIns.has(file) || onDisk.has(darkTwinOf(file))) continue;
+    if (DARK.test(file) || onDisk.has(darkTwinOf(file))) continue;
     problems.push(
       `${file}: no dark twin ${darkTwinOf(file)}; every docs image and video comes in light and dark`,
     );
@@ -434,7 +430,7 @@ function imageProblems(
         note(ref, `${ref.file} is part of a video: show it with <DocsVideo name="…">`);
         continue;
       }
-      if (ref.file.endsWith('.gif') && !standIns.has(ref.file)) {
+      if (ref.file.endsWith('.gif')) {
         note(ref, `${ref.file}: animations are looping videos now; show one with <DocsVideo>`);
         continue;
       }
@@ -448,8 +444,7 @@ function imageProblems(
       }
       const twin = darkTwinOf(ref.file);
       if (!onDisk.has(twin)) {
-        // A stand-in shows alone until its entry is recaptured; any other image has no twin,
-        // which the file check above reports.
+        // The file check above reports the missing twin.
         if (ref.classes.includes('light-only')) {
           note(
             ref,
@@ -497,44 +492,17 @@ function imageProblems(
 /**
  * The checks that need only the pages and the media files: refs to missing files, orphans, files
  * without their dark twin, the light/dark pair rules, `<DocsVideo>` tags, raw images with a width
- * but no height, `#anchor` links, and names of removed UI in the user guide. `standIns` are the
- * files awaiting recapture (`awaiting-recapture.ts`), which may show alone.
+ * but no height, `#anchor` links, and names of removed UI in the user guide.
  */
-export function lintDocs(
-  pages: readonly DocsPage[],
-  files: readonly ImageFile[],
-  standIns: readonly string[] = [],
-): string[] {
-  return [
-    ...imageProblems(pages, files, new Set(standIns)),
-    ...anchorProblems(pages),
-    ...staleProblems(pages),
-  ];
+export function lintDocs(pages: readonly DocsPage[], files: readonly ImageFile[]): string[] {
+  return [...imageProblems(pages, files), ...anchorProblems(pages), ...staleProblems(pages)];
 }
 
-/** A stand-in's file for an entry: its light screenshot, or its old GIF. */
-const standInOf = (entry: CaptureEntry): string =>
-  `${entry.name}.${entry.kind === 'png' ? 'png' : 'gif'}`;
-
-/**
- * The files the manifest writes, with each one's budget and pages: every entry's light and dark
- * files, or its stand-in while it awaits recapture. Also reports each stand-in no entry has.
- */
-export function manifestOutputs(
-  entries: readonly CaptureEntry[],
-  standIns: readonly string[] = [],
-): { outputs: MediaOutput[]; problems: string[] } {
-  const waiting = new Set(standIns);
-  const outputs: MediaOutput[] = [];
-  for (const entry of entries) {
-    const standIn = standInOf(entry);
-    if (waiting.has(standIn)) {
-      waiting.delete(standIn);
-      outputs.push({ file: standIn, docs: entry.docs });
-      continue;
-    }
-    for (const variant of captureVariants([entry])) {
-      for (const file of variant.files) {
+/** The files the manifest writes, with each one's budget, frame size and pages. */
+export function manifestOutputs(entries: readonly CaptureEntry[]): MediaOutput[] {
+  return entries.flatMap((entry) =>
+    captureVariants([entry]).flatMap((variant) =>
+      variant.files.map((file) => {
         const output: MediaOutput = { file, docs: entry.docs };
         if (entry.kind === 'video' && !file.endsWith('.jpg')) {
           output.budgetBytes = entry.budgetBytes ?? DEFAULT_VIDEO_BUDGET;
@@ -542,14 +510,10 @@ export function manifestOutputs(
         if (entry.kind === 'video' && file === `${entry.name}.webm`) {
           output.size = viewportSize(entry.viewport);
         }
-        outputs.push(output);
-      }
-    }
-  }
-  const problems = [...waiting].map(
-    (file) => `${file}: awaits recapture, but no entry of that name and kind exists`,
+        return output;
+      }),
+    ),
   );
-  return { outputs, problems };
 }
 
 /**

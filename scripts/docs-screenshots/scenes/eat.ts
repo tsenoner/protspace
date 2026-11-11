@@ -11,7 +11,7 @@ import {
   statusChip,
 } from '../../../apps/web/tests/helpers/explore';
 import { eatPanel, eatThresholdBox } from '../../../apps/web/tests/helpers/eat';
-import { panelTab } from '../../../apps/web/tests/helpers/mobile';
+import { panelTab, plotTooltip } from '../../../apps/web/tests/helpers/mobile';
 import {
   emptyScreenPointNear,
   plotSettled,
@@ -70,6 +70,8 @@ async function zoomAround(
   for (let step = 0; step < steps; step++) await page.mouse.wheel(0, -50);
   await plotSettled(page);
   await cap.moveTo(await restingSpot(page), { steps: 15 });
+  // The glide crosses proteins; the scene starts once no hover tooltip is left open.
+  await expect(plotTooltip(page)).toHaveCount(0);
 }
 
 /** Zooms in on the biggest group of predictions, so the rings the range changes are large. */

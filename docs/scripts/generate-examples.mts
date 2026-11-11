@@ -34,7 +34,6 @@ import {
 } from '../../apps/web/src/explore/example-datasets.ts';
 import { EXAMPLE_MANIFEST } from '../../apps/web/src/explore/example-manifest.ts';
 import { exampleServedPath } from '../../apps/web/src/explore/example-served-path.ts';
-import { AWAITING_RECAPTURE } from '../../scripts/docs-screenshots/awaiting-recapture.ts';
 import { repoFileProblem } from '../../scripts/examples/pinned.ts';
 import { EXAMPLE_DETAILS, NO_BIOCENTRAL, type ExampleDetails } from './example-details.ts';
 import { MACHINE_PATH } from './machine-path.ts';
@@ -91,11 +90,6 @@ const code = (name: string) => `\`${name}\``;
 const count = (n: number) => n.toLocaleString('en-US');
 const thumbnailPath = (id: string, dark = false) =>
   join(THUMBNAIL_DIR, `${id}${dark ? '-dark' : ''}.png`);
-/**
- * A thumbnail still awaiting its recapture in both themes (scripts/docs-screenshots/
- * awaiting-recapture.ts): the page shows its light one alone until then.
- */
-const lightOnly = (id: string) => AWAITING_RECAPTURE.includes(`examples/${id}.png`);
 
 /** "a", "a and b", "a, b and c". */
 function list(items: readonly string[]): string {
@@ -151,7 +145,7 @@ function validate(): string[] {
         `"${id}" is not one of the paper's datasets: say what it was built to show (builtToShow).`,
       );
     }
-    for (const dark of lightOnly(id) ? [false] : [false, true]) {
+    for (const dark of [false, true]) {
       if (existsSync(thumbnailPath(id, dark))) continue;
       const file = `examples/${id}${dark ? '-dark' : ''}.png`;
       errors.push(
@@ -318,8 +312,8 @@ function renderCard({ entry, details, record }: Card): string[] {
   const { id } = entry;
   const lines = [`## ${details.title} {#${id}}`, ''];
   const alt = `${details.title}: ${entry.insight}`;
-  lines.push(`![${alt}](./images/examples/${id}.png)${lightOnly(id) ? '' : '{.light-only}'}`);
-  if (!lightOnly(id)) lines.push(`![${alt}](./images/examples/${id}-dark.png){.dark-only}`);
+  lines.push(`![${alt}](./images/examples/${id}.png){.light-only}`);
+  lines.push(`![${alt}](./images/examples/${id}-dark.png){.dark-only}`);
   lines.push('');
   lines.push(`_${details.tagline}_`, '', `**${entry.insight}**`, '');
   lines.push(`${details.lookAt} ${details.tryNext}`, '');

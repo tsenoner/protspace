@@ -102,7 +102,7 @@ style. A raw image with a width SHALL also give its height. The hand-made chart 
 Every docs animation SHALL be a muted, looping video: per theme a VP9 WebM, an H.264 MP4 for
 browsers without VP9, and a JPEG poster of its first frame, cut where the scene starts.
 `pnpm docs:videos` SHALL encode each recording at a fixed quality, and each WebM and MP4 SHALL fit
-its entry's budget, 1.5 MiB (1,572,864 bytes) unless the entry sets its own; a file still over
+its entry's budget, 1.25 MiB (1,310,720 bytes) unless the entry sets its own; a file still over
 budget SHALL fail the run, keep its recording and leave the previous files in place. A page SHALL
 show an animation with `<DocsVideo name alt width height>`, which renders both themes' videos and
 shows the one matching the docs' appearance. A video SHALL load nothing until it nears the viewport,
@@ -112,7 +112,7 @@ shows its poster with controls. No page SHALL show a GIF.
 #### Scenario: The default budget
 
 - **WHEN** a video entry sets no budget
-- **THEN** its budget is 1.5 MiB for its WebM and for its MP4
+- **THEN** its budget is 1.25 MiB for its WebM and for its MP4
 
 #### Scenario: One byte over
 

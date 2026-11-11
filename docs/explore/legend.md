@@ -26,7 +26,7 @@ in `Other` highlights the `Other` row. Release **Shift** and the highlight goes.
 
 Click any legend row to toggle its visibility:
 
-![Hiding, showing and showing only one category](./images/legend-toggle.gif)
+<DocsVideo name="legend-toggle" alt="Hiding, showing and showing only one category" width="1280" height="720" />
 
 - Click once, or press its eye, to hide that value. A hidden row stays in the list, dimmed, with a
   crossed-out eye.
@@ -47,7 +47,7 @@ press **Enter** to open its picker.
 Drag a row by its grip up or down to change the draw order in the scatterplot. Items near the top
 are drawn on top of items below them.
 
-![Dragging a row to the top, then sorting the legend by count](./images/legend-reorder.gif)
+<DocsVideo name="legend-reorder" alt="Dragging a row to the top, then sorting the legend by count" width="1280" height="720" />
 
 Dragging switches the annotation's order to **Your order**. On a touch screen, hold the grip for a
 moment, then drag. From the keyboard, focus a row's grip, press **Space** to pick the row up, move
@@ -59,7 +59,7 @@ Categorical annotations group less frequent values into `Other` once the visible
 current legend cap (**Max legend items** in the [settings](#settings)). The row reads
 `Other · N categories`.
 
-![Searching Other and adding a category to the legend](./images/legend-others.gif)
+<DocsVideo name="legend-others" alt="Searching Other and adding a category to the legend" width="1280" height="720" />
 
 - Press **View** on the `Other` row to open a popover listing the grouped values, largest first,
   each with its count.

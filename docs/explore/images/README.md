@@ -22,7 +22,8 @@ captures both themes and `|` captures several entries.
 The captures run headless, so nothing takes focus: screenshots in the installed Google Chrome
 (`channel: 'chrome'`, which still draws WebGL on the Mac's GPU), recordings in Playwright's own
 headless Chromium (Chrome's headless screencast on macOS leaves out the bottom 88 px of the
-viewport). They start their own Vite server on port 8096 (`DOCS_CAPTURE_PORT` to change it), never
+viewport), started with `--use-angle=metal` so it too draws on the GPU: on its SwiftShader default
+Mol\* cannot get a WebGL context beside the plot's, and the structure panel says WebGL is missing. They start their own Vite server on port 8096 (`DOCS_CAPTURE_PORT` to change it), never
 reuse one, and serve the product demo as the startup dataset. With `PLAYWRIGHT_BASE_URL` set they
 use that server instead; a server that pins the startup load to an E2E fixture is refused. Captures
 of the other examples (the thumbnails, and the EAT page's, which open the three-finger toxins
@@ -43,10 +44,10 @@ the same either way; give a new native select that a capture shows its own arrow
 
 ### How long a full run takes
 
-Measured on the first trials (Apple silicon, idle machine): a screenshot takes 2-4 s, a recording
-about as long as its scene plus 3 s, and the encoder 2 s per variant. With 41 screenshot entries
-(82 files), 12 animations (24 recordings) and the Vite server's build, `pnpm docs:images` takes
-roughly 15 to 20 minutes, up to 8 of them the two Swiss-Prot thumbnails.
+Measured on the full run of November 2026 (Apple M4 Pro, idle machine): the 82 screenshots take
+3.3 minutes, the 24 recordings 3.5 minutes and the encoder about a minute, so `pnpm docs:images`
+takes about 9 minutes with the Vite server's build. The largest thumbnail, Swiss-Prot, loads in
+under 20 seconds per theme on the GPU.
 
 ## Adding an image or an animation
 
@@ -74,9 +75,6 @@ roughly 15 to 20 minutes, up to 8 of them the two Swiss-Prot thumbnails.
   scale 1.
 - `indicators.ts`: the cursor, click and key overlays a video shows, in the page's theme.
 - `video.ts`: the encoder. `check.ts` and `docs-lint.ts`: the lint.
-- `awaiting-recapture.ts`: the old files that stand in for entries not yet recaptured in both
-  themes (a light-only PNG, or an old GIF); the lint accepts them alone until then. It goes once
-  the list is empty.
 
 The scenes drive the app through the same helpers as the E2E suite (`apps/web/tests/helpers/`),
 which find controls by role and name and wait for signals: a dialog visible, a structure loaded,
@@ -132,9 +130,10 @@ sidecar holding where the scene starts (the end of the entry's setup) and the fr
 `pnpm docs:videos [--keep] [name…]` encodes each recording (only the named ones when names are
 given; a name encodes both themes) at a fixed quality: VP9 at CRF 40, H.264 at CRF 28, both
 `yuv420p` without audio, and the poster as a JPEG. The WebM and the MP4 must each fit the entry's
-budget, 1.5 MiB (1,572,864 bytes) unless the entry sets `budgetBytes`; one over budget fails the
+budget, 1.25 MiB (1,310,720 bytes) unless the entry sets `budgetBytes`; one over budget fails the
 run, keeps its recording and leaves the files in the docs as they were. A typical 7 s scene is
-about 0.35 MiB as WebM, 0.27 MiB as MP4 and 0.1 MiB of poster, a quarter of the old GIF. An encoded
+0.15-0.35 MiB as WebM, a little less as MP4, plus a 0.1 MiB poster; the busiest, duplicate-badges,
+is 0.96 MiB. The 12 old GIFs took 31 MB. An encoded
 recording is deleted unless `--keep` is given. `ffmpeg` with `libvpx-vp9` and `libx264` must be on
 your `PATH` (`brew install ffmpeg`).
 
