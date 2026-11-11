@@ -8,6 +8,7 @@ import {
   buildColorShapeMappings,
   calculatePointSize,
   defaultShapeSize,
+  maxShapeSize,
   explicitShapeSize,
   createDefaultSettings,
   getDefaultSortMode,
@@ -147,10 +148,30 @@ describe('legend-helpers', () => {
   });
 
   describe('defaultShapeSize', () => {
-    it('keeps 10 up to 10,000 proteins', () => {
-      expect(defaultShapeSize(1)).toBe(10);
-      expect(defaultShapeSize(5_000)).toBe(10);
+    it('grows below 10,000 proteins as (10,000 / N)^(1/4), up to 40', () => {
+      expect(defaultShapeSize(10)).toBe(40);
+      expect(defaultShapeSize(50)).toBe(38);
+      expect(defaultShapeSize(100)).toBe(32);
+      expect(defaultShapeSize(500)).toBe(21);
+      expect(defaultShapeSize(1_000)).toBe(18);
+      expect(defaultShapeSize(1_089)).toBe(17);
+      expect(defaultShapeSize(5_000)).toBe(12);
+      expect(defaultShapeSize(7_831)).toBe(11);
       expect(defaultShapeSize(10_000)).toBe(10);
+    });
+
+    it('caps the default for a tiny dataset at 40', () => {
+      expect(defaultShapeSize(1)).toBe(40);
+      expect(defaultShapeSize(2)).toBe(40);
+    });
+
+    it('never shrinks as the dataset gets smaller', () => {
+      let previous = defaultShapeSize(600_000);
+      for (let n = 600_000; n >= 1; n = Math.floor(n * 0.9)) {
+        const size = defaultShapeSize(n);
+        expect(size).toBeGreaterThanOrEqual(previous);
+        previous = size;
+      }
     });
 
     it('shrinks with the protein count as (10,000 / N)^(2/3)', () => {
@@ -178,6 +199,38 @@ describe('legend-helpers', () => {
     it('returns whole sizes', () => {
       for (const n of [12_345, 33_333, 77_777, 250_000]) {
         expect(Number.isInteger(defaultShapeSize(n))).toBe(true);
+      }
+    });
+  });
+
+  describe('maxShapeSize', () => {
+    it('keeps 64 from 10,000 proteins up', () => {
+      expect(maxShapeSize(10_000)).toBe(64);
+      expect(maxShapeSize(100_000)).toBe(64);
+      expect(maxShapeSize(573_649)).toBe(64);
+    });
+
+    it('lets a smaller dataset go larger, up to 128', () => {
+      expect(maxShapeSize(10)).toBe(128);
+      expect(maxShapeSize(1_000)).toBe(128);
+      expect(maxShapeSize(5_000)).toBe(128);
+      expect(maxShapeSize(7_831)).toBe(81);
+    });
+
+    it('keeps the ink of the largest dots at what 10,000 proteins at 64 draw', () => {
+      for (const n of [5_000, 6_000, 8_000, 9_999]) {
+        expect(n * maxShapeSize(n)).toBeLessThanOrEqual(10_000 * 64);
+      }
+    });
+
+    it('gives the ceiling 128 while the count is unknown', () => {
+      expect(maxShapeSize(0)).toBe(128);
+      expect(maxShapeSize(Number.NaN)).toBe(128);
+    });
+
+    it('is never below the default', () => {
+      for (const n of [1, 10, 100, 1_000, 10_000, 100_000]) {
+        expect(maxShapeSize(n)).toBeGreaterThanOrEqual(defaultShapeSize(n));
       }
     });
   });

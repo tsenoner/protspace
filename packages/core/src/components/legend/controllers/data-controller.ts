@@ -20,6 +20,7 @@ import {
   SHAPE_SIZE_FILLER,
   calculatePointSize,
   defaultShapeSize,
+  maxShapeSize,
   getDefaultSortMode,
   valueToKey,
 } from '../legend-helpers';
@@ -499,14 +500,14 @@ export class LegendDataController {
 
   /**
    * The dataset's stored size (picked, or a bundle's top-level size), else the annotation's own,
-   * else the default from the dataset's protein count; capped at the dialog's bound.
+   * else the default from the dataset's protein count; capped at the dataset's largest size.
    */
   resolveShapeSize(): number {
     return Math.min(
       this.host._persistenceController.loadShapeSize() ??
         this.host._annotationShapeSize ??
         defaultShapeSize(this.host._datasetProteinCount),
-      LEGEND_DEFAULTS.maxSymbolSize,
+      maxShapeSize(this.host._datasetProteinCount),
     );
   }
 

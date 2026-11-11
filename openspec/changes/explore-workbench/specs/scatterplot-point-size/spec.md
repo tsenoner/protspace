@@ -1,3 +1,8 @@
+## RENAMED Requirements
+
+- FROM: `### Requirement: The legend shape size SHALL default from the dataset's protein count and never exceed 64`
+- TO: `### Requirement: The legend shape size SHALL default from the dataset's protein count and stay within the dataset's largest size`
+
 ## MODIFIED Requirements
 
 ### Requirement: A picked shape size SHALL hold for every annotation of the dataset
@@ -45,27 +50,41 @@ every annotation's own stored size, once, as Reset does now.
 
 - **WHEN** the user opens a 5,000-protein dataset and then a 105,562-protein one, picking no size in
   either
-- **THEN** the dots are drawn at shape size 10 and then at 2
+- **THEN** the dots are drawn at shape size 12 and then at 2
 
-### Requirement: The legend shape size SHALL default from the dataset's protein count and never exceed 64
+### Requirement: The legend shape size SHALL default from the dataset's protein count and stay within the dataset's largest size
 
-The legend's default shape size SHALL be `clamp(round(10 · (10000 / N)^⅔), 1, 10)`, where `N` is
-the number of proteins in the whole dataset, and SHALL be 10 when `N` is 0.
+The legend's default shape size SHALL be `min(40, round(10 · (10000 / N)^¼))` when `N` is at most
+10,000 and `max(1, round(10 · (10000 / N)^⅔))` above, where `N` is the number of proteins in the
+whole dataset, and SHALL be 10 when `N` is 0. The dataset's largest shape size SHALL be
+`clamp(floor(640000 / N), 64, 128)`: 64 from 10,000 proteins up, more for a smaller dataset, so the
+total ink of the largest dots never exceeds what 10,000 proteins at 64 draw.
 `N` SHALL count every protein of the loaded dataset, so hiding categories, filtering or isolating
-SHALL NOT change the default. The legend's settings popover SHALL accept whole sizes from 1 to 64
-and SHALL cap a larger entry at 64, showing the capped value. A larger size from a bundle, top-level
-or per-annotation, or from browser storage SHALL be capped at 64 as well, and a capped top-level
-bundle size SHALL be stored as 64. The popover's size field SHALL show a picked size and stay empty
-while the default is in use; its placeholder SHALL give the dataset's default, and its hint SHALL
-read "Default for this dataset: <default>; clear the field to use it." A typed size SHALL apply
-300 ms after the last keystroke, or at once on Enter or when the field loses focus; the popover has
-no Save button. Emptying the size field SHALL clear the shape size as Reset does, so the default
-applies, and SHALL keep the annotation's other settings. The point size SHALL be
-`max(10, round(8 · shapeSize))`.
+SHALL NOT change the default or the largest size. The legend's settings popover SHALL accept whole
+sizes from 1 to the largest size and SHALL cap a larger entry at it, showing the capped value. A
+larger size from a bundle, top-level or per-annotation, or from browser storage SHALL be drawn at
+the largest size as well, and a capped top-level bundle size SHALL be stored as the largest size;
+an annotation's own record SHALL keep at most 128. The popover's size field SHALL show a picked
+size and stay empty while the default is in use; its placeholder SHALL give the dataset's default,
+and its hint SHALL read "Default for this dataset: <default>, largest <largest>; clear the field to
+use it." A typed size SHALL apply 300 ms after the last keystroke, or at once on Enter or when the
+field loses focus; the popover has no Save button. Emptying the size field SHALL clear the shape
+size as Reset does, so the default applies, and SHALL keep the annotation's other settings. The
+point size SHALL be `max(10, round(8 · shapeSize))`.
+
+#### Scenario: Default for a tiny dataset
+
+- **WHEN** a dataset of 100 proteins loads with no stored or bundled shape size
+- **THEN** the shape size is 32 and dots are drawn at point size 256
 
 #### Scenario: Default for a small dataset
 
 - **WHEN** a dataset of 5,000 proteins loads with no stored or bundled shape size
+- **THEN** the shape size is 12 and dots are drawn at point size 96
+
+#### Scenario: Default at the reference count
+
+- **WHEN** a dataset of 10,000 proteins loads with no stored or bundled shape size
 - **THEN** the shape size is 10 and dots are drawn at point size 80
 
 #### Scenario: Default for a large dataset
@@ -87,7 +106,7 @@ applies, and SHALL keep the annotation's other settings. The point size SHALL be
 
 - **WHEN** the user opens the legend settings on a 105,562-protein dataset without a picked size
 - **THEN** the size field is empty, its placeholder is 2, and its hint reads "Default for this
-  dataset: 2; clear the field to use it."
+  dataset: 2, largest 64; clear the field to use it."
 
 #### Scenario: Emptying the size field
 
@@ -97,15 +116,21 @@ applies, and SHALL keep the annotation's other settings. The point size SHALL be
 
 #### Scenario: Oversized entry
 
-- **WHEN** the user types 640 into the shape size field
+- **WHEN** the user types 640 into the shape size field on a 40,000-protein dataset
 - **THEN** 64 is applied and the field shows 64
+
+#### Scenario: A small dataset goes larger
+
+- **WHEN** the user types 100 into the shape size field on a 1,000-protein dataset, and then 640
+- **THEN** 100 is applied, and then 128 is applied and the field shows 128
 
 #### Scenario: Oversized bundle size
 
-- **WHEN** a bundle with a top-level `"shapeSize": 200` is imported
+- **WHEN** a bundle with a top-level `"shapeSize": 200` is imported for a 40,000-protein dataset
 - **THEN** dots are drawn at shape size 64 (point size 512) and 64 is stored for the dataset
 
 #### Scenario: Oversized stored size
 
-- **WHEN** the browser holds a shape size of 200 for the dataset or the annotation
-- **THEN** the legend loads it as 64
+- **WHEN** the browser holds a shape size of 200 for a 40,000-protein dataset or one of its
+  annotations
+- **THEN** the legend draws it at 64

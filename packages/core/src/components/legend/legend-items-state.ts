@@ -189,7 +189,10 @@ export function numericOrderFromItems(items: readonly LegendItem[]): string[] | 
 /** A persisted legend record as live values, decided but not yet applied. */
 export interface ResolvedLegendSettings {
   maxVisibleValues: number;
-  /** The annotation's own size, capped at the dialog's bound; null for a filler (unset). */
+  /**
+   * The annotation's own size, capped at the largest any dataset accepts (the dataset's own cap
+   * applies when it is resolved); null for a filler (unset).
+   */
   annotationShapeSize: number | null;
   hiddenValues: string[];
   paletteId: string;
@@ -245,7 +248,9 @@ export function resolvePersistedSettings(
   return {
     maxVisibleValues,
     annotationShapeSize:
-      ownShapeSize === null ? null : Math.min(ownShapeSize, LEGEND_DEFAULTS.maxSymbolSize),
+      ownShapeSize === null
+        ? null
+        : Math.min(ownShapeSize, LEGEND_DEFAULTS.smallDatasetMaxSymbolSize),
     hiddenValues: topologyMatches ? [...settings.hiddenValues] : [],
     paletteId,
     sortMode: normalizeSortModeForType(settings.sortMode, isNumeric),

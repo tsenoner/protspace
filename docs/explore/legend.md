@@ -126,21 +126,27 @@ nothing is changed.
 
 ### Shared Settings
 
-| Setting                                       | What it does                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Palette**                                   | Picks the active palette for the selected annotation from its swatches.                                                                                                                                                                                                                                                                                                           |
-| **Max legend items**                          | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations (labelled `Bins`): target maximum number of bins.                                                                                                                                                                                                                     |
-| **Shape size / Point size**                   | Adjusts marker size in the scatterplot (range 1 to 64; a larger size from a bundle or an earlier session is capped at 64). The default follows the dataset's protein count, see [Default dot size](#default-dot-size). The size you pick holds for every annotation of the dataset. Numeric annotations use the label `Point size` because numeric legends always render circles. |
-| **Show duplicate counts and spread overlaps** | Shows duplicate count badges and spreads overlapping points when you expand them.                                                                                                                                                                                                                                                                                                 |
+| Setting                                       | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Palette**                                   | Picks the active palette for the selected annotation from its swatches.                                                                                                                                                                                                                                                                                                                                                                               |
+| **Max legend items**                          | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations (labelled `Bins`): target maximum number of bins.                                                                                                                                                                                                                                                                                         |
+| **Shape size / Point size**                   | Adjusts marker size in the scatterplot (range 1 to 64, up to 128 on a dataset of fewer than 10,000 proteins; a larger size from a bundle or an earlier session is capped). The default and the largest size follow the dataset's protein count, see [Default dot size](#default-dot-size). The size you pick holds for every annotation of the dataset. Numeric annotations use the label `Point size` because numeric legends always render circles. |
+| **Show duplicate counts and spread overlaps** | Shows duplicate count badges and spreads overlapping points when you expand them.                                                                                                                                                                                                                                                                                                                                                                     |
 
 ### Default dot size
 
-Until you pick a size, the dot size follows how many proteins the dataset has, so a large dataset
-opens with dots small enough that one category does not cover the others:
+Until you pick a size, the dot size follows how many proteins the dataset has. A small dataset
+opens with dots large enough to read, and a large one with dots small enough that one category does
+not cover the others. Small datasets also accept larger sizes: the GPU draws every dot's pixels at
+each redraw, so a size above 64 is offered only while the dataset draws no more than 10,000
+proteins at 64 would.
 
-| Proteins in the dataset | Up to 10,000 | 20,000 | 40,000 | 100,000 | 570,000 |
-| ----------------------- | ------------ | ------ | ------ | ------- | ------- |
-| Default shape size      | 10           | 6      | 4      | 2       | 1       |
+| Proteins in the dataset | 10  | 100 | 1,000 | 5,000 | 10,000 | 40,000 | 100,000 | 570,000 |
+| ----------------------- | --- | --- | ----- | ----- | ------ | ------ | ------- | ------- |
+| Default shape size      | 40  | 32  | 18    | 12    | 10     | 4      | 2       | 1       |
+| Largest shape size      | 128 | 128 | 128   | 128   | 64     | 64     | 64      | 64      |
+
+Between 5,000 and 10,000 proteins the largest size falls from 128 to 64.
 
 The count is the whole dataset, so hiding categories, filtering or isolating does not change it.
 Legend settings show the dataset's default under the size field. A size you type is stored for the

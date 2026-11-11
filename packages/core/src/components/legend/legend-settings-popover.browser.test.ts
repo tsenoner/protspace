@@ -271,6 +271,19 @@ describe('protspace-legend-settings-popover', () => {
     await expect.poll(() => changes).toEqual([{ shapeSize: 64 }]);
   });
 
+  it("caps at the dataset's own largest size and names it in the hint", async () => {
+    const { el, changes } = await mount();
+    el.maxShapeSize = 128;
+    await settle(el);
+    expect(root(el).textContent).toContain('Default for this dataset: 4, largest 128');
+    const input = inner(field(el, 'shape-size-input'));
+    await userEvent.fill(input, '100');
+    await expect.poll(() => changes).toEqual([{ shapeSize: 100 }]);
+    await userEvent.fill(input, '640');
+    expect(input.value).toBe('128');
+    await expect.poll(() => changes).toEqual([{ shapeSize: 100 }, { shapeSize: 128 }]);
+  });
+
   it('0, -5, an empty field and a bad entry fire nothing and mark the field invalid', async () => {
     const { el, changes } = await mount();
     const host = field(el, 'max-visible-input');
@@ -311,7 +324,7 @@ describe('protspace-legend-settings-popover', () => {
   it('each number field and Reset are described by the hint under them', async () => {
     const { el } = await mount();
     expect(inner(field(el, 'shape-size-input')).ariaDescribedByElements?.[0]?.textContent).toMatch(
-      /^Default for this dataset: 4; clear the field to use it\.$/,
+      /^Default for this dataset: 4, largest 64; clear the field to use it\.$/,
     );
     expect(
       inner(field(el, 'max-visible-input')).ariaDescribedByElements?.[0]?.textContent?.trim(),

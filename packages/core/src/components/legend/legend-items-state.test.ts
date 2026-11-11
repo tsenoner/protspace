@@ -318,10 +318,10 @@ describe('resolvePersistedSettings', () => {
     });
   });
 
-  it('caps a stored size of 640 at 64', () => {
+  it('caps a stored size of 640 at 128, the largest any dataset accepts', () => {
     expect(
       resolvePersistedSettings(record({ shapeSize: 640 }), categorical).annotationShapeSize,
-    ).toBe(64);
+    ).toBe(128);
     expect(
       resolvePersistedSettings(record({ shapeSize: 24 }), categorical).annotationShapeSize,
     ).toBe(24);

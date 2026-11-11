@@ -62,6 +62,7 @@ import {
   isItemSelected,
   createItemActionEvent,
   computeOtherConcreteValues,
+  maxShapeSize,
   valueToKey,
 } from './legend-helpers';
 import { sortItemsForDisplay, type ActiveSortMode } from './legend-items-state';
@@ -690,7 +691,7 @@ export class ProtspaceLegend extends LitElement {
    * component's own hash is not computed from the new data yet.
    */
   public applyShapeSize(shapeSize: number, datasetHash?: string): void {
-    const size = Math.min(shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+    const size = Math.min(shapeSize, maxShapeSize(this._datasetProteinCount));
     this._persistenceController.saveShapeSize(size, datasetHash);
     this.shapeSize = size;
     this._scatterplotController.updateConfig({ pointSize: calculatePointSize(size) });

@@ -15,9 +15,12 @@ export const LEGEND_DEFAULTS = {
   maxVisibleValues: 10,
   symbolSize: DEFAULT_CONFIG.pointSize / SYMBOL_SIZE_MULTIPLIER,
   symbolSizeMultiplier: SYMBOL_SIZE_MULTIPLIER,
-  // A UX bound from the original spinner, not a GPU limit: with zoom (<=4x) and plot-area (<=1.5x)
-  // growth the largest live sprite at dpr 3 is ~340 device px, inside ANGLE/Metal's 511 px limit.
+  // The largest size from 10,000 proteins up: a UX bound from the original spinner.
   maxSymbolSize: 64,
+  // The largest size a small dataset may pick (see maxShapeSize). A GPU bound: with zoom (<=4x),
+  // plot-area (<=1.5x) and diamond (1.25x) growth its largest live sprite at dpr 3 is ~480 device
+  // px, inside ANGLE/Metal's 511 px point-size limit.
+  smallDatasetMaxSymbolSize: 128,
   dragTimeout: 100,
   scatterplotSelector: 'protspace-scatterplot',
   autoSyncDelay: 100,
