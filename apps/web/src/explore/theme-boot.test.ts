@@ -11,8 +11,8 @@ const raw = (modules: Record<string, unknown>) => (Object.values(modules)[0] ?? 
 const INDEX_HTML = raw(
   import.meta.glob('../../index.html', { query: '?raw', import: 'default', eager: true }),
 );
-const THEME_TS = raw(
-  import.meta.glob('../../../../packages/core/src/styles/theme.ts', {
+const TOKENS_CSS = raw(
+  import.meta.glob('../../../../packages/core/src/styles/tokens.css', {
     query: '?raw',
     import: 'default',
     eager: true,
@@ -53,7 +53,7 @@ describe('the first-paint boot in index.html', () => {
   it('is found', () => {
     expect(BOOT_SCRIPT.trim()).not.toBe('');
     expect(BOOT_STYLE.trim()).not.toBe('');
-    expect(THEME_TS).toContain('const darkRoles');
+    expect(TOKENS_CSS).toContain(":root[data-theme='dark']");
   });
 
   it('the boot script comes after the GitHub Pages redirect script', () => {
@@ -107,8 +107,8 @@ describe('the first-paint boot in index.html', () => {
     expect(BOOT_SCRIPT).toContain(`'${THEME_STORAGE_KEY}'`);
   });
 
-  it("the first-paint style's colour equals dark --ps-surface in theme.ts", () => {
-    const darkRoles = THEME_TS.match(/const darkRoles = css`([\s\S]*?)`/)?.[1] ?? '';
+  it("the first-paint style's colour equals dark --ps-surface in tokens.css", () => {
+    const darkRoles = TOKENS_CSS.match(/:root\[data-theme='dark'\] \{([\s\S]*?)\}/)?.[1] ?? '';
     const darkSurface = darkRoles.match(/--ps-surface:\s*(#[0-9a-f]{6})\b/i)?.[1];
     expect(darkSurface).toBeDefined();
     const colours = [...BOOT_STYLE.matchAll(/background:\s*(#[0-9a-f]{3,8})\b/gi)].map((match) =>

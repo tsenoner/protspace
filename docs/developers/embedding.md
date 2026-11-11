@@ -171,7 +171,7 @@ specificity:
 
 A rule inside another cascade layer (Tailwind's `@layer base`, for example) does not override a
 token; keep token overrides unlayered. The tokens are listed, light and dark, in
-`packages/core/src/styles/theme.ts`; the ones a host most often sets are `--ps-accent`,
+`packages/core/src/styles/tokens.css`; the ones a host most often sets are `--ps-accent`,
 `--ps-surface`, `--ps-surface-raised`, `--ps-text`, `--ps-text-muted`, `--ps-border` and
 `--ps-plot-bg`.
 

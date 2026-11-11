@@ -350,7 +350,7 @@ test.describe('exports stay light in Dark', () => {
 });
 
 test.describe('dark surfaces', () => {
-  // Dark role values from theme.ts, as computed colours (block-scoped: other describes in this
+  // Dark role values from tokens.css, as computed colours (block-scoped: other describes in this
   // file may name their own).
   const DARK_RAISED = 'rgb(22, 32, 54)'; // --ps-surface-raised #162036
   const DARK_HOVER = 'rgb(30, 41, 59)'; // --ps-surface-hover #1e293b

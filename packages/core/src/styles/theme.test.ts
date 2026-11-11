@@ -11,7 +11,7 @@ const SURFACES = [
   '--ps-surface-hover',
 ] as const;
 
-/** A token's raw value in one theme; a token missing from theme.ts fails by name. */
+/** A token's raw value in one theme; a token missing from tokens.css fails by name. */
 function token(t: Map<string, string>, name: string): string {
   const value = t.get(name);
   if (value === undefined) throw new Error(`${name} is not declared`);

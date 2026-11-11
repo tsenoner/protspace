@@ -70,7 +70,7 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 
-  /* Core's --ps-* tokens (packages/core/src/styles/theme.ts) as utilities, for the kit gallery
+  /* Core's --ps-* tokens (packages/core/src/styles/tokens.css) as utilities, for the kit gallery
      (src/dev/KitGallery.tsx); the explore shell reads the tokens in workbench.css. */
   --color-ps-surface: var(--ps-surface);
   --color-ps-text: var(--ps-text);

@@ -102,12 +102,12 @@ export const layoutStyles = css`
 ### Design tokens
 
 Colours, font sizes, spacing, radii, shadows and durations are `--ps-*` tokens, declared only in
-`packages/core/src/styles/theme.ts` (light values on `:root`, dark values under
+`packages/core/src/styles/tokens.css` (light values on `:root`, dark values under
 `[data-theme='dark']`, and under `[data-theme='system']` while the OS prefers dark, so a
 `system` page follows the OS live). Stylesheets read these tokens and declare none:
 `packages/core/src/styles/style-lint.test.ts` checks every core stylesheet, with no exemptions.
 It fails one that hard-codes a colour or a font size, declares a `--ps-*` token, or reads a
-variable that neither `theme.ts` nor the stylesheet itself declares. A module may read a
+variable that neither `tokens.css` nor the stylesheet itself declares. A module may read a
 variable it declares itself (the scatter plot's `--protspace-height`, the projection card's
 local `--card-gap`); the few values code sets at run time (`--protspace-tooltip-max-height`, the kit's
 `--available-height`, …) are listed in the test. `z-index` values are plain numbers: there are no
@@ -313,4 +313,4 @@ each ship their own co-located `.styles.ts`, so no single stylesheet grows large
 
 ---
 
-See implementations in `/packages/core/src/components/` and the `--ps-*` tokens in `/packages/core/src/styles/theme.ts`.
+See implementations in `/packages/core/src/components/` and the `--ps-*` tokens in `/packages/core/src/styles/tokens.css`.

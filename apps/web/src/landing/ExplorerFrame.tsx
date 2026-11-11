@@ -10,7 +10,7 @@ import { NEUTRAL_COLOR } from './ScatterCanvas';
 
 /**
  * The explorer's light surface colours as plain values: the landing page never imports core, whose
- * tokens live in packages/core/src/styles/theme.ts.
+ * tokens live in packages/core/src/styles/tokens.css.
  */
 const UI = {
   page: '#f4f4f4',

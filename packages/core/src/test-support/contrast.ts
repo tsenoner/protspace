@@ -28,7 +28,7 @@ export function declaredIn(selector: ThemeBlock): Map<string, string> {
 }
 
 /**
- * The raw token values one theme ships, as theme.ts declares them. The dark block redeclares only
+ * The raw token values one theme ships, as tokens.css declares them. The dark block redeclares only
  * the roles; anything it leaves out (sizes, the fixed paper roles) falls back to :root, as in CSS.
  */
 export function tokensOf(selector: ThemeBlock): Map<string, string> {
@@ -36,7 +36,7 @@ export function tokensOf(selector: ThemeBlock): Map<string, string> {
   if (selector === ':root') return light;
   const own = declaredIn(selector);
   // A reformatted selector would otherwise make every dark gate measure the light values.
-  if (own.size === 0) throw new Error(`theme.ts has no rule ${selector}`);
+  if (own.size === 0) throw new Error(`tokens.css has no rule ${selector}`);
   return new Map([...light, ...own]);
 }
 

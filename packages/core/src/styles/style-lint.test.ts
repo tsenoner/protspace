@@ -46,8 +46,8 @@ function cssOf(path: string): string {
 }
 
 /**
- * Declarations that hard-code a colour or a font size, declare a token outside theme.ts, or read a
- * variable that neither theme.ts, RUNTIME_VARS nor the checked CSS itself declares. A module may
+ * Declarations that hard-code a colour or a font size, declare a token outside tokens.css, or read a
+ * variable that neither tokens.css, RUNTIME_VARS nor the checked CSS itself declares. A module may
  * read a property it declares (--card-gap, the plot's --protspace-* sizes); a sheet it composes
  * counts as its own, since cssOf returns both.
  */
@@ -98,7 +98,7 @@ const NAMED =
   /(?<![\w-])(?:gr[ae]y|silver|red|green|blue|yellow|orange|navy|maroon|teal|purple|whitesmoke|gainsboro|lightgr[ae]y|darkgr[ae]y)(?![\w-])/i;
 
 /**
- * A web stylesheet's raw or named colours, its reads of --ps-* tokens theme.ts does not define,
+ * A web stylesheet's raw or named colours, its reads of --ps-* tokens tokens.css does not define,
  * and its reads of the landing page's light-only colours.
  */
 function webCssViolations(cssText: string): string[] {
@@ -178,9 +178,9 @@ describe('style lint', () => {
     expect([...read].filter((token) => !DEFINED.has(token))).toEqual([]);
   });
 
-  it('uses every token theme.ts defines', () => {
+  it('uses every token tokens.css defines', () => {
     const sources = [...sourceFiles(CORE_SRC), ...sourceFiles(WEB_SRC)]
-      .filter((file) => file !== join(CORE_SRC, 'styles', 'theme.ts'))
+      .filter((file) => file !== join(CORE_SRC, 'styles', 'tokens.css'))
       .map((file) => readFileSync(file, 'utf8'))
       .join('\n');
     const unused = [...DEFINED].filter((token) => !new RegExp(`${token}(?![\\w-])`).test(sources));
