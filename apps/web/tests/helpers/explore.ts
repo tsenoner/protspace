@@ -342,6 +342,17 @@ export const filterPanel = (page: Page): Locator =>
 
 export const queryBuilder = (page: Page): Locator => page.locator('protspace-query-builder');
 
+/** The add buttons below the cards; a group has its own "Add condition", so scope to these. */
+const queryActions = (page: Page): Locator => queryBuilder(page).locator('.query-actions');
+
+/** "Add condition" below the cards: it adds a card after the last item. */
+export const addConditionButton = (page: Page): Locator =>
+  queryActions(page).getByRole('button', { name: 'Add condition', exact: true });
+
+/** "Add group" below the cards: it adds a group holding one empty card. */
+export const addGroupButton = (page: Page): Locator =>
+  queryActions(page).getByRole('button', { name: 'Add group', exact: true });
+
 /** The query builder's Apply button. */
 export const filterApplyButton = (page: Page): Locator =>
   queryBuilder(page).getByRole('button', { name: 'Apply', exact: true });
@@ -681,7 +692,7 @@ export async function draftFilterCondition(
   const builder = queryBuilder(page);
   const rows = builder.locator('protspace-query-condition-row');
   if (row >= (await rows.count())) {
-    await builder.getByRole('button', { name: 'Add condition', exact: true }).click();
+    await addConditionButton(page).click();
     await expect(rows).toHaveCount(row + 1);
   }
   const condition = rows.nth(row);

@@ -20,14 +20,14 @@ Each condition is a card:
    search box, as in [Color by](/explore/controls#color-by).
 2. For a category annotation, click **+ value** and tick the values to keep. For a numeric one, set
    the range (see [Numeric conditions](#numeric-conditions)).
-3. Click **+ Add condition** for another card.
+3. Click **+ Add condition** below the cards for another card, or **+ Add group** for a group of
+   cards (see [And, or and groups](#and-or-and-groups)).
 4. Click **Apply** to filter the plot. The panel stays open.
 
 The card's **✕** removes it. Its **⋯** menu has **Change annotation**, **Clear values** and
 **Duplicate**. A card you changed since the last Apply has a blue edge on its left side.
 
-The **⋯** in the panel's header has **Add group** and **Clear all**. **Clear all** leaves one empty
-card.
+The **⋯** in the panel's header has **Clear all**, which leaves one empty card.
 
 ### Operators
 
@@ -94,8 +94,9 @@ these?**:
 A group is a card of its own, named **Any of these** (joined by or) or **All of these** (joined by
 and), or **Group** when its cards are joined in different ways or one has **and not**.
 **+ Add condition** inside it adds a card to the group. Its **⋯** menu has **Ungroup**, and its
-**✕** removes the group with its cards. **Add group** in the panel's **⋯** menu starts an empty
-group.
+**✕** removes the group with its cards. **+ Add group** below the cards starts a group with one
+empty card. A group has no **Add group** of its own: a group inside a group comes from **Group
+these?**.
 
 ## Numeric conditions
 

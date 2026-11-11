@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
+  addConditionButton,
   closeFilterPanel,
   dismissTourIfPresent,
   filterApplyButton,
@@ -316,7 +317,7 @@ async function ensureCondition(page: Page, annotation: string): Promise<number> 
   let annotations = await topRowAnnotations(page);
   let emptyIndex = annotations.indexOf('');
   if (emptyIndex < 0) {
-    await queryBuilder(page).getByRole('button', { name: 'Add condition', exact: true }).click();
+    await addConditionButton(page).click();
     await expect
       .poll(async () => (await topRowAnnotations(page)).filter((t) => t === '').length)
       .toBeGreaterThan(0);

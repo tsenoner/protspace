@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './query-builder';
 import { evaluateQuery } from './query-evaluate';
-import { createCondition, createGroup } from './query-types';
+import { createCondition, createGroup, isFilterGroup } from './query-types';
 import type { FilterQuery } from './query-types';
 import type { ProtspaceData } from './types';
 
@@ -421,6 +421,47 @@ describe('query-builder embedded in a host', () => {
     expect(root.querySelector('.btn-close')).toBeNull();
     expect(root.querySelector('.match-count')).not.toBeNull();
     expect(root.querySelector('.query-footer-reset')).not.toBeNull();
+  });
+
+  it('embedded shows "Add condition" and "Add group" side by side below the cards', async () => {
+    const builder = await mountEmbedded();
+    const actions = builder.shadowRoot!.querySelector('.query-actions')!;
+    const buttons = [...actions.querySelectorAll('ps-button')];
+
+    expect(buttons.map((b) => b.className)).toEqual(['add-condition', 'add-group']);
+    expect(buttons.map((b) => b.textContent!.trim())).toEqual(['Add condition', 'Add group']);
+  });
+
+  it('"Add group" appends a group with one empty card, joined like the last item', async () => {
+    const builder = await mountEmbedded();
+    builder.query = [human(), mouseOr()];
+    await builder.updateComplete;
+    const changes: FilterQuery[] = [];
+    builder.addEventListener('query-changed', (e) =>
+      changes.push((e as CustomEvent<{ query: FilterQuery }>).detail.query),
+    );
+
+    (builder.shadowRoot!.querySelector('.add-group') as HTMLElement).click();
+
+    expect(changes).toHaveLength(1);
+    const [query] = changes;
+    expect(query).toHaveLength(3);
+    const group = query[2];
+    expect(isFilterGroup(group)).toBe(true);
+    expect(group.logicalOp).toBe('OR');
+    if (!isFilterGroup(group)) return;
+    expect(group.conditions).toHaveLength(1);
+    expect(group.conditions[0]).toMatchObject({ annotation: '', values: [] });
+  });
+
+  it('a group offers "Add condition" but no "Add group"', async () => {
+    const builder = await mountEmbedded();
+    builder.query = [human(), createGroup({ logicalOp: 'AND' })];
+    await builder.updateComplete;
+    const group = builder.shadowRoot!.querySelector('.group-container')!;
+
+    expect(group.querySelector('.add-group-condition')).not.toBeNull();
+    expect(group.querySelector('.add-group')).toBeNull();
   });
 
   it('embedded leaves Escape to the host', async () => {
