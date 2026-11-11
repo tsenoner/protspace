@@ -32,12 +32,11 @@ interface ColorPickerOptions {
   isMultilabel(): boolean;
 }
 
-/** One shape as its radio draws it: filled in the text colour, the plus as an outline. */
+/** One shape as its radio draws it, filled in the text colour: hollow means an EAT prediction. */
 function shapeIcon(shape: PointShape): TemplateResult {
   const size = 14;
   const canvas = 20;
   const centre = canvas / 2;
-  const outline = shape === 'plus';
   return html`<svg
     width=${canvas}
     height=${canvas}
@@ -48,9 +47,9 @@ function shapeIcon(shape: PointShape): TemplateResult {
     <g transform="translate(${centre}, ${centre})">
       <path
         d=${SHAPE_PATH_GENERATORS[shape](size)}
-        fill=${outline ? 'none' : 'currentColor'}
+        fill="currentColor"
         stroke="currentColor"
-        stroke-width=${outline ? 1.5 : 1}
+        stroke-width="1"
       ></path>
     </g>
   </svg>`;

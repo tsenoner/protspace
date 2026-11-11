@@ -1,7 +1,7 @@
 import { LitElement, html, type TemplateResult } from 'lit';
 import { property } from 'lit/decorators.js';
 import { customElement } from '../../../utils/safe-custom-element';
-import { toDisplayValue, toInternalValue } from '@protspace/utils';
+import { displayAnnotationValue, toInternalValue } from '@protspace/utils';
 import type { AnnotationBlock, NumericAnnotationType, TooltipView } from '@protspace/utils';
 import { proteinTooltipStyles } from './protein-tooltip.styles';
 import '../../kit/button';
@@ -115,7 +115,7 @@ function renderAnnotationBlock(block: AnnotationBlock): TemplateResult {
           scoreText =
             scores.length > MAX_VISIBLE_SCORES ? visible.join(', ') + ', …' : visible.join(', ');
         }
-        const displayValue = toDisplayValue(toInternalValue(value));
+        const displayValue = displayAnnotationValue(block.key, toInternalValue(value));
         return html`<div class="tooltip-annotation ${block.predicted ? 'eat-transferred-row' : ''}">
           <span
             class="tooltip-annotation-label ${block.predicted ? 'eat-transferred-label' : ''}"
@@ -212,7 +212,7 @@ class ProtspaceProteinTooltip extends LitElement {
     const proteinName = getProteinName(view.proteinName);
     const primary = view.blocks[0];
     const value = primary?.displayValues
-      .map((shown) => toDisplayValue(toInternalValue(shown)))
+      .map((shown) => displayAnnotationValue(primary.key, toInternalValue(shown)))
       .join(', ');
     return html`
       <div class="tooltip compact">

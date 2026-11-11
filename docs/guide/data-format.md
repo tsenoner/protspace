@@ -97,7 +97,8 @@ an envelope, next to `exportOptions` and these optional keys:
 
 `shapeSize` is written only once the user picked one or loaded one from a bundle; on load it
 overrides every annotation's own `shapeSize`. A per-annotation `10` or `30` reads as unset, and the
-web app then sizes dots by the dataset's protein count. The web app caps either value at 64. Both
+web app then sizes dots by the dataset's protein count. The web app caps either value at 64, or
+at up to 128 for a dataset of fewer than 10,000 proteins. Both
 readers accept both shapes.
 
 ## Tables

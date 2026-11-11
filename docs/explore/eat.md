@@ -167,9 +167,9 @@ If the picked prediction is outside the range, the strip says so: `Hidden on the
 
 ## Telling Them Apart In The Plot
 
-A transferred protein is drawn as a **hollow ringed marker**: its shape and its colour are exactly those of the value it borrowed, but the interior is punched out, leaving a ring. Curated proteins stay solid.
+A transferred protein is drawn as a **hollow ringed marker**: its shape and its colour are exactly those of the value it borrowed, but the interior is punched out, leaving a ring. Curated proteins stay solid. The hole is see-through, so where markers overlap, the points underneath show through it.
 
-This means the two populations read as one distribution at a glance, since the colours match, while any individual point still declares which kind it is. The ring thickness scales with the marker, so from **Shape size** 10 up the hole stays open and the ring never thins to a hairline on large markers. Only at the smallest sizes, where a dot is a few pixels across, can the hole shrink below a pixel. Large datasets [default to such sizes](/explore/legend#default-dot-size), so raise the shape size there if the rings are hard to tell apart.
+This means the two populations read as one distribution at a glance, since the colours match, while any individual point still declares which kind it is. The ring is about an eighth of the marker's width (12%) and never thinner than one screen pixel, so it grows with the marker and never thins to a hairline. Every shape keeps an open hole from **Shape size** 10 up, the plus included; on a standard-density screen the plus's hole at size 10 is about a pixel wide. Only at the smallest sizes, where a dot is a few pixels across, can the hole shrink below a pixel. Large datasets [default to such sizes](/explore/legend#default-dot-size), so raise the shape size there if the rings are hard to tell apart.
 
 Hover a transferred protein and its tooltip carries a **Predicted (transferred)** block for the active annotation: the reliability as a percentage, a bar showing the same number, and the line `Reliability index · source <ID>` naming the reference protein the label was copied from.
 

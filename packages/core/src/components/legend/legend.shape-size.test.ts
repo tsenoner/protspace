@@ -51,9 +51,10 @@ const DATASET = {
 
 /**
  * A detached legend never runs `updated()`, which is where it counts the dataset's proteins
- * next to the hash, so the count is set directly. The default 2 protein ids give shape size 10.
+ * next to the hash, so the count is set directly. The default count gives shape size 10 and the
+ * largest size 64.
  */
-function makeLegend(proteinCount = 2) {
+function makeLegend(proteinCount = 10_000) {
   const el = document.createElement('protspace-legend') as ShapeSizeLegend;
   const pointSizes: number[] = [];
   el._scatterplotController.updateConfig = (config) => {
@@ -158,6 +159,25 @@ describe('legend shape size', () => {
     expect(el.pickedShapeSize).toBe(64);
   });
 
+  it('lets a small dataset take a size up to 128', () => {
+    const { el, hash, pointSizes, switchTo } = makeLegend(1_000);
+    switchTo('a');
+    expect(el.shapeSize).toBe(18);
+    el._settings.apply({ shapeSize: 100 });
+    expect(el.shapeSize).toBe(100);
+    expect(pointSizes.at(-1)).toBe(800);
+    el.applyShapeSize(200, hash);
+    expect(el.shapeSize).toBe(128);
+    expect(el.pickedShapeSize).toBe(128);
+  });
+
+  it('shrinks the largest size between 5,000 and 10,000 proteins', () => {
+    const { el, switchTo } = makeLegend(8_000);
+    switchTo('a');
+    el._settings.apply({ shapeSize: 200 });
+    expect(el.shapeSize).toBe(80);
+  });
+
   it('caps a stored size at 64', () => {
     const { el, hash, switchTo, store } = makeLegend();
     store('a', 200);
@@ -169,14 +189,15 @@ describe('legend shape size', () => {
     expect(el.shapeSize).toBe(64);
   });
 
-  it("stores and exports an annotation's oversized own size as 64", () => {
+  it("stores and exports an annotation's oversized own size as 128, drawing 64", () => {
     const { el, switchTo, store, stored, annotate } = makeLegend();
     store('a', 200);
     switchTo('a');
+    expect(el.shapeSize).toBe(64);
     el._persistenceController.saveSettings();
-    expect(stored('a')?.shapeSize).toBe(64);
+    expect(stored('a')?.shapeSize).toBe(128);
     annotate('a');
-    expect(el.getAllPersistedSettings().a.shapeSize).toBe(64);
+    expect(el.getAllPersistedSettings().a.shapeSize).toBe(128);
   });
 
   it('caps a host-set size in the settings popover and when it is committed', async () => {
@@ -519,7 +540,7 @@ describe('legend default shape size with a scatterplot', () => {
 
   it('recomputes the default for the next dataset', async () => {
     const { legend, plot } = await mount(5_000);
-    expect(legend.shapeSize).toBe(10);
+    expect(legend.shapeSize).toBe(12);
 
     const next = makeData(40_000, 'q');
     legend.clearForNewDataset(generateDatasetHash(next));

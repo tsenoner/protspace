@@ -11,7 +11,8 @@ import {
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
-import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
+import { ROLE_EAT_FIXTURE, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
+import { e2eExample } from './helpers/example-fixtures';
 import {
   addFromOther,
   closeLegendSettings,
@@ -144,6 +145,65 @@ test.describe('workbench legend', () => {
 
     await page.keyboard.up('Shift');
     await expect.poll(focused).toEqual([]);
+  });
+
+  test('a score strip dot, or a scored row with Shift, focuses its category in the plot', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await importUserFile(page, ROLE_EAT_FIXTURE);
+    await waitForProteinCount(page, e2eExample('eat').count);
+    await dismissTourIfPresent(page);
+    // An annotation with per-category silhouettes in the projection on screen.
+    const annotation = await page.locator('#myPlot').evaluate((el) => {
+      const plot = el as unknown as {
+        data: {
+          projections: { name: string }[];
+          statisticsRows?: { annotation?: string; metric: string; category?: string | null }[];
+          annotations: Record<string, { kind?: string }>;
+        };
+        selectedProjectionIndex: number;
+      };
+      const space = plot.data.projections[plot.selectedProjectionIndex].name;
+      return plot.data.statisticsRows?.find(
+        (row) =>
+          row.metric === 'silhouette' &&
+          row.category != null &&
+          (row as { space_name?: string }).space_name === space &&
+          row.annotation !== undefined &&
+          plot.data.annotations[row.annotation]?.kind !== 'numeric',
+      )?.annotation;
+    });
+    expect(annotation, 'a scored annotation in the fixture').toBeTruthy();
+    await selectAnnotation(page, annotation!);
+    await page.locator('#myPlot').evaluate((plot) => {
+      const seen = window as unknown as { __focus?: string[] | null };
+      seen.__focus = null;
+      plot.addEventListener('category-focus', (event) => {
+        seen.__focus = (event as CustomEvent<{ values: string[] | null }>).detail.values;
+      });
+    });
+    const focus = () =>
+      page.evaluate(() => (window as unknown as { __focus?: string[] | null }).__focus ?? null);
+
+    const dot = legend(page).locator('protspace-score-strip circle[data-category]').first();
+    const category = (await dot.getAttribute('data-category'))!;
+    await dot.hover();
+    await expect.poll(focus).toEqual([category]);
+    await page.mouse.move(0, 0);
+    await expect.poll(focus).toBeNull();
+
+    // A row: nothing without Shift, its category with it.
+    const value = (await legendRowValues(page, { visible: true })).find(
+      (each) => each !== 'Other' && each !== '__NA__',
+    )!;
+    await legend(page).locator(`.legend-item[data-value="${value}"]`).hover();
+    await page.waitForTimeout(100);
+    expect(await focus()).toBeNull();
+    await page.keyboard.down('Shift');
+    await expect.poll(focus).toEqual([value]);
+    await page.keyboard.up('Shift');
+    await expect.poll(focus).toBeNull();
   });
 
   test("a long name ends in an ellipsis and its full name is in the row's accessible name", async ({

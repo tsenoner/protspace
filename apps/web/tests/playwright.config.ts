@@ -374,6 +374,12 @@ export default defineConfig({
       testMatch: /glyph-outline\.spec\.ts/,
     }),
     {
+      // Draws with the real point shader in a bare canvas; never navigates.
+      name: 'hollow-glyphs',
+      use: devices['Desktop Chrome'],
+      testMatch: /hollow-glyphs\.spec\.ts/,
+    },
+    {
       name: 'eat-visualization',
       use: {
         ...devices['Desktop Chrome'],

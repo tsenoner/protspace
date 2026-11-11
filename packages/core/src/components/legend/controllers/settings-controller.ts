@@ -8,7 +8,12 @@ import {
 } from '@protspace/utils';
 import { LEGEND_DEFAULTS, LEGEND_EVENTS, LEGEND_VALUES, isNAValue } from '../config';
 import type { ProtspaceLegend } from '../legend';
-import { calculatePointSize, defaultShapeSize, getDefaultSortMode } from '../legend-helpers';
+import {
+  calculatePointSize,
+  defaultShapeSize,
+  getDefaultSortMode,
+  maxShapeSize,
+} from '../legend-helpers';
 import { LegendDataProcessor } from '../legend-data-processor';
 import { normalizeCategoricalPaletteId, normalizeSortModeForType } from '../legend-items-state';
 import type { LegendDisplaySettings, LegendItem, PersistedCategoryData } from '../types';
@@ -71,7 +76,7 @@ export class SettingsController {
         // An emptied size field returns the dataset to its default, as Reset does for the size.
         this.host._data.clearShapeSize();
       } else {
-        const size = Math.min(patch.shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+        const size = Math.min(patch.shapeSize, maxShapeSize(this.host._datasetProteinCount));
         if (size !== this.host.shapeSize) {
           this.host._persistenceController.saveShapeSize(size);
           this.host.shapeSize = size;
@@ -194,7 +199,9 @@ export class SettingsController {
       this.host._annotationShapeSize === null &&
       this.host.shapeSize === defaultShapeSize(this.host._datasetProteinCount) &&
       this.host._persistenceController.loadShapeSize() === null;
-    return isDefault ? null : Math.min(this.host.shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+    return isDefault
+      ? null
+      : Math.min(this.host.shapeSize, maxShapeSize(this.host._datasetProteinCount));
   }
 
   /**
@@ -228,6 +235,7 @@ export class SettingsController {
       .settings=${this.displaySettings(isNumeric)}
       .numeric=${isNumeric}
       .defaultShapeSize=${defaultShapeSize(this.host._datasetProteinCount)}
+      .maxShapeSize=${maxShapeSize(this.host._datasetProteinCount)}
       .logBinningAvailable=${this.host.annotationData.numericMetadata?.logSupported ?? true}
       .canReset=${open && this.canReset()}
       .annotationLabel=${label}

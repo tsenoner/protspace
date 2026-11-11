@@ -293,9 +293,11 @@ Pass `datasetHash` to `applyShapeSize` when the legend has not computed the new 
 Compute it, as for `clearForNewDataset` and `setFileSettings`, with `generateDatasetHash(data)` from
 `@protspace/utils` on the same `data` given to the scatter plot: the legend keys its storage by that
 hash, EAT predictions included.
-A size above 64 is applied and stored as 64. Write `pickedShapeSize`, not `shapeSize`, into a bundle's top-level `shapeSize`: the live
+A size above the dataset's [largest size](/explore/legend#default-dot-size) (64, or up to 128
+below 10,000 proteins) is applied and stored as that size. Write `pickedShapeSize`, not `shapeSize`, into a bundle's top-level `shapeSize`: the live
 `shapeSize` may only be seeded from the current annotation, or be the default computed from the
-dataset's protein count, `clamp(round(10 · (10000 / N)^⅔), 1, 10)`, which is never stored or
+dataset's protein count, `min(40, round(10 · (10000 / N)^¼))` up to 10,000 proteins and
+`max(1, round(10 · (10000 / N)^⅔))` above, which is never stored or
 exported. The legend resolves `shapeSize` from the picked or applied size, then the annotation's own
 `shapeSize` (10 and 30 read as unset), then that default.
 

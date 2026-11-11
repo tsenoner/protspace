@@ -112,6 +112,20 @@ describe('protspace-legend-other-popover', () => {
     expect(status(el)).toBe('');
   });
 
+  it("names TED's '-' for its annotation, and finds it by its words or by '-'", async () => {
+    const { el, anchor } = await mount([
+      { value: '-', count: 3 },
+      { value: '3.40.50.300', count: 1 },
+    ]);
+    el.annotation = 'ted_domains';
+    await open(el, anchor);
+    expect(rowNames(el)).toEqual(['No CATH label', '3.40.50.300']);
+    await search(el, 'cath');
+    expect(rowNames(el)).toEqual(['No CATH label']);
+    await search(el, '-');
+    expect(rowNames(el)).toEqual(['No CATH label']);
+  });
+
   it('Add to legend fires other-add with the raw value, __NA__ for N/A', async () => {
     const { el, anchor } = await mount(MIXED);
     const added: CustomEvent<{ value: string }>[] = [];

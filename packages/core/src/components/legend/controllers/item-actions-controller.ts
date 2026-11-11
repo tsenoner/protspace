@@ -1,4 +1,5 @@
-import { LEGEND_VALUES, toDisplayValue } from '../config';
+import { displayAnnotationValue } from '@protspace/utils';
+import { LEGEND_VALUES } from '../config';
 import type { ProtspaceLegend } from '../legend';
 import {
   clickPointerType,
@@ -80,7 +81,9 @@ export class ItemActionsController {
     this.host._hiddenValues = result.hiddenValues;
 
     const item = this.host._legendItems.find((i) => valueToKey(i.value) === valueKey);
-    this.host._announceStatus(`${toDisplayValue(value)} ${item?.isVisible ? 'shown' : 'hidden'}`);
+    this.host._announceStatus(
+      `${displayAnnotationValue(this.host.selectedAnnotation, value)} ${item?.isVisible ? 'shown' : 'hidden'}`,
+    );
 
     this.host._scatterplotController.syncHiddenValues();
     this.host._dispatchItemAction(value, 'toggle');
@@ -96,7 +99,9 @@ export class ItemActionsController {
 
     const visibleCount = result.items.filter((i) => i.isVisible).length;
     this.host._announceStatus(
-      visibleCount === 1 ? `Isolated ${toDisplayValue(value)}` : 'All items shown',
+      visibleCount === 1
+        ? `Isolated ${displayAnnotationValue(this.host.selectedAnnotation, value)}`
+        : 'All items shown',
     );
 
     this.host._scatterplotController.syncHiddenValues();
@@ -122,7 +127,9 @@ export class ItemActionsController {
     // pending value will be cleared after the first call, causing the second call to not
     // respect the extract operation.
 
-    this.host._announceStatus(`Extracted ${toDisplayValue(value)} from Other category`);
+    this.host._announceStatus(
+      `Extracted ${displayAnnotationValue(this.host.selectedAnnotation, value)} from Other category`,
+    );
     this.host._dispatchItemAction(value, 'extract');
     this.saveAfterUpdate();
   }
@@ -189,7 +196,9 @@ export class ItemActionsController {
     // pending value will be cleared after the first call, causing the second call to not
     // respect the merge operation.
 
-    this.host._announceStatus(`Moved ${toDisplayValue(value)} to Other category`);
+    this.host._announceStatus(
+      `Moved ${displayAnnotationValue(this.host.selectedAnnotation, value)} to Other category`,
+    );
     this.saveAfterUpdate();
   }
 
@@ -213,8 +222,8 @@ export class ItemActionsController {
         focusTarget?.focus();
         this.host._announceStatus(
           this.host._announceManualPromotionOnNextReorder
-            ? `Moved ${htmlEl.dataset.displayValue ?? toDisplayValue(value)}. Switched ${this.host._annotationDisplayName} to Manual order.`
-            : `Moved ${htmlEl.dataset.displayValue ?? toDisplayValue(value)}.`,
+            ? `Moved ${htmlEl.dataset.displayValue ?? displayAnnotationValue(this.host.selectedAnnotation, value)}. Switched ${this.host._annotationDisplayName} to Manual order.`
+            : `Moved ${htmlEl.dataset.displayValue ?? displayAnnotationValue(this.host.selectedAnnotation, value)}.`,
         );
         this.host._announceManualPromotionOnNextReorder = false;
         htmlEl.addEventListener(

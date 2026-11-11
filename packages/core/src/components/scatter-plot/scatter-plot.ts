@@ -369,6 +369,8 @@ export class ProtspaceScatterplot extends LitElement {
   private _shiftDown = false;
   /** Shift+hover: the hovered point's category values; every other point fades. */
   @state() private _focusedValues: string[] | null = null;
+  /** The focus asked for from outside (`focusCategories`), used while Shift + hover is not. */
+  private _externalFocus: string[] | null = null;
   // The scales and what they were built at: the plot data's length and `_scalesKey()`.
   private _scalesCache: { scales: ScalePair; plotDataLength: number; key: string } | null = null;
 
@@ -631,6 +633,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._unpinTooltip();
     this._hoveredPoint = null;
     this._shiftDown = false;
+    this._externalFocus = null;
     this._setFocusedValues(null);
   }
 
@@ -1827,6 +1830,17 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
+  /**
+   * Focuses these categories as Shift + hover does, without Shift: the legend asks for it while
+   * the pointer is on a score strip's dot, or on a scored row with Shift held. Null ends it.
+   * Shift + hover on the plot wins, a selection outranks it, and a new dataset or annotation,
+   * or the window losing focus, ends it.
+   */
+  focusCategories(values: readonly string[] | null): void {
+    this._externalFocus = values && values.length > 0 ? [...values] : null;
+    this._updateFocus(this._shiftDown);
+  }
+
   /** Shift+hover focus: keep the hovered point's category, fade everything else. */
   private _updateFocus(shift: boolean): void {
     const point = this._hoveredPoint;
@@ -1845,6 +1859,9 @@ export class ProtspaceScatterplot extends LitElement {
         const inOther = values.some((v) => this.otherAnnotationValues.includes(v));
         next = inOther ? [...values, ...this.otherAnnotationValues] : values;
       }
+    }
+    if (next === null && this._externalFocus && !this.selectedProteinIds.length) {
+      next = this._externalFocus;
     }
     this._setFocusedValues(next);
   }
@@ -1880,12 +1897,17 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _handleWindowBlur = () => {
     this._shiftDown = false;
+    this._externalFocus = null;
     this._updateFocus(false);
   };
 
   /** Re-derive the focus when its inputs change under a still cursor. */
   private _reconcileFocus(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('data')) this._hoveredPoint = null;
+    // The categories asked for belong to the old dataset or annotation.
+    if (changedProperties.has('data') || changedProperties.has('selectedAnnotation')) {
+      this._externalFocus = null;
+    }
     if (
       changedProperties.has('data') ||
       changedProperties.has('selectedAnnotation') ||
@@ -1894,7 +1916,8 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('eatOverlayEnabled') ||
       changedProperties.has('selectedProteinIds')
     ) {
-      this._updateFocus(this._focusedValues !== null);
+      // A focus that is Shift + hover's own stays one; an asked-for one comes back by itself.
+      this._updateFocus(this._shiftDown || (this._focusedValues !== null && !this._externalFocus));
     }
   }
 

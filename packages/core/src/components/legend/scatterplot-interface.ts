@@ -38,6 +38,9 @@ export interface IScatterplotElement extends Element {
   // kept set while the visible-category structure is preserved.
   filtersActive?: boolean;
   filteredProteinIds?: string[];
+
+  /** Focuses these categories as Shift + hover does; null ends it (optional). */
+  focusCategories?(values: readonly string[] | null): void;
 }
 
 /**

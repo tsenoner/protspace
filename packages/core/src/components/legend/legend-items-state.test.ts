@@ -4,6 +4,7 @@ import { LEGEND_VALUES, NA_VALUE } from './config';
 import {
   applyDerivedNumericColors,
   applyNumericDisplayLabels,
+  applyValueLabels,
   displayedOrder,
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
@@ -226,6 +227,26 @@ describe('applyNumericDisplayLabels', () => {
   });
 });
 
+describe('applyValueLabels', () => {
+  it("names TED's '-' and keeps its value, N/A and Other as they are", () => {
+    const labelled = applyValueLabels(
+      [item('-', 0), item('3.40.50.300', 1), item(OTHER, 2), item(NA_VALUE, 3)],
+      'ted_domains',
+    );
+    expect(labelled.map((each) => [each.value, each.displayValue])).toEqual([
+      ['-', 'No CATH label'],
+      ['3.40.50.300', undefined],
+      [OTHER, undefined],
+      [NA_VALUE, undefined],
+    ]);
+  });
+
+  it("returns the same items for an annotation without labels, '-' included", () => {
+    const items = [item('-', 0), item('PF00001', 1)];
+    expect(applyValueLabels(items, 'pfam')).toBe(items);
+  });
+});
+
 describe('applyDerivedNumericColors', () => {
   it('takes each bin colour from the annotation and leaves Other and N/A alone', () => {
     const coloured = applyDerivedNumericColors(
@@ -290,10 +311,10 @@ describe('resolvePersistedSettings', () => {
     });
   });
 
-  it('caps a stored size of 640 at 64', () => {
+  it('caps a stored size of 640 at 128, the largest any dataset accepts', () => {
     expect(
       resolvePersistedSettings(record({ shapeSize: 640 }), categorical).annotationShapeSize,
-    ).toBe(64);
+    ).toBe(128);
     expect(
       resolvePersistedSettings(record({ shapeSize: 24 }), categorical).annotationShapeSize,
     ).toBe(24);

@@ -62,6 +62,7 @@ import {
   isItemSelected,
   createItemActionEvent,
   computeOtherConcreteValues,
+  maxShapeSize,
   valueToKey,
 } from './legend-helpers';
 import { sortItemsForDisplay, type ActiveSortMode } from './legend-items-state';
@@ -167,6 +168,13 @@ export class ProtspaceLegend extends LitElement {
   @state() private _plotFocus: { values: ReadonlySet<string>; first: string } | null = null;
   /** Some focused value sits in Other, so the Other row lights; derived in `willUpdate`. */
   private _plotFocusInOther = false;
+  /** The score-strip dot under the pointer, whose category the plot focuses. */
+  private _stripFocusCategory: string | null = null;
+  /** The row under a mouse or pen, which the plot focuses while Shift is held. */
+  private _rowUnderPointer: string | null = null;
+  private _shiftDown = false;
+  /** What the legend last asked the plot to focus, so a move that changes nothing sends nothing. */
+  private _requestedPlotFocus: readonly string[] | null = null;
 
   @query('.legend-items')
   private _legendItemsEl?: HTMLDivElement;
@@ -440,6 +448,7 @@ export class ProtspaceLegend extends LitElement {
 
   _otherPopover = new OtherPopoverControl(this, {
     getItems: () => this._otherItems,
+    getAnnotation: () => this.selectedAnnotation,
     add: (value) => this._actions.extractFromOther(value),
     addAll: () => this._actions.extractAllFromOther(),
     focusFirstRow: () => this._keyboard.focusItem(0),
@@ -458,6 +467,20 @@ export class ProtspaceLegend extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._scatterplotController.scatterplotSelector = this.scatterplotSelector;
+    window.addEventListener('keydown', this._onShiftKey);
+    window.addEventListener('keyup', this._onShiftKey);
+    window.addEventListener('blur', this._onWindowBlur);
+  }
+
+  disconnectedCallback(): void {
+    window.removeEventListener('keydown', this._onShiftKey);
+    window.removeEventListener('keyup', this._onShiftKey);
+    window.removeEventListener('blur', this._onWindowBlur);
+    this._shiftDown = false;
+    this._stripFocusCategory = null;
+    this._rowUnderPointer = null;
+    this._syncPlotFocus();
+    super.disconnectedCallback();
   }
 
   updated(changedProperties: Map<string, unknown>): void {
@@ -651,6 +674,9 @@ export class ProtspaceLegend extends LitElement {
     this._clusterCaveat = null;
     this._hoveredCategory = null;
     this._plotFocus = null;
+    this._requestedPlotFocus = null;
+    this._stripFocusCategory = null;
+    this._rowUnderPointer = null;
     this._reorder.clear();
 
     // Reset isolation state
@@ -692,7 +718,7 @@ export class ProtspaceLegend extends LitElement {
    * component's own hash is not computed from the new data yet.
    */
   public applyShapeSize(shapeSize: number, datasetHash?: string): void {
-    const size = Math.min(shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+    const size = Math.min(shapeSize, maxShapeSize(this._datasetProteinCount));
     this._persistenceController.saveShapeSize(size, datasetHash);
     this.shapeSize = size;
     this._scatterplotController.updateConfig({ pointSize: calculatePointSize(size) });
@@ -815,6 +841,50 @@ export class ProtspaceLegend extends LitElement {
     return renderSortMenu(model, this._sortMenuHandlers);
   }
 
+  /**
+   * Asks the plot to focus what the pointer is on, as Shift + hover on a point does: a score
+   * strip's dot, or a row of a scored annotation while Shift is held (the Other row stands for
+   * every category under it). Nothing otherwise, so crossing rows never fades the plot.
+   */
+  private _syncPlotFocus(): void {
+    let next: string[] | null = null;
+    if (this._stripFocusCategory !== null) {
+      next = [this._stripFocusCategory];
+    } else if (
+      this._shiftDown &&
+      this._rowUnderPointer !== null &&
+      this._categoryScores.length > 0
+    ) {
+      next =
+        this._rowUnderPointer === LEGEND_VALUES.OTHER
+          ? computeOtherConcreteValues(this._otherItems)
+          : [this._rowUnderPointer];
+    }
+    const previous = this._requestedPlotFocus;
+    if (
+      next === previous ||
+      (next !== null && previous !== null && next.join('\u0000') === previous.join('\u0000'))
+    ) {
+      return;
+    }
+    this._requestedPlotFocus = next;
+    this._scatterplotController.scatterplot?.focusCategories?.(next);
+  }
+
+  private _onShiftKey = (event: KeyboardEvent): void => {
+    if (event.key !== 'Shift') return;
+    this._shiftDown = event.type === 'keydown';
+    // Typing a capital in a text field should not fade the plot.
+    const target = event.composedPath()[0] as HTMLElement | undefined;
+    if (this._shiftDown && target?.closest?.('input, textarea, [contenteditable="true"]')) return;
+    this._syncPlotFocus();
+  };
+
+  private _onWindowBlur = (): void => {
+    this._shiftDown = false;
+    this._syncPlotFocus();
+  };
+
   private _setHoveredCategory(category: string | null): void {
     // Nothing reads the hover when there are no scores: `_renderScoreStrips` returns before
     // the `highlighted` binding and `_renderLegendItem` gates its class on the same emptiness.
@@ -839,7 +909,12 @@ export class ProtspaceLegend extends LitElement {
    * is a legend row: a category grouped under Other has no row to hide.
    */
   private _scoreStripHandlers: ScoreStripsHandlers = {
-    onHover: (category) => this._setHoveredCategory(category),
+    onHover: (category, touch) => {
+      this._setHoveredCategory(category);
+      // A tap's hover lingers until the next tap elsewhere: it marks the row, never fades the plot.
+      this._stripFocusCategory = touch ? null : category;
+      this._syncPlotFocus();
+    },
     onToggle: (category) => {
       if (this._legendItems.some((item) => item.value === category)) {
         this._actions.toggle(category);
@@ -855,7 +930,11 @@ export class ProtspaceLegend extends LitElement {
       this._sortedLegendItems = sortItemsForDisplay(this._legendItems);
     }
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
-      this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
+      this._stripPoints = deriveStripPoints(
+        this._legendItems,
+        this._categoryScores,
+        this.selectedAnnotation,
+      );
     }
     if (changedProperties.has('_plotFocus') || changedProperties.has('_otherItems')) {
       const focus = this._plotFocus;
@@ -869,6 +948,10 @@ export class ProtspaceLegend extends LitElement {
     // Settings and the picker are the annotation's own: a new one closes them. The sync paths
     // flushed first; set from outside, an edit for the old annotation is dropped, not moved.
     if (changedProperties.has('selectedAnnotation')) {
+      // The plot drops a focus asked for under the old annotation by itself.
+      this._requestedPlotFocus = null;
+      this._stripFocusCategory = null;
+      this._rowUnderPointer = null;
       this._settingsPopover?.cancel();
       this._settingsAnchor = null;
       this._colorPicker.dismiss();
@@ -920,7 +1003,11 @@ export class ProtspaceLegend extends LitElement {
       onDoubleClick: () => this._actions.rowDoubleClick(item.value),
       onKeyDown: (e: KeyboardEvent) => this._keyboard.onItemKeyDown(e, item, sortedIndex),
       onHandleKeyDown: (e: KeyboardEvent) => this._keyboard.onHandleKeyDown(e, item),
-      onHover: (category) => this._setHoveredCategory(category),
+      onHover: (category) => {
+        this._setHoveredCategory(category);
+        this._rowUnderPointer = category;
+        this._syncPlotFocus();
+      },
       onFocus: () => {
         this._keyboard.focusValue = item.value;
       },

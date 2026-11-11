@@ -288,6 +288,19 @@ describe('legend colour and shape picker', () => {
     expect(storedFamilyRecord().categories.A.shape).toBe('diamond');
   });
 
+  it('draws every shape filled, the plus too: hollow is the EAT cue', async () => {
+    const { legend } = await mount();
+    await openPicker(legend, 'A');
+    const paths = [
+      ...legend.shadowRoot!.querySelectorAll<SVGPathElement>('.shape-picker-item svg path'),
+    ];
+    expect(paths).toHaveLength(6);
+    for (const path of paths) expect(path.getAttribute('fill')).toBe('currentColor');
+    expect(shape(legend, 'plus').querySelector('path')!.getAttribute('d')).toBe(
+      SHAPE_PATH_GENERATORS.plus(14),
+    );
+  });
+
   it('a second click on the swatch whose picker is open closes it and lands the pending colour', async () => {
     const { legend, plot } = await mount();
     await openPicker(legend, 'A');

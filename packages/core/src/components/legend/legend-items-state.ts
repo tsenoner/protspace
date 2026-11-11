@@ -1,5 +1,6 @@
 import {
   DEFAULT_CATEGORICAL_PALETTE_ID,
+  annotationValueLabel,
   getNumericBinLabelMap,
   isGradientPalette,
   resolveNumericAnnotationDisplaySettings,
@@ -146,6 +147,20 @@ export function applyNumericDisplayLabels(
   );
 }
 
+/**
+ * The registry's words for a category, as its display value (TED's `-` reads "No CATH label");
+ * the value itself, which filters and settings key on, is unchanged.
+ */
+export function applyValueLabels(items: readonly LegendItem[], annotation: string): LegendItem[] {
+  if (!items.some((each) => annotationValueLabel(annotation, each.value) !== undefined)) {
+    return items as LegendItem[];
+  }
+  return items.map((each) => {
+    const label = annotationValueLabel(annotation, each.value);
+    return label === undefined ? each : { ...each, displayValue: label };
+  });
+}
+
 /** Each numeric bin's colour from the annotation's gradient; Other and N/A keep theirs. */
 export function applyDerivedNumericColors(
   items: readonly LegendItem[],
@@ -180,7 +195,10 @@ export function numericOrderFromItems(items: readonly LegendItem[]): string[] | 
 /** A persisted legend record as live values, decided but not yet applied. */
 export interface ResolvedLegendSettings {
   maxVisibleValues: number;
-  /** The annotation's own size, capped at the dialog's bound; null for a filler (unset). */
+  /**
+   * The annotation's own size, capped at the largest any dataset accepts (the dataset's own cap
+   * applies when it is resolved); null for a filler (unset).
+   */
   annotationShapeSize: number | null;
   hiddenValues: string[];
   paletteId: string;
@@ -236,7 +254,9 @@ export function resolvePersistedSettings(
   return {
     maxVisibleValues,
     annotationShapeSize:
-      ownShapeSize === null ? null : Math.min(ownShapeSize, LEGEND_DEFAULTS.maxSymbolSize),
+      ownShapeSize === null
+        ? null
+        : Math.min(ownShapeSize, LEGEND_DEFAULTS.smallDatasetMaxSymbolSize),
     hiddenValues: topologyMatches ? [...settings.hiddenValues] : [],
     paletteId,
     sortMode: normalizeSortModeForType(settings.sortMode, isNumeric),

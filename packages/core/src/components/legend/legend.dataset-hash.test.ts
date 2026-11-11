@@ -218,7 +218,8 @@ describe('legend dataset hash for an EAT dataset', () => {
     await settleLegend(legend);
 
     expect(legend.pickedShapeSize).toBeUndefined();
-    expect(legend.shapeSize).toBe(10);
+    // The default for its 3 proteins.
+    expect(legend.shapeSize).toBe(40);
   });
 
   it('loads the settings stored under the hash of the dataset it is given, without a plot', async () => {
