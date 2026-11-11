@@ -213,6 +213,20 @@ describe('legend score hover focuses the plot', () => {
     expect(focusCategories.mock.calls).toEqual([[['Elapidae']], [null]]);
   });
 
+  it('a tapped strip dot marks its row but leaves the plot alone', async () => {
+    const { legend, focusCategories } = await mountWithSpy();
+    legend.shadowRoot!.querySelector('protspace-score-strip')!.dispatchEvent(
+      new CustomEvent('strip-hover', {
+        detail: { category: 'Elapidae', touch: true },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    await legend.updateComplete;
+    expect(legend.shadowRoot!.querySelector('.legend-item-score-hover')).not.toBeNull();
+    expect(focusCategories).not.toHaveBeenCalled();
+  });
+
   it('a strip dot under Other focuses only its own category', async () => {
     const { legend, focusCategories } = await mountWithSpy(
       makeData([statRow({ category: 'NotInTheLegend', value: 0.4 })]),

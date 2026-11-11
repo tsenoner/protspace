@@ -101,6 +101,35 @@ describe('protspace-score-strip', () => {
     expect(seen).toEqual(['Elapidae', null]);
   });
 
+  it('flags a hover that a tap began, so the legend does not fade the plot for it', async () => {
+    const el = await setup();
+    const seen: Array<{ category: string | null; touch: boolean }> = [];
+    el.addEventListener('strip-hover', (event) =>
+      seen.push((event as CustomEvent<{ category: string | null; touch: boolean }>).detail),
+    );
+
+    const dot = el.shadowRoot!.querySelector('circle')!;
+    // A tap: pointerover first, then the compatibility mouseenter.
+    dot.dispatchEvent(new PointerEvent('pointerover', { pointerType: 'touch', bubbles: true }));
+    dot.dispatchEvent(new Event('mouseenter', { bubbles: false }));
+    // Then a mouse.
+    dot.dispatchEvent(new PointerEvent('pointerover', { pointerType: 'mouse', bubbles: true }));
+    dot.dispatchEvent(new Event('mouseenter', { bubbles: false }));
+
+    expect(seen).toEqual([
+      { category: 'Elapidae', touch: true },
+      { category: 'Elapidae', touch: false },
+    ]);
+  });
+
+  it('names each dot as the legend does', async () => {
+    const el = await setup();
+    el.points = [{ category: '-', label: 'No CATH label', value: 0.2, color: '#123456' }];
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('circle title')!.textContent).toBe('No CATH label: 0.20');
+    expect(el.shadowRoot!.querySelector('.sr-only li')!.textContent).toBe('No CATH label: 0.20');
+  });
+
   it('emits strip-click with the category on dot click', async () => {
     const el = await setup();
     const seen: Array<string> = [];

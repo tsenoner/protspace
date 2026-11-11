@@ -45,6 +45,8 @@ The plot SHALL focus a category, exactly as Shift + hover over one of its points
 pointer is on that category's dot in a separation-score strip, and while the pointer is on a legend
 row of a scored annotation with Shift held; the Other row SHALL focus every category under it. No
 Shift is needed on a strip dot, and a dot of a category under Other SHALL focus only that category.
+A tap on a strip dot SHALL mark its row without focusing the plot, since a tap's hover lasts until
+the next tap elsewhere.
 Shift + hover over a point in the plot SHALL take precedence, a selection SHALL outrank the focus as
 it does Shift + hover's, and the focus SHALL end when the pointer leaves the dot or row, when Shift
 is released on a row, when the window loses focus, and when the dataset or the annotation changes.
@@ -60,6 +62,11 @@ The plot SHALL report this focus through category-focus like its own.
 
 - **WHEN** the user holds Shift with the pointer on category B's legend row
 - **THEN** every point outside B fades until Shift is released or the pointer leaves the row
+
+#### Scenario: Tapping a strip dot
+
+- **WHEN** the user taps category A's dot on a touch screen
+- **THEN** A's legend row is marked and A is toggled, and the plot does not fade
 
 #### Scenario: A row without Shift
 

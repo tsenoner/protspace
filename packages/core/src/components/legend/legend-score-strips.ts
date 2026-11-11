@@ -1,7 +1,7 @@
 import { html, nothing, type TemplateResult } from 'lit';
-import { metricDisplay, type CategoryScore } from '@protspace/utils';
+import { displayAnnotationValue, metricDisplay, type CategoryScore } from '@protspace/utils';
 import './category-score-strip';
-import type { ScoreStripPoint } from './category-score-strip';
+import type { ScoreStripPoint, StripHoverDetail } from './category-score-strip';
 import type { LegendItem } from './types';
 
 /**
@@ -41,7 +41,8 @@ export interface ScoreStripsView {
 
 /** What a strip's pointer events do. */
 export interface ScoreStripsHandlers {
-  onHover(category: string | null): void;
+  /** `touch`: a tap entered the dot, so the hover lingers until the next tap elsewhere. */
+  onHover(category: string | null, touch: boolean): void;
   onToggle(category: string): void;
 }
 
@@ -53,6 +54,7 @@ export interface ScoreStripsHandlers {
  */
 function stripPoints(
   colorByValue: Map<string, string>,
+  annotation: string,
   scores: readonly CategoryScore[],
   pick: (score: CategoryScore) => number | null,
   pickEmbedding?: (score: CategoryScore) => number | null,
@@ -64,6 +66,7 @@ function stripPoints(
     const rowColor = colorByValue.get(score.category);
     const point: ScoreStripPoint = {
       category: score.category,
+      label: displayAnnotationValue(annotation, score.category),
       value,
       color: rowColor ?? OTHER_POINT_COLOR,
       embedding: pickEmbedding?.(score) ?? null,
@@ -82,6 +85,7 @@ function stripPoints(
 export function deriveStripPoints(
   items: readonly LegendItem[],
   scores: readonly CategoryScore[],
+  annotation = '',
 ): StripPoints {
   // One map for both strips: it is keyed by the same legend items either way.
   const colorByValue = new Map(items.map((item) => [item.value, item.color]));
@@ -89,11 +93,17 @@ export function deriveStripPoints(
   // silhouette strip's tooltip carries an embedding reference.
   const silhouette = stripPoints(
     colorByValue,
+    annotation,
     scores,
     (score) => score.silhouette,
     (score) => score.silhouetteEmbedding,
   );
-  const daviesBouldin = stripPoints(colorByValue, scores, (score) => score.daviesBouldin);
+  const daviesBouldin = stripPoints(
+    colorByValue,
+    annotation,
+    scores,
+    (score) => score.daviesBouldin,
+  );
   // Silhouette is bounded to [-1, 1], so its axis is fixed and comparable across datasets.
   // Davies-Bouldin is unbounded above, so it scales to the data at hand. Folded rather than
   // spread into Math.min/max: the argument list would grow with the category count, and a
@@ -159,8 +169,8 @@ export function renderScoreStrips(
     <section
       class="score-strips"
       aria-label="Separation by category"
-      @strip-hover=${(event: CustomEvent<{ category: string | null }>) =>
-        handlers.onHover(event.detail.category)}
+      @strip-hover=${(event: CustomEvent<StripHoverDetail>) =>
+        handlers.onHover(event.detail.category, event.detail.touch)}
       @strip-click=${(event: CustomEvent<{ category: string }>) =>
         handlers.onToggle(event.detail.category)}
     >

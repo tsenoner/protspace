@@ -907,9 +907,10 @@ export class ProtspaceLegend extends LitElement {
    * is a legend row: a category grouped under Other has no row to hide.
    */
   private _scoreStripHandlers: ScoreStripsHandlers = {
-    onHover: (category) => {
+    onHover: (category, touch) => {
       this._setHoveredCategory(category);
-      this._stripFocusCategory = category;
+      // A tap's hover lingers until the next tap elsewhere: it marks the row, never fades the plot.
+      this._stripFocusCategory = touch ? null : category;
       this._syncPlotFocus();
     },
     onToggle: (category) => {
@@ -927,7 +928,11 @@ export class ProtspaceLegend extends LitElement {
       this._sortedLegendItems = sortItemsForDisplay(this._legendItems);
     }
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
-      this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
+      this._stripPoints = deriveStripPoints(
+        this._legendItems,
+        this._categoryScores,
+        this.selectedAnnotation,
+      );
     }
     if (changedProperties.has('_plotFocus') || changedProperties.has('_otherItems')) {
       const focus = this._plotFocus;

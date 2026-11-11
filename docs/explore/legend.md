@@ -86,7 +86,7 @@ See [Transferred Annotations (EAT)](/explore/eat) for the EAT panel, where the b
 When the dataset was prepared with statistics and the selected annotation was scored in the current projection, two strips appear near the top of the legend panel, above the category list: one for `Silhouette`, one for `Davies–Bouldin`. Each plots one dot per category, in that category's legend color, so you can see which values sit apart from the rest and which overlap.
 
 - Hovering a dot highlights the matching legend row and focuses its category in the plot, as
-  holding **Shift** over one of its points does. Hovering a row highlights its dot; hold **Shift**
+  holding **Shift** over one of its points does (a tap only highlights the row). Hovering a row highlights its dot; hold **Shift**
   as well and the plot focuses that category too (the `Other` row focuses every category under
   it). Holding **Shift** over a point in the plot highlights its category's dot and row as well.
 - Clicking a dot toggles that category, exactly like clicking its legend row.

@@ -9,6 +9,8 @@ import '../common/info-popover';
 /** One category's position on a score axis, painted in its legend colour. */
 export interface ScoreStripPoint {
   category: string;
+  /** The category as the legend names it (N/A, TED's "No CATH label"); the raw value if unset. */
+  label?: string;
   value: number;
   color: string;
   /**
@@ -21,6 +23,12 @@ export interface ScoreStripPoint {
    * the dot takes the themed --ps-plot-other.
    */
   other?: true;
+}
+
+/** `strip-hover`: the dot's category, or null on leaving it; `touch` when a tap entered it. */
+export interface StripHoverDetail {
+  category: string | null;
+  touch: boolean;
 }
 
 const STRIP_HEIGHT = 44;
@@ -69,6 +77,12 @@ class ProtspaceScoreStrip extends LitElement {
 
   static styles = categoryScoreStripStyles;
 
+  /**
+   * The pointer type of the last `pointerover`, which precedes the dot's `mouseenter`: a tap
+   * fires a compatibility `mouseenter` too, and its hover lasts until the next tap elsewhere.
+   */
+  private _pointerType = 'mouse';
+
   render() {
     if (this.points.length === 0) return nothing;
 
@@ -101,7 +115,14 @@ class ProtspaceScoreStrip extends LitElement {
         <span>${this.higherIsBetter ? 'higher is better' : 'lower is better'}</span>
       </div>
       <div class="strip-body">
-        <svg height="${STRIP_HEIGHT}" role="img" aria-label="${this.label} per category">
+        <svg
+          height="${STRIP_HEIGHT}"
+          role="img"
+          aria-label="${this.label} per category"
+          @pointerover=${(event: PointerEvent) => {
+            this._pointerType = event.pointerType;
+          }}
+        >
           <line
             class="axis"
             x1="${PADDING}%"
@@ -124,7 +145,7 @@ class ProtspaceScoreStrip extends LitElement {
             @mouseenter=${() => this._emitHover(point.category)}
             @mouseleave=${() => this._emitHover(null)}
             @click=${() => this._emitClick(point.category)}
-          ><title>${point.category}: ${formatStatValue(point.value)}${
+          ><title>${point.label ?? point.category}: ${formatStatValue(point.value)}${
             point.embedding == null
               ? ''
               : ` (embedding reference ${formatStatValue(point.embedding)})`
@@ -151,7 +172,8 @@ class ProtspaceScoreStrip extends LitElement {
            scores — the entire point of the strip — are unreachable to assistive tech. -->
       <ul class="sr-only">
         ${this.points.map(
-          (point) => html`<li>${point.category}: ${formatStatValue(point.value)}</li>`,
+          (point) =>
+            html`<li>${point.label ?? point.category}: ${formatStatValue(point.value)}</li>`,
         )}
       </ul>
     `;
@@ -164,8 +186,8 @@ class ProtspaceScoreStrip extends LitElement {
 
   private _emitHover(category: string | null): void {
     this.dispatchEvent(
-      new CustomEvent<{ category: string | null }>('strip-hover', {
-        detail: { category },
+      new CustomEvent<StripHoverDetail>('strip-hover', {
+        detail: { category, touch: this._pointerType === 'touch' },
         bubbles: true,
       }),
     );
