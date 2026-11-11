@@ -525,8 +525,9 @@ export class ProtspaceLegend extends LitElement {
     }
 
     // Initialize Sortable when container becomes available
-    // The controller handles preventing duplicate initialization
-    if (this._legendItemsEl && this._sortedLegendItems.length > 0) {
+    // The controller handles preventing duplicate initialization. Not on a detached legend: the
+    // controller destroyed Sortable on disconnect, and an update still pending would rebuild it.
+    if (this.isConnected && this._legendItemsEl && this._sortedLegendItems.length > 0) {
       this._dragController.initialize(this._legendItemsEl, true);
     }
     this._otherPopover.updated();
