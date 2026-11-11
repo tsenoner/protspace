@@ -10,6 +10,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   POINT_FRAGMENT_SHADER as frag,
   POINT_VERTEX_SHADER as vert,
+  pointKnockoutUniforms,
 } from '../../../packages/core/src/components/scatter-plot/webgl/renderer/point-shaders';
 
 /** Shape indices as the shader reads them (getShapeIndex). */
@@ -49,8 +50,10 @@ async function drawGlyphs(
   size: number,
   { offset = 0.5, alpha = 1, background = [1, 1, 1] }: DrawOptions = {},
 ): Promise<GlyphPixels> {
+  // The background uniforms as the renderer pushes them, worked out on the CPU.
+  const knockout = pointKnockoutUniforms(background, 2.2);
   return page.evaluate(
-    ({ vert, frag, shape, size, offset, alpha, background }) => {
+    ({ vert, frag, shape, size, offset, alpha, knockout }) => {
       const W = 128;
       const canvas = document.createElement('canvas');
       canvas.width = W;
@@ -85,7 +88,10 @@ async function drawGlyphs(
       gl.uniform1f(loc('u_dpr'), 1);
       gl.uniform1f(loc('u_pointScale'), 1);
       gl.uniform1f(loc('u_gamma'), 2.2);
-      gl.uniform3f(loc('u_knockoutColor'), ...background);
+      gl.uniform3f(loc('u_knockoutColor'), ...knockout.linearColor);
+      gl.uniform1f(loc('u_hollowFadeGain'), knockout.hollowFadeGain);
+      gl.uniform1f(loc('u_lightRimBound'), knockout.lightRimBound);
+      gl.uniform1f(loc('u_maxPointSize'), gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1]);
       gl.uniform1i(loc('u_maxLabels'), 1);
       gl.uniform2f(loc('u_labelTextureSize'), 1, 1);
 
@@ -140,7 +146,7 @@ async function drawGlyphs(
       }
       return { hole, ring, ringRun, hollowPeak };
     },
-    { vert, frag, shape, size, offset, alpha, background },
+    { vert, frag, shape, size, offset, alpha, knockout },
   );
 }
 

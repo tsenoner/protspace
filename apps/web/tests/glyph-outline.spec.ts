@@ -78,7 +78,11 @@ test('glyph outline appearance across point sizes', async ({ page }) => {
       gl.uniform1f(loc('u_dpr'), 1);
       gl.uniform1f(loc('u_pointScale'), 1);
       gl.uniform1f(loc('u_gamma'), 2.2);
+      // White, as pointKnockoutUniforms gives it: linear white, no fade gain, no light rim.
       gl.uniform3f(loc('u_knockoutColor'), 1, 1, 1);
+      gl.uniform1f(loc('u_hollowFadeGain'), 1);
+      gl.uniform1f(loc('u_lightRimBound'), 0);
+      gl.uniform1f(loc('u_maxPointSize'), gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1]);
       gl.uniform1i(loc('u_maxLabels'), 1);
       gl.uniform2f(loc('u_labelTextureSize'), 1, 1);
 

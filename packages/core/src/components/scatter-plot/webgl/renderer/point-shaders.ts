@@ -6,6 +6,51 @@
 import { PLUS_ARM_RATIO } from '@protspace/utils';
 
 /**
+ * A faded hollow marker (the points a selection, focus or EAT Dim fades) is a thin ring at a low
+ * alpha. On white it stays readable; on a dark plot it all but vanishes, so there its alpha is
+ * raised by this gain, up to the shader's HOLLOW_DARK_FADE_CEILING, still well under a shown
+ * point's.
+ */
+export const HOLLOW_DARK_FADE_GAIN = 2.5;
+/** The background luminance (linear) under which the plot counts as dark. */
+const DARK_PLOT_LUMINANCE = 0.05;
+
+/** What {@link POINT_FRAGMENT_SHADER} needs to know about the plot background. */
+interface PointKnockoutUniforms {
+  /** `u_knockoutColor`: the background in linear light. */
+  linearColor: [number, number, number];
+  /** `u_hollowFadeGain`: HOLLOW_DARK_FADE_GAIN on a dark plot, else 1. */
+  hollowFadeGain: number;
+  /**
+   * `u_lightRimBound`: a point whose luminance + 0.05 is under it takes a light rim. Twice the
+   * background's luminance + 0.05 on a dark plot (2:1 contrast); 0, so never, on a light one.
+   */
+  lightRimBound: number;
+}
+
+/**
+ * The point shader's background uniforms from the plot background in sRGB (0-1) and the
+ * effective gamma: worked out once per draw on the CPU, not per fragment.
+ */
+export function pointKnockoutUniforms(
+  knockoutColor: readonly [number, number, number],
+  gamma: number,
+): PointKnockoutUniforms {
+  const linear = knockoutColor.map((channel) => Math.max(channel, 0) ** gamma) as [
+    number,
+    number,
+    number,
+  ];
+  const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  const dark = luminance < DARK_PLOT_LUMINANCE;
+  return {
+    linearColor: linear,
+    hollowFadeGain: dark ? HOLLOW_DARK_FADE_GAIN : 1,
+    lightRimBound: dark ? 2 * (luminance + 0.05) : 0,
+  };
+}
+
+/**
  * Where a projection switch drew each point, for a vertex shader with
  * `CAMERA_TO_CLIP_GLSL`. `u_morph` runs 1 -> 0 while the points glide and is 0
  * otherwise; outside a glide `a_prevPosition` is disabled and reads (0, 0).
@@ -85,6 +130,9 @@ uniform vec4 u_transform;
 uniform float u_dpr;
 uniform float u_pointScale;
 uniform float u_gamma;
+// The largest point the context draws (ALIASED_POINT_SIZE_RANGE): the UI's own size cap is a
+// UX rule, and a sprite past this would otherwise be up to the driver.
+uniform float u_maxPointSize;
 ${MORPH_GLSL}
 ${RECORD_STYLE_GLSL}
 ${MARK_GLSL}
@@ -121,7 +169,7 @@ ${CAMERA_TO_CLIP_GLSL}
 
   // Depth is computed per-point on the CPU (opacity + legend z-order tie-break)
   gl_Position = vec4(clipSpace.x, -clipSpace.y, a_depth, 1.0);
-  gl_PointSize = max(1.0, pointSize * u_pointScale * u_dpr);
+  gl_PointSize = clamp(pointSize * u_pointScale * u_dpr, 1.0, u_maxPointSize);
 
   // Convert sRGB input to linear RGB for proper blending
   vec3 linearColor = pow(max(color.rgb, vec3(0.0)), vec3(u_gamma));
@@ -153,7 +201,10 @@ uniform int u_maxLabels;
 // fall through to its dominant color rather than sampling unallocated storage.
 uniform int u_labelAtlasCapacity;
 uniform float u_gamma;
+// The plot background, already linear, and what it sets (pointKnockoutUniforms, on the CPU).
 uniform vec3 u_knockoutColor;
+uniform float u_hollowFadeGain;
+uniform float u_lightRimBound;
 
 out vec4 fragColor;
 
@@ -171,10 +222,8 @@ const float HOLLOW_RING_DIAMETER_SHARE = 0.12;
 // The most of a glyph's depth the ring may take, so every shape keeps a hole; without it the
 // device-pixel floor closed the plus's thin arms.
 const float HOLLOW_RING_DEPTH_SHARE = 0.6;
-// A faded hollow marker (the points a selection, focus or EAT Dim fades) is a thin ring at a low
-// alpha. On white it stays readable; on a dark plot it all but vanishes, so there its alpha is
-// raised by this gain, up to HOLLOW_DARK_FADE_CEILING, still well under a shown point's.
-const float HOLLOW_DARK_FADE_GAIN = 2.5;
+// A faded hollow marker on a dark plot is raised by u_hollowFadeGain (HOLLOW_DARK_FADE_GAIN) up
+// to this, still well under a shown point's.
 const float HOLLOW_DARK_FADE_CEILING = 0.5;
 
 // Outline width. Two terms, and it needs both:
@@ -318,14 +367,10 @@ void main() {
   }
 
   // The knockout colour is the live plot background (white in light and in every export).
-  vec3 linearKnockoutColor = pow(max(u_knockoutColor, vec3(0.0)), vec3(u_gamma));
-  vec3 luma = vec3(0.2126, 0.7152, 0.0722);
-  float bgLum = dot(linearKnockoutColor, luma);
-  bool darkPlot = bgLum < 0.05;
-  // A faded hollow marker on a dark plot reads stronger (HOLLOW_DARK_FADE_GAIN).
+  // A faded hollow marker on a dark plot reads stronger (u_hollowFadeGain is 1 on a light one).
   float pointAlpha = v_color.a;
-  if (darkPlot && v_predicted > 0.5 && pointAlpha < HOLLOW_DARK_FADE_CEILING) {
-    pointAlpha = min(pointAlpha * HOLLOW_DARK_FADE_GAIN, HOLLOW_DARK_FADE_CEILING);
+  if (v_predicted > 0.5 && pointAlpha < HOLLOW_DARK_FADE_CEILING) {
+    pointAlpha = min(pointAlpha * u_hollowFadeGain, HOLLOW_DARK_FADE_CEILING);
   }
 
   // Darken near the edge to mimic a border/outline. Applied to BOTH filled dots and predicted
@@ -350,8 +395,8 @@ void main() {
     // On a dark plot, a point below 2:1 against the background (Kelly #222222 and #2B3D26,
     // Okabe-Ito #000000) gets a light rim instead, or nothing would bound it. A light background
     // (the light theme, every export) always takes the darkened rim.
-    float fgLum = dot(finalColor, luma);
-    bool lightRim = darkPlot && fgLum + 0.05 < 2.0 * (bgLum + 0.05);
+    float fgLum = dot(finalColor, vec3(0.2126, 0.7152, 0.0722));
+    bool lightRim = fgLum + 0.05 < u_lightRimBound;
     vec3 rim = lightRim ? mix(finalColor, vec3(0.55), 0.7) : finalColor * 0.5;
     finalColor = mix(finalColor, rim, outlineMix);
   }
@@ -361,7 +406,7 @@ void main() {
   // for reliability-faded points.
   float finalAlpha = mix(pointAlpha, PREDICTED_INTERIOR_FILL, predictedInterior) * shapeAlpha;
   vec3 premultipliedColor =
-    mix(finalColor * pointAlpha, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior) *
+    mix(finalColor * pointAlpha, u_knockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior) *
     shapeAlpha;
   fragColor = vec4(premultipliedColor, finalAlpha);
 }`;
