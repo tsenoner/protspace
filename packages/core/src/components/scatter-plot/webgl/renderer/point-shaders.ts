@@ -3,7 +3,13 @@
  * export: the point and gamma programs, and the camera, glide and record-table
  * snippets the density shaders reuse.
  */
-import { PLUS_ARM_RATIO } from '@protspace/utils';
+/**
+ * The plus's arm half-width over its radius, the SVG path's `PLUS_ARM_RATIO` from
+ * `@protspace/utils` (point-shaders.test.ts keeps the two equal). Written out rather than imported:
+ * the end-to-end harnesses load this module in Node, where the utils bundle (which pulls in d3)
+ * cannot be required.
+ */
+export const PLUS_ARM_RATIO = 0.42;
 
 /**
  * A faded hollow marker (the points a selection, focus or EAT Dim fades) is a thin ring at a low

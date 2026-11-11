@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { PLUS_ARM_RATIO as SVG_PLUS_ARM_RATIO } from '@protspace/utils';
 import {
   CAMERA_TO_CLIP_GLSL,
   GAMMA_FRAGMENT_SHADER,
+  PLUS_ARM_RATIO,
   POINT_FRAGMENT_SHADER,
   POINT_VERTEX_SHADER,
 } from './point-shaders';
+
+describe('the plus glyph', () => {
+  it("draws its arms as wide as the legend's and the export's SVG plus", () => {
+    expect(PLUS_ARM_RATIO).toBe(SVG_PLUS_ARM_RATIO);
+    expect(POINT_FRAGMENT_SHADER).toContain(`const float PLUS_ARM = ${PLUS_ARM_RATIO.toFixed(2)};`);
+  });
+});
 
 describe('gamma correction shader', () => {
   it('un-premultiplies before handing the frame to the compositor', () => {
