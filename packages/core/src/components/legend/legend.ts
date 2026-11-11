@@ -629,6 +629,9 @@ export class ProtspaceLegend extends LitElement {
       // (the file's category set). Without this, _visibleValues uses the default items
       // built during loadNewData(), which may have a different visible set than the file.
       this._legendItems = [];
+      // The slots and colours of that default build go too: a category the file does not colour
+      // would otherwise keep its default colour even when the file gives it to another category.
+      this._processorContext.slotTracker.reset();
       this._data.rebuildItems();
     }
   }

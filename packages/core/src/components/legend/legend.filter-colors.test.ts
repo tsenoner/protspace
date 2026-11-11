@@ -10,6 +10,7 @@ import {
 } from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 import { LEGEND_VALUES } from './config';
+import { createDefaultSettings } from './legend-helpers';
 
 vi.stubGlobal('localStorage', createLocalStorageMock());
 
@@ -193,5 +194,31 @@ describe('a category keeps its colour through filters', () => {
     await settleLegend(legend);
 
     expect(colors(legend).K).toBe(original.B);
+  });
+});
+
+describe("a bundle's stored colours", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('a category the bundle does not colour takes a colour no stored category holds', async () => {
+    const { legend } = await filterableSetup(TWELVE, 'family');
+    const defaults = colors(legend);
+
+    // A bundle styled for A alone, in the colour B had before it was opened (as `protspace style`
+    // writes one): B, coloured by nothing stored, must not keep that colour from the default build.
+    legend.setFileSettings({
+      family: {
+        ...createDefaultSettings('family'),
+        categories: { A: { zOrder: 0, color: defaults.B, shape: 'circle' } },
+      },
+    });
+    await settleLegend(legend);
+
+    const shown = colors(legend);
+    expect(shown.A).toBe(defaults.B);
+    expect(new Set(Object.values(shown)).size).toBe(Object.keys(shown).length);
   });
 });
