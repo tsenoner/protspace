@@ -10,9 +10,8 @@
 import {
   captureVariants,
   DEFAULT_VIDEO_BUDGET,
+  outputFiles,
   THEMES,
-  VIDEO_FILES,
-  variantStem,
   viewportSize,
   type CaptureEntry,
 } from './capture-plan';
@@ -168,29 +167,39 @@ function imageFile(page: string, src: string): string | null {
 const pixels = (value: string | null): number | null =>
   value !== null && /^\d+$/.test(value) ? Number(value) : null;
 
-/** The `<DocsVideo>` tags on `page`, in page order. */
-export function videoTags(page: DocsPage): VideoTag[] {
-  const tags: VideoTag[] = [];
+/** Something found on a page, with the column it starts at on its line, to sort a line by. */
+interface Placed<T> {
+  at: number;
+  item: T;
+}
+
+/** The `<DocsVideo>` tags on `page`, in page order, each with its column. */
+function placedVideoTags(page: DocsPage): Placed<VideoTag>[] {
+  const tags: Placed<VideoTag>[] = [];
   prose(page.text).forEach((raw, index) => {
     for (const match of withoutInlineCode(raw).matchAll(DOCS_VIDEO)) {
-      tags.push({
+      const item: VideoTag = {
         page: page.path,
         name: attribute(match[0], 'name'),
         alt: attribute(match[0], 'alt'),
         width: pixels(attribute(match[0], 'width')),
         height: pixels(attribute(match[0], 'height')),
         line: index + 1,
-      });
+      };
+      tags.push({ at: match.index ?? 0, item });
     }
   });
   return tags;
 }
 
+/** The `<DocsVideo>` tags on `page`, in page order. */
+export function videoTags(page: DocsPage): VideoTag[] {
+  return placedVideoTags(page).map(({ item }) => item);
+}
+
 /** A video's files for both themes: `zoom.webm`, `zoom.mp4`, `zoom.jpg`, `zoom-dark.webm`, … */
 export function videoFiles(name: string): string[] {
-  return THEMES.flatMap((theme) =>
-    VIDEO_FILES.map((extension) => `${variantStem(name, theme)}.${extension}`),
-  );
+  return THEMES.flatMap((theme) => outputFiles(name, 'video', theme));
 }
 
 /**
@@ -198,35 +207,24 @@ export function videoFiles(name: string): string[] {
  * each `<DocsVideo>`.
  */
 export function imageRefs(page: DocsPage): ImageRef[] {
-  const refs: ImageRef[] = [];
+  const found = placedVideoTags(page).flatMap(({ at, item: tag }): Placed<ImageRef>[] => {
+    if (tag.name === null) return [];
+    const video = { width: tag.width, height: tag.height };
+    return videoFiles(tag.name).map(
+      (file): Placed<ImageRef> => ({
+        at,
+        item: { page: page.path, file, classes: [], lazy: true, line: tag.line, video },
+      }),
+    );
+  });
   prose(page.text).forEach((raw, index) => {
     const text = withoutInlineCode(raw);
-    const found: Array<{ at: number; ref: ImageRef }> = [];
-    for (const match of text.matchAll(DOCS_VIDEO)) {
-      const name = attribute(match[0], 'name');
-      if (name === null) continue;
-      const video = {
-        width: pixels(attribute(match[0], 'width')),
-        height: pixels(attribute(match[0], 'height')),
-      };
-      for (const file of videoFiles(name)) {
-        const ref: ImageRef = {
-          page: page.path,
-          file,
-          classes: [],
-          lazy: true,
-          line: index + 1,
-          video,
-        };
-        found.push({ at: match.index ?? 0, ref });
-      }
-    }
     for (const match of text.matchAll(MD_IMAGE)) {
       const file = imageFile(page.path, match[1]);
       if (file === null) continue;
       const classes = [...(match[2] ?? '').matchAll(/\.([\w-]+)/g)].map((m) => m[1]);
-      const ref = { page: page.path, file, classes, lazy: true, line: index + 1 };
-      found.push({ at: match.index ?? 0, ref });
+      const item = { page: page.path, file, classes, lazy: true, line: index + 1 };
+      found.push({ at: match.index ?? 0, item });
     }
     for (const match of text.matchAll(HTML_IMG)) {
       const src = attribute(match[0], 'src');
@@ -239,11 +237,10 @@ export function imageRefs(page: DocsPage): ImageRef[] {
       if (attribute(match[0], 'width') !== null && attribute(match[0], 'height') === null) {
         ref.heightless = true;
       }
-      found.push({ at: match.index ?? 0, ref });
+      found.push({ at: match.index ?? 0, item: ref });
     }
-    found.sort((a, b) => a.at - b.at).forEach(({ ref }) => refs.push(ref));
   });
-  return refs;
+  return found.sort((a, b) => a.item.line - b.item.line || a.at - b.at).map(({ item }) => item);
 }
 
 /** VitePress's slugify (vitepress 1.6), applied to a heading's text without its markup. */
@@ -500,19 +497,17 @@ export function lintDocs(pages: readonly DocsPage[], files: readonly ImageFile[]
 
 /** The files the manifest writes, with each one's budget, frame size and pages. */
 export function manifestOutputs(entries: readonly CaptureEntry[]): MediaOutput[] {
-  return entries.flatMap((entry) =>
-    captureVariants([entry]).flatMap((variant) =>
-      variant.files.map((file) => {
-        const output: MediaOutput = { file, docs: entry.docs };
-        if (entry.kind === 'video' && !file.endsWith('.jpg')) {
-          output.budgetBytes = entry.budgetBytes ?? DEFAULT_VIDEO_BUDGET;
-        }
-        if (entry.kind === 'video' && file === `${entry.name}.webm`) {
-          output.size = viewportSize(entry.viewport);
-        }
-        return output;
-      }),
-    ),
+  return captureVariants(entries).flatMap(({ entry, files }) =>
+    files.map((file) => {
+      const output: MediaOutput = { file, docs: entry.docs };
+      if (entry.kind === 'video' && !file.endsWith('.jpg')) {
+        output.budgetBytes = entry.budgetBytes ?? DEFAULT_VIDEO_BUDGET;
+      }
+      if (entry.kind === 'video' && file === `${entry.name}.webm`) {
+        output.size = viewportSize(entry.viewport);
+      }
+      return output;
+    }),
   );
 }
 
