@@ -486,3 +486,17 @@ export function displayAnnotationValue(
 ): string {
   return annotationValueLabel(column, value) ?? toDisplayValue(value, otherItemsCount);
 }
+
+/**
+ * What a search for this value matches, lower-cased: the name it is shown under, and, for a
+ * value the registry names, the value itself too (TED's `-` is found by "No CATH label" and by
+ * `-`). `name` is that shown name, {@link displayAnnotationValue} unless given.
+ */
+export function annotationValueSearchKey(
+  column: string,
+  value: string,
+  name: string = displayAnnotationValue(column, value),
+): string {
+  const named = annotationValueLabel(column, value) !== undefined;
+  return (named ? `${name}\n${value}` : name).toLowerCase();
+}
