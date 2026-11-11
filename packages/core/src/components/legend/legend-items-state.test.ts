@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { COLOR_SCHEMES, type LegendPersistedSettings } from '@protspace/utils';
+import type { LegendPersistedSettings } from '@protspace/utils';
 import { LEGEND_VALUES, NA_VALUE } from './config';
 import {
   applyDerivedNumericColors,
   applyNumericDisplayLabels,
-  applyPaletteColors,
   displayedOrder,
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
@@ -202,33 +201,6 @@ describe('reorderByValues', () => {
 
   it('adds no Other when the legend has none', () => {
     expect(values(reorderByValues([item('A', 0), item('B', 1)], ['B', 'A']))).toEqual(['B', 'A']);
-  });
-});
-
-describe('applyPaletteColors', () => {
-  it('colours rows by their position in the palette and leaves Other and N/A alone', () => {
-    const palette = COLOR_SCHEMES.okabeIto;
-    const coloured = applyPaletteColors(
-      [
-        item('A', 0),
-        item(OTHER, 1, { color: '#888888' }),
-        item('B', 2),
-        item(NA_VALUE, 3, { color: '#cccccc' }),
-      ],
-      'okabeIto',
-    );
-    expect(coloured.map((each) => each.color)).toEqual([
-      palette[0],
-      '#888888',
-      palette[2],
-      '#cccccc',
-    ]);
-  });
-
-  it('falls back to kellys for an unknown palette', () => {
-    expect(applyPaletteColors([item('A', 0)], 'no-such-palette')[0].color).toBe(
-      COLOR_SCHEMES.kellys[0],
-    );
   });
 });
 

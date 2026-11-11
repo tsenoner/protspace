@@ -154,6 +154,10 @@ Applying a filter is a step you can undo with **⌘ Z** (Mac) / **Ctrl + Z**, an
 ✕ on the plot's **Filtered** chip (**Remove filter**) does the same from the plot. Either way a
 **Filter removed** notification offers **Undo**, which brings the filter back.
 
+A filter never changes a category's color. While it is applied, the legend lists only the
+categories with matching proteins, and the others keep their colors for when the filter is
+removed.
+
 ## On a phone
 
 The menus and the value list open as sheets from the bottom of the screen, and **Group these?** is

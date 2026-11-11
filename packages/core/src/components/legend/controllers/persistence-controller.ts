@@ -45,6 +45,10 @@ export interface PersistenceCallbacks {
   shouldPersistCategoryEncodings: () => boolean;
   /** Returns true when the currently selected annotation is numeric (NA visuals are locked). */
   isNumericAnnotation?: () => boolean;
+  /** True while a filter or an isolation narrows the view, so some categories have no row. */
+  isViewConstrained?: () => boolean;
+  /** The values in the Other bucket of the current view. */
+  getOtherValues?: () => string[];
   getCurrentSettings: () => {
     maxVisibleValues: number;
     shapeSize: number;
@@ -291,7 +295,43 @@ export class PersistenceController
     if (!this.callbacks.shouldPersistCategories()) {
       return {};
     }
+    return this.withHeldBackCategories(this._categoriesFromItems());
+  }
 
+  /**
+   * The stored categories a constrained view leaves out (neither a row nor in Other), kept with
+   * their colours and places next to `categories`, the ones it shows. Without them a save under
+   * a filter would forget the colour and place of every category the filter hides. The kept
+   * ones hold their places in the stored order, the shown ones fill the rest in their own order,
+   * and the places are numbered 0..n-1. Outside a constrained view `categories` is returned.
+   */
+  withHeldBackCategories(
+    categories: Record<string, PersistedCategoryData>,
+  ): Record<string, PersistedCategoryData> {
+    if (!this.callbacks.isViewConstrained?.() || !this.callbacks.shouldPersistCategories()) {
+      return categories;
+    }
+    const inOther = new Set(this.callbacks.getOtherValues?.() ?? []);
+    const isHeldBack = (value: string) => !(value in categories) && !inOther.has(value);
+    const byPlace = (
+      a: [string, PersistedCategoryData],
+      b: [string, PersistedCategoryData],
+    ): number => a[1].zOrder - b[1].zOrder;
+    const stored = Object.entries(this._pendingCategories).sort(byPlace);
+    if (!stored.some(([value]) => isHeldBack(value))) return categories;
+
+    const shown = Object.entries(categories).sort(byPlace);
+    const merged: Array<[string, PersistedCategoryData]> = [];
+    let next = 0;
+    for (const entry of stored) {
+      if (isHeldBack(entry[0])) merged.push(entry);
+      else if (entry[0] in categories && next < shown.length) merged.push(shown[next++]);
+    }
+    merged.push(...shown.slice(next));
+    return Object.fromEntries(merged.map(([value, data], zOrder) => [value, { ...data, zOrder }]));
+  }
+
+  private _categoriesFromItems(): Record<string, PersistedCategoryData> {
     const legendItems = this.callbacks.getLegendItems();
     const persistCategoryEncodings = this.callbacks.shouldPersistCategoryEncodings();
     const isNumeric = this.callbacks.isNumericAnnotation?.() ?? false;

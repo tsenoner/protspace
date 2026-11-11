@@ -1,5 +1,6 @@
 import type { AnnotationData } from '@protspace/utils';
 import {
+  DEFAULT_CATEGORICAL_PALETTE_ID,
   getProteinAnnotationCount,
   getProteinAnnotationIndexAt,
   isCsrAnnotationData,
@@ -89,12 +90,38 @@ function binsInProteinOrder(
   return order;
 }
 
+/** What `createLegendItems` needs to know about the view besides its rows. */
+interface LegendItemsViewOptions {
+  /**
+   * A filter or an isolation narrows the view. Its rows keep their slots, and so do the
+   * categories it leaves out: a slot is freed only in an unconstrained view.
+   */
+  constrained?: boolean;
+  /** The values the view counted. A stored colour of a value it left out stays taken. */
+  presentValues?: ReadonlySet<string>;
+  /** The categorical palette that colours each slot. */
+  paletteId?: string;
+}
+
+/** What `processLegendItems` needs besides the counted view. */
+interface LegendProcessOptions {
+  /** The categorical palette that colours each slot. */
+  paletteId?: string;
+  /**
+   * The counts without the filter or isolation. A constrained view of an annotation that has no
+   * slots yet (just selected, or Reset) takes its slots from these, so each category gets the
+   * colour the unfiltered view gives it. Called only then.
+   */
+  unfilteredFrequencies?: () => ReadonlyMap<string, number>;
+}
+
 /**
  * Processes legend data with slot-based visual encoding.
  *
  * Slot assignment:
  * - Initial: slots 0, 1, 2, ... assigned by frequency (most frequent = slot 0)
- * - Subsequent: existing slots persist; only freed when items move to "Other"
+ * - Subsequent: existing slots persist; only freed when items move to "Other" in an
+ *   unconstrained view. A filter or isolation frees none, so it never recolours a category.
  * - Extracted items reuse freed slots or get the next available
  *
  * Note: All methods that need slot tracking now require a context parameter
@@ -384,7 +411,9 @@ export class LegendDataProcessor {
     passedZOrders: Map<string, number> = new Map(),
     persistedCategories: Record<string, PersistedCategoryData> = {},
     isNumericSource: boolean = false,
+    view: LegendItemsViewOptions = {},
   ): LegendItem[] {
+    const { constrained = false, presentValues, paletteId = DEFAULT_CATEGORICAL_PALETTE_ID } = view;
     // Use passed zOrders if available, otherwise extract from existingLegendItems. Other's own
     // zOrder is never read: it always goes last.
     let existingZOrders: Map<string, number>;
@@ -411,13 +440,11 @@ export class LegendDataProcessor {
 
     if (ctx.slotTracker.isEmpty()) {
       ctx.slotTracker.reassignSlots(visibleCategoryNames);
-    } else {
+    } else if (!constrained) {
+      // Every category holding a slot without a row went to Other: its slot is free again. A
+      // constrained view frees none, so a category it leaves out keeps its colour.
       const currentVisibleSet = new Set(visibleCategoryNames);
-      const previousVisible = existingLegendItems
-        .filter((i) => i.value !== LEGEND_VALUES.OTHER)
-        .map((i) => toDisplayValue(i.value));
-
-      for (const category of previousVisible) {
+      for (const category of ctx.slotTracker.assignedCategories()) {
         if (!currentVisibleSet.has(category)) {
           ctx.slotTracker.freeSlot(category);
         }
@@ -449,12 +476,18 @@ export class LegendDataProcessor {
       }
     }
 
-    // Pre-scan: collect colors already claimed by items with persisted or existing values
-    const claimedColors = new Set<string>();
+    // Pre-scan: collect colors already claimed by items with persisted or existing values, and
+    // by categories holding a slot or a stored colour that the view leaves out.
+    const claimedColors = new Set<string>(ctx.slotTracker.rememberedColors());
     for (const [value] of topItems) {
       const persisted = persistedCategories[value];
       const existing = existingColors.get(value);
       claimedColors.add((persisted?.color || existing?.color) ?? '');
+    }
+    if (presentValues) {
+      for (const [value, persisted] of Object.entries(persistedCategories)) {
+        if (persisted.color && !presentValues.has(value)) claimedColors.add(persisted.color);
+      }
     }
 
     const keepsZOrder = sortMode === 'manual';
@@ -463,7 +496,7 @@ export class LegendDataProcessor {
       const zOrder = keepsZOrder ? (existingZOrders.get(value) ?? index) : index;
       const slot = ctx.slotTracker.getSlot(displayName);
 
-      let encoding = getVisualEncoding(slot, displayName);
+      let encoding = getVisualEncoding(slot, displayName, paletteId);
 
       // Numeric NA is locked: ignore persisted/existing overrides, force defaults.
       if (isNumericSource && isNAValue(value)) {
@@ -477,9 +510,10 @@ export class LegendDataProcessor {
         };
       }
 
-      // Priority: persisted > existing > default encoding (with conflict resolution)
+      // Priority: persisted > existing > remembered > default encoding (with conflict resolution)
       const persisted = persistedCategories[value];
       const existing = existingColors.get(value);
+      const remembered = ctx.slotTracker.rememberedColor(displayName);
 
       if (persisted?.color || persisted?.shape) {
         encoding = {
@@ -488,6 +522,8 @@ export class LegendDataProcessor {
         };
       } else if (existing) {
         encoding = { color: existing.color, shape: encoding.shape };
+      } else if (remembered) {
+        encoding = { color: remembered, shape: encoding.shape };
       } else {
         // Default encoding — categorical NA gets NA_DEFAULT_COLOR instead of slot color.
         let { color, shape } = encoding;
@@ -500,15 +536,16 @@ export class LegendDataProcessor {
           // Probe subsequent slots for an unclaimed color (cap at 30 to exceed
           // Kelly's 21-color palette and guarantee termination)
           let altSlot = slot + 1;
-          color = getVisualEncoding(altSlot, displayName).color;
+          color = getVisualEncoding(altSlot, displayName, paletteId).color;
           while (claimedColors.has(color) && altSlot < slot + 30) {
             altSlot++;
-            color = getVisualEncoding(altSlot, displayName).color;
+            color = getVisualEncoding(altSlot, displayName, paletteId).color;
           }
         }
         encoding = { color, shape };
         claimedColors.add(color);
       }
+      ctx.slotTracker.rememberColor(displayName, encoding.color);
 
       return {
         value,
@@ -560,6 +597,7 @@ export class LegendDataProcessor {
     pendingExtract?: string,
     pendingMerge?: string,
     isNumericSource: boolean = false,
+    options: LegendProcessOptions = {},
   ): { legendItems: LegendItem[]; otherItems: OtherItem[] } {
     this.resetIfAnnotationChanged(ctx, annotationName);
 
@@ -581,6 +619,29 @@ export class LegendDataProcessor {
     // "Your order". A numeric one re-derives from its manual bin ids each pass.
     const orderMode: LegendSortMode =
       sortMode === 'manual-reverse' && !isNumericSource ? 'manual' : sortMode;
+
+    // A constrained view of an annotation with no slots yet takes them from the unfiltered view,
+    // so a category's colour does not depend on the filter it was first seen under.
+    if (
+      isolationMode &&
+      !isNumericSource &&
+      ctx.slotTracker.isEmpty() &&
+      options.unfilteredFrequencies
+    ) {
+      const seedVisible =
+        visibleValues.size > 0 ? visibleValues : new Set(Object.keys(persistedCategories));
+      const { topItems: unfilteredTop } = this.sortAndLimitItems(
+        options.unfilteredFrequencies(),
+        maxVisibleValues,
+        false,
+        orderMode,
+        existingZOrders,
+        seedVisible,
+        numericOrderValues,
+        useOtherBucket,
+      );
+      ctx.slotTracker.reassignSlots(unfilteredTop.map(([value]) => toDisplayValue(value)));
+    }
 
     const { topItems, otherItems, otherCount } = this.sortAndLimitItems(
       frequencyMap,
@@ -605,10 +666,14 @@ export class LegendDataProcessor {
       new Map(existingZOrders),
       persistedCategories,
       isNumericSource,
+      {
+        constrained: isolationMode,
+        presentValues: new Set(frequencyMap.keys()),
+        paletteId: options.paletteId,
+      },
     );
 
-    // The palette colours rows by list position: list a reversed order bottom-up, as its sort
-    // did before, so each row keeps the colour it had in "Your order". Other stays last.
+    // List a reversed order bottom-up, as its sort did before. Other stays last.
     if (orderMode !== sortMode) {
       const isOther = (item: LegendItem) => Number(item.value === LEGEND_VALUES.OTHER);
       items.sort((a, b) => isOther(a) - isOther(b) || b.zOrder - a.zOrder);
@@ -629,5 +694,44 @@ export class LegendDataProcessor {
     }
 
     return { legendItems: items, otherItems: filteredOther };
+  }
+
+  /**
+   * The palette's colour for the slot a category holds, or undefined while it holds none.
+   * `value` is internal (N/A is '__NA__').
+   */
+  static slotColor(
+    ctx: LegendProcessorContext,
+    value: string,
+    paletteId: string,
+  ): string | undefined {
+    const displayName = toDisplayValue(value);
+    const slot = ctx.slotTracker.peekSlot(displayName);
+    return slot === undefined ? undefined : getVisualEncoding(slot, displayName, paletteId).color;
+  }
+
+  /**
+   * A palette pick: each row takes the palette's colour for its slot, so colours follow the
+   * categories, not the rows' positions. Other and N/A keep theirs. Every category holding a
+   * slot remembers its new colour, the ones the view leaves out too.
+   */
+  static recolorBySlot(
+    ctx: LegendProcessorContext,
+    items: readonly LegendItem[],
+    paletteId: string,
+  ): LegendItem[] {
+    const recolored = items.map((item) => {
+      if (item.value === LEGEND_VALUES.OTHER || isNAValue(item.value)) return item;
+      const displayName = toDisplayValue(item.value);
+      const slot = ctx.slotTracker.getSlot(displayName);
+      return { ...item, color: getVisualEncoding(slot, displayName, paletteId).color };
+    });
+    const naName = toDisplayValue(NA_VALUE);
+    for (const category of ctx.slotTracker.assignedCategories()) {
+      if (category === naName) continue;
+      const slot = ctx.slotTracker.peekSlot(category)!;
+      ctx.slotTracker.rememberColor(category, getVisualEncoding(slot, category, paletteId).color);
+    }
+    return recolored;
   }
 }

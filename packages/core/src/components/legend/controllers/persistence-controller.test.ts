@@ -199,6 +199,60 @@ describe('PersistenceController', () => {
     });
   });
 
+  describe('saving while a filter hides categories', () => {
+    const stored = {
+      a: { zOrder: 0, color: '#aa0000', shape: 'circle' },
+      b: { zOrder: 1, color: '#bb0000', shape: 'square' },
+      c: { zOrder: 2, color: '#cc0000', shape: 'circle' },
+      d: { zOrder: 3, color: '#dd0000', shape: 'circle' },
+    };
+
+    beforeEach(() => {
+      controller.updateDatasetHash(['protein1']);
+      controller.updateSelectedAnnotation('annotation1');
+      controller.setPendingCategories({ ...stored });
+    });
+
+    const save = (items: LegendItem[], constrained: boolean, other: string[] = []) => {
+      mockCallbacks.getLegendItems = vi.fn().mockReturnValue(items);
+      mockCallbacks.isViewConstrained = () => constrained;
+      mockCallbacks.getOtherValues = () => other;
+      controller.saveSettings();
+      return vi.mocked(setStorageItem).mock.lastCall?.[1] as {
+        categories: Record<string, { zOrder: number; color: string }>;
+      };
+    };
+
+    it('keeps the colour, shape and place of each category the filter hides', () => {
+      // The filter shows c and a, c first; b and d have no row.
+      const saved = save(
+        [
+          { ...createTestItem('c', 0), color: '#123456' },
+          { ...createTestItem('a', 1), color: '#aa0000' },
+        ],
+        true,
+      );
+
+      expect(saved.categories).toEqual({
+        c: { zOrder: 0, color: '#123456', shape: 'circle' },
+        b: stored.b,
+        a: { zOrder: 2, color: '#aa0000', shape: 'circle' },
+        d: stored.d,
+      });
+      expect(controller.pendingCategories).toEqual(saved.categories);
+    });
+
+    it('drops a category the filtered view holds in Other', () => {
+      const saved = save([createTestItem('a', 0)], true, ['b']);
+      expect(Object.keys(saved.categories)).toEqual(['a', 'c', 'd']);
+    });
+
+    it('stores only the rows outside a filter, as before', () => {
+      const saved = save([createTestItem('a', 0)], false);
+      expect(Object.keys(saved.categories)).toEqual(['a']);
+    });
+  });
+
   describe('saveSettings', () => {
     it('does nothing without storage key', () => {
       controller.saveSettings();

@@ -6,14 +6,11 @@ import {
   normalizeNumericPaletteId,
   type PointShape,
 } from '@protspace/utils';
-import { LEGEND_DEFAULTS, LEGEND_EVENTS, LEGEND_VALUES } from '../config';
+import { LEGEND_DEFAULTS, LEGEND_EVENTS, LEGEND_VALUES, isNAValue } from '../config';
 import type { ProtspaceLegend } from '../legend';
 import { calculatePointSize, defaultShapeSize, getDefaultSortMode } from '../legend-helpers';
-import {
-  applyPaletteColors,
-  normalizeCategoricalPaletteId,
-  normalizeSortModeForType,
-} from '../legend-items-state';
+import { LegendDataProcessor } from '../legend-data-processor';
+import { normalizeCategoricalPaletteId, normalizeSortModeForType } from '../legend-items-state';
 import type { LegendDisplaySettings, LegendItem, PersistedCategoryData } from '../types';
 
 /**
@@ -87,12 +84,14 @@ export class SettingsController {
         this.host._selectedPaletteId = numeric.paletteId;
       } else {
         this.host._selectedPaletteId = normalizeCategoricalPaletteId(patch.paletteId);
-        this.host._legendItems = applyPaletteColors(
+        // By slot, not by row: a later filter or sort keeps each category's colour.
+        this.host._legendItems = LegendDataProcessor.recolorBySlot(
+          this.host._processorContext,
           this.host._legendItems,
           this.host._selectedPaletteId,
         );
         // Ahead of the update below, which keeps stored colours over palette ones.
-        this.syncColorsToPersistence();
+        this.syncColorsToPersistence(this.host._selectedPaletteId);
       }
     }
     if (numeric && patch.numericStrategy !== undefined) numeric.strategy = patch.numericStrategy;
@@ -328,7 +327,11 @@ export class SettingsController {
     this.host.requestUpdate();
   }
 
-  private syncColorsToPersistence(): void {
+  /**
+   * Stores the rows' colours, shapes and places, keeping the ones a filter hides. With
+   * `paletteId` (a palette pick) the hidden ones take that palette's colour for their slot.
+   */
+  private syncColorsToPersistence(paletteId?: string): void {
     const categories: Record<string, PersistedCategoryData> = {};
     const persistVisualEncodings = !this.host._isCurrentAnnotationNumeric();
     this.host._legendItems.forEach((item) => {
@@ -340,6 +343,14 @@ export class SettingsController {
         };
       }
     });
-    this.host._persistenceController.setPendingCategories(categories);
+    const kept = this.host._persistenceController.withHeldBackCategories(categories);
+    if (paletteId) {
+      for (const [value, data] of Object.entries(kept)) {
+        if (value in categories || !data.color || isNAValue(value)) continue;
+        const color = LegendDataProcessor.slotColor(this.host._processorContext, value, paletteId);
+        if (color) kept[value] = { ...data, color };
+      }
+    }
+    this.host._persistenceController.setPendingCategories(kept);
   }
 }

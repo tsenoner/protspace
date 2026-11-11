@@ -86,8 +86,9 @@ describe('legend settings stored before phase 3', () => {
     expect(hiddenRows(legend)).toEqual(['C']);
     for (const [rank, value] of [...'ABCDEFGH'].entries()) {
       const path = symbolPath(legend, value);
-      // Okabe-Ito colours every row by its rank; B, D and F's custom colours give way to it.
-      expect(path.getAttribute('fill')).toBe(OKABE_ITO[rank]);
+      // Stored colours win: Okabe-Ito by rank, and B, D and F keep their custom colours.
+      expect(path.getAttribute('fill')).toBe(seed.categories[value].color);
+      if (!'BDF'.includes(value)) expect(path.getAttribute('fill')).toBe(OKABE_ITO[rank]);
       // Their custom shapes stay.
       expect(path.getAttribute('d')).toBe(
         SHAPE_PATH_GENERATORS[seed.categories[value].shape](LEGEND_STYLES.legendDisplaySize),
@@ -111,15 +112,8 @@ describe('legend settings stored before phase 3', () => {
     expect(written.hiddenValues).toEqual(seed.hiddenValues);
     expect(written.enableDuplicateStackUI).toBe(seed.enableDuplicateStackUI);
     expect(written.selectedPaletteId).toBe(seed.selectedPaletteId);
-    // Same zOrders and shapes; every colour is the Okabe-Ito colour the row shows.
-    expect(written.categories).toEqual(
-      Object.fromEntries(
-        [...'ABCDEFGH'].map((value, rank) => [
-          value,
-          { ...seed.categories[value], color: OKABE_ITO[rank] },
-        ]),
-      ),
-    );
+    // Same zOrders, colours and shapes: a rebuild no longer paints the palette over them.
+    expect(written.categories).toEqual(seed.categories);
   });
 
   it('opens a record saved with the retired By separation sort by count, keeping the rest', async () => {

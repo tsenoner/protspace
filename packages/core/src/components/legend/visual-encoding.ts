@@ -11,11 +11,9 @@
  * - Slot recycling ensures extracted items get available slots
  */
 
-import { COLOR_SCHEMES } from '@protspace/utils';
+import { DEFAULT_CATEGORICAL_PALETTE_ID, getColorSchemeStops } from '@protspace/utils';
 import { LEGEND_VALUES } from './config';
 import { NEUTRAL_VALUE_COLOR } from '../scatter-plot/config';
-
-const KELLYS_COLORS = COLOR_SCHEMES.kellys;
 
 /** Special slot values for reserved categories */
 export const SPECIAL_SLOTS = {
@@ -42,13 +40,17 @@ interface VisualEncoding {
  * NA color is NOT special-cased here — that's the legend processor's job.
  * This function only knows about "Other" (fixed) vs slot-indexed regulars.
  */
-export function getVisualEncoding(slot: number, categoryName?: string): VisualEncoding {
+export function getVisualEncoding(
+  slot: number,
+  categoryName?: string,
+  paletteId: string = DEFAULT_CATEGORICAL_PALETTE_ID,
+): VisualEncoding {
   if (categoryName === LEGEND_VALUES.OTHER) {
     return { color: OTHER_COLOR, shape: 'circle' };
   }
 
-  const color = KELLYS_COLORS[slot % KELLYS_COLORS.length];
-  return { color, shape: 'circle' };
+  const palette = getColorSchemeStops(paletteId);
+  return { color: palette[slot % palette.length], shape: 'circle' };
 }
 
 /**
@@ -58,6 +60,9 @@ export function getVisualEncoding(slot: number, categoryName?: string): VisualEn
  * 1. Assigning slots 0, 1, 2, ... to visible items in order
  * 2. Tracking freed slots when items move to Others
  * 3. Reusing lowest freed slot for newly visible/extracted items
+ *
+ * A category a filter or an isolation leaves out keeps its slot, and the colour it last had,
+ * until it goes to Other: no other category can take that colour meanwhile.
  */
 export class SlotTracker {
   /** Map from category name to assigned slot */
@@ -66,6 +71,8 @@ export class SlotTracker {
   private freedSlots: number[] = [];
   /** Next slot to assign if no freed slots available */
   private nextSlot = 0;
+  /** The colour each category holding a slot last had, by category name. */
+  private colors = new Map<string, string>();
 
   /**
    * Get or assign a slot for a category.
@@ -106,6 +113,7 @@ export class SlotTracker {
     }
 
     const slot = this.slots.get(categoryName);
+    this.colors.delete(categoryName);
     if (slot !== undefined) {
       this.slots.delete(categoryName);
       // Insert into freed slots maintaining sorted order
@@ -147,6 +155,9 @@ export class SlotTracker {
     }
 
     // Update state
+    for (const category of this.colors.keys()) {
+      if (!newSlots.has(category)) this.colors.delete(category);
+    }
     this.slots = newSlots;
     this.nextSlot = slotIndex;
 
@@ -161,6 +172,32 @@ export class SlotTracker {
     this.slots.clear();
     this.freedSlots = [];
     this.nextSlot = 0;
+    this.colors.clear();
+  }
+
+  /** The slot a category holds, without assigning one. */
+  peekSlot(categoryName: string): number | undefined {
+    return this.slots.get(categoryName);
+  }
+
+  /** The categories holding a slot. */
+  assignedCategories(): string[] {
+    return [...this.slots.keys()];
+  }
+
+  /** Remember the colour a category holding a slot was given. */
+  rememberColor(categoryName: string, color: string): void {
+    if (this.slots.has(categoryName)) this.colors.set(categoryName, color);
+  }
+
+  /** The colour a category last had while holding its slot. */
+  rememberedColor(categoryName: string): string | undefined {
+    return this.colors.get(categoryName);
+  }
+
+  /** Every remembered colour: taken, even by a category the current view leaves out. */
+  rememberedColors(): Iterable<string> {
+    return this.colors.values();
   }
 
   /**

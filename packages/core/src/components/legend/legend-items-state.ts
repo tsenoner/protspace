@@ -1,6 +1,5 @@
 import {
   DEFAULT_CATEGORICAL_PALETTE_ID,
-  COLOR_SCHEMES,
   getNumericBinLabelMap,
   isGradientPalette,
   resolveNumericAnnotationDisplaySettings,
@@ -132,14 +131,6 @@ export function displayedOrder(sorted: readonly LegendItem[], isNumeric: boolean
   return sorted
     .map((each) => each.value)
     .filter((value) => (isNumeric ? !isSpecial(value) : value !== LEGEND_VALUES.OTHER));
-}
-
-/** A categorical palette over the rows by position; Other and N/A keep their fixed colours. */
-export function applyPaletteColors(items: readonly LegendItem[], paletteId: string): LegendItem[] {
-  const palette = COLOR_SCHEMES[paletteId as keyof typeof COLOR_SCHEMES] || COLOR_SCHEMES.kellys;
-  return items.map((each, index) =>
-    isSpecial(each.value) ? each : { ...each, color: palette[index % palette.length] },
-  );
 }
 
 /** Each numeric bin's label from the annotation; Other, N/A and unknown ids keep theirs. */

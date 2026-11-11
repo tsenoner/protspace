@@ -1,5 +1,4 @@
 import {
-  DEFAULT_CATEGORICAL_PALETTE_ID,
   DEFAULT_NUMERIC_STRATEGY,
   annotationCategoryScores,
   getNumericBinLabelMap,
@@ -26,7 +25,6 @@ import {
 import {
   applyDerivedNumericColors,
   applyNumericDisplayLabels,
-  applyPaletteColors,
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
   numericOrderFromItems,
@@ -198,8 +196,12 @@ export class LegendDataController {
    * cheaper than the array scan it replaces, and it depends on the isolation
    * state, which changes independently of the storage.
    */
-  private computeAnnotationCounts(knownValues: string[]): ReadonlyMap<string, number> {
-    const isolating = this.host.isolationMode && this.host.isolationHistory?.length > 0;
+  private computeAnnotationCounts(
+    knownValues: string[],
+    unfiltered = false,
+  ): ReadonlyMap<string, number> {
+    const isolating =
+      !unfiltered && this.host.isolationMode && this.host.isolationHistory?.length > 0;
     const filteredIndices = isolating
       ? LegendDataProcessor.getFilteredIndices(
           true,
@@ -249,6 +251,10 @@ export class LegendDataController {
       this.host.isolationMode ? this.host._preIsolationVisibleValues : new Set<string>(),
       getNumericBinLowerBoundMap(this.host.annotationData),
       true,
+      undefined,
+      undefined,
+      false,
+      { unfilteredFrequencies: () => this.computeAnnotationCounts([], true) },
     );
     return legendItems;
   }
@@ -357,13 +363,22 @@ export class LegendDataController {
       // When none of these apply (true initial load), use empty set so maxVisibleValues is respected.
       const hasPendingOps = pendingExtract !== undefined || pendingMerge !== undefined;
       const hasExistingItems = this.host._legendItems.some((i) => i.value !== LEGEND_VALUES.OTHER);
-      const visibleValues = this.host.isolationMode
-        ? this.host._preIsolationVisibleValues
-        : this.host._persistenceController.hasPersistedSettings() ||
-            hasPendingOps ||
-            hasExistingItems
-          ? this.host._visibleValues
-          : new Set<string>();
+      // Leaving a filter or isolation brings back the rows shown before it, with the edits made
+      // under it, not just the rows it left: a row it hid would otherwise lose its place.
+      const leavingIsolation =
+        !this.host.isolationMode && this.host._preIsolationVisibleValues.size > 0;
+      const visibleValues =
+        this.host.isolationMode || leavingIsolation
+          ? new Set([
+              ...this.host._preIsolationVisibleValues,
+              ...(leavingIsolation ? this.host._visibleValues : []),
+            ])
+          : this.host._persistenceController.hasPersistedSettings() ||
+              hasPendingOps ||
+              hasExistingItems
+            ? this.host._visibleValues
+            : new Set<string>();
+      if (leavingIsolation) this.host._preIsolationVisibleValues = new Set<string>();
       const numericOrderValues = getNumericBinLowerBoundMap(this.host.annotationData);
       const numericDisplayLabels = getNumericBinLabelMap(this.host.annotationData);
       const numericManualOrderIds = isNumericAnnotation
@@ -399,6 +414,12 @@ export class LegendDataController {
         pendingExtract,
         pendingMerge,
         isNumericAnnotation,
+        {
+          paletteId: isNumericAnnotation
+            ? undefined
+            : normalizeCategoricalPaletteId(this.host._selectedPaletteId),
+          unfilteredFrequencies: () => this.computeAnnotationCounts(knownValues, true),
+        },
       );
 
       // Apply hidden values
@@ -421,11 +442,6 @@ export class LegendDataController {
             this.host.annotationData,
           );
         }
-      } else if (this.host._selectedPaletteId !== DEFAULT_CATEGORICAL_PALETTE_ID) {
-        this.host._legendItems = applyPaletteColors(
-          this.host._legendItems,
-          this.host._selectedPaletteId,
-        );
       }
 
       // Clear pending extract/merge values after they've been applied
