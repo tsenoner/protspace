@@ -87,18 +87,20 @@ describe('protspace-score-strip', () => {
     expect(svg.hasAttribute('viewBox')).toBe(false);
   });
 
-  it('emits strip-hover with the category on pointer enter, and null on leave', async () => {
+  it('emits strip-hover with the category on pointer enter, and null on leaving the strip', async () => {
     const el = await setup();
     const seen: Array<string | null> = [];
     el.addEventListener('strip-hover', (event) =>
       seen.push((event as CustomEvent<{ category: string | null }>).detail.category),
     );
 
-    const dot = el.shadowRoot!.querySelector('circle')!;
-    dot.dispatchEvent(new Event('mouseenter', { bubbles: false }));
-    dot.dispatchEvent(new Event('mouseleave', { bubbles: false }));
+    const [first, second] = el.shadowRoot!.querySelectorAll('circle');
+    first.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    // Dot to dot is one hover each, with no clear between them.
+    second.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    el.shadowRoot!.querySelector('svg')!.dispatchEvent(new Event('mouseleave'));
 
-    expect(seen).toEqual(['Elapidae', null]);
+    expect(seen).toEqual(['Elapidae', 'Viperidae', null]);
   });
 
   it('flags a hover that a tap began, so the legend does not fade the plot for it', async () => {
@@ -109,12 +111,11 @@ describe('protspace-score-strip', () => {
     );
 
     const dot = el.shadowRoot!.querySelector('circle')!;
-    // A tap: pointerover first, then the compatibility mouseenter.
-    dot.dispatchEvent(new PointerEvent('pointerover', { pointerType: 'touch', bubbles: true }));
-    dot.dispatchEvent(new Event('mouseenter', { bubbles: false }));
+    // A tap, and its lift: the hover lingers until the next tap elsewhere.
+    dot.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'touch' }));
+    dot.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'touch' }));
     // Then a mouse.
-    dot.dispatchEvent(new PointerEvent('pointerover', { pointerType: 'mouse', bubbles: true }));
-    dot.dispatchEvent(new Event('mouseenter', { bubbles: false }));
+    dot.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
 
     expect(seen).toEqual([
       { category: 'Elapidae', touch: true },

@@ -216,6 +216,34 @@ describe('focusCategories, the focus a legend score strip asks for', () => {
     expect(sp._focusedValues).toBeNull();
   });
 
+  it("a legend row's categories focus only while the plot's own Shift is held", () => {
+    const sp = makeScatter();
+    const events = listen(sp);
+    sp.focusCategories(['B'], 'row');
+    expect(sp._focusedValues).toBeNull();
+    sp._handleShiftKey(shiftKey('keydown'));
+    expect(sp._focusedValues).toEqual(['B']);
+    sp._handleShiftKey(shiftKey('keyup'));
+    expect(sp._focusedValues).toBeNull();
+    // A window blur releases Shift but keeps the row: Shift again focuses it again.
+    sp._handleShiftKey(shiftKey('keydown'));
+    sp._handleWindowBlur();
+    expect(sp._focusedValues).toBeNull();
+    sp._handleShiftKey(shiftKey('keydown'));
+    expect(sp._focusedValues).toEqual(['B']);
+    sp.focusCategories(null);
+    expect(sp._focusedValues).toBeNull();
+    expect(events).toEqual([['B'], null, ['B'], null, ['B'], null]);
+  });
+
+  it('Shift typed into a text field does not focus a legend row', () => {
+    const sp = makeScatter();
+    sp.focusCategories(['B'], 'row');
+    const input = document.createElement('input');
+    sp._handleShiftKey(Object.assign(shiftKey('keydown'), { composedPath: () => [input] }));
+    expect(sp._focusedValues).toBeNull();
+  });
+
   it('a window blur, a new dataset or a new annotation ends it', () => {
     const sp = makeScatter();
     sp.focusCategories(['B']);

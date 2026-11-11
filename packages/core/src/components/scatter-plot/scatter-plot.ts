@@ -369,8 +369,11 @@ export class ProtspaceScatterplot extends LitElement {
   private _shiftDown = false;
   /** Shift+hover: the hovered point's category values; every other point fades. */
   @state() private _focusedValues: string[] | null = null;
-  /** The focus asked for from outside (`focusCategories`), used while Shift + hover is not. */
-  private _externalFocus: string[] | null = null;
+  /**
+   * The categories the legend's pointer is on (`focusCategories`), used while Shift + hover is
+   * not: a score strip's dot focuses them as is, a legend row only while Shift is held.
+   */
+  private _externalFocus: { values: string[]; needsShift: boolean } | null = null;
   // The scales and what they were built at: the plot data's length and `_scalesKey()`.
   private _scalesCache: { scales: ScalePair; plotDataLength: number; key: string } | null = null;
 
@@ -1831,13 +1834,15 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Focuses these categories as Shift + hover does, without Shift: the legend asks for it while
-   * the pointer is on a score strip's dot, or on a scored row with Shift held. Null ends it.
-   * Shift + hover on the plot wins, a selection outranks it, and a new dataset or annotation,
-   * or the window losing focus, ends it.
+   * Focuses these categories as Shift + hover does: the legend reports what its pointer is on, a
+   * score strip's dot (`'strip'`, focused as is) or a scored row (`'row'`, focused only while
+   * Shift is held, by the plot's own Shift state). Null ends it. Shift + hover on the plot wins,
+   * a selection outranks it, and a new dataset or annotation ends it; the window losing focus
+   * ends a strip's.
    */
-  focusCategories(values: readonly string[] | null): void {
-    this._externalFocus = values && values.length > 0 ? [...values] : null;
+  focusCategories(values: readonly string[] | null, source: 'strip' | 'row' = 'strip'): void {
+    this._externalFocus =
+      values && values.length > 0 ? { values: [...values], needsShift: source === 'row' } : null;
     this._updateFocus(this._shiftDown);
   }
 
@@ -1860,8 +1865,14 @@ export class ProtspaceScatterplot extends LitElement {
         next = inOther ? [...values, ...this.otherAnnotationValues] : values;
       }
     }
-    if (next === null && this._externalFocus && !this.selectedProteinIds.length) {
-      next = this._externalFocus;
+    const external = this._externalFocus;
+    if (
+      next === null &&
+      external &&
+      (!external.needsShift || this._shiftDown) &&
+      !this.selectedProteinIds.length
+    ) {
+      next = external.values;
     }
     this._setFocusedValues(next);
   }
@@ -1897,7 +1908,8 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _handleWindowBlur = () => {
     this._shiftDown = false;
-    this._externalFocus = null;
+    // A row's focus waits for Shift again; a strip dot's ends until the pointer comes back.
+    if (this._externalFocus && !this._externalFocus.needsShift) this._externalFocus = null;
     this._updateFocus(false);
   };
 

@@ -172,9 +172,8 @@ export class ProtspaceLegend extends LitElement {
   private _stripFocusCategory: string | null = null;
   /** The row under a mouse or pen, which the plot focuses while Shift is held. */
   private _rowUnderPointer: string | null = null;
-  private _shiftDown = false;
-  /** What the legend last asked the plot to focus, so a move that changes nothing sends nothing. */
-  private _requestedPlotFocus: readonly string[] | null = null;
+  /** Whether the legend has reported a category to the plot that it has not withdrawn yet. */
+  private _reportedPlotFocus = false;
 
   @query('.legend-items')
   private _legendItemsEl?: HTMLDivElement;
@@ -467,16 +466,9 @@ export class ProtspaceLegend extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._scatterplotController.scatterplotSelector = this.scatterplotSelector;
-    window.addEventListener('keydown', this._onShiftKey);
-    window.addEventListener('keyup', this._onShiftKey);
-    window.addEventListener('blur', this._onWindowBlur);
   }
 
   disconnectedCallback(): void {
-    window.removeEventListener('keydown', this._onShiftKey);
-    window.removeEventListener('keyup', this._onShiftKey);
-    window.removeEventListener('blur', this._onWindowBlur);
-    this._shiftDown = false;
     this._stripFocusCategory = null;
     this._rowUnderPointer = null;
     this._syncPlotFocus();
@@ -677,7 +669,7 @@ export class ProtspaceLegend extends LitElement {
     this._clusterCaveat = null;
     this._hoveredCategory = null;
     this._plotFocus = null;
-    this._requestedPlotFocus = null;
+    this._reportedPlotFocus = false;
     this._stripFocusCategory = null;
     this._rowUnderPointer = null;
     this._reorder.clear();
@@ -845,48 +837,29 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /**
-   * Asks the plot to focus what the pointer is on, as Shift + hover on a point does: a score
-   * strip's dot, or a row of a scored annotation while Shift is held (the Other row stands for
-   * every category under it). Nothing otherwise, so crossing rows never fades the plot.
+   * Tells the plot which category the pointer is on: a score strip's dot, or a row of a scored
+   * annotation (the Other row stands for every category under it). The plot owns Shift: it
+   * focuses a dot's category as is and a row's only while Shift is held, so crossing rows never
+   * fades the plot. A pointer on neither withdraws an earlier report, and only that.
    */
   private _syncPlotFocus(): void {
-    let next: string[] | null = null;
+    const plot = this._scatterplotController.scatterplot;
     if (this._stripFocusCategory !== null) {
-      next = [this._stripFocusCategory];
-    } else if (
-      this._shiftDown &&
-      this._rowUnderPointer !== null &&
-      this._categoryScores.length > 0
-    ) {
-      next =
+      plot?.focusCategories?.([this._stripFocusCategory], 'strip');
+    } else if (this._rowUnderPointer !== null && this._categoryScores.length > 0) {
+      const values =
         this._rowUnderPointer === LEGEND_VALUES.OTHER
           ? computeOtherConcreteValues(this._otherItems)
           : [this._rowUnderPointer];
-    }
-    const previous = this._requestedPlotFocus;
-    if (
-      next === previous ||
-      (next !== null && previous !== null && next.join('\u0000') === previous.join('\u0000'))
-    ) {
+      plot?.focusCategories?.(values, 'row');
+    } else {
+      if (!this._reportedPlotFocus) return;
+      plot?.focusCategories?.(null);
+      this._reportedPlotFocus = false;
       return;
     }
-    this._requestedPlotFocus = next;
-    this._scatterplotController.scatterplot?.focusCategories?.(next);
+    this._reportedPlotFocus = true;
   }
-
-  private _onShiftKey = (event: KeyboardEvent): void => {
-    if (event.key !== 'Shift') return;
-    this._shiftDown = event.type === 'keydown';
-    // Typing a capital in a text field should not fade the plot.
-    const target = event.composedPath()[0] as HTMLElement | undefined;
-    if (this._shiftDown && target?.closest?.('input, textarea, [contenteditable="true"]')) return;
-    this._syncPlotFocus();
-  };
-
-  private _onWindowBlur = (): void => {
-    this._shiftDown = false;
-    this._syncPlotFocus();
-  };
 
   private _setHoveredCategory(category: string | null): void {
     // Nothing reads the hover when there are no scores: `_renderScoreStrips` returns before
@@ -952,7 +925,7 @@ export class ProtspaceLegend extends LitElement {
     // flushed first; set from outside, an edit for the old annotation is dropped, not moved.
     if (changedProperties.has('selectedAnnotation')) {
       // The plot drops a focus asked for under the old annotation by itself.
-      this._requestedPlotFocus = null;
+      this._reportedPlotFocus = false;
       this._stripFocusCategory = null;
       this._rowUnderPointer = null;
       this._settingsPopover?.cancel();
