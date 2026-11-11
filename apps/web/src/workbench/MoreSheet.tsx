@@ -71,7 +71,9 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
   const dialog = useRef<PsDialog>(null);
   const contours = useRef<HTMLElement>(null);
   const themeControl = useRef<HTMLElement>(null);
-  const { densityLayer, appliedFilterConditions } = useWorkbenchStatus();
+  const { densityLayer, appliedFilterConditions, datasetName } = useWorkbenchStatus();
+  // Nothing to export yet: the row is off, as the app bar's Export button is.
+  const noDataset = datasetName === null;
   // Not part of the More dot, which marks only what changes the view (Contours, a filter).
   const theme = useResolvedTheme();
   const [helpOpen, setHelpOpen] = useState(false);
@@ -176,10 +178,20 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
             <span className="wb-sheet-label">Import data</span>
             <ChevronRight className="wb-sheet-chevron" {...ICON} />
           </button>
-          <button type="button" className="wb-sheet-row" onClick={openExport}>
+          {/* Off through aria-disabled, not disabled: it stays in the Tab order and says why. */}
+          <button
+            type="button"
+            className="wb-sheet-row"
+            aria-disabled={noDataset ? 'true' : undefined}
+            onClick={noDataset ? undefined : openExport}
+          >
             <Download className="wb-sheet-icon" {...ICON} />
             <span className="wb-sheet-label">Export</span>
-            <ChevronRight className="wb-sheet-chevron" {...ICON} />
+            {noDataset ? (
+              <span className="wb-sheet-value">Load a dataset to export</span>
+            ) : (
+              <ChevronRight className="wb-sheet-chevron" {...ICON} />
+            )}
           </button>
           {/* The editor opens after the sheet closed, so it returns focus to More. */}
           <button type="button" className="wb-sheet-row" onClick={closeThen(openFigureEditor)}>

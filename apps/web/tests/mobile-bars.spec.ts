@@ -8,6 +8,7 @@ import {
   dismissTourIfPresent,
   exportDownload,
   exportKinds,
+  exportMenu,
   exportPanel,
   exportTrigger,
   figureEditorButton,
@@ -41,7 +42,8 @@ import {
   touchTargetsBelow,
 } from './helpers/mobile';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
-import { stubStructureRequests, workbenchRoot } from './helpers/workbench';
+import { emptyState, stubStructureRequests, workbenchRoot } from './helpers/workbench';
+import { STARTUP_URL_GLOB } from './helpers/fixtures';
 import { DARK_SURFACE, htmlTheme, themeButton } from './helpers/theme';
 import { seedLegacyTourSeen } from './helpers/tour-storage-state';
 
@@ -219,6 +221,26 @@ test.describe('the bars on a phone', () => {
     const moreHost = viewBar(page).locator('.wb-more');
     await expect(moreHost).toHaveAttribute('aria-haspopup', 'dialog');
     await expect(moreHost).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test("with no dataset, More's Export row is off, as the app bar's Export button is", async ({
+    page,
+  }) => {
+    // The startup demo never arrives: startup ends with nothing on screen.
+    await page.route(STARTUP_URL_GLOB, (route) => route.abort());
+    await page.goto('/explore');
+    await expect(emptyState(page)).toBeVisible();
+    await dismissTourIfPresent(page);
+
+    const rows = await openMoreSheet(page);
+    const row = rows.getByRole('button', { name: /^Export/ });
+    await expect(row).toHaveAttribute('aria-disabled', 'true');
+    await expect(row).toHaveAccessibleName('Export Load a dataset to export');
+    // Forced: Playwright waits for an aria-disabled control to become enabled.
+    await row.tap({ force: true });
+    // Nothing opens, and the sheet stays.
+    await expect(moreSheet(page)).toBeVisible();
+    await expect(exportMenu(page).locator('ps-popover[open]')).toHaveCount(0);
   });
 
   test('C5: the Color by picker and its info bubble stay within the viewport', async ({ page }) => {

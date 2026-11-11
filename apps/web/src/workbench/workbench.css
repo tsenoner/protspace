@@ -1986,6 +1986,16 @@
   background: var(--ps-surface-hover);
 }
 
+/* Export with no dataset: off, as the app bar's Export button is. */
+.wb-sheet-row[aria-disabled='true'] {
+  color: var(--ps-text-faint);
+  cursor: default;
+}
+
+:is(button, a).wb-sheet-row[aria-disabled='true']:hover {
+  background: transparent;
+}
+
 .wb-sheet-row:focus-visible {
   outline: var(--ps-focus-width) solid var(--ps-focus);
   outline-offset: calc(-1 * var(--ps-focus-width));
