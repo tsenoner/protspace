@@ -363,6 +363,8 @@ export class ProtspaceLegend extends LitElement {
     shouldPersistCategories: () => !this._isCurrentAnnotationNumeric(),
     shouldPersistCategoryEncodings: () => !this._isCurrentAnnotationNumeric(),
     isNumericAnnotation: () => this._isCurrentAnnotationNumeric(),
+    isViewConstrained: () => this.isolationMode,
+    getOtherValues: () => this._otherItems.map((item) => item.value),
     getCurrentSettings: () => this._data.currentSettings(),
   });
 

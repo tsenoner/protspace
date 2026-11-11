@@ -9,14 +9,18 @@ import {
   filterPanel,
   getProteinCount,
   getViewState,
+  importUserFile,
   openExplore,
   openFilter,
   queryBuilder,
   redo,
+  selectAnnotation,
   statusChip,
   undo,
+  waitForExploreDataLoad,
 } from './helpers/explore';
 import { expectNoAxeViolations } from './helpers/a11y';
+import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 import { rail, structurePanel, watchPlotResizes } from './helpers/workbench';
 
 /** The plot's filter channel: whether it is on, and how many proteins it keeps. */
@@ -27,6 +31,18 @@ function readPlotFilter(page: Page): Promise<{ filtersActive: boolean; kept: num
       filtersActive: host.filtersActive === true,
       kept: host.filteredProteinIds?.length ?? 0,
     };
+  });
+}
+
+/** Each legend row's colour by category, Other left out. */
+function legendColors(page: Page): Promise<Record<string, string>> {
+  return page.locator('protspace-legend').evaluate((legend) => {
+    const items =
+      (legend as Element & { _legendItems?: Array<{ value: string; color: string }> })
+        ._legendItems ?? [];
+    return Object.fromEntries(
+      items.filter((item) => item.value !== 'Other').map((item) => [item.value, item.color]),
+    );
   });
 }
 
@@ -261,5 +277,32 @@ test.describe('the Filter panel', () => {
     await redo(page);
     await expect.poll(async () => (await readPlotFilter(page)).kept).toBe(kept);
     await expect(joiner).toHaveAccessibleName('Joiner for condition 2: and not');
+  });
+
+  test('"is 1", then "is none of", then Remove filter: every category ends in its own colour', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await importUserFile(page, TOXPROT_5181_FIXTURE);
+    await waitForExploreDataLoad(page, { proteinCount: 5181 });
+    await selectAnnotation(page, 'protein_existence');
+    const original = await legendColors(page);
+    const levels = Object.keys(original);
+    expect(levels.length).toBeGreaterThan(2);
+    // Level 1 of UniProt's protein existence.
+    const first = levels.find((level) => level.includes('protein level'))!;
+
+    const card = await draftFilterCondition(page, 0, 'protein_existence', [first]);
+    await filterApplyButton(page).click();
+    await expect.poll(() => legendColors(page)).toEqual({ [first]: original[first] });
+
+    await card.locator('.operator-pill').click();
+    await page.getByRole('menuitemradio', { name: /^is none of/ }).click();
+    await filterApplyButton(page).click();
+    const { [first]: _first, ...rest } = original;
+    await expect.poll(() => legendColors(page)).toEqual(rest);
+
+    await clearStatusChip(page, 'filter');
+    await expect.poll(() => legendColors(page)).toEqual(original);
   });
 });
