@@ -64,8 +64,7 @@ export const importMenuStyles = [
       border-top: 1px solid var(--ps-border);
     }
 
-    .import-open-file::part(button),
-    .import-export-button::part(button) {
+    .import-open-file::part(button) {
       width: 100%;
     }
 

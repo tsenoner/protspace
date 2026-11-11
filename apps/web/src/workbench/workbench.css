@@ -559,7 +559,7 @@
 }
 
 /* The Import and Export menus, mounted without their own buttons: the dataset name opens Import,
-   whose "Export…" opens Export. Their panels are in the top layer, so the box adds nothing. */
+   the app bar's Export button Export. Their panels are in the top layer, so the box adds nothing. */
 .wb-data-actions {
   display: contents;
 }
@@ -675,6 +675,71 @@
   .workbench[data-layout='tablet'] [data-workbench='app-bar-actions'] {
     gap: 0;
   }
+}
+
+/* Export's chevron, muted as the dataset name's. Below 1200 px the button is the download icon
+   with a small chevron beside it, so it still reads as opening a panel. */
+.wb-export-chevron {
+  color: var(--ps-text-muted);
+}
+
+.wb-export[data-icon-only]::part(button) {
+  gap: 1px;
+  padding: 0 5px 0 7px;
+}
+
+/* Between the two tasks (Export, Figure editor) and the theme, Help, Feedback and GitHub. */
+.wb-actions-sep {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 var(--ps-space-1);
+  background: var(--ps-border);
+}
+
+/* Below 820 px the divider's 15 px are what search needs to show "Search or paste IDs" whole. */
+@media (max-width: 819px) {
+  .wb-actions-sep {
+    display: none;
+  }
+}
+
+/* A narrow tablet (below 800 px, AppBar.tsx's data-search-folded): search folds into the phone's
+   search button just before the actions, and opens over the whole bar as on a phone. The start
+   takes what is left, so the dataset name ends in an ellipsis before anything overlaps. */
+.workbench[data-layout='tablet'] header[data-search-folded] {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.workbench[data-layout='tablet'] header[data-search-folded] .wb-search-toggle {
+  display: inline-flex;
+}
+
+.workbench[data-layout='tablet'] header[data-search-folded] .wb-search-close {
+  display: inline-flex;
+}
+
+.workbench[data-layout='tablet']
+  header[data-search-folded]:not([data-search-open])
+  [data-workbench='app-bar-center'] {
+  display: none;
+}
+
+.workbench[data-layout='tablet'] header[data-search-open] [data-workbench='app-bar-center'] {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-1);
+  padding: 0 var(--site-bar-inset-end) 0 var(--site-bar-inset-start);
+  background: var(--ps-surface);
+}
+
+.workbench[data-layout='tablet'] header[data-search-open] #myProteinSearch {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* The plot's top-left corner, over the plot and never part of its box: the tool strip, and beside

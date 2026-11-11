@@ -366,6 +366,39 @@ describe('protspace-export-menu', () => {
     expect(kindPicker().shadowRoot!.activeElement).toBe(radio(kindPicker(), 'image'));
   });
 
+  it('toggleFrom opens the panel under the anchor, then closes it with focus left there', async () => {
+    const more = moreAnchor();
+    more.focus();
+    menu.toggleFrom(more);
+    await settle();
+    expect(isOpen()).toBe(true);
+    expect(popover().anchor).toBe(more);
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+    expect(kindPicker().shadowRoot!.activeElement).toBe(radio(kindPicker(), 'image'));
+
+    more.focus();
+    menu.toggleFrom(more);
+    await settle();
+    expect(isOpen()).toBe(false);
+    expect(document.activeElement).toBe(more);
+    expect(popover().anchor).toBe(trigger());
+  });
+
+  it('toggleFrom from another anchor moves the open panel there', async () => {
+    const first = moreAnchor();
+    const more = moreAnchor();
+    more.style.top = '300px';
+    menu.toggleFrom(first);
+    await settle();
+    menu.toggleFrom(more, 'bottom-start');
+    await settle();
+    expect(isOpen()).toBe(true);
+    expect(popover().anchor).toBe(more);
+    expect(first.getAttribute('aria-expanded')).toBeNull();
+    const left = more.getBoundingClientRect().left;
+    expect(Math.abs(panel().getBoundingClientRect().left - left)).toBeLessThan(2);
+  });
+
   describe('on a phone', () => {
     beforeAll(async () => {
       await page.viewport(390, 844);

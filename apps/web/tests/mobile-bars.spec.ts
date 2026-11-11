@@ -9,6 +9,7 @@ import {
   exportDownload,
   exportKinds,
   exportPanel,
+  exportTrigger,
   figureEditorButton,
   filterApplyButton,
   filterPanel,
@@ -386,9 +387,11 @@ test.describe('the bars on a portrait tablet', () => {
     await openExplorePhone(page);
     await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'tablet');
     await expect(searchInput(page)).toBeVisible();
-    // Import and Export open from the dataset name, as on a desktop.
+    // Import opens from the dataset name, as on a desktop; Export is an icon button of its own.
     await expect(datasetSwitcher(page)).toBeVisible();
-    await expect(appBar(page).getByRole('button', { name: /^(Import|Export)$/ })).toHaveCount(0);
+    await expect(appBar(page).getByRole('button', { name: 'Import', exact: true })).toHaveCount(0);
+    await expect(exportTrigger(page)).toBeVisible();
+    // At 800 px search still fits in the bar.
     await expect(searchToggle(page)).toBeHidden();
     // At 800 px the view bar has room for every control: Filter shows and More does not.
     await expect(moreButton(page)).toBeHidden();
@@ -410,6 +413,49 @@ test.describe('the bars on a portrait tablet', () => {
 
     // As mobile-explore-layout.spec.ts measures at 800×1000: the one more button leaves both whole.
     expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
+  });
+});
+
+test.describe('the bars on a narrow tablet', () => {
+  test.use({ viewport: { width: 700, height: 1000 } });
+
+  test('below 800 px search folds into its button; the actions stay, touch-sized, in one row', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'tablet');
+    await expect(searchToggle(page)).toBeVisible();
+    await expect(searchInput(page)).toBeHidden();
+    await expect(datasetSwitcher(page)).toBeVisible();
+    await expect(exportTrigger(page)).toBeVisible();
+    await expect(figureEditorButton(page)).toBeVisible();
+    await expect(themeButton(page)).toBeVisible();
+    expect(await touchTargetsBelow(page, appBar(page))).toEqual([]);
+    expect(await appBar(page).evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await expectNoHorizontalOverflow(page);
+    // The search button sits where search was: after the dataset, before the actions.
+    const start = await box(appBar(page).locator('[data-workbench="app-bar-start"]'));
+    const toggle = await box(searchToggle(page));
+    const exported = await box(exportTrigger(page));
+    expect(start.x + start.width).toBeLessThanOrEqual(toggle.x + 1);
+    expect(toggle.x + toggle.width).toBeLessThanOrEqual(exported.x + 1);
+
+    // It opens search over the whole bar, and Close search returns focus to it.
+    await searchToggle(page).tap();
+    await expect(searchInput(page)).toBeFocused();
+    const overlay = await box(appBar(page).locator('[data-workbench="app-bar-center"]'));
+    expect(Math.abs(overlay.width - (await box(appBar(page))).width)).toBeLessThanOrEqual(1);
+    await appBar(page).getByRole('button', { name: 'Close search', exact: true }).tap();
+    await expect(searchInput(page)).toBeHidden();
+    await expect(searchToggle(page)).toBeFocused();
+
+    // Export's icon opens the Export panel on screen, under itself.
+    await exportTrigger(page).tap();
+    await expect(exportPanel(page)).toBeVisible();
+    await expectWithinViewport(page, exportPanel(page));
+    expect((await box(exportPanel(page))).y).toBeGreaterThanOrEqual(exported.y + exported.height);
+    await page.keyboard.press('Escape');
+    await expect(exportPanel(page)).toBeHidden();
   });
 });
 

@@ -5,6 +5,8 @@ import {
   appBar,
   datasetSwitcher,
   dismissTourIfPresent,
+  exportMenu,
+  exportTrigger,
   getSelectedProteinIds,
   holdNextRequest,
   importMenu,
@@ -190,6 +192,49 @@ test.describe('empty state', () => {
     expect(below || above).toBe(true);
     expect(Math.abs(box.x - anchor.x)).toBeLessThan(2);
     await expect(importMenu(page).locator('[data-example-id]').first()).toBeVisible();
+  });
+
+  test('the app bar offers Import on the dataset slot and a greyed, focusable Export', async ({
+    page,
+  }) => {
+    await expect(emptyState(page)).toBeVisible();
+    const importButton = appBar(page).getByRole('button', { name: 'Import', exact: true });
+    await expect(importButton).toBeVisible();
+    await expect(importButton).toHaveAttribute('aria-haspopup', 'dialog');
+
+    // Off through aria-disabled, not disabled: it stays in the Tab order and its tooltip says why.
+    const exportButton = exportTrigger(page);
+    await expect(exportButton).toBeVisible();
+    await expect(exportButton).toHaveAttribute('aria-disabled', 'true');
+    // The tooltip describes the inner button by element reference, which Playwright's own
+    // description does not follow: read the reference.
+    expect(
+      await exportButton.evaluate((button) =>
+        (button.ariaDescribedByElements ?? []).map((el) => el.getAttribute('aria-label')),
+      ),
+    ).toEqual(['Load a dataset to export']);
+    await exportButton.focus();
+    await expect(exportButton).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(exportMenu(page).locator('ps-popover[open]')).toHaveCount(0);
+    await exportButton.click({ force: true });
+    await expect(exportMenu(page).locator('ps-popover[open]')).toHaveCount(0);
+
+    // The dataset slot opens the Import panel under itself, focus on its first action.
+    await importButton.click();
+    await expect(
+      importMenu(page).getByRole('dialog', { name: 'Import', exact: true }),
+    ).toBeVisible();
+    await expect(importButton).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Escape');
+    await expect(importButton).toBeFocused();
+
+    // A load gives the slot the dataset's name and turns Export on.
+    await dropFileOnWorkbench(page, page.locator('#myPlot'), BUNDLE);
+    await waitForProteinCount(page, BUNDLE_COUNT);
+    await expect(datasetSwitcher(page)).toBeVisible();
+    await expect(appBar(page).getByRole('button', { name: 'Import', exact: true })).toHaveCount(0);
+    await expect(exportButton).not.toHaveAttribute('aria-disabled', 'true');
   });
 
   test('a drop on the empty plot loads the file and the empty state goes', async ({ page }) => {

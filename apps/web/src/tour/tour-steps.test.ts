@@ -230,7 +230,7 @@ describe('tourSteps', () => {
         );
       }
     }
-    // Export… no longer holds the editor.
+    // Export no longer holds the editor.
     expect(step(tourSteps('full', context('desktop')), 'data').description).not.toContain(
       'Figure editor',
     );
