@@ -1,4 +1,5 @@
 import { defineComponent, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { isAutoplayRefusal } from './autoplay';
 
 /**
  * `<DocsVideo name="zoom" alt="…" width="1280" height="720" />`: a docs animation, the looping,
@@ -54,8 +55,9 @@ export const DocsVideo = defineComponent({
       if (reducedMotion.value) return;
       // Autoplay needs the muted property, not only the attribute.
       video.muted = true;
-      video.play().catch(() => {
-        blocked.value = true;
+      video.play().catch((error: unknown) => {
+        // Only a refusal: a pause() before the load finished (a quick scroll past) aborts the play.
+        if (isAutoplayRefusal(error)) blocked.value = true;
       });
     };
     const onMotionChange = () => {

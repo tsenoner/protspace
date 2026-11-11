@@ -20,6 +20,7 @@ import {
   type ImageRef,
   type MediaOutput,
 } from '../../../../scripts/docs-screenshots/docs-lint';
+import { isAutoplayRefusal } from '../../../../docs/.vitepress/theme/autoplay';
 
 /**
  * Pins the docs media pipeline's pure rules (scripts/docs-screenshots/capture-plan.ts): how an
@@ -658,5 +659,15 @@ describe('docs lint: no allowlist left', () => {
     expect(lintManifest([], [{ file: 'eat-connectors.gif' }], [])).toEqual([
       expect.stringMatching(/^eat-connectors\.gif: no manifest entry makes it/),
     ]);
+  });
+});
+
+describe('DocsVideo autoplay', () => {
+  it('shows the controls only when the browser refuses to autoplay', () => {
+    expect(isAutoplayRefusal(new DOMException('no autoplay', 'NotAllowedError'))).toBe(true);
+    // A pause() before the load finished, as when a reader scrolls past, is no refusal.
+    expect(isAutoplayRefusal(new DOMException('interrupted by pause()', 'AbortError'))).toBe(false);
+    expect(isAutoplayRefusal(new DOMException('no source', 'NotSupportedError'))).toBe(false);
+    expect(isAutoplayRefusal(undefined)).toBe(false);
   });
 });
