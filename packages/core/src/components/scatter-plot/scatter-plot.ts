@@ -1835,7 +1835,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   /**
    * Focuses these categories as Shift + hover does: the legend reports what its pointer is on, a
-   * score strip's dot (`'strip'`, focused as is) or a scored row (`'row'`, focused only while
+   * score strip's dot (`'strip'`, focused as is) or a legend row (`'row'`, focused only while
    * Shift is held, by the plot's own Shift state). Null ends it. Shift + hover on the plot wins,
    * a selection outranks it, and a new dataset or annotation ends it; the window losing focus
    * ends a strip's.

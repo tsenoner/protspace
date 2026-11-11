@@ -39,11 +39,12 @@ only change focus makes outside the plot: the legend lights the focused rows fro
 - **WHEN** focus is on A and the cursor moves to another point whose only value is A
 - **THEN** no further `category-focus` is dispatched
 
-### Requirement: The legend's score hover focuses its category in the plot
+### Requirement: The legend's hover focuses its category in the plot
 
 The plot SHALL focus a category, exactly as Shift + hover over one of its points does, while the
-pointer is on that category's dot in a separation-score strip, and while the pointer is on a legend
-row of a scored annotation with Shift held; the Other row SHALL focus every category under it. No
+pointer is on that category's dot in a separation-score strip, and while the pointer is on its legend
+row with Shift held, for every annotation, scored or not; the Other row SHALL focus every category
+under it. No
 Shift is needed on a strip dot, and a dot of a category under Other SHALL focus only that category.
 A tap on a strip dot SHALL mark its row without focusing the plot, since a tap's hover lasts until
 the next tap elsewhere.
@@ -58,9 +59,10 @@ The plot SHALL report this focus through category-focus like its own.
 - **THEN** every point outside A fades, and A's legend row is highlighted
 - **AND** moving the pointer off the dot restores the plot
 
-#### Scenario: Shift on a scored row
+#### Scenario: Shift on a legend row
 
-- **WHEN** the user holds Shift with the pointer on category B's legend row
+- **WHEN** the user holds Shift with the pointer on category B's legend row, for an annotation with
+  or without separation scores
 - **THEN** every point outside B fades until Shift is released or the pointer leaves the row
 
 #### Scenario: Tapping a strip dot

@@ -22,6 +22,9 @@ Hold **Shift** over a point in the plot to focus its category: its legend row is
 too, and so is its dot in the [score strips](#separation-score-strips) when there are any. A point
 in `Other` highlights the `Other` row. Release **Shift** and the highlight goes.
 
+It works the other way round too: hold **Shift** over a legend row to focus that category in the
+plot, for any annotation. The `Other` row focuses every category under it.
+
 ## Show And Hide Values
 
 Click any legend row to toggle its visibility:

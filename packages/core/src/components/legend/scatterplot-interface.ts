@@ -40,7 +40,7 @@ export interface IScatterplotElement extends Element {
   filteredProteinIds?: string[];
 
   /**
-   * Reports the categories under the legend's pointer, a score strip's dot or a row; the plot
+   * Reports the categories under the legend's pointer, a score strip's dot or any row; the plot
    * focuses them as Shift + hover does (a row only while Shift is held). Null ends it (optional).
    */
   focusCategories?(values: readonly string[] | null, source?: 'strip' | 'row'): void;

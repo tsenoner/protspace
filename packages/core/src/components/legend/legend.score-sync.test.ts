@@ -252,12 +252,20 @@ describe('legend score hover focuses the plot', () => {
     expect(focusCategories).not.toHaveBeenCalled();
   });
 
-  it('rows of an annotation without scores never focus the plot', async () => {
+  it('a row of an annotation without scores reports its category too, for Shift', async () => {
     const { legend, focusCategories } = await mountWithSpy({ ...makeData(), statisticsRows: [] });
     row(legend, 'Viperidae').dispatchEvent(
       new PointerEvent('pointerenter', { pointerType: 'mouse' }),
     );
-    expect(focusCategories).not.toHaveBeenCalled();
+    expect(focusCategories).toHaveBeenLastCalledWith(['Viperidae'], 'row');
+  });
+
+  it('a pointer resting on one row reports it once', async () => {
+    const { legend, focusCategories } = await mountWithSpy();
+    const viperidae = row(legend, 'Viperidae');
+    viperidae.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    viperidae.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    expect(focusCategories).toHaveBeenCalledOnce();
   });
 
   it('removing the legend mid-hover ends the focus', async () => {

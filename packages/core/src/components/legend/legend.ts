@@ -183,8 +183,8 @@ export class ProtspaceLegend extends LitElement {
   private _stripFocusCategory: string | null = null;
   /** The row under a mouse or pen, which the plot focuses while Shift is held. */
   private _rowUnderPointer: string | null = null;
-  /** Whether the legend has reported a category to the plot that it has not withdrawn yet. */
-  private _reportedPlotFocus = false;
+  /** The last report to the plot (source and values), or null once withdrawn or never sent. */
+  private _reportedPlotFocus: string | null = null;
 
   @query('.legend-items')
   private _legendItemsEl?: HTMLDivElement;
@@ -508,6 +508,8 @@ export class ProtspaceLegend extends LitElement {
         : { ...this.data, protein_ids: this.proteinIds };
 
       this._datasetProteinCount = unfilteredData.protein_ids.length;
+      // A size set before the count was known (or for a smaller dataset) gets this one's cap.
+      this.shapeSize = this._shapeSize;
       this._persistenceController.updateDatasetHash(unfilteredData);
     }
 
@@ -680,7 +682,7 @@ export class ProtspaceLegend extends LitElement {
     this._clusterCaveat = null;
     this._hoveredCategory = null;
     this._plotFocus = null;
-    this._reportedPlotFocus = false;
+    this._reportedPlotFocus = null;
     this._stripFocusCategory = null;
     this._rowUnderPointer = null;
     this._reorder.clear();
@@ -847,28 +849,31 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /**
-   * Tells the plot which category the pointer is on: a score strip's dot, or a row of a scored
-   * annotation (the Other row stands for every category under it). The plot owns Shift: it
-   * focuses a dot's category as is and a row's only while Shift is held, so crossing rows never
-   * fades the plot. A pointer on neither withdraws an earlier report, and only that.
+   * Tells the plot which category the pointer is on: a score strip's dot, or any legend row (the
+   * Other row stands for every category under it). The plot owns Shift: it focuses a dot's
+   * category as is and a row's only while Shift is held, so crossing rows never fades the plot.
+   * A pointer on neither withdraws an earlier report, and only that. A report equal to the last
+   * one is not sent again.
    */
   private _syncPlotFocus(): void {
-    const plot = this._scatterplotController.scatterplot;
+    let report: { values: readonly string[]; source: 'strip' | 'row' } | null = null;
     if (this._stripFocusCategory !== null) {
-      plot?.focusCategories?.([this._stripFocusCategory], 'strip');
-    } else if (this._rowUnderPointer !== null && this._categoryScores.length > 0) {
-      const values =
-        this._rowUnderPointer === LEGEND_VALUES.OTHER
-          ? computeOtherConcreteValues(this._otherItems)
-          : [this._rowUnderPointer];
-      plot?.focusCategories?.(values, 'row');
-    } else {
-      if (!this._reportedPlotFocus) return;
-      plot?.focusCategories?.(null);
-      this._reportedPlotFocus = false;
-      return;
+      report = { values: [this._stripFocusCategory], source: 'strip' };
+    } else if (this._rowUnderPointer !== null) {
+      report = {
+        values:
+          this._rowUnderPointer === LEGEND_VALUES.OTHER
+            ? computeOtherConcreteValues(this._otherItems)
+            : [this._rowUnderPointer],
+        source: 'row',
+      };
     }
-    this._reportedPlotFocus = true;
+    const key = report ? `${report.source}\u0001${report.values.join('\u0000')}` : null;
+    if (key === this._reportedPlotFocus) return;
+    this._reportedPlotFocus = key;
+    const plot = this._scatterplotController.scatterplot;
+    if (report) plot?.focusCategories?.(report.values, report.source);
+    else plot?.focusCategories?.(null);
   }
 
   private _setHoveredCategory(category: string | null): void {
@@ -935,7 +940,7 @@ export class ProtspaceLegend extends LitElement {
     // flushed first; set from outside, an edit for the old annotation is dropped, not moved.
     if (changedProperties.has('selectedAnnotation')) {
       // The plot drops a focus asked for under the old annotation by itself.
-      this._reportedPlotFocus = false;
+      this._reportedPlotFocus = null;
       this._stripFocusCategory = null;
       this._rowUnderPointer = null;
       this._settingsPopover?.cancel();
