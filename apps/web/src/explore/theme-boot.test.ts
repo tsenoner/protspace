@@ -134,6 +134,15 @@ describe('the first-paint boot', () => {
     expect(Object.fromEntries(both.store)).toEqual({ [THEME_STORAGE_KEY]: 'light' });
   });
 
+  it("moves a legacy override over VitePress's 'auto', which any docs visit leaves", () => {
+    const storage = fakeStorage({
+      [LEGACY_THEME_STORAGE_KEY]: '"dark"',
+      [THEME_STORAGE_KEY]: 'auto',
+    });
+    expect(runBoot(BOOT_SCRIPT, storage)).toBe('dark');
+    expect(Object.fromEntries(storage.store)).toEqual({ [THEME_STORAGE_KEY]: 'dark' });
+  });
+
   it("the first-paint style's colour equals dark --ps-surface in tokens.css", () => {
     const darkRoles = TOKENS_CSS.match(/:root\[data-theme='dark'\] \{([\s\S]*?)\}/)?.[1] ?? '';
     const darkSurface = darkRoles.match(/--ps-surface:\s*(#[0-9a-f]{6})\b/i)?.[1];

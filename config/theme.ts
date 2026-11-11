@@ -12,8 +12,9 @@ export const LEGACY_THEME_STORAGE_KEY = 'protspace:theme';
 /**
  * Sets <html data-theme> before first paint, on every page of the app (apps/web/index.html) and of
  * the docs (docs/.vitepress/config.mts): 'dark' or 'light' for an override, else 'system', which
- * the tokens' media query follows. It first moves a value under the legacy key to the shared one,
- * unless the shared one is already set. It cannot import anything, so the app's index.html holds a
+ * the tokens' media query follows. It first moves an override under the legacy key to the shared
+ * one, unless the shared one holds an override already: VitePress writes 'auto' there on any docs
+ * visit, which must not erase an Explore user's Dark. It cannot import anything, so the app's index.html holds a
  * copy; theme-boot.test.ts pins the two together.
  */
 export const THEME_BOOT_SCRIPT = `(function () {
@@ -24,7 +25,8 @@ export const THEME_BOOT_SCRIPT = `(function () {
     var legacy = localStorage.getItem(legacyKey);
     if (legacy !== null) {
       var override = legacy === '"dark"' || legacy === '"light"';
-      if (override && localStorage.getItem(key) === null) {
+      var shared = localStorage.getItem(key);
+      if (override && shared !== 'dark' && shared !== 'light') {
         localStorage.setItem(key, legacy.slice(1, -1));
       }
       localStorage.removeItem(legacyKey);

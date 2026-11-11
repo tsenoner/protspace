@@ -98,6 +98,21 @@ describe('theme store', () => {
     expect(Object.fromEntries(store)).toEqual({ [THEME_STORAGE_KEY]: 'light' });
   });
 
+  it("moves a legacy override over VitePress's 'auto', never over a shared override", () => {
+    // Any docs visit leaves 'auto' under the shared key: it must not erase Explore's Dark.
+    store.set(LEGACY_THEME_STORAGE_KEY, '"dark"');
+    store.set(THEME_STORAGE_KEY, 'auto');
+    expect(getTheme()).toBe('dark');
+    expect(Object.fromEntries(store)).toEqual({ [THEME_STORAGE_KEY]: 'dark' });
+
+    resetThemeForTests();
+    store.clear();
+    store.set(LEGACY_THEME_STORAGE_KEY, '"dark"');
+    store.set(THEME_STORAGE_KEY, 'light');
+    expect(getTheme()).toBe('light');
+    expect(Object.fromEntries(store)).toEqual({ [THEME_STORAGE_KEY]: 'light' });
+  });
+
   it('a press on a light OS stores dark, applies it and notifies once', () => {
     const listener = vi.fn();
     subscribeTheme(listener);

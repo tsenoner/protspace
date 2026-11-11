@@ -34,7 +34,9 @@ function readStored(): ThemeChoice {
   try {
     const legacy = localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
     if (legacy !== null) {
-      if (localStorage.getItem(THEME_STORAGE_KEY) === null && /^"(dark|light)"$/.test(legacy))
+      // Unless the shared key holds an override: VitePress stores 'auto' on any docs visit.
+      const shared = localStorage.getItem(THEME_STORAGE_KEY);
+      if (shared !== 'dark' && shared !== 'light' && /^"(dark|light)"$/.test(legacy))
         localStorage.setItem(THEME_STORAGE_KEY, legacy.slice(1, -1));
       localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
     }

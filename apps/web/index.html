@@ -91,7 +91,8 @@
           var legacy = localStorage.getItem(legacyKey);
           if (legacy !== null) {
             var override = legacy === '"dark"' || legacy === '"light"';
-            if (override && localStorage.getItem(key) === null) {
+            var shared = localStorage.getItem(key);
+            if (override && shared !== 'dark' && shared !== 'light') {
               localStorage.setItem(key, legacy.slice(1, -1));
             }
             localStorage.removeItem(legacyKey);
