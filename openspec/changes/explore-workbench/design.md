@@ -75,8 +75,9 @@ The look was chosen with mockups during brainstorming. The chosen screens are ke
 The page becomes a workbench (mockup: [`mockups/workbench-light.png`](mockups/workbench-light.png)):
 
 - **App bar** (48 px): the wordmark (links home); the dataset name and protein count, which open the
-  Import panel (decision 15); search in the centre (⌘K / Ctrl+K); Import and
-  Export; the theme switch; a help menu (docs, keyboard shortcuts, tour); Feedback; GitHub. The
+  Import panel (decision 15); search in the centre (⌘K / Ctrl+K); Export and the Figure editor,
+  the two task buttons, then past a thin divider the theme switch; a help menu (docs, keyboard
+  shortcuts, tour); Feedback; GitHub. The
   site's Home / Docs / Explore / Resources navigation leaves this page; Docs moves into the help
   menu. The plot's Tips & Shortcuts popover and its tour button move into the help menu as
   "Keyboard shortcuts" and "Take the tour".
@@ -364,17 +365,23 @@ condition in the draft moves the slider only when the draft is applied.
 - **Empty state and drop target.** If nothing is loaded the plot shows "Drop a file or pick an
   example". Dragging a file anywhere over the workbench shows a drop area; today the scatterplot
   handles drops and sets an attribute that nothing styles. Drop handling moves to the shell.
-- **Import panel.** The Import button and the dataset name open the same panel: the examples, the last
-  imported file, and "Open a file…", with the accepted formats listed.
-- **Export panel.** Opened from the dataset menu's "Export…" (More → Export on a phone). It asks
+- **Import panel.** The dataset name opens it (with nothing loaded the name's place reads "Import"):
+  the examples, the last imported file, and "Open a file…", with the accepted formats listed. It
+  only imports. Export used to be its last row, which made saving a PNG two clicks deep under a
+  menu named after the data; review split them, as other tools open and export from separate
+  places.
+- **Export panel.** Opened from its own Export button just before the Figure editor (More → Export
+  on a phone): labelled with a chevron from 1200 px, a download icon with a small chevron below,
+  greyed but focusable (`aria-disabled`) with "Load a dataset to export" while nothing is loaded.
+  A tablet narrower than 800 px folds search into the phone's search button to make room. It asks
   what first (Image, Protein IDs, Table, Data bundle), then shows only that choice's options: PNG
   or PDF and the note that contours are left out for an image; Include legend settings, and the
   "file contains custom settings" hint, for a bundle. One Download button names the file. A flat
   menu of eight rows came first; review found it hard to read, with the checkbox far from the
   bundle it belongs to, so the panel goes back to main's "what, then how" in the kit's parts.
 - **Figure editor button.** The figure editor is one of the main tools, so it has a labelled
-  button at the right of the app bar (an icon with a tooltip on a tablet, a More row on a phone)
-  rather than a place inside Export.
+  button at the right of the app bar, after Export (an icon with a tooltip below 1200 px, a More
+  row on a phone), rather than a place inside Export.
 - **Figure editor.** Becomes a full-screen `ps-dialog`: Escape closes it, focus is contained, and
   its "Cancel", which already keeps the editor state, is renamed "Close". `publish-modal.ts` is
   split along its sections.

@@ -11,6 +11,7 @@ import {
   exportKinds,
   exportMenu,
   exportPanel,
+  exportTrigger,
   figureEditorButton,
   getCurrentDatasetName,
   getSelectedProteinIds,
@@ -31,15 +32,16 @@ import { figureEditor, figureEditorContent } from './helpers/figure';
 import { PHOSPHATASE_1587_FIXTURE, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
 
-/** The Import and Export panels under the dataset name (Task 2.5), and the Figure editor button. */
+/**
+ * The Import panel under the dataset name, the Export panel under its own button (Task 2.5), and
+ * the Figure editor button.
+ */
 
 test.describe('Import and Export menus', () => {
-  test('Import and Export open from the dataset name and work from the keyboard', async ({
-    page,
-  }) => {
+  test('the dataset name opens Import only, and works from the keyboard', async ({ page }) => {
     await openExplore(page);
-    // No buttons of their own in the bar: the dataset name opens both.
-    await expect(appBar(page).getByRole('button', { name: /^(Import|Export)$/ })).toHaveCount(0);
+    // No Import button of its own in the bar: the dataset name opens it.
+    await expect(appBar(page).getByRole('button', { name: 'Import', exact: true })).toHaveCount(0);
     // The tour's Import step finds the menu itself, in the light DOM.
     await expect(page.locator('[data-driver-id="import"]')).toHaveAttribute('id', 'myImportMenu');
 
@@ -49,22 +51,46 @@ test.describe('Import and Export menus', () => {
     const ownDataset = importMenu(page).locator('[data-driver-id="import-own-dataset"]');
     await expect(ownDataset).toBeFocused();
     await expect(dataset).toHaveAttribute('aria-expanded', 'true');
+    // It imports and nothing else: no Export… in it any more.
+    await expect(importPanel(page).getByRole('button', { name: /export/i })).toHaveCount(0);
+    // ArrowUp wraps to the last action, an example.
+    await page.keyboard.press('ArrowUp');
+    await expect(importMenu(page).locator('[data-example-id]:focus')).toHaveCount(1);
     await page.keyboard.press('Escape');
     await expect(ownDataset).toHaveCount(0);
     await expect(dataset).toBeFocused();
+  });
 
-    // "Export…", the panel's last action (ArrowUp wraps to it), hands over to the Export panel
-    // under the same name.
-    await page.keyboard.press('Enter');
-    await expect(ownDataset).toBeFocused();
-    await page.keyboard.press('ArrowUp');
-    await expect(importMenu(page).getByRole('button', { name: 'Export…' })).toBeFocused();
+  test('the Export button opens the Export panel under itself and works from the keyboard', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    const exportButton = exportTrigger(page);
+    // A labelled button just before the Figure editor, past search, and then the divider.
+    await expect(exportButton).toBeVisible();
+    await expect(exportButton).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(exportButton).toHaveAttribute('aria-expanded', 'false');
+    const exportBox = (await exportButton.boundingBox())!;
+    const editorBox = (await figureEditorButton(page).boundingBox())!;
+    const searchBox = (await page.locator('#myProteinSearch').boundingBox())!;
+    expect(exportBox.x).toBeGreaterThan(searchBox.x + searchBox.width);
+    expect(exportBox.x + exportBox.width).toBeLessThanOrEqual(editorBox.x);
+    const divider = (await appBar(page).locator('.wb-actions-sep').boundingBox())!;
+    expect(divider.x).toBeGreaterThanOrEqual(editorBox.x + editorBox.width);
+
+    // One Tab stop after search's field.
+    await page.locator('#myProteinSearch input').focus();
+    await page.keyboard.press('Tab');
+    await expect(exportButton).toBeFocused();
     await page.keyboard.press('Enter');
     // Focus lands on the first choice, what to export.
     const image = exportKinds(page).getByRole('radio', { name: 'Image', exact: true });
     await expect(image).toBeFocused();
-    await expect(ownDataset).toHaveCount(0);
-    await expect(dataset).toHaveAttribute('aria-expanded', 'true');
+    await expect(exportButton).toHaveAttribute('aria-expanded', 'true');
+    // Under the button, its right edge lined up with the button's (bottom-end).
+    const panelBox = (await exportPanel(page).boundingBox())!;
+    expect(panelBox.y).toBeGreaterThanOrEqual(exportBox.y + exportBox.height);
+    expect(Math.abs(panelBox.x + panelBox.width - (exportBox.x + exportBox.width))).toBeLessThan(2);
     // The arrow keys pick what, Tab moves on to how.
     await page.keyboard.press('ArrowRight');
     await expect(
@@ -75,7 +101,15 @@ test.describe('Import and Export menus', () => {
     await expect(exportDownload(page)).toHaveAccessibleName('Download .txt');
     await page.keyboard.press('Escape');
     await expect(exportPanel(page)).toBeHidden();
-    await expect(dataset).toBeFocused();
+    await expect(exportButton).toBeFocused();
+    await expect(exportButton).toHaveAttribute('aria-expanded', 'false');
+
+    // A second press on the button closes the panel it opened.
+    await exportButton.click();
+    await expect(exportPanel(page)).toBeVisible();
+    await exportButton.click();
+    await expect(exportMenu(page).locator('ps-popover[open]')).toHaveCount(0);
+    await expect(exportButton).toBeFocused();
   });
 
   test('Open a file… opens the file chooser', async ({ page }) => {

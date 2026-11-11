@@ -1,23 +1,26 @@
 # Bars and Tools
 
 The Explore page has two bars above the plot and a set of tools on the plot itself. The **app bar**
-holds the dataset (with Import and Export), search, the Figure editor, the theme and help. The **view bar** below it
-chooses what the plot shows. The **plot tools** select proteins and narrow the view.
+holds the dataset (which opens Import), search, Export, the Figure editor, the theme and help. The
+**view bar** below it chooses what the plot shows. The **plot tools** select proteins and narrow the view.
 [Interface Overview](/explore/) shows where each one sits; this page describes what each control
 does.
 
 ## App bar
 
-From left to right: the ProtSpace wordmark (back to the home page), the dataset menu (which holds
-Import and Export), the search box, **Figure editor**, **Theme**, **Help**, **Feedback** and
-**GitHub**. On a tablet **Figure editor** shows only its icon. On a phone the search box opens from
-a search button, and the Figure editor, Theme and Help move into the view bar's **More** sheet.
+From left to right: the ProtSpace wordmark (back to the home page), the dataset menu (which opens
+[Import](#import)), the search box, [**Export**](#export) and **Figure editor**, then past a thin
+divider **Theme**, **Help**, **Feedback** and **GitHub**. In a window narrower than 1200 px,
+**Export** and **Figure editor** show only their icons (Export keeps a small chevron); hover one for
+its name. On a tablet narrower than 800 px the search box folds into a search button that opens it
+over the bar. On a phone the search box opens from that button too, and Export, the Figure editor,
+Theme and Help move into the view bar's **More** sheet.
 
 ### Dataset menu
 
 The dataset's name and protein count, for example **Venom toxins (demo) · 7,831 proteins**. A long
-name is shortened; hover it for the full name. Click it to open the same panel as
-[Import](#import), where you can switch to another dataset.
+name is shortened; hover it for the full name. Click it to open the [Import](#import) panel, where
+you can switch to another dataset. With nothing loaded it reads **Import**.
 
 ### Search
 
@@ -70,7 +73,6 @@ Click the [dataset name](#dataset-menu) to open the panel:
   list links to the whole page. Large examples carry a **Large** badge, and their ⓘ also gives the
   download size and the memory and time they take to open. The example currently loaded is
   disabled and marked with a check; its ⓘ still opens.
-- **Export…** closes the panel and opens the [Export panel](#export) under the dataset name.
 
 Choosing an example loads it and puts `dataset=<id>` in the URL, so the link is shareable and the
 browser's **Back** button returns to whatever was shown before. The file you imported stays stored
@@ -97,11 +99,12 @@ the startup load.
 
 ### Export
 
-Click the dataset name and choose **Export…** to save your visualization or its data (on a phone:
-**More**, then **Export**). The Export panel asks what first, then shows only the options for it,
-and one **Download** button that names the file:
+Click **Export** in the app bar to save your visualization or its data (on a phone: **More**, then
+**Export**). With nothing loaded it is greyed out, and its tooltip says to load a dataset first. The
+Export panel asks what first, then shows only the options for it, and one **Download** button that
+names the file:
 
-![The Export panel open under the dataset name: Image, Protein IDs, Table and Data bundle, with Image and PNG chosen and Download PNG](./images/export-menu.png)
+![The Export panel open under the Export button: Image, Protein IDs, Table and Data bundle, with Image and PNG chosen and Download PNG](./images/export-menu.png)
 
 | Choose          | Then                        | Saves                                                       |
 | --------------- | --------------------------- | ----------------------------------------------------------- |
@@ -111,7 +114,7 @@ and one **Download** button that names the file:
 | **Data bundle** | **Include legend settings** | All data and, with the checkbox, your settings              |
 
 The arrow keys move between the choices, **Tab** moves on to their options and **Download**, and
-**Escape** closes the panel and returns to the dataset name. See
+**Escape** closes the panel and returns to **Export**. See
 [Exporting Results](/explore/exporting) for what each file holds.
 
 ### Figure editor

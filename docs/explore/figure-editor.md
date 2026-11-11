@@ -7,9 +7,9 @@ The Figure Editor is a window-filling dialog for creating publication-ready figu
 
 ## Opening the Figure Editor
 
-Click **Figure editor** at the right of the app bar, before the theme and Help buttons. On a tablet
-the button shows only its image icon, named by its tooltip; on a phone, open **More** and choose
-**Figure editor**.
+Click **Figure editor** at the right of the app bar, after **Export** and before the theme and Help
+buttons. In a window narrower than 1200 px the button shows only its image icon, named by its
+tooltip; on a phone, open **More** and choose **Figure editor**.
 
 The editor opens as a dialog that fills the window, with a **preview canvas** on the left and a
 **settings sidebar** on the right. **Close**, the dialog's **×** and **Escape** close it; when an
@@ -21,8 +21,8 @@ figure are always light: a white (or transparent) background with the light colo
 the same whichever theme you made it in.
 :::
 
-To download an image without opening the editor, click the dataset name, choose **Export…**, then
-**Image** and **PNG** or **PDF**. It always exports your current view at 2048 × 1024 px and does not
+To download an image without opening the editor, click **Export** in the app bar, then **Image**
+and **PNG** or **PDF**. It always exports your current view at 2048 × 1024 px and does not
 use the editor's settings.
 
 The editor always renders the full view, what a double-click on the plot shows, not your current

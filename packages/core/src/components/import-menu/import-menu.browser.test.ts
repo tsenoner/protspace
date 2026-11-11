@@ -429,32 +429,18 @@ describe('protspace-import-menu', () => {
     expect(root().activeElement).toBe(example('demo'));
   });
 
-  it('Export… shows only when exportable, opens a dialog, and hands over with the anchor', async () => {
+  it('only imports: it offers no Export', async () => {
+    menu.lastFile = {
+      name: 'kinases.parquetbundle',
+      sizeLabel: '3.2 MB',
+      storedAt: '2026-01-01T00:00:00Z',
+    };
     await open();
-    expect(root().querySelector('.import-export-button')).toBeNull();
-    escape();
-    await settle();
-
-    menu.exportable = true;
-    const handOver = vi.fn();
-    menu.addEventListener('open-export-menu', handOver);
-    menu.openFrom(datasetButton());
-    await settle();
-    const exportButton = root().querySelector('.import-export-button') as HTMLElement;
-    expect(exportButton.textContent!.trim()).toBe('Export…');
-    // The Export panel it opens is a dialog, as this one is.
-    expect(exportButton.shadowRoot!.querySelector('button')!.getAttribute('aria-haspopup')).toBe(
-      'dialog',
+    const labels = [...root().querySelectorAll<HTMLElement>('[data-import-action]')].map((action) =>
+      (action.getAttribute('aria-label') ?? action.textContent ?? '').trim(),
     );
-    // Last, after the examples.
-    const sections = [...root().querySelectorAll('.import-section')];
-    expect(sections.indexOf(exportButton.parentElement!)).toBe(sections.length - 1);
-
-    exportButton.click();
-    await vi.waitFor(() => expect(handOver).toHaveBeenCalledOnce());
-    // The panel closed first, so the one that opens next is the top layer.
-    expect(isOpen()).toBe(false);
-    expect((handOver.mock.calls[0][0] as CustomEvent).detail).toEqual({ anchor: datasetButton() });
+    expect(labels.length).toBeGreaterThan(2);
+    expect(labels.some((label) => /export/i.test(label))).toBe(false);
   });
 
   it('ArrowDown and ArrowUp move between the actions and skip the disabled example', async () => {

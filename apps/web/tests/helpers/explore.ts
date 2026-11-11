@@ -287,7 +287,7 @@ export const importMenu = (page: Page): Locator => page.locator('#myImportMenu')
 /** The element that holds the Export panel. */
 export const exportMenu = (page: Page): Locator => page.locator('#myExportMenu');
 
-/** The Import panel: a dialog named "Import" that the Import button and the dataset name open. */
+/** The Import panel: a dialog named "Import" that the dataset name opens. */
 export const importPanel = (page: Page): Locator =>
   importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
 
@@ -297,7 +297,8 @@ export const removeLastFileButton = (page: Page, fileName: string): Locator =>
 
 /**
  * The app bar's dataset name, which opens the Import panel (the dataset switcher; Import has no
- * button of its own). Its name reads "{name}, {count} proteins, switch dataset".
+ * button of its own). Its name reads "{name}, {count} proteins, switch dataset"; with nothing
+ * loaded the same button reads "Import" and this finds nothing.
  */
 export const datasetSwitcher = (page: Page): Locator =>
   appBar(page).getByRole('button', { name: /, switch dataset$/ });
@@ -384,9 +385,12 @@ export const contoursTrigger = (page: Page): Locator =>
 export const contoursMenu = (page: Page): Locator =>
   page.locator('protspace-contours-menu').getByRole('menu', { name: 'Contours' });
 
-/** The Import panel's "Export…", which opens the Export panel under the dataset name, and the panel. */
+/**
+ * The app bar's Export button, labelled from 1200 px and an icon below (a phone has More's Export
+ * row instead), and the panel it opens.
+ */
 export const exportTrigger = (page: Page): Locator =>
-  importMenu(page).getByRole('button', { name: 'Export…', exact: true });
+  appBar(page).getByRole('button', { name: 'Export', exact: true });
 export const exportPanel = (page: Page): Locator =>
   exportMenu(page).getByRole('dialog', { name: 'Export', exact: true });
 
@@ -591,14 +595,13 @@ export async function pickExample(page: Page, id: string): Promise<void> {
 }
 
 /**
- * Opens the Export panel unless it is open; resolves once it shows. It opens from the dataset
- * name's Import panel ("Export…"). "Open" is read from the popover's `open` attribute, which goes
- * at once on close, not from the panel, which stays visible while it fades out.
+ * Opens the Export panel unless it is open; resolves once it shows. It opens from the app bar's
+ * Export button. "Open" is read from the popover's `open` attribute, which goes at once on close,
+ * not from the panel, which stays visible while it fades out.
  */
 export async function openExportMenu(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
   if ((await exportMenu(page).locator('ps-popover[open]').count()) === 0) {
-    await openImportMenu(page);
     await exportTrigger(page).click();
   }
   await expect(exportPanel(page)).toBeVisible();
