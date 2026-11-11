@@ -336,13 +336,22 @@ describe('protspace-query-builder: the footer', () => {
   const box = (builder: ProtspaceQueryBuilder, selector: string) =>
     builder.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
 
-  it('follows the last card and "Add condition" while the cards fit', async () => {
+  it('puts "Add condition" and "Add group" side by side, equally wide, at the sidebar width', async () => {
     const builder = await mount([card()]);
-    const add = box(builder, '.add-condition');
+    const condition = box(builder, '.add-condition');
+    const group = box(builder, '.add-group');
+    expect(group.top).toBeCloseTo(condition.top, 0);
+    expect(group.left).toBeGreaterThan(condition.right);
+    expect(group.width).toBeCloseTo(condition.width, 0);
+  });
+
+  it('follows the last card and the add buttons while the cards fit', async () => {
+    const builder = await mount([card()]);
+    const actions = box(builder, '.query-actions');
     const footer = box(builder, '.query-footer');
     // One gap of the builder's column between them, and room left below.
-    expect(footer.top - add.bottom).toBeGreaterThanOrEqual(0);
-    expect(footer.top - add.bottom).toBeLessThan(24);
+    expect(footer.top - actions.bottom).toBeGreaterThanOrEqual(0);
+    expect(footer.top - actions.bottom).toBeLessThan(24);
     expect(builder.getBoundingClientRect().bottom - footer.bottom).toBeGreaterThan(200);
   });
 

@@ -69,26 +69,27 @@ export const queryBuilderStyles = [
       scrollbar-width: thin;
     }
 
+    /* Add condition and Add group: two equal dashed kit buttons at the end of the cards. They
+       share a row and wrap only when the panel is too narrow for both labels. */
     .query-actions {
       display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: var(--ps-space-1);
+      flex-wrap: wrap;
+      gap: var(--ps-space-1-5);
     }
 
-    /* Add condition: a full-width dashed kit button at the end of the cards. */
-    .add-condition {
+    :is(.add-condition, .add-group) {
       display: flex;
-      align-self: stretch;
+      flex: 1 1 0;
+      min-width: max-content;
     }
 
-    .add-condition::part(button) {
+    :is(.add-condition, .add-group)::part(button) {
       width: 100%;
       border-style: dashed;
       color: var(--ps-text-muted);
     }
 
-    .add-condition::part(button):hover {
+    :is(.add-condition, .add-group)::part(button):hover {
       color: var(--ps-text);
     }
 

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  addConditionButton,
+  addGroupButton,
   applyFirstCategoryFilter,
   clearStatusChip,
   closeFilterPanel,
@@ -134,7 +136,7 @@ test.describe('the Filter panel', () => {
     await expect(cancel).toBeDisabled();
 
     // An empty condition is not a change, so Cancel stays off.
-    await queryBuilder(page).getByRole('button', { name: 'Add condition', exact: true }).click();
+    await addConditionButton(page).click();
     await expect(conditionRows(page)).toHaveCount(2);
     await expect(cancel).toBeDisabled();
 
@@ -150,6 +152,41 @@ test.describe('the Filter panel', () => {
     await expect(conditionRows(page)).toHaveCount(1);
     await expect(cancel).toBeDisabled();
     expect((await readPlotFilter(page)).filtersActive).toBe(true);
+  });
+
+  test('"Add group" below the cards adds a group with one card; its own "Add condition" adds to it', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await openFilter(page);
+    const groups = queryBuilder(page).locator('.group-container');
+
+    await addGroupButton(page).click();
+
+    await expect(groups).toHaveCount(1);
+    await expect(groups.locator('protspace-query-condition-row')).toHaveCount(1);
+    await expect(conditionRows(page)).toHaveCount(2);
+    // A group adds cards, not groups.
+    await expect(groups.getByRole('button', { name: 'Add group', exact: true })).toHaveCount(0);
+
+    await groups.getByRole('button', { name: 'Add condition', exact: true }).click();
+    await expect(groups.locator('protspace-query-condition-row')).toHaveCount(2);
+
+    // The top-level button still adds after the group.
+    await addConditionButton(page).click();
+    await expect(conditionRows(page)).toHaveCount(4);
+    await expect(groups.locator('protspace-query-condition-row')).toHaveCount(2);
+  });
+
+  test("the header's ⋯ menu holds only Clear all", async ({ page }) => {
+    await openExplore(page);
+    await openFilter(page);
+
+    await filterPanel(page).getByRole('button', { name: 'Filter actions', exact: true }).click();
+
+    await expect(page.getByRole('menu', { name: 'Filter actions' })).toBeVisible();
+    // The items are slotted, so not inside the menu role's subtree; only the open menu's show.
+    await expect(page.getByRole('menuitem')).toHaveText(['Clear all']);
   });
 
   test("the filter chip's ✕ removes the filter", async ({ page }) => {
@@ -204,13 +241,14 @@ test.describe('the Filter panel', () => {
   }) => {
     await openExplore(page);
     await openFilter(page);
-    const add = queryBuilder(page).getByRole('button', { name: 'Add condition', exact: true });
+    const add = addConditionButton(page);
+    const actions = queryBuilder(page).locator('.query-actions');
     const footer = queryBuilder(page).locator('.query-footer');
     const below = async () => {
-      const button = (await add.boundingBox())!;
-      return (await footer.boundingBox())!.y - (button.y + button.height);
+      const row = (await actions.boundingBox())!;
+      return (await footer.boundingBox())!.y - (row.y + row.height);
     };
-    // One gap of the builder's column under "Add condition".
+    // One gap of the builder's column under the add buttons.
     expect(await below()).toBeGreaterThanOrEqual(0);
     expect(await below()).toBeLessThan(24);
 
