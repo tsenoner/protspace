@@ -230,7 +230,10 @@ Categorical annotations use discrete palettes. ProtSpace keeps the established c
 - Dark2
 - Tableau 10
 
-Colors stay attached to categories when you reorder them.
+Colors stay attached to categories when you reorder or sort them, under every palette. Filtering
+or isolating never recolors a category: a category the filter hides keeps its color for when it
+comes back, and removing the filter restores every color. A color is freed for another category
+only when you move a category into `Other` (or lower **Max legend items**) with no filter applied.
 
 ### Numeric Gradients
 
