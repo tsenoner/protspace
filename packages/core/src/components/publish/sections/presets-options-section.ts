@@ -1,7 +1,14 @@
 import { html, type TemplateResult } from 'lit';
+import '../../kit/select';
+import type { PsSelect, SelectOption } from '../../kit/select';
 import '../../kit/tooltip';
 import { JOURNAL_PRESETS, type PresetId } from '../journal-presets';
 import type { PublishState } from '../publish-state';
+
+const BACKGROUND_OPTIONS: SelectOption[] = [
+  { value: 'white', label: 'White' },
+  { value: 'transparent', label: 'Transparent' },
+];
 
 interface PresetsModel {
   preset: PublishState['preset'];
@@ -78,19 +85,18 @@ export function renderOptions(model: OptionsModel, handlers: OptionsHandlers): T
 
       <div class="publish-row">
         <label>Background</label>
-        <select
+        <ps-select
           class="publish-select"
-          aria-label="Background"
+          size="sm"
+          label="Background"
+          .options=${BACKGROUND_OPTIONS}
           .value=${model.background}
           @change=${(e: Event) => {
             handlers.update({
-              background: (e.target as HTMLSelectElement).value as 'white' | 'transparent',
+              background: (e.target as PsSelect).value as 'white' | 'transparent',
             });
           }}
-        >
-          <option value="white">White</option>
-          <option value="transparent">Transparent</option>
-        </select>
+        ></ps-select>
       </div>
     </div>
   `;

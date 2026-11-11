@@ -7,7 +7,7 @@ import { PanelFold } from './PanelFold';
 import { PanelTabs } from './PanelTabs';
 import { useWorkbenchStatus } from './use-workbench-status';
 
-/** The builder the filter controller wires; the header's ⋯ menu edits its draft. */
+/** The builder the filter controller wires; the header's ⋯ menu clears its draft. */
 const builder = () => document.getElementById('myQueryBuilder') as ProtspaceQueryBuilder | null;
 
 /**
@@ -18,7 +18,8 @@ const builder = () => document.getElementById('myQueryBuilder') as ProtspaceQuer
  * legend and hands focus to the rail's Filter item (CSS hides Close below 951 px).
  *
  * Beside the heading, a label says whether the panel shows the plot's filter ("Applied") or a
- * draft ("2 unapplied changes"); the ⋯ menu adds a group or clears the draft.
+ * draft ("2 unapplied changes"); the ⋯ menu clears the draft. Add condition and Add group sit
+ * below the cards, in the builder.
  */
 export function FilterPanel({
   panel,
@@ -52,7 +53,6 @@ export function FilterPanel({
     element.anchor = more.current;
     const onSelect = (event: Event) => {
       const value = (event as CustomEvent<{ value: string }>).detail.value;
-      if (value === 'add-group') builder()?.addGroup();
       if (value === 'clear-all') builder()?.clearAll();
     };
     element.addEventListener('ps-select', onSelect);
@@ -104,7 +104,6 @@ export function FilterPanel({
           onClick={toggleMenu}
         ></ps-icon-button>
         <ps-menu ref={menu} label="Filter actions" placement="bottom-end">
-          <ps-menu-item value="add-group">Add group</ps-menu-item>
           <ps-menu-item value="clear-all" danger>
             Clear all
           </ps-menu-item>

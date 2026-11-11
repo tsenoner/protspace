@@ -1,6 +1,5 @@
 import { css, unsafeCSS } from 'lit';
 import { LANDSCAPE_PHONE_MEDIA, PHONE_MEDIA } from '../../utils/breakpoints';
-import { selectOptionStyles } from '../kit/field.styles';
 import { focusRing, kitHost, reducedMotion } from '../kit/kit-shared.styles';
 
 /**
@@ -12,8 +11,6 @@ export const publishModalStyles = [
   kitHost,
   focusRing,
   reducedMotion,
-  // The editor's native selects: their lists stay readable in either theme.
-  selectOptionStyles,
   css`
     /* ─── Layout ────────────────────────────────────────────── */
     .publish-container {
@@ -266,15 +263,9 @@ export const publishModalStyles = [
       font-size: var(--ps-text-xs);
     }
 
+    /* The kit select (ps-select size="sm"); its text at the settings' size. */
     .publish-select {
-      padding: var(--ps-space-0-5) var(--ps-space-1-5);
-      border: 1px solid var(--ps-border-control);
-      border-radius: var(--ps-radius);
-      background: var(--ps-surface);
-      color: var(--ps-text);
-      font-family: inherit;
       font-size: var(--ps-text-sm);
-      cursor: pointer;
     }
 
     .publish-checkbox-label {
@@ -568,12 +559,11 @@ export const publishModalStyles = [
       font-size: var(--ps-text-sm);
     }
 
-    /* Touch: the tools, presets and format toggles, the number fields and the selects are 40 px
-       targets. */
+    /* Touch: the tools, presets and format toggles and the number fields are 40 px targets, as
+       the kit selects are on their own. */
     @media (pointer: coarse) {
       .publish-toggle-btn,
-      .publish-row-input,
-      .publish-select {
+      .publish-row-input {
         min-height: var(--ps-touch-target);
       }
 

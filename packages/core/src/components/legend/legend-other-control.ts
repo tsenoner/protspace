@@ -7,6 +7,8 @@ const VIEW_BUTTON = '.legend-item-other .view-button';
 /** What the Other popover reads from the legend and asks it to do. */
 interface OtherControlOptions {
   getItems(): readonly OtherItem[];
+  /** The selected annotation, whose value labels the rows use. */
+  getAnnotation(): string;
   /** Moves one category out of Other; the popover stays open. */
   add(value: string): void;
   /** Moves every category out of Other and closes the popover. */
@@ -98,6 +100,7 @@ export class OtherPopoverControl {
       .anchor=${this._anchor}
       .open=${this.isOpen}
       .items=${this.options.getItems()}
+      .annotation=${this.options.getAnnotation()}
       @other-add=${this._onAdd}
       @other-add-all=${this._onAddAll}
       @ps-close=${this._onClose}

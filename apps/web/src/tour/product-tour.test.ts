@@ -70,7 +70,7 @@ function fakeElement(
 }
 
 const selector = (id: string) => `[data-driver-id="${id}"]`;
-const DESKTOP: TourContext = { mode: 'desktop', coarse: false, mac: false };
+const DESKTOP: TourContext = { mode: 'desktop', coarse: false, mac: false, searchFolded: false };
 
 const store = new Map<string, string>();
 const media = { reduced: false, coarse: false };

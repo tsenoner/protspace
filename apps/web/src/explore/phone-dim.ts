@@ -1,6 +1,6 @@
 import type { ProtspaceScatterplot } from '@protspace/core';
 import { hasStructureSheet, type LayoutModeSource } from './layout-mode';
-import { getTheme, subscribeTheme } from './theme-state';
+import { getResolvedTheme, subscribeTheme } from './theme-state';
 
 /** The plot's own fade of unselected points (core's DEFAULT_CONFIG.fadedOpacity). */
 const PLOT_FADED_OPACITY = 0.15;
@@ -23,20 +23,14 @@ type FlagSource = {
  */
 export function touchDarkSource(): FlagSource {
   const coarse = matchMedia('(pointer: coarse)');
-  const darkOs = matchMedia('(prefers-color-scheme: dark)');
-  const isDark = () => {
-    const theme = getTheme();
-    return theme === 'dark' || (theme === 'system' && darkOs.matches);
-  };
   return {
-    get: () => coarse.matches && isDark(),
+    get: () => coarse.matches && getResolvedTheme() === 'dark',
     subscribe(listener) {
       coarse.addEventListener('change', listener);
-      darkOs.addEventListener('change', listener);
+      // The theme store also reports an OS scheme change.
       const stopTheme = subscribeTheme(listener);
       return () => {
         coarse.removeEventListener('change', listener);
-        darkOs.removeEventListener('change', listener);
         stopTheme();
       };
     },

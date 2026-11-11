@@ -169,16 +169,24 @@ structure loads, when the Filter panel counts) read the same value. Touch afford
 
 ## Theme
 
-The explore page's theme (design decision 16) is System, Light or Dark, kept under
-`protspace:theme` by its own store, `apps/web/src/explore/theme-state.ts` (its key, choices and
-default in the leaf `theme-defaults.ts`), beside the layout store. The choice goes as is onto
-`data-theme` on `<html>`, and only while `/explore` is mounted: `Explore.tsx` applies it in a
-layout effect and removes it on unmount, so the landing and privacy pages keep their look.
-`data-theme="system"` stays `system`; the token sheet's media query follows the OS. On a cold load
-of `/explore`, a classic script in `index.html`, after the GitHub Pages redirect, sets the
-attribute from storage before first paint, and an unlayered `<style>` paints the dark surface
-until the lazy chunk adopts the tokens; `theme-boot.test.ts` pins the script's key, choices and
-default and the style's colour to `theme-defaults.ts` and `theme.ts`.
+The site's theme (design decision 16) is one choice for Home, Explore and the docs. It is
+stored under VitePress's own key, `vitepress-theme-appearance` (`config/theme.ts`), with VueUse's
+raw values: `dark` or `light` for an override, `auto` or nothing to follow the system. The docs'
+pre-paint script hard-codes that key, so the app adopts it; the app's earlier `protspace:theme`
+value moves over once. The app's store, `apps/web/src/explore/theme-state.ts` (the pure rules in
+`theme-defaults.ts`), resolves the choice to `system`, `light` or `dark` and writes it onto
+`data-theme` on `<html>` on every page; `system` stays `system`, and the token sheet's media
+query follows the OS. The button flips the mode on screen: a press stores the other mode, and a
+press back to the OS's mode removes the override (VueUse `useDark`'s rule, which the docs'
+button gets from VitePress's `isDark`). The store also hears OS changes and other tabs' writes.
+
+On a cold load, `THEME_BOOT_SCRIPT` (`config/theme.ts`) sets the attribute from storage before
+first paint: the app's `vite.config.ts` injects it at the end of `index.html`'s head, after the
+GitHub Pages redirect, and the docs run it in their head, before VitePress's own script reads the
+same key for its `.dark` class. An unlayered `<style>` in `index.html` paints the dark surface
+until the stylesheet loads. `theme-boot.test.ts` runs the script and pins the style's colour to
+`tokens.css`. In the docs, `theme/index.ts` keeps `data-theme` in step with `isDark`
+after mount.
 
 ## Tour
 

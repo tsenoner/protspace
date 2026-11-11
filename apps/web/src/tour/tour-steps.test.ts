@@ -72,11 +72,12 @@ const DRIVER_IDS = [
   'search-toggle',
 ];
 
-const context = (mode: LayoutMode, coarse = false, mac = false): TourContext => ({
-  mode,
-  coarse,
-  mac,
-});
+const context = (
+  mode: LayoutMode,
+  coarse = false,
+  mac = false,
+  searchFolded = false,
+): TourContext => ({ mode, coarse, mac, searchFolded });
 const titles = (steps: TourStepSpec[]) => steps.map((step) => step.title);
 const driverId = (selector: string) => /^\[data-driver-id="([a-z-]+)"\]$/.exec(selector)?.[1];
 /** The data-driver-id each step points at: its light-DOM target or its shadow host. */
@@ -115,6 +116,16 @@ describe('tourSteps', () => {
           tourSteps(kind, context('phone', coarse)),
         );
       }
+    }
+  });
+
+  it('sends a tablet narrower than 800 px, whose search is folded, to the search button', () => {
+    for (const kind of ['full'] as const) {
+      const search = step(tourSteps(kind, context('tablet', true, false, true)), 'search');
+      expect(search.target).toBe('[data-driver-id="search-toggle"]');
+      expect(search.description).toContain('Tap the search button');
+      const wide = step(tourSteps(kind, context('tablet', true)), 'search');
+      expect(wide.target).toBe('[data-driver-id="search"]');
     }
   });
 
@@ -230,7 +241,7 @@ describe('tourSteps', () => {
         );
       }
     }
-    // Export… no longer holds the editor.
+    // Export no longer holds the editor.
     expect(step(tourSteps('full', context('desktop')), 'data').description).not.toContain(
       'Figure editor',
     );

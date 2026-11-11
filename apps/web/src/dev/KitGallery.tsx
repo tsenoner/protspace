@@ -1,6 +1,7 @@
 import '@protspace/core';
 import type { PsDialog, PsMenu, SegmentedOption, SelectOption } from '@protspace/core';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { applyTheme } from '../explore/theme-state';
 
 const PALETTES: SelectOption[] = [
   { value: 'kelly', label: "Kelly's colours" },
@@ -34,11 +35,10 @@ export default function KitGallery() {
   const [pressed, setPressed] = useState(true);
   const dialog = useRef<PsDialog>(null);
 
+  // A preview only: leaving the gallery puts back the theme the site has stored.
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    return () => {
-      delete document.documentElement.dataset.theme;
-    };
+    return applyTheme;
   }, [theme]);
 
   return (

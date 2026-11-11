@@ -1,23 +1,26 @@
 # Bars and Tools
 
 The Explore page has two bars above the plot and a set of tools on the plot itself. The **app bar**
-holds the dataset (with Import and Export), search, the Figure editor, the theme and help. The **view bar** below it
-chooses what the plot shows. The **plot tools** select proteins and narrow the view.
+holds the dataset (which opens Import), search, Export, the Figure editor, the theme and help. The
+**view bar** below it chooses what the plot shows. The **plot tools** select proteins and narrow the view.
 [Interface Overview](/explore/) shows where each one sits; this page describes what each control
 does.
 
 ## App bar
 
-From left to right: the ProtSpace wordmark (back to the home page), the dataset menu (which holds
-Import and Export), the search box, **Figure editor**, **Theme**, **Help**, **Feedback** and
-**GitHub**. On a tablet **Figure editor** shows only its icon. On a phone the search box opens from
-a search button, and the Figure editor, Theme and Help move into the view bar's **More** sheet.
+From left to right: the ProtSpace wordmark (back to the home page), the dataset menu (which opens
+[Import](#import)), the search box, [**Export**](#export) and **Figure editor**, then past a thin
+divider (left out below 820 px) **Theme**, **Help**, **Feedback** and **GitHub**. In a window narrower than 1200 px,
+**Export** and **Figure editor** show only their icons (Export keeps a small chevron); hover one for
+its name. On a tablet narrower than 800 px the search box folds into a search button that opens it
+over the bar. On a phone the search box opens from that button too, and Export, the Figure editor,
+Theme and Help move into the view bar's **More** sheet.
 
 ### Dataset menu
 
 The dataset's name and protein count, for example **Venom toxins (demo) · 7,831 proteins**. A long
-name is shortened; hover it for the full name. Click it to open the same panel as
-[Import](#import), where you can switch to another dataset.
+name is shortened; hover it for the full name. Click it to open the [Import](#import) panel, where
+you can switch to another dataset. With nothing loaded it reads **Import**.
 
 ### Search
 
@@ -40,7 +43,8 @@ Paste several IDs at once (separated by newlines or spaces) and every matching p
 Pasting a list only ever adds. When something does not go as asked, a short report opens under the
 box:
 
-![The search box with its report after pasting five IDs: "3 of 5 found", and the two unknown IDs listed under Not found](./images/search-messages.png)
+![The search box with its report after pasting five IDs: "3 of 5 found", and the two unknown IDs listed under Not found](./images/search-messages.png){.light-only}
+![The search box with its report after pasting five IDs: "3 of 5 found", and the two unknown IDs listed under Not found](./images/search-messages-dark.png){.dark-only}
 
 | Report                                      | When                                                                    |
 | ------------------------------------------- | ----------------------------------------------------------------------- |
@@ -59,7 +63,10 @@ Click the [dataset name](#dataset-menu) to open the panel:
   [Importing Data](/explore/importing-data) for the full flow, size limits, and privacy
   implications. You can also drop either file type anywhere on the page.
 - **Last file** reopens the file you imported last, which ProtSpace keeps in your browser. It
-  shows only while another dataset is on screen.
+  shows only while another dataset is on screen. The red **×** beside it, or **Delete** (or
+  **Backspace**) on the row, removes that copy from your browser after you confirm. This cannot be
+  undone: if you have no other copy, reopen it and export it first. Your legend settings for it
+  are kept, so importing the file again brings them back.
 - **Examples** lists the startup demo and the datasets behind the ProtSpace paper's figures;
   [Example Datasets](/explore/example-datasets) describes each one. Each item's label gives the
   protein count and download size, and its **ⓘ** icon says what the example is and what its
@@ -67,7 +74,6 @@ Click the [dataset name](#dataset-menu) to open the panel:
   list links to the whole page. Large examples carry a **Large** badge, and their ⓘ also gives the
   download size and the memory and time they take to open. The example currently loaded is
   disabled and marked with a check; its ⓘ still opens.
-- **Export…** closes the panel and opens the [Export panel](#export) under the dataset name.
 
 Choosing an example loads it and puts `dataset=<id>` in the URL, so the link is shareable and the
 browser's **Back** button returns to whatever was shown before. The file you imported stays stored
@@ -94,11 +100,13 @@ the startup load.
 
 ### Export
 
-Click the dataset name and choose **Export…** to save your visualization or its data (on a phone:
-**More**, then **Export**). The Export panel asks what first, then shows only the options for it,
-and one **Download** button that names the file:
+Click **Export** in the app bar to save your visualization or its data (on a phone: **More**, then
+**Export**). With nothing loaded it is greyed out, and its tooltip says to load a dataset first. The
+Export panel asks what first, then shows only the options for it, and one **Download** button that
+names the file:
 
-![The Export panel open under the dataset name: Image, Protein IDs, Table and Data bundle, with Image and PNG chosen and Download PNG](./images/export-menu.png)
+![The Export panel open under the Export button: Image, Protein IDs, Table and Data bundle, with Image and PNG chosen and Download PNG](./images/export-menu.png){.light-only}
+![The Export panel open under the Export button: Image, Protein IDs, Table and Data bundle, with Image and PNG chosen and Download PNG](./images/export-menu-dark.png){.dark-only}
 
 | Choose          | Then                        | Saves                                                       |
 | --------------- | --------------------------- | ----------------------------------------------------------- |
@@ -108,7 +116,7 @@ and one **Download** button that names the file:
 | **Data bundle** | **Include legend settings** | All data and, with the checkbox, your settings              |
 
 The arrow keys move between the choices, **Tab** moves on to their options and **Download**, and
-**Escape** closes the panel and returns to the dataset name. See
+**Escape** closes the panel and returns to **Export**. See
 [Exporting Results](/explore/exporting) for what each file holds.
 
 ### Figure editor
@@ -119,11 +127,11 @@ sizes, labels, arrows and zoom insets, saved as PNG or PDF. See the
 
 ### Theme
 
-**Theme** steps the page through **System** (follow your operating system, the default),
-**Dark** and **Light**: each click moves to the next one and applies it at once. Its icon shows the
-mode that is on, and its tooltip says which mode a click switches to. ProtSpace remembers your
-choice in this browser. The plot, the legend and
-the structure viewer follow the theme; exported images and figures are always light.
+**Theme** switches between light and dark at once. ProtSpace starts in your operating system's
+setting; a click to the other mode is remembered in this browser, and a click back to your system's
+mode follows the system again. Its icon shows the mode on screen, and its tooltip says which mode a
+click switches to. The home page and the docs share the choice. The plot, the legend and the
+structure viewer follow the theme; exported images and figures are always light.
 
 ### Help
 
@@ -145,7 +153,8 @@ into **More**.
 
 Switch between the projections your bundle carries:
 
-![The Projection menu open under its button, listing the bundle's projections with the current one checked](./images/projection-menu.png)
+![The Projection menu open under its button, listing the bundle's projections with the current one checked](./images/projection-menu.png){.light-only}
+![The Projection menu open under its button, listing the bundle's projections with the current one checked](./images/projection-menu-dark.png){.dark-only}
 
 | Method       | Best For                           |
 | ------------ | ---------------------------------- |
@@ -188,7 +197,8 @@ recompute the projection with the 2D method (e.g. `umap2`). Otherwise `protspace
 
 Choose which annotation colours the points:
 
-![The Color by menu open under its button: a search field and the annotations grouped by source](./images/color-by-menu.png)
+![The Color by menu open under its button: a search field and the annotations grouped by source](./images/color-by-menu.png){.light-only}
+![The Color by menu open under its button: a search field and the annotations grouped by source](./images/color-by-menu-dark.png){.dark-only}
 
 - **Grouped categories**: annotations are organized into sections, one per source (Biocentral,
   InterPro, TED, Taxonomy, UniProt, Other)
@@ -229,7 +239,8 @@ annotation and open the [projection details](/explore/scatterplot#projection-met
 numbers, or see [Separation Scores](/explore/separation-scores) for what they mean.
 :::
 
-![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge.png)
+![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge.png){.light-only}
+![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge-dark.png){.dark-only}
 
 ::: info EAT badge
 An **EAT** badge marks an annotation in which some proteins carry a value **transferred from a
@@ -251,7 +262,8 @@ even where its points pile on top of each other. The button names the current mo
 **Contours Off** or **Contours Auto**. When the window is narrow it shows only the mode, and on a
 narrower one the modes move into **More**.
 
-![The Contours menu open under its button, with Always checked among Off, Auto and Always](./images/contours-menu.png)
+![The Contours menu open under its button, with Always checked among Off, Auto and Always](./images/contours-menu.png){.light-only}
+![The Contours menu open under its button, with Always checked among Off, Auto and Always](./images/contours-menu-dark.png){.dark-only}
 
 | Mode              | What it does                                                        |
 | ----------------- | ------------------------------------------------------------------- |
@@ -263,7 +275,8 @@ Auto and Always draw the same rings and fill; only their strength differs. Auto 
 many points are visible, how large the plot is and how far you have zoomed in. It does not check
 whether points actually overlap.
 
-![The demo dataset with Contours set to Always: each protein family's cluster is outlined by rings in its legend colour](./images/scatterplot-contours.png)
+![The demo dataset with Contours set to Always: each protein family's cluster is outlined by rings in its legend colour](./images/scatterplot-contours.png){.light-only}
+![The demo dataset with Contours set to Always: each protein family's cluster is outlined by rings in its legend colour](./images/scatterplot-contours-dark.png){.dark-only}
 
 How to read them:
 

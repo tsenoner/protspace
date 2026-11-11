@@ -26,6 +26,7 @@ export type MockScatterplot = HTMLElement & {
   getCurrentData(): VisualizationData;
   isIsolationMode(): boolean;
   getIsolationHistory(): string[][];
+  focusCategories?(values: readonly string[] | null, source?: 'strip' | 'row'): void;
 };
 
 /**

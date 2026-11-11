@@ -46,8 +46,8 @@ function cssOf(path: string): string {
 }
 
 /**
- * Declarations that hard-code a colour or a font size, declare a token outside theme.ts, or read a
- * variable that neither theme.ts, RUNTIME_VARS nor the checked CSS itself declares. A module may
+ * Declarations that hard-code a colour or a font size, declare a token outside tokens.css, or read a
+ * variable that neither tokens.css, RUNTIME_VARS nor the checked CSS itself declares. A module may
  * read a property it declares (--card-gap, the plot's --protspace-* sizes); a sheet it composes
  * counts as its own, since cssOf returns both.
  */
@@ -82,25 +82,11 @@ function cssViolations(cssText: string): string[] {
 /** The web app's explore stylesheets (index.css belongs to the landing page): colours from tokens. */
 const WEB_CSS = ['workbench/workbench.css', 'tour/product-tour.css'];
 
-/**
- * index.css's shadcn colours (light-only HSL triples) and the Tailwind aliases that wrap them: an
- * explore sheet reading one stays light in Dark.
- */
-const LANDING_COLOURS = new Set(
-  [
-    ...readFileSync(join(WEB_SRC, 'index.css'), 'utf8').matchAll(
-      /(--[\w-]+)\s*:\s*(?:[\d.]+ [\d.]+% [\d.]+%|hsl\(var\(--[\w-]+\)\))\s*;/g,
-    ),
-  ].map(([, name]) => name),
-);
 /** Named colours beyond COLOUR's white/black; false positives are cheap in the two web sheets. */
 const NAMED =
   /(?<![\w-])(?:gr[ae]y|silver|red|green|blue|yellow|orange|navy|maroon|teal|purple|whitesmoke|gainsboro|lightgr[ae]y|darkgr[ae]y)(?![\w-])/i;
 
-/**
- * A web stylesheet's raw or named colours, its reads of --ps-* tokens theme.ts does not define,
- * and its reads of the landing page's light-only colours.
- */
+/** A web stylesheet's raw or named colours, and its reads of --ps-* tokens tokens.css does not define. */
 function webCssViolations(cssText: string): string[] {
   const css = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
   const found: string[] = [];
@@ -109,10 +95,7 @@ function webCssViolations(cssText: string): string[] {
     const unknownToken = [...value.matchAll(/var\(\s*(--ps-[\w-]+)/g)].some(
       ([, name]) => !DEFINED.has(name),
     );
-    const landingColour = [...value.matchAll(/var\(\s*(--[\w-]+)/g)].some(([, name]) =>
-      LANDING_COLOURS.has(name),
-    );
-    if (COLOUR.test(value) || NAMED.test(value) || unknownToken || landingColour)
+    if (COLOUR.test(value) || NAMED.test(value) || unknownToken)
       found.push(`${property}: ${value}`);
   }
   return found;
@@ -178,9 +161,9 @@ describe('style lint', () => {
     expect([...read].filter((token) => !DEFINED.has(token))).toEqual([]);
   });
 
-  it('uses every token theme.ts defines', () => {
+  it('uses every token tokens.css defines', () => {
     const sources = [...sourceFiles(CORE_SRC), ...sourceFiles(WEB_SRC)]
-      .filter((file) => file !== join(CORE_SRC, 'styles', 'theme.ts'))
+      .filter((file) => file !== join(CORE_SRC, 'styles', 'tokens.css'))
       .map((file) => readFileSync(file, 'utf8'))
       .join('\n');
     const unused = [...DEFINED].filter((token) => !new RegExp(`${token}(?![\\w-])`).test(sources));
@@ -195,17 +178,68 @@ describe('style lint', () => {
     ).toEqual(['color: #334155', 'border: 1px solid var(--ps-nope)']);
   });
 
-  it('flags a named or landing-page colour in a web stylesheet', () => {
-    expect(LANDING_COLOURS.size).toBeGreaterThan(10);
+  it('flags a named colour in a web stylesheet', () => {
     expect(
       webCssViolations(
-        '.a { border-color: var(--border); color: var(--color-muted-foreground); outline: 1px solid gray; padding: var(--ps-space-2); grid-area: content; }',
+        '.a { color: var(--ps-text); outline: 1px solid gray; padding: var(--ps-space-2); grid-area: content; }',
       ),
-    ).toEqual([
-      'border-color: var(--border)',
-      'color: var(--color-muted-foreground)',
-      'outline: 1px solid gray',
-    ]);
+    ).toEqual(['outline: 1px solid gray']);
+  });
+
+  // The landing's shadcn colours are --ps-* tokens now, so they follow the theme like the app's.
+  it('index.css maps every shadcn colour onto a --ps-* token and declares no colour of its own', () => {
+    const css = readFileSync(join(WEB_SRC, 'index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const colours = [...css.matchAll(/(--color-[\w-]+)\s*:\s*([^;]+);/g)];
+    expect(colours.length).toBeGreaterThan(20);
+    for (const [, name, value] of colours)
+      expect(value.trim(), name).toMatch(/^var\(--ps-[\w-]+\)$/);
+    expect(css).toContain("@import '../../../packages/core/src/styles/tokens.css'");
+  });
+
+  // The docs' VitePress colours are the app's (no #1b1b1f), in light and dark from one block.
+  it("the docs' custom.css maps VitePress's colours onto --ps-* tokens", () => {
+    const css = readFileSync(
+      join(CORE_SRC, '../../../docs/.vitepress/theme/custom.css'),
+      'utf8',
+    ).replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css).toContain("@import '../../../packages/core/src/styles/tokens.css'");
+    const block = css.match(/:root,\s*\.dark\s*\{([^}]*)\}/)?.[1] ?? '';
+    const mapped = new Map(
+      [...block.matchAll(/(--vp-[\w-]+)\s*:\s*([^;]+);/g)].map(([, name, value]) => [
+        name,
+        value.trim(),
+      ]),
+    );
+    for (const name of [
+      '--vp-c-bg',
+      '--vp-c-bg-alt',
+      '--vp-c-bg-elv',
+      '--vp-c-bg-soft',
+      '--vp-c-text-1',
+      '--vp-c-text-2',
+      '--vp-c-text-3',
+      '--vp-c-divider',
+      '--vp-c-border',
+      '--vp-c-gutter',
+      '--vp-c-default-soft',
+      '--vp-c-brand-1',
+      '--vp-c-brand-3',
+      '--vp-c-brand-soft',
+      '--vp-button-brand-text',
+      '--vp-c-warning-1',
+      '--vp-c-danger-1',
+      '--vp-code-bg',
+      '--vp-code-block-bg',
+    ])
+      expect(mapped.get(name), name).toMatch(/var\(--ps-[\w-]+\)/);
+    // No colour literal anywhere in the mapping, and every token it reads exists.
+    for (const [name, value] of mapped) {
+      expect(COLOUR.test(value.replace(/color-mix\(in srgb,/g, '')), name).toBe(false);
+      for (const [, token] of value.matchAll(/var\((--ps-[\w-]+)\)/g))
+        expect(DEFINED.has(token), token).toBe(true);
+    }
+    // Nothing else in the file sets a VitePress colour back to a literal.
+    expect(css.replace(block, '')).not.toMatch(/--vp-c-[\w-]+\s*:/);
   });
 
   it.each(WEB_CSS)('%s reads colours from tokens', (file) => {

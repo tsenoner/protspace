@@ -148,7 +148,7 @@ const Citation = () => (
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`DOI ${ref.doi} (opens in a new tab)`}
-                className="break-all rounded-sm font-mono text-[13px] text-primary underline-offset-4 hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="break-all rounded-sm font-mono text-[13px] text-primary underline-offset-4 hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 {ref.doi}
               </a>
@@ -165,14 +165,14 @@ const Citation = () => (
         <h3 id="citation-resources" className="text-xs tracking-wide text-muted-foreground">
           Code, package and license
         </h3>
-        <div className="mt-2 flex flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-white">
+        <div className="mt-2 flex flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-card">
           {/* Hairlines come from the 1px gaps over a border-coloured list: rows stack on phones,
               form a 2 x 2 grid on tablets, and share the stretched height from lg up. */}
           <ul className="grid flex-1 gap-px bg-border/70 md:grid-cols-2 lg:flex lg:flex-col">
             {resources.map((resource) => {
               const Icon = resource.icon;
               return (
-                <li key={resource.href} className="flex bg-white lg:flex-1">
+                <li key={resource.href} className="flex bg-card lg:flex-1">
                   <a
                     href={resource.href}
                     {...(resource.external

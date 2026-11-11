@@ -22,11 +22,14 @@ Hold **Shift** over a point in the plot to focus its category: its legend row is
 too, and so is its dot in the [score strips](#separation-score-strips) when there are any. A point
 in `Other` highlights the `Other` row. Release **Shift** and the highlight goes.
 
+It works the other way round too: hold **Shift** over a legend row to focus that category in the
+plot, for any annotation. The `Other` row focuses every category under it.
+
 ## Show And Hide Values
 
 Click any legend row to toggle its visibility:
 
-![Hiding, showing and showing only one category](./images/legend-toggle.gif)
+<DocsVideo name="legend-toggle" alt="Hiding, showing and showing only one category" width="1280" height="720" />
 
 - Click once, or press its eye, to hide that value. A hidden row stays in the list, dimmed, with a
   crossed-out eye.
@@ -47,7 +50,7 @@ press **Enter** to open its picker.
 Drag a row by its grip up or down to change the draw order in the scatterplot. Items near the top
 are drawn on top of items below them.
 
-![Dragging a row to the top, then sorting the legend by count](./images/legend-reorder.gif)
+<DocsVideo name="legend-reorder" alt="Dragging a row to the top, then sorting the legend by count" width="1280" height="720" />
 
 Dragging switches the annotation's order to **Your order**. On a touch screen, hold the grip for a
 moment, then drag. From the keyboard, focus a row's grip, press **Space** to pick the row up, move
@@ -59,7 +62,7 @@ Categorical annotations group less frequent values into `Other` once the visible
 current legend cap (**Max legend items** in the [settings](#settings)). The row reads
 `Other · N categories`.
 
-![Searching Other and adding a category to the legend](./images/legend-others.gif)
+<DocsVideo name="legend-others" alt="Searching Other and adding a category to the legend" width="1280" height="720" />
 
 - Press **View** on the `Other` row to open a popover listing the grouped values, largest first,
   each with its count.
@@ -85,8 +88,10 @@ See [Transferred Annotations (EAT)](/explore/eat) for the EAT panel, where the b
 
 When the dataset was prepared with statistics and the selected annotation was scored in the current projection, two strips appear near the top of the legend panel, above the category list: one for `Silhouette`, one for `Davies–Bouldin`. Each plots one dot per category, in that category's legend color, so you can see which values sit apart from the rest and which overlap.
 
-- Hovering a dot highlights the matching legend row, and hovering a row highlights its dot.
-  Holding **Shift** over a point in the plot highlights its category's dot and row as well.
+- Hovering a dot highlights the matching legend row and focuses its category in the plot, as
+  holding **Shift** over one of its points does (a tap only highlights the row). Hovering a row highlights its dot; hold **Shift**
+  as well and the plot focuses that category too (the `Other` row focuses every category under
+  it). Holding **Shift** over a point in the plot highlights its category's dot and row as well.
 - Clicking a dot toggles that category, exactly like clicking its legend row.
 - The strips are where to read the ranking: the legend's own order stays the plot's draw order.
 - While a filter or isolation narrows the view, the strips are replaced by the note `Separation scores are hidden while the view is filtered.`
@@ -126,21 +131,27 @@ nothing is changed.
 
 ### Shared Settings
 
-| Setting                                       | What it does                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Palette**                                   | Picks the active palette for the selected annotation from its swatches.                                                                                                                                                                                                                                                                                                           |
-| **Max legend items**                          | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations (labelled `Bins`): target maximum number of bins.                                                                                                                                                                                                                     |
-| **Shape size / Point size**                   | Adjusts marker size in the scatterplot (range 1 to 64; a larger size from a bundle or an earlier session is capped at 64). The default follows the dataset's protein count, see [Default dot size](#default-dot-size). The size you pick holds for every annotation of the dataset. Numeric annotations use the label `Point size` because numeric legends always render circles. |
-| **Show duplicate counts and spread overlaps** | Shows duplicate count badges and spreads overlapping points when you expand them.                                                                                                                                                                                                                                                                                                 |
+| Setting                                       | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Palette**                                   | Picks the active palette for the selected annotation from its swatches.                                                                                                                                                                                                                                                                                                                                                                               |
+| **Max legend items**                          | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations (labelled `Bins`): target maximum number of bins.                                                                                                                                                                                                                                                                                         |
+| **Shape size / Point size**                   | Adjusts marker size in the scatterplot (range 1 to 64, up to 128 on a dataset of fewer than 10,000 proteins; a larger size from a bundle or an earlier session is capped). The default and the largest size follow the dataset's protein count, see [Default dot size](#default-dot-size). The size you pick holds for every annotation of the dataset. Numeric annotations use the label `Point size` because numeric legends always render circles. |
+| **Show duplicate counts and spread overlaps** | Shows duplicate count badges and spreads overlapping points when you expand them.                                                                                                                                                                                                                                                                                                                                                                     |
 
 ### Default dot size
 
-Until you pick a size, the dot size follows how many proteins the dataset has, so a large dataset
-opens with dots small enough that one category does not cover the others:
+Until you pick a size, the dot size follows how many proteins the dataset has. A small dataset
+opens with dots large enough to read, and a large one with dots small enough that one category does
+not cover the others. Small datasets also accept larger sizes: the GPU draws every dot's pixels at
+each redraw, so a size above 64 is offered only while the dataset draws no more than 10,000
+proteins at 64 would.
 
-| Proteins in the dataset | Up to 10,000 | 20,000 | 40,000 | 100,000 | 570,000 |
-| ----------------------- | ------------ | ------ | ------ | ------- | ------- |
-| Default shape size      | 10           | 6      | 4      | 2       | 1       |
+| Proteins in the dataset | 10  | 100 | 1,000 | 5,000 | 10,000 | 40,000 | 100,000 | 570,000 |
+| ----------------------- | --- | --- | ----- | ----- | ------ | ------ | ------- | ------- |
+| Default shape size      | 40  | 32  | 18    | 12    | 10     | 4      | 2       | 1       |
+| Largest shape size      | 128 | 128 | 128   | 128   | 64     | 64     | 64      | 64      |
+
+Between 5,000 and 10,000 proteins the largest size falls from 128 to 64.
 
 The count is the whole dataset, so hiding categories, filtering or isolating does not change it.
 Legend settings show the dataset's default under the size field. A size you type is stored for the
@@ -230,7 +241,10 @@ Categorical annotations use discrete palettes. ProtSpace keeps the established c
 - Dark2
 - Tableau 10
 
-Colors stay attached to categories when you reorder them.
+Colors stay attached to categories when you reorder or sort them, under every palette. Filtering
+or isolating never recolors a category: a category the filter hides keeps its color for when it
+comes back, and removing the filter restores every color. A color is freed for another category
+only when you move a category into `Other` (or lower **Max legend items**) with no filter applied.
 
 ### Numeric Gradients
 
@@ -257,7 +271,7 @@ If an imported bundle or saved browser state references an unsupported numeric g
 
 ### Shapes
 
-Every category renders as a circle by default. To give a category another colour or shape (square, diamond, plus, triangle-up, triangle-down), click its colour in the legend row (its tooltip reads `Change colour and shape`): the popover has a Shape section underneath the colour picker. Click the colour again, press **Escape** or click elsewhere to close it.
+Every category renders as a circle by default. To give a category another colour or shape (square, diamond, plus, triangle-up, triangle-down), click its colour in the legend row (its tooltip reads `Change colour and shape`): the popover has a Shape section underneath the colour picker. Its shapes are drawn filled, as the plot draws curated proteins; a hollow marker in the plot means an [EAT prediction](/explore/eat#telling-them-apart-in-the-plot). Click the colour again, press **Escape** or click elsewhere to close it.
 
 Numeric and multi-label annotations always render as circles; per-category shape assignment is not available for those.
 

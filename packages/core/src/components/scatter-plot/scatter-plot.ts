@@ -23,6 +23,7 @@ import {
   countNoun,
   annotationLabel,
   formatCount,
+  LEGEND_VALUES,
 } from '@protspace/utils';
 import type { DataDomain, ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
@@ -369,6 +370,12 @@ export class ProtspaceScatterplot extends LitElement {
   private _shiftDown = false;
   /** Shift+hover: the hovered point's category values; every other point fades. */
   @state() private _focusedValues: string[] | null = null;
+  /**
+   * The categories the legend's pointer is on (`focusCategories`), used while Shift + hover is
+   * not: a score strip's dot focuses them without Shift, a legend row only while Shift is held.
+   * Either way {@link _focusFor} decides what they cover, as for a point.
+   */
+  private _externalFocus: { values: string[]; needsShift: boolean } | null = null;
   // The scales and what they were built at: the plot data's length and `_scalesKey()`.
   private _scalesCache: { scales: ScalePair; plotDataLength: number; key: string } | null = null;
 
@@ -631,6 +638,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._unpinTooltip();
     this._hoveredPoint = null;
     this._shiftDown = false;
+    this._externalFocus = null;
     this._setFocusedValues(null);
   }
 
@@ -1024,6 +1032,12 @@ export class ProtspaceScatterplot extends LitElement {
       // and moves the selection between the GPU and staging.
       if (changedProperties.has('_focusedValues') || !this._style.marksOnGpu()) {
         this._webglRenderer?.invalidateStyleCache();
+        // A staged focus or selection moves whole categories between the opacity tiers, and so
+        // between paint depths: re-sort, so the focused points draw on top. The renderer's own
+        // check samples only the rearmost points, which a switch from one focused category to
+        // another leaves faded both times: it would restyle in the old order, leaving the new
+        // focus under faded points and the old one, faded, on top.
+        this._webglRenderer?.invalidateDepthOrder();
       }
       // With an opacity tier at 0, the change also moves which points are interactive.
       // The point-count label may have counted them already: compare the grid's marks.
@@ -1827,24 +1841,55 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
-  /** Shift+hover focus: keep the hovered point's category, fade everything else. */
+  /**
+   * Focuses a category from the legend exactly as Shift + hover on one of its points does, through
+   * the same {@link _focusFor}: the legend reports what its pointer is on, a score strip's dot
+   * (`'strip'`, focused without Shift) or a legend row (`'row'`, focused only while Shift is held,
+   * by the plot's own Shift state). The values are legend values; `Other` stands for its bucket.
+   * Null ends it. Shift + hover on the plot wins, a selection outranks it, and a new dataset or
+   * annotation ends it; the window losing focus ends a strip's.
+   */
+  focusCategories(values: readonly string[] | null, source: 'strip' | 'row' = 'strip'): void {
+    this._externalFocus =
+      values && values.length > 0 ? { values: [...values], needsShift: source === 'row' } : null;
+    this._updateFocus(this._shiftDown);
+  }
+
+  /**
+   * What focusing these categories covers, for a point, a legend row and a score strip's dot
+   * alike: the categories themselves, and the whole "Other" bucket, as the legend shows it, when
+   * one of them is in it (or is `Other` itself). Null when there is nothing to focus.
+   */
+  private _focusFor(values: readonly string[]): string[] | null {
+    const other = this.otherAnnotationValues;
+    const own = values.filter((value) => value !== LEGEND_VALUES.OTHER);
+    const inOther = own.length < values.length || own.some((value) => other.includes(value));
+    const next = inOther ? [...new Set([...own, ...other])] : own;
+    return next.length > 0 ? next : null;
+  }
+
+  /**
+   * The category focus: the Shift-hovered point's categories, else the legend's (`focusCategories`),
+   * both through {@link _focusFor}; every other point fades. A selection outranks it.
+   */
   private _updateFocus(shift: boolean): void {
+    if (this.selectedProteinIds.length) {
+      this._setFocusedValues(null);
+      return;
+    }
     const point = this._hoveredPoint;
     let next: string[] | null = null;
-    // A selection outranks focus, so skip the O(N) focus mask while one is active.
-    // The materialized data is what the visibility model reads: numeric bins and EAT
-    // predictions exist only there, not in the raw `this.data`.
-    const data =
-      shift && point && this.selectedAnnotation && !this.selectedProteinIds.length
-        ? this._views.materialized()
-        : null;
+    // The materialized data is what the visibility model reads: numeric bins and EAT predictions
+    // exist only there, not in the raw `this.data`.
+    const data = shift && point && this.selectedAnnotation ? this._views.materialized() : null;
     if (point && data) {
-      const values = getProteinAnnotationValues(data, point.originalIndex, this.selectedAnnotation);
-      if (values.length > 0) {
-        // A point in the "Other" bucket focuses the whole bucket, as the legend shows it.
-        const inOther = values.some((v) => this.otherAnnotationValues.includes(v));
-        next = inOther ? [...values, ...this.otherAnnotationValues] : values;
-      }
+      next = this._focusFor(
+        getProteinAnnotationValues(data, point.originalIndex, this.selectedAnnotation),
+      );
+    }
+    const external = this._externalFocus;
+    if (next === null && external && (!external.needsShift || this._shiftDown)) {
+      next = this._focusFor(external.values);
     }
     this._setFocusedValues(next);
   }
@@ -1880,12 +1925,18 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _handleWindowBlur = () => {
     this._shiftDown = false;
+    // A row's focus waits for Shift again; a strip dot's ends until the pointer comes back.
+    if (this._externalFocus && !this._externalFocus.needsShift) this._externalFocus = null;
     this._updateFocus(false);
   };
 
   /** Re-derive the focus when its inputs change under a still cursor. */
   private _reconcileFocus(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('data')) this._hoveredPoint = null;
+    // The categories asked for belong to the old dataset or annotation.
+    if (changedProperties.has('data') || changedProperties.has('selectedAnnotation')) {
+      this._externalFocus = null;
+    }
     if (
       changedProperties.has('data') ||
       changedProperties.has('selectedAnnotation') ||
@@ -1894,7 +1945,8 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('eatOverlayEnabled') ||
       changedProperties.has('selectedProteinIds')
     ) {
-      this._updateFocus(this._focusedValues !== null);
+      // A focus that is Shift + hover's own stays one; an asked-for one comes back by itself.
+      this._updateFocus(this._shiftDown || (this._focusedValues !== null && !this._externalFocus));
     }
   }
 

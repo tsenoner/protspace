@@ -75,15 +75,21 @@ The look was chosen with mockups during brainstorming. The chosen screens are ke
 The page becomes a workbench (mockup: [`mockups/workbench-light.png`](mockups/workbench-light.png)):
 
 - **App bar** (48 px): the wordmark (links home); the dataset name and protein count, which open the
-  Import panel (decision 15); search in the centre (⌘K / Ctrl+K); Import and
-  Export; the theme switch; a help menu (docs, keyboard shortcuts, tour); Feedback; GitHub. The
+  Import panel (decision 15); search in the centre (⌘K / Ctrl+K); Export and the Figure editor,
+  the two task buttons, then past a thin divider the theme switch; a help menu (docs, keyboard
+  shortcuts, tour); Feedback; GitHub. The
   site's Home / Docs / Explore / Resources navigation leaves this page; Docs moves into the help
   menu. The plot's Tips & Shortcuts popover and its tour button move into the help menu as
   "Keyboard shortcuts" and "Take the tour".
 - **Shared anchors** (PR 555 review): Home, Explore and the docs keep their own bars, but take the
   bar's height, the wordmark's size and inset, and the inset of the last icon from one file,
   `config/site-bar.css`, and all three end in Feedback then GitHub as the same icons. Switching
-  pages, nothing moves.
+  pages, nothing moves. The follow-up review completes it: all three show the Theme button before
+  Feedback (Explore keeps Help between them), Feedback is the same menu everywhere (email, copy
+  the address, a GitHub issue), the wordmark is one file inverted in dark by `--ps-logo-filter`,
+  and the docs' bar is one full-width strip like the others. Explore keeps its toolbar without
+  site links (the wordmark leads Home, Help leads to the docs), and the bars keep their own phone
+  breakpoints (640 px for Explore, 768 px for Home and the docs, where VitePress fixes it).
 - **View bar** (44 px): how the plot is drawn. Projection (with the projection's "how it was made"
   details beside it), Color by, Contours, Filter. It never wraps: labels shorten first, then the
   least-used items move into a "More" menu.
@@ -163,9 +169,11 @@ width changes, and points under an opaque sidebar are drawn for nothing).
 
 ### 5. Design tokens on the document root
 
-- One stylesheet in core, `packages/core/src/styles/theme.ts` (a Lit `css` module, so the existing
-  ESLint rule and `styles-integrity.test.ts` cover it), is the single source of the design values.
-  Every variable is prefixed `--ps-`, so nothing clashes with the shadcn names the landing page uses.
+- One stylesheet in core, `packages/core/src/styles/tokens.css`, is the single source of the design
+  values: plain CSS, which core adopts as a Lit sheet (`theme.ts` reads it raw), the landing page
+  imports in `apps/web/src/index.css` and the docs in their custom CSS (decision 16), so all three
+  share one palette. Every variable is prefixed `--ps-`, so nothing clashes with the shadcn names
+  the landing page's own classes use.
   It has two kinds of token: roles, which the themes set (surfaces, borders, text, accent fill, accent
   text, accent tint, danger, warning, success, focus, scrim, shadows, and later the plot background
   and neutral point greys); and sizes (control heights 28/32 px, list row 28 px, radii, the type
@@ -181,9 +189,9 @@ width changes, and points under an opaque sidebar are drawn for nothing).
 - Tailwind 4 in `apps/web` maps the same variables in `@theme inline` (e.g. `bg-ps-surface`), so
   React code and Lit code draw from one list.
 - A unit test fails when a core stylesheet contains a raw colour, a literal font size, a `--ps-*`
-  declaration or a `var(--…)` that neither `theme.ts` nor the stylesheet itself declares (a
+  declaration or a `var(--…)` that neither `tokens.css` nor the stylesheet itself declares (a
   component may read its own size properties, such as the scatter plot's `--protspace-height`),
-  and when `theme.ts` defines a token nothing uses.
+  and when `tokens.css` defines a token nothing uses.
 
 Alternatives considered: keeping per-component tokens (the cause of the drift), and generating CSS
 from a TypeScript token module (a build step for no gain: the CSS file is readable on its own, and
@@ -267,9 +275,10 @@ position, active panel, the structure's docked/floating mode and floating rectan
 shell subscribes with `useSyncExternalStore`; the runtime reads and writes it through the same
 module. It persists to one localStorage key, `protspace:layout:v1`, wrapped in try/catch so private
 windows still work. Layout is never written to the URL, so a shared link never imposes the sharer's
-layout. The theme choice has its own store, `apps/web/src/explore/theme-state.ts`, and its own key,
-`protspace:theme`, which an inline script in `apps/web/index.html` reads before first paint
-(decision 16).
+layout. The theme choice has its own store, `apps/web/src/explore/theme-state.ts`, under the key
+the docs use too, `vitepress-theme-appearance`, which the pre-paint script (`config/theme.ts`, a copy
+inline in `apps/web/index.html`) reads before first paint; the earlier `protspace:theme` value is
+migrated once (decision 16).
 
 ### 11. One layer stack for Escape and closing
 
@@ -332,7 +341,9 @@ The query builder becomes the sidebar's Filter panel (rail icon), so the plot st
 filter is built. A live count shows how many proteins the draft matches, computed off the render
 path. Edits are a draft until Apply; Cancel discards the draft and returns to the applied filter
 (today Cancel keeps the edits). When Apply is disabled the panel says why ("Choose a value for
-condition 2"). Removing the filter is one click on the Filter chip's ✕.
+condition 2"). Removing the filter is one click on the Filter chip's ✕. "Add condition" and "Add
+group" sit side by side below the cards, so a group is one visible click away; the header's ⋯ keeps
+only Clear all, and a group adds cards but not groups.
 
 The modal used to stop the EAT reliability slider and the query builder from being edited at the
 same time; the side panel allows both. The slider stays an immediate control: it changes the
@@ -357,17 +368,23 @@ condition in the draft moves the slider only when the draft is applied.
 - **Empty state and drop target.** If nothing is loaded the plot shows "Drop a file or pick an
   example". Dragging a file anywhere over the workbench shows a drop area; today the scatterplot
   handles drops and sets an attribute that nothing styles. Drop handling moves to the shell.
-- **Import panel.** The Import button and the dataset name open the same panel: the examples, the last
-  imported file, and "Open a file…", with the accepted formats listed.
-- **Export panel.** Opened from the dataset menu's "Export…" (More → Export on a phone). It asks
+- **Import panel.** The dataset name opens it (with nothing loaded the name's place reads "Import"):
+  the examples, the last imported file, and "Open a file…", with the accepted formats listed. It
+  only imports. Export used to be its last row, which made saving a PNG two clicks deep under a
+  menu named after the data; review split them, as other tools open and export from separate
+  places.
+- **Export panel.** Opened from its own Export button just before the Figure editor (More → Export
+  on a phone): labelled with a chevron from 1200 px, a download icon with a small chevron below,
+  greyed but focusable (`aria-disabled`) with "Load a dataset to export" while nothing is loaded.
+  A tablet narrower than 800 px folds search into the phone's search button to make room. It asks
   what first (Image, Protein IDs, Table, Data bundle), then shows only that choice's options: PNG
   or PDF and the note that contours are left out for an image; Include legend settings, and the
   "file contains custom settings" hint, for a bundle. One Download button names the file. A flat
   menu of eight rows came first; review found it hard to read, with the checkbox far from the
   bundle it belongs to, so the panel goes back to main's "what, then how" in the kit's parts.
 - **Figure editor button.** The figure editor is one of the main tools, so it has a labelled
-  button at the right of the app bar (an icon with a tooltip on a tablet, a More row on a phone)
-  rather than a place inside Export.
+  button at the right of the app bar, after Export (an icon with a tooltip below 1200 px, a More
+  row on a phone), rather than a place inside Export.
 - **Figure editor.** Becomes a full-screen `ps-dialog`: Escape closes it, focus is contained, and
   its "Cancel", which already keeps the editor state, is renamed "Close". `publish-modal.ts` is
   split along its sections.
@@ -378,12 +395,19 @@ condition in the draft moves the slider only when the draft is applied.
 
 ### 16. Dark mode
 
-- A theme switch in the app bar (in the More sheet on phones): System (default), Dark, Light. In
-  the app bar it is one icon button that steps System → Dark → Light → System (PR 555 review): the
-  icon shows the mode, and the name and tooltip say the mode and the next ("Theme: System. Switch
-  to Dark"), since on a dark OS the step from System to Dark changes nothing on screen. The
-  choice is stored under `protspace:theme`; an inline script in `index.html` sets `data-theme`
-  before first paint, so the page never flashes white. System follows `prefers-color-scheme` live.
+- A two-state theme switch in the app bar (in the More sheet on phones, as a Light | Dark pair
+  showing the mode on screen), which supersedes the System → Dark → Light cycle of the PR 555
+  review (follow-up review): the page starts from `prefers-color-scheme` and follows it live; a
+  press stores the other mode; a press back to the OS's current mode removes the override, so the
+  page follows the system again (VitePress's and VueUse `useDark`'s rule, Chrome's dark-mode
+  toggle guidance). The icon shows the mode on screen, and the name and tooltip say it and the
+  other ("Theme: Light. Switch to Dark"). There is no third "System" state to pick.
+- Home, Explore and the docs share one choice (follow-up review). It is stored under VitePress's
+  own key, `vitepress-theme-appearance`, with VueUse's raw `dark` / `light` / `auto` values,
+  because VitePress's pre-paint head script hard-codes the key; the app's earlier
+  `protspace:theme` value is migrated once. One pre-paint script (`config/theme.ts`) sets
+  `data-theme` on every app route (a copy in `index.html`) and in the docs' head, so no page
+  flashes the other theme. The app's store also follows other tabs.
 - Everything on the explore page follows: shell, kit, legend, tooltips, dialogs, the loading
   overlay, notifications and the tour. The explore root sets `color-scheme` so scrollbars and form
   controls match.
@@ -393,15 +417,22 @@ condition in the draft moves the slider only when the draft is applied.
   background.
 - The Mol\* viewer's background follows the theme.
 - `data-theme="system"` stays on `<html>` as chosen; the token sheet's media query follows the OS
-  live, so nothing resolves it to light or dark in the attribute. The attribute is set only while
-  `/explore` is mounted.
+  live, so nothing resolves it to light or dark in the attribute. The attribute is set on every
+  page.
 - "Selection ring" means the brush and lasso outline and the EAT endpoint ring; no GPU ring is
   drawn around selected points.
 - Contour lines keep their lighten toward white in both themes; they get no token.
 - The Mol\* canvas takes `--ps-surface`, so the structure card matches its panel.
 - Exports always use the light values (white background, light greys), whatever the theme, and the
   figure editor previews them that way.
-- The landing page, privacy page and docs keep their current look.
+- Every page takes the app's palette, in light and dark, from one plain CSS token file,
+  `packages/core/src/styles/tokens.css` (follow-up review), which core reads into its Lit sheet,
+  the landing imports, and the docs import. Home, Privacy and 404 map Tailwind's shadcn colours
+  onto the tokens, so Home uses the app's accent (`#007ab5` light, `#38bdf8` dark) instead of
+  `#3b82f6`, and the landing's illustration panels and canvases go dark with the page. The docs
+  map VitePress's `--vp-c-*` colours (surfaces, text, lines, brand, buttons, code, custom blocks)
+  onto the tokens, so their dark mode is the app's slate `#0f172a`, not VitePress's `#1b1b1f`,
+  with dark buttons in sky-400 and dark text.
 
 Mockup: [`mockups/workbench-dark.png`](mockups/workbench-dark.png).
 
@@ -450,7 +481,7 @@ is superseded.
 ### 19. Docs media pipeline
 
 `pnpm docs:images` (Playwright captures in `scripts/docs-screenshots/`, about 3,600 lines, plus
-`convert-to-gif.ts`) is rewritten for the new layout:
+`convert-to-gif.ts`) is rewritten for the new layout, and its GIFs become looping videos:
 
 - One set of page helpers ("open the filter panel", "select these proteins") shared by the e2e tests
   (`apps/web/tests/helpers/`) and the captures, so a layout change is fixed in one place.
@@ -458,16 +489,19 @@ is superseded.
   140 hand-written `shadowRoot` and `evaluate` lookups.
 - Captures wait for signals (the plot has drawn, the dialog is open, the animation has ended)
   instead of the about 100 fixed `waitForTimeout` pauses.
-- Each image is one entry (name, viewport, theme, steps, PNG or GIF); one runner handles file names,
-  light and dark variants and the GIF conversion, with a size budget per GIF.
-- Every screenshot and GIF (51 PNG and 10 GIF files, dark twins included) and the 5 example
-  thumbnails are regenerated. The thumbnails move here from the `examples-live` e2e suite, so every
-  docs image comes from one pipeline. New captures cover the sidebar fold and resize, the floating
-  structure, the selection bar, the filter panel, search messages, the theme switch and the phone
-  layout. Images named after the old layout (`control-bar-*.png`) are replaced and deleted. The main
-  screenshots get dark variants, shown when the docs are in dark mode.
-- `pnpm docs:images:check` runs in `pnpm precommit` (local only, no browser): every image comes from
-  an entry, dark twins come in pairs and GIFs stay within budget.
+- Each image is one entry (name, viewport, steps, kind `png` or `video`); one runner handles file
+  names and captures every entry in light and in dark. `pnpm docs:screenshots` writes the PNGs;
+  `pnpm docs:animations` records the videos and `pnpm docs:videos` encodes each recording as a
+  looping WebM (VP9) and MP4 (H.264) with a JPEG poster, each encoding within a 1.25 MiB budget.
+  Pages show them through `<DocsVideo>`, which plays the twin of the theme on screen.
+- Every screenshot and recording is regenerated: 82 PNG files (the 5 example thumbnails included)
+  and 24 recordings, dark twins included. The thumbnails move here from the `examples-live` e2e
+  suite, so every docs image comes from one pipeline. New captures cover the sidebar fold and
+  resize, the floating structure, the selection bar, the filter panel, search messages, the theme
+  switch and the phone layout. Images named after the old layout (`control-bar-*.png`) and the old
+  GIFs are replaced and deleted. The docs show the dark twin in dark mode.
+- `pnpm docs:images:check` runs in `pnpm precommit` (local only, no browser): every file comes from
+  an entry, and it fails on a missing light or dark twin.
 
 ### 20. Testing
 
@@ -526,7 +560,9 @@ is superseded.
 
 - No data migration. URL parameters (`dataset`, `annotation`, `projection`, `tooltip`, `density`)
   are unchanged.
-- localStorage: new keys `protspace:layout:v1` and `protspace:theme`. Per-dataset legend settings
+- localStorage: new key `protspace:layout:v1`; the theme is stored under the docs' existing
+  `vitepress-theme-appearance`, and the earlier `protspace:theme` value is migrated once into it
+  and removed. Per-dataset legend settings
   keep their key and format. The figure editor's saved state keeps its key.
 - The tour gets a new storage key. New visitors get the full tour; returning visitors (the old key is
   present) get a short "What's new" tour once, covering the new layout, the sidebar and the theme

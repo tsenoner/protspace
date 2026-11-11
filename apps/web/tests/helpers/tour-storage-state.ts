@@ -5,7 +5,7 @@ import {
   TOUR_STORAGE_KEY,
   type TourKind,
 } from '../../src/tour/storage-key';
-import { THEME_STORAGE_KEY, type ThemeChoice } from '../../src/explore/theme-defaults';
+import { storedTheme, THEME_STORAGE_KEY, type ThemeChoice } from '../../src/explore/theme-defaults';
 
 /**
  * The stored entry that marks the product tour as seen. Every test and capture that suppresses the
@@ -41,10 +41,9 @@ export function exploreStorageState(
   if (options.layout) {
     localStorage.push({ name: LAYOUT_STORAGE_KEY, value: JSON.stringify(options.layout) });
   }
-  if (options.theme) {
-    // JSON-encoded, as the theme store writes it through setStorageItem.
-    localStorage.push({ name: THEME_STORAGE_KEY, value: JSON.stringify(options.theme) });
-  }
+  const theme = options.theme && storedTheme(options.theme);
+  // Raw, as the theme store writes it; System stores nothing.
+  if (theme) localStorage.push({ name: THEME_STORAGE_KEY, value: theme });
   return { cookies: [], origins: [{ origin: new URL(baseUrl).origin, localStorage }] };
 }
 

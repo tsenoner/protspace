@@ -1,13 +1,17 @@
 import { LitElement, html, nothing, type PropertyValues } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { countNoun, formatCount } from '@protspace/utils';
+import {
+  annotationValueSearchKey,
+  countNoun,
+  displayAnnotationValue,
+  formatCount,
+} from '@protspace/utils';
 import '../kit/button';
 import '../kit/input';
 import '../kit/popover';
 import type { PsInput } from '../kit/input';
 import type { PsPopover } from '../kit/popover';
-import { toDisplayValue } from './config';
 import { otherPopoverStyles } from './legend-other-popover.styles';
 import type { OtherItem } from './types';
 
@@ -17,7 +21,7 @@ export const OTHER_POPOVER_ROW_LIMIT = 200;
 interface OtherRow {
   readonly value: string;
   readonly name: string;
-  /** The lower-cased display name the search matches. */
+  /** The lower-cased display name the search matches, and the raw value when it differs. */
   readonly key: string;
   readonly count: number;
 }
@@ -44,12 +48,18 @@ export class ProtspaceLegendOtherPopover extends LitElement {
   @property({ attribute: false }) anchor: Element | null = null;
   @property({ type: Boolean }) open = false;
   @property({ attribute: false }) items: readonly OtherItem[] = [];
+  /** The annotation the items belong to, for its value labels. */
+  @property() annotation = '';
 
   @state() private _query = '';
   @query('ps-popover') private _popover?: PsPopover;
   @query('ps-input') private _search?: PsInput;
 
-  private _rowsCache: { items: readonly OtherItem[]; rows: readonly OtherRow[] } | null = null;
+  private _rowsCache: {
+    items: readonly OtherItem[];
+    annotation: string;
+    rows: readonly OtherRow[];
+  } | null = null;
   private _matchesCache: {
     rows: readonly OtherRow[];
     query: string;
@@ -169,13 +179,14 @@ export class ProtspaceLegendOtherPopover extends LitElement {
   /** Rows sorted by count, largest first, then by name; rebuilt only when `items` changes. */
   private _rows(): readonly OtherRow[] {
     let cache = this._rowsCache;
-    if (!cache || cache.items !== this.items) {
+    if (!cache || cache.items !== this.items || cache.annotation !== this.annotation) {
       const rows = this.items.map((item) => {
-        const name = toDisplayValue(item.value);
-        return { value: item.value, name, key: name.toLowerCase(), count: item.count };
+        const name = displayAnnotationValue(this.annotation, item.value);
+        const key = annotationValueSearchKey(this.annotation, item.value, name);
+        return { value: item.value, name, key, count: item.count };
       });
       rows.sort(byCountThenName);
-      cache = { items: this.items, rows };
+      cache = { items: this.items, annotation: this.annotation, rows };
       this._rowsCache = cache;
     }
     return cache.rows;

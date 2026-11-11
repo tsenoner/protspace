@@ -62,6 +62,7 @@ import {
   isItemSelected,
   createItemActionEvent,
   computeOtherConcreteValues,
+  maxShapeSize,
   valueToKey,
 } from './legend-helpers';
 import { sortItemsForDisplay, type ActiveSortMode } from './legend-items-state';
@@ -115,7 +116,18 @@ export class ProtspaceLegend extends LitElement {
   @property({ type: Array }) isolationHistory: string[][] = [];
   @property({ type: Object }) data: LegendDataInput | null = null;
   @property({ type: String, reflect: true }) selectedAnnotation = '';
-  @property({ type: Number, reflect: true }) shapeSize: number = LEGEND_DEFAULTS.symbolSize;
+  /**
+   * The dataset's shape size. Capped here, where it is set, at the largest the dataset allows
+   * (`maxShapeSize` of its protein count), so no caller caps it on its own.
+   */
+  @property({ type: Number, reflect: true })
+  get shapeSize(): number {
+    return this._shapeSize;
+  }
+  set shapeSize(size: number) {
+    this._shapeSize = Math.min(size, maxShapeSize(this._datasetProteinCount));
+  }
+  private _shapeSize: number = LEGEND_DEFAULTS.symbolSize;
 
   @property({ type: String, attribute: 'scatterplot-selector' })
   scatterplotSelector: string = LEGEND_DEFAULTS.scatterplotSelector;
@@ -167,6 +179,12 @@ export class ProtspaceLegend extends LitElement {
   @state() private _plotFocus: { values: ReadonlySet<string>; first: string } | null = null;
   /** Some focused value sits in Other, so the Other row lights; derived in `willUpdate`. */
   private _plotFocusInOther = false;
+  /** The score-strip dot under the pointer, whose category the plot focuses. */
+  private _stripFocusCategory: string | null = null;
+  /** The row under a mouse or pen, which the plot focuses while Shift is held. */
+  private _rowUnderPointer: string | null = null;
+  /** The last report to the plot (source and values), or null once withdrawn or never sent. */
+  private _reportedPlotFocus: string | null = null;
 
   @query('.legend-items')
   private _legendItemsEl?: HTMLDivElement;
@@ -363,6 +381,8 @@ export class ProtspaceLegend extends LitElement {
     shouldPersistCategories: () => !this._isCurrentAnnotationNumeric(),
     shouldPersistCategoryEncodings: () => !this._isCurrentAnnotationNumeric(),
     isNumericAnnotation: () => this._isCurrentAnnotationNumeric(),
+    isViewConstrained: () => this.isolationMode,
+    getOtherValues: () => this._otherItems.map((item) => item.value),
     getCurrentSettings: () => this._data.currentSettings(),
   });
 
@@ -438,6 +458,7 @@ export class ProtspaceLegend extends LitElement {
 
   _otherPopover = new OtherPopoverControl(this, {
     getItems: () => this._otherItems,
+    getAnnotation: () => this.selectedAnnotation,
     add: (value) => this._actions.extractFromOther(value),
     addAll: () => this._actions.extractAllFromOther(),
     focusFirstRow: () => this._keyboard.focusItem(0),
@@ -456,6 +477,13 @@ export class ProtspaceLegend extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._scatterplotController.scatterplotSelector = this.scatterplotSelector;
+  }
+
+  disconnectedCallback(): void {
+    this._stripFocusCategory = null;
+    this._rowUnderPointer = null;
+    this._syncPlotFocus();
+    super.disconnectedCallback();
   }
 
   updated(changedProperties: Map<string, unknown>): void {
@@ -480,6 +508,8 @@ export class ProtspaceLegend extends LitElement {
         : { ...this.data, protein_ids: this.proteinIds };
 
       this._datasetProteinCount = unfilteredData.protein_ids.length;
+      // A size set before the count was known (or for a smaller dataset) gets this one's cap.
+      this.shapeSize = this._shapeSize;
       this._persistenceController.updateDatasetHash(unfilteredData);
     }
 
@@ -604,6 +634,9 @@ export class ProtspaceLegend extends LitElement {
       // (the file's category set). Without this, _visibleValues uses the default items
       // built during loadNewData(), which may have a different visible set than the file.
       this._legendItems = [];
+      // The slots and colours of that default build go too: a category the file does not colour
+      // would otherwise keep its default colour even when the file gives it to another category.
+      this._processorContext.slotTracker.reset();
       this._data.rebuildItems();
     }
   }
@@ -649,6 +682,9 @@ export class ProtspaceLegend extends LitElement {
     this._clusterCaveat = null;
     this._hoveredCategory = null;
     this._plotFocus = null;
+    this._reportedPlotFocus = null;
+    this._stripFocusCategory = null;
+    this._rowUnderPointer = null;
     this._reorder.clear();
 
     // Reset isolation state
@@ -690,10 +726,9 @@ export class ProtspaceLegend extends LitElement {
    * component's own hash is not computed from the new data yet.
    */
   public applyShapeSize(shapeSize: number, datasetHash?: string): void {
-    const size = Math.min(shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
-    this._persistenceController.saveShapeSize(size, datasetHash);
-    this.shapeSize = size;
-    this._scatterplotController.updateConfig({ pointSize: calculatePointSize(size) });
+    this.shapeSize = shapeSize;
+    this._persistenceController.saveShapeSize(this.shapeSize, datasetHash);
+    this._scatterplotController.updateConfig({ pointSize: calculatePointSize(this.shapeSize) });
   }
 
   /**
@@ -813,6 +848,28 @@ export class ProtspaceLegend extends LitElement {
     return renderSortMenu(model, this._sortMenuHandlers);
   }
 
+  /**
+   * Tells the plot which category the pointer is on, a score strip's dot or any legend row, as a
+   * legend value (`Other` for the Other row). The plot focuses it with the same function as Shift +
+   * hover on a point, which decides what it covers, and owns Shift: a dot's category is focused
+   * without it, a row's only while it is held, so crossing rows never fades the plot. A pointer on
+   * neither withdraws an earlier report, and only that; a report equal to the last is not resent.
+   */
+  private _syncPlotFocus(): void {
+    const report: { value: string; source: 'strip' | 'row' } | null =
+      this._stripFocusCategory !== null
+        ? { value: this._stripFocusCategory, source: 'strip' }
+        : this._rowUnderPointer !== null
+          ? { value: this._rowUnderPointer, source: 'row' }
+          : null;
+    const key = report ? `${report.source}\u0001${report.value}` : null;
+    if (key === this._reportedPlotFocus) return;
+    this._reportedPlotFocus = key;
+    const plot = this._scatterplotController.scatterplot;
+    if (report) plot?.focusCategories?.([report.value], report.source);
+    else plot?.focusCategories?.(null);
+  }
+
   private _setHoveredCategory(category: string | null): void {
     // Nothing reads the hover when there are no scores: `_renderScoreStrips` returns before
     // the `highlighted` binding and `_renderLegendItem` gates its class on the same emptiness.
@@ -837,7 +894,12 @@ export class ProtspaceLegend extends LitElement {
    * is a legend row: a category grouped under Other has no row to hide.
    */
   private _scoreStripHandlers: ScoreStripsHandlers = {
-    onHover: (category) => this._setHoveredCategory(category),
+    onHover: (category, touch) => {
+      this._setHoveredCategory(category);
+      // A tap's hover lingers until the next tap elsewhere: it marks the row, never fades the plot.
+      this._stripFocusCategory = touch ? null : category;
+      this._syncPlotFocus();
+    },
     onToggle: (category) => {
       if (this._legendItems.some((item) => item.value === category)) {
         this._actions.toggle(category);
@@ -853,7 +915,11 @@ export class ProtspaceLegend extends LitElement {
       this._sortedLegendItems = sortItemsForDisplay(this._legendItems);
     }
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
-      this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
+      this._stripPoints = deriveStripPoints(
+        this._legendItems,
+        this._categoryScores,
+        this.selectedAnnotation,
+      );
     }
     if (changedProperties.has('_plotFocus') || changedProperties.has('_otherItems')) {
       const focus = this._plotFocus;
@@ -867,6 +933,10 @@ export class ProtspaceLegend extends LitElement {
     // Settings and the picker are the annotation's own: a new one closes them. The sync paths
     // flushed first; set from outside, an edit for the old annotation is dropped, not moved.
     if (changedProperties.has('selectedAnnotation')) {
+      // The plot drops a focus asked for under the old annotation by itself.
+      this._reportedPlotFocus = null;
+      this._stripFocusCategory = null;
+      this._rowUnderPointer = null;
       this._settingsPopover?.cancel();
       this._settingsAnchor = null;
       this._colorPicker.dismiss();
@@ -918,7 +988,11 @@ export class ProtspaceLegend extends LitElement {
       onDoubleClick: () => this._actions.rowDoubleClick(item.value),
       onKeyDown: (e: KeyboardEvent) => this._keyboard.onItemKeyDown(e, item, sortedIndex),
       onHandleKeyDown: (e: KeyboardEvent) => this._keyboard.onHandleKeyDown(e, item),
-      onHover: (category) => this._setHoveredCategory(category),
+      onHover: (category) => {
+        this._setHoveredCategory(category);
+        this._rowUnderPointer = category;
+        this._syncPlotFocus();
+      },
       onFocus: () => {
         this._keyboard.focusValue = item.value;
       },

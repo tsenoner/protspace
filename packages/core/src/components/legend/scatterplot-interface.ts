@@ -38,6 +38,13 @@ export interface IScatterplotElement extends Element {
   // kept set while the visible-category structure is preserved.
   filtersActive?: boolean;
   filteredProteinIds?: string[];
+
+  /**
+   * Reports the category under the legend's pointer (a legend value, `Other` for its row), a
+   * score strip's dot or any row; the plot focuses it as Shift + hover on a point does (a row only
+   * while Shift is held). Null ends it (optional).
+   */
+  focusCategories?(values: readonly string[] | null, source?: 'strip' | 'row'): void;
 }
 
 /**

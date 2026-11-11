@@ -328,7 +328,7 @@ interface Point {
  * row with a pause on each. One fast sweep over many rows leaves the order unchanged: Sortable
  * ignores a row it is still animating, and an emulated drag sends `dragover` only when the mouse
  * moves. A capture passes `move` as `(p) => cap.moveTo(p, { steps: 6 })` and `pause` as
- * `(ms) => cap.hold(ms)`, so the GIF shows the glide and times the holds.
+ * `(ms) => cap.hold(ms)`, so the video shows the glide and times the holds.
  */
 export async function dragLegendRow(
   page: Page,

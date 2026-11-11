@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { SIDEBAR_WIDTH } from '../src/explore/layout-defaults';
 import {
   dismissTourIfPresent,
@@ -11,7 +11,8 @@ import {
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
-import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
+import { ROLE_EAT_FIXTURE, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
+import { e2eExample } from './helpers/example-fixtures';
 import {
   addFromOther,
   closeLegendSettings,
@@ -144,6 +145,65 @@ test.describe('workbench legend', () => {
 
     await page.keyboard.up('Shift');
     await expect.poll(focused).toEqual([]);
+  });
+
+  test('a score strip dot, or a scored row with Shift, focuses its category in the plot', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await importUserFile(page, ROLE_EAT_FIXTURE);
+    await waitForProteinCount(page, e2eExample('eat').count);
+    await dismissTourIfPresent(page);
+    // An annotation with per-category silhouettes in the projection on screen.
+    const annotation = await page.locator('#myPlot').evaluate((el) => {
+      const plot = el as unknown as {
+        data: {
+          projections: { name: string }[];
+          statisticsRows?: { annotation?: string; metric: string; category?: string | null }[];
+          annotations: Record<string, { kind?: string }>;
+        };
+        selectedProjectionIndex: number;
+      };
+      const space = plot.data.projections[plot.selectedProjectionIndex].name;
+      return plot.data.statisticsRows?.find(
+        (row) =>
+          row.metric === 'silhouette' &&
+          row.category != null &&
+          (row as { space_name?: string }).space_name === space &&
+          row.annotation !== undefined &&
+          plot.data.annotations[row.annotation]?.kind !== 'numeric',
+      )?.annotation;
+    });
+    expect(annotation, 'a scored annotation in the fixture').toBeTruthy();
+    await selectAnnotation(page, annotation!);
+    await page.locator('#myPlot').evaluate((plot) => {
+      const seen = window as unknown as { __focus?: string[] | null };
+      seen.__focus = null;
+      plot.addEventListener('category-focus', (event) => {
+        seen.__focus = (event as CustomEvent<{ values: string[] | null }>).detail.values;
+      });
+    });
+    const focus = () =>
+      page.evaluate(() => (window as unknown as { __focus?: string[] | null }).__focus ?? null);
+
+    const dot = legend(page).locator('protspace-score-strip circle[data-category]').first();
+    const category = (await dot.getAttribute('data-category'))!;
+    await dot.hover();
+    await expect.poll(focus).toEqual([category]);
+    await page.mouse.move(0, 0);
+    await expect.poll(focus).toBeNull();
+
+    // A row: nothing without Shift, its category with it.
+    const value = (await legendRowValues(page, { visible: true })).find(
+      (each) => each !== 'Other' && each !== '__NA__',
+    )!;
+    await legend(page).locator(`.legend-item[data-value="${value}"]`).hover();
+    await page.waitForTimeout(100);
+    expect(await focus()).toBeNull();
+    await page.keyboard.down('Shift');
+    await expect.poll(focus).toEqual([value]);
+    await page.keyboard.up('Shift');
+    await expect.poll(focus).toBeNull();
   });
 
   test("a long name ends in an ellipsis and its full name is in the row's accessible name", async ({
@@ -335,4 +395,65 @@ test('the tablet legend scrolls its list inside its row', async ({ page }) => {
   );
   expect(pageScrolls).toBe(false);
   expect(await list.evaluate((l) => l.scrollHeight > l.clientHeight)).toBe(true);
+});
+
+/**
+ * The share of `value`'s points among the points drawn last (on top), as many slots as the
+ * category has: 1 when the whole category paints over everything else.
+ */
+async function topShare(page: Page, value: string): Promise<number> {
+  return page.evaluate((target) => {
+    type Plot = {
+      _webglRenderer: { sortOrder: Uint32Array; currentPointCount: number };
+      _plotData: { length: number; originalIndices: Int32Array | null };
+      _views: { materialized(): unknown };
+      selectedAnnotation: string;
+    };
+    type Column =
+      | { offsets: ArrayLike<number>; codes: ArrayLike<number> }
+      | ArrayLike<number | ArrayLike<number>>;
+    type Data = {
+      annotations: Record<string, { values: string[] }>;
+      annotation_data: Record<string, Column>;
+    };
+    const plot = document.querySelector('protspace-scatterplot') as unknown as Plot;
+    const data = plot._views.materialized() as Data;
+    const code = data.annotations[plot.selectedAnnotation].values.indexOf(target);
+    const column = data.annotation_data[plot.selectedAnnotation];
+    // A protein's codes: a ragged column (offsets + codes), one array per protein, or one code.
+    const codesOf = (i: number): ArrayLike<number> => {
+      if ('offsets' in column) {
+        return Array.prototype.slice.call(column.codes, column.offsets[i], column.offsets[i + 1]);
+      }
+      const row = column[i];
+      return typeof row === 'number' ? [row] : row;
+    };
+    const pd = plot._plotData;
+    const has = (slot: number) =>
+      Array.from(codesOf(pd.originalIndices ? pd.originalIndices[slot] : slot)).includes(code);
+    let count = 0;
+    for (let slot = 0; slot < pd.length; slot++) if (has(slot)) count++;
+    const { sortOrder, currentPointCount: n } = plot._webglRenderer;
+    let onTop = 0;
+    for (let k = n - count; k < n; k++) if (has(sortOrder[k])) onTop++;
+    return count === 0 ? 0 : onTop / count;
+  }, value);
+}
+
+test('Shift over one legend row and then the next draws each focused category on top', async ({
+  page,
+}) => {
+  await openExplore(page);
+  const [first, second] = await legendRowValues(page);
+  await page.keyboard.down('Shift');
+
+  await legendRow(page, first).hover();
+  await expect.poll(() => topShare(page, first)).toBe(1);
+
+  // The switch leaves the rearmost points faded both times: the plot must still re-sort, so the
+  // new category paints on top and the old one, faded, goes back under it.
+  await legendRow(page, second).hover();
+  await expect.poll(() => topShare(page, second)).toBe(1);
+  expect(await topShare(page, first)).toBeLessThan(0.05);
+  await page.keyboard.up('Shift');
 });

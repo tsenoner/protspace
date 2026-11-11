@@ -207,6 +207,21 @@ describe('protspace-publish-modal dimensions', () => {
     expect(internals._state.heightPx).toBe(max);
     expect(box(modal, 'height')).toBe(((max * 25.4) / internals._state.dpi).toFixed(1));
   });
+
+  it('draws its selects with the kit select, and a pick from its list applies', async () => {
+    const { modal, internals } = await mount();
+    expect(modal.shadowRoot!.querySelectorAll('select')).toHaveLength(0);
+    const unit = modal.shadowRoot!.querySelector<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >('ps-select[data-publish-input="unit"]')!;
+    await unit.updateComplete;
+    const list = unit.shadowRoot!.querySelector('select')!;
+    expect(list.value).toBe(internals._state.unit);
+    list.value = 'cm';
+    list.dispatchEvent(new Event('change', { bubbles: true }));
+    await (modal as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
+    expect(internals._state.unit).toBe('cm');
+  });
 });
 
 describe('protspace-publish-modal undo', () => {

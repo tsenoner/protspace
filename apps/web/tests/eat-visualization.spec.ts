@@ -230,7 +230,9 @@ async function sampleEncodedExportMarkers(
         (Math.sqrt(pointSize) / 3) *
         plot._webglRenderer!.pointScale() *
         Math.sqrt((width * height) / (live.width * live.height));
-      const ringOffset = Math.max(1, Math.round(0.75 * exportRadius));
+      // The middle of the ring, which is 12% of the diameter and at least one pixel wide.
+      const ringWidth = Math.max(1, 0.24 * exportRadius);
+      const ringOffset = Math.max(1, exportRadius - ringWidth / 2);
       // Sixteen directions: at large point sizes neighbours cover much of the ring, and only
       // samples clear of them count (below).
       const predictedRingOffsets = Array.from({ length: 16 }, (_, i) => [
@@ -694,8 +696,8 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const distanceFromWhite = ([red, green, blue]: number[]) =>
     Math.abs(255 - red) + Math.abs(255 - green) + Math.abs(255 - blue);
   // Measured at a 1280x720 window: predicted nearest neighbour 8.36 px, observed 10.93 px, export
-  // radius 5.36 px, ring offset 4 px. The ring sample that faces the predicted point's nearest
-  // neighbour lands 4.36 px from that neighbour's centre, 1 px inside its marker, so the stricter
+  // radius 5.36 px, ring offset 4.7 px. The ring sample that faces the predicted point's nearest
+  // neighbour lands ~3.7 px from that neighbour's centre, inside its marker, so the stricter
   // `> exportRadius + ringOffset` does not hold for this data; the sampler drops such samples and
   // keeps the ones clear of every other marker. The predicted centre (the hollow check) is 3 px
   // clear of every neighbour's marker and the observed centre 5.6 px.

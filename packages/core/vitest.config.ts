@@ -8,6 +8,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   worker: { format: 'es' },
   test: {
+    // Vitest blanks CSS it does not process, `?raw` imports included: the token sheet reads
+    // tokens.css as text (styles/theme.ts).
+    css: { include: [/tokens\.css/] },
     projects: [
       {
         extends: true,

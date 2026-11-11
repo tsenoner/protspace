@@ -8,7 +8,9 @@ import {
   dismissTourIfPresent,
   exportDownload,
   exportKinds,
+  exportMenu,
   exportPanel,
+  exportTrigger,
   figureEditorButton,
   filterApplyButton,
   filterPanel,
@@ -40,7 +42,8 @@ import {
   touchTargetsBelow,
 } from './helpers/mobile';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
-import { stubStructureRequests, workbenchRoot } from './helpers/workbench';
+import { emptyState, stubStructureRequests, workbenchRoot } from './helpers/workbench';
+import { STARTUP_URL_GLOB } from './helpers/fixtures';
 import { DARK_SURFACE, htmlTheme, themeButton } from './helpers/theme';
 import { seedLegacyTourSeen } from './helpers/tour-storage-state';
 
@@ -162,10 +165,10 @@ test.describe('the bars on a phone', () => {
       /^Export/,
       /^Figure editor/,
       /^Help & shortcuts/,
+      /^Feedback/,
     ]) {
       await expect(rows.getByRole('button', { name })).toBeVisible();
     }
-    await expect(rows.getByRole('link', { name: /^Feedback/ })).toBeVisible();
     await expect(rows.getByRole('radiogroup', { name: 'Theme' })).toBeVisible();
     // GitHub is not offered on a phone: the sheet has no row for it, and the app bar's link goes
     // with the other actions.
@@ -218,6 +221,26 @@ test.describe('the bars on a phone', () => {
     const moreHost = viewBar(page).locator('.wb-more');
     await expect(moreHost).toHaveAttribute('aria-haspopup', 'dialog');
     await expect(moreHost).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test("with no dataset, More's Export row is off, as the app bar's Export button is", async ({
+    page,
+  }) => {
+    // The startup demo never arrives: startup ends with nothing on screen.
+    await page.route(STARTUP_URL_GLOB, (route) => route.abort());
+    await page.goto('/explore');
+    await expect(emptyState(page)).toBeVisible();
+    await dismissTourIfPresent(page);
+
+    const rows = await openMoreSheet(page);
+    const row = rows.getByRole('button', { name: /^Export/ });
+    await expect(row).toHaveAttribute('aria-disabled', 'true');
+    await expect(row).toHaveAccessibleName('Export Load a dataset to export');
+    // Forced: Playwright waits for an aria-disabled control to become enabled.
+    await row.tap({ force: true });
+    // Nothing opens, and the sheet stays.
+    await expect(moreSheet(page)).toBeVisible();
+    await expect(exportMenu(page).locator('ps-popover[open]')).toHaveCount(0);
   });
 
   test('C5: the Color by picker and its info bubble stay within the viewport', async ({ page }) => {
@@ -302,7 +325,7 @@ test.describe('the bars on a phone on its side', () => {
     await expectWithinViewport(page, heading);
 
     // The last row is reachable by scrolling the sheet, with its header still in view.
-    const last = rows.getByRole('link', { name: /^Feedback/ });
+    const last = rows.getByRole('button', { name: 'Feedback', exact: true });
     await last.scrollIntoViewIfNeeded();
     await expectWithinViewport(page, last);
     await expectWithinViewport(page, heading);
@@ -386,9 +409,11 @@ test.describe('the bars on a portrait tablet', () => {
     await openExplorePhone(page);
     await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'tablet');
     await expect(searchInput(page)).toBeVisible();
-    // Import and Export open from the dataset name, as on a desktop.
+    // Import opens from the dataset name, as on a desktop; Export is an icon button of its own.
     await expect(datasetSwitcher(page)).toBeVisible();
-    await expect(appBar(page).getByRole('button', { name: /^(Import|Export)$/ })).toHaveCount(0);
+    await expect(appBar(page).getByRole('button', { name: 'Import', exact: true })).toHaveCount(0);
+    await expect(exportTrigger(page)).toBeVisible();
+    // At 800 px search still fits in the bar.
     await expect(searchToggle(page)).toBeHidden();
     // At 800 px the view bar has room for every control: Filter shows and More does not.
     await expect(moreButton(page)).toBeHidden();
@@ -410,6 +435,49 @@ test.describe('the bars on a portrait tablet', () => {
 
     // As mobile-explore-layout.spec.ts measures at 800×1000: the one more button leaves both whole.
     expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
+  });
+});
+
+test.describe('the bars on a narrow tablet', () => {
+  test.use({ viewport: { width: 700, height: 1000 } });
+
+  test('below 800 px search folds into its button; the actions stay, touch-sized, in one row', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    await expect(workbenchRoot(page)).toHaveAttribute('data-layout', 'tablet');
+    await expect(searchToggle(page)).toBeVisible();
+    await expect(searchInput(page)).toBeHidden();
+    await expect(datasetSwitcher(page)).toBeVisible();
+    await expect(exportTrigger(page)).toBeVisible();
+    await expect(figureEditorButton(page)).toBeVisible();
+    await expect(themeButton(page)).toBeVisible();
+    expect(await touchTargetsBelow(page, appBar(page))).toEqual([]);
+    expect(await appBar(page).evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await expectNoHorizontalOverflow(page);
+    // The search button sits where search was: after the dataset, before the actions.
+    const start = await box(appBar(page).locator('[data-workbench="app-bar-start"]'));
+    const toggle = await box(searchToggle(page));
+    const exported = await box(exportTrigger(page));
+    expect(start.x + start.width).toBeLessThanOrEqual(toggle.x + 1);
+    expect(toggle.x + toggle.width).toBeLessThanOrEqual(exported.x + 1);
+
+    // It opens search over the whole bar, and Close search returns focus to it.
+    await searchToggle(page).tap();
+    await expect(searchInput(page)).toBeFocused();
+    const overlay = await box(appBar(page).locator('[data-workbench="app-bar-center"]'));
+    expect(Math.abs(overlay.width - (await box(appBar(page))).width)).toBeLessThanOrEqual(1);
+    await appBar(page).getByRole('button', { name: 'Close search', exact: true }).tap();
+    await expect(searchInput(page)).toBeHidden();
+    await expect(searchToggle(page)).toBeFocused();
+
+    // Export's icon opens the Export panel on screen, under itself.
+    await exportTrigger(page).tap();
+    await expect(exportPanel(page)).toBeVisible();
+    await expectWithinViewport(page, exportPanel(page));
+    expect((await box(exportPanel(page))).y).toBeGreaterThanOrEqual(exported.y + exported.height);
+    await page.keyboard.press('Escape');
+    await expect(exportPanel(page)).toBeHidden();
   });
 });
 
@@ -809,20 +877,27 @@ test.describe('the More sheet', () => {
     await expect(moreButton(page)).toBeFocused();
   });
 
-  test('Feedback closes the sheet as it opens the mail client', async ({ page }) => {
+  test("Feedback reveals the app bar menu's three entries; Copy closes the sheet and confirms", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const rows = await openMoreSheet(page);
-    // Keep the mailto: navigation from leaving the page; the app's own click handler still runs.
-    await page.evaluate(() =>
-      window.addEventListener(
-        'click',
-        (e) => {
-          if ((e.target as Element).closest('a[href^="mailto:"]')) e.preventDefault();
-        },
-        { capture: true },
-      ),
-    );
-    await rows.getByRole('link', { name: /^Feedback/ }).tap();
+    const feedback = rows.getByRole('button', { name: 'Feedback', exact: true });
+    const copy = rows.getByRole('button', { name: 'Copy email address', exact: true });
+    await expect(feedback).toHaveAttribute('aria-expanded', 'false');
+    await expect(copy).toBeHidden();
+
+    await feedback.tap();
+    await expect(feedback).toHaveAttribute('aria-expanded', 'true');
+    for (const name of ['Email hello@protspace.app', 'Copy email address', 'Open a GitHub issue']) {
+      await expect(rows.getByRole('button', { name, exact: true })).toBeVisible();
+    }
+
+    await copy.tap();
     await expect(moreSheet(page)).toBeHidden();
+    await expect(page.getByText('Copied hello@protspace.app')).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('hello@protspace.app');
   });
 
   test('the More dot shows with a filter applied', async ({ page }) => {
@@ -847,6 +922,12 @@ test.describe('the More sheet', () => {
     const help = await box(rows.getByRole('button', { name: 'Help & shortcuts', exact: true }));
     expect(exported.y).toBeLessThan(theme.y);
     expect(theme.y).toBeLessThan(help.y);
+    // Two modes, the one on screen selected: the light OS's.
+    await expect(rows.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio')).toHaveText([
+      'Light',
+      'Dark',
+    ]);
+    await expect(themeSegment(page, 'Light')).toHaveAttribute('aria-checked', 'true');
 
     await themeSegment(page, 'Dark').tap();
     await expect.poll(() => htmlTheme(page)).toBe('dark');
@@ -857,6 +938,11 @@ test.describe('the More sheet', () => {
         workbenchRoot(page).evaluate((element) => getComputedStyle(element).backgroundColor),
       )
       .toBe(DARK_SURFACE);
+
+    // Back to the OS's own mode: the page follows the system again.
+    await themeSegment(page, 'Light').tap();
+    await expect.poll(() => htmlTheme(page)).toBe('system');
+    await expect(themeSegment(page, 'Light')).toHaveAttribute('aria-checked', 'true');
   });
 
   test('the theme never lights the More dot', async ({ page }) => {

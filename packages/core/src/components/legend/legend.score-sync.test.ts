@@ -182,6 +182,100 @@ describe('legend score strip synchronisation', () => {
   });
 });
 
+describe('legend score hover focuses the plot', () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  async function mountWithSpy(data: VisualizationData = makeData()) {
+    const focusCategories = vi.fn();
+    const { legend } = await mountLegendWithScatterplot(data, 'major_group', { focusCategories });
+    return { legend, focusCategories };
+  }
+
+  const hoverStrip = (legend: ProtspaceLegend, category: string | null) =>
+    legend
+      .shadowRoot!.querySelector('protspace-score-strip')!
+      .dispatchEvent(
+        new CustomEvent('strip-hover', { detail: { category }, bubbles: true, composed: true }),
+      );
+  const row = (legend: ProtspaceLegend, value: string) =>
+    legend.shadowRoot!.querySelector(`[data-value="${value}"]`)!;
+
+  it('a strip dot focuses its category in the plot, and leaving it ends the focus', async () => {
+    const { legend, focusCategories } = await mountWithSpy();
+    hoverStrip(legend, 'Elapidae');
+    hoverStrip(legend, null);
+    expect(focusCategories.mock.calls).toEqual([[['Elapidae'], 'strip'], [null]]);
+  });
+
+  it('a tapped strip dot marks its row but leaves the plot alone', async () => {
+    const { legend, focusCategories } = await mountWithSpy();
+    legend.shadowRoot!.querySelector('protspace-score-strip')!.dispatchEvent(
+      new CustomEvent('strip-hover', {
+        detail: { category: 'Elapidae', touch: true },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    await legend.updateComplete;
+    expect(legend.shadowRoot!.querySelector('.legend-item-score-hover')).not.toBeNull();
+    expect(focusCategories).not.toHaveBeenCalled();
+  });
+
+  it('a strip dot under Other focuses only its own category', async () => {
+    const { legend, focusCategories } = await mountWithSpy(
+      makeData([statRow({ category: 'NotInTheLegend', value: 0.4 })]),
+    );
+    hoverStrip(legend, 'NotInTheLegend');
+    expect(focusCategories).toHaveBeenLastCalledWith(['NotInTheLegend'], 'strip');
+  });
+
+  it('a scored row reports its category as a row, which the plot focuses only with Shift', async () => {
+    const { legend, focusCategories } = await mountWithSpy();
+    const viperidae = row(legend, 'Viperidae');
+    viperidae.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    expect(focusCategories).toHaveBeenLastCalledWith(['Viperidae'], 'row');
+    viperidae.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
+    expect(focusCategories).toHaveBeenLastCalledWith(null);
+    row(legend, 'Elapidae').dispatchEvent(
+      new PointerEvent('pointerenter', { pointerType: 'mouse' }),
+    );
+    expect(focusCategories).toHaveBeenLastCalledWith(['Elapidae'], 'row');
+  });
+
+  it('the legend leaves Shift to the plot: it listens for no key', async () => {
+    const { focusCategories } = await mountWithSpy();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift' }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' }));
+    expect(focusCategories).not.toHaveBeenCalled();
+  });
+
+  it('a row of an annotation without scores reports its category too, for Shift', async () => {
+    const { legend, focusCategories } = await mountWithSpy({ ...makeData(), statisticsRows: [] });
+    row(legend, 'Viperidae').dispatchEvent(
+      new PointerEvent('pointerenter', { pointerType: 'mouse' }),
+    );
+    expect(focusCategories).toHaveBeenLastCalledWith(['Viperidae'], 'row');
+  });
+
+  it('a pointer resting on one row reports it once', async () => {
+    const { legend, focusCategories } = await mountWithSpy();
+    const viperidae = row(legend, 'Viperidae');
+    viperidae.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    viperidae.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    expect(focusCategories).toHaveBeenCalledOnce();
+  });
+
+  it('removing the legend mid-hover ends the focus', async () => {
+    const { legend, focusCategories } = await mountWithSpy();
+    hoverStrip(legend, 'Elapidae');
+    legend.remove();
+    expect(focusCategories).toHaveBeenLastCalledWith(null);
+  });
+});
+
 describe('legend score column', () => {
   beforeEach(() => {
     // The persistence controller reads/writes real localStorage keyed by a hash of

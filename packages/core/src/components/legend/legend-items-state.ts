@@ -1,6 +1,6 @@
 import {
   DEFAULT_CATEGORICAL_PALETTE_ID,
-  COLOR_SCHEMES,
+  annotationValueLabel,
   getNumericBinLabelMap,
   isGradientPalette,
   resolveNumericAnnotationDisplaySettings,
@@ -134,14 +134,6 @@ export function displayedOrder(sorted: readonly LegendItem[], isNumeric: boolean
     .filter((value) => (isNumeric ? !isSpecial(value) : value !== LEGEND_VALUES.OTHER));
 }
 
-/** A categorical palette over the rows by position; Other and N/A keep their fixed colours. */
-export function applyPaletteColors(items: readonly LegendItem[], paletteId: string): LegendItem[] {
-  const palette = COLOR_SCHEMES[paletteId as keyof typeof COLOR_SCHEMES] || COLOR_SCHEMES.kellys;
-  return items.map((each, index) =>
-    isSpecial(each.value) ? each : { ...each, color: palette[index % palette.length] },
-  );
-}
-
 /** Each numeric bin's label from the annotation; Other, N/A and unknown ids keep theirs. */
 export function applyNumericDisplayLabels(
   items: readonly LegendItem[],
@@ -153,6 +145,22 @@ export function applyNumericDisplayLabels(
       ? each
       : { ...each, displayValue: labels.get(each.value) ?? each.displayValue ?? each.value },
   );
+}
+
+/**
+ * The registry's words for a category, as its display value (TED's `-` reads "No CATH label");
+ * the value itself, which filters and settings key on, is unchanged.
+ */
+export function applyValueLabels(items: readonly LegendItem[], annotation: string): LegendItem[] {
+  let labelled = false;
+  const next = items.map((each) => {
+    const label = annotationValueLabel(annotation, each.value);
+    if (label === undefined) return each;
+    labelled = true;
+    return { ...each, displayValue: label };
+  });
+  // Unchanged items keep their identity, so nothing downstream sees a new array.
+  return labelled ? next : (items as LegendItem[]);
 }
 
 /** Each numeric bin's colour from the annotation's gradient; Other and N/A keep theirs. */
@@ -189,7 +197,10 @@ export function numericOrderFromItems(items: readonly LegendItem[]): string[] | 
 /** A persisted legend record as live values, decided but not yet applied. */
 export interface ResolvedLegendSettings {
   maxVisibleValues: number;
-  /** The annotation's own size, capped at the dialog's bound; null for a filler (unset). */
+  /**
+   * The annotation's own size, capped at the largest any dataset accepts (the dataset's own cap
+   * applies when it is resolved); null for a filler (unset).
+   */
   annotationShapeSize: number | null;
   hiddenValues: string[];
   paletteId: string;
@@ -245,7 +256,9 @@ export function resolvePersistedSettings(
   return {
     maxVisibleValues,
     annotationShapeSize:
-      ownShapeSize === null ? null : Math.min(ownShapeSize, LEGEND_DEFAULTS.maxSymbolSize),
+      ownShapeSize === null
+        ? null
+        : Math.min(ownShapeSize, LEGEND_DEFAULTS.smallDatasetMaxSymbolSize),
     hiddenValues: topologyMatches ? [...settings.hiddenValues] : [],
     paletteId,
     sortMode: normalizeSortModeForType(settings.sortMode, isNumeric),

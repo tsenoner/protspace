@@ -17,7 +17,7 @@ const CLI_DOCS = `${DOCS_URL}guide/python-cli`;
 const PRIVACY_DOCS = `${DOCS_URL}guide/faq#is-my-data-uploaded-to-a-server`;
 
 const focusRing =
-  'rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+  'rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
 type StoryLine = { kind: 'comment' | 'command' | 'output'; text: string };
 
@@ -72,7 +72,7 @@ function MapGlyph({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 100 90"
-      className={cn('rounded-md border border-border/80 bg-white shadow-sm', className)}
+      className={cn('rounded-md border border-border/80 bg-card shadow-sm', className)}
       aria-hidden="true"
     >
       {MAP_DOTS.map((dot, i) => (
@@ -135,7 +135,7 @@ export function WorkflowOverview() {
         <div className="min-w-0 xl:max-w-5xl">
           <div
             ref={ref}
-            className="overflow-hidden rounded-xl border border-border/70 bg-white shadow-sm"
+            className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm"
           >
             <div className="flex items-center gap-3 border-b border-border/70 px-4 py-2 sm:px-5">
               <span className="mr-auto font-mono text-xs text-muted-foreground">~/proteins</span>
@@ -193,7 +193,7 @@ export function WorkflowOverview() {
                     done ? 'opacity-100' : 'opacity-40 grayscale',
                   )}
                 >
-                  <span className="shrink-0 rounded-md border border-border/70 bg-white px-2 py-0.5 font-mono text-xs text-foreground">
+                  <span className="shrink-0 rounded-md border border-border/70 bg-card px-2 py-0.5 font-mono text-xs text-foreground">
                     data.parquetbundle
                   </span>
                   <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground md:hidden" />

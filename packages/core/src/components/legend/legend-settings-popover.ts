@@ -129,6 +129,8 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
   settings: LegendDisplaySettings = DEFAULT_SETTINGS;
   @property({ type: Boolean }) numeric = false;
   @property({ attribute: false }) defaultShapeSize: number = LEGEND_DEFAULTS.symbolSize;
+  /** The dataset's largest size: 64, more for a small dataset. */
+  @property({ attribute: false }) maxShapeSize: number = LEGEND_DEFAULTS.maxSymbolSize;
   @property({ attribute: false }) logBinningAvailable = true;
   @property({ attribute: false }) canReset = false;
   @property({ attribute: false }) annotationLabel = '';
@@ -176,7 +178,7 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
           'shapeSize',
           this.numeric ? 'Point size' : 'Shape size',
           String(this.defaultShapeSize),
-          `Default for this dataset: ${this.defaultShapeSize}; clear the field to use it.`,
+          `Default for this dataset: ${this.defaultShapeSize}, largest ${this.maxShapeSize}; clear the field to use it.`,
         )}
         <ps-switch
           label="Show duplicate counts and spread overlaps"
@@ -315,11 +317,11 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
     if (field === 'shapeSize' && input.value === '' && !input.validity.badInput) return null;
     const value = parsePositiveInt(input.value);
     if (value === null) return undefined;
-    if (field === 'shapeSize' && value > LEGEND_DEFAULTS.maxSymbolSize) {
+    if (field === 'shapeSize' && value > this.maxShapeSize) {
       // Written back, so the field never shows a size that is not the one applied.
-      input.value = String(LEGEND_DEFAULTS.maxSymbolSize);
+      input.value = String(this.maxShapeSize);
       host.value = input.value;
-      return LEGEND_DEFAULTS.maxSymbolSize;
+      return this.maxShapeSize;
     }
     return value;
   }

@@ -111,7 +111,10 @@ const Hero = () => {
   return (
     <section id="home" className="relative overflow-hidden pt-12">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid items-center gap-10 py-14 sm:py-20 lg:min-h-[640px] lg:max-h-[880px] lg:grid-cols-12 lg:py-16 lg:h-[calc(100vh-3rem)]">
+        {/* On a desktop the hero is exactly the visible window below the bar, on any screen
+            height: the next section always starts at the fold, and the map grows with the
+            window instead of stopping at a fixed height. */}
+        <div className="grid items-center gap-10 py-14 sm:py-20 lg:h-[calc(100svh-var(--site-bar-height))] lg:min-h-[640px] lg:grid-cols-12 lg:py-12">
           <div className="min-w-0 lg:col-span-6 xl:col-span-5">
             {/* The site's wordmark at hero size; the header shows its own once this scrolls away.
                 The hero's largest element: 9.6em of this box's type scale (about 540 px at 1440 px,
@@ -125,7 +128,7 @@ const Hero = () => {
                 // The SVG's viewBox: a box of the right shape before it loads (no layout shift).
                 width={870}
                 height={190}
-                className="-ml-[0.1em] block h-auto w-[9.6em] max-w-[calc(100%+0.1em)]"
+                className="-ml-[0.1em] block h-auto w-[9.6em] max-w-[calc(100%+0.1em)] [filter:var(--ps-logo-filter)]"
               />
             </div>
             <h1 className="text-[1.625rem] font-semibold leading-[1.1] tracking-tight text-foreground sm:text-[2.25rem] lg:text-[2rem] xl:text-[2.5rem] 2xl:text-[2.75rem]">
@@ -167,7 +170,7 @@ const Hero = () => {
           </div>
 
           <figure
-            className="relative -mx-4 aspect-[4/3] sm:mx-0 lg:col-span-6 lg:mx-0 lg:aspect-auto lg:h-[min(72vh,640px)] xl:col-span-7"
+            className="relative -mx-4 aspect-[4/3] sm:mx-0 lg:col-span-6 lg:mx-0 lg:aspect-auto lg:h-full xl:col-span-7"
             aria-busy={demo === undefined}
           >
             {demo && shown && annotation ? (
@@ -189,7 +192,7 @@ const Hero = () => {
                 key={item.label}
                 aria-hidden="true"
                 className={cn(
-                  'pointer-events-none absolute hidden items-center gap-1.5 whitespace-nowrap rounded-md border border-border/60 bg-white/85 px-2 py-0.5 text-[11px] font-medium text-foreground/80 shadow-sm backdrop-blur-[2px] sm:flex',
+                  'pointer-events-none absolute hidden items-center gap-1.5 whitespace-nowrap rounded-md border border-border/60 bg-card/85 px-2 py-0.5 text-[11px] font-medium text-foreground/80 shadow-sm backdrop-blur-[2px] sm:flex',
                   item.side === 'below'
                     ? '-translate-x-1/2 translate-y-[9px]'
                     : item.side === 'right'

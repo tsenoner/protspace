@@ -1,6 +1,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
+import '../kit/dialog';
+import type { PsDialog } from '../kit/dialog';
 import type { PsPopover } from '../kit/popover';
 import './import-menu';
 import type { ProtspaceImportMenu } from './import-menu';
@@ -23,6 +25,12 @@ const EXAMPLE_DATASETS: ExampleDatasetSummary[] = [
     large: true,
   },
 ];
+
+const LAST_FILE = {
+  name: 'mine.parquetbundle',
+  sizeLabel: '12.3 MB',
+  storedAt: '2026-10-01T00:00:00.000Z',
+};
 
 type InfoPopoverElement = HTMLElement & { updateComplete: Promise<boolean> };
 
@@ -60,6 +68,8 @@ const example = (id: string) =>
   root().querySelector<HTMLButtonElement>(`[data-example-id="${id}"]`)!;
 const exampleInfo = (id: string) =>
   root().querySelector(`.import-examples [data-example-info="${id}"]`) as InfoPopoverElement | null;
+const lastFileRow = () => root().querySelector<HTMLButtonElement>('.import-last-file .import-row');
+const removeButton = () => root().querySelector<HTMLElement>('.import-last-file-remove');
 const datasetButton = () => document.getElementById('dataset') as HTMLButtonElement;
 const outside = () => document.getElementById('outside') as HTMLButtonElement;
 
@@ -317,11 +327,11 @@ describe('protspace-import-menu', () => {
     escape();
     await settle();
 
-    menu.lastFile = { name: 'mine.parquetbundle', sizeLabel: '12.3 MB' };
+    menu.lastFile = LAST_FILE;
     const reopened = vi.fn();
     menu.addEventListener('open-last-file', reopened);
     await open();
-    const row = root().querySelector<HTMLButtonElement>('.import-last-file button')!;
+    const row = lastFileRow()!;
     expect(root().querySelector('.import-last-file .import-section-label')!.textContent).toBe(
       'Last file',
     );
@@ -337,32 +347,100 @@ describe('protspace-import-menu', () => {
     expect(isOpen()).toBe(false);
   });
 
-  it('Export… shows only when exportable, opens a dialog, and hands over with the anchor', async () => {
+  it("Last file's red × is named for the file and asks to remove it, leaving the panel open", async () => {
+    menu.lastFile = LAST_FILE;
+    const removed = vi.fn();
+    menu.addEventListener('remove-last-file', removed);
     await open();
-    expect(root().querySelector('.import-export-button')).toBeNull();
-    escape();
-    await settle();
+    const remove = removeButton()!;
+    expect(remove.getAttribute('label')).toBe('Remove mine.parquetbundle from this browser');
+    const inner = remove.shadowRoot!.querySelector('button')!;
+    expect(inner.getAttribute('aria-label')).toBe('Remove mine.parquetbundle from this browser');
+    // Red at rest: removing deletes the only stored copy.
+    const probe = document.body.appendChild(document.createElement('span'));
+    probe.style.color = 'var(--ps-danger)';
+    expect(getComputedStyle(inner).color).toBe(getComputedStyle(probe).color);
+    // Beside the row, never inside its button.
+    expect(lastFileRow()!.contains(remove)).toBe(false);
 
-    menu.exportable = true;
-    const handOver = vi.fn();
-    menu.addEventListener('open-export-menu', handOver);
-    menu.openFrom(datasetButton());
+    inner.click();
     await settle();
-    const exportButton = root().querySelector('.import-export-button') as HTMLElement;
-    expect(exportButton.textContent!.trim()).toBe('Export…');
-    // The Export panel it opens is a dialog, as this one is.
-    expect(exportButton.shadowRoot!.querySelector('button')!.getAttribute('aria-haspopup')).toBe(
-      'dialog',
+    expect(removed).toHaveBeenCalledOnce();
+    expect((removed.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      name: 'mine.parquetbundle',
+      storedAt: LAST_FILE.storedAt,
+    });
+    // The host asks first; the panel stays, so focus can come back to it.
+    expect(isOpen()).toBe(true);
+  });
+
+  it('Delete or Backspace on the Last file row asks to remove it; arrows skip the ×', async () => {
+    menu.lastFile = LAST_FILE;
+    const removed = vi.fn();
+    menu.addEventListener('remove-last-file', removed);
+    trigger().focus();
+    await open();
+    const row = lastFileRow()!;
+    expect(row.getAttribute('aria-keyshortcuts')).toBe('Delete Backspace');
+
+    await userEvent.keyboard('{ArrowDown}');
+    expect(root().activeElement).toBe(row);
+    await userEvent.keyboard('{Delete}');
+    expect(removed).toHaveBeenCalledOnce();
+    await userEvent.keyboard('{Backspace}');
+    expect(removed).toHaveBeenCalledTimes(2);
+    expect(isOpen()).toBe(true);
+
+    // The × is a Tab stop, not one of the arrow-key actions.
+    await userEvent.keyboard('{ArrowDown}');
+    expect(root().activeElement).toBe(example('demo'));
+    removeButton()!.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(root().activeElement).toBe(example('demo'));
+  });
+
+  it('a dialog opened over the panel to confirm keeps it open; after the removal focus moves on', async () => {
+    menu.lastFile = LAST_FILE;
+    let dialog: PsDialog | null = null;
+    menu.addEventListener('remove-last-file', () => {
+      dialog = document.createElement('ps-dialog');
+      dialog.heading = 'Remove last file?';
+      document.body.append(dialog);
+      dialog.open = true;
+    });
+    await open();
+    removeButton()!.focus();
+    removeButton()!.shadowRoot!.querySelector('button')!.click();
+    await vi.waitFor(() => expect(dialog?.shadowRoot?.querySelector('dialog')?.open).toBe(true));
+    await settle();
+    expect(isOpen()).toBe(true);
+
+    // Cancel: the dialog returns focus to the ×, in the open panel.
+    dialog!.dismiss();
+    await settle();
+    expect(isOpen()).toBe(true);
+    expect(root().activeElement).toBe(removeButton());
+
+    // Confirmed and removed: the host clears lastFile; focus takes the next item.
+    menu.lastFile = null;
+    await settle();
+    expect(root().querySelector('.import-last-file')).toBeNull();
+    expect(isOpen()).toBe(true);
+    expect(root().activeElement).toBe(example('demo'));
+  });
+
+  it('only imports: it offers no Export', async () => {
+    menu.lastFile = {
+      name: 'kinases.parquetbundle',
+      sizeLabel: '3.2 MB',
+      storedAt: '2026-01-01T00:00:00Z',
+    };
+    await open();
+    const labels = [...root().querySelectorAll<HTMLElement>('[data-import-action]')].map((action) =>
+      (action.getAttribute('aria-label') ?? action.textContent ?? '').trim(),
     );
-    // Last, after the examples.
-    const sections = [...root().querySelectorAll('.import-section')];
-    expect(sections.indexOf(exportButton.parentElement!)).toBe(sections.length - 1);
-
-    exportButton.click();
-    await vi.waitFor(() => expect(handOver).toHaveBeenCalledOnce());
-    // The panel closed first, so the one that opens next is the top layer.
-    expect(isOpen()).toBe(false);
-    expect((handOver.mock.calls[0][0] as CustomEvent).detail).toEqual({ anchor: datasetButton() });
+    expect(labels.length).toBeGreaterThan(2);
+    expect(labels.some((label) => /export/i.test(label))).toBe(false);
   });
 
   it('ArrowDown and ArrowUp move between the actions and skip the disabled example', async () => {

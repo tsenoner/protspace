@@ -20,6 +20,7 @@ describe('shortcuts', () => {
       'Search',
       'Legend',
       'Structure viewer',
+      'Import menu',
       'Figure editor',
     ]);
     for (const group of groups) {

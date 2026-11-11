@@ -20,7 +20,7 @@ describe('icon', () => {
     expect(iconMarkup('x')).toContain('width="16"');
   });
 
-  it.each(['sun', 'moon', 'sun-moon'] as const)("has the theme switch's icon %s", (name) => {
+  it.each(['sun', 'moon'] as const)("has the theme switch's icon %s", (name) => {
     const markup = iconMarkup(name, 16);
     expect(markup).toMatch(/^<svg [^>]*aria-hidden="true"/);
     expect(markup).toMatch(/<(path|circle) /);

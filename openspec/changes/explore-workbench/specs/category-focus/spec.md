@@ -38,3 +38,50 @@ only change focus makes outside the plot: the legend lights the focused rows fro
 
 - **WHEN** focus is on A and the cursor moves to another point whose only value is A
 - **THEN** no further `category-focus` is dispatched
+
+### Requirement: The legend's hover focuses its category in the plot
+
+The plot SHALL focus a category, exactly as Shift + hover over one of its points does, while the
+pointer is on that category's dot in a separation-score strip, and while the pointer is on its legend
+row with Shift held, for every annotation, scored or not. The plot SHALL decide what each covers with
+the one rule Shift + hover on a point uses: the category itself, and the whole Other bucket when the
+category is Other or grouped under it. No Shift is needed on a strip dot.
+A tap on a strip dot SHALL mark its row without focusing the plot, since a tap's hover lasts until
+the next tap elsewhere.
+Shift + hover over a point in the plot SHALL take precedence, a selection SHALL outrank the focus as
+it does Shift + hover's, and the focus SHALL end when the pointer leaves the dot or row, when Shift
+is released on a row, when the window loses focus, and when the dataset or the annotation changes.
+The plot SHALL report this focus through category-focus like its own.
+
+#### Scenario: Hovering a strip dot
+
+- **WHEN** the user hovers category A's dot on the silhouette strip
+- **THEN** every point outside A fades, and A's legend row is highlighted
+- **AND** moving the pointer off the dot restores the plot
+
+#### Scenario: Shift on a legend row
+
+- **WHEN** the user holds Shift with the pointer on category B's legend row, for an annotation with
+  or without separation scores
+- **THEN** every point outside B fades until Shift is released or the pointer leaves the row
+
+#### Scenario: Other covers the same bucket from the plot and the legend
+
+- **WHEN** the user holds Shift over a point grouped under Other, holds Shift over the Other row, or
+  hovers the strip dot of a category grouped under Other
+- **THEN** each focuses the same categories: every category under Other
+
+#### Scenario: Tapping a strip dot
+
+- **WHEN** the user taps category A's dot on a touch screen
+- **THEN** A's legend row is marked and A is toggled, and the plot does not fade
+
+#### Scenario: A row without Shift
+
+- **WHEN** the pointer crosses legend rows without Shift
+- **THEN** the plot does not fade
+
+#### Scenario: A selection is active
+
+- **WHEN** proteins are selected and the user hovers a strip dot
+- **THEN** the plot keeps showing the selection and does not fade by category

@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { AnnotationData } from '@protspace/utils';
-import { getFirstAnnotationIndex, getProteinAnnotationIndices } from '@protspace/utils';
+import {
+  getColorSchemeStops,
+  getFirstAnnotationIndex,
+  getProteinAnnotationIndices,
+} from '@protspace/utils';
 import {
   LegendDataProcessor,
   createProcessorContext,
@@ -38,6 +42,12 @@ function legacyCounts(
 }
 
 const asObject = (counts: ReadonlyMap<string, number>) => Object.fromEntries(counts);
+
+/** Each row's colour, Other left out. */
+const colorsOf = (items: LegendItem[]) =>
+  Object.fromEntries(
+    items.filter((i) => i.value !== LEGEND_VALUES.OTHER).map((i) => [i.value, i.color]),
+  );
 
 /**
  * What the legend hands the processor: a per-protein value list counted once, with the
@@ -1516,8 +1526,6 @@ describe('legend-data-processor', () => {
           ['10 - 20', 10],
         ]),
         false,
-        undefined,
-        undefined,
       );
 
       expect(result.legendItems).toEqual([
@@ -1599,8 +1607,7 @@ describe('legend-data-processor', () => {
           visible,
           new Map(),
           true,
-          pending.extract,
-          pending.merge,
+          { pendingExtract: pending.extract, pendingMerge: pending.merge },
         ).legendItems;
       };
       const order = (items: LegendItem[]) =>
@@ -1714,7 +1721,7 @@ describe('legend-data-processor', () => {
         visibleValues,
         new Map(),
         true,
-        'c',
+        { pendingExtract: 'c' },
       );
       const legendValues = result.legendItems
         .filter((i) => i.value !== 'Other')
@@ -1738,8 +1745,7 @@ describe('legend-data-processor', () => {
         visibleValues,
         new Map(),
         true,
-        undefined,
-        'b',
+        { pendingMerge: 'b' },
       );
       const legendValues = result.legendItems
         .filter((i) => i.value !== 'Other')
@@ -1949,6 +1955,284 @@ describe('legend-data-processor', () => {
         .filter((i) => i.value !== 'Other')
         .map((i) => i.value);
       expect(legendValues.length).toBe(3);
+    });
+  });
+
+  describe('colours through filters and isolation', () => {
+    const COUNTS: Record<string, number> = { a: 50, b: 40, c: 30, d: 20, e: 10 };
+    const counts = (keys: string[] = Object.keys(COUNTS)) =>
+      new Map(keys.map((key) => [key, COUNTS[key]] as const));
+    /** One pass of the legend: `keys` are the counted values, `constrained` a filter. */
+    const pass = (
+      keys: string[] | undefined,
+      constrained: boolean,
+      existing: LegendItem[],
+      visible: Set<string> = new Set(),
+      extra: { max?: number; paletteId?: string; persisted?: Record<string, never> } = {},
+    ) =>
+      LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(keys),
+        extra.max ?? 10,
+        constrained,
+        existing,
+        'size-desc',
+        extra.persisted ?? {},
+        visible,
+        new Map(),
+        true,
+        { paletteId: extra.paletteId, unfilteredFrequencies: () => counts() },
+      ).legendItems;
+
+    it('unfiltered, isolate [a], isolate [b..e], unfiltered: every category ends in its colour', () => {
+      let items = pass(undefined, false, []);
+      const original = colorsOf(items);
+      const shown = new Set(Object.keys(original));
+
+      items = pass(['a'], true, items, shown);
+      expect(colorsOf(items)).toEqual({ a: original.a });
+      items = pass(['b', 'c', 'd', 'e'], true, items, shown);
+      const { a: _a, ...rest } = original;
+      expect(colorsOf(items)).toEqual(rest);
+      // Back unfiltered from the filtered rows alone: a is promoted again, in its own colour.
+      items = pass(undefined, false, items, new Set(['b', 'c', 'd', 'e']));
+
+      expect(colorsOf(items)).toEqual(original);
+    });
+
+    it('keeps the colours by slot under a non-default palette', () => {
+      const okabeIto = getColorSchemeStops('okabeIto');
+      let items = pass(undefined, false, [], new Set(), { paletteId: 'okabeIto' });
+      const original = colorsOf(items);
+      expect(Object.values(original)).toEqual(okabeIto.slice(0, 5));
+
+      items = pass(['a'], true, items, new Set(Object.keys(original)), { paletteId: 'okabeIto' });
+      items = pass(['c', 'e'], true, items, new Set(Object.keys(original)), {
+        paletteId: 'okabeIto',
+      });
+      expect(colorsOf(items)).toEqual({ c: original.c, e: original.e });
+      items = pass(undefined, false, items, new Set(['c', 'e']), { paletteId: 'okabeIto' });
+
+      expect(colorsOf(items)).toEqual(original);
+    });
+
+    it('merging a row into Other while unfiltered frees its slot for the next category taken out', () => {
+      let items = pass(undefined, false, [], new Set(), { max: 3 });
+      const original = colorsOf(items);
+      expect(Object.keys(original)).toEqual(['a', 'b', 'c']);
+
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(),
+        2,
+        false,
+        items,
+        'size-desc',
+        {},
+        new Set(['a', 'b', 'c']),
+        new Map(),
+        true,
+        { pendingMerge: 'b' },
+      ).legendItems;
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(),
+        3,
+        false,
+        items,
+        'size-desc',
+        {},
+        new Set(['a', 'c']),
+        new Map(),
+        true,
+        { pendingExtract: 'e' },
+      ).legendItems;
+
+      expect(colorsOf(items)).toEqual({ a: original.a, c: original.c, e: original.b });
+    });
+
+    it('a constrained view frees no slot, even for a row merged into Other', () => {
+      let items = pass(undefined, false, [], new Set(), { max: 3 });
+      const original = colorsOf(items);
+
+      items = pass(['a', 'c'], true, items, new Set(['a', 'b', 'c']), { max: 3 });
+      // Taken out of Other under the filter: d may not take the colour b keeps.
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(['a', 'c', 'd']),
+        4,
+        true,
+        items,
+        'size-desc',
+        {},
+        new Set(['a', 'b', 'c', 'd']),
+        new Map(),
+        true,
+      ).legendItems;
+
+      const d = colorsOf(items).d;
+      expect(Object.values(original)).not.toContain(d);
+      items = pass(undefined, false, items, new Set(['a', 'b', 'c', 'd']), { max: 4 });
+      expect(colorsOf(items)).toEqual({ ...original, d });
+    });
+
+    it('keeps the colours of categories the view leaves out claimed when a new one probes', () => {
+      // a's stored colour is the one slot 3 would give; a is filtered out when d is taken out.
+      const slot3 = getVisualEncoding(3).color;
+      const persisted = { a: { zOrder: 0, color: slot3, shape: '' } };
+      let items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(['a', 'b', 'c']),
+        3,
+        false,
+        [],
+        'size-desc',
+        persisted,
+      ).legendItems;
+      expect(colorsOf(items).a).toBe(slot3);
+
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(['b', 'c', 'd']),
+        4,
+        true,
+        items,
+        'size-desc',
+        persisted,
+        new Set(['a', 'b', 'c', 'd']),
+      ).legendItems;
+
+      expect(colorsOf(items).d).not.toBe(slot3);
+    });
+
+    it('a constrained first pass takes its slots from the unfiltered counts', () => {
+      const unfiltered = colorsOf(pass(undefined, false, []));
+      ctx = createProcessorContext();
+
+      // An annotation picked, or Reset, while a filter keeps only d and e.
+      const items = pass(['d', 'e'], true, []);
+
+      expect(colorsOf(items)).toEqual({ d: unfiltered.d, e: unfiltered.e });
+    });
+  });
+
+  describe('recolorBySlot', () => {
+    it("gives each row its slot's palette colour and leaves Other and N/A alone", () => {
+      const items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'annotation1',
+        new Map([
+          ['a', 5],
+          [NA_VALUE, 4],
+          ['b', 3],
+        ]),
+        2,
+        false,
+        [],
+        'size-desc',
+      ).legendItems;
+      const reversed = [...items].reverse();
+
+      const recolored = LegendDataProcessor.recolorBySlot(ctx, reversed, 'okabeIto');
+
+      const okabeIto = getColorSchemeStops('okabeIto');
+      expect(colorsOf(recolored)).toEqual({ a: okabeIto[0], [NA_VALUE]: NA_DEFAULT_COLOR });
+      expect(recolored.find((i) => i.value === LEGEND_VALUES.OTHER)?.color).toBe(
+        items.find((i) => i.value === LEGEND_VALUES.OTHER)?.color,
+      );
+    });
+
+    it('a category the view leaves out takes the new palette when it comes back', () => {
+      let items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'annotation1',
+        new Map([
+          ['a', 5],
+          ['b', 3],
+        ]),
+        10,
+        false,
+        [],
+        'size-desc',
+      ).legendItems;
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'annotation1',
+        new Map([['b', 3]]),
+        10,
+        true,
+        items,
+        'size-desc',
+        {},
+        new Set(['a', 'b']),
+      ).legendItems;
+      items = LegendDataProcessor.recolorBySlot(ctx, items, 'okabeIto');
+      expect(LegendDataProcessor.pickedColor(ctx, 'a')).toBe(getColorSchemeStops('okabeIto')[0]);
+
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'annotation1',
+        new Map([
+          ['a', 5],
+          ['b', 3],
+        ]),
+        10,
+        false,
+        items,
+        'size-desc',
+        {},
+        new Set(['b']),
+        new Map(),
+        true,
+        { paletteId: 'okabeIto' },
+      ).legendItems;
+
+      expect(colorsOf(items)).toEqual({
+        a: getColorSchemeStops('okabeIto')[0],
+        b: getColorSchemeStops('okabeIto')[1],
+      });
+    });
+
+    it('keeps the rows distinct once a filter has pushed slots past the palette length', () => {
+      const kellys = getColorSchemeStops('kellys');
+      const names = Array.from({ length: 28 }, (_, i) => `c${i}`);
+      const counts = (values: string[]) =>
+        new Map(values.map((v) => [v, 100 - Number(v.slice(1))]));
+      // A filter frees no slot, so each new view's categories take fresh, growing slots.
+      const views = [names.slice(0, 10), ['c0', ...names.slice(10, 19)]];
+      views.push(['c0', ...names.slice(19, 28)]);
+      let items: LegendItem[] = [];
+      for (const view of views) {
+        items = LegendDataProcessor.processLegendItems(
+          ctx,
+          'annotation1',
+          counts(view),
+          10,
+          true,
+          items,
+          'size-desc',
+        ).legendItems;
+      }
+      expect(ctx.slotTracker.assignedCategories()).toEqual(expect.arrayContaining(['c0', 'c21']));
+      expect(ctx.slotTracker.getSlot('c21') % kellys.length).toBe(ctx.slotTracker.getSlot('c0'));
+      const before = Object.values(colorsOf(items));
+      expect(new Set(before).size).toBe(10);
+
+      const recolored = LegendDataProcessor.recolorBySlot(ctx, items, 'kellys');
+
+      const after = colorsOf(recolored);
+      expect(new Set(Object.values(after)).size).toBe(10);
+      expect(after.c0).toBe(kellys[0]);
+      // The categories the view leaves out remember colours apart from the rows' too.
+      for (const hidden of names.filter((n) => !(n in after)).slice(0, 10)) {
+        expect(Object.values(after)).not.toContain(LegendDataProcessor.pickedColor(ctx, hidden));
+      }
     });
   });
 });

@@ -170,8 +170,9 @@ test.describe('workbench shell', () => {
 
 /**
  * Home's header and Explore's app bar share their anchors (config/site-bar.css, PR 555 review): the
- * bar's height, the wordmark's box, and Feedback then GitHub ending at the same right edge. The
- * docs' nav reads the same file; its dev server is not part of this suite.
+ * bar's height, the wordmark's box, the Theme button before them, and Feedback (a menu in both)
+ * then GitHub ending at the same right edge. The docs' nav reads the same file; its dev server is
+ * not part of this suite.
  */
 test.describe('the anchors Home and Explore share', () => {
   const box = async (locator: Locator) => {
@@ -186,13 +187,11 @@ test.describe('the anchors Home and Explore share', () => {
     return {
       bar: (await box(bar)).height,
       wordmark: await box(wordmark),
-      // A link on Home, a menu button in Explore.
-      feedback: await box(
-        bar
-          .getByRole('link', { name: 'Feedback', exact: true })
-          .or(bar.getByRole('button', { name: 'Feedback', exact: true })),
-      ),
+      // A menu button in both.
+      feedback: await box(bar.getByRole('button', { name: 'Feedback', exact: true })),
       github: await box(bar.getByRole('link', { name: 'GitHub', exact: true })),
+      // Before Feedback in both; Explore has Help between them.
+      themeRight: (await box(bar.getByRole('button', { name: /^Theme: / }))).right,
     };
   };
 
@@ -206,7 +205,11 @@ test.describe('the anchors Home and Explore share', () => {
       await openExplore(page);
       const explore = await anchors(appBar(page), page.locator("[data-workbench='home'] img"));
 
-      expect(home).toEqual(explore);
+      const { themeRight: homeTheme, ...homeAnchors } = home;
+      const { themeRight: exploreTheme, ...exploreAnchors } = explore;
+      expect(homeAnchors).toEqual(exploreAnchors);
+      expect(homeTheme).toBeLessThan(home.feedback.left);
+      expect(exploreTheme).toBeLessThan(explore.feedback.left);
       expect(explore.bar).toBe(48);
       expect(explore.wordmark).toMatchObject({ left: 24, height: 24 });
       expect(explore.feedback.right).toBeLessThan(explore.github.left);

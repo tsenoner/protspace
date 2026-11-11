@@ -287,8 +287,7 @@ export class ProtspaceQueryBuilder extends LitElement {
     this._dispatchQueryChanged([...this.query, condition]);
   }
 
-  /** Adds an empty group after the last item; the Filter panel header's ⋯ menu calls it. */
-  addGroup(): void {
+  private _addGroup() {
     const group = createGroup({ logicalOp: nextJoiner(this.query) });
     this._dispatchQueryChanged([...this.query, group]);
   }
@@ -780,11 +779,9 @@ export class ProtspaceQueryBuilder extends LitElement {
             <ps-button class="add-condition" @click=${this._addCondition}
               ><span slot="start">${icon('plus', 16)}</span>Add condition</ps-button
             >
-            ${this.embedded
-              ? nothing
-              : html`<ps-button class="add-group" variant="ghost" size="sm" @click=${this.addGroup}
-                  ><span slot="start">${icon('plus', 14)}</span>Add group</ps-button
-                >`}
+            <ps-button class="add-group" @click=${this._addGroup}
+              ><span slot="start">${icon('plus', 16)}</span>Add group</ps-button
+            >
           </div>
         </div>
 
@@ -792,7 +789,12 @@ export class ProtspaceQueryBuilder extends LitElement {
 
         <div class="query-footer">
           <div class="match-line">
-            <p class="match-count" role="status" aria-live="polite">
+            <p
+              class="match-count"
+              role="status"
+              aria-live="polite"
+              aria-busy=${this._counting ? 'true' : 'false'}
+            >
               ${total > 0
                 ? html`<span class="match-number">${formatCount(matched)}</span
                     ><span class="match-total"

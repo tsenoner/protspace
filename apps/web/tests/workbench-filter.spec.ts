@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  addConditionButton,
+  addGroupButton,
   applyFirstCategoryFilter,
   clearStatusChip,
   closeFilterPanel,
@@ -9,14 +11,18 @@ import {
   filterPanel,
   getProteinCount,
   getViewState,
+  importUserFile,
   openExplore,
   openFilter,
   queryBuilder,
   redo,
+  selectAnnotation,
   statusChip,
   undo,
+  waitForExploreDataLoad,
 } from './helpers/explore';
 import { expectNoAxeViolations } from './helpers/a11y';
+import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 import { rail, structurePanel, watchPlotResizes } from './helpers/workbench';
 
 /** The plot's filter channel: whether it is on, and how many proteins it keeps. */
@@ -27,6 +33,18 @@ function readPlotFilter(page: Page): Promise<{ filtersActive: boolean; kept: num
       filtersActive: host.filtersActive === true,
       kept: host.filteredProteinIds?.length ?? 0,
     };
+  });
+}
+
+/** Each legend row's colour by category, Other left out. */
+function legendColors(page: Page): Promise<Record<string, string>> {
+  return page.locator('protspace-legend').evaluate((legend) => {
+    const items =
+      (legend as Element & { _legendItems?: Array<{ value: string; color: string }> })
+        ._legendItems ?? [];
+    return Object.fromEntries(
+      items.filter((item) => item.value !== 'Other').map((item) => [item.value, item.color]),
+    );
   });
 }
 
@@ -134,7 +152,7 @@ test.describe('the Filter panel', () => {
     await expect(cancel).toBeDisabled();
 
     // An empty condition is not a change, so Cancel stays off.
-    await queryBuilder(page).getByRole('button', { name: 'Add condition', exact: true }).click();
+    await addConditionButton(page).click();
     await expect(conditionRows(page)).toHaveCount(2);
     await expect(cancel).toBeDisabled();
 
@@ -150,6 +168,41 @@ test.describe('the Filter panel', () => {
     await expect(conditionRows(page)).toHaveCount(1);
     await expect(cancel).toBeDisabled();
     expect((await readPlotFilter(page)).filtersActive).toBe(true);
+  });
+
+  test('"Add group" below the cards adds a group with one card; its own "Add condition" adds to it', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await openFilter(page);
+    const groups = queryBuilder(page).locator('.group-container');
+
+    await addGroupButton(page).click();
+
+    await expect(groups).toHaveCount(1);
+    await expect(groups.locator('protspace-query-condition-row')).toHaveCount(1);
+    await expect(conditionRows(page)).toHaveCount(2);
+    // A group adds cards, not groups.
+    await expect(groups.getByRole('button', { name: 'Add group', exact: true })).toHaveCount(0);
+
+    await groups.getByRole('button', { name: 'Add condition', exact: true }).click();
+    await expect(groups.locator('protspace-query-condition-row')).toHaveCount(2);
+
+    // The top-level button still adds after the group.
+    await addConditionButton(page).click();
+    await expect(conditionRows(page)).toHaveCount(4);
+    await expect(groups.locator('protspace-query-condition-row')).toHaveCount(2);
+  });
+
+  test("the header's ⋯ menu holds only Clear all", async ({ page }) => {
+    await openExplore(page);
+    await openFilter(page);
+
+    await filterPanel(page).getByRole('button', { name: 'Filter actions', exact: true }).click();
+
+    await expect(page.getByRole('menu', { name: 'Filter actions' })).toBeVisible();
+    // The items are slotted, so not inside the menu role's subtree; only the open menu's show.
+    await expect(page.getByRole('menuitem')).toHaveText(['Clear all']);
   });
 
   test("the filter chip's ✕ removes the filter", async ({ page }) => {
@@ -204,13 +257,14 @@ test.describe('the Filter panel', () => {
   }) => {
     await openExplore(page);
     await openFilter(page);
-    const add = queryBuilder(page).getByRole('button', { name: 'Add condition', exact: true });
+    const add = addConditionButton(page);
+    const actions = queryBuilder(page).locator('.query-actions');
     const footer = queryBuilder(page).locator('.query-footer');
     const below = async () => {
-      const button = (await add.boundingBox())!;
-      return (await footer.boundingBox())!.y - (button.y + button.height);
+      const row = (await actions.boundingBox())!;
+      return (await footer.boundingBox())!.y - (row.y + row.height);
     };
-    // One gap of the builder's column under "Add condition".
+    // One gap of the builder's column under the add buttons.
     expect(await below()).toBeGreaterThanOrEqual(0);
     expect(await below()).toBeLessThan(24);
 
@@ -261,5 +315,32 @@ test.describe('the Filter panel', () => {
     await redo(page);
     await expect.poll(async () => (await readPlotFilter(page)).kept).toBe(kept);
     await expect(joiner).toHaveAccessibleName('Joiner for condition 2: and not');
+  });
+
+  test('"is 1", then "is none of", then Remove filter: every category ends in its own colour', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await importUserFile(page, TOXPROT_5181_FIXTURE);
+    await waitForExploreDataLoad(page, { proteinCount: 5181 });
+    await selectAnnotation(page, 'protein_existence');
+    const original = await legendColors(page);
+    const levels = Object.keys(original);
+    expect(levels.length).toBeGreaterThan(2);
+    // Level 1 of UniProt's protein existence.
+    const first = levels.find((level) => level.includes('protein level'))!;
+
+    const card = await draftFilterCondition(page, 0, 'protein_existence', [first]);
+    await filterApplyButton(page).click();
+    await expect.poll(() => legendColors(page)).toEqual({ [first]: original[first] });
+
+    await card.locator('.operator-pill').click();
+    await page.getByRole('menuitemradio', { name: /^is none of/ }).click();
+    await filterApplyButton(page).click();
+    const { [first]: _first, ...rest } = original;
+    await expect.poll(() => legendColors(page)).toEqual(rest);
+
+    await clearStatusChip(page, 'filter');
+    await expect.poll(() => legendColors(page)).toEqual(original);
   });
 });

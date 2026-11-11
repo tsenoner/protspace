@@ -114,6 +114,24 @@ describe('ps-dialog', () => {
     expect(fallback).toHaveBeenCalledOnce();
   });
 
+  it('leaves no layer behind when the browser refuses to open it', async () => {
+    document.body.innerHTML = `<ps-dialog heading="Refused"><p>Body</p></ps-dialog>`;
+    const dialog = document.querySelector('ps-dialog') as PsDialog;
+    await dialog.updateComplete;
+    const showModal = vi
+      .spyOn(HTMLDialogElement.prototype, 'showModal')
+      .mockImplementationOnce(() => {
+        throw new DOMException('refused', 'InvalidStateError');
+      });
+    cleanups.push(() => showModal.mockRestore());
+
+    dialog.open = true;
+    await dialog.updateComplete.catch(() => {});
+
+    expect(showModal).toHaveBeenCalledOnce();
+    expect(topLayer()).toBeUndefined();
+  });
+
   it('hides the footer when nothing is slotted into it', async () => {
     document.body.innerHTML = '<ps-dialog heading="Info"><p>Only text</p></ps-dialog>';
     const dialog = document.querySelector('ps-dialog') as PsDialog;

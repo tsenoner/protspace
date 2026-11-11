@@ -101,11 +101,12 @@ consumed during generation, only their effects (the resulting categories with `z
 `shape`) are written.
 
 ::: warning A size picked in the web app overrides `shapeSize`
-The web app's legend accepts shape sizes from 1 to 64, and the web app caps a larger `shapeSize`
-from a bundle, top-level or per-annotation, at 64. As the `shapeSize` row above says, a
-per-annotation `10` reads as unset, so a styles file cannot set exactly 10 on a dataset whose
-[default](/explore/legend#default-dot-size) is smaller (above about 10,800 proteins); use `9` or
-`11` for about that size. A bundle exported from the web app after the user picked a size carries it as a
+The web app's legend accepts shape sizes from 1 to 64, or up to 128 on a dataset of fewer than
+10,000 proteins, and the web app caps a larger `shapeSize` from a bundle, top-level or
+per-annotation, at that [largest size](/explore/legend#default-dot-size). As the `shapeSize` row
+above says, a per-annotation `10` reads as unset, so a styles file cannot set exactly 10 on a
+dataset whose [default](/explore/legend#default-dot-size) is not 10 (below about 8,200 or above
+about 10,800 proteins); use `9` or `11` for about that size. A bundle exported from the web app after the user picked a size carries it as a
 top-level `shapeSize` in its settings, next to the per-annotation ones. On import, that top-level
 value overrides every annotation's `shapeSize`, and `protspace style` keeps it when it rewrites the
 settings, so editing the per-annotation `shapeSize` of such a bundle has no visible effect.

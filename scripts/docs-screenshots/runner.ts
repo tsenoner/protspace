@@ -1,11 +1,12 @@
 /**
- * Turns the manifest into Playwright tests: one `test.describe` per output file, with its own
+ * Turns the manifest into Playwright tests: one `test.describe` per entry and theme, with its own
  * viewport, device, colour scheme, motion setting and stored layout, holding one test titled with
- * the file name (so `-g "<file>"` captures one image). Each test opens Explore, waits for the data
- * and for the plot to stop drawing, and runs the entry's setup and steps through a `CaptureApi`.
- * A screenshot then parks the pointer and shoots. A GIF is recorded at 1× in a context of its own
- * (Playwright sets `video` per worker, not per test) and saved, with a sidecar giving where the
- * scene starts, for `gif.ts` to convert.
+ * the variant's first file (so `-g "<name>"` captures both themes, `-g "<name>-dark"` the dark
+ * one). Each test opens Explore, waits for the data and for the plot to stop drawing, and runs the
+ * entry's setup and steps through a `CaptureApi`. A screenshot then parks the pointer and shoots.
+ * A video is recorded at 1× in a context of its own (Playwright sets `video` per worker, not per
+ * test) and saved under its stem, with a sidecar giving where the scene starts, for `video.ts` to
+ * encode.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -29,9 +30,8 @@ import { plotSettled } from '../../apps/web/tests/helpers/plot';
 import { exploreStorageState } from '../../apps/web/tests/helpers/tour-storage-state';
 import {
   captureVariants,
-  DEFAULT_GIF_BUDGET,
+  DEFAULT_VIDEO_BUDGET,
   DESKTOP_VIEWPORT,
-  GIF_START,
   TABLET_VIEWPORT,
   validateManifest,
   type CaptureApi,
@@ -39,8 +39,8 @@ import {
   type CaptureKind,
   type CaptureVariant,
   type Clip,
-  type GifSidecar,
   type Theme,
+  type VideoSidecar,
   type ViewportName,
 } from './capture-plan';
 import { installIndicators, showClick, showCursor, showKey, showLabel } from './indicators';
@@ -79,10 +79,10 @@ function contextOptions({ entry, theme }: CaptureVariant): BrowserContextOptions
   const base = typeof viewport === 'object' ? { ...DEVICES.desktop, viewport } : DEVICES[viewport];
   return {
     ...base,
-    // GIFs at 1; screenshots at 2 unless a desktop one sets `scale` (validateManifest allows it
+    // Videos at 1; screenshots at 2 unless a desktop one sets `scale` (validateManifest allows it
     // nowhere else). Phones and tablets at 2, not Pixel 7's 2.625: touch comes from
     // isMobile/hasTouch, and the docs show these 240-320 px wide.
-    deviceScaleFactor: entry.kind === 'gif' ? 1 : viewport === 'desktop' ? (entry.scale ?? 2) : 2,
+    deviceScaleFactor: entry.kind === 'video' ? 1 : viewport === 'desktop' ? (entry.scale ?? 2) : 2,
     colorScheme: theme,
     reducedMotion: entry.kind === 'png' ? 'reduce' : 'no-preference',
   };
@@ -180,7 +180,7 @@ function screenshotApi(page: Page, theme: Theme): CaptureApi {
 }
 
 /**
- * The pointer and keys of a GIF scene: the pointer glides to each target, every click and key
+ * The pointer and keys of a video scene: the pointer glides to each target, every click and key
  * press shows its overlay, and `hold` paces the recording. `hold` is the only timer in the
  * capture code; everything else waits for a signal.
  */
@@ -190,7 +190,7 @@ function recordingApi(page: Page, theme: Theme): CaptureApi {
     await showCursor(page, at);
   };
   return {
-    kind: 'gif',
+    kind: 'video',
     theme,
     hold: async (ms) => {
       await page.waitForTimeout(ms);
@@ -244,26 +244,27 @@ async function shoot(page: Page, entry: CaptureEntry, file: string): Promise<voi
   else await target.screenshot(options);
 }
 
-const recording = (name: string, extension: 'webm' | 'json') =>
-  path.join(TEMP_VIDEOS_DIR, `${name}.${extension}`);
+/** A recording or its sidecar in temp-videos/, by the variant's stem (`zoom`, `zoom-dark`). */
+const recording = (stem: string, extension: 'webm' | 'json') =>
+  path.join(TEMP_VIDEOS_DIR, `${stem}.${extension}`);
 
 /**
- * Records a GIF scene in a context of its own, sized to the viewport at 1×. Removes an older
- * recording of the same name first and saves the video and its sidecar only when the scene
- * passes, so a failed or timed-out scene leaves nothing for `gif.ts` to convert.
+ * Records a video scene in a context of its own, sized to the viewport at 1×. Removes an older
+ * recording of the same stem first and saves the video and its sidecar only when the scene
+ * passes, so a failed or timed-out scene leaves nothing for `video.ts` to encode.
  */
-async function recordGif(
+async function recordVideo(
   browser: Browser,
   baseURL: string | undefined,
   variant: CaptureVariant,
   outputDir: string,
 ): Promise<void> {
-  const { entry, theme } = variant;
+  const { entry, theme, stem } = variant;
   // Before the context: a timeout tears the test down without running its catch.
-  fs.rmSync(recording(entry.name, 'webm'), { force: true });
-  fs.rmSync(recording(entry.name, 'json'), { force: true });
+  fs.rmSync(recording(stem, 'webm'), { force: true });
+  fs.rmSync(recording(stem, 'json'), { force: true });
   const options = contextOptions(variant);
-  if (!options.viewport) throw new Error(`${variant.file}: no viewport`);
+  if (!options.viewport) throw new Error(`${variant.title}: no viewport`);
   const context = await browser.newContext({
     ...options,
     baseURL,
@@ -287,33 +288,32 @@ async function recordGif(
   }
   await context.close();
   const video = page.video();
-  if (!video) throw new Error(`${variant.file}: the context recorded no video`);
-  fs.mkdirSync(TEMP_VIDEOS_DIR, { recursive: true });
-  await video.saveAs(recording(entry.name, 'webm'));
+  if (!video) throw new Error(`${variant.title}: the context recorded no video`);
+  // A stem under examples/ records into a folder of its own.
+  fs.mkdirSync(path.dirname(recording(stem, 'webm')), { recursive: true });
+  await video.saveAs(recording(stem, 'webm'));
   // saveAs copies: drop the original from test-results.
   await video.delete();
-  const sidecar: GifSidecar = {
-    name: entry.name,
+  const sidecar: VideoSidecar = {
     trimStartMs,
-    budgetBytes: entry.budgetBytes ?? DEFAULT_GIF_BUDGET,
-    start: { ...GIF_START, ...entry.gif },
+    budgetBytes: entry.budgetBytes ?? DEFAULT_VIDEO_BUDGET,
   };
-  fs.writeFileSync(recording(entry.name, 'json'), `${JSON.stringify(sidecar, null, 2)}\n`);
+  fs.writeFileSync(recording(stem, 'json'), `${JSON.stringify(sidecar, null, 2)}\n`);
 }
 
-/** Registers one test per output file of `kind`; throws when the manifest is invalid. */
+/** Registers one test per variant of `kind`; throws when the manifest is invalid. */
 export function registerCaptures(kind: CaptureKind): void {
   const problems = validateManifest(MANIFEST);
   if (problems.length > 0) {
     throw new Error(`The docs capture manifest is invalid:\n${problems.join('\n')}`);
   }
   for (const variant of captureVariants(MANIFEST, kind)) {
-    const { entry, theme, file } = variant;
-    test.describe(file, () => {
-      if (kind === 'gif') {
-        test(file, async ({ browser, baseURL }, testInfo) => {
+    const { entry, theme, title } = variant;
+    test.describe(title, () => {
+      if (kind === 'video') {
+        test(title, async ({ browser, baseURL }, testInfo) => {
           test.setTimeout(entry.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-          await recordGif(browser, baseURL, variant, testInfo.outputPath('video'));
+          await recordVideo(browser, baseURL, variant, testInfo.outputPath('video'));
         });
         return;
       }
@@ -325,14 +325,14 @@ export function registerCaptures(kind: CaptureKind): void {
         },
       });
 
-      test(file, async ({ page }) => {
+      test(title, async ({ page }) => {
         test.setTimeout(entry.timeoutMs ?? DEFAULT_TIMEOUT_MS);
         const cap = screenshotApi(page, theme);
         await openEntry(page, entry);
         await entry.setup?.(page, cap);
         await entry.steps?.(page, cap);
         if (!entry.keepPointer) await parkPointer(page);
-        await shoot(page, entry, file);
+        await shoot(page, entry, title);
       });
     });
   }

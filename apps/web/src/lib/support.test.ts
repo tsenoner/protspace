@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   GITHUB_REPO_URL,
   MAX_ERROR_CHARS,
@@ -6,6 +6,8 @@ import {
   buildBugContext,
   buildIssueUrl,
   buildMailto,
+  FEEDBACK_MENU_ITEMS,
+  runFeedbackAction,
 } from './support';
 
 describe('buildMailto', () => {
@@ -91,5 +93,44 @@ describe('buildBugContext', () => {
     expect(buildBugContext({ operation: 'Export', error: undefined })).toContain(
       'Error: Unknown error',
     );
+  });
+});
+
+describe('the Feedback menu', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('offers email, the address to copy and a GitHub issue, in that order', () => {
+    expect(FEEDBACK_MENU_ITEMS.map(({ value }) => value)).toEqual(['email', 'copy', 'issue']);
+    expect(FEEDBACK_MENU_ITEMS[0].label).toBe(`Email ${SUPPORT_EMAIL}`);
+  });
+
+  it('Email opens a feedback mail to the inbox, and the issue a new tab, both synchronously', () => {
+    const location = { href: '' };
+    const open = vi.fn();
+    vi.stubGlobal('window', { location, open });
+
+    runFeedbackAction('email', vi.fn());
+    expect(location.href).toBe(buildMailto({ subject: 'ProtSpace feedback' }));
+
+    runFeedbackAction('issue', vi.fn());
+    expect(open).toHaveBeenCalledExactlyOnceWith(
+      `${GITHUB_REPO_URL}/issues/new`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  });
+
+  it('Copy reports whether the address reached the clipboard, a missing clipboard included', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const copied = vi.fn();
+    runFeedbackAction('copy', copied);
+    await vi.waitFor(() => expect(copied).toHaveBeenCalledExactlyOnceWith(true));
+    expect(writeText).toHaveBeenCalledWith(SUPPORT_EMAIL);
+
+    vi.stubGlobal('navigator', {});
+    const failed = vi.fn();
+    runFeedbackAction('copy', failed);
+    await vi.waitFor(() => expect(failed).toHaveBeenCalledExactlyOnceWith(false));
   });
 });

@@ -131,7 +131,12 @@ export interface PointUniformLocations {
   morph: WebGLUniformLocation | null;
   pointScale: WebGLUniformLocation | null;
   gamma: WebGLUniformLocation | null;
+  /** The largest point size the context draws (ALIASED_POINT_SIZE_RANGE). */
+  maxPointSize: WebGLUniformLocation | null;
+  /** The plot background in linear light, and the two values it sets (pointKnockoutUniforms). */
   knockoutColor: WebGLUniformLocation | null;
+  hollowFadeGain: WebGLUniformLocation | null;
+  lightRimBound: WebGLUniformLocation | null;
   labelColors: WebGLUniformLocation | null;
   labelTextureSize: WebGLUniformLocation | null;
   maxLabels: WebGLUniformLocation | null;

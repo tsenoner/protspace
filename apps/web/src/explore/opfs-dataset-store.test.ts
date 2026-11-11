@@ -8,6 +8,7 @@ import {
   markLastLoadStatus,
   readLastLoadStatus,
   readStoredImportSummary,
+  removeLastImportedFile,
   restoreLastLoadStatus,
 } from './opfs-dataset-store';
 import { getDatasetPersistenceFailureNotification } from './notifications';
@@ -96,7 +97,7 @@ class MockDirectoryHandle {
       return;
     }
 
-    throw new Error(`Entry not found: ${name}`);
+    throw new DOMException(`Entry not found: ${name}`, 'NotFoundError');
   }
 
   hasDirectory(name: string) {
@@ -414,5 +415,47 @@ describe('readStoredImportSummary', () => {
     expect(root.hasDirectory('protspace-last-import')).toBe(true);
     await expect(loadLastImportedFile()).rejects.toBeInstanceOf(StoredDatasetCorruptError);
     expect(root.hasDirectory('protspace-last-import')).toBe(false);
+  });
+});
+
+describe('removeLastImportedFile', () => {
+  it('removes the stored import it names by its save time', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['x'], 'mine.parquetbundle')).commit();
+    const { storedAt } = (await readStoredImportSummary())!;
+
+    await expect(removeLastImportedFile(storedAt)).resolves.toBe(true);
+    expect(root.hasDirectory('protspace-last-import')).toBe(false);
+  });
+
+  it('keeps a newer import saved over it since', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['x'], 'newer.parquetbundle')).commit();
+
+    await expect(removeLastImportedFile('2000-01-01T00:00:00.000Z')).resolves.toBe(false);
+    expect((await readStoredImportSummary())?.name).toBe('newer.parquetbundle');
+  });
+
+  it('has nothing to keep when nothing is stored', async () => {
+    stubNavigator(new MockDirectoryHandle());
+    await expect(removeLastImportedFile('2000-01-01T00:00:00.000Z')).resolves.toBe(true);
+  });
+
+  it('rejects when the stored copy could not be removed, and keeps it', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['x'], 'mine.parquetbundle')).commit();
+    const { storedAt } = (await readStoredImportSummary())!;
+    // A copy still being written holds the store's directory.
+    vi.spyOn(root, 'removeEntry').mockRejectedValueOnce(
+      new DOMException('The entry is in use', 'NoModificationAllowedError'),
+    );
+
+    await expect(removeLastImportedFile(storedAt)).rejects.toMatchObject({
+      name: 'NoModificationAllowedError',
+    });
+    expect((await readStoredImportSummary())?.name).toBe('mine.parquetbundle');
   });
 });

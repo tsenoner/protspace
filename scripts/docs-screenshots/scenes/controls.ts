@@ -1,6 +1,6 @@
 /**
  * Captures for docs/explore/controls.md (Bars and Tools) and docs/explore/filter.md: each view-bar
- * menu open beside its trigger, the search report, the Export menu, the Filter panel holding a
+ * menu open beside its trigger, the search report, the Export panel, the Filter panel holding a
  * two-condition draft and its value list, the plot with contours, and the EAT badge in Color by.
  */
 import { expect, type Page } from '@playwright/test';
@@ -13,7 +13,7 @@ import {
   contoursTrigger,
   draftFilterCondition,
   exportPanel,
-  datasetSwitcher,
+  exportTrigger,
   filterPanel,
   openExportMenu,
   pasteIntoSearch,
@@ -37,6 +37,16 @@ const EAT_ANNOTATION = 'toxin_class';
 const UNKNOWN_IDS = ['X00001', 'X00002'];
 
 /**
+ * Waits until the Filter panel's count has caught up with the draft: its count runs 300 ms after
+ * the last edit, and its "since last edit" change compares with the count before. The count line
+ * is `aria-busy` while a count is pending (set in the same update as the edit), so the scene's
+ * next edit is counted on its own and the picture's change reads the same in every run and theme.
+ */
+async function countSettled(page: Page): Promise<void> {
+  await expect(queryBuilder(page).locator('.match-count')).toHaveAttribute('aria-busy', 'false');
+}
+
+/**
  * Builds a draft in the Filter panel and leaves it unapplied: the colouring annotation is one of
  * the two largest legend categories, AND length is between 60 and 120 in its range card. The
  * header counts the unapplied changes; Apply is enabled.
@@ -47,6 +57,7 @@ async function draftTwoConditions(page: Page): Promise<void> {
   await draftFilterCondition(page, 0, annotation, values);
   const second = await draftFilterCondition(page, 1, 'length');
   await second.getByLabel('Minimum value').fill('60');
+  await countSettled(page);
   await second.getByLabel('Maximum value').fill('120');
   // No focus ring on the last field in the picture.
   await second.getByLabel('Maximum value').blur();
@@ -57,6 +68,7 @@ async function draftTwoConditions(page: Page): Promise<void> {
   // The range card's own count lands after a debounce.
   await expect(second.locator('.numeric-match-count')).toHaveText(/^[1-9][\d,]* proteins?/);
   await expect(filterPanel(page).getByText(/^2 unapplied changes$/)).toBeVisible();
+  await countSettled(page);
 }
 
 /** Opens the value list of the first card, on the colouring annotation, with two values ticked. */
@@ -87,10 +99,12 @@ async function draftGroup(page: Page): Promise<void> {
   const builder = queryBuilder(page);
   await builder.getByRole('button', { name: /^Joiner for condition 2/ }).click();
   await page.getByRole('menuitemradio', { name: /^or/ }).click();
+  await countSettled(page);
   await builder.getByRole('button', { name: 'Group these', exact: true }).click();
   await expect(builder.locator('.group-container')).toHaveCount(1);
   await expect(builder.locator('.group-label')).toHaveText('Any of these');
   await expect(length.locator('.numeric-match-count')).toHaveText(/^[1-9][\d,]* proteins?/);
+  await countSettled(page);
 }
 
 /** The open value list's panel. */
@@ -142,7 +156,8 @@ export const CONTROLS_CAPTURES: CaptureEntry[] = [
     steps: async (page) => {
       await openExportMenu(page);
     },
-    target: (page) => around([datasetSwitcher(page), exportPanel(page)]),
+    // The panel under the app bar's Export button, which it opens from.
+    target: (page) => around([exportTrigger(page), exportPanel(page)]),
   },
   {
     name: 'search-messages',
@@ -171,7 +186,6 @@ export const CONTROLS_CAPTURES: CaptureEntry[] = [
     name: 'filter-panel',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     docs: ['explore/filter.md'],
     steps: draftTwoConditions,
     target: (page) => filterPanel(page),
@@ -189,7 +203,6 @@ export const CONTROLS_CAPTURES: CaptureEntry[] = [
     name: 'filter-value-list',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     docs: ['explore/filter.md'],
     steps: openValueList,
     target: (page) => around([filterPanel(page), valueList(page)]),

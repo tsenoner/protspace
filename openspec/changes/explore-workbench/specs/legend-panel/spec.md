@@ -153,6 +153,47 @@ or a press outside SHALL close it and return focus to View.
 - **WHEN** the dialog is open and the user presses Escape
 - **THEN** it closes and focus returns to View
 
+### Requirement: A category keeps its colour through filters and isolation
+
+The legend SHALL keep each category's colour for a dataset and annotation while a filter or an
+isolation hides or shows it, and removing the filter or isolation SHALL restore exactly the
+colours shown before it. While the view is constrained, a category with no matching proteins
+SHALL leave the legend but keep its colour reserved, so no other category takes it. A colour
+SHALL be freed for reuse only when a category moves into Other (dropped there, or Max legend items
+lowered) in the unfiltered view. Every categorical palette SHALL colour a category by its colour
+slot, not by its row's position, so neither a filter nor a sort recolours it. A save made while
+filtered SHALL keep the stored colour and place of every category the filter hides. An annotation
+first shown under a filter SHALL give each category the colour the unfiltered view gives it.
+
+#### Scenario: Is, then is none of, then no filter
+
+- **WHEN** the legend colours by Protein existence, the user filters to "is" level 1, changes the
+  condition to "is none of", then removes the filter
+- **THEN** while filtered each level shown keeps its own colour, and once the filter is removed
+  every level has its original colour again
+
+#### Scenario: A non-default palette
+
+- **WHEN** Okabe-Ito is the palette and the user runs the same filter sequence, or changes the sort
+- **THEN** no category changes colour
+
+#### Scenario: A category added from Other while filtered
+
+- **WHEN** the user adds a category from Other while a filter is applied, then removes the filter
+- **THEN** the category gets a colour no other category holds and keeps it after the filter goes
+
+#### Scenario: A save while filtered
+
+- **WHEN** a filter hides some categories and the user hides a row, recolours one or reorders
+- **THEN** the stored record still holds the hidden categories' colours and places, and removing
+  the filter shows them as before
+
+#### Scenario: A row merged into Other while unfiltered
+
+- **WHEN** no filter is applied, the user drops a row onto Other and then adds another category
+  from Other
+- **THEN** the added category takes the colour the merged row had
+
 ### Requirement: Legend settings apply live and are stored per dataset and annotation
 
 Legend settings SHALL open in a popover named "Legend settings: {annotation}" under the settings
@@ -166,7 +207,9 @@ SHALL survive a reload.
 #### Scenario: A palette pick
 
 - **WHEN** the user picks a palette
-- **THEN** the rows recolour at once and the choice is stored
+- **THEN** the rows recolour at once and the choice is stored, and no two rows share a colour
+  while the palette has as many colours as there are rows, even after a filter has changed which
+  categories show
 
 #### Scenario: Reset
 
@@ -187,12 +230,20 @@ SHALL survive a reload.
 
 When the projection has separation scores, the legend SHALL show the score strips beside its rows,
 with the cluster caveat (stats-auto-clustering) where it applies, and hovering a row with a mouse
-SHALL mark that row's values on both strips; a touch SHALL NOT.
+SHALL mark that row's values on both strips; a touch SHALL NOT. Hovering a strip's dot SHALL mark
+its row and focus its category in the plot, and hovering a row while Shift is held SHALL focus the
+plot on that row's category (category-focus); hovering a row without Shift SHALL NOT change the
+plot.
 
 #### Scenario: Hovering a scored row
 
 - **WHEN** the mouse hovers a legend row of a scored annotation
-- **THEN** both strips mark that row's values
+- **THEN** both strips mark that row's values, and the plot does not change
+
+#### Scenario: Hovering a strip dot
+
+- **WHEN** the mouse hovers category A's dot on a score strip
+- **THEN** A's row is marked and the plot fades every category but A
 
 ### Requirement: The plot's category focus lights its legend row
 

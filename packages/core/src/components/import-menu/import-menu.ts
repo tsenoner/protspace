@@ -10,16 +10,16 @@ import '../kit/popover';
 import type { PsPopover } from '../kit/popover';
 import type { Placement } from '../kit/position';
 import { importMenuStyles } from './import-menu.styles';
-import type { ExampleDatasetSummary } from './types';
+import type { ExampleDatasetSummary, LastFile } from './types';
 
 /**
  * The Import panel: "Open a file…", the last imported file and the host's example catalog
  * (design decisions 1 and 15). Its own Import button opens it, and so does any control the host
  * passes to `openFrom`/`toggleFrom` (the app bar's dataset name, the empty plot's "Pick an
- * example"). The panel is a `ps-popover` with role dialog, a layer of the kit's layer stack:
- * Escape and a press outside close it, and focus returns to the control that opened it. It only
- * asks: `open-file-dialog`, `open-last-file`, `load-example-dataset` and (with `exportable`)
- * `open-export-menu` are the host's to act on.
+ * example"). It only imports: the host gives Export a control of its own. The panel is a
+ * `ps-popover` with role dialog, a layer of the kit's layer stack: Escape and a press outside close
+ * it, and focus returns to the control that opened it. It only asks: `open-file-dialog`,
+ * `open-last-file`, `remove-last-file` and `load-example-dataset` are the host's to act on.
  */
 @customElement('protspace-import-menu')
 export class ProtspaceImportMenu extends LitElement {
@@ -31,20 +31,19 @@ export class ProtspaceImportMenu extends LitElement {
   @property({ attribute: 'examples-docs-url' }) examplesDocsUrl = '';
   /** The example on screen, or null for a user import; its item is disabled with a check. */
   @property({ attribute: 'current-example-id' }) currentExampleId: string | null = null;
-  /** The stored import the panel offers to reopen, or null for none (or while it is on screen). */
-  @property({ attribute: false }) lastFile: { name: string; sizeLabel: string } | null = null;
   /**
-   * The panel also offers "Export…", for a host whose dataset control is the one place for the
-   * data on screen. It asks, as the rest does: `open-export-menu` carries the control the panel
-   * opened from, for the host to open its Export panel there.
+   * The stored import the panel offers to reopen, or null for none (or while it is on screen).
+   * `storedAt`, its save time, goes back to the host with `remove-last-file`.
    */
-  @property({ type: Boolean }) exportable = false;
+  @property({ attribute: false }) lastFile: LastFile | null = null;
 
   @state() private open = false;
   /** The control the panel opened from; null until the first opening (the trigger by default). */
   @state() private anchorEl: HTMLElement | null = null;
   @query('.trigger') private trigger!: HTMLButtonElement;
   @query('ps-popover') private panelPopover!: PsPopover;
+  /** Focus was on Last file when the host removed it: the next update moves it on. */
+  private refocusAfterLastFile = false;
 
   connectedCallback(): void {
     super.connectedCallback();
@@ -81,8 +80,20 @@ export class ProtspaceImportMenu extends LitElement {
     else this.openFrom(anchor);
   }
 
+  protected willUpdate(changed: Map<PropertyKey, unknown>): void {
+    if (!changed.has('lastFile') || this.lastFile || !this.open) return;
+    const section = this.renderRoot.querySelector('.import-last-file');
+    this.refocusAfterLastFile = !!section && flatContains(section, deepActiveElement());
+  }
+
   // A plain Map: `anchorEl` is private, so it is not a key PropertyValues<this> accepts.
   protected updated(changed: Map<PropertyKey, unknown>): void {
+    if (this.refocusAfterLastFile) {
+      this.refocusAfterLastFile = false;
+      // The item that took its place, else "Open a file…" above it.
+      const actions = this.actions();
+      (actions[1] ?? actions[0])?.focus();
+    }
     if (!changed.has('open') && !changed.has('anchorEl')) return;
     const previous = changed.get('anchorEl') as HTMLElement | null | undefined;
     if (previous && previous !== this.anchorEl) previous.setAttribute('aria-expanded', 'false');
@@ -133,34 +144,38 @@ export class ProtspaceImportMenu extends LitElement {
       </section>
       ${this.lastFile ? this.renderLastFile(this.lastFile) : nothing}
       ${this.exampleDatasets.length > 0 ? this.renderExamples() : nothing}
-      ${this.exportable
-        ? html`<section class="import-section import-export">
-            <ps-button
-              class="import-export-button"
-              variant="secondary"
-              data-import-action
-              aria-haspopup="dialog"
-              @click=${this.openExportMenu}
-              ><span slot="start">${icon('download', 16)}</span>Export…</ps-button
-            >
-          </section>`
-        : nothing}
     </div>`;
   }
 
-  private renderLastFile(file: { name: string; sizeLabel: string }) {
+  /**
+   * The row reopens the file; the red × beside it (a sibling, as an example's ⓘ) removes the stored
+   * copy, and so do Delete and Backspace on the row. The × is a Tab stop outside the arrow keys.
+   */
+  private renderLastFile(file: LastFile) {
+    const removeLabel = `Remove ${file.name} from this browser`;
     return html`<section class="import-section import-last-file">
       <h3 class="import-section-label">Last file</h3>
-      <button
-        type="button"
-        class="import-row"
-        data-import-action
-        aria-label=${`Reopen ${file.name}`}
-        @click=${this.openLastFile}
-      >
-        <span class="import-row-label">${file.name}</span>
-        <span class="import-row-meta">${file.sizeLabel}</span>
-      </button>
+      <div class="import-last-file-row">
+        <button
+          type="button"
+          class="import-row"
+          data-import-action
+          aria-label=${`Reopen ${file.name}`}
+          aria-keyshortcuts="Delete Backspace"
+          @click=${this.openLastFile}
+          @keydown=${this.onLastFileKeydown}
+        >
+          <span class="import-row-label">${file.name}</span>
+          <span class="import-row-meta">${file.sizeLabel}</span>
+        </button>
+        <ps-icon-button
+          class="import-last-file-remove"
+          icon="x"
+          size="sm"
+          label=${removeLabel}
+          @click=${this.removeLastFile}
+        ></ps-icon-button>
+      </div>
     </section>`;
   }
 
@@ -282,11 +297,14 @@ export class ProtspaceImportMenu extends LitElement {
    * retargeted to the host itself; a null target (a press on the panel's background, or the
    * window losing focus) leaves it open. The anchor counts as inside, as for the popover's
    * outside press: a press on it focuses it first, and its own click then toggles the panel.
+   * Focus that went into a layer opened above the panel (the host's confirmation of Remove) keeps
+   * it open, so focus can come back to it.
    */
   private onFocusOut = (event: FocusEvent) => {
     const next = event.relatedTarget as Node | null;
     if (!this.open || !next || flatContains(this, next)) return;
     if (this.anchorEl && flatContains(this.anchorEl, next)) return;
+    if (this.panelPopover?.hasLayerAbove()) return;
     this.close();
   };
 
@@ -321,24 +339,29 @@ export class ProtspaceImportMenu extends LitElement {
     );
   };
 
-  /**
-   * Hands over to the host's Export panel, under the same control. This panel closes first and
-   * releases its layer, so the one that opens next is the top layer and Escape closes it alone.
-   */
-  private openExportMenu = async () => {
-    const anchor = this.anchorEl ?? this.trigger;
-    this.close();
-    await this.updateComplete;
-    await this.panelPopover.updateComplete;
-    this.dispatchEvent(
-      new CustomEvent('open-export-menu', { detail: { anchor }, bubbles: true, composed: true }),
-    );
-  };
-
   private openLastFile = () => {
     this.close();
     this.dispatchEvent(
       new CustomEvent('open-last-file', { detail: {}, bubbles: true, composed: true }),
+    );
+  };
+
+  private onLastFileKeydown = (event: KeyboardEvent) => {
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+    event.preventDefault();
+    this.removeLastFile();
+  };
+
+  /** Asks the host to remove the stored copy. The panel stays open while the host confirms. */
+  private removeLastFile = () => {
+    if (!this.lastFile) return;
+    const { name, storedAt } = this.lastFile;
+    this.dispatchEvent(
+      new CustomEvent('remove-last-file', {
+        detail: { name, storedAt },
+        bubbles: true,
+        composed: true,
+      }),
     );
   };
 

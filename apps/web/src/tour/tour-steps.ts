@@ -16,6 +16,11 @@ export interface TourContext {
   coarse: boolean;
   /** ⌘ on Mac and iOS, Ctrl elsewhere. */
   mac: boolean;
+  /**
+   * The app bar shows a search button instead of the field: a phone, either way up, or a tablet
+   * narrower than 800 px (its header carries `data-search-folded`).
+   */
+  searchFolded: boolean;
 }
 
 type TourStepId =
@@ -79,6 +84,8 @@ const tourHome = (ctx: TourContext): string =>
 const homeSpotlight = (ctx: TourContext): string =>
   driverId(hasStructureSheet(ctx.mode) ? 'more' : 'help');
 
+const searchFolded = (ctx: TourContext): boolean => ctx.searchFolded || hasStructureSheet(ctx.mode);
+
 type StepBuilder = (ctx: TourContext, kind: TourKind) => TourStepSpec;
 
 const STEPS: Record<TourStepId, StepBuilder> = {
@@ -101,7 +108,7 @@ const STEPS: Record<TourStepId, StepBuilder> = {
   data: (ctx) => ({
     id: 'data',
     title: 'Your Data',
-    description: `${press(ctx)} the <strong>dataset name</strong> to load one of the <strong>examples</strong>, reopen your <strong>last file</strong>, or choose <strong>Open a file…</strong>. You can also drop a file anywhere on the page. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is sent to our server to be embedded first. Its <strong>Export…</strong> saves an image (PNG or PDF), the protein IDs, a table or the <code>.parquetbundle</code>. ${link('/docs/guide/data-preparation', 'Learn how to prepare your data')}.`,
+    description: `${press(ctx)} the <strong>dataset name</strong> to load one of the <strong>examples</strong>, reopen your <strong>last file</strong>, or choose <strong>Open a file…</strong>. You can also drop a file anywhere on the page. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is sent to our server to be embedded first. The <strong>Export</strong> button at the right saves an image (PNG or PDF), the protein IDs, a table or the <code>.parquetbundle</code>. ${link('/docs/guide/data-preparation', 'Learn how to prepare your data')}.`,
     target: driverId('dataset'),
   }),
 
@@ -133,17 +140,17 @@ const STEPS: Record<TourStepId, StepBuilder> = {
     id: 'more',
     title: 'More Options',
     description:
-      '<strong>More</strong> holds <strong>Contours</strong>, <strong>Filter</strong>, <strong>Import</strong>, <strong>Export</strong>, the <strong>Figure editor</strong>, the <strong>Theme</strong> (System, Light or Dark), <strong>Help &amp; shortcuts</strong> and <strong>Feedback</strong>. A dot on the button means contours or a filter are on.',
+      '<strong>More</strong> holds <strong>Contours</strong>, <strong>Filter</strong>, <strong>Import</strong>, <strong>Export</strong>, the <strong>Figure editor</strong>, the <strong>Theme</strong> (Light or Dark), <strong>Help &amp; shortcuts</strong> and <strong>Feedback</strong>. A dot on the button means contours or a filter are on.',
     target: driverId('more'),
   }),
 
   search: (ctx) => ({
     id: 'search',
     title: 'Search Proteins',
-    description: hasStructureSheet(ctx.mode)
+    description: searchFolded(ctx)
       ? `${press(ctx)} the search button to search over the app bar. Type a protein ID to find it, or <strong>paste</strong> a list of IDs to select them all at once; a message says how many were found and which were not.`
       : `${ctx.coarse ? 'Tap here' : `Press ${chord(ctx, 'K')} or click here`} to search. Type a protein ID to find it, or <strong>paste</strong> a list of IDs to select them all at once; a message says how many were found and which were not.`,
-    target: driverId(hasStructureSheet(ctx.mode) ? 'search-toggle' : 'search'),
+    target: driverId(searchFolded(ctx) ? 'search-toggle' : 'search'),
   }),
 
   plot: (ctx) => ({
@@ -216,8 +223,8 @@ const STEPS: Record<TourStepId, StepBuilder> = {
     title: 'Light or Dark',
     description:
       kind === 'whats-new'
-        ? 'ProtSpace now has a dark theme. Each click of this button moves from <strong>System</strong> (follows your device) to <strong>Dark</strong>, then <strong>Light</strong>, then back; its icon shows which is on. Exports and figures stay light.'
-        : 'Each click moves from <strong>System</strong> (follows your device) to <strong>Dark</strong>, then <strong>Light</strong>, then back; the icon shows which is on. The plot and the structure follow the theme; exports and figures are always light.',
+        ? 'ProtSpace now has a dark theme. It starts from your device setting; a click switches between <strong>Light</strong> and <strong>Dark</strong>, and choosing the mode your device uses follows the device again. The docs and the home page use the same choice. Exports and figures stay light.'
+        : 'ProtSpace starts from your device setting; a click switches between <strong>Light</strong> and <strong>Dark</strong>, and choosing the mode your device uses follows the device again. The plot and the structure follow the theme; exports and figures are always light.',
     target: driverId('theme'),
   }),
 

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { COLOR_SCHEMES, type LegendPersistedSettings } from '@protspace/utils';
+import type { LegendPersistedSettings } from '@protspace/utils';
 import { LEGEND_VALUES, NA_VALUE } from './config';
 import {
   applyDerivedNumericColors,
   applyNumericDisplayLabels,
-  applyPaletteColors,
+  applyValueLabels,
   displayedOrder,
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
@@ -205,33 +205,6 @@ describe('reorderByValues', () => {
   });
 });
 
-describe('applyPaletteColors', () => {
-  it('colours rows by their position in the palette and leaves Other and N/A alone', () => {
-    const palette = COLOR_SCHEMES.okabeIto;
-    const coloured = applyPaletteColors(
-      [
-        item('A', 0),
-        item(OTHER, 1, { color: '#888888' }),
-        item('B', 2),
-        item(NA_VALUE, 3, { color: '#cccccc' }),
-      ],
-      'okabeIto',
-    );
-    expect(coloured.map((each) => each.color)).toEqual([
-      palette[0],
-      '#888888',
-      palette[2],
-      '#cccccc',
-    ]);
-  });
-
-  it('falls back to kellys for an unknown palette', () => {
-    expect(applyPaletteColors([item('A', 0)], 'no-such-palette')[0].color).toBe(
-      COLOR_SCHEMES.kellys[0],
-    );
-  });
-});
-
 describe('applyNumericDisplayLabels', () => {
   it('labels bins from the annotation and keeps Other, N/A and unknown ids as they were', () => {
     const labelled = applyNumericDisplayLabels(
@@ -251,6 +224,26 @@ describe('applyNumericDisplayLabels', () => {
       undefined,
       undefined,
     ]);
+  });
+});
+
+describe('applyValueLabels', () => {
+  it("names TED's '-' and keeps its value, N/A and Other as they are", () => {
+    const labelled = applyValueLabels(
+      [item('-', 0), item('3.40.50.300', 1), item(OTHER, 2), item(NA_VALUE, 3)],
+      'ted_domains',
+    );
+    expect(labelled.map((each) => [each.value, each.displayValue])).toEqual([
+      ['-', 'No CATH label'],
+      ['3.40.50.300', undefined],
+      [OTHER, undefined],
+      [NA_VALUE, undefined],
+    ]);
+  });
+
+  it("returns the same items for an annotation without labels, '-' included", () => {
+    const items = [item('-', 0), item('PF00001', 1)];
+    expect(applyValueLabels(items, 'pfam')).toBe(items);
   });
 });
 
@@ -318,10 +311,10 @@ describe('resolvePersistedSettings', () => {
     });
   });
 
-  it('caps a stored size of 640 at 64', () => {
+  it('caps a stored size of 640 at 128, the largest any dataset accepts', () => {
     expect(
       resolvePersistedSettings(record({ shapeSize: 640 }), categorical).annotationShapeSize,
-    ).toBe(64);
+    ).toBe(128);
     expect(
       resolvePersistedSettings(record({ shapeSize: 24 }), categorical).annotationShapeSize,
     ).toBe(24);

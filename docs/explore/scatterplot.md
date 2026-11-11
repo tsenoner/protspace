@@ -20,7 +20,7 @@ The scatterplot is the main visualization area where proteins appear as points. 
 
 ## Navigation
 
-![Zooming and panning](./images/zoom.gif)
+<DocsVideo name="zoom" alt="Zooming in on a cluster with the scroll wheel, dragging to pan, then zooming back out" width="1280" height="720" />
 
 - **Zoom**: Scroll wheel or pinch gesture
 - **Pan**: Drag the background while **Move and zoom** is the active tool
@@ -30,8 +30,8 @@ The scatterplot is the main visualization area where proteins appear as points. 
 Dots grow as you zoom in, so single proteins stay easy to see and to hover: a dot's radius is ×1.4
 at 4× zoom, ×2 at 16×, and never more than ×4. Zooming out never shrinks them below their unzoomed
 size, which you set with the shape size in the [legend](/explore/legend#shared-settings). Until you
-pick one, it [follows the dataset's protein count](/explore/legend#default-dot-size): 10 up to
-10,000 proteins, smaller for larger datasets. Dots are
+pick one, it [follows the dataset's protein count](/explore/legend#default-dot-size): 10 at
+10,000 proteins, larger for smaller datasets (up to 40) and smaller for larger ones. Dots are
 also a little larger on a big plot and a little smaller on a small one (×0.8 to ×1.5 against a
 1000 × 700 px plot), and the same size on every pixel density. Hovering picks a dot anywhere within
 its drawn radius, or within 4 px of its centre when it is smaller than that.
@@ -68,7 +68,7 @@ are unavailable while the view holds fewer than two points.
 
 ### Single & Multi-Select
 
-![Clicking a protein selects it; Ctrl/⌘ + click adds two more; Esc clears the selection](./images/select-single.gif)
+<DocsVideo name="select-single" alt="Clicking a protein selects it; Ctrl/⌘ + click adds two more; Esc clears the selection" width="1280" height="720" />
 
 - **Click** a point to select it, and show its structure
 - **⌘ + click** (Mac) or **Ctrl + click** (Windows, Linux) to add a point to the selection, or
@@ -79,7 +79,7 @@ are unavailable while the view holds fewer than two points.
 
 ### Box Selection
 
-![Box select drags a box over the phospholipase A2 cluster, Show only these isolates it, and the chip's ✕ shows every protein again](./images/select-box.gif)
+<DocsVideo name="select-box" alt="Box select drags a box over the phospholipase A2 cluster, Show only these isolates it, and the chip's ✕ shows every protein again" width="1280" height="720" />
 
 1. Pick **Box select** in the tool strip
 2. Drag to draw a rectangle
@@ -165,7 +165,7 @@ outside the plot, the next click, or a pan or zoom.
 
 ### Focusing a Category
 
-Hold **Shift** while hovering a point to see where its category sits: every protein sharing one of its values in the current annotation stays bright, everything else fades. Move to another point to switch category; release **Shift** or move off the point to go back.
+Hold **Shift** while hovering a point to see where its category sits: every protein sharing one of its values in the current annotation stays bright, everything else fades. Move to another point to switch category; release **Shift** or move off the point to go back. When the annotation has [separation scores](/explore/separation-scores), hovering a dot in a score strip focuses its category the same way, and so does hovering its legend row with **Shift** held.
 
 - Hovering a point in the legend's **Other** group focuses the whole group
 - Hidden legend values stay hidden, and the tooltip is hidden while focusing
@@ -178,7 +178,7 @@ once **Show duplicate counts and spread overlaps** is on in the [legend settings
 Click a stacked point to spread it into a spider layout showing each protein; click a protein in
 the spider to select it, and click anywhere outside it (its badge, for example) or press **Escape** to fold it again.
 
-![A duplicate stack opened into a spider, one of its proteins selected, then folded from its badge](./images/duplicate-badges.gif)
+<DocsVideo name="duplicate-badges" alt="A duplicate stack opened into a spider, one of its proteins selected, then folded from its badge" width="1280" height="720" />
 
 ### Projection Metadata
 

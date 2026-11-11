@@ -2,7 +2,7 @@ import { css } from 'lit';
 
 const scatterplotStylesCore = css`
   :host {
-    /* Sizes only: every colour comes from a --ps-* token (theme.ts), so an embedder restyles the
+    /* Sizes only: every colour comes from a --ps-* token (tokens.css), so an embedder restyles the
        plot in both themes by setting those on :root. --protspace-width and --protspace-height
        are the documented embedder API (docs/developers/embedding.md). */
 

@@ -6,14 +6,16 @@ import {
   normalizeNumericPaletteId,
   type PointShape,
 } from '@protspace/utils';
-import { LEGEND_DEFAULTS, LEGEND_EVENTS, LEGEND_VALUES } from '../config';
+import { LEGEND_DEFAULTS, LEGEND_EVENTS, LEGEND_VALUES, isNAValue } from '../config';
 import type { ProtspaceLegend } from '../legend';
-import { calculatePointSize, defaultShapeSize, getDefaultSortMode } from '../legend-helpers';
 import {
-  applyPaletteColors,
-  normalizeCategoricalPaletteId,
-  normalizeSortModeForType,
-} from '../legend-items-state';
+  calculatePointSize,
+  defaultShapeSize,
+  getDefaultSortMode,
+  maxShapeSize,
+} from '../legend-helpers';
+import { LegendDataProcessor } from '../legend-data-processor';
+import { normalizeCategoricalPaletteId, normalizeSortModeForType } from '../legend-items-state';
 import type { LegendDisplaySettings, LegendItem, PersistedCategoryData } from '../types';
 
 /**
@@ -74,10 +76,10 @@ export class SettingsController {
         // An emptied size field returns the dataset to its default, as Reset does for the size.
         this.host._data.clearShapeSize();
       } else {
-        const size = Math.min(patch.shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
-        if (size !== this.host.shapeSize) {
-          this.host._persistenceController.saveShapeSize(size);
-          this.host.shapeSize = size;
+        const previous = this.host.shapeSize;
+        this.host.shapeSize = patch.shapeSize;
+        if (this.host.shapeSize !== previous) {
+          this.host._persistenceController.saveShapeSize(this.host.shapeSize);
         }
       }
     }
@@ -87,12 +89,14 @@ export class SettingsController {
         this.host._selectedPaletteId = numeric.paletteId;
       } else {
         this.host._selectedPaletteId = normalizeCategoricalPaletteId(patch.paletteId);
-        this.host._legendItems = applyPaletteColors(
+        // By slot, not by row: a later filter or sort keeps each category's colour.
+        this.host._legendItems = LegendDataProcessor.recolorBySlot(
+          this.host._processorContext,
           this.host._legendItems,
           this.host._selectedPaletteId,
         );
         // Ahead of the update below, which keeps stored colours over palette ones.
-        this.syncColorsToPersistence();
+        this.syncColorsToPersistence(true);
       }
     }
     if (numeric && patch.numericStrategy !== undefined) numeric.strategy = patch.numericStrategy;
@@ -186,8 +190,8 @@ export class SettingsController {
   }
 
   /**
-   * The size the size field shows: the live one, capped at the field's bound, or null while it
-   * is the dataset's default, which the empty field stands for (its placeholder names it).
+   * The size the size field shows: the live one (capped where it is set), or null while it is
+   * the dataset's default, which the empty field stands for (its placeholder names it).
    */
   private fieldShapeSize(): number | null {
     // The storage read last: this runs at every legend render, the popover closed or not.
@@ -195,7 +199,7 @@ export class SettingsController {
       this.host._annotationShapeSize === null &&
       this.host.shapeSize === defaultShapeSize(this.host._datasetProteinCount) &&
       this.host._persistenceController.loadShapeSize() === null;
-    return isDefault ? null : Math.min(this.host.shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+    return isDefault ? null : this.host.shapeSize;
   }
 
   /**
@@ -229,6 +233,7 @@ export class SettingsController {
       .settings=${this.displaySettings(isNumeric)}
       .numeric=${isNumeric}
       .defaultShapeSize=${defaultShapeSize(this.host._datasetProteinCount)}
+      .maxShapeSize=${maxShapeSize(this.host._datasetProteinCount)}
       .logBinningAvailable=${this.host.annotationData.numericMetadata?.logSupported ?? true}
       .canReset=${open && this.canReset()}
       .annotationLabel=${label}
@@ -328,7 +333,11 @@ export class SettingsController {
     this.host.requestUpdate();
   }
 
-  private syncColorsToPersistence(): void {
+  /**
+   * Stores the rows' colours, shapes and places, keeping the ones a filter hides. After
+   * a palette pick the hidden ones take the colour that pick gave them.
+   */
+  private syncColorsToPersistence(afterPalettePick = false): void {
     const categories: Record<string, PersistedCategoryData> = {};
     const persistVisualEncodings = !this.host._isCurrentAnnotationNumeric();
     this.host._legendItems.forEach((item) => {
@@ -340,6 +349,14 @@ export class SettingsController {
         };
       }
     });
-    this.host._persistenceController.setPendingCategories(categories);
+    const kept = this.host._persistenceController.withHeldBackCategories(categories);
+    if (afterPalettePick) {
+      for (const [value, data] of Object.entries(kept)) {
+        if (value in categories || !data.color || isNAValue(value)) continue;
+        const color = LegendDataProcessor.pickedColor(this.host._processorContext, value);
+        if (color) kept[value] = { ...data, color };
+      }
+    }
+    this.host._persistenceController.setPendingCategories(kept);
   }
 }

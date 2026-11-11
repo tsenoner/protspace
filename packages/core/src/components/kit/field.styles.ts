@@ -9,7 +9,7 @@ import { focusRing, kitHost } from './kit-shared.styles';
  * resolved for the OS's light or dark, which `color-scheme: light dark` selects. Theme tokens
  * cannot do this: they follow the page's theme, which the list may not.
  */
-export const selectOptionStyles = css`
+const selectOptionStyles = css`
   select option {
     color-scheme: light dark;
     background-color: Canvas;

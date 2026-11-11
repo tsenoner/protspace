@@ -20,14 +20,14 @@ Each condition is a card:
    search box, as in [Color by](/explore/controls#color-by).
 2. For a category annotation, click **+ value** and tick the values to keep. For a numeric one, set
    the range (see [Numeric conditions](#numeric-conditions)).
-3. Click **+ Add condition** for another card.
+3. Click **+ Add condition** below the cards for another card, or **+ Add group** for a group of
+   cards (see [And, or and groups](#and-or-and-groups)).
 4. Click **Apply** to filter the plot. The panel stays open.
 
 The card's **✕** removes it. Its **⋯** menu has **Change annotation**, **Clear values** and
 **Duplicate**. A card you changed since the last Apply has a blue edge on its left side.
 
-The **⋯** in the panel's header has **Add group** and **Clear all**. **Clear all** leaves one empty
-card.
+The **⋯** in the panel's header has **Clear all**, which leaves one empty card.
 
 ### Operators
 
@@ -89,13 +89,15 @@ these?**:
 - **Use "or" for all** (or "and") uses the same joiner for the whole list.
 - **Cancel** keeps the joiner as it was.
 
-![A group card, Any of these, holding two Protein family cards joined by or, then and, then a Sequence length card](./images/filter-group.png)
+![A group card, Any of these, holding two Protein family cards joined by or, then and, then a Sequence length card](./images/filter-group.png){.light-only}
+![A group card, Any of these, holding two Protein family cards joined by or, then and, then a Sequence length card](./images/filter-group-dark.png){.dark-only}
 
 A group is a card of its own, named **Any of these** (joined by or) or **All of these** (joined by
 and), or **Group** when its cards are joined in different ways or one has **and not**.
 **+ Add condition** inside it adds a card to the group. Its **⋯** menu has **Ungroup**, and its
-**✕** removes the group with its cards. **Add group** in the panel's **⋯** menu starts an empty
-group.
+**✕** removes the group with its cards. **+ Add group** below the cards starts a group with one
+empty card. A group has no **Add group** of its own: a group inside a group comes from **Group
+these?**.
 
 ## Numeric conditions
 
@@ -154,6 +156,10 @@ Applying a filter is a step you can undo with **⌘ Z** (Mac) / **Ctrl + Z**, an
 ✕ on the plot's **Filtered** chip (**Remove filter**) does the same from the plot. Either way a
 **Filter removed** notification offers **Undo**, which brings the filter back.
 
+A filter never changes a category's color. While it is applied, the legend lists only the
+categories with matching proteins, and the others keep their colors for when the filter is
+removed.
+
 ## On a phone
 
 The menus and the value list open as sheets from the bottom of the screen, and **Group these?** is
@@ -165,7 +171,8 @@ For a dataset with transferred annotations, the reliability range in the [EAT pa
 writes one condition into this filter while it hides the predictions outside the range (**Hide**).
 The condition shows here as a locked row, such as `Toxin class — reliability ≥ 50 %`:
 
-![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row.png)
+![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row.png){.light-only}
+![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row-dark.png){.dark-only}
 
 You cannot edit it here, or join it with **and not**. **Edit in EAT ›** opens the EAT panel, and
 the ✕ puts the range back to 0–100 %. **Fade** writes no condition. See

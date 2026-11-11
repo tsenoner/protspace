@@ -79,25 +79,12 @@
     </script>
     <!-- End Single Page Apps for GitHub Pages -->
 
-    <!-- The explore page's theme before first paint (design decision 16), on /explore only and
-         after the redirect above, which turns /?/explore into /explore. theme-boot.test.ts pins
-         the key, the choices, the default and the colour to theme-defaults.ts and theme.ts. -->
-    <script data-theme-boot>
-      (function () {
-        if (!/^\/explore\/?$/.test(location.pathname)) return;
-        var theme = 'system';
-        try {
-          var stored = JSON.parse(localStorage.getItem('protspace:theme'));
-          if (stored === 'system' || stored === 'light' || stored === 'dark') theme = stored;
-        } catch (error) {
-          // No storage (private mode, blocked site data) or a value that is not JSON: the default.
-        }
-        document.documentElement.setAttribute('data-theme', theme);
-      })();
-    </script>
+    <!-- The site's theme before first paint (design decision 16): vite.config.ts injects
+         config/theme.ts's THEME_BOOT_SCRIPT, which the docs run too, at the end of <head>, after
+         the redirect above. theme-boot.test.ts pins this style's colour to tokens.css. -->
     <style data-theme-boot>
-      /* The dark surface until the explore chunk adopts the tokens. Unlayered, so it beats the
-         landing's @layer base white body; #0f172a is dark --ps-surface. */
+      /* The dark surface until the stylesheet loads. Unlayered, so it beats the landing's
+         @layer base body; #0f172a is dark --ps-surface. */
       :root[data-theme='dark'],
       :root[data-theme='dark'] body {
         color-scheme: dark;

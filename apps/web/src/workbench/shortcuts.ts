@@ -26,6 +26,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['Scroll'], action: 'Zoom in or out' },
       { keys: ['Double-click'], action: 'Reset the zoom' },
       { keys: ['Shift'], action: 'Hold over a point to focus its category' },
+      { keys: ['Shift'], action: 'Hold over a legend row to focus its category' },
       { keys: ['Escape'], action: 'Close an expanded stack of duplicate points' },
       { keys: ['Escape'], action: 'Hide the EAT connectors' },
     ],
@@ -80,6 +81,10 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['Right-drag'], action: 'Move the structure' },
       { keys: ['Scroll'], action: 'Zoom in or out' },
     ],
+  },
+  {
+    title: 'Import menu',
+    items: [{ keys: ['Delete'], action: 'Remove the focused Last file from this browser' }],
   },
   {
     title: 'Figure editor',

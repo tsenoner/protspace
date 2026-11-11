@@ -80,6 +80,11 @@ collapsed sidebar on the legend, unfolded, and show the legend if the Filter pan
 - **WHEN** the tour runs on a tablet
 - **THEN** every step points at a control on screen and there is no Sidebar step
 
+#### Scenario: On a tablet narrower than 800 px
+
+- **WHEN** the tour runs on a tablet whose app bar folds search into its search button
+- **THEN** the search step points at that button and says to press it, as on a phone
+
 #### Scenario: A missing target
 
 - **WHEN** a step's target is not on the page

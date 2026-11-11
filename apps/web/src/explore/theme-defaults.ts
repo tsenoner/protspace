@@ -1,42 +1,54 @@
 /**
- * The explore page's theme choice (design decision 16): its storage key, its values and its
- * default. A leaf module with no imports, so the Playwright helpers can import it as well.
- * index.html's boot script repeats the key, the values and the default, because it runs before
- * any module; theme-boot.test.ts pins them to these.
+ * The site's theme choice (design decision 16): its storage, its values and the rule a press
+ * follows. Pure functions only, so the Playwright helpers can import it as well. The key is
+ * shared with the docs and the boot script (config/theme.ts).
  */
+import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from '../../../../config/theme';
 
+export { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY };
+
+/** What the page follows: the system, or an override. Written as is to <html data-theme>. */
 export type ThemeChoice = 'system' | 'light' | 'dark';
 
-/** Its own key, never a field of the layout: JSON-encoded through @protspace/utils storage. */
-export const THEME_STORAGE_KEY = 'protspace:theme';
+/** What the page shows. */
+export type ThemeMode = 'light' | 'dark';
 
-/**
- * In the order the switch offers them: the app bar's button steps through them (design decision
- * 16, as the Nov 4 review chose: start on System, then Dark, then Light), and the More sheet's
- * segments list them so.
- */
-export const THEME_CHOICES: readonly ThemeChoice[] = ['system', 'dark', 'light'];
-
-/** The choice after `choice` in THEME_CHOICES, from the last back to the first. */
-export function nextTheme(choice: ThemeChoice): ThemeChoice {
-  return THEME_CHOICES[(THEME_CHOICES.indexOf(choice) + 1) % THEME_CHOICES.length];
-}
-
-/** What the switch calls each choice: the app bar button's name and the More sheet's segments. */
-export const THEME_LABELS: Record<ThemeChoice, string> = {
-  system: 'System',
-  light: 'Light',
-  dark: 'Dark',
-};
-
-/** The choice with nothing (or nothing valid) stored: follow the OS (design decision 16). */
+/** The choice with nothing (or nothing valid) stored: follow the OS. */
 export const DEFAULT_THEME: ThemeChoice = 'system';
 
+/** The modes in the order a Light/Dark pair shows them. */
+export const THEME_MODES = ['light', 'dark'] as const satisfies readonly ThemeMode[];
+
+export const THEME_MODE_LABELS: Record<ThemeMode, string> = { light: 'Light', dark: 'Dark' };
+
+/** The choice a stored raw value means: 'dark' or 'light', else (VueUse's 'auto', nothing) the system. */
+export function parseStoredTheme(raw: string | null): ThemeChoice {
+  return raw === 'dark' || raw === 'light' ? raw : DEFAULT_THEME;
+}
+
+/** What to store for a choice: null (remove the key) to follow the system. */
+export function storedTheme(choice: ThemeChoice): string | null {
+  return choice === 'system' ? null : choice;
+}
+
+/** The mode a choice shows while the OS is dark (`osDark`) or light. */
+export function resolveTheme(choice: ThemeChoice, osDark: boolean): ThemeMode {
+  if (choice !== 'system') return choice;
+  return osDark ? 'dark' : 'light';
+}
+
+/** The mode a press of the theme button shows next. */
+export const otherMode = (mode: ThemeMode): ThemeMode => (mode === 'dark' ? 'light' : 'dark');
+
 /**
- * The theme button's name and tooltip: the choice it shows, then what a press does, e.g.
- * "Theme: System. Switch to Dark". On a dark OS a press from System to Dark changes nothing on
- * screen, so the name says which mode is on.
+ * The choice that shows `mode`: an override, unless the OS already shows it, when the page goes
+ * back to following the system (VitePress's and VueUse's useDark rule).
  */
-export function themeButtonLabel(choice: ThemeChoice): string {
-  return `Theme: ${THEME_LABELS[choice]}. Switch to ${THEME_LABELS[nextTheme(choice)]}`;
+export function chooseMode(mode: ThemeMode, osDark: boolean): ThemeChoice {
+  return mode === (osDark ? 'dark' : 'light') ? 'system' : mode;
+}
+
+/** The theme button's name and tooltip: the mode shown, then what a press does. */
+export function themeButtonLabel(mode: ThemeMode): string {
+  return `Theme: ${THEME_MODE_LABELS[mode]}. Switch to ${THEME_MODE_LABELS[otherMode(mode)]}`;
 }

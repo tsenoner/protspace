@@ -182,7 +182,7 @@ export function FeatureShowcase() {
                   loading="lazy"
                   className="absolute inset-x-2 bottom-5 top-2 h-[calc(100%-1.75rem)] w-[calc(100%-1rem)] object-contain"
                 />
-                <figcaption className="absolute bottom-1 left-2 text-[10.5px] text-[#5b6b7a]">
+                <figcaption className="absolute bottom-1 left-2 text-[10.5px] text-muted-foreground">
                   {STRUCTURE.id} · AlphaFold2 · pLDDT
                 </figcaption>
               </figure>
@@ -213,7 +213,7 @@ function ChipGroup({
       aria-label={`${label} shown on the map`}
       className="flex flex-wrap items-center gap-1.5 text-xs"
     >
-      <span className="mr-0.5 text-[#5b6b7a]">{label}</span>
+      <span className="mr-0.5 text-muted-foreground">{label}</span>
       {items.map((item, i) => (
         <button
           key={item}
@@ -221,10 +221,10 @@ function ChipGroup({
           aria-pressed={i === active}
           onClick={() => onSelect(i)}
           className={cn(
-            'rounded-[4px] border px-2 py-0.5 font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+            'rounded-[4px] border px-2 py-0.5 font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
             i === active
-              ? 'border-[#334155] bg-[#334155] text-white'
-              : 'border-[#d9e2ec] bg-white text-[#334155] hover:border-[#5b6b7a]',
+              ? 'border-foreground bg-foreground text-background'
+              : 'border-border bg-card text-foreground hover:border-muted-foreground',
           )}
         >
           {item}
@@ -249,9 +249,9 @@ function Tile({
   children: ReactNode;
 }) {
   return (
-    <article className="grid min-w-0 gap-4 rounded-2xl border border-border/70 bg-white p-3 xl:grid-cols-[12rem_minmax(0,1fr)] xl:items-center xl:pr-4">
+    <article className="grid min-w-0 gap-4 rounded-2xl border border-border/70 bg-card p-3 xl:grid-cols-[12rem_minmax(0,1fr)] xl:items-center xl:pr-4">
       <div
-        className="relative h-32 overflow-hidden rounded-[10px] border border-[#d9e2ec] bg-white"
+        className="relative h-32 overflow-hidden rounded-[10px] border border-border bg-card"
         aria-busy={visual === null}
       >
         {visual}
@@ -291,7 +291,10 @@ function TransferSketch({ venom }: { venom: VenomData }) {
     };
   }, [venom]);
   if (!example) return null;
-  const rim = 'rgb(15 23 42 / 0.35)';
+  // SVG presentation attributes take no var(): the theme's colours go in through style.
+  const rim = { stroke: 'color-mix(in srgb, var(--ps-text) 35%, transparent)' };
+  const text = { fill: 'var(--ps-text)' };
+  const muted = { fill: 'var(--ps-text-muted)' };
 
   return (
     <svg
@@ -301,27 +304,34 @@ function TransferSketch({ venom }: { venom: VenomData }) {
       aria-label={`${example.query} has no curated EC number and takes ${example.label} from its nearest annotated reference ${example.source}, reliability index ${example.confidence.toFixed(2)}.`}
     >
       {example.others.map((color, i) => (
-        <circle key={i} cx={i ? 142 : 30} cy={i ? 26 : 30} r="5" fill={color} stroke={rim} />
+        <circle key={i} cx={i ? 142 : 30} cy={i ? 26 : 30} r="5" fill={color} style={rim} />
       ))}
       <line
         x1="52"
         y1="84"
         x2="104"
         y2="52"
-        stroke="#475569"
+        style={{ stroke: 'var(--ps-plot-connector)' }}
         strokeWidth="1.4"
         strokeDasharray="4 3.5"
       />
-      <circle cx="104" cy="52" r="11" fill="none" stroke="#0f766e" strokeWidth="1.4" />
-      <circle cx="104" cy="52" r="5.5" fill={example.sourceColor} stroke={rim} />
+      <circle
+        cx="104"
+        cy="52"
+        r="11"
+        fill="none"
+        style={{ stroke: 'var(--ps-eat-endpoint)' }}
+        strokeWidth="1.4"
+      />
+      <circle cx="104" cy="52" r="5.5" fill={example.sourceColor} style={rim} />
       <circle cx="52" cy="84" r="5" fill="none" stroke={example.color} strokeWidth="2.6" />
-      <text x="52" y="104" textAnchor="middle" fontSize="10" fontWeight="600" fill="#0f172a">
+      <text x="52" y="104" textAnchor="middle" fontSize="10" fontWeight="600" style={text}>
         {example.query}
       </text>
-      <text x="124" y="76" textAnchor="middle" fontSize="9.5" fill="#64748b">
+      <text x="124" y="76" textAnchor="middle" fontSize="9.5" style={muted}>
         {example.source}
       </text>
-      <text x="124" y="88" textAnchor="middle" fontSize="9.5" fill="#0f172a">
+      <text x="124" y="88" textAnchor="middle" fontSize="9.5" style={text}>
         RI {example.confidence.toFixed(2)}
       </text>
     </svg>
@@ -351,9 +361,9 @@ function SeparationSketch({ venom }: { venom: VenomData }) {
     <div
       role="img"
       aria-label={`Silhouette per ${label.toLowerCase()}: ${signed(overall.map)} in ${projection}, ${signed(overall.embedding)} in the embedding, one dot per category.`}
-      className="grid h-full content-center gap-1.5 px-3 py-2 text-xs text-[#5b6b7a]"
+      className="grid h-full content-center gap-1.5 px-3 py-2 text-xs text-muted-foreground"
     >
-      <p className="font-semibold text-[#334155]">Silhouette per {label.toLowerCase()}</p>
+      <p className="font-semibold text-foreground">Silhouette per {label.toLowerCase()}</p>
       {rows.map((row) => (
         <div key={row.key}>
           <p className="flex justify-between gap-2 tabular-nums">
@@ -361,7 +371,7 @@ function SeparationSketch({ venom }: { venom: VenomData }) {
             <span>{signed(row.value)}</span>
           </p>
           <svg width="100%" height="18" aria-hidden="true" className="block overflow-visible">
-            <line x1="5%" x2="95%" y1="9" y2="9" stroke="#cbd5e1" />
+            <line x1="5%" x2="95%" y1="9" y2="9" style={{ stroke: 'var(--ps-border-strong)' }} />
             {ordered.map((category) => (
               <circle
                 key={category.label}
@@ -369,7 +379,7 @@ function SeparationSketch({ venom }: { venom: VenomData }) {
                 cy="9"
                 r="4.6"
                 fill={category.color}
-                stroke="#fff"
+                style={{ stroke: 'var(--ps-surface-raised)' }}
               />
             ))}
           </svg>

@@ -6,6 +6,7 @@ import { notify } from '../lib/notify';
 import {
   getClearStoredDataConfirm,
   getFilterRemovedNotification,
+  getRemoveLastFileConfirm,
   getRendererDegradedNotification,
 } from './notifications';
 import { chooseTour, type TourKind } from '../tour/storage-key';
@@ -52,7 +53,11 @@ import {
   createLoadingOverlayController,
   type LoadingOverlayController,
 } from './loading-overlay';
-import { loadLastImportedFile, readStoredImportSummary } from './opfs-dataset-store';
+import {
+  loadLastImportedFile,
+  readStoredImportSummary,
+  removeLastImportedFile,
+} from './opfs-dataset-store';
 import { createSelectionController } from './selection-controller';
 import { createStatusController } from './status-controller';
 import { createStructureController } from './structure-controller';
@@ -748,6 +753,10 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     getCurrentExampleId: () => currentExampleId,
     getShownName: () => currentDatasetName,
     warn: (title) => notify.warning({ title }),
+    success: (title) => notify.success({ title }),
+    // Last file's × deletes the stored copy, which nothing can restore: ask first.
+    confirmRemove: (fileName) => confirmAction(getRemoveLastFileConfirm(fileName)),
+    removeLastFile: removeLastImportedFile,
   });
   lifecycle.addCleanup(() => importMenuBinding.dispose());
 

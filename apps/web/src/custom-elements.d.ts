@@ -62,7 +62,6 @@ declare module 'react' {
         React.HTMLAttributes<HTMLElement> & {
           id?: string;
           'data-driver-id'?: string;
-          exportable?: string;
         },
         HTMLElement
       >;

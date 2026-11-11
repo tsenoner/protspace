@@ -293,9 +293,11 @@ Pass `datasetHash` to `applyShapeSize` when the legend has not computed the new 
 Compute it, as for `clearForNewDataset` and `setFileSettings`, with `generateDatasetHash(data)` from
 `@protspace/utils` on the same `data` given to the scatter plot: the legend keys its storage by that
 hash, EAT predictions included.
-A size above 64 is applied and stored as 64. Write `pickedShapeSize`, not `shapeSize`, into a bundle's top-level `shapeSize`: the live
+A size above the dataset's [largest size](/explore/legend#default-dot-size) (64, or up to 128
+below 10,000 proteins) is applied and stored as that size. Write `pickedShapeSize`, not `shapeSize`, into a bundle's top-level `shapeSize`: the live
 `shapeSize` may only be seeded from the current annotation, or be the default computed from the
-dataset's protein count, `clamp(round(10 · (10000 / N)^⅔), 1, 10)`, which is never stored or
+dataset's protein count, `min(40, round(10 · (10000 / N)^¼))` up to 10,000 proteins and
+`max(1, round(10 · (10000 / N)^⅔))` above, which is never stored or
 exported. The legend resolves `shapeSize` from the picked or applied size, then the annotation's own
 `shapeSize` (10 and 30 read as unset), then that default.
 
@@ -540,12 +542,12 @@ The Import button and any control the host passes to `openFrom` or `toggleFrom` 
 panel, a dialog named "Import": "Open a file…" with the formats it accepts and where each goes,
 the last imported file, and the example catalog.
 
-| Property           | Type                                          | Description                                                                                          |
-| ------------------ | --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `exampleDatasets`  | `readonly ExampleDatasetSummary[]`            | Example catalog, listed in the "Examples" section; JavaScript-only                                   |
-| `examplesDocsUrl`  | `string`                                      | Page linked as "About these examples"; `examples-docs-url`                                           |
-| `currentExampleId` | `string \| null`                              | Example on screen, `null` for a user import; its item is disabled with a check; `current-example-id` |
-| `lastFile`         | `{ name: string; sizeLabel: string } \| null` | The stored import, offered as "Last file"; `null` hides the row; JavaScript-only                     |
+| Property           | Type                               | Description                                                                                                          |
+| ------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `exampleDatasets`  | `readonly ExampleDatasetSummary[]` | Example catalog, listed in the "Examples" section; JavaScript-only                                                   |
+| `examplesDocsUrl`  | `string`                           | Page linked as "About these examples"; `examples-docs-url`                                                           |
+| `currentExampleId` | `string \| null`                   | Example on screen, `null` for a user import; its item is disabled with a check; `current-example-id`                 |
+| `lastFile`         | `LastFile \| null`                 | The stored import, offered as "Last file" with a red × that asks to remove it; `null` hides the row; JavaScript-only |
 
 ::: warning BREAKING
 `currentDatasetName` (`current-dataset-name`) and the panel's "Current dataset" block are removed.
@@ -564,6 +566,9 @@ bar's dataset name does.
 | `docsUrl?`    | `string`  | The popover's "Learn more" link                             |
 | `large?`      | `boolean` | A "Large" badge on the item                                 |
 
+`LastFile` has `name` and `sizeLabel` (shown on the row) and `storedAt`, the host's save time,
+which `remove-last-file` hands back.
+
 Methods: `openFrom(anchor: HTMLElement)` opens the panel under `anchor` and sets
 `aria-haspopup="dialog"` and `aria-expanded` on it; focus returns to it when the panel closes.
 `toggleFrom(anchor)` closes the panel when it is open from that anchor and opens it there
@@ -573,14 +578,18 @@ CSS part: `trigger`, the Import button. A host that opens the panel only from it
 it with `::part(trigger) { display: none }` and keeps the element rendered (a `display: none`
 element takes its panel with it), as the app's phone layout does.
 
-| Event                  | Detail           | Description                   |
-| ---------------------- | ---------------- | ----------------------------- |
-| `load-example-dataset` | `{ id: string }` | An example dataset was chosen |
-| `open-file-dialog`     | `{}`             | "Open a file…" was chosen     |
-| `open-last-file`       | `{}`             | "Last file" was chosen        |
+| Event                  | Detail                               | Description                                                  |
+| ---------------------- | ------------------------------------ | ------------------------------------------------------------ |
+| `load-example-dataset` | `{ id: string }`                     | An example dataset was chosen                                |
+| `open-file-dialog`     | `{}`                                 | "Open a file…" was chosen                                    |
+| `open-last-file`       | `{}`                                 | "Last file" was chosen                                       |
+| `remove-last-file`     | `{ name: string; storedAt: string }` | Last file's × was pressed, or Delete or Backspace on its row |
 
-Each fires inside the user's click, after the panel has closed: call the data loader's
-`openFilePicker()` from the `open-file-dialog` listener and the browser lets the file chooser open.
+Each but `remove-last-file` fires inside the user's click, after the panel has closed: call the data
+loader's `openFilePicker()` from the `open-file-dialog` listener and the browser lets the file
+chooser open. `remove-last-file` leaves the panel open: ask in a dialog (the panel stays while
+focus is in it), then delete the stored copy and set `lastFile` to `null`, and focus moves to the
+next item.
 
 ### Export Menu
 
@@ -593,9 +602,10 @@ toggling it keeps the menu open) and the note "Quick exports leave out contours.
 | `hasFileSettings` | `boolean` | The loaded file carries settings a Parquet export can keep; `has-file-settings` |
 
 Methods: `reset()` checks **Include legend settings** again, as for a new dataset.
-`openFrom(anchor: HTMLElement)` opens the menu under `anchor` with focus on its first item, as the
-Export button does; when it closes, focus returns to `anchor` and the menu belongs to the Export
-button again. CSS part: `trigger`, the Export button; hide it with `::part(trigger)` and open the
+`openFrom(anchor: HTMLElement, placement = 'bottom-end')` opens the menu under `anchor` with focus
+on its first item, as the Export button does; when it closes, focus returns to `anchor` and the
+menu belongs to the Export button again. `toggleFrom(anchor, placement)` closes the menu when it is
+open from that anchor and opens it there otherwise, as the app bar's own Export button does. CSS part: `trigger`, the Export button; hide it with `::part(trigger)` and open the
 menu from your own control, as the app's phone layout does from More.
 
 | Event                 | Detail              | Description                 |

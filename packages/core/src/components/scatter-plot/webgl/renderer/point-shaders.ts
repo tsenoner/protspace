@@ -3,6 +3,58 @@
  * export: the point and gamma programs, and the camera, glide and record-table
  * snippets the density shaders reuse.
  */
+/**
+ * The plus's arm half-width over its radius, the SVG path's `PLUS_ARM_RATIO` from
+ * `@protspace/utils` (point-shaders.test.ts keeps the two equal). Written out rather than imported:
+ * the end-to-end harnesses load this module in Node, where the utils bundle (which pulls in d3)
+ * cannot be required.
+ */
+export const PLUS_ARM_RATIO = 0.42;
+
+/**
+ * A faded hollow marker (the points a selection, focus or EAT Dim fades) is a thin ring at a low
+ * alpha. On white it stays readable; on a dark plot it all but vanishes, so there its alpha is
+ * raised by this gain, up to the shader's HOLLOW_DARK_FADE_CEILING, still well under a shown
+ * point's.
+ */
+export const HOLLOW_DARK_FADE_GAIN = 2.5;
+/** The background luminance (linear) under which the plot counts as dark. */
+const DARK_PLOT_LUMINANCE = 0.05;
+
+/** What {@link POINT_FRAGMENT_SHADER} needs to know about the plot background. */
+interface PointKnockoutUniforms {
+  /** `u_knockoutColor`: the background in linear light. */
+  linearColor: [number, number, number];
+  /** `u_hollowFadeGain`: HOLLOW_DARK_FADE_GAIN on a dark plot, else 1. */
+  hollowFadeGain: number;
+  /**
+   * `u_lightRimBound`: a point whose luminance + 0.05 is under it takes a light rim. Twice the
+   * background's luminance + 0.05 on a dark plot (2:1 contrast); 0, so never, on a light one.
+   */
+  lightRimBound: number;
+}
+
+/**
+ * The point shader's background uniforms from the plot background in sRGB (0-1) and the
+ * effective gamma: worked out once per draw on the CPU, not per fragment.
+ */
+export function pointKnockoutUniforms(
+  knockoutColor: readonly [number, number, number],
+  gamma: number,
+): PointKnockoutUniforms {
+  const linear = knockoutColor.map((channel) => Math.max(channel, 0) ** gamma) as [
+    number,
+    number,
+    number,
+  ];
+  const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  const dark = luminance < DARK_PLOT_LUMINANCE;
+  return {
+    linearColor: linear,
+    hollowFadeGain: dark ? HOLLOW_DARK_FADE_GAIN : 1,
+    lightRimBound: dark ? 2 * (luminance + 0.05) : 0,
+  };
+}
 
 /**
  * Where a projection switch drew each point, for a vertex shader with
@@ -84,6 +136,9 @@ uniform vec4 u_transform;
 uniform float u_dpr;
 uniform float u_pointScale;
 uniform float u_gamma;
+// The largest point the context draws (ALIASED_POINT_SIZE_RANGE): the UI's own size cap is a
+// UX rule, and a sprite past this would otherwise be up to the driver.
+uniform float u_maxPointSize;
 ${MORPH_GLSL}
 ${RECORD_STYLE_GLSL}
 ${MARK_GLSL}
@@ -120,7 +175,7 @@ ${CAMERA_TO_CLIP_GLSL}
 
   // Depth is computed per-point on the CPU (opacity + legend z-order tie-break)
   gl_Position = vec4(clipSpace.x, -clipSpace.y, a_depth, 1.0);
-  gl_PointSize = max(1.0, pointSize * u_pointScale * u_dpr);
+  gl_PointSize = clamp(pointSize * u_pointScale * u_dpr, 1.0, u_maxPointSize);
 
   // Convert sRGB input to linear RGB for proper blending
   vec3 linearColor = pow(max(color.rgb, vec3(0.0)), vec3(u_gamma));
@@ -152,13 +207,30 @@ uniform int u_maxLabels;
 // fall through to its dominant color rather than sampling unallocated storage.
 uniform int u_labelAtlasCapacity;
 uniform float u_gamma;
+// The plot background, already linear, and what it sets (pointKnockoutUniforms, on the CPU).
 uniform vec3 u_knockoutColor;
+uniform float u_hollowFadeGain;
+uniform float u_lightRimBound;
 
 out vec4 fragColor;
 
 const float PI = 3.14159265359;
 const float SQRT3 = 1.73205080757;
 const float PREDICTED_INTERIOR_FILL = 0.0; // 1.0 = filled knockout (old), 0.0 = hollow
+// The plus's arm half-width, shared with the SVG path (PLUS_ARM_RATIO).
+const float PLUS_ARM = ${PLUS_ARM_RATIO.toFixed(2)};
+// A hollow marker's ring: 12% of the sprite's diameter (0.24 of its radius), as plotting
+// libraries stroke hollow markers (at most 1/8 of the diameter, never above 1/6), with a floor
+// of one device pixel. The floor (2 / gl_PointSize in sprite units) wins below about 8 device px
+// (2 / 0.24); from 6 device px up the ring is still at most a sixth of the diameter. The depth
+// cap below can take it under a pixel on the smallest plus, triangle and diamond sprites.
+const float HOLLOW_RING_DIAMETER_SHARE = 0.12;
+// The most of a glyph's depth the ring may take, so every shape keeps a hole; without it the
+// device-pixel floor closed the plus's thin arms.
+const float HOLLOW_RING_DEPTH_SHARE = 0.6;
+// A faded hollow marker on a dark plot is raised by u_hollowFadeGain (HOLLOW_DARK_FADE_GAIN) up
+// to this, still well under a shown point's.
+const float HOLLOW_DARK_FADE_CEILING = 0.5;
 
 // Outline width. Two terms, and it needs both:
 //
@@ -190,6 +262,10 @@ void main() {
   // Positive = inside, zero = on boundary, negative = outside.
   // This single computation drives both anti-aliasing and the outline effect.
   float edgeDist;
+  // The deepest edgeDist inside the glyph, and edgeDist's gradient per sprite unit: what a
+  // hollow ring is sized against.
+  float depth = 1.0;
+  float fieldGradient = 1.0;
 
   if (v_shape < 0.5) { // Circle
     edgeDist = 1.0 - length(coord);
@@ -198,20 +274,23 @@ void main() {
   } else if (v_shape < 2.5) { // Diamond
     // Match d3.symbolDiamond proportions (same mapping as D3's "tan30" constant, i.e. sqrt(1/3))
     edgeDist = 1.0 - (abs(coord.x) * SQRT3 + abs(coord.y));
+    fieldGradient = 2.0;
   } else if (v_shape < 3.5) { // Triangle Up
     // Inside region: abs(x)*SQRT3 <= 1 + y, clipped to point quad [-1,1]^2.
     float eSides = (1.0 + coord.y - abs(coord.x) * SQRT3) / 2.0;
     float eBottom = 1.0 - coord.y;
     float eLR = 1.0 - abs(coord.x);
     edgeDist = min(eSides, min(eBottom, eLR));
+    depth = 2.0 / 3.0;
   } else if (v_shape < 4.5) { // Triangle Down
     // Inside region: abs(x)*SQRT3 <= 1 - y, clipped to point quad [-1,1]^2.
     float eSides = (1.0 - coord.y - abs(coord.x) * SQRT3) / 2.0;
     float eTop = 1.0 + coord.y;
     float eLR = 1.0 - abs(coord.x);
     edgeDist = min(eSides, min(eTop, eLR));
+    depth = 2.0 / 3.0;
   } else { // Plus — SDF as union of vertical and horizontal arms
-    float thickness = 0.35;
+    float thickness = PLUS_ARM;
     // SDF for vertical arm (half-extents: thickness x 1.0)
     vec2 dV = abs(coord) - vec2(thickness, 1.0);
     float sdfV = length(max(dV, 0.0)) + min(max(dV.x, dV.y), 0.0);
@@ -220,6 +299,7 @@ void main() {
     float sdfH = length(max(dH, 0.0)) + min(max(dH.x, dH.y), 0.0);
     // Union of both arms; negate so positive = inside
     edgeDist = -min(sdfV, sdfH);
+    depth = PLUS_ARM;
   }
 
   // Anti-aliased shape edge: smooth alpha over ~1 screen pixel using
@@ -244,13 +324,16 @@ void main() {
   // below stays class-free.
   float outlineBudget = OUTLINE_DOT_BUDGET;
   if (v_predicted > 0.5) {
-    // Keep the ring legible at every sprite size without allowing derivative scaling to consume
-    // the interior. With PREDICTED_INTERIOR_FILL = 1.0 the opaque surface-color knockout would
-    // prevent earlier overlapping points from showing through the hole; at 0.0 (hollow) that
-    // show-through is allowed for densely overlapping markers — an accepted trade-off.
-    float ringWidth = clamp(pixelScale * 1.75, 0.30, 0.55);
+    // The ring in sprite units (a share of the diameter, at least a device pixel), converted to
+    // edgeDist units and capped by the glyph's depth, so the same rule holds on every shape. With
+    // PREDICTED_INTERIOR_FILL = 1.0 an opaque surface-color knockout would hide earlier
+    // overlapping points behind the hole; at 0.0 (hollow) they show through it — an accepted
+    // trade-off for dense EAT regions.
+    float ringWidth = min(
+      fieldGradient * max(HOLLOW_RING_DIAMETER_SHARE * 2.0, pixelScale),
+      HOLLOW_RING_DEPTH_SHARE * depth);
     outlineBudget = ringWidth * OUTLINE_RING_BUDGET;
-    float interiorAa = min(pixelScale, (1.0 - ringWidth) * 0.5);
+    float interiorAa = min(fieldGradient * pixelScale, (depth - ringWidth) * 0.5);
     predictedInterior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);
   }
   if (shapeAlpha < 0.001) discard;
@@ -289,6 +372,13 @@ void main() {
     finalColor = pow(max(texColor.rgb, vec3(0.0)), vec3(u_gamma));
   }
 
+  // The knockout colour is the live plot background (white in light and in every export).
+  // A faded hollow marker on a dark plot reads stronger (u_hollowFadeGain is 1 on a light one).
+  float pointAlpha = v_color.a;
+  if (v_predicted > 0.5 && pointAlpha < HOLLOW_DARK_FADE_CEILING) {
+    pointAlpha = min(pointAlpha * u_hollowFadeGain, HOLLOW_DARK_FADE_CEILING);
+  }
+
   // Darken near the edge to mimic a border/outline. Applied to BOTH filled dots and predicted
   // rings so the two glyph classes share one outline treatment (#369) — filled-vs-hollow stays
   // the encoding that tells them apart, which is a pre-attentive categorical difference and far
@@ -296,8 +386,6 @@ void main() {
   // Still skipped for faded points (low alpha), where the darkening is disproportionately visible.
   float outlineWidth =
     min(max(OUTLINE_RADIUS_FRACTION, OUTLINE_DEVICE_PX * fieldPerPixel), outlineBudget);
-  // The knockout colour is the live plot background (white in light and in every export).
-  vec3 linearKnockoutColor = pow(max(u_knockoutColor, vec3(0.0)), vec3(u_gamma));
   if (v_color.a > 0.5) {
     // Smooth the inner edge. The outer edge is already anti-aliased by shapeAlpha, so a hard
     // threshold here left the outline smooth outside and stepped inside. edgeDist is positive
@@ -305,7 +393,7 @@ void main() {
     //
     // The feather spans pixelScale, NOT fieldPerPixel, even though the width above uses
     // fieldPerPixel. On a ring, outlineBudget caps the band below one device pixel
-    // (ringWidth * 0.35 <= 0.19), so feathering over fieldPerPixel would make the ramp wider
+    // (ringWidth * 0.35 <= 0.21), so feathering over fieldPerPixel would make the ramp wider
     // than the band it is supposed to soften and wash the outline out instead — on a diamond,
     // whose gradient is 2, that cost a predicted glyph ~3x of its darkening at default point
     // sizes. Widening the band is safe; widening the feather past the band is not.
@@ -313,10 +401,8 @@ void main() {
     // On a dark plot, a point below 2:1 against the background (Kelly #222222 and #2B3D26,
     // Okabe-Ito #000000) gets a light rim instead, or nothing would bound it. A light background
     // (the light theme, every export) always takes the darkened rim.
-    vec3 luma = vec3(0.2126, 0.7152, 0.0722);
-    float bgLum = dot(linearKnockoutColor, luma);
-    float fgLum = dot(finalColor, luma);
-    bool lightRim = bgLum < 0.05 && fgLum + 0.05 < 2.0 * (bgLum + 0.05);
+    float fgLum = dot(finalColor, vec3(0.2126, 0.7152, 0.0722));
+    bool lightRim = fgLum + 0.05 < u_lightRimBound;
     vec3 rim = lightRim ? mix(finalColor, vec3(0.55), 0.7) : finalColor * 0.5;
     finalColor = mix(finalColor, rim, outlineMix);
   }
@@ -324,9 +410,9 @@ void main() {
   // Predicted interiors mix toward PREDICTED_INTERIOR_FILL (hollow=0.0, filled-knockout=1.0).
   // Mix premultiplied components explicitly so the ring/interior transition remains correct
   // for reliability-faded points.
-  float finalAlpha = mix(v_color.a, PREDICTED_INTERIOR_FILL, predictedInterior) * shapeAlpha;
+  float finalAlpha = mix(pointAlpha, PREDICTED_INTERIOR_FILL, predictedInterior) * shapeAlpha;
   vec3 premultipliedColor =
-    mix(finalColor * v_color.a, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior) *
+    mix(finalColor * pointAlpha, u_knockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior) *
     shapeAlpha;
   fragColor = vec4(premultipliedColor, finalAlpha);
 }`;

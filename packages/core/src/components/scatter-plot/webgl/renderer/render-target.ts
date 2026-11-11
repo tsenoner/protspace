@@ -11,6 +11,7 @@ import { clamp01 } from '@protspace/utils';
 import type { PointUniformLocations } from '../types';
 import { IDENTITY_RESCALE, type Rescale } from './rescale';
 import { MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
+import { pointKnockoutUniforms } from './point-shaders';
 import {
   LABEL_ATLAS_TEXTURE_UNIT,
   MARK_TEXTURE_UNIT,
@@ -90,6 +91,25 @@ export function setCameraUniforms(
   gl.uniform1f(loc.morph, cam.morph ?? 0);
 }
 
+const maxPointSizes = new WeakMap<WebGL2RenderingContext, number>();
+
+/** Far past any context's point-size range: the shader's clamp then changes nothing. */
+const UNCLAMPED_POINT_SIZE = 1e6;
+
+/**
+ * The largest point size the context draws, read once per context (a GPU query, so never per
+ * frame). A range it cannot read (a lost context) clamps nothing, leaving it to the driver.
+ */
+function maxPointSize(gl: WebGL2RenderingContext): number {
+  let size = maxPointSizes.get(gl);
+  if (size === undefined) {
+    const range = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE) as Float32Array | null;
+    size = range && range[1] >= 1 ? range[1] : UNCLAMPED_POINT_SIZE;
+    maxPointSizes.set(gl, size);
+  }
+  return size;
+}
+
 /** Per-draw inputs for {@link bindPointDrawState}. */
 interface PointDrawStateParams extends CameraParams {
   pointScale: number;
@@ -151,7 +171,11 @@ export function bindPointDrawState(
   setCameraUniforms(gl, uniforms, params);
   gl.uniform1f(uniforms.pointScale, params.pointScale);
   gl.uniform1f(uniforms.gamma, params.gamma);
-  gl.uniform3f(uniforms.knockoutColor, ...params.knockoutColor);
+  gl.uniform1f(uniforms.maxPointSize, maxPointSize(gl));
+  const knockout = pointKnockoutUniforms(params.knockoutColor, params.gamma);
+  gl.uniform3f(uniforms.knockoutColor, ...knockout.linearColor);
+  gl.uniform1f(uniforms.hollowFadeGain, knockout.hollowFadeGain);
+  gl.uniform1f(uniforms.lightRimBound, knockout.lightRimBound);
   // No atlas: capacity 0 makes the shader's pie branch unreachable, so the
   // remaining three describe the 1x1 placeholder that is bound in its place.
   const atlas = params.labelAtlas;

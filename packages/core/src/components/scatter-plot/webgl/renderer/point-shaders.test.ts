@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { PLUS_ARM_RATIO as SVG_PLUS_ARM_RATIO } from '@protspace/utils';
 import {
   CAMERA_TO_CLIP_GLSL,
   GAMMA_FRAGMENT_SHADER,
+  PLUS_ARM_RATIO,
   POINT_FRAGMENT_SHADER,
   POINT_VERTEX_SHADER,
 } from './point-shaders';
+
+describe('the plus glyph', () => {
+  it("draws its arms as wide as the legend's and the export's SVG plus", () => {
+    expect(PLUS_ARM_RATIO).toBe(SVG_PLUS_ARM_RATIO);
+    expect(POINT_FRAGMENT_SHADER).toContain(`const float PLUS_ARM = ${PLUS_ARM_RATIO.toFixed(2)};`);
+  });
+});
 
 describe('gamma correction shader', () => {
   it('un-premultiplies before handing the frame to the compositor', () => {
@@ -40,13 +49,38 @@ describe('point shaders', () => {
       'predictedInterior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);',
     );
     expect(POINT_FRAGMENT_SHADER).toContain(
-      'mix(finalColor * v_color.a, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior)',
+      'mix(finalColor * pointAlpha, u_knockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior)',
     );
     expect(POINT_FRAGMENT_SHADER).toContain('uniform vec3 u_knockoutColor;');
     // The hollow interior is the only thing that distinguishes the two glyph classes; the
     // outline applies to both (#369, see the outline describe block).
-    expect(POINT_FRAGMENT_SHADER).toContain('clamp(pixelScale * 1.75, 0.30, 0.55)');
-    expect(POINT_FRAGMENT_SHADER).toContain('min(pixelScale, (1.0 - ringWidth) * 0.5)');
+  });
+
+  it("clamps the sprite to the context's point-size range, not only to 1", () => {
+    expect(POINT_VERTEX_SHADER).toContain(
+      'gl_PointSize = clamp(pointSize * u_pointScale * u_dpr, 1.0, u_maxPointSize);',
+    );
+  });
+
+  it('sizes the ring as a share of the diameter, a device-pixel floor and a depth cap', () => {
+    expect(POINT_FRAGMENT_SHADER).toContain('const float HOLLOW_RING_DIAMETER_SHARE = 0.12;');
+    expect(POINT_FRAGMENT_SHADER).toContain('const float HOLLOW_RING_DEPTH_SHARE = 0.6;');
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'fieldGradient * max(HOLLOW_RING_DIAMETER_SHARE * 2.0, pixelScale),',
+    );
+    expect(POINT_FRAGMENT_SHADER).toContain('HOLLOW_RING_DEPTH_SHARE * depth);');
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'min(fieldGradient * pixelScale, (depth - ringWidth) * 0.5)',
+    );
+  });
+
+  it('gives each shape its depth and gradient, so the plus and triangles keep a hole', () => {
+    expect(POINT_FRAGMENT_SHADER).toContain('const float PLUS_ARM = 0.42;');
+    expect(POINT_FRAGMENT_SHADER).toContain('float thickness = PLUS_ARM;');
+    expect(POINT_FRAGMENT_SHADER).toContain('depth = PLUS_ARM;');
+    expect(POINT_FRAGMENT_SHADER.match(/depth = 2\.0 \/ 3\.0;/g)).toHaveLength(2);
+    // The diamond's edgeDist has gradient 2.
+    expect(POINT_FRAGMENT_SHADER).toContain('fieldGradient = 2.0;');
   });
 
   it('sizes the ring from an isotropic pixel scale so the hole stays round', () => {
@@ -66,8 +100,25 @@ describe('point shaders', () => {
   it('makes the predicted interior hollow via a single revertible flag', () => {
     expect(POINT_FRAGMENT_SHADER).toContain('const float PREDICTED_INTERIOR_FILL = 0.0;');
     expect(POINT_FRAGMENT_SHADER).toContain(
-      'mix(v_color.a, PREDICTED_INTERIOR_FILL, predictedInterior)',
+      'mix(pointAlpha, PREDICTED_INTERIOR_FILL, predictedInterior)',
     );
+  });
+
+  it('raises a faded hollow marker on a dark plot only, and keeps it under a shown point', () => {
+    // The gain is worked out on the CPU (pointKnockoutUniforms): 1 on a light plot.
+    expect(POINT_FRAGMENT_SHADER).toContain('uniform float u_hollowFadeGain;');
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'if (v_predicted > 0.5 && pointAlpha < HOLLOW_DARK_FADE_CEILING) {',
+    );
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'pointAlpha = min(pointAlpha * u_hollowFadeGain, HOLLOW_DARK_FADE_CEILING);',
+    );
+    // No per-fragment pow or luminance of the background.
+    expect(POINT_FRAGMENT_SHADER).not.toContain('pow(max(u_knockoutColor');
+    expect(POINT_FRAGMENT_SHADER).toContain('const float HOLLOW_DARK_FADE_CEILING = 0.5;');
+    // Both the alpha and the premultiplied colour take the raised alpha.
+    expect(POINT_FRAGMENT_SHADER).toContain('mix(finalColor * pointAlpha,');
+    expect(POINT_FRAGMENT_SHADER).not.toContain('finalColor * v_color.a');
   });
 
   describe('outline (#369)', () => {

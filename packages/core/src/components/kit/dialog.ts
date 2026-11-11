@@ -129,8 +129,9 @@ export class PsDialog extends LitElement {
       this.shown = true;
       this.returnFocusTo = focusOrigin();
     }
-    this.dialog.showModal();
     const dialog = this;
+    // On the stack before showModal() moves focus into it: the focusout that move fires in a layer
+    // below already finds this one above it.
     this.releaseLayer = pushLayer({
       close: this.dismiss,
       elements: [this.frame],
@@ -138,6 +139,14 @@ export class PsDialog extends LitElement {
         return dialog.dismissible;
       },
     });
+    try {
+      this.dialog.showModal();
+    } catch (error) {
+      // A dialog that cannot open must not leave a layer above everything else.
+      this.releaseLayer();
+      this.releaseLayer = undefined;
+      throw error;
+    }
     this.frame.focus();
     const target = this.querySelector<HTMLElement>('[autofocus]');
     target?.focus();

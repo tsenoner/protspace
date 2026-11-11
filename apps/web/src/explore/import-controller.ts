@@ -1,9 +1,11 @@
 import type { DataLoader as ProtspaceDataLoader, ProtspaceImportMenu } from '@protspace/core';
 import type { DatasetController } from './dataset-controller';
 import { findExampleDataset, formatMegabytes } from './example-datasets';
+import { getLastFileRemovedNotification, getLastFileReplacedNotification } from './notifications';
 import type { DatasetChangeSource } from './types';
 
 const STORED_FILE_UNREADABLE = 'The stored file could not be read';
+const STORED_FILE_NOT_REMOVED = 'The stored file could not be removed';
 
 interface StoredImportSummary {
   name: string;
@@ -33,12 +35,19 @@ interface ImportMenuOptions {
   getShownName(): string;
   /** Shows a warning notification titled `title`. */
   warn(title: string): void;
+  /** Shows a success notification titled `title`. */
+  success(title: string): void;
+  /** Asks before Last file's × deletes the stored copy of `name`; true to go ahead. */
+  confirmRemove(name: string): Promise<boolean>;
+  /** Deletes the stored import saved at `storedAt` (`removeLastImportedFile`); false kept a newer one. */
+  removeLastFile(storedAt: string): Promise<boolean>;
 }
 
 /**
  * The Import menu's choices: an example loads as a menu choice (the stored import stays), "Open a
- * file…" opens the data loader's file picker, and "Last file" reopens the stored import. The
- * menu's `lastFile` follows every dataset change and is null while that file is on screen.
+ * file…" opens the data loader's file picker, "Last file" reopens the stored import and its ×
+ * removes it after asking. The menu's `lastFile` follows every dataset change and is null while
+ * that file is on screen.
  */
 export function bindImportMenu({
   listen,
@@ -51,6 +60,9 @@ export function bindImportMenu({
   getCurrentExampleId,
   getShownName,
   warn,
+  success,
+  confirmRemove,
+  removeLastFile,
 }: ImportMenuOptions): { refreshLastFile(): Promise<void>; dispose(): void } {
   // A slower, older read must not overwrite a newer one.
   let refreshes = 0;
@@ -71,8 +83,37 @@ export function bindImportMenu({
       summary.name === getShownName();
     importMenu.lastFile =
       summary && !onScreen
-        ? { name: summary.name, sizeLabel: formatMegabytes(summary.size) }
+        ? {
+            name: summary.name,
+            sizeLabel: formatMegabytes(summary.size),
+            storedAt: summary.storedAt,
+          }
         : null;
+  };
+
+  // The legend settings saved for the file stay: re-importing it brings them back.
+  // One removal at a time: a second Delete while the first confirm or removal runs does nothing.
+  let removing = false;
+  const removeStoredFile = async (name: string, storedAt: string): Promise<void> => {
+    if (removing) return;
+    removing = true;
+    try {
+      if (!(await confirmRemove(name))) return;
+      let removed: boolean;
+      try {
+        removed = await removeLastFile(storedAt);
+      } catch (error) {
+        console.error('Removing the stored file failed:', error);
+        warn(STORED_FILE_NOT_REMOVED);
+        await refreshLastFile();
+        return;
+      }
+      await refreshLastFile();
+      if (removed) success(getLastFileRemovedNotification(name).title);
+      else warn(getLastFileReplacedNotification(name).title);
+    } finally {
+      removing = false;
+    }
   };
 
   const reopenLastFile = async (): Promise<void> => {
@@ -115,6 +156,11 @@ export function bindImportMenu({
   listen('open-file-dialog', () => dataLoader.openFilePicker());
   listen('open-last-file', () => {
     void reopenLastFile();
+  });
+  listen('remove-last-file', (event) => {
+    const detail = (event as CustomEvent<{ name?: string; storedAt?: string } | null>).detail;
+    if (!detail?.name || !detail.storedAt) return;
+    void removeStoredFile(detail.name, detail.storedAt);
   });
   // The stored import can change after the dataset change that announced it (the save step runs
   // after the render, so a second import is announced while the first is still stored): read it

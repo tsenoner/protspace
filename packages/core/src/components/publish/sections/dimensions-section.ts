@@ -1,11 +1,18 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { live } from 'lit/directives/live.js';
 import { icon } from '../../kit/icon';
+import '../../kit/select';
+import type { PsSelect, SelectOption } from '../../kit/select';
 import '../../kit/tooltip';
 import { cmToMm, inToMm, mmToCm, mmToIn, pxToMm } from '../dimension-utils';
 import { getActivePresetMaxHeightPx, getActivePresetWidthPx } from '../publish-modal-helpers';
 import type { PublishState } from '../publish-state';
 import { MAX_EXPORT_DIMENSION } from '../../scatter-plot/webgl/renderer/device-limits';
+
+const UNIT_OPTIONS: SelectOption[] = ['px', 'mm', 'in', 'cm'].map((unit) => ({
+  value: unit,
+  label: unit,
+}));
 
 type Unit = PublishState['unit'];
 
@@ -188,20 +195,17 @@ export function renderDimensions(
             : nothing}
         </div>
         ${renderAspectLink(s.aspectLocked, widthLocked, handlers.toggleAspectLock)}
-        <select
+        <ps-select
           class="publish-select publish-unit-select"
+          size="sm"
           data-publish-input="unit"
-          aria-label="Unit"
+          label="Unit"
+          .options=${UNIT_OPTIONS}
           .value=${s.unit}
           @change=${(e: Event) => {
-            handlers.unit((e.target as HTMLSelectElement).value as Unit);
+            handlers.unit((e.target as PsSelect).value as Unit);
           }}
-        >
-          <option value="px">px</option>
-          <option value="mm">mm</option>
-          <option value="in">in</option>
-          <option value="cm">cm</option>
-        </select>
+        ></ps-select>
 
         <label class="publish-dim-label">Height</label>
         <div class="publish-dim-control">

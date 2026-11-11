@@ -64,8 +64,7 @@ export const importMenuStyles = [
       border-top: 1px solid var(--ps-border);
     }
 
-    .import-open-file::part(button),
-    .import-export-button::part(button) {
+    .import-open-file::part(button) {
       width: 100%;
     }
 
@@ -126,6 +125,26 @@ export const importMenuStyles = [
       display: flex;
       flex-direction: column;
       gap: var(--ps-space-0-5);
+    }
+
+    /* Last file: its row, then the remove × as a sibling. */
+    .import-last-file-row {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-1);
+    }
+
+    /* Red at rest: removing deletes the stored copy, which may be the user's only one. */
+    .import-last-file-remove {
+      flex: none;
+    }
+
+    .import-last-file-remove::part(button) {
+      color: var(--ps-danger);
+    }
+
+    .import-last-file-remove::part(button):hover {
+      background: color-mix(in srgb, var(--ps-danger) 10%, var(--ps-surface));
     }
 
     /* An example item: its button, then its info popover as a sibling (never inside the button). */

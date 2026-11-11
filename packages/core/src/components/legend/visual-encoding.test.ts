@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { getColorSchemeStops } from '@protspace/utils';
 import { getVisualEncoding, SlotTracker, SPECIAL_SLOTS } from './visual-encoding';
 import { NEUTRAL_VALUE_COLOR } from '../scatter-plot/config';
 
@@ -30,6 +31,16 @@ describe('visual-encoding', () => {
       for (let i = 0; i < 6; i++) {
         expect(getVisualEncoding(i).shape).toBe('circle');
       }
+    });
+
+    it('colours a slot from the given palette, wrapping past its end', () => {
+      const okabeIto = getColorSchemeStops('okabeIto');
+      expect(getVisualEncoding(2, 'a', 'okabeIto').color).toBe(okabeIto[2]);
+      expect(getVisualEncoding(okabeIto.length + 1, 'a', 'okabeIto').color).toBe(okabeIto[1]);
+    });
+
+    it("falls back to Kelly's colours for an unknown palette", () => {
+      expect(getVisualEncoding(0, 'a', 'no-such-palette').color).toBe(getVisualEncoding(0).color);
     });
 
     it('wraps around colors after palette exhausted', () => {
@@ -118,6 +129,39 @@ describe('visual-encoding', () => {
         tracker.reset();
         expect(tracker.isEmpty()).toBe(true);
         expect(tracker.getSlot('newCategory')).toBe(0);
+      });
+    });
+
+    describe('remembered colours', () => {
+      it('remembers a colour only for a category holding a slot', () => {
+        tracker.getSlot('a');
+        tracker.rememberColor('a', '#111111');
+        tracker.rememberColor('b', '#222222');
+        expect(tracker.rememberedColor('a')).toBe('#111111');
+        expect(tracker.rememberedColor('b')).toBeUndefined();
+        expect([...tracker.rememberedColors()]).toEqual(['#111111']);
+      });
+
+      it('forgets the colour with the slot, on a free, a reassign or a reset', () => {
+        tracker.reassignSlots(['a', 'b', 'c']);
+        tracker.rememberColor('a', '#111111');
+        tracker.rememberColor('b', '#222222');
+        tracker.rememberColor('c', '#333333');
+
+        tracker.freeSlot('a');
+        expect(tracker.rememberedColor('a')).toBeUndefined();
+        tracker.reassignSlots(['c']);
+        expect(tracker.rememberedColor('b')).toBeUndefined();
+        expect(tracker.rememberedColor('c')).toBe('#333333');
+        tracker.reset();
+        expect([...tracker.rememberedColors()]).toEqual([]);
+      });
+
+      it('lists the categories holding a slot', () => {
+        tracker.reassignSlots(['a', 'b']);
+        expect(tracker.assignedCategories()).toEqual(['a', 'b']);
+        expect(tracker.getSlot('b')).toBe(1);
+        expect(tracker.assignedCategories()).toEqual(['a', 'b']);
       });
     });
 

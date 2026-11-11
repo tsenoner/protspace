@@ -34,14 +34,25 @@ describe('deriveStripPoints', () => {
     );
 
     expect(points.silhouette).toEqual([
-      { category: 'A', value: 0.5, color: '#ff0000', embedding: 0.4 },
-      { category: 'Z', value: -0.2, color: '#888', embedding: null, other: true },
+      { category: 'A', label: 'A', value: 0.5, color: '#ff0000', embedding: 0.4 },
+      { category: 'Z', label: 'Z', value: -0.2, color: '#888', embedding: null, other: true },
     ]);
     // Davies-Bouldin has no embedding-space counterpart.
     expect(points.daviesBouldin).toEqual([
-      { category: 'A', value: 1.2, color: '#ff0000', embedding: null },
-      { category: 'Z', value: 2, color: '#888', embedding: null, other: true },
+      { category: 'A', label: 'A', value: 1.2, color: '#ff0000', embedding: null },
+      { category: 'Z', label: 'Z', value: 2, color: '#888', embedding: null, other: true },
     ]);
+  });
+
+  it("labels each point as the legend names it: N/A, and TED's '-' as No CATH label", () => {
+    const labels = (annotation: string) =>
+      deriveStripPoints(
+        [],
+        [score('-', 0.1, null), score('__NA__', 0.2, null)],
+        annotation,
+      ).silhouette.map((point) => point.label);
+    expect(labels('ted_domains')).toEqual(['No CATH label', 'N/A']);
+    expect(labels('major_group')).toEqual(['-', 'N/A']);
   });
 
   it("spans Davies-Bouldin's domain over its points, [0, 1] with none", () => {

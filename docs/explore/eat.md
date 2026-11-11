@@ -30,7 +30,8 @@ A transfer run with `--max-distance` adds a fourth column, `COL__neighbor`, show
 
 Annotations carrying predictions are marked with an **EAT** badge in the [Color by menu](/explore/controls#color-by), beside the annotation's name. The badge appears only for columns that have at least one transferred value, so it doubles as the list of what is worth exploring. If no annotation carries the badge, the bundle has no predictions in it.
 
-![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge.png)
+![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge.png){.light-only}
+![The Color by menu of the three-finger toxins example, with the EAT badge beside toxin_class](./images/eat-annotation-badge-dark.png){.dark-only}
 
 This is not the **PRED** badge, which marks a whole column as computational based on its name. An **EAT** badge means the opposite: the column is curated, and only some of its cells were filled in. See [Predicted Annotations](/explore/legend#predicted-annotations).
 
@@ -84,7 +85,7 @@ The second section is a chart of the predictions by reliability: 20 bars, each 5
 
 Curated proteins are never affected. The range applies only to predictions.
 
-![Dragging the low end of the range to 50 % thins out the rings on the map and pales the chart's left bars; dragging the high end to 80 % pales the right bars too; Reset brings every prediction back](./images/eat-range-hide.gif)
+<DocsVideo name="eat-range-hide" alt="Dragging the low end of the range to 50 % thins out the rings on the map and pales the chart's left bars; dragging the high end to 80 % pales the right bars too; Reset brings every prediction back" width="1280" height="720" />
 
 ### Hide or Fade
 
@@ -97,7 +98,7 @@ Curated proteins are never affected. The range applies only to predictions.
 
 **Hide** is the default. Choose **Fade** to see where the weak predictions sit without losing them from the picture. Click the Fade chip to open the EAT panel. Its ✕ (**Stop fading EAT predictions**) resets the EAT panel, as **Reset** does.
 
-![With the range at 50–100 %, switching from Hide to Fade brings the weak predictions back as faint rings and swaps the Filtered chip for the EAT fade chip; switching back to Hide removes them again](./images/eat-range-fade.gif)
+<DocsVideo name="eat-range-fade" alt="With the range at 50–100 %, switching from Hide to Fade brings the weak predictions back as faint rings and swaps the Filtered chip for the EAT fade chip; switching back to Hide removes them again" width="1280" height="720" />
 
 Because Hide is a real filter, it interacts with everything else that responds to a filtered view. The plot's **Filtered** chip appears, and the [separation score](/explore/separation-scores) strips hide while it is on, since whole-dataset scores would contradict a narrowed view. Fade filters nothing, so the strips stay.
 
@@ -140,7 +141,7 @@ The panel is built for one loop: find the weakest predictions, look at each one,
 3. **Read the Selected protein strip** at the bottom of the panel.
 4. **Go to source** selects the protein the label was copied from, fits both on the map, and draws the dashed line between them, with a ring on the source.
 
-![Clicking the Ancestral / non-conventional label opens its five least reliable predictions; picking one zooms the map to it and shows the Selected protein strip; Go to source selects the source and draws the line between the two](./images/eat-check.gif)
+<DocsVideo name="eat-check" alt="Clicking the Ancestral / non-conventional label opens its five least reliable predictions; picking one zooms the map to it and shows the Selected protein strip; Go to source selects the source and draws the line between the two" width="1280" height="720" />
 
 Under each list, **Show 5 more** adds the next five in the list's order, and `Showing 10 of 212` says how many of them the list shows. **Select all 212 in range** selects every prediction in range behind that label or bar, and **Export IDs** downloads their IDs. Click the row or bar again, or press Escape, to close the list.
 
@@ -167,9 +168,11 @@ If the picked prediction is outside the range, the strip says so: `Hidden on the
 
 ## Telling Them Apart In The Plot
 
-A transferred protein is drawn as a **hollow ringed marker**: its shape and its colour are exactly those of the value it borrowed, but the interior is punched out, leaving a ring. Curated proteins stay solid.
+A transferred protein is drawn as a **hollow ringed marker**: its shape and its colour are exactly those of the value it borrowed, but the interior is punched out, leaving a ring. Curated proteins stay solid. The hole is see-through, so where markers overlap, the points underneath show through it.
 
-This means the two populations read as one distribution at a glance, since the colours match, while any individual point still declares which kind it is. The ring thickness scales with the marker, so from **Shape size** 10 up the hole stays open and the ring never thins to a hairline on large markers. Only at the smallest sizes, where a dot is a few pixels across, can the hole shrink below a pixel. Large datasets [default to such sizes](/explore/legend#default-dot-size), so raise the shape size there if the rings are hard to tell apart.
+This means the two populations read as one distribution at a glance, since the colours match, while any individual point still declares which kind it is. The ring is about an eighth of the marker's width (12%) and at least one screen pixel, as long as the marker is large enough to keep a hole, so it grows with the marker. On a high-density (2x) screen every shape keeps an open hole from **Shape size** 10 up, the plus included. On a standard-density screen the circle, square and triangles do too, but whether a small diamond or plus shows a hole depends on where the point lands: they need a shape size of about 32 to keep one everywhere. At the smallest sizes, where a dot is a few pixels across, both the ring and the hole can shrink below a pixel. Large datasets [default to such sizes](/explore/legend#default-dot-size), so raise the shape size there if the rings are hard to tell apart.
+
+When a selection, a focus or **Fade** draws rings faint, a dark theme draws them a little stronger than a light one (2.5 times the faded opacity, at most half opaque), since a faint thin ring all but disappears on a dark background. Exports always use the light setting.
 
 Hover a transferred protein and its tooltip carries a **Predicted (transferred)** block for the active annotation: the reliability as a percentage, a bar showing the same number, and the line `Reliability index · source <ID>` naming the reference protein the label was copied from.
 
@@ -190,7 +193,7 @@ Provenance is also drawable. With predictions shown and **Draw a line to the sou
 - **Click a transferred protein** and one dashed line joins it to its source, the protein whose label it borrowed for the currently active annotation.
 - **Click a source protein** and dashed lines fan out to every protein that borrowed from it.
 
-![Clicking a transferred toxin draws one dashed line to the reviewed toxin it borrowed its class from; clicking that source draws a line to every toxin that borrowed from it](./images/eat-connectors.gif)
+<DocsVideo name="eat-connectors" alt="Clicking a transferred toxin draws one dashed line to the reviewed toxin it borrowed its class from; clicking that source draws a line to every toxin that borrowed from it" width="1280" height="720" />
 
 A protein that is both a transferred protein and a source for others takes the first case: only its own source line is drawn. If that source's legend category is hidden, the click draws nothing at all.
 
@@ -215,7 +218,8 @@ The same button under a label's or a bar's list exports only that label's or bar
 
 In **Hide**, a narrowed range is an ordinary filter condition, so the [Filter panel](/explore/filter#reliability-and-the-filter) lists it. It shows as one locked row, because the EAT panel owns it:
 
-![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row.png)
+![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row.png){.light-only}
+![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row-dark.png){.dark-only}
 
 **Edit in EAT ›** opens the EAT panel (and colours by that annotation if you had switched away). The ✕ puts the range back to 0–100 %. Removing the whole filter, from the Filter panel or the plot's **Filtered** chip, does the same. The condition keeps curated proteins visible: they have no reliability, and the condition matches them on purpose.
 
@@ -227,11 +231,12 @@ The reliability columns are not in the Filter panel's annotation list or in Colo
 
 Below 951 px the panel is the **EAT** tab of the panel under the plot, beside **Legend** and **Filter**. It holds the same sections in a more compact form: a shorter chart, larger touch targets, and the Selected protein strip as one row, such as `○ V8N5J6 · reliability 26 % · from Q06ZW0`, with **Go to source**.
 
-<img src="./images/eat-phone.png" alt="ProtSpace on a phone with the EAT tab open under the plot: Show predictions, the How much is predicted bar and the start of the reliability section" width="224" height="456" />
+<img src="./images/eat-phone.png" class="light-only" alt="ProtSpace on a phone with the EAT tab open under the plot: Show predictions, the How much is predicted bar and the start of the reliability section" width="224" height="456" />
+<img src="./images/eat-phone-dark.png" class="dark-only" alt="ProtSpace on a phone with the EAT tab open under the plot: Show predictions, the How much is predicted bar and the start of the reliability section" width="224" height="456" loading="lazy" />
 
 ## What A Bundle Saves
 
-**Export… → Data bundle**, with **Include legend settings** checked, stores:
+**Export → Data bundle**, with **Include legend settings** checked, stores:
 
 - whether **Show predictions** is on;
 - the **low end of the range**;

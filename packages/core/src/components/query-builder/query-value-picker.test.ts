@@ -151,6 +151,19 @@ describe('query-value-picker', () => {
       expect(footer(el)).toBe('2 selected · 3 proteins');
     });
 
+    it("names TED's '-' and finds it by its words or by '-'", async () => {
+      const ted: ProtspaceData = {
+        protein_ids: ['P0', 'P1'],
+        annotations: { ted_domains: { kind: 'categorical', values: ['-', '3.40.50.300'] } },
+        annotation_data: { ted_domains: [[0], [1]] },
+      };
+      const el = await mount({ annotation: 'ted_domains', data: ted, matchedIndices: null });
+      expect(labels(el)).toContain('No CATH label');
+      expect(labels(el)).not.toContain('-');
+      expect(labels(await search(el, 'cath'))).toEqual(['No CATH label']);
+      expect(labels(await search(el, '-'))).toEqual(['No CATH label']);
+    });
+
     it('de-duplicates repeated raw values', async () => {
       const el = await mount({
         data: {
