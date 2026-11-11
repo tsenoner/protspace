@@ -12,7 +12,8 @@ import {
  * The icon buttons the docs' nav bar ends with: the theme button, the Feedback menu, then GitHub,
  * the order and the icons of Explore's app bar and the landing's header, so the three end on the
  * same line. Lucide's paths, drawn as the app draws them (16 px, stroke 1.75). In the phone menu
- * (`labelled`) each also shows its name, and Feedback lists its entries in place.
+ * (`labelled`) each also shows its name: Theme as a Light | Dark pair, and Feedback lists its
+ * entries in place.
  */
 const FEEDBACK_ICON = ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'] as const;
 const GITHUB_ICON = [
@@ -43,8 +44,7 @@ const MOON = ['M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'] as const;
 
 const ThemeButton = defineComponent({
   name: 'ThemeButton',
-  props: { labelled: Boolean },
-  setup(props) {
+  setup() {
     const { isDark } = useData();
     // The static HTML cannot know the mode: both icons render and CSS shows one (html.dark), and
     // the name waits for the mount, so the first client render matches the server's.
@@ -65,17 +65,53 @@ const ThemeButton = defineComponent({
           type: 'button',
           class: 'site-end-link site-theme-button',
           onClick: toggle,
-          ...(props.labelled ? {} : { 'aria-label': label, title: label }),
+          'aria-label': label,
+          title: label,
         },
-        [
-          icon(SUN, 4, 'site-theme-sun'),
-          icon(MOON, 0, 'site-theme-moon'),
-          props.labelled
-            ? h('span', mounted.value ? `Theme: ${THEME_LABELS[mode]}` : 'Theme')
-            : null,
-        ],
+        [icon(SUN, 4, 'site-theme-sun'), icon(MOON, 0, 'site-theme-moon')],
       );
     };
+  },
+});
+
+/**
+ * The phone menu's Theme row: Light and Dark as a pair, the mode on screen pressed, as Home's
+ * phone menu and Explore's More sheet have it. Picking the OS's own mode follows the system again
+ * (VitePress's isDark stores 'auto' then). Neither is pressed until the mount, when the mode is
+ * known.
+ */
+const ThemeChoice = defineComponent({
+  name: 'ThemeChoice',
+  setup() {
+    const { isDark } = useData();
+    const mounted = ref(false);
+    onMounted(() => (mounted.value = true));
+    return () =>
+      h('div', { class: 'site-theme-choice' }, [
+        h('span', { class: 'site-theme-choice-name', 'aria-hidden': 'true' }, [
+          icon(SUN, 4, 'site-theme-sun'),
+          icon(MOON, 0, 'site-theme-moon'),
+          'Theme',
+        ]),
+        h(
+          'div',
+          { role: 'group', 'aria-label': 'Theme', class: 'site-theme-segments' },
+          (['light', 'dark'] as const).map((value) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'site-theme-segment',
+                'aria-pressed': String(mounted.value && isDark.value === (value === 'dark')),
+                onClick: () => {
+                  isDark.value = value === 'dark';
+                },
+              },
+              THEME_LABELS[value],
+            ),
+          ),
+        ),
+      ]);
   },
 });
 
@@ -251,7 +287,7 @@ export const EndLinks = defineComponent({
   setup(props) {
     return () =>
       h('div', { class: ['site-end-links', { labelled: props.labelled }] }, [
-        h(ThemeButton, { labelled: props.labelled }),
+        props.labelled ? h(ThemeChoice) : h(ThemeButton),
         h(FeedbackMenu, { labelled: props.labelled }),
         h(GitHubLink, { labelled: props.labelled }),
       ]);

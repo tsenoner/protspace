@@ -82,9 +82,9 @@ flashes the other theme, and a choice made in another tab SHALL apply without a 
 
 Every page of the site SHALL follow the one stored theme choice: the landing page, the privacy
 page, the not-found page, /explore (also when reached through the GitHub Pages deep link
-`/?/explore`) and the docs. Each SHALL offer the Theme button in its top bar (Home's and the docs'
-phone menus as a row, the explore page's More sheet as a Light | Dark pair), and moving between
-them SHALL keep the mode.
+`/?/explore`) and the docs. Each SHALL offer the Theme button in its top bar (on a phone, Home's
+and the docs' menus and the explore page's More sheet as a Light | Dark pair with the mode on
+screen selected), and moving between them SHALL keep the mode.
 
 #### Scenario: Dark everywhere
 

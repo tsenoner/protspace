@@ -210,6 +210,55 @@ html:not(.dark) .site-theme-moon {
   color: var(--vp-c-brand-1);
 }
 
+/* The phone menu's Theme row: a Light | Dark pair, as on Home's phone menu. */
+.VPNavScreen .site-theme-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--vp-c-divider);
+  padding: 8px 0 7px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+  color: var(--vp-c-text-1);
+}
+
+.VPNavScreen .site-theme-choice-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.VPNavScreen .site-theme-segments {
+  display: flex;
+  padding: 2px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+}
+
+.VPNavScreen .site-theme-segment {
+  padding: 2px 12px;
+  border-radius: 4px;
+  color: var(--vp-c-text-2);
+  font-weight: 400;
+  transition: background-color 0.25s;
+}
+
+.VPNavScreen .site-theme-segment:hover {
+  background-color: var(--vp-c-default-soft);
+}
+
+.VPNavScreen .site-theme-segment[aria-pressed='true'] {
+  background-color: var(--vp-c-brand-3);
+  color: var(--vp-button-brand-text);
+}
+
+.VPNavScreen .site-theme-segment:focus-visible {
+  outline: 2px solid var(--ps-focus);
+  outline-offset: 1px;
+}
+
 /* The Feedback menu (theme/end-links.ts): the app's menu, drawn with the docs' variables. */
 .VPNav .site-feedback {
   position: relative;
