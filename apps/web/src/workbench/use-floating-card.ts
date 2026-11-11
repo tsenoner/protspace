@@ -73,9 +73,11 @@ export function useFloatingCard(
       });
 
     paint(rect);
-    // The window and the sidebar resize the plot area: keep the stored card inside it.
+    // The window and the sidebar resize the plot area: keep the stored card inside it. While arrow
+    // keys are down the painted rect is newer than the stored one, so it is the one kept inside.
+    // A new observer always reports once, and a key pressed before that report must not be undone.
     const observer = new ResizeObserver(() => {
-      if (!gesture) paint(clampFloatRect(stored, bounds()));
+      if (!gesture) paint(clampFloatRect(keyStart ? rect : stored, bounds()));
     });
     observer.observe(plot);
 
