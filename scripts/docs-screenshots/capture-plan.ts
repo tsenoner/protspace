@@ -8,8 +8,19 @@ import type { Locator, Page } from '@playwright/test';
 import type { LayoutState } from '../../apps/web/src/explore/layout-defaults';
 
 export type Theme = 'light' | 'dark';
-export type CaptureKind = 'png' | 'gif';
+/** A screenshot, or an animation recorded as a looping video. */
+export type CaptureKind = 'png' | 'video';
 export type ViewportName = 'desktop' | 'tablet' | 'phone';
+
+/** Every entry is captured in both, light first: the docs show the one matching their mode. */
+export const THEMES: readonly Theme[] = ['light', 'dark'];
+
+/**
+ * A video's files, in the order a page's `<video>` lists them: VP9 WebM first, H.264 MP4 for
+ * browsers without VP9, and the JPEG poster (the scene's first frame), which shows before the
+ * video plays and instead of it under reduced motion.
+ */
+export const VIDEO_FILES = ['webm', 'mp4', 'jpg'] as const;
 
 /** A rectangle of the page, in CSS pixels from the viewport's top left. */
 export interface Clip {
@@ -21,7 +32,7 @@ export interface Clip {
 
 /**
  * What a scene's `setup` and `steps` act through. In a screenshot, `hold` and `label` resolve at
- * once and the pointer and keys act without overlays; in a GIF, `hold` paces the recording and
+ * once and the pointer and keys act without overlays; in a video, `hold` paces the recording and
  * every action shows its overlay.
  */
 export interface CaptureApi {
@@ -39,72 +50,89 @@ export interface CaptureApi {
   label(text: string): Promise<void>;
 }
 
-/** One docs image: what to open, what to do, what to shoot, and the pages that show it. */
+/** One docs image or video: what to open, what to do, what to shoot, and the pages that show it. */
 export interface CaptureEntry {
   /** File stem under docs/explore/images/, lowercase kebab-case, optionally under `examples/`. */
   name: string;
   kind: CaptureKind;
   viewport: ViewportName | { width: number; height: number };
-  /** Default `['light']`; `'dark'` adds `<name>-dark.png` (screenshots only). */
-  themes?: readonly Theme[];
   /** Device scale of a desktop screenshot; default 2. */
   scale?: 1 | 2;
   /** An example's catalog id, opened by its `?dataset=` link; default the startup demo. */
   dataset?: string;
   /** Stored before the page loads, over the default layout. */
   layout?: Partial<LayoutState>;
-  /** Brings the page to the scene's start; a GIF is trimmed to start where it ends. */
+  /** Brings the page to the scene's start; a video is trimmed to start where it ends. */
   setup?: (page: Page, cap: CaptureApi) => Promise<void>;
   /** The scene: the state to shoot, or the actions to record. */
   steps?: (page: Page, cap: CaptureApi) => Promise<void>;
-  /** What to shoot; default the viewport. */
+  /** What to shoot; default the viewport. Screenshots only: a video records the viewport. */
   target?: (page: Page) => Locator | Promise<Locator | Clip>;
   /** Leave the pointer where the steps put it (a hover state), instead of parking it. */
   keepPointer?: boolean;
   /** The test's timeout; default 90 s. */
   timeoutMs?: number;
-  /** A GIF's size limit; default `DEFAULT_GIF_BUDGET`. */
+  /** A video's size limit, for its WebM and its MP4 each; default `DEFAULT_VIDEO_BUDGET`. */
   budgetBytes?: number;
-  /** Where a GIF's fps and width ladder starts. */
-  gif?: { fps?: number; width?: number };
   /** The docs pages that show the image, relative to docs/, e.g. 'explore/index.md'. */
   docs: readonly string[];
 }
 
 export const DESKTOP_VIEWPORT = { width: 1280, height: 720 };
 export const TABLET_VIEWPORT = { width: 800, height: 1280 };
-/** 3 MiB. */
-export const DEFAULT_GIF_BUDGET = 3 * 1024 * 1024;
+/** Playwright's Pixel 7, which the runner emulates for `phone`. */
+export const PHONE_VIEWPORT = { width: 412, height: 839 };
+/** 1.5 MiB, per encoding. */
+export const DEFAULT_VIDEO_BUDGET = 1.5 * 1024 * 1024;
 
-/** An entry's output file for one theme: `x.png`, `x-dark.png`, `examples/demo.png`, `zoom.gif`. */
-export function outputFile(name: string, kind: CaptureKind, theme: Theme): string {
-  return `${name}${theme === 'dark' ? '-dark' : ''}.${kind}`;
+/** An entry's file stem for one theme: `x`, `x-dark`, `examples/demo-dark`. */
+export function variantStem(name: string, theme: Theme): string {
+  return theme === 'dark' ? `${name}-dark` : name;
 }
 
-/** One output file of an entry. */
+/**
+ * An entry's output files for one theme: `x.png`, `x-dark.png`, `examples/demo.png`;
+ * `zoom.webm`, `zoom.mp4`, `zoom.jpg`.
+ */
+export function outputFiles(name: string, kind: CaptureKind, theme: Theme): string[] {
+  const stem = variantStem(name, theme);
+  return kind === 'png' ? [`${stem}.png`] : VIDEO_FILES.map((extension) => `${stem}.${extension}`);
+}
+
+/** One theme of an entry: its stem, its files, and the title of the test that captures it. */
 export interface CaptureVariant {
   entry: CaptureEntry;
   theme: Theme;
-  file: string;
+  stem: string;
+  files: string[];
+  /** The first file, so `-g "<name>"` captures both themes and `-g "<name>-dark"` the dark one. */
+  title: string;
 }
 
-const THEME_ORDER: readonly Theme[] = ['light', 'dark'];
-
-/** Every output file, in manifest order, light before dark; only those of `kind` when given. */
+/** Every variant, in manifest order, light before dark; only those of `kind` when given. */
 export function captureVariants(
   entries: readonly CaptureEntry[],
   kind?: CaptureKind,
 ): CaptureVariant[] {
   return entries
     .filter((entry) => kind === undefined || entry.kind === kind)
-    .flatMap((entry) => {
-      const themes = entry.themes ?? ['light'];
-      return THEME_ORDER.filter((theme) => themes.includes(theme)).map((theme) => ({
-        entry,
-        theme,
-        file: outputFile(entry.name, entry.kind, theme),
-      }));
-    });
+    .flatMap((entry) =>
+      THEMES.map((theme) => {
+        const files = outputFiles(entry.name, entry.kind, theme);
+        return { entry, theme, stem: variantStem(entry.name, theme), files, title: files[0] };
+      }),
+    );
+}
+
+/** A viewport's size in CSS pixels. */
+export function viewportSize(viewport: CaptureEntry['viewport']): {
+  width: number;
+  height: number;
+} {
+  if (typeof viewport === 'object') return viewport;
+  if (viewport === 'desktop') return DESKTOP_VIEWPORT;
+  if (viewport === 'tablet') return TABLET_VIEWPORT;
+  return PHONE_VIEWPORT;
 }
 
 const NAME = /^(examples\/)?[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -118,17 +146,25 @@ export function validateManifest(entries: readonly CaptureEntry[]): string[] {
     if (seen.has(entry.name)) problems.push(`${at}: the name is used twice`);
     seen.add(entry.name);
     if (/\.[a-z0-9]+$/i.test(entry.name)) {
-      problems.push(`${at}: the name has an extension; the runner adds .png or .gif`);
+      problems.push(`${at}: the name has an extension; the runner adds it`);
     } else if (!NAME.test(entry.name)) {
       problems.push(`${at}: the name is not lowercase kebab-case (optionally under examples/)`);
     } else if (entry.name.endsWith('-dark')) {
-      problems.push(`${at}: a name ending in -dark is the dark variant's; use themes instead`);
+      problems.push(`${at}: a name ending in -dark is the dark variant's; every entry gets one`);
     }
-    if (entry.kind === 'gif' && entry.themes?.includes('dark')) {
-      problems.push(`${at}: a GIF is light only; show the dark theme in a screenshot`);
+    if (entry.kind === 'png' && entry.budgetBytes !== undefined) {
+      problems.push(`${at}: budgetBytes applies to videos only`);
     }
-    if (entry.kind === 'png' && (entry.budgetBytes !== undefined || entry.gif !== undefined)) {
-      problems.push(`${at}: budgetBytes and gif apply to GIFs only`);
+    if (entry.kind === 'video') {
+      if (entry.target !== undefined) {
+        problems.push(`${at}: a video records the whole viewport; target applies to screenshots`);
+      }
+      const { width, height } = viewportSize(entry.viewport);
+      if (width % 2 !== 0 || height % 2 !== 0) {
+        problems.push(
+          `${at}: a video's viewport needs an even width and height (${width}×${height})`,
+        );
+      }
     }
     if (entry.scale !== undefined && (entry.kind !== 'png' || entry.viewport !== 'desktop')) {
       problems.push(`${at}: scale applies to desktop screenshots only`);
@@ -143,46 +179,14 @@ export function validateManifest(entries: readonly CaptureEntry[]): string[] {
   return problems;
 }
 
-/** A GIF's frame rate and width in pixels. */
-export interface GifSettings {
-  fps: number;
-  width: number;
-}
-
 /**
- * Where a GIF's ladder starts unless its entry says otherwise. Playwright records video at a fixed
- * 25 fps, so a higher rate would only repeat frames.
+ * What the runner writes beside a video's recording (`temp-videos/<stem>.json`) for `video.ts`:
+ * where the scene starts in the recording, the size limit and the frame size.
  */
-export const GIF_START: GifSettings = { fps: 25, width: 1000 };
-
-const LADDER_FPS = [20, 15];
-const LADDER_WIDTHS = [800, 640];
-
-/**
- * The settings a GIF is converted at, in order, until one fits its budget: the start, then each
- * lower frame rate of 20 and 15, then each narrower width of 800 and 640 at the last rate.
- * `gifLadder()` is 25/1000, 20/1000, 15/1000, 15/800, 15/640.
- */
-export function gifLadder(start: Partial<GifSettings> = {}): GifSettings[] {
-  const first = { ...GIF_START, ...start };
-  const ladder = [first];
-  for (const fps of LADDER_FPS) {
-    if (fps < first.fps) ladder.push({ fps, width: first.width });
-  }
-  const { fps } = ladder[ladder.length - 1];
-  for (const width of LADDER_WIDTHS) {
-    if (width < first.width) ladder.push({ fps, width });
-  }
-  return ladder;
-}
-
-/**
- * What the runner writes beside a GIF's recording (`temp-videos/<name>.json`) for `gif.ts`: where
- * the scene starts in the video, the size limit and the ladder's first rung.
- */
-export interface GifSidecar {
-  name: string;
+export interface VideoSidecar {
+  stem: string;
   trimStartMs: number;
   budgetBytes: number;
-  start: GifSettings;
+  width: number;
+  height: number;
 }

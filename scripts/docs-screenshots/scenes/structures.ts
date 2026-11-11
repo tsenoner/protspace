@@ -40,7 +40,6 @@ export const STRUCTURE_CAPTURES: CaptureEntry[] = [
     name: 'structure-floating',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     // Floating from the start, so Mol* draws its one model in the card's own box: popping out
     // after the load would resize a drawn canvas, with no signal for its redraw.
     layout: { structurePlacement: 'floating' },

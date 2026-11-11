@@ -148,7 +148,8 @@ into **More**.
 
 Switch between the projections your bundle carries:
 
-![The Projection menu open under its button, listing the bundle's projections with the current one checked](./images/projection-menu.png)
+![The Projection menu open under its button, listing the bundle's projections with the current one checked](./images/projection-menu.png){.light-only}
+![The Projection menu open under its button, listing the bundle's projections with the current one checked](./images/projection-menu-dark.png){.dark-only}
 
 | Method       | Best For                           |
 | ------------ | ---------------------------------- |

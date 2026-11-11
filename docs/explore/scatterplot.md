@@ -20,7 +20,7 @@ The scatterplot is the main visualization area where proteins appear as points. 
 
 ## Navigation
 
-![Zooming and panning](./images/zoom.gif)
+<DocsVideo name="zoom" alt="Zooming in on a cluster with the scroll wheel, dragging to pan, then zooming back out" width="1280" height="720" />
 
 - **Zoom**: Scroll wheel or pinch gesture
 - **Pan**: Drag the background while **Move and zoom** is the active tool

@@ -1,6 +1,6 @@
 /**
- * Captures for docs/explore/figure-editor.md: the editor whole (light and dark: its chrome follows
- * the theme, its preview stays light), the presets grid, and the preview with overlays and with a
+ * Captures for docs/explore/figure-editor.md: the editor whole (its chrome follows the theme, its
+ * preview stays light), the presets grid, and the preview with overlays and with a
  * zoom inset, drawn with the editor's own tools.
  */
 import { expect, type Locator, type Page } from '@playwright/test';
@@ -111,7 +111,6 @@ export const FIGURE_EDITOR_CAPTURES: CaptureEntry[] = [
     name: 'figure-editor-overview',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     docs: ['explore/figure-editor.md'],
     setup: async (page) => {
       await openFigureEditor(page);

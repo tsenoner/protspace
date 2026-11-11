@@ -1,7 +1,7 @@
 /**
  * The overview's "Phones and tablets" captures on an emulated Pixel 7: the phone layout, the More
- * sheet and the structure sheet (light and dark), and the tablet layout (light). The structure
- * loads the real Mol* and AlphaFold, so these need network.
+ * sheet and the structure sheet, and the tablet layout. The structure loads the real Mol* and
+ * AlphaFold, so these need network.
  */
 import { expect, type Page } from '@playwright/test';
 import type { CaptureEntry } from '../capture-plan';
@@ -59,7 +59,6 @@ export const PHONE_CAPTURES: CaptureEntry[] = [
     name: 'phone-layout',
     kind: 'png',
     viewport: 'phone',
-    themes: ['light', 'dark'],
     steps: phoneLayoutSteps,
     docs: ['explore/index.md'],
   },
@@ -67,7 +66,6 @@ export const PHONE_CAPTURES: CaptureEntry[] = [
     name: 'phone-more-sheet',
     kind: 'png',
     viewport: 'phone',
-    themes: ['light', 'dark'],
     steps: moreSheetSteps,
     docs: ['explore/index.md'],
   },
@@ -75,7 +73,6 @@ export const PHONE_CAPTURES: CaptureEntry[] = [
     name: 'phone-structure-sheet',
     kind: 'png',
     viewport: 'phone',
-    themes: ['light', 'dark'],
     steps: structureSheetSteps,
     timeoutMs: 150_000,
     docs: ['explore/index.md'],

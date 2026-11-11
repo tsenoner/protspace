@@ -34,6 +34,7 @@ import {
 } from '../../apps/web/src/explore/example-datasets.ts';
 import { EXAMPLE_MANIFEST } from '../../apps/web/src/explore/example-manifest.ts';
 import { exampleServedPath } from '../../apps/web/src/explore/example-served-path.ts';
+import { AWAITING_RECAPTURE } from '../../scripts/docs-screenshots/awaiting-recapture.ts';
 import { repoFileProblem } from '../../scripts/examples/pinned.ts';
 import { EXAMPLE_DETAILS, NO_BIOCENTRAL, type ExampleDetails } from './example-details.ts';
 import { MACHINE_PATH } from './machine-path.ts';
@@ -88,7 +89,13 @@ interface Card {
 
 const code = (name: string) => `\`${name}\``;
 const count = (n: number) => n.toLocaleString('en-US');
-const thumbnailPath = (id: string) => join(THUMBNAIL_DIR, `${id}.png`);
+const thumbnailPath = (id: string, dark = false) =>
+  join(THUMBNAIL_DIR, `${id}${dark ? '-dark' : ''}.png`);
+/**
+ * A thumbnail still awaiting its recapture in both themes (scripts/docs-screenshots/
+ * awaiting-recapture.ts): the page shows its light one alone until then.
+ */
+const lightOnly = (id: string) => AWAITING_RECAPTURE.includes(`examples/${id}.png`);
 
 /** "a", "a and b", "a, b and c". */
 function list(items: readonly string[]): string {
@@ -144,9 +151,11 @@ function validate(): string[] {
         `"${id}" is not one of the paper's datasets: say what it was built to show (builtToShow).`,
       );
     }
-    if (!existsSync(thumbnailPath(id))) {
+    for (const dark of lightOnly(id) ? [false] : [false, true]) {
+      if (existsSync(thumbnailPath(id, dark))) continue;
+      const file = `examples/${id}${dark ? '-dark' : ''}.png`;
       errors.push(
-        `"${id}": docs/explore/images/examples/${id}.png is missing; capture it with \`pnpm docs:screenshots -g "examples/${id}.png"\`.`,
+        `"${id}": docs/explore/images/${file} is missing; capture it with \`pnpm docs:screenshots -g "examples/${id}"\`.`,
       );
     }
 
@@ -308,7 +317,10 @@ const downloadHref = (record: BundleRecord) => `/${exampleServedPath(record)}`;
 function renderCard({ entry, details, record }: Card): string[] {
   const { id } = entry;
   const lines = [`## ${details.title} {#${id}}`, ''];
-  lines.push(`![${details.title}: ${entry.insight}](./images/examples/${id}.png)`, '');
+  const alt = `${details.title}: ${entry.insight}`;
+  lines.push(`![${alt}](./images/examples/${id}.png)${lightOnly(id) ? '' : '{.light-only}'}`);
+  if (!lightOnly(id)) lines.push(`![${alt}](./images/examples/${id}-dark.png){.dark-only}`);
+  lines.push('');
   lines.push(`_${details.tagline}_`, '', `**${entry.insight}**`, '');
   lines.push(`${details.lookAt} ${details.tryNext}`, '');
 

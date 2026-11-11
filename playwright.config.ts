@@ -2,9 +2,15 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * The docs media captures in scripts/docs-screenshots/ (`pnpm docs:screenshots` for the PNGs,
- * `pnpm docs:animations` for the GIF recordings, which `pnpm docs:gifs` converts): the runner
- * turns each manifest entry into one test per output file, and docs/explore/images/README.md
- * describes the pipeline.
+ * `pnpm docs:animations` for the video recordings, which `pnpm docs:videos` encodes): the runner
+ * turns each manifest entry into one test per theme, and docs/explore/images/README.md describes
+ * the pipeline.
+ *
+ * Every capture runs headless, so nothing takes focus. Screenshots use the installed Google Chrome
+ * (`channel: 'chrome'`), whose headless mode still draws WebGL on the system GPU. Videos use
+ * Playwright's headless Chromium: Chrome's headless mode on macOS records only the top 632 px of a
+ * 720 px viewport (its screencast leaves room for a toolbar it does not draw), the headless shell
+ * records all of it. CI, which never captures docs media, would use the headless shell for both.
  *
  * It starts its own dev server on DOCS_CAPTURE_PORT (default 8096), with this checkout's packages
  * built first and without VITE_STARTUP_DATASET_URL, so the captures show the product demo, never
@@ -31,8 +37,7 @@ export default defineConfig({
     baseURL: BASE_URL,
     // The runner shoots each image itself.
     screenshot: 'off',
-    // Headed on macOS for the system GPU's WebGL; CI runs headless on SwiftShader.
-    headless: !!process.env.CI,
+    headless: true,
     // The docs are English: numbers read 3.6, not the capturing machine's 3,6.
     locale: 'en-US',
   },
@@ -53,16 +58,20 @@ export default defineConfig({
 
   projects: [
     {
-      // Screenshots: one test per PNG in the manifest (runner.ts sets each one's device).
+      // Screenshots: one test per PNG and theme (runner.ts sets each one's device).
       name: 'docs-png',
-      use: { ...devices['Desktop Chrome'], video: 'off' },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(!process.env.CI && { channel: 'chrome' }),
+        video: 'off',
+      },
       testMatch: /capture-png\.spec\.ts$/,
     },
     {
-      // GIFs: one test per GIF in the manifest; runner.ts records each in a context of its own.
-      name: 'docs-gif',
+      // Videos: one test per video and theme; runner.ts records each in a context of its own.
+      name: 'docs-video',
       use: { ...devices['Desktop Chrome'] },
-      testMatch: /capture-gif\.spec\.ts$/,
+      testMatch: /capture-video\.spec\.ts$/,
     },
   ],
 

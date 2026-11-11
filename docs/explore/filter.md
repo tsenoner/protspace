@@ -89,7 +89,8 @@ these?**:
 - **Use "or" for all** (or "and") uses the same joiner for the whole list.
 - **Cancel** keeps the joiner as it was.
 
-![A group card, Any of these, holding two Protein family cards joined by or, then and, then a Sequence length card](./images/filter-group.png)
+![A group card, Any of these, holding two Protein family cards joined by or, then and, then a Sequence length card](./images/filter-group.png){.light-only}
+![A group card, Any of these, holding two Protein family cards joined by or, then and, then a Sequence length card](./images/filter-group-dark.png){.dark-only}
 
 A group is a card of its own, named **Any of these** (joined by or) or **All of these** (joined by
 and), or **Group** when its cards are joined in different ways or one has **and not**.

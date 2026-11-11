@@ -1,3 +1,3 @@
 import { registerCaptures } from './runner';
 
-registerCaptures('gif');
+registerCaptures('video');

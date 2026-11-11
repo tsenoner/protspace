@@ -23,7 +23,7 @@ import type { CaptureApi, CaptureEntry } from '../capture-plan';
 
 const DATASET = 'three-finger-toxins';
 const ANNOTATION = 'toxin_class';
-/** The label the checking GIF opens: most of its members are predicted. */
+/** The label the checking video opens: most of its members are predicted. */
 const CHECKED_LABEL = 'Ancestral / non-conventional';
 /**
  * How far both clicked proteins stand from every other one. The workbench's 1280×720 plot packs
@@ -31,11 +31,11 @@ const CHECKED_LABEL = 'Ancestral / non-conventional';
  * connector counts fail the capture if it picks a neighbour.
  */
 const CLEARANCE_PX = 2;
-/** Wheel steps of the connectors GIF's zoom, before its recording starts. */
+/** Wheel steps of the connectors video's zoom, before its recording starts. */
 const ZOOM_STEPS = 12;
 
 type Pair = Awaited<ReturnType<typeof provenancePair>>;
-/** The connectors GIF's pair per page: picked in setup, before the zoom, and clicked in steps. */
+/** The connectors video's pair per page: picked in setup, before the zoom, and clicked in steps. */
 const pairs = new WeakMap<Page, Pair>();
 
 const connectors = (page: Page): Locator =>
@@ -110,7 +110,6 @@ export const EAT_CAPTURES: CaptureEntry[] = [
     name: 'eat-panel',
     kind: 'png',
     viewport: { width: 1280, height: 1130 },
-    themes: ['light', 'dark'],
     dataset: DATASET,
     layout: { panel: 'eat', structureHidden: true },
     docs: ['explore/eat.md'],
@@ -149,7 +148,7 @@ export const EAT_CAPTURES: CaptureEntry[] = [
   },
   {
     name: 'eat-range-hide',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     dataset: DATASET,
     layout: { panel: 'eat' },
@@ -186,7 +185,7 @@ export const EAT_CAPTURES: CaptureEntry[] = [
   },
   {
     name: 'eat-range-fade',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     dataset: DATASET,
     layout: { panel: 'eat' },
@@ -214,7 +213,7 @@ export const EAT_CAPTURES: CaptureEntry[] = [
   },
   {
     name: 'eat-check',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     dataset: DATASET,
     layout: { panel: 'eat' },
@@ -245,7 +244,7 @@ export const EAT_CAPTURES: CaptureEntry[] = [
   },
   {
     name: 'eat-connectors',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     dataset: DATASET,
     timeoutMs: 120_000,
