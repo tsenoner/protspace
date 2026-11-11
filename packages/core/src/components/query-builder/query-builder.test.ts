@@ -461,7 +461,10 @@ describe('query-builder embedded in a host', () => {
     const group = builder.shadowRoot!.querySelector('.group-container')!;
 
     expect(group.querySelector('.add-group-condition')).not.toBeNull();
-    expect(group.querySelector('.add-group')).toBeNull();
+    // The panel's own Add group, below the cards, is the only one, and it sits outside the group.
+    const addGroups = builder.shadowRoot!.querySelectorAll('.add-group');
+    expect(addGroups).toHaveLength(1);
+    expect(group.contains(addGroups[0])).toBe(false);
   });
 
   it('embedded leaves Escape to the host', async () => {
