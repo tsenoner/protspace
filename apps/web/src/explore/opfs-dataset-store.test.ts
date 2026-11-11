@@ -97,7 +97,7 @@ class MockDirectoryHandle {
       return;
     }
 
-    throw new Error(`Entry not found: ${name}`);
+    throw new DOMException(`Entry not found: ${name}`, 'NotFoundError');
   }
 
   hasDirectory(name: string) {
@@ -441,5 +441,21 @@ describe('removeLastImportedFile', () => {
   it('has nothing to keep when nothing is stored', async () => {
     stubNavigator(new MockDirectoryHandle());
     await expect(removeLastImportedFile('2000-01-01T00:00:00.000Z')).resolves.toBe(true);
+  });
+
+  it('rejects when the stored copy could not be removed, and keeps it', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['x'], 'mine.parquetbundle')).commit();
+    const { storedAt } = (await readStoredImportSummary())!;
+    // A copy still being written holds the store's directory.
+    vi.spyOn(root, 'removeEntry').mockRejectedValueOnce(
+      new DOMException('The entry is in use', 'NoModificationAllowedError'),
+    );
+
+    await expect(removeLastImportedFile(storedAt)).rejects.toMatchObject({
+      name: 'NoModificationAllowedError',
+    });
+    expect((await readStoredImportSummary())?.name).toBe('mine.parquetbundle');
   });
 });
