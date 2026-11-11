@@ -261,6 +261,28 @@ describe('the Import menu', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it('a second remove while the first is still asking does nothing', async () => {
+    let answer: (yes: boolean) => void = () => {};
+    const { importMenu, confirmRemove, removeLastFile, success } = bind({
+      confirmRemove: () => new Promise<boolean>((resolve) => (answer = resolve)),
+    });
+    await vi.waitFor(() => expect(importMenu.lastFile).not.toBeNull());
+    const remove = () =>
+      importMenu.dispatchEvent(
+        new CustomEvent('remove-last-file', {
+          detail: { name: STORED.name, storedAt: STORED.storedAt },
+        }),
+      );
+
+    remove();
+    remove();
+    answer(true);
+
+    await vi.waitFor(() => expect(success).toHaveBeenCalledOnce());
+    expect(confirmRemove).toHaveBeenCalledOnce();
+    expect(removeLastFile).toHaveBeenCalledOnce();
+  });
+
   it('a cancelled remove keeps the stored copy', async () => {
     const { importMenu, removeLastFile, success } = bind({ confirmRemove: async () => false });
     await vi.waitFor(() => expect(importMenu.lastFile).not.toBeNull());

@@ -92,20 +92,28 @@ export function bindImportMenu({
   };
 
   // The legend settings saved for the file stay: re-importing it brings them back.
+  // One removal at a time: a second Delete while the first confirm or removal runs does nothing.
+  let removing = false;
   const removeStoredFile = async (name: string, storedAt: string): Promise<void> => {
-    if (!(await confirmRemove(name))) return;
-    let removed: boolean;
+    if (removing) return;
+    removing = true;
     try {
-      removed = await removeLastFile(storedAt);
-    } catch (error) {
-      console.error('Removing the stored file failed:', error);
-      warn(STORED_FILE_NOT_REMOVED);
+      if (!(await confirmRemove(name))) return;
+      let removed: boolean;
+      try {
+        removed = await removeLastFile(storedAt);
+      } catch (error) {
+        console.error('Removing the stored file failed:', error);
+        warn(STORED_FILE_NOT_REMOVED);
+        await refreshLastFile();
+        return;
+      }
       await refreshLastFile();
-      return;
+      if (removed) success(getLastFileRemovedNotification(name).title);
+      else warn(getLastFileReplacedNotification(name).title);
+    } finally {
+      removing = false;
     }
-    await refreshLastFile();
-    if (removed) success(getLastFileRemovedNotification(name).title);
-    else warn(getLastFileReplacedNotification(name).title);
   };
 
   const reopenLastFile = async (): Promise<void> => {

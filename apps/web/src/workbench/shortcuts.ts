@@ -82,6 +82,10 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     ],
   },
   {
+    title: 'Import menu',
+    items: [{ keys: ['Delete'], action: 'Remove the focused Last file from this browser' }],
+  },
+  {
     title: 'Figure editor',
     items: [
       { keys: ['Delete'], action: 'Remove the selected overlay or inset' },
