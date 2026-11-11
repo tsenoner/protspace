@@ -1,4 +1,5 @@
 import { toast } from '../components/ui/sonner';
+import { SUPPORT_EMAIL } from './support';
 
 /** A toast button: it opens a link, or runs a callback. Either way it dismisses the toast. */
 type NotifyAction =
@@ -187,6 +188,12 @@ export const notify = {
     };
   },
 };
+
+/** A copy of the support address's outcome, as a toast: runFeedbackAction's `onCopied`. */
+export function notifyCopied(copied: boolean): void {
+  if (copied) notify.success({ title: `Copied ${SUPPORT_EMAIL}` });
+  else notify.error({ title: 'Could not copy to clipboard', description: SUPPORT_EMAIL });
+}
 
 export function resetNotifyStateForTests(): void {
   recentNotifications.clear();

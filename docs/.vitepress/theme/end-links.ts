@@ -7,6 +7,12 @@ import {
   SUPPORT_EMAIL,
   type FeedbackAction,
 } from '../../../apps/web/src/lib/support';
+import { handleMenuKey, isOutsidePress } from '../../../apps/web/src/lib/menu-keys';
+import {
+  THEME_MODE_LABELS,
+  THEME_MODES,
+  themeButtonLabel,
+} from '../../../apps/web/src/explore/theme-defaults';
 
 /**
  * The icon buttons the docs' nav bar ends with: the theme button, the Feedback menu, then GitHub,
@@ -28,7 +34,6 @@ const GITHUB_ICON = [
  * under the key the app shares (config/theme.ts), and stores 'auto' when the pick matches the OS,
  * so a press back to the OS's mode follows the system again, as in the app.
  */
-const THEME_LABELS = { light: 'Light', dark: 'Dark' } as const;
 /** Lucide's sun and moon, as Explore's kit draws them. */
 const SUN = [
   'M12 2v2',
@@ -54,11 +59,7 @@ const ThemeButton = defineComponent({
       isDark.value = !isDark.value;
     };
     return () => {
-      const mode = isDark.value ? 'dark' : 'light';
-      const other = isDark.value ? 'light' : 'dark';
-      const label = mounted.value
-        ? `Theme: ${THEME_LABELS[mode]}. Switch to ${THEME_LABELS[other]}`
-        : 'Theme';
+      const label = mounted.value ? themeButtonLabel(isDark.value ? 'dark' : 'light') : 'Theme';
       return h(
         'button',
         {
@@ -96,7 +97,7 @@ const ThemeChoice = defineComponent({
         h(
           'div',
           { role: 'group', 'aria-label': 'Theme', class: 'site-theme-segments' },
-          (['light', 'dark'] as const).map((value) =>
+          THEME_MODES.map((value) =>
             h(
               'button',
               {
@@ -107,7 +108,7 @@ const ThemeChoice = defineComponent({
                   isDark.value = value === 'dark';
                 },
               },
-              THEME_LABELS[value],
+              THEME_MODE_LABELS[value],
             ),
           ),
         ),
@@ -169,8 +170,7 @@ const FeedbackMenu = defineComponent({
     ];
 
     const onOutside = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!menu.value?.contains(target) && !button.value?.contains(target)) open.value = false;
+      if (isOutsidePress(event, menu.value, button.value)) open.value = false;
     };
     onMounted(() => document.addEventListener('pointerdown', onOutside));
     onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside));
@@ -185,21 +185,8 @@ const FeedbackMenu = defineComponent({
       if (action !== 'copy') open.value = false;
       runFeedbackAction(action, show);
     };
-    const onKey = (event: KeyboardEvent) => {
-      const items = entries();
-      const at = items.indexOf(document.activeElement as HTMLElement);
-      const move = (index: number) => items[(index + items.length) % items.length]?.focus();
-      if (event.key === 'ArrowDown') move(at + 1);
-      else if (event.key === 'ArrowUp') move(at - 1);
-      else if (event.key === 'Home') move(0);
-      else if (event.key === 'End') move(items.length - 1);
-      else if (event.key === 'Escape') {
-        open.value = false;
-        button.value?.focus();
-      } else if (event.key === 'Tab') open.value = false;
-      else return;
-      if (event.key !== 'Tab') event.preventDefault();
-    };
+    const onKey = (event: KeyboardEvent) =>
+      handleMenuKey(event, entries(), () => (open.value = false), button.value);
 
     const entryLabel = (value: FeedbackAction, label: string) =>
       value === 'copy' && note.value ? note.value : label;

@@ -1,13 +1,10 @@
 import { Moon, Sun } from 'lucide-react';
-import { useState } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { THEME_MODE_LABELS, themeButtonLabel, type ThemeMode } from '@/explore/theme-defaults';
-import { getResolvedTheme, setThemeMode, toggleThemeMode } from '@/explore/theme-state';
+import { THEME_MODE_LABELS, THEME_MODES } from '@/explore/theme-defaults';
+import { setThemeMode } from '@/explore/theme-state';
+import { ICON } from '@/lib/icon';
 import { cn } from '@/lib/utils';
-import { useResolvedTheme } from '@/workbench/use-theme';
-
-/** A 16 px icon at the kit's stroke, as in Explore's app bar; decorative. */
-const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
+import { useResolvedTheme, useThemeToggle } from '@/workbench/use-theme';
 
 /**
  * Home's theme button, Explore's twin (workbench/ThemeToggle.tsx) in React: it flips between light
@@ -15,13 +12,7 @@ const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
  * Its icon is the mode on screen; a press also announces the new mode.
  */
 export function SiteThemeToggle({ className }: { className: string }) {
-  const mode = useResolvedTheme();
-  const [announcement, setAnnouncement] = useState('');
-  const label = themeButtonLabel(mode);
-  const toggle = () => {
-    toggleThemeMode();
-    setAnnouncement(`Theme: ${THEME_MODE_LABELS[getResolvedTheme()]}`);
-  };
+  const { mode, label, announcement, toggle } = useThemeToggle();
 
   return (
     <>
@@ -46,7 +37,6 @@ export function SiteThemeToggle({ className }: { className: string }) {
  */
 export function SiteThemeChoice({ className }: { className?: string }) {
   const mode = useResolvedTheme();
-  const modes: ThemeMode[] = ['light', 'dark'];
   return (
     <div className={cn('flex items-center justify-between gap-4', className)}>
       <span className="flex items-center gap-2" aria-hidden="true">
@@ -54,7 +44,7 @@ export function SiteThemeChoice({ className }: { className?: string }) {
         Theme
       </span>
       <div role="group" aria-label="Theme" className="flex rounded-md border p-0.5">
-        {modes.map((value) => (
+        {THEME_MODES.map((value) => (
           <button
             key={value}
             type="button"

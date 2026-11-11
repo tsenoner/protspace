@@ -704,29 +704,24 @@
   }
 }
 
-/* A narrow tablet (below 800 px, AppBar.tsx's data-search-folded): search folds into the phone's
-   search button just before the actions, and opens over the whole bar as on a phone. The start
-   takes what is left, so the dataset name ends in an ellipsis before anything overlaps. */
-.workbench[data-layout='tablet'] header[data-search-folded] {
-  position: relative;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-}
-
-.workbench[data-layout='tablet'] header[data-search-folded] .wb-search-toggle {
-  display: inline-flex;
-}
-
-.workbench[data-layout='tablet'] header[data-search-folded] .wb-search-close {
-  display: inline-flex;
-}
-
-.workbench[data-layout='tablet']
-  header[data-search-folded]:not([data-search-open])
-  [data-workbench='app-bar-center'] {
+/* Folded search (AppBar.tsx's data-search-folded: a phone either way up, and a tablet below
+   800 px): a search button stands in for the field, and data-search-open shows search over the
+   whole bar, with Close search to end it (Task 5.4's controls). Landscape reshapes the open row
+   below; the header is its containing block on a phone and a narrow tablet. */
+.wb-search-toggle,
+.wb-search-close {
   display: none;
 }
 
-.workbench[data-layout='tablet'] header[data-search-open] [data-workbench='app-bar-center'] {
+.workbench header[data-search-folded] :is(.wb-search-toggle, .wb-search-close) {
+  display: inline-flex;
+}
+
+.workbench header[data-search-folded]:not([data-search-open]) [data-workbench='app-bar-center'] {
+  display: none;
+}
+
+.workbench header[data-search-open] [data-workbench='app-bar-center'] {
   position: absolute;
   inset: 0;
   z-index: 1;
@@ -737,9 +732,16 @@
   background: var(--ps-surface);
 }
 
-.workbench[data-layout='tablet'] header[data-search-open] #myProteinSearch {
+.workbench header[data-search-open] #myProteinSearch {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* A narrow tablet keeps its actions: the search button sits just before them, and the start takes
+   what is left, so the dataset name ends in an ellipsis before anything overlaps. */
+.workbench[data-layout='tablet'] header[data-search-folded] {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 /* The plot's top-left corner, over the plot and never part of its box: the tool strip, and beside
@@ -1136,39 +1138,18 @@
   display: none;
 }
 
-/* The search button opens search over the whole row; Close search ends it (Task 5.4's controls). */
-.workbench[data-layout='landscape'] :is(.wb-search-toggle, .wb-search-close) {
-  display: inline-flex;
-}
-
-.workbench[data-layout='landscape'] header[data-search-open] #myProteinSearch {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 .workbench[data-layout='landscape'] .wb-dataset-name {
   max-width: 16vw;
 }
 
-/* Search opens over the whole row, wordmark to More; the root is its containing block. Its
-   z-index lifts it over the view bar's positioned More button. */
-.workbench[data-layout='landscape']
-  header:not([data-search-open])
-  [data-workbench='app-bar-center'] {
-  display: none;
-}
-
+/* Folded search (above) opens over the whole row, wordmark to More; the root is its containing
+   block. Its z-index lifts it over the view bar's positioned More button. */
 .workbench[data-layout='landscape'] header[data-search-open] [data-workbench='app-bar-center'] {
-  position: absolute;
   inset: 0 0 auto;
-  z-index: 1;
-  display: flex;
-  align-items: center;
   gap: var(--ps-space-2);
   height: var(--wb-app-bar-height);
   padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
   border-bottom: 1px solid var(--ps-border);
-  background: var(--ps-surface);
 }
 
 /* The view bar holds Projection, Color by and More (stage 3: Contours and Filter are
@@ -1862,34 +1843,6 @@
 .workbench[data-layout='phone'] .wb-dataset-name {
   min-width: 48px;
   max-width: 45vw;
-}
-
-.workbench[data-layout='phone'] [data-workbench='app-bar-center'] {
-  display: none;
-}
-
-.workbench[data-layout='phone'] header[data-search-open] [data-workbench='app-bar-center'] {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--ps-space-1);
-  padding: 0 var(--site-bar-inset-end) 0 var(--site-bar-inset-start);
-  background: var(--ps-surface);
-}
-
-.workbench[data-layout='phone'] header[data-search-open] #myProteinSearch {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.wb-search-toggle,
-.wb-search-close {
-  display: none;
-}
-
-.workbench[data-layout='phone'] :is(.wb-search-toggle, .wb-search-close) {
-  display: inline-flex;
 }
 
 .workbench[data-layout='phone'] [data-workbench='view-bar'][data-stage] {

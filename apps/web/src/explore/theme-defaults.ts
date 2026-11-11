@@ -1,8 +1,7 @@
 /**
  * The site's theme choice (design decision 16): its storage, its values and the rule a press
  * follows. Pure functions only, so the Playwright helpers can import it as well. The key is
- * shared with the docs (config/theme.ts); index.html's boot script repeats it, and
- * theme-boot.test.ts pins the two.
+ * shared with the docs and the boot script (config/theme.ts).
  */
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from '../../../../config/theme';
 
@@ -16,6 +15,9 @@ export type ThemeMode = 'light' | 'dark';
 
 /** The choice with nothing (or nothing valid) stored: follow the OS. */
 export const DEFAULT_THEME: ThemeChoice = 'system';
+
+/** The modes in the order a Light/Dark pair shows them. */
+export const THEME_MODES = ['light', 'dark'] as const satisfies readonly ThemeMode[];
 
 export const THEME_MODE_LABELS: Record<ThemeMode, string> = { light: 'Light', dark: 'Dark' };
 
@@ -35,7 +37,8 @@ export function resolveTheme(choice: ThemeChoice, osDark: boolean): ThemeMode {
   return osDark ? 'dark' : 'light';
 }
 
-const other = (mode: ThemeMode): ThemeMode => (mode === 'dark' ? 'light' : 'dark');
+/** The mode a press of the theme button shows next. */
+export const otherMode = (mode: ThemeMode): ThemeMode => (mode === 'dark' ? 'light' : 'dark');
 
 /**
  * The choice that shows `mode`: an override, unless the OS already shows it, when the page goes
@@ -45,12 +48,7 @@ export function chooseMode(mode: ThemeMode, osDark: boolean): ThemeChoice {
   return mode === (osDark ? 'dark' : 'light') ? 'system' : mode;
 }
 
-/** A press of the theme button: the other mode, by chooseMode's rule. */
-export function toggleTheme(choice: ThemeChoice, osDark: boolean): ThemeChoice {
-  return chooseMode(other(resolveTheme(choice, osDark)), osDark);
-}
-
 /** The theme button's name and tooltip: the mode shown, then what a press does. */
 export function themeButtonLabel(mode: ThemeMode): string {
-  return `Theme: ${THEME_MODE_LABELS[mode]}. Switch to ${THEME_MODE_LABELS[other(mode)]}`;
+  return `Theme: ${THEME_MODE_LABELS[mode]}. Switch to ${THEME_MODE_LABELS[otherMode(mode)]}`;
 }

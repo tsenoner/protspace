@@ -24,12 +24,13 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
+import { ICON } from '@/lib/icon';
+import { notifyCopied } from '@/lib/notify';
 import { FEEDBACK_MENU_ITEMS, runFeedbackAction } from '@/lib/support';
 import { focusFilterTitle, openPanel } from '../explore/layout-state';
-import { THEME_MODE_LABELS, type ThemeMode } from '../explore/theme-defaults';
+import { THEME_MODE_LABELS, THEME_MODES, type ThemeMode } from '../explore/theme-defaults';
 import { setThemeMode } from '../explore/theme-state';
 import { openFigureEditor } from './figure-editor-action';
-import { notifyCopied } from './FeedbackMenu';
 import { openDocumentation, takeTheTour } from './help-actions';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { useResolvedTheme } from './use-theme';
@@ -42,13 +43,10 @@ const CONTOUR_OPTIONS = DENSITY_LAYER_MODES.map((mode) => ({
 }));
 
 /** The two modes, as the app bar's button names them; the selected one is the mode on screen. */
-const THEME_OPTIONS = (['light', 'dark'] as const).map((value) => ({
+const THEME_OPTIONS = THEME_MODES.map((value) => ({
   value,
   label: THEME_MODE_LABELS[value],
 }));
-
-/** A row's Lucide icon: 16 px at the kit's stroke, decorative. */
-const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
 
 interface MoreSheetProps {
   open: boolean;

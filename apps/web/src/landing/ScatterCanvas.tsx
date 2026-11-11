@@ -38,6 +38,9 @@ export interface ScatterCanvasProps {
  */
 const NEUTRAL_COLORS: Record<ThemeMode, string> = { light: '#c4cad3', dark: '#475569' };
 
+/** The hover ring's colour where --ps-text is unset: light --ps-text (slate-900). */
+const DEFAULT_RING_COLOR = '#0f172a';
+
 /** The neutral grey of the mode on screen; re-renders when the theme changes. */
 export function useNeutralColor(): string {
   return NEUTRAL_COLORS[useResolvedTheme()];
@@ -169,9 +172,18 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // The theme's grey for an unannotated plot; a theme change re-renders the layer below.
-  const neutralColor = useNeutralColor();
+  const theme = useResolvedTheme();
+  const neutralColor = NEUTRAL_COLORS[theme];
   const neutralRef = useRef<string | null>(null);
   neutralRef.current = neutral ? neutralColor : null;
+  // The hover ring: the page's text colour (dark on light, light on dark), read once per theme.
+  const ringColorRef = useRef(DEFAULT_RING_COLOR);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const text = getComputedStyle(canvas).getPropertyValue('--ps-text').trim();
+    ringColorRef.current = text || DEFAULT_RING_COLOR;
+  }, [theme]);
   const [box, setBox] = useState({ width: 0, height: 0, dpr: 1 });
   const [hover, setHover] = useState<{ index: number; px: number; py: number } | null>(null);
 
@@ -274,8 +286,7 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
         Math.PI * 2,
       );
       ctx.lineWidth = 1.5;
-      // The page's text colour, dark on light and light on dark.
-      ctx.strokeStyle = getComputedStyle(canvas).getPropertyValue('--ps-text').trim() || '#0f172a';
+      ctx.strokeStyle = ringColorRef.current;
       ctx.stroke();
       return;
     }

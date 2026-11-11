@@ -92,26 +92,32 @@ describe('theme store', () => {
     expect(storage.getItem.mock.calls.filter(([key]) => key === THEME_STORAGE_KEY)).toHaveLength(1);
   });
 
-  it('moves a legacy JSON choice to the shared key', () => {
-    store.set(LEGACY_THEME_STORAGE_KEY, '"light"');
-    expect(getTheme()).toBe('light');
-    expect(Object.fromEntries(store)).toEqual({ [THEME_STORAGE_KEY]: 'light' });
+  it('reads the shared key only: the boot script has moved a legacy value already', () => {
+    store.set(LEGACY_THEME_STORAGE_KEY, '"dark"');
+    expect(getTheme()).toBe('system');
+    expect(storage.getItem.mock.calls.map(([key]) => key)).toEqual([THEME_STORAGE_KEY]);
   });
 
-  it("moves a legacy override over VitePress's 'auto', never over a shared override", () => {
-    // Any docs visit leaves 'auto' under the shared key: it must not erase Explore's Dark.
-    store.set(LEGACY_THEME_STORAGE_KEY, '"dark"');
-    store.set(THEME_STORAGE_KEY, 'auto');
-    expect(getTheme()).toBe('dark');
-    expect(Object.fromEntries(store)).toEqual({ [THEME_STORAGE_KEY]: 'dark' });
-
-    resetThemeForTests();
-    store.clear();
-    store.set(LEGACY_THEME_STORAGE_KEY, '"dark"');
-    store.set(THEME_STORAGE_KEY, 'light');
-    expect(getTheme()).toBe('light');
-    expect(Object.fromEntries(store)).toEqual({ [THEME_STORAGE_KEY]: 'light' });
-  });
+  it.each([
+    // [stored choice, OS dark, shown, choice after a press]
+    [null, false, 'light', 'dark'],
+    [null, true, 'dark', 'light'],
+    ['dark', false, 'dark', 'system'],
+    ['light', true, 'light', 'system'],
+    // An override the OS has since caught up with: a press still flips what is shown.
+    ['dark', true, 'dark', 'light'],
+    ['light', false, 'light', 'dark'],
+  ] as const)(
+    'stored %s on a dark OS (%s) shows %s and a press makes it %s',
+    (stored, dark, shown, next) => {
+      if (stored) store.set(THEME_STORAGE_KEY, stored);
+      os.dark = dark;
+      expect(getResolvedTheme()).toBe(shown);
+      toggleThemeMode();
+      expect(getTheme()).toBe(next);
+      expect(getResolvedTheme()).not.toBe(shown);
+    },
+  );
 
   it('a press on a light OS stores dark, applies it and notifies once', () => {
     const listener = vi.fn();

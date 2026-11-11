@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   chooseMode,
   DEFAULT_THEME,
+  otherMode,
   parseStoredTheme,
   resolveTheme,
   storedTheme,
   THEME_STORAGE_KEY,
   themeButtonLabel,
-  toggleTheme,
 } from './theme-defaults';
 
 describe('the stored theme', () => {
@@ -30,24 +30,18 @@ describe('the stored theme', () => {
   });
 });
 
-describe('a press of the theme button', () => {
-  it.each([
-    // [choice, OS dark, shown, after a press]
-    ['system', false, 'light', 'dark'],
-    ['system', true, 'dark', 'light'],
-    ['dark', false, 'dark', 'system'],
-    ['light', true, 'light', 'system'],
-    // An override the OS has since caught up with: a press still flips what is shown.
-    ['dark', true, 'dark', 'light'],
-    ['light', false, 'light', 'dark'],
-  ] as const)(
-    '%s on a dark OS (%s) shows %s and a press makes it %s',
-    (choice, os, shown, next) => {
-      expect(resolveTheme(choice, os)).toBe(shown);
-      expect(toggleTheme(choice, os)).toBe(next);
-      expect(resolveTheme(toggleTheme(choice, os), os)).not.toBe(shown);
-    },
-  );
+describe('choosing a mode', () => {
+  it('a choice resolves against the OS', () => {
+    expect(resolveTheme('system', false)).toBe('light');
+    expect(resolveTheme('system', true)).toBe('dark');
+    expect(resolveTheme('dark', false)).toBe('dark');
+    expect(resolveTheme('light', true)).toBe('light');
+  });
+
+  it('a press shows the other mode', () => {
+    expect(otherMode('light')).toBe('dark');
+    expect(otherMode('dark')).toBe('light');
+  });
 
   it("picking the OS's own mode follows the system", () => {
     expect(chooseMode('dark', true)).toBe('system');
