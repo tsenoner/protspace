@@ -24,11 +24,12 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
-import { FEEDBACK_HREF } from '@/lib/support';
+import { FEEDBACK_MENU_ITEMS, runFeedbackAction } from '@/lib/support';
 import { focusFilterTitle, openPanel } from '../explore/layout-state';
 import { THEME_MODE_LABELS, type ThemeMode } from '../explore/theme-defaults';
 import { setThemeMode } from '../explore/theme-state';
 import { openFigureEditor } from './figure-editor-action';
+import { notifyCopied } from './FeedbackMenu';
 import { openDocumentation, takeTheTour } from './help-actions';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { useResolvedTheme } from './use-theme';
@@ -63,8 +64,8 @@ interface MoreSheetProps {
  * other row closes the sheet first and then acts, so what it opens (a panel, a dialog, the Filter
  * panel, the figure editor) is never a second layer under a closing one. The Export and Import
  * panels open from More and the dataset name, since their own buttons are hidden on a phone, and
- * the Figure editor row stands in for the app bar's button; Help & shortcuts unfolds its three
- * entries in place rather than open a menu from a hidden button.
+ * the Figure editor row stands in for the app bar's button; Help & shortcuts and Feedback unfold
+ * their three entries in place rather than open a menu from a hidden button.
  */
 export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
   const dialog = useRef<PsDialog>(null);
@@ -74,9 +75,11 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
   // Not part of the More dot, which marks only what changes the view (Contours, a filter).
   const theme = useResolvedTheme();
   const [helpOpen, setHelpOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
   const helpRowsId = useId();
+  const feedbackRowsId = useId();
 
   // Escape, the close button and a backdrop press close the sheet itself; follow it.
   useEffect(() => {
@@ -86,9 +89,12 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
     return () => element.removeEventListener('ps-close', onClose);
   }, [onClose]);
 
-  // Each opening starts with Help & shortcuts folded.
+  // Each opening starts with Help & shortcuts and Feedback folded.
   useEffect(() => {
-    if (!open) setHelpOpen(false);
+    if (!open) {
+      setHelpOpen(false);
+      setFeedbackOpen(false);
+    }
   }, [open]);
 
   // A contour mode goes through the view bar's Contours menu, which stays mounted while hidden:
@@ -232,16 +238,35 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
               <span className="wb-sheet-label">Take the tour</span>
             </button>
           </div>
-          {/* The link navigates itself; the sheet still closes, as after any other row. */}
-          <a
+          {/* Feedback's entries, as the app bar's menu and Home's and the docs' phone menus have them. */}
+          <button
+            type="button"
             className="wb-sheet-row"
-            href={FEEDBACK_HREF}
-            onClick={() => dialog.current?.dismiss()}
+            aria-expanded={feedbackOpen}
+            aria-controls={feedbackRowsId}
+            onClick={() => setFeedbackOpen((value) => !value)}
           >
             <MessageSquare className="wb-sheet-icon" {...ICON} />
             <span className="wb-sheet-label">Feedback</span>
-            <ChevronRight className="wb-sheet-chevron" {...ICON} />
-          </a>
+            {feedbackOpen ? (
+              <ChevronDown className="wb-sheet-chevron" {...ICON} />
+            ) : (
+              <ChevronRight className="wb-sheet-chevron" {...ICON} />
+            )}
+          </button>
+          <div id={feedbackRowsId} className="wb-sheet-sub" hidden={!feedbackOpen}>
+            {FEEDBACK_MENU_ITEMS.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                className="wb-sheet-row wb-sheet-subrow"
+                // Synchronous in the tap, so the browser allows the issue's new tab.
+                onClick={closeThen(() => runFeedbackAction(value, notifyCopied))}
+              >
+                <span className="wb-sheet-label">{label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </ps-dialog>
       {/* Opened after the sheet closed, so it returns focus to More. */}

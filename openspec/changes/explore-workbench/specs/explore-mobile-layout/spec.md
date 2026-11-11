@@ -135,7 +135,8 @@ Help & shortcuts and Feedback; it SHALL NOT offer GitHub. Contours and Theme SHA
 keep the sheet open. Every other row SHALL close the sheet first and then act: Filter shows the
 Filter tab and focuses its heading, Import data opens the Import panel under the dataset name,
 Export opens the Export panel as a sheet on the bottom edge, Figure editor opens the figure editor,
-and Help & shortcuts unfolds Documentation, Keyboard shortcuts and Take the tour in place. The sheet SHALL fit the window and scroll inside itself, keeping its header
+Help & shortcuts unfolds Documentation, Keyboard shortcuts and Take the tour in place, and
+Feedback unfolds the app bar's Feedback entries in place. The sheet SHALL fit the window and scroll inside itself, keeping its header
 in view. While a contour mode other than Off or a filter is applied, More SHALL show a dot and its
 accessible name SHALL gain ", N active"; the theme SHALL never light the dot.
 

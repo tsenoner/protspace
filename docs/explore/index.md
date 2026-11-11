@@ -157,7 +157,7 @@ On a phone:
   the bar. The view bar keeps **Projection**, **Color by** and **More**.
 - **More** opens a sheet with everything else: **Contours**, **Filter**, **Import data**,
   **Export**, **Figure editor**, **Theme** (Light, Dark), **Help & shortcuts** (Documentation, Keyboard
-  shortcuts, Take the tour) and **Feedback**. A dot on **More** says something in it is active,
+  shortcuts, Take the tour) and **Feedback** (email, copy the address, open a GitHub issue). A dot on **More** says something in it is active,
   such as contours or a filter.
 - The panel under the plot holds the legend and the Filter panel, switched by the **Legend** and
   **Filter** tabs. Its chevron folds it to its header to give the plot the room.

@@ -9,9 +9,9 @@ email address" (copies the address and confirms it) and "Open a GitHub issue" (a
 repository, in a new tab). A bare `mailto:` does nothing without a mail app, so the menu always
 offers a way that works. The menu SHALL open by click, Enter or Space with focus on its first
 entry, and Escape SHALL close it and return focus to the button. In the phone menus of Home and
-the docs the three entries SHALL be listed under Feedback; on a phone, the explore page's More
-sheet SHALL offer a Feedback row with the `mailto:`, which closes the sheet as the mail client
-opens.
+the docs, and in the explore page's More sheet on a phone, the three entries SHALL be listed under
+Feedback; in the More sheet a Feedback row unfolds them in place, and picking one closes the sheet
+as it acts.
 
 #### Scenario: The same menu on Home, in the docs and in Explore
 
@@ -26,9 +26,10 @@ opens.
 
 #### Scenario: Feedback on a phone
 
-- **WHEN** the explore page's More sheet is open on a phone
-- **THEN** a link named "Feedback" is offered with the `mailto:` target
-- **AND** activating it closes the sheet
+- **WHEN** the user unfolds the Feedback row of the explore page's More sheet on a phone
+- **THEN** "Email hello@protspace.app", "Copy email address" and "Open a GitHub issue" are listed
+  under it
+- **AND** picking one closes the sheet and runs it
 
 ## ADDED Requirements
 

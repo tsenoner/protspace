@@ -140,8 +140,8 @@ export function buildBugContext({
   ].join('\n');
 }
 
-/** The app bar's and the More sheet's Feedback link: a mail to the support inbox. */
-export const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
+/** The Feedback menu's Email entry: a mail to the support inbox. */
+const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
 
 /** A blank new issue on the repository: the Feedback menu's third way to reach us. */
 const FEEDBACK_ISSUE_URL = `${GITHUB_REPO_URL}/issues/new`;
