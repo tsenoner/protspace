@@ -15,12 +15,15 @@ import {
   getCurrentDatasetName,
   getSelectedProteinIds,
   importMenu,
+  importPanel,
   importUserFile,
   openExplore,
   openExportMenu,
   openImportMenu,
   pickExample,
+  removeLastFileButton,
   supportsExplorePersistedDataset,
+  toast,
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
@@ -206,6 +209,54 @@ test.describe('Import and Export menus', () => {
     await reopen.click();
     await expect.poll(() => getCurrentDatasetName(page), { timeout: 30_000 }).toBe(importedName);
     await expectUrlParam(page, 'dataset', null);
+  });
+
+  test("Last file's red × asks first, then removes the stored copy for good", async ({ page }) => {
+    await serveExampleFixtures(page);
+    const other = e2eExample('other');
+    await openExplore(page);
+    test.skip(!(await supportsExplorePersistedDataset(page)), 'This browser has no usable OPFS.');
+
+    await importUserFile(page, TOXPROT_5181_FIXTURE);
+    await waitForProteinCount(page, 5181);
+    await waitForPersistedExploreDataset(page);
+    const importedName = (await getCurrentDatasetName(page))!;
+    await pickExample(page, other.id);
+    await expectUrlParam(page, 'dataset', other.id);
+
+    // Delete on the focused row asks; Cancel keeps the file and returns focus to the row.
+    await openImportMenu(page);
+    const row = importMenu(page).getByRole('button', { name: `Reopen ${importedName}` });
+    await expect(row).toHaveAttribute('aria-keyshortcuts', 'Delete Backspace');
+    await row.focus();
+    await page.keyboard.press('Delete');
+    const question = page.getByRole('dialog', { name: 'Remove last file?' });
+    // The body and buttons are the dialog's slotted content, found through the ps-dialog host.
+    const confirm = page.locator('ps-dialog', { has: question });
+    await expect(confirm).toContainText(`"${importedName}"`);
+    await expect(confirm).toContainText('Your legend settings for it are kept.');
+    await expect(confirm.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(question).toHaveCount(0);
+    await expect(importPanel(page)).toBeVisible();
+    await expect(row).toBeFocused();
+
+    // The × asks the same; Remove deletes the copy and focus moves on in the open panel.
+    const remove = removeLastFileButton(page, importedName);
+    await expect(remove).toBeVisible();
+    await remove.click();
+    await confirm.getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(toast(page, `Removed "${importedName}" from this browser`)).toBeVisible();
+    await expect(row).toHaveCount(0);
+    await expect(importPanel(page)).toBeVisible();
+    await expect(importMenu(page).locator(`[data-example-id]`).first()).toBeFocused();
+    // The dataset on screen stays.
+    await expectUrlParam(page, 'dataset', other.id);
+
+    await page.reload();
+    await waitForProteinCount(page, other.count);
+    await openImportMenu(page);
+    await expect(importMenu(page).getByRole('button', { name: /^Reopen / })).toHaveCount(0);
   });
 
   test('a user import disables no example; a chosen example is then disabled', async ({ page }) => {

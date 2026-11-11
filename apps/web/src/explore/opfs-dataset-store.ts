@@ -385,3 +385,14 @@ export async function readStoredImportSummary(): Promise<{
 export async function clearLastImportedFile(): Promise<void> {
   await clearStoreDirectory();
 }
+
+/**
+ * Removes the stored import saved at `expectedStoredAt` (the Import menu's "Last file" ×). An
+ * import saved since then is kept, and this resolves false; otherwise the store is cleared.
+ */
+export async function removeLastImportedFile(expectedStoredAt: string): Promise<boolean> {
+  const summary = await readStoredImportSummary();
+  if (summary && summary.storedAt !== expectedStoredAt) return false;
+  await clearStoreDirectory();
+  return true;
+}

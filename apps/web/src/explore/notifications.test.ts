@@ -16,7 +16,10 @@ import {
   getExportFailureNotification,
   getExportSuccessNotification,
   getFilterRemovedNotification,
+  getLastFileRemovedNotification,
+  getLastFileReplacedNotification,
   getLegendErrorNotification,
+  getRemoveLastFileConfirm,
   getRendererDegradedNotification,
   getSelectionCopiedNotification,
   getSelectionCopyFailedNotification,
@@ -351,6 +354,24 @@ describe('undo and confirmation copy', () => {
       body: 'Loading the default deletes the copy of "mine.parquetbundle" saved in this browser. It cannot be undone.',
       confirmLabel: 'Load default',
       danger: true,
+    });
+  });
+
+  it("asks before Last file's × removes the stored copy, and says the legend settings stay", () => {
+    expect(getRemoveLastFileConfirm('mine.parquetbundle')).toEqual({
+      heading: 'Remove last file?',
+      body: 'This deletes the copy of "mine.parquetbundle" saved in this browser. Your legend settings for it are kept. It cannot be undone.',
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+  });
+
+  it('names the removed file, and a newer one kept in its place', () => {
+    expect(getLastFileRemovedNotification('mine.parquetbundle')).toEqual({
+      title: 'Removed "mine.parquetbundle" from this browser',
+    });
+    expect(getLastFileReplacedNotification('mine.parquetbundle')).toEqual({
+      title: 'Kept the stored file: a newer import replaced "mine.parquetbundle"',
     });
   });
 });

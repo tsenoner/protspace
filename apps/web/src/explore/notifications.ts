@@ -394,3 +394,31 @@ export function getClearStoredDataConfirm(
     danger: true,
   };
 }
+
+/**
+ * The question before the Import menu's Last file × deletes the OPFS copy, which may be the only
+ * one the user still has. The legend settings stay.
+ */
+export function getRemoveLastFileConfirm(fileName: string): {
+  heading: string;
+  body: string;
+  confirmLabel: string;
+  danger: true;
+} {
+  return {
+    heading: 'Remove last file?',
+    body: `This deletes the copy of "${fileName}" saved in this browser. Your legend settings for it are kept. It cannot be undone.`,
+    confirmLabel: 'Remove',
+    danger: true,
+  };
+}
+
+/** Last file's × removed the stored copy. */
+export function getLastFileRemovedNotification(fileName: string): { title: string } {
+  return { title: `Removed "${fileName}" from this browser` };
+}
+
+/** A newer import was saved while the removal was being confirmed: that one stays. */
+export function getLastFileReplacedNotification(fileName: string): { title: string } {
+  return { title: `Kept the stored file: a newer import replaced "${fileName}"` };
+}
