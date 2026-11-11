@@ -3,14 +3,18 @@ import { THEME_BOOT_SCRIPT } from '../../../../config/theme';
 import { DEFAULT_THEME, LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from './theme-defaults';
 
 /**
- * Pins index.html's first-paint pair to the shared boot script and to the tokens (AGENTS.md: a
- * fact that lives in two places gets a test). The boot script is a copy of config/theme.ts's,
- * which the docs run too, and the boot style repeats dark --ps-surface, because neither can
- * import anything. Both files are read via `?raw`: tsconfig.app.json carries no Node types.
+ * The first-paint boot: config/theme.ts's script, which the app's vite.config.ts injects into
+ * index.html and the docs put in their head, and index.html's style, which repeats dark
+ * --ps-surface because it cannot import anything (AGENTS.md: a fact that lives in two places gets
+ * a test). The files are read via `?raw`: tsconfig.app.json carries no Node types.
+ * workbench-theme.spec.ts runs the script in the built app.
  */
 const raw = (modules: Record<string, unknown>) => (Object.values(modules)[0] ?? '') as string;
 const INDEX_HTML = raw(
   import.meta.glob('../../index.html', { query: '?raw', import: 'default', eager: true }),
+);
+const VITE_CONFIG = raw(
+  import.meta.glob('../../vite.config.ts', { query: '?raw', import: 'default', eager: true }),
 );
 const TOKENS_CSS = raw(
   import.meta.glob('../../../../packages/core/src/styles/tokens.css', {
@@ -28,7 +32,6 @@ const DOCS_CONFIG = raw(
   }),
 );
 
-const BOOT_SCRIPT = INDEX_HTML.match(/<script data-theme-boot>([\s\S]*?)<\/script>/)?.[1] ?? '';
 const BOOT_STYLE = INDEX_HTML.match(/<style data-theme-boot>([\s\S]*?)<\/style>/)?.[1] ?? '';
 
 /** A storage over `entries`; `throws` makes every call throw, as blocked site data does. */
@@ -73,14 +76,14 @@ function runBoot(script: string, storage: ReturnType<typeof fakeStorage>): strin
 
 describe('the first-paint boot', () => {
   it('is found', () => {
-    expect(BOOT_SCRIPT.trim()).not.toBe('');
     expect(BOOT_STYLE.trim()).not.toBe('');
     expect(TOKENS_CSS).toContain(":root[data-theme='dark']");
   });
 
-  it("index.html's script is config/theme.ts's, up to whitespace", () => {
-    const squash = (text: string) => text.replace(/\s+/g, '');
-    expect(squash(BOOT_SCRIPT)).toBe(squash(THEME_BOOT_SCRIPT));
+  it("the app injects the script at the end of index.html's head, so after the redirect", () => {
+    expect(VITE_CONFIG).toContain("import { THEME_BOOT_SCRIPT } from '../../config/theme'");
+    expect(VITE_CONFIG).toMatch(/children: THEME_BOOT_SCRIPT,\s*injectTo: 'head',/);
+    expect(INDEX_HTML).not.toContain('<script data-theme-boot>');
   });
 
   it("the docs run the same script in their head, before VitePress's own", () => {
@@ -89,10 +92,9 @@ describe('the first-paint boot', () => {
     expect(DOCS_CONFIG).toContain("import { THEME_BOOT_SCRIPT } from '../../config/theme'");
   });
 
-  it('the boot script comes after the GitHub Pages redirect script', () => {
+  it('the boot style comes after the GitHub Pages redirect script', () => {
     const redirectEnd = INDEX_HTML.indexOf('<!-- End Single Page Apps for GitHub Pages -->');
     expect(redirectEnd).toBeGreaterThan(0);
-    expect(INDEX_HTML.indexOf('<script data-theme-boot>')).toBeGreaterThan(redirectEnd);
     expect(INDEX_HTML.indexOf('<style data-theme-boot>')).toBeGreaterThan(redirectEnd);
     expect(INDEX_HTML.indexOf('<style data-theme-boot>')).toBeLessThan(
       INDEX_HTML.indexOf('</head>'),
@@ -100,9 +102,9 @@ describe('the first-paint boot', () => {
   });
 
   it('applies a stored override on any page: no path check', () => {
-    expect(BOOT_SCRIPT).not.toContain('location');
-    expect(runBoot(BOOT_SCRIPT, fakeStorage({ [THEME_STORAGE_KEY]: 'dark' }))).toBe('dark');
-    expect(runBoot(BOOT_SCRIPT, fakeStorage({ [THEME_STORAGE_KEY]: 'light' }))).toBe('light');
+    expect(THEME_BOOT_SCRIPT).not.toContain('location');
+    expect(runBoot(THEME_BOOT_SCRIPT, fakeStorage({ [THEME_STORAGE_KEY]: 'dark' }))).toBe('dark');
+    expect(runBoot(THEME_BOOT_SCRIPT, fakeStorage({ [THEME_STORAGE_KEY]: 'light' }))).toBe('light');
   });
 
   it.each([
@@ -112,25 +114,25 @@ describe('the first-paint boot', () => {
     ['a JSON "dark"', fakeStorage({ [THEME_STORAGE_KEY]: '"dark"' })],
     ['a throwing localStorage', fakeStorage({ [THEME_STORAGE_KEY]: 'dark' }, true)],
   ])('%s follows the system', (_case, storage) => {
-    expect(runBoot(BOOT_SCRIPT, storage)).toBe(DEFAULT_THEME);
+    expect(runBoot(THEME_BOOT_SCRIPT, storage)).toBe(DEFAULT_THEME);
   });
 
   it('moves a legacy override to the shared key, once', () => {
     const storage = fakeStorage({ [LEGACY_THEME_STORAGE_KEY]: '"dark"' });
-    expect(runBoot(BOOT_SCRIPT, storage)).toBe('dark');
+    expect(runBoot(THEME_BOOT_SCRIPT, storage)).toBe('dark');
     expect(Object.fromEntries(storage.store)).toEqual({ [THEME_STORAGE_KEY]: 'dark' });
   });
 
   it('drops a legacy System, and never overwrites a shared choice', () => {
     const system = fakeStorage({ [LEGACY_THEME_STORAGE_KEY]: '"system"' });
-    expect(runBoot(BOOT_SCRIPT, system)).toBe('system');
+    expect(runBoot(THEME_BOOT_SCRIPT, system)).toBe('system');
     expect(system.store.size).toBe(0);
 
     const both = fakeStorage({
       [LEGACY_THEME_STORAGE_KEY]: '"dark"',
       [THEME_STORAGE_KEY]: 'light',
     });
-    expect(runBoot(BOOT_SCRIPT, both)).toBe('light');
+    expect(runBoot(THEME_BOOT_SCRIPT, both)).toBe('light');
     expect(Object.fromEntries(both.store)).toEqual({ [THEME_STORAGE_KEY]: 'light' });
   });
 
@@ -139,7 +141,7 @@ describe('the first-paint boot', () => {
       [LEGACY_THEME_STORAGE_KEY]: '"dark"',
       [THEME_STORAGE_KEY]: 'auto',
     });
-    expect(runBoot(BOOT_SCRIPT, storage)).toBe('dark');
+    expect(runBoot(THEME_BOOT_SCRIPT, storage)).toBe('dark');
     expect(Object.fromEntries(storage.store)).toEqual({ [THEME_STORAGE_KEY]: 'dark' });
   });
 

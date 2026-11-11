@@ -181,11 +181,11 @@ press back to the OS's mode removes the override (VueUse `useDark`'s rule, which
 button gets from VitePress's `isDark`). The store also hears OS changes and other tabs' writes.
 
 On a cold load, `THEME_BOOT_SCRIPT` (`config/theme.ts`) sets the attribute from storage before
-first paint: `index.html` holds a copy after the GitHub Pages redirect, and the docs run it in
-their head, before VitePress's own script reads the same key for its `.dark` class. An unlayered
-`<style>` in `index.html` paints the dark surface until the stylesheet loads.
-`theme-boot.test.ts` pins the copy to `config/theme.ts`, the docs' head entry, and the style's
-colour to `tokens.css`. In the docs, `theme/index.ts` keeps `data-theme` in step with `isDark`
+first paint: the app's `vite.config.ts` injects it at the end of `index.html`'s head, after the
+GitHub Pages redirect, and the docs run it in their head, before VitePress's own script reads the
+same key for its `.dark` class. An unlayered `<style>` in `index.html` paints the dark surface
+until the stylesheet loads. `theme-boot.test.ts` runs the script and pins the style's colour to
+`tokens.css`. In the docs, `theme/index.ts` keeps `data-theme` in step with `isDark`
 after mount.
 
 ## Tour
