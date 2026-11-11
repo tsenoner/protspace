@@ -207,7 +207,9 @@ SHALL survive a reload.
 #### Scenario: A palette pick
 
 - **WHEN** the user picks a palette
-- **THEN** the rows recolour at once and the choice is stored
+- **THEN** the rows recolour at once and the choice is stored, and no two rows share a colour
+  while the palette has as many colours as there are rows, even after a filter has changed which
+  categories show
 
 #### Scenario: Reset
 

@@ -2181,9 +2181,7 @@ describe('legend-data-processor', () => {
         new Set(['a', 'b']),
       ).legendItems;
       items = LegendDataProcessor.recolorBySlot(ctx, items, 'okabeIto');
-      expect(LegendDataProcessor.slotColor(ctx, 'a', 'okabeIto')).toBe(
-        getColorSchemeStops('okabeIto')[0],
-      );
+      expect(LegendDataProcessor.pickedColor(ctx, 'a')).toBe(getColorSchemeStops('okabeIto')[0]);
 
       items = LegendDataProcessor.processLegendItems(
         ctx,
@@ -2210,6 +2208,41 @@ describe('legend-data-processor', () => {
         a: getColorSchemeStops('okabeIto')[0],
         b: getColorSchemeStops('okabeIto')[1],
       });
+    });
+
+    it('keeps the rows distinct once a filter has pushed slots past the palette length', () => {
+      const kellys = getColorSchemeStops('kellys');
+      const names = Array.from({ length: 28 }, (_, i) => `c${i}`);
+      const counts = (values: string[]) =>
+        new Map(values.map((v) => [v, 100 - Number(v.slice(1))]));
+      // A filter frees no slot, so each new view's categories take fresh, growing slots.
+      const views = [names.slice(0, 10), ['c0', ...names.slice(10, 19)]];
+      views.push(['c0', ...names.slice(19, 28)]);
+      let items: LegendItem[] = [];
+      for (const view of views) {
+        items = LegendDataProcessor.processLegendItems(
+          ctx,
+          'annotation1',
+          counts(view),
+          10,
+          true,
+          items,
+          'size-desc',
+        ).legendItems;
+      }
+      expect(ctx.slotTracker.peekSlot('c21')! % kellys.length).toBe(ctx.slotTracker.peekSlot('c0'));
+      const before = Object.values(colorsOf(items));
+      expect(new Set(before).size).toBe(10);
+
+      const recolored = LegendDataProcessor.recolorBySlot(ctx, items, 'kellys');
+
+      const after = colorsOf(recolored);
+      expect(new Set(Object.values(after)).size).toBe(10);
+      expect(after.c0).toBe(kellys[0]);
+      // The categories the view leaves out remember colours apart from the rows' too.
+      for (const hidden of names.filter((n) => !(n in after)).slice(0, 10)) {
+        expect(Object.values(after)).not.toContain(LegendDataProcessor.pickedColor(ctx, hidden));
+      }
     });
   });
 });

@@ -96,7 +96,7 @@ export class SettingsController {
           this.host._selectedPaletteId,
         );
         // Ahead of the update below, which keeps stored colours over palette ones.
-        this.syncColorsToPersistence(this.host._selectedPaletteId);
+        this.syncColorsToPersistence(true);
       }
     }
     if (numeric && patch.numericStrategy !== undefined) numeric.strategy = patch.numericStrategy;
@@ -336,10 +336,10 @@ export class SettingsController {
   }
 
   /**
-   * Stores the rows' colours, shapes and places, keeping the ones a filter hides. With
-   * `paletteId` (a palette pick) the hidden ones take that palette's colour for their slot.
+   * Stores the rows' colours, shapes and places, keeping the ones a filter hides. After
+   * a palette pick the hidden ones take the colour that pick gave them.
    */
-  private syncColorsToPersistence(paletteId?: string): void {
+  private syncColorsToPersistence(afterPalettePick = false): void {
     const categories: Record<string, PersistedCategoryData> = {};
     const persistVisualEncodings = !this.host._isCurrentAnnotationNumeric();
     this.host._legendItems.forEach((item) => {
@@ -352,10 +352,10 @@ export class SettingsController {
       }
     });
     const kept = this.host._persistenceController.withHeldBackCategories(categories);
-    if (paletteId) {
+    if (afterPalettePick) {
       for (const [value, data] of Object.entries(kept)) {
         if (value in categories || !data.color || isNAValue(value)) continue;
-        const color = LegendDataProcessor.slotColor(this.host._processorContext, value, paletteId);
+        const color = LegendDataProcessor.pickedColor(this.host._processorContext, value);
         if (color) kept[value] = { ...data, color };
       }
     }

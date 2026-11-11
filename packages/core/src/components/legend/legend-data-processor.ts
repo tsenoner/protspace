@@ -697,41 +697,56 @@ export class LegendDataProcessor {
   }
 
   /**
-   * The palette's colour for the slot a category holds, or undefined while it holds none.
-   * `value` is internal (N/A is '__NA__').
+   * The colour the last palette pick gave a category holding a slot (see `recolorBySlot`), or
+   * undefined while it holds none. `value` is internal (N/A is '__NA__').
    */
-  static slotColor(
-    ctx: LegendProcessorContext,
-    value: string,
-    paletteId: string,
-  ): string | undefined {
-    const displayName = toDisplayValue(value);
-    const slot = ctx.slotTracker.peekSlot(displayName);
-    return slot === undefined ? undefined : getVisualEncoding(slot, displayName, paletteId).color;
+  static pickedColor(ctx: LegendProcessorContext, value: string): string | undefined {
+    return ctx.slotTracker.rememberedColor(toDisplayValue(value));
   }
 
   /**
    * A palette pick: each row takes the palette's colour for its slot, so colours follow the
    * categories, not the rows' positions. Other and N/A keep theirs. Every category holding a
    * slot remembers its new colour, the ones the view leaves out too.
+   *
+   * Slots are not compact under a filter (none is freed), so two slots a palette length apart
+   * would share a colour. As in `createLegendItems`, a category whose slot colour is taken
+   * probes the next slots for a free one: the rows first, in slot order, then the categories
+   * the view leaves out, so the rows stay distinct whenever the palette has enough colours.
    */
   static recolorBySlot(
     ctx: LegendProcessorContext,
     items: readonly LegendItem[],
     paletteId: string,
   ): LegendItem[] {
-    const recolored = items.map((item) => {
-      if (item.value === LEGEND_VALUES.OTHER || isNAValue(item.value)) return item;
-      const displayName = toDisplayValue(item.value);
-      const slot = ctx.slotTracker.getSlot(displayName);
-      return { ...item, color: getVisualEncoding(slot, displayName, paletteId).color };
-    });
+    const tracker = ctx.slotTracker;
+    const keepsColor = (item: LegendItem) =>
+      item.value === LEGEND_VALUES.OTHER || isNAValue(item.value);
     const naName = toDisplayValue(NA_VALUE);
-    for (const category of ctx.slotTracker.assignedCategories()) {
-      if (category === naName) continue;
-      const slot = ctx.slotTracker.peekSlot(category)!;
-      ctx.slotTracker.rememberColor(category, getVisualEncoding(slot, category, paletteId).color);
+    const bySlot = (a: string, b: string) => tracker.getSlot(a) - tracker.getSlot(b);
+
+    const rows = items.filter((item) => !keepsColor(item)).map((i) => toDisplayValue(i.value));
+    const rowSet = new Set(rows);
+    const leftOut = tracker
+      .assignedCategories()
+      .filter((category) => category !== naName && !rowSet.has(category));
+
+    const claimed = new Set(items.filter(keepsColor).map((item) => item.color));
+    const picked = new Map<string, string>();
+    for (const category of [...rows.sort(bySlot), ...leftOut.sort(bySlot)]) {
+      const slot = tracker.getSlot(category);
+      let color = getVisualEncoding(slot, category, paletteId).color;
+      // Cap at 30 probes, past Kelly's 21 colours, so the walk always ends.
+      for (let alt = slot + 1; claimed.has(color) && alt < slot + 30; alt++) {
+        color = getVisualEncoding(alt, category, paletteId).color;
+      }
+      claimed.add(color);
+      picked.set(category, color);
+      tracker.rememberColor(category, color);
     }
-    return recolored;
+
+    return items.map((item) =>
+      keepsColor(item) ? item : { ...item, color: picked.get(toDisplayValue(item.value))! },
+    );
   }
 }
