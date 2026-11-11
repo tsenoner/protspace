@@ -7,6 +7,8 @@
  * coordinates for the same points (another projection) move each point to its new place.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { ThemeMode } from '../explore/theme-defaults';
+import { useResolvedTheme } from '../workbench/use-theme';
 import type { Category } from './landing-data';
 import { prefersReducedMotion } from './motion';
 
@@ -29,8 +31,17 @@ export interface ScatterCanvasProps {
   'aria-label'?: string;
 }
 
-/** The grey of points and legend swatches before a section reveals its colors. */
-export const NEUTRAL_COLOR = '#c4cad3';
+/**
+ * The grey of points and legend swatches before a section reveals its colors, per mode: a canvas
+ * needs a colour value, not a token. Dark is slate-600, as quiet on the dark plot as the light
+ * grey is on white.
+ */
+const NEUTRAL_COLORS: Record<ThemeMode, string> = { light: '#c4cad3', dark: '#475569' };
+
+/** The neutral grey of the mode on screen; re-renders when the theme changes. */
+export function useNeutralColor(): string {
+  return NEUTRAL_COLORS[useResolvedTheme()];
+}
 const BASE_OPACITY = 0.9;
 const FADED_OPACITY = 0.18;
 const HIT_RADIUS_PX = 9;
@@ -83,7 +94,7 @@ function drawPoints(
   ctx: CanvasRenderingContext2D,
   props: ScatterCanvasProps,
   layout: Layout,
-  neutral: boolean,
+  neutral: string | null,
   only?: number,
 ) {
   const { x, y, index, categories } = props;
@@ -99,7 +110,7 @@ function drawPoints(
   ctx.lineJoin = 'round';
   for (const category of order) {
     if (only !== undefined && category !== only) continue;
-    const color = neutral ? NEUTRAL_COLOR : categories[category]?.color;
+    const color = neutral ?? categories[category]?.color;
     if (!color) continue;
 
     ctx.beginPath();
@@ -131,7 +142,7 @@ function drawPoints(
   }
 }
 
-function renderLayer(props: ScatterCanvasProps, layout: Layout, neutral: boolean) {
+function renderLayer(props: ScatterCanvasProps, layout: Layout, neutral: string | null) {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(layout.width * layout.dpr));
   canvas.height = Math.max(1, Math.round(layout.height * layout.dpr));
@@ -157,6 +168,10 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
   } = props;
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // The theme's grey for an unannotated plot; a theme change re-renders the layer below.
+  const neutralColor = useNeutralColor();
+  const neutralRef = useRef<string | null>(null);
+  neutralRef.current = neutral ? neutralColor : null;
   const [box, setBox] = useState({ width: 0, height: 0, dpr: 1 });
   const [hover, setHover] = useState<{ index: number; px: number; py: number } | null>(null);
 
@@ -225,7 +240,7 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
         ctx,
         { ...current, x: morph.x, y: morph.y },
         layoutRef.current,
-        current.neutral ?? false,
+        neutralRef.current,
       );
       if (t < 1) {
         state.frame = requestAnimationFrame(composite);
@@ -247,7 +262,7 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
       ctx.globalAlpha = BASE_OPACITY;
       ctx.scale(dpr, dpr);
       const current = propsRef.current;
-      drawPoints(ctx, current, layoutRef.current, current.neutral ?? false, current.index[hovered]);
+      drawPoints(ctx, current, layoutRef.current, neutralRef.current, current.index[hovered]);
       ctx.globalAlpha = 1;
       const { width, height, radius } = layoutRef.current;
       ctx.beginPath();
@@ -259,7 +274,8 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
         Math.PI * 2,
       );
       ctx.lineWidth = 1.5;
-      ctx.strokeStyle = '#0f172a';
+      // The page's text colour, dark on light and light on dark.
+      ctx.strokeStyle = getComputedStyle(canvas).getPropertyValue('--ps-text').trim() || '#0f172a';
       ctx.stroke();
       return;
     }
@@ -280,7 +296,7 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
   useEffect(() => {
     if (!box.width || !box.height) return;
     const state = layers.current;
-    const next = renderLayer(propsRef.current, layoutRef.current, neutral);
+    const next = renderLayer(propsRef.current, layoutRef.current, neutralRef.current);
     const canSlide =
       state.current &&
       state.current.width === next.width &&
@@ -307,7 +323,7 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
     cancelAnimationFrame(state.frame);
     state.frame = requestAnimationFrame(composite);
     return () => cancelAnimationFrame(state.frame);
-  }, [x, y, index, categories, pointRadius, neutral, box, composite]);
+  }, [x, y, index, categories, pointRadius, neutral, neutralColor, box, composite]);
 
   // Hover emphasis is drawn from the cached layer: recomposite only.
   useEffect(() => {
@@ -364,7 +380,7 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
       />
       {tooltip ? (
         <div
-          className="pointer-events-none absolute z-10 max-w-[260px] rounded-md border border-border bg-white/95 px-3 py-2 text-xs text-foreground shadow-md"
+          className="pointer-events-none absolute z-10 max-w-[260px] rounded-md border border-border bg-popover/95 px-3 py-2 text-xs text-foreground shadow-md"
           style={{
             ...(flipY ? { bottom: box.height - hover!.py + 12 } : { top: hover!.py + 12 }),
             ...(flipX ? { right: box.width - hover!.px + 12 } : { left: hover!.px + 12 }),

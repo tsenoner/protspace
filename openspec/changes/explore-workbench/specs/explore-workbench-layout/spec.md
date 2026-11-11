@@ -37,6 +37,14 @@ The landing and privacy pages SHALL keep the site header.
 - **WHEN** the user moves between the landing page, /explore and the docs at the same window width
 - **THEN** each top bar is 48 px tall, the wordmark is 24 px tall at the same left inset, and the
   bar ends in Feedback then GitHub, with the last icon at the same right inset
+- **AND** each bar shows the Theme button before Feedback, Feedback is a menu in each, and the
+  wordmark is the same file, inverted in dark
+
+#### Scenario: The docs' bar is one strip
+
+- **WHEN** a docs page with a sidebar is open at 960 px or wider
+- **THEN** the bar's background runs under the wordmark too, its bottom line spans the whole
+  width, and the Docs link is marked as the current page
 
 ### Requirement: The view bar keeps one row
 

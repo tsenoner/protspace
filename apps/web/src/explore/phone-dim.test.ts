@@ -106,7 +106,8 @@ describe('touchDarkSource', () => {
       removeItem(): void {},
     });
     vi.stubGlobal('matchMedia', (query: string) => {
-      const entry = { matches: false, listeners: new Set<() => void>() };
+      // One state per query, as a browser's: the theme store asks again on each read.
+      const entry = queries.get(query) ?? { matches: false, listeners: new Set<() => void>() };
       queries.set(query, entry);
       return {
         get matches() {

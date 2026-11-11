@@ -3,7 +3,7 @@ import { BELOW_DESKTOP_MEDIA } from '../../utils/breakpoints';
 
 const structureViewerStylesCore = css`
   :host {
-    /* Every colour comes from a --ps-* token (theme.ts), so an embedder restyles the viewer in both
+    /* Every colour comes from a --ps-* token (tokens.css), so an embedder restyles the viewer in both
        themes by setting those on :root. The frame is the panel's surface, the colour the Mol*
        canvas also takes, so frame and canvas meet without a seam. */
     display: flex;

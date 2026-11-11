@@ -2,22 +2,34 @@
 
 ### Requirement: Feedback action in header
 
-The site header SHALL present a prominent Feedback button that opens a `mailto:` to the support
-inbox, available on both desktop and mobile navigation. The explore page, which shows no site
-header, SHALL offer the same `mailto:` in its app bar as an icon link named "Feedback" with the
-tooltip "Feedback", and on a phone as the More sheet's Feedback row, which closes the sheet as the
-mail client opens.
+Home's site header, the docs' nav bar and the explore page's app bar SHALL each offer the same
+Feedback menu: an icon button named "Feedback" that opens a menu named "Feedback" with "Email
+hello@protspace.app" (a `mailto:` to the support inbox whose subject identifies feedback), "Copy
+email address" (copies the address and confirms it) and "Open a GitHub issue" (a new issue on the
+repository, in a new tab). A bare `mailto:` does nothing without a mail app, so the menu always
+offers a way that works. The menu SHALL open by click, Enter or Space with focus on its first
+entry, and Escape SHALL close it and return focus to the button. In the phone menus of Home and
+the docs, and in the explore page's More sheet on a phone, the three entries SHALL be listed under
+Feedback; in the More sheet a Feedback row unfolds them in place, and picking one closes the sheet
+as it acts.
 
-#### Scenario: Header feedback button present
+#### Scenario: The same menu on Home, in the docs and in Explore
 
-- **WHEN** a page that renders the header is displayed
-- **THEN** a "Feedback" button is shown in the navigation, and its target is a `mailto:` to `hello@protspace.app` whose subject identifies feedback
+- **WHEN** the user opens Feedback in Home's header, the docs' nav or Explore's app bar
+- **THEN** a menu named "Feedback" lists "Email hello@protspace.app", "Copy email address" and
+  "Open a GitHub issue", the first focused
 
-#### Scenario: Feedback on the explore page
+#### Scenario: Copying the address
 
-- **WHEN** the explore page is open on a desktop, or its More sheet is open on a phone
-- **THEN** a link named "Feedback" is offered with the same `mailto:` target
-- **AND** on a phone, activating it closes the sheet
+- **WHEN** the user picks "Copy email address"
+- **THEN** `hello@protspace.app` is on the clipboard and the page confirms the copy
+
+#### Scenario: Feedback on a phone
+
+- **WHEN** the user unfolds the Feedback row of the explore page's More sheet on a phone
+- **THEN** "Email hello@protspace.app", "Copy email address" and "Open a GitHub issue" are listed
+  under it
+- **AND** picking one closes the sheet and runs it
 
 ## ADDED Requirements
 

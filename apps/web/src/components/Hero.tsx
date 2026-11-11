@@ -125,7 +125,7 @@ const Hero = () => {
                 // The SVG's viewBox: a box of the right shape before it loads (no layout shift).
                 width={870}
                 height={190}
-                className="-ml-[0.1em] block h-auto w-[9.6em] max-w-[calc(100%+0.1em)]"
+                className="-ml-[0.1em] block h-auto w-[9.6em] max-w-[calc(100%+0.1em)] [filter:var(--ps-logo-filter)]"
               />
             </div>
             <h1 className="text-[1.625rem] font-semibold leading-[1.1] tracking-tight text-foreground sm:text-[2.25rem] lg:text-[2rem] xl:text-[2.5rem] 2xl:text-[2.75rem]">
@@ -189,7 +189,7 @@ const Hero = () => {
                 key={item.label}
                 aria-hidden="true"
                 className={cn(
-                  'pointer-events-none absolute hidden items-center gap-1.5 whitespace-nowrap rounded-md border border-border/60 bg-white/85 px-2 py-0.5 text-[11px] font-medium text-foreground/80 shadow-sm backdrop-blur-[2px] sm:flex',
+                  'pointer-events-none absolute hidden items-center gap-1.5 whitespace-nowrap rounded-md border border-border/60 bg-card/85 px-2 py-0.5 text-[11px] font-medium text-foreground/80 shadow-sm backdrop-blur-[2px] sm:flex',
                   item.side === 'below'
                     ? '-translate-x-1/2 translate-y-[9px]'
                     : item.side === 'right'

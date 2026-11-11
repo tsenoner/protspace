@@ -96,7 +96,7 @@ export const moreSheetContent = (page: Page): Locator =>
   page.locator('ps-dialog').filter({ has: moreSheet(page) });
 
 /** A segment of the More sheet's Theme row, by its text. */
-export const themeSegment = (page: Page, label: 'System' | 'Light' | 'Dark'): Locator =>
+export const themeSegment = (page: Page, label: 'Light' | 'Dark'): Locator =>
   moreSheetContent(page).getByRole('radio', { name: label, exact: true });
 
 /**

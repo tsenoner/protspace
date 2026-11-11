@@ -25,7 +25,7 @@ The Explore page is a workbench for protein embeddings: a map of your proteins i
 - **Dataset name** shows what is loaded and how many proteins it holds. Click it for the [dataset menu](/explore/controls#dataset-menu): the example datasets, your last file, **Open a file…** and **Export…**, which saves an image, the protein IDs, a table or the data bundle. See [Importing Data](/explore/importing-data) and [Exporting Results](/explore/exporting).
 - **Search** finds proteins by ID; paste a list of IDs to select them all at once. See [Search](/explore/controls#search).
 - **Figure editor** lays out the plot and its legend as a figure for a paper or a slide. See [Figure Editor](/explore/figure-editor).
-- **Theme** steps through System, Dark and Light, one click at a time; see [Light and dark](#light-and-dark).
+- **Theme** switches between light and dark; see [Light and dark](#light-and-dark).
 - **Help** has the documentation, the keyboard shortcuts and the tour; see [Help, shortcuts and the tour](#help-shortcuts-and-the-tour).
 - **Feedback** lets you email the ProtSpace team, copy their address or open a GitHub issue, and **GitHub** opens the project's repository.
 
@@ -93,19 +93,21 @@ Selecting a protein loads its AlphaFold structure under the legend. A row of lin
 
 ## Light and dark
 
-![The Theme button in the app bar with its tooltip, Theme: System. Switch to Dark](./images/theme-switch.png){.light-only}
-![The Theme button in the app bar with its tooltip, Theme: System. Switch to Dark](./images/theme-switch-dark.png){.dark-only}
+![The Theme button in the app bar with its tooltip, Theme: Light. Switch to Dark](./images/theme-switch.png){.light-only}
+![The Theme button in the app bar with its tooltip, Theme: Dark. Switch to Light](./images/theme-switch-dark.png){.dark-only}
 
-The Theme button in the app bar has three modes, and each click moves to the next one: **System**,
-then **Dark**, then **Light**, then back to **System**. Its icon shows the mode that is on (half sun
-and half moon for System, a moon for Dark, a sun for Light), and its tooltip names the mode and the
-one a click switches to.
+ProtSpace starts in your operating system's light or dark setting, and follows it when it
+changes. The Theme button switches to the other mode: its icon shows the mode on screen (a sun for
+light, a moon for dark), and its tooltip names that mode and the one a click switches to.
 
-- **System** follows your operating system's light or dark setting, and changes when it does. It
-  is where ProtSpace starts.
-- **Dark** and **Light** stay as you set them.
+- A click to the mode your system is not using stays as you set it, and is remembered in this
+  browser.
+- A click back to the mode your system uses follows the system again.
 
-Your choice is remembered in this browser. The plot, the legend and the 3D structure follow the theme. Exports and figures are always light, so a figure looks the same whichever theme you made it in. On a phone the Theme choice is in **More**.
+The home page and these docs have the same button, and all three share one choice: switch to
+dark in Explore and the docs open dark too. The plot, the legend and the 3D structure follow the
+theme. Exports and figures are always light, so a figure looks the same whichever theme you made
+it in. On a phone the Theme choice is in **More**, as a **Light** | **Dark** pair.
 
 ## Help, shortcuts and the tour
 
@@ -154,8 +156,8 @@ On a phone:
 - The app bar keeps the wordmark, the dataset's name and a search button, which opens search over
   the bar. The view bar keeps **Projection**, **Color by** and **More**.
 - **More** opens a sheet with everything else: **Contours**, **Filter**, **Import data**,
-  **Export**, **Figure editor**, **Theme** (System, Dark, Light), **Help & shortcuts** (Documentation, Keyboard
-  shortcuts, Take the tour) and **Feedback**. A dot on **More** says something in it is active,
+  **Export**, **Figure editor**, **Theme** (Light, Dark), **Help & shortcuts** (Documentation, Keyboard
+  shortcuts, Take the tour) and **Feedback** (email, copy the address, open a GitHub issue). A dot on **More** says something in it is active,
   such as contours or a filter.
 - The panel under the plot holds the legend and the Filter panel, switched by the **Legend** and
   **Filter** tabs. Its chevron folds it to its header to give the plot the room.

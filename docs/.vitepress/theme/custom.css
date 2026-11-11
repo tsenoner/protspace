@@ -1,28 +1,70 @@
 /*
- * The docs' nav bar in the site's top bar geometry (config/site-bar.css), so the wordmark and the
- * Feedback and GitHub icons sit where the landing's header and Explore's app bar have them.
- * VitePress lays the bar out from --vp-nav-height, so the content, the sidebar and the phone's
- * local nav move with it. Its component styles are scoped, hence the .VPNav prefix: one class more
- * than theirs.
+ * The docs in the site's palette and top bar geometry. Colours: VitePress's semantic variables
+ * read core's --ps-* tokens (packages/core/src/styles/tokens.css), the file the landing page and
+ * Explore read too, so the docs' surfaces, text, lines, links, buttons, code and custom blocks are
+ * the app's in light and in dark (the slate blue-black, not VitePress's #1b1b1f). The tokens
+ * follow <html data-theme>, which the head script and theme/index.ts keep in step with VitePress's
+ * .dark class. Geometry: config/site-bar.css, so the wordmark and the icons sit where the
+ * landing's header and Explore's app bar have them. VitePress lays the bar out from
+ * --vp-nav-height, so the content, the sidebar and the phone's local nav move with it. Its
+ * component styles are scoped, hence the .VPNav prefix: one class more than theirs.
  */
 @import '../../../config/site-bar.css';
+@import '../../../packages/core/src/styles/tokens.css';
 
-:root {
+/* One block for both modes, after VitePress's own :root and .dark: the tokens change underneath. */
+:root,
+.dark {
   --vp-nav-height: var(--site-bar-height);
   --vp-nav-logo-height: var(--site-bar-logo-height);
-  /* ProtSpace's accent (packages/core/src/styles/theme.ts --ps-accent*), not VitePress's indigo:
-     the current page in the bar, links and buttons are the blue of Home's and Explore's. */
-  --vp-c-brand-1: #0369a1;
-  --vp-c-brand-2: #00699c;
-  --vp-c-brand-3: #007ab5;
-  --vp-c-brand-soft: rgb(3 105 161 / 0.12);
-}
 
-.dark {
-  --vp-c-brand-1: #38bdf8;
-  --vp-c-brand-2: #7dd3fc;
-  --vp-c-brand-3: #0284c7;
-  --vp-c-brand-soft: rgb(56 189 248 / 0.16);
+  /* Surfaces and text. */
+  --vp-c-bg: var(--ps-surface);
+  --vp-c-bg-alt: var(--ps-surface-muted);
+  --vp-c-bg-elv: var(--ps-surface-raised);
+  --vp-c-bg-soft: var(--ps-surface-muted);
+  --vp-c-text-1: var(--ps-text);
+  --vp-c-text-2: var(--ps-text-muted);
+  --vp-c-text-3: var(--ps-text-faint);
+
+  /* Lines, and the neutral fills buttons, badges and code use. */
+  --vp-c-border: var(--ps-border-strong);
+  --vp-c-divider: var(--ps-border);
+  --vp-c-gutter: var(--ps-border);
+  --vp-c-default-1: var(--ps-border-strong);
+  --vp-c-default-2: var(--ps-border);
+  --vp-c-default-3: var(--ps-surface-hover);
+  --vp-c-default-soft: var(--ps-surface-hover);
+  --vp-c-gray-soft: var(--ps-surface-hover);
+
+  /* ProtSpace's accent, not VitePress's indigo: links, the current page and buttons are the blue
+     of Home's and Explore's; a filled button carries the app's text on the accent (dark text on
+     sky-400 in dark). */
+  --vp-c-brand-1: var(--ps-accent-text);
+  --vp-c-brand-2: var(--ps-accent-hover);
+  --vp-c-brand-3: var(--ps-accent);
+  --vp-c-brand-soft: var(--ps-accent-tint);
+  --vp-button-brand-text: var(--ps-text-on-accent);
+  --vp-button-brand-hover-text: var(--ps-text-on-accent);
+  --vp-button-brand-active-text: var(--ps-text-on-accent);
+
+  /* Custom blocks: tip and note follow the brand; warning and danger are the app's. */
+  --vp-c-warning-1: var(--ps-warning);
+  --vp-c-warning-2: var(--ps-warning);
+  --vp-c-warning-3: var(--ps-warning);
+  --vp-c-warning-soft: color-mix(in srgb, var(--ps-warning) 14%, transparent);
+  --vp-c-danger-1: var(--ps-danger);
+  --vp-c-danger-2: var(--ps-danger);
+  --vp-c-danger-3: var(--ps-danger);
+  --vp-c-danger-soft: color-mix(in srgb, var(--ps-danger) 14%, transparent);
+  --vp-c-caution-1: var(--ps-danger);
+  --vp-c-caution-2: var(--ps-danger);
+  --vp-c-caution-3: var(--ps-danger);
+  --vp-c-caution-soft: color-mix(in srgb, var(--ps-danger) 14%, transparent);
+
+  /* Code: inline code on the hover surface, blocks on the muted one. */
+  --vp-code-bg: var(--ps-surface-hover);
+  --vp-code-block-bg: var(--ps-surface-muted);
 }
 
 /* --vp-nav-height includes the 1 px divider, as the app's bars include their border: VitePress draws
@@ -36,7 +78,9 @@
 }
 
 /* Beside the sidebar the wordmark sits over it, and the bar's right part ends at the inset. Past
-   1440 px VitePress centres the page; the bar keeps its insets, as the app's bars do. */
+   1440 px VitePress centres the page; the bar keeps its insets, as the app's bars do. The bar is
+   one full-width strip, as Home's and Explore's are: the wordmark's part has the bar's colour,
+   not the sidebar's, and the bottom line runs under it too. */
 @media (min-width: 960px) {
   .VPNav .VPNavBar.has-sidebar .wrapper {
     padding: 0;
@@ -44,6 +88,12 @@
 
   .VPNav .VPNavBar.has-sidebar .container > .title {
     padding-left: var(--site-bar-inset-start);
+    height: calc(var(--vp-nav-height) - 1px);
+    background-color: var(--vp-nav-bg-color);
+  }
+
+  .VPNav .VPNavBar.has-sidebar .divider {
+    padding-left: 0;
   }
 
   .VPNav .VPNavBar.has-sidebar .content {
@@ -77,7 +127,18 @@
   display: none;
 }
 
+/* The wordmark: one file, its dark ink turned light in dark, as in the app (--ps-logo-filter). */
+.VPNavBarTitle .logo {
+  filter: var(--ps-logo-filter);
+}
+
 /* ── The end links (theme/end-links.ts) ──────────────────────────────────── */
+
+/* The theme button draws both icons; the mode on screen picks one, before any script runs. */
+html.dark .site-theme-sun,
+html:not(.dark) .site-theme-moon {
+  display: none;
+}
 
 .VPNav .site-end-links {
   display: none;
@@ -147,4 +208,110 @@
 .VPNavScreen .site-end-links.labelled .site-end-link:hover {
   background: none;
   color: var(--vp-c-brand-1);
+}
+
+/* The phone menu's Theme row: a Light | Dark pair, as on Home's phone menu. */
+.VPNavScreen .site-theme-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--vp-c-divider);
+  padding: 8px 0 7px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+  color: var(--vp-c-text-1);
+}
+
+.VPNavScreen .site-theme-choice-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.VPNavScreen .site-theme-segments {
+  display: flex;
+  padding: 2px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+}
+
+.VPNavScreen .site-theme-segment {
+  padding: 2px 12px;
+  border-radius: 4px;
+  color: var(--vp-c-text-2);
+  font-weight: 400;
+  transition: background-color 0.25s;
+}
+
+.VPNavScreen .site-theme-segment:hover {
+  background-color: var(--vp-c-default-soft);
+}
+
+.VPNavScreen .site-theme-segment[aria-pressed='true'] {
+  background-color: var(--vp-c-brand-3);
+  color: var(--vp-button-brand-text);
+}
+
+.VPNavScreen .site-theme-segment:focus-visible {
+  outline: 2px solid var(--ps-focus);
+  outline-offset: 1px;
+}
+
+/* The Feedback menu (theme/end-links.ts): the app's menu, drawn with the docs' variables. */
+.VPNav .site-feedback {
+  position: relative;
+}
+
+.VPNav .site-feedback-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-elv);
+  box-shadow: var(--vp-shadow-3);
+}
+
+.VPNav .site-feedback-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--vp-c-text-1);
+  font: inherit;
+  font-size: 14px;
+  line-height: 24px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.VPNav .site-feedback-item:hover,
+.VPNav .site-feedback-item:focus-visible {
+  outline: none;
+  background-color: var(--vp-c-default-soft);
+}
+
+/* In the phone menu: a heading row, then the entries indented under it. */
+.VPNavScreen .site-feedback-heading {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+  color: var(--vp-c-text-1);
+}
+
+.VPNavScreen .site-end-links.labelled .site-feedback-rows .site-end-link {
+  padding-left: 24px;
+  font-weight: 400;
+  color: var(--vp-c-text-2);
 }

@@ -1,23 +1,22 @@
 /**
  * The explorer's chrome, rebuilt in plain HTML so landing sections read as the same product as
- * /explore without loading it: off-white canvas, white toolbar, plot panel with a point-count
- * chip, and the legend panel on the right.
+ * /explore without loading it: a muted canvas, the toolbar, the plot panel with a point-count
+ * chip, and the legend panel on the right. Its colours are the explorer's --ps-* tokens, so it
+ * turns dark with the page.
  */
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import type { Category } from './landing-data';
-import { NEUTRAL_COLOR } from './ScatterCanvas';
+import { useNeutralColor } from './ScatterCanvas';
 
-/**
- * The explorer's light surface colours as plain values: the landing page never imports core, whose
- * tokens live in packages/core/src/styles/theme.ts.
- */
+/** The explorer's surface colours: tokens.css, which index.css imports for the landing page. */
 const UI = {
-  page: '#f4f4f4',
-  border: '#d9e2ec',
-  row: '#f6f8fb',
-  text: '#334155',
-  muted: '#5b6b7a',
+  page: 'var(--ps-surface-muted)',
+  plot: 'var(--ps-plot-bg)',
+  border: 'var(--ps-border)',
+  row: 'var(--ps-surface-hover)',
+  text: 'var(--ps-text)',
+  muted: 'var(--ps-text-muted)',
 };
 
 /** "12 of 294" when named categories were collapsed into Other, else the category count. */
@@ -58,6 +57,7 @@ export function ExplorerFrame({
   busy,
   plotClassName,
 }: ExplorerFrameProps) {
+  const neutral = useNeutralColor();
   const named = categories.filter((category) => !category.kind);
   const rows = [...named.slice(0, legendRows), ...categories.filter((category) => category.kind)];
 
@@ -65,7 +65,7 @@ export function ExplorerFrame({
     <div className="rounded-2xl border border-border/70 p-2 sm:p-3" style={{ background: UI.page }}>
       {toolbar ? (
         <div
-          className="mb-2 flex flex-wrap items-center rounded-md border bg-white gap-x-5 gap-y-2 px-3 py-2"
+          className="mb-2 flex flex-wrap items-center rounded-md border bg-card gap-x-5 gap-y-2 px-3 py-2"
           style={{ borderColor: UI.border }}
         >
           {toolbar}
@@ -74,17 +74,14 @@ export function ExplorerFrame({
 
       <div className="flex flex-col gap-2 lg:flex-row">
         <div
-          className={cn(
-            'relative min-w-0 flex-1 overflow-hidden rounded-md border bg-white',
-            plotClassName,
-          )}
-          style={{ borderColor: UI.border }}
+          className={cn('relative min-w-0 flex-1 overflow-hidden rounded-md border', plotClassName)}
+          style={{ borderColor: UI.border, background: UI.plot }}
           aria-busy={busy}
         >
           {children}
           {count ? (
             <span
-              className="pointer-events-none absolute bottom-2 left-2 rounded-[4px] border bg-white/90 px-1.5 py-0.5 text-[11px] tabular-nums"
+              className="pointer-events-none absolute bottom-2 left-2 rounded-[4px] border bg-card/90 px-1.5 py-0.5 text-[11px] tabular-nums"
               style={{ borderColor: UI.border, color: UI.text }}
             >
               {count.toLocaleString()} points
@@ -94,7 +91,7 @@ export function ExplorerFrame({
 
         {showLegend ? (
           <div
-            className="shrink-0 rounded-md border bg-white p-2 lg:w-64"
+            className="shrink-0 rounded-md border bg-card p-2 lg:w-64"
             style={{ borderColor: UI.border }}
           >
             <div className="flex items-baseline justify-between gap-2 px-2 pb-2 pt-1 text-sm">
@@ -117,9 +114,9 @@ export function ExplorerFrame({
                 >
                   <span
                     aria-hidden="true"
-                    className="inline-block shrink-0 rounded-full ring-1 ring-inset ring-black/25 h-3.5 w-3.5"
+                    className="inline-block shrink-0 rounded-full ring-1 ring-inset ring-foreground/25 h-3.5 w-3.5"
                     style={{
-                      background: colored ? category.color : NEUTRAL_COLOR,
+                      background: colored ? category.color : neutral,
                       transition: 'background 550ms ease',
                     }}
                   />

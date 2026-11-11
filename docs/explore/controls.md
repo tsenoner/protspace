@@ -119,11 +119,11 @@ sizes, labels, arrows and zoom insets, saved as PNG or PDF. See the
 
 ### Theme
 
-**Theme** steps the page through **System** (follow your operating system, the default),
-**Dark** and **Light**: each click moves to the next one and applies it at once. Its icon shows the
-mode that is on, and its tooltip says which mode a click switches to. ProtSpace remembers your
-choice in this browser. The plot, the legend and
-the structure viewer follow the theme; exported images and figures are always light.
+**Theme** switches between light and dark at once. ProtSpace starts in your operating system's
+setting; a click to the other mode is remembered in this browser, and a click back to your system's
+mode follows the system again. Its icon shows the mode on screen, and its tooltip says which mode a
+click switches to. The home page and the docs share the choice. The plot, the legend and the
+structure viewer follow the theme; exported images and figures are always light.
 
 ### Help
 

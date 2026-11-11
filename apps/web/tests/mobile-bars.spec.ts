@@ -162,10 +162,10 @@ test.describe('the bars on a phone', () => {
       /^Export/,
       /^Figure editor/,
       /^Help & shortcuts/,
+      /^Feedback/,
     ]) {
       await expect(rows.getByRole('button', { name })).toBeVisible();
     }
-    await expect(rows.getByRole('link', { name: /^Feedback/ })).toBeVisible();
     await expect(rows.getByRole('radiogroup', { name: 'Theme' })).toBeVisible();
     // GitHub is not offered on a phone: the sheet has no row for it, and the app bar's link goes
     // with the other actions.
@@ -302,7 +302,7 @@ test.describe('the bars on a phone on its side', () => {
     await expectWithinViewport(page, heading);
 
     // The last row is reachable by scrolling the sheet, with its header still in view.
-    const last = rows.getByRole('link', { name: /^Feedback/ });
+    const last = rows.getByRole('button', { name: 'Feedback', exact: true });
     await last.scrollIntoViewIfNeeded();
     await expectWithinViewport(page, last);
     await expectWithinViewport(page, heading);
@@ -809,20 +809,27 @@ test.describe('the More sheet', () => {
     await expect(moreButton(page)).toBeFocused();
   });
 
-  test('Feedback closes the sheet as it opens the mail client', async ({ page }) => {
+  test("Feedback reveals the app bar menu's three entries; Copy closes the sheet and confirms", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const rows = await openMoreSheet(page);
-    // Keep the mailto: navigation from leaving the page; the app's own click handler still runs.
-    await page.evaluate(() =>
-      window.addEventListener(
-        'click',
-        (e) => {
-          if ((e.target as Element).closest('a[href^="mailto:"]')) e.preventDefault();
-        },
-        { capture: true },
-      ),
-    );
-    await rows.getByRole('link', { name: /^Feedback/ }).tap();
+    const feedback = rows.getByRole('button', { name: 'Feedback', exact: true });
+    const copy = rows.getByRole('button', { name: 'Copy email address', exact: true });
+    await expect(feedback).toHaveAttribute('aria-expanded', 'false');
+    await expect(copy).toBeHidden();
+
+    await feedback.tap();
+    await expect(feedback).toHaveAttribute('aria-expanded', 'true');
+    for (const name of ['Email hello@protspace.app', 'Copy email address', 'Open a GitHub issue']) {
+      await expect(rows.getByRole('button', { name, exact: true })).toBeVisible();
+    }
+
+    await copy.tap();
     await expect(moreSheet(page)).toBeHidden();
+    await expect(page.getByText('Copied hello@protspace.app')).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('hello@protspace.app');
   });
 
   test('the More dot shows with a filter applied', async ({ page }) => {
@@ -847,6 +854,12 @@ test.describe('the More sheet', () => {
     const help = await box(rows.getByRole('button', { name: 'Help & shortcuts', exact: true }));
     expect(exported.y).toBeLessThan(theme.y);
     expect(theme.y).toBeLessThan(help.y);
+    // Two modes, the one on screen selected: the light OS's.
+    await expect(rows.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio')).toHaveText([
+      'Light',
+      'Dark',
+    ]);
+    await expect(themeSegment(page, 'Light')).toHaveAttribute('aria-checked', 'true');
 
     await themeSegment(page, 'Dark').tap();
     await expect.poll(() => htmlTheme(page)).toBe('dark');
@@ -857,6 +870,11 @@ test.describe('the More sheet', () => {
         workbenchRoot(page).evaluate((element) => getComputedStyle(element).backgroundColor),
       )
       .toBe(DARK_SURFACE);
+
+    // Back to the OS's own mode: the page follows the system again.
+    await themeSegment(page, 'Light').tap();
+    await expect.poll(() => htmlTheme(page)).toBe('system');
+    await expect(themeSegment(page, 'Light')).toHaveAttribute('aria-checked', 'true');
   });
 
   test('the theme never lights the More dot', async ({ page }) => {

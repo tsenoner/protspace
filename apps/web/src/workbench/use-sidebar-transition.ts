@@ -9,7 +9,7 @@ interface SlideTargets {
   structure: RefObject<HTMLElement | null>;
 }
 
-/** The theme's panel duration and easing (design decision 8), read where theme.ts sets them. */
+/** The theme's panel duration and easing (design decision 8), read where tokens.css sets them. */
 function slideTiming(): KeyframeAnimationOptions {
   const style = getComputedStyle(document.documentElement);
   // No fallback: a missing --ps-duration makes animate() throw, which the e2e suite catches.

@@ -2,21 +2,15 @@ import { ChevronDown, Github, Menu, MessageSquare, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { FEEDBACK_HREF, GITHUB_REPO_URL } from '@/lib/support';
+import { FEEDBACK_MENU_ITEMS, GITHUB_REPO_URL, runFeedbackAction } from '@/lib/support';
 import { cn } from '@/lib/utils';
+import { notifyCopied } from '@/workbench/FeedbackMenu';
 import { getNavigation } from '../../../../config/navigation';
+import { SiteFeedbackMenu } from './SiteFeedbackMenu';
+import { SiteThemeChoice, SiteThemeToggle } from './SiteThemeToggle';
 
 const mode = import.meta.env.MODE === 'production' ? 'production' : 'development';
 const navItems = getNavigation(mode);
-
-/**
- * The icon links the bar ends with, in Explore's order and with its icons: Explore's app bar and
- * the docs' nav end the same way, so they sit on the same line when the reader switches pages.
- */
-const END_LINKS = [
-  { label: 'Feedback', href: FEEDBACK_HREF, Icon: MessageSquare, newTab: false },
-  { label: 'GitHub', href: GITHUB_REPO_URL, Icon: Github, newTab: true },
-] as const;
 
 /** A 16 px icon at the kit's stroke, as in Explore's app bar; decorative. */
 const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
@@ -25,10 +19,9 @@ const newTabProps = { target: '_blank', rel: 'noopener noreferrer' } as const;
 
 const textClass = 'text-foreground';
 /** ProtSpace's accent text colour (--ps-accent-text), which the docs' nav uses as its brand colour
-    too: the hover and the current page are the same blue in both bars. Literal class names, so
-    Tailwind finds them. */
-const hoverTextClass = 'hover:text-[var(--ps-accent-text,#0369a1)]';
-const activeTextClass = 'text-[var(--ps-accent-text,#0369a1)]';
+    too: the hover and the current page are the same blue in both bars. */
+const hoverTextClass = 'hover:text-link';
+const activeTextClass = 'text-link';
 /** Classes for an internal link: the current page is marked, as the docs' nav marks Docs. */
 const navLinkClass =
   (base: string) =>
@@ -37,10 +30,10 @@ const navLinkClass =
 const mutedTextClass = 'text-foreground/80';
 const dropdownClasses =
   'absolute top-full right-0 mt-2 w-48 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus-within:opacity-100 group-focus-within:visible transition-all duration-200 border bg-background border-border/40';
-/** Sized and spaced like Explore's icon buttons (config/site-bar.css): the background changes on
-    hover, the colour stays. */
+/** Sized, spaced and coloured like Explore's icon buttons (config/site-bar.css, the --ps-* tokens):
+    the background changes on hover, the colour stays. */
 const iconButtonClass =
-  'inline-flex size-(--site-bar-icon-box) flex-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'inline-flex size-(--site-bar-icon-box) flex-none items-center justify-center rounded-[var(--ps-radius)] text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 type HeaderProps = {
   className?: string;
@@ -86,7 +79,7 @@ const Header = ({ className, heroLogoId }: HeaderProps) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   const headerClasses = cn(
-    'fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-lg bg-background/85 border-border',
+    'fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-lg bg-background/85 border-border font-ps',
     className,
   );
 
@@ -104,7 +97,12 @@ const Header = ({ className, heroLogoId }: HeaderProps) => {
           aria-hidden={!logoShown || undefined}
           tabIndex={logoShown ? undefined : -1}
         >
-          <img src="/wordmark.svg" alt="ProtSpace" className="block h-(--site-bar-logo-height)" />
+          {/* Its dark ink turned light in dark, as Explore's (--ps-logo-filter). */}
+          <img
+            src="/wordmark.svg"
+            alt="ProtSpace"
+            className="block h-(--site-bar-logo-height) [filter:var(--ps-logo-filter)]"
+          />
         </Link>
 
         {/* Desktop Navigation */}
@@ -175,25 +173,23 @@ const Header = ({ className, heroLogoId }: HeaderProps) => {
             })}
           </nav>
 
+          {/* Theme, Feedback, GitHub: the order and the icons of the docs' and Explore's bars. */}
           <div className="flex items-center gap-(--site-bar-icon-gap)">
-            {/* The theme button's slot in the docs' and Explore's bars. Home is light only, so it
-                stays empty and the links above line up with theirs. */}
-            <span className="size-(--site-bar-icon-box) flex-none" aria-hidden="true" />
-            {END_LINKS.map(({ label, href, Icon, newTab }) => (
-              <Tooltip key={label}>
-                <TooltipTrigger asChild>
-                  <a
-                    href={href}
-                    className={iconButtonClass}
-                    aria-label={label}
-                    {...(newTab ? newTabProps : {})}
-                  >
-                    <Icon {...ICON} />
-                  </a>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{label}</TooltipContent>
-              </Tooltip>
-            ))}
+            <SiteThemeToggle className={iconButtonClass} />
+            <SiteFeedbackMenu className={iconButtonClass} />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href={GITHUB_REPO_URL}
+                  className={iconButtonClass}
+                  aria-label="GitHub"
+                  {...newTabProps}
+                >
+                  <Github {...ICON} />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">GitHub</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
@@ -293,23 +289,66 @@ const Header = ({ className, heroLogoId }: HeaderProps) => {
             );
           })}
 
-          {/* The bar's icon links, named, in the same order. */}
-          {END_LINKS.map(({ label, href, Icon, newTab }) => (
-            <a
-              key={label}
-              href={href}
+          {/* The bar's icon buttons, named, in the same order: Theme as a Light | Dark pair,
+              Feedback's entries in place, then GitHub. */}
+          <SiteThemeChoice className="py-1 text-sm font-medium" />
+          <div>
+            <button
+              type="button"
+              onClick={() => setOpenDropdown(openDropdown === 'Feedback' ? null : 'Feedback')}
+              aria-expanded={openDropdown === 'Feedback'}
               className={cn(
-                'flex items-center gap-2 py-2 text-sm font-medium transition-colors',
+                'flex items-center justify-between w-full py-2 text-sm font-medium transition-colors',
                 textClass,
                 hoverTextClass,
               )}
-              {...(newTab ? newTabProps : {})}
-              onClick={() => setIsMenuOpen(false)}
             >
-              <Icon {...ICON} />
-              {label}
-            </a>
-          ))}
+              <span className="flex items-center gap-2">
+                <MessageSquare {...ICON} />
+                Feedback
+              </span>
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 transition-transform',
+                  openDropdown === 'Feedback' && 'rotate-180',
+                )}
+              />
+            </button>
+            {openDropdown === 'Feedback' && (
+              <div className="pl-6 space-y-2 mt-2">
+                {FEEDBACK_MENU_ITEMS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={cn(
+                      'block py-2 text-left text-sm transition-colors',
+                      mutedTextClass,
+                      hoverTextClass,
+                    )}
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      runFeedbackAction(value, notifyCopied);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <a
+            href={GITHUB_REPO_URL}
+            className={cn(
+              'flex items-center gap-2 py-2 text-sm font-medium transition-colors',
+              textClass,
+              hoverTextClass,
+            )}
+            {...newTabProps}
+            onClick={() => setIsMenuOpen(false)}
+          >
+            <Github {...ICON} />
+            GitHub
+          </a>
         </nav>
       )}
     </header>

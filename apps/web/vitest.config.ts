@@ -9,5 +9,8 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.test.ts'],
+    // Vitest blanks CSS it does not process, `?raw` imports included: theme-boot.test.ts reads
+    // core's tokens.css as text.
+    css: { include: [/tokens\.css/] },
   },
 });

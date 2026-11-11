@@ -83,7 +83,12 @@ The page becomes a workbench (mockup: [`mockups/workbench-light.png`](mockups/wo
 - **Shared anchors** (PR 555 review): Home, Explore and the docs keep their own bars, but take the
   bar's height, the wordmark's size and inset, and the inset of the last icon from one file,
   `config/site-bar.css`, and all three end in Feedback then GitHub as the same icons. Switching
-  pages, nothing moves.
+  pages, nothing moves. The follow-up review completes it: all three show the Theme button before
+  Feedback (Explore keeps Help between them), Feedback is the same menu everywhere (email, copy
+  the address, a GitHub issue), the wordmark is one file inverted in dark by `--ps-logo-filter`,
+  and the docs' bar is one full-width strip like the others. Explore keeps its toolbar without
+  site links (the wordmark leads Home, Help leads to the docs), and the bars keep their own phone
+  breakpoints (640 px for Explore, 768 px for Home and the docs, where VitePress fixes it).
 - **View bar** (44 px): how the plot is drawn. Projection (with the projection's "how it was made"
   details beside it), Color by, Contours, Filter. It never wraps: labels shorten first, then the
   least-used items move into a "More" menu.
@@ -380,12 +385,19 @@ condition in the draft moves the slider only when the draft is applied.
 
 ### 16. Dark mode
 
-- A theme switch in the app bar (in the More sheet on phones): System (default), Dark, Light. In
-  the app bar it is one icon button that steps System → Dark → Light → System (PR 555 review): the
-  icon shows the mode, and the name and tooltip say the mode and the next ("Theme: System. Switch
-  to Dark"), since on a dark OS the step from System to Dark changes nothing on screen. The
-  choice is stored under `protspace:theme`; an inline script in `index.html` sets `data-theme`
-  before first paint, so the page never flashes white. System follows `prefers-color-scheme` live.
+- A two-state theme switch in the app bar (in the More sheet on phones, as a Light | Dark pair
+  showing the mode on screen), which supersedes the System → Dark → Light cycle of the PR 555
+  review (follow-up review): the page starts from `prefers-color-scheme` and follows it live; a
+  press stores the other mode; a press back to the OS's current mode removes the override, so the
+  page follows the system again (VitePress's and VueUse `useDark`'s rule, Chrome's dark-mode
+  toggle guidance). The icon shows the mode on screen, and the name and tooltip say it and the
+  other ("Theme: Light. Switch to Dark"). There is no third "System" state to pick.
+- Home, Explore and the docs share one choice (follow-up review). It is stored under VitePress's
+  own key, `vitepress-theme-appearance`, with VueUse's raw `dark` / `light` / `auto` values,
+  because VitePress's pre-paint head script hard-codes the key; the app's earlier
+  `protspace:theme` value is migrated once. One pre-paint script (`config/theme.ts`) sets
+  `data-theme` on every app route (a copy in `index.html`) and in the docs' head, so no page
+  flashes the other theme. The app's store also follows other tabs.
 - Everything on the explore page follows: shell, kit, legend, tooltips, dialogs, the loading
   overlay, notifications and the tour. The explore root sets `color-scheme` so scrollbars and form
   controls match.
@@ -395,15 +407,22 @@ condition in the draft moves the slider only when the draft is applied.
   background.
 - The Mol\* viewer's background follows the theme.
 - `data-theme="system"` stays on `<html>` as chosen; the token sheet's media query follows the OS
-  live, so nothing resolves it to light or dark in the attribute. The attribute is set only while
-  `/explore` is mounted.
+  live, so nothing resolves it to light or dark in the attribute. The attribute is set on every
+  page.
 - "Selection ring" means the brush and lasso outline and the EAT endpoint ring; no GPU ring is
   drawn around selected points.
 - Contour lines keep their lighten toward white in both themes; they get no token.
 - The Mol\* canvas takes `--ps-surface`, so the structure card matches its panel.
 - Exports always use the light values (white background, light greys), whatever the theme, and the
   figure editor previews them that way.
-- The landing page, privacy page and docs keep their current look.
+- Every page takes the app's palette, in light and dark, from one plain CSS token file,
+  `packages/core/src/styles/tokens.css` (follow-up review), which core reads into its Lit sheet,
+  the landing imports, and the docs import. Home, Privacy and 404 map Tailwind's shadcn colours
+  onto the tokens, so Home uses the app's accent (`#007ab5` light, `#38bdf8` dark) instead of
+  `#3b82f6`, and the landing's illustration panels and canvases go dark with the page. The docs
+  map VitePress's `--vp-c-*` colours (surfaces, text, lines, brand, buttons, code, custom blocks)
+  onto the tokens, so their dark mode is the app's slate `#0f172a`, not VitePress's `#1b1b1f`,
+  with dark buttons in sky-400 and dark text.
 
 Mockup: [`mockups/workbench-dark.png`](mockups/workbench-dark.png).
 

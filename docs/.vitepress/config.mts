@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitepress';
 import { getUrls, PORTS } from '../../config/urls';
 import { getNavigation } from '../../config/navigation';
+import { THEME_BOOT_SCRIPT } from '../../config/theme';
 
 const isDev = process.env.NODE_ENV !== 'production';
 const mode = isDev ? 'development' : 'production';
@@ -39,17 +40,18 @@ export default defineConfig({
 
   head: [
     ['link', { rel: 'icon', href: '/docs/favicon.svg' }],
+    // The app's theme boot (config/theme.ts): data-theme for the shared --ps-* tokens, and a move of
+    // the app's old key, before VitePress's own head script (added after these) reads the shared
+    // key for its .dark class.
+    ['script', { id: 'theme-boot' }, THEME_BOOT_SCRIPT],
     // Docs images come in light/dark pairs ({.light-only} then {.dark-only}, the dark twin lazy);
     // VitePress's appearance toggle puts .dark on <html>, so only one of each pair shows.
     ['style', {}, 'html.dark img.light-only,html:not(.dark) img.dark-only{display:none}'],
   ],
 
   themeConfig: {
-    logo: {
-      light: '/wordmark.svg',
-      dark: '/wordmark-black.svg',
-      alt: 'ProtSpace',
-    },
+    // One wordmark; custom.css inverts it in dark with the app's --ps-logo-filter.
+    logo: { src: '/wordmark.svg', alt: 'ProtSpace' },
     siteTitle: false,
 
     // Feedback and GitHub end the bar as icons (theme/end-links.ts), not as nav or social links.
@@ -80,6 +82,8 @@ export default defineConfig({
         text: item.text,
         link,
         ...(item.link && item.text !== 'Docs' && { target: '_self' }), // Only set target for non-Docs items
+        // Every docs page is under Docs: it stays marked, as Home's header marks its current page.
+        ...(item.text === 'Docs' && { activeMatch: '^/' }),
         // Home and Explore are the site's own pages, opened in the same tab: no ↗ (as on Home).
         noIcon: true,
       };

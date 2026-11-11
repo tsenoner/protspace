@@ -105,4 +105,36 @@ test.describe('feedback menu', () => {
     expect(issue.url()).toBe('https://github.com/tsenoner/protspace/issues/new');
     await issue.close();
   });
+
+  test("Home's header offers the same Feedback menu, by keyboard too", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('/privacy');
+    const button = page.getByRole('banner').getByRole('button', { name: 'Feedback', exact: true });
+    await expect(button).toHaveAttribute('aria-haspopup', 'menu');
+
+    await button.focus();
+    await page.keyboard.press('Enter');
+    const menu = page.getByRole('menu', { name: 'Feedback' });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem')).toHaveText([
+      'Email hello@protspace.app',
+      'Copy email address',
+      'Open a GitHub issue',
+    ]);
+    await expect(menu.getByRole('menuitem').first()).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(menu.getByRole('menuitem', { name: 'Copy email address' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(button).toBeFocused();
+
+    await button.click();
+    await menu.getByRole('menuitem', { name: 'Copy email address' }).click();
+    await expect(menu).toBeHidden();
+    await expect(page.getByText('Copied hello@protspace.app')).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('hello@protspace.app');
+  });
 });

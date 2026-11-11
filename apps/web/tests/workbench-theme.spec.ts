@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { THEME_STORAGE_KEY } from '../src/explore/theme-defaults';
+import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from '../src/explore/theme-defaults';
 import {
   appBar,
   appBarTextFits,
@@ -13,12 +13,19 @@ import {
   waitForExploreDataLoad,
 } from './helpers/explore';
 import { figureEditorContent, figurePreviewCanvas } from './helpers/figure';
-import { chooseTheme, DARK_SURFACE, htmlTheme, seedTheme, themeButton } from './helpers/theme';
+import {
+  chooseTheme,
+  DARK_SURFACE,
+  htmlTheme,
+  seedTheme,
+  shownTheme,
+  themeButton,
+} from './helpers/theme';
 import { workbenchRoot } from './helpers/workbench';
 
 /**
- * The explore page's theme (design decision 16): the stored choice, the first paint of a cold
- * load, the scope to /explore, and (Task 6.2 on) the switch.
+ * The site's theme (design decision 16): the stored choice, the first paint of a cold load, the
+ * pages it reaches, and the switch.
  */
 
 const WHITE = 'rgb(255, 255, 255)';
@@ -112,7 +119,7 @@ test.describe('theme choice', () => {
     await seedTheme(page, 'dark');
     const { first, release } = await loadWithExploreChunkHeld(page, '/?/explore');
 
-    // The redirect ran first: the path the boot script checked was already /explore.
+    // The redirect ran first, and the boot script themed the page before the first frame.
     expect(new URL(page.url()).pathname).toBe('/explore');
     expect(first).toBe(DARK_SURFACE);
     expect(await htmlTheme(page)).toBe('dark');
@@ -120,25 +127,71 @@ test.describe('theme choice', () => {
     await waitForExploreDataLoad(page);
   });
 
-  test('only /explore is themed', async ({ page }) => {
+  test('every page follows the choice: Home, Privacy and a missing page are dark too', async ({
+    page,
+  }) => {
     await seedTheme(page, 'dark');
-    for (const path of ['/', '/privacy']) {
+    // The first frame of a cold load of Home: no flash of the light page.
+    await page.addInitScript(() => {
+      const sample = () => {
+        if (!document.body) return requestAnimationFrame(sample);
+        (window as unknown as { __firstPaint?: string }).__firstPaint = getComputedStyle(
+          document.body,
+        ).backgroundColor;
+      };
+      requestAnimationFrame(sample);
+    });
+    await page.goto('/');
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { __firstPaint?: string }).__firstPaint),
+      )
+      .toBe(DARK_SURFACE);
+    for (const path of ['/', '/privacy', '/no-such-page']) {
       await page.goto(path);
-      expect(await htmlTheme(page)).toBeNull();
-      await expect.poll(() => backgroundOf(page.locator('body'))).toBe(WHITE);
+      expect(await htmlTheme(page)).toBe('dark');
+      await expect.poll(() => backgroundOf(page.locator('body'))).toBe(DARK_SURFACE);
+      expect(
+        await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
+      ).toBe('dark');
     }
+    // The header's wordmark turns light, as Explore's does.
+    await page.goto('/privacy');
+    await expect(page.getByRole('banner').locator('img[src="/wordmark.svg"]')).toHaveCSS(
+      'filter',
+      'invert(1) hue-rotate(180deg)',
+    );
+  });
 
-    await openExplore(page);
+  test("Home's theme button flips the page, and Explore opens in the same mode", async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const header = page.getByRole('banner');
+    const button = header.getByRole('button', { name: /^Theme: / });
+    await expect(button).toHaveAccessibleName('Theme: Light. Switch to Dark');
+    await expect.poll(() => backgroundOf(page.locator('body'))).toBe(WHITE);
+
+    await button.click();
     expect(await htmlTheme(page)).toBe('dark');
+    await expect(button).toHaveAccessibleName('Theme: Dark. Switch to Light');
+    await expect.poll(() => backgroundOf(page.locator('body'))).toBe(DARK_SURFACE);
+    expect(await page.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY)).toBe('dark');
 
-    // Leaving through the wordmark's SPA link: Explore unmounts and takes the attribute with it.
+    // Explore through the SPA link, then back through the wordmark: one choice throughout.
+    await header.getByRole('link', { name: 'Explore', exact: true }).first().click();
+    await waitForExploreDataLoad(page);
+    expect(await htmlTheme(page)).toBe('dark');
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(DARK_SURFACE);
+    await chooseTheme(page, 'Light');
+
     await appBar(page).getByRole('link', { name: 'ProtSpace home' }).click();
     await page.waitForURL((url) => url.pathname === '/');
-    await expect.poll(() => htmlTheme(page)).toBeNull();
-    expect(
-      await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
-    ).not.toBe('dark');
+    expect(await shownTheme(page)).toBe('light');
     await expect.poll(() => backgroundOf(page.locator('body'))).toBe(WHITE);
+    await expect(
+      page.getByRole('banner').getByRole('button', { name: /^Theme: / }),
+    ).toHaveAccessibleName('Theme: Light. Switch to Dark');
   });
 });
 
@@ -167,7 +220,7 @@ test.describe('the theme switch', () => {
       .locator('ps-icon-button[data-driver-id="theme"]')
       .evaluate((button) => (button as HTMLElement & { icon: string }).icon);
 
-  test('Dark from the app bar themes the page, survives a reload and is stored as JSON', async ({
+  test('Dark from the app bar themes the page, survives a reload and is stored raw', async ({
     page,
   }) => {
     await openExplore(page);
@@ -175,9 +228,8 @@ test.describe('the theme switch', () => {
 
     expect(await htmlTheme(page)).toBe('dark');
     await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(DARK_SURFACE);
-    expect(await page.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY)).toBe(
-      '"dark"',
-    );
+    // VitePress's key and value, so the docs open dark too.
+    expect(await page.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY)).toBe('dark');
 
     await page.reload();
     await waitForExploreDataLoad(page);
@@ -185,39 +237,60 @@ test.describe('the theme switch', () => {
     await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(DARK_SURFACE);
   });
 
-  test('each press steps System, Dark, Light and back, and the name says the mode and the next', async ({
+  test("a press flips the mode, and a press back to the OS's mode follows the system again", async ({
     page,
   }) => {
-    await seedTheme(page, 'system');
     await openExplore(page);
-    const steps = [
-      ['system', 'Theme: System. Switch to Dark'],
-      ['dark', 'Theme: Dark. Switch to Light'],
-      ['light', 'Theme: Light. Switch to System'],
-      ['system', 'Theme: System. Switch to Dark'],
-    ] as const;
-    for (const [index, [theme, name]] of steps.entries()) {
-      if (index > 0) await themeButton(page).click();
-      expect(await htmlTheme(page)).toBe(theme);
-      await expect(themeButton(page)).toHaveAccessibleName(name);
-    }
-    // No menu any more: a press applies the next mode at once.
+    const stored = () => page.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY);
+    // Nothing stored on a light OS: the system's light.
+    expect(await htmlTheme(page)).toBe('system');
+    await expect(themeButton(page)).toHaveAccessibleName('Theme: Light. Switch to Dark');
+
+    await themeButton(page).click();
+    expect(await htmlTheme(page)).toBe('dark');
+    await expect(themeButton(page)).toHaveAccessibleName('Theme: Dark. Switch to Light');
+    expect(await stored()).toBe('dark');
+
+    await themeButton(page).click();
+    expect(await htmlTheme(page)).toBe('system');
+    await expect(themeButton(page)).toHaveAccessibleName('Theme: Light. Switch to Dark');
+    expect(await stored()).toBeNull();
+
+    // Following the system again: the OS turning dark turns the page and the button dark.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(DARK_SURFACE);
+    await expect(themeButton(page)).toHaveAccessibleName('Theme: Dark. Switch to Light');
+    // No menu: a press applies the other mode at once.
     await expect(page.getByRole('menu', { name: 'Theme' })).toHaveCount(0);
   });
 
-  test("the button's icon shows the choice", async ({ page }) => {
+  test("the button's icon shows the mode", async ({ page }) => {
     await openExplore(page);
     await chooseTheme(page, 'Light');
     expect(await shownIcon(page)).toBe('sun');
     await chooseTheme(page, 'Dark');
     expect(await shownIcon(page)).toBe('moon');
-    await chooseTheme(page, 'System');
-    expect(await shownIcon(page)).toBe('sun-moon');
   });
 
-  test('System follows the OS live', async ({ page }) => {
+  test("the explore page's old choice is moved to the shared key", async ({ page }) => {
+    await page.addInitScript((key) => {
+      if (!sessionStorage.getItem('seeded')) {
+        localStorage.setItem(key, '"dark"');
+        sessionStorage.setItem('seeded', '1');
+      }
+    }, LEGACY_THEME_STORAGE_KEY);
     await openExplore(page);
-    await chooseTheme(page, 'System');
+    expect(await htmlTheme(page)).toBe('dark');
+    expect(
+      await page.evaluate(
+        ([legacy, key]) => [localStorage.getItem(legacy), localStorage.getItem(key)],
+        [LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY],
+      ),
+    ).toEqual([null, 'dark']);
+  });
+
+  test('with no choice stored the page follows the OS live', async ({ page }) => {
+    await openExplore(page);
     expect(await htmlTheme(page)).toBe('system');
     await expect.poll(() => backgroundOf(workbenchRoot(page))).toBe(WHITE);
 
@@ -282,10 +355,10 @@ test.describe('exports stay light in Dark', () => {
     await openExplore(page);
     // Explicit, so the test holds whatever DEFAULT_THEME is (Task 6.13 makes it System).
     await chooseTheme(page, 'Light');
-    expect(await htmlTheme(page)).toBe('light');
+    expect(await shownTheme(page)).toBe('light');
     const light = await quickPng(page);
     await chooseTheme(page, 'Dark');
-    expect(await htmlTheme(page)).toBe('dark');
+    expect(await shownTheme(page)).toBe('dark');
     const dark = await quickPng(page);
 
     // Decode both in the page and compare every pixel: the export never reads the theme.
@@ -350,7 +423,7 @@ test.describe('exports stay light in Dark', () => {
 });
 
 test.describe('dark surfaces', () => {
-  // Dark role values from theme.ts, as computed colours (block-scoped: other describes in this
+  // Dark role values from tokens.css, as computed colours (block-scoped: other describes in this
   // file may name their own).
   const DARK_RAISED = 'rgb(22, 32, 54)'; // --ps-surface-raised #162036
   const DARK_HOVER = 'rgb(30, 41, 59)'; // --ps-surface-hover #1e293b

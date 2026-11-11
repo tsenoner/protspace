@@ -3,7 +3,7 @@
 
 /*
  * ProtSpace theme overrides for driver.js. Every colour is a --ps-* token
- * (packages/core/src/styles/theme.ts), so the tour follows the explore page's theme. driver.css
+ * (packages/core/src/styles/tokens.css), so the tour follows the explore page's theme. driver.css
  * paints its own light colours on the popover, its arrow, the close button and the footer
  * buttons (including their :hover and :focus states); each is overridden here. The overlay's
  * colour is set in product-tour.ts (overlayColor). style-lint.test.ts fails a raw colour here.
