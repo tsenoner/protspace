@@ -197,12 +197,13 @@ export class LegendDataController {
 
   /**
    * The counts without the filter or isolation. They change only with what is counted, not with
-   * the isolation state, so they are kept per count source (the synced storage, or the fed
-   * `annotationValues` array) and known values: a constrained rebuild or a Reset preview reuses
+   * the isolation state, so they are kept per synced count source and known values: a constrained rebuild or a Reset preview reuses
    * them instead of scanning every protein again.
    */
   private unfilteredFrequencies(knownValues: string[]): ReadonlyMap<string, number> {
-    const source = this.host._countSource ?? this.host.annotationValues;
+    const source = this.host._countSource;
+    // A host-fed `annotationValues` array can be edited in place, so only synced storage is kept.
+    if (!source) return this.computeAnnotationCounts(knownValues, true);
     const known = knownValues.join('\u0000');
     const memo = this._unfilteredCounts;
     if (memo && memo.source === source && memo.known === known) return memo.counts;

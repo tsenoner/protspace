@@ -139,7 +139,14 @@ export class PsDialog extends LitElement {
         return dialog.dismissible;
       },
     });
-    this.dialog.showModal();
+    try {
+      this.dialog.showModal();
+    } catch (error) {
+      // A dialog that cannot open must not leave a layer above everything else.
+      this.releaseLayer();
+      this.releaseLayer = undefined;
+      throw error;
+    }
     this.frame.focus();
     const target = this.querySelector<HTMLElement>('[autofocus]');
     target?.focus();
