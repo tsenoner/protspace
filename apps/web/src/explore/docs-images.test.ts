@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   captureVariants,
-  DEFAULT_GIF_BUDGET,
-  gifLadder,
-  outputFile,
+  DEFAULT_VIDEO_BUDGET,
+  outputFiles,
   validateManifest,
   type CaptureEntry,
 } from '../../../../scripts/docs-screenshots/capture-plan';
@@ -12,7 +11,10 @@ import {
   imageRefs,
   lintDocs,
   lintManifest,
+  manifestOutputs,
   pageAnchors,
+  videoFiles,
+  videoTags,
   type DocsPage,
   type ImageFile,
   type ImageRef,
@@ -30,56 +32,57 @@ function entry(overrides: Partial<CaptureEntry> & { name: string }): CaptureEntr
   return { kind: 'png', viewport: 'desktop', docs: ['explore/index.md'], ...overrides };
 }
 
-describe('outputFile', () => {
+describe('outputFiles', () => {
   it.each([
-    ['interface-overview', 'png', 'light', 'interface-overview.png'],
-    ['interface-overview', 'png', 'dark', 'interface-overview-dark.png'],
-    ['examples/demo', 'png', 'light', 'examples/demo.png'],
-    ['zoom', 'gif', 'light', 'zoom.gif'],
-  ] as const)('names %s (%s, %s) %s', (name, kind, theme, file) => {
-    expect(outputFile(name, kind, theme)).toBe(file);
+    ['interface-overview', 'png', 'light', ['interface-overview.png']],
+    ['interface-overview', 'png', 'dark', ['interface-overview-dark.png']],
+    ['examples/demo', 'png', 'dark', ['examples/demo-dark.png']],
+    ['zoom', 'video', 'light', ['zoom.webm', 'zoom.mp4', 'zoom.jpg']],
+    ['zoom', 'video', 'dark', ['zoom-dark.webm', 'zoom-dark.mp4', 'zoom-dark.jpg']],
+  ] as const)('names %s (%s, %s) %j', (name, kind, theme, files) => {
+    expect(outputFiles(name, kind, theme)).toEqual(files);
   });
 });
 
 describe('captureVariants', () => {
-  const entries = [
-    entry({ name: 'paired', themes: ['dark', 'light'] }),
-    entry({ name: 'zoom', kind: 'gif' }),
-    entry({ name: 'plain' }),
-  ];
+  const entries = [entry({ name: 'shot' }), entry({ name: 'zoom', kind: 'video' })];
 
-  it('expands every entry in manifest order, light before dark, light by default', () => {
-    expect(captureVariants(entries).map((variant) => [variant.file, variant.theme])).toEqual([
-      ['paired.png', 'light'],
-      ['paired-dark.png', 'dark'],
-      ['zoom.gif', 'light'],
-      ['plain.png', 'light'],
+  it('expands every entry into light then dark, in manifest order', () => {
+    expect(
+      captureVariants(entries).map((variant) => [variant.title, variant.stem, variant.theme]),
+    ).toEqual([
+      ['shot.png', 'shot', 'light'],
+      ['shot-dark.png', 'shot-dark', 'dark'],
+      ['zoom.webm', 'zoom', 'light'],
+      ['zoom-dark.webm', 'zoom-dark', 'dark'],
     ]);
   });
 
   it('keeps only the asked kind', () => {
-    expect(captureVariants(entries, 'png').map((variant) => variant.file)).toEqual([
-      'paired.png',
-      'paired-dark.png',
-      'plain.png',
+    expect(captureVariants(entries, 'png').map((variant) => variant.title)).toEqual([
+      'shot.png',
+      'shot-dark.png',
     ]);
-    expect(captureVariants(entries, 'gif').map((variant) => variant.file)).toEqual(['zoom.gif']);
+    expect(captureVariants(entries, 'video').map((variant) => variant.files)).toEqual([
+      ['zoom.webm', 'zoom.mp4', 'zoom.jpg'],
+      ['zoom-dark.webm', 'zoom-dark.mp4', 'zoom-dark.jpg'],
+    ]);
   });
 
   it('hands each variant its entry', () => {
-    expect(captureVariants(entries, 'gif')[0].entry).toBe(entries[1]);
+    expect(captureVariants(entries, 'video')[0].entry).toBe(entries[1]);
   });
 });
 
 describe('validateManifest', () => {
-  it('accepts a screenshot, a light and dark screenshot, a thumbnail and a GIF', () => {
+  it('accepts a screenshot, a thumbnail, a phone screenshot and a video', () => {
     expect(
       validateManifest([
         entry({ name: 'interface-overview' }),
-        entry({ name: 'legend-panel', themes: ['light', 'dark'], scale: 1 }),
+        entry({ name: 'legend-panel', scale: 1 }),
         entry({ name: 'examples/demo', docs: ['explore/example-datasets.md'] }),
-        entry({ name: 'zoom', kind: 'gif', budgetBytes: 2_000_000, gif: { fps: 20 } }),
-        entry({ name: 'more-sheet', viewport: 'phone', themes: ['light', 'dark'] }),
+        entry({ name: 'zoom', kind: 'video', budgetBytes: 2_000_000 }),
+        entry({ name: 'more-sheet', viewport: 'phone' }),
       ]),
     ).toEqual([]);
   });
@@ -88,17 +91,21 @@ describe('validateManifest', () => {
     ['a name used twice', [entry({ name: 'twice' }), entry({ name: 'twice' })], 'used twice'],
     ['an uppercase name', [entry({ name: 'Interface-Overview' })], 'kebab-case'],
     ['a name with spaces', [entry({ name: 'interface overview' })], 'kebab-case'],
-    ['a name in another folder', [entry({ name: 'gifs/zoom' })], 'kebab-case'],
-    ['a name with an extension', [entry({ name: 'zoom.gif' })], 'has an extension'],
+    ['a name in another folder', [entry({ name: 'videos/zoom' })], 'kebab-case'],
+    ['a name with an extension', [entry({ name: 'zoom.webm' })], 'has an extension'],
     ['a name ending in -dark', [entry({ name: 'overview-dark' })], 'ending in -dark'],
+    ['a budget on a screenshot', [entry({ name: 'shot', budgetBytes: 1_000 })], 'videos only'],
     [
-      'a dark GIF',
-      [entry({ name: 'zoom', kind: 'gif', themes: ['light', 'dark'] })],
-      'GIF is light only',
+      'a crop on a video',
+      [entry({ name: 'zoom', kind: 'video', target: (page) => page.locator('body') })],
+      'records the whole viewport',
     ],
-    ['a budget on a screenshot', [entry({ name: 'shot', budgetBytes: 1_000 })], 'GIFs only'],
-    ['GIF settings on a screenshot', [entry({ name: 'shot', gif: { fps: 15 } })], 'GIFs only'],
-    ['a scale on a GIF', [entry({ name: 'zoom', kind: 'gif', scale: 1 })], 'scale applies'],
+    [
+      'a video at an odd height',
+      [entry({ name: 'zoom', kind: 'video', viewport: 'phone' })],
+      'even width and height',
+    ],
+    ['a scale on a video', [entry({ name: 'zoom', kind: 'video', scale: 1 })], 'scale applies'],
     [
       'a scale on a phone screenshot',
       [entry({ name: 'shot', viewport: 'phone', scale: 2 })],
@@ -120,32 +127,15 @@ describe('validateManifest', () => {
   });
 });
 
-describe('the GIF budget', () => {
-  it('defaults to 3 MiB', () => {
-    expect(DEFAULT_GIF_BUDGET).toBe(3_145_728);
-  });
-});
-
-describe('gifLadder', () => {
-  const rungs = (ladder: ReturnType<typeof gifLadder>) =>
-    ladder.map(({ fps, width }) => `${fps}/${width}`);
-
-  it('steps the frame rate down, then the width', () => {
-    expect(rungs(gifLadder())).toEqual(['25/1000', '20/1000', '15/1000', '15/800', '15/640']);
-  });
-
-  it("starts at an entry's own settings", () => {
-    expect(rungs(gifLadder({ fps: 20, width: 800 }))).toEqual(['20/800', '15/800', '15/640']);
-  });
-
-  it('steps only the frame rate from the narrowest width', () => {
-    expect(rungs(gifLadder({ width: 640 }))).toEqual(['25/640', '20/640', '15/640']);
+describe('the video budget', () => {
+  it('defaults to 1.25 MiB per encoding', () => {
+    expect(DEFAULT_VIDEO_BUDGET).toBe(1_310_720);
   });
 });
 
 /**
  * The capture code as text: decision 19 replaced the old captures' hand-written shadow-root
- * lookups and fixed sleeps with role locators, typed plot reads and signals. Pacing a GIF is the
+ * lookups and fixed sleeps with role locators, typed plot reads and signals. Pacing a video is the
  * one place a fixed wait belongs, and it is `cap.hold`, so it is countable in review.
  */
 const CAPTURE_SOURCES = import.meta.glob('../../../../scripts/docs-screenshots/**/*.ts', {
@@ -201,9 +191,9 @@ describe('the capture code', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('removes an older recording before a GIF starts recording', () => {
+  it('removes an older recording before a video starts recording', () => {
     const runner = CAPTURE_SOURCES[`${SCRIPTS}runner.ts`];
-    const removed = runner.indexOf("fs.rmSync(recording(entry.name, 'webm')");
+    const removed = runner.indexOf("fs.rmSync(recording(stem, 'webm')");
     expect(removed).toBeGreaterThan(-1);
     expect(removed).toBeLessThan(runner.indexOf('browser.newContext('));
   });
@@ -362,11 +352,6 @@ describe('docs lint: light and dark pairs', () => {
     ]);
   });
 
-  it('leaves an inline display alone on an image with no dark twin', () => {
-    const page = lintPage('explore/a.md', '<img src="./images/b.png" style="display: block">');
-    expect(lintDocs([page], onDisk('b.png'))).toEqual([]);
-  });
-
   it('fails a -dark image shown without its light twin before it', () => {
     const pages = [lintPage('explore/a.md', ...PAIR), lintPage('explore/b.md', PAIR[1])];
     expect(lintDocs(pages, files)).toEqual([
@@ -376,32 +361,111 @@ describe('docs lint: light and dark pairs', () => {
 
   it('fails a -dark file without its light twin', () => {
     expect(lintDocs([], onDisk('b-dark.png'))).toEqual([
-      'b-dark.png: a -dark image needs its light twin b.png',
+      'b-dark.png: a -dark file needs its light twin b.png',
+    ]);
+  });
+
+  it('fails an image without its dark twin, once, wherever it is shown', () => {
+    const page = lintPage('explore/a.md', '![B](./images/b.png)');
+    expect(lintDocs([page], onDisk('b.png'))).toEqual([
+      'b.png: no dark twin b-dark.png; every docs image and video comes in light and dark',
+    ]);
+  });
+
+  it('fails a GIF: animations are videos', () => {
+    const page = lintPage('explore/a.md', '![Z](./images/z.gif)', '![Z](./images/z-dark.gif)');
+    expect(lintDocs([page], onDisk('z.gif', 'z-dark.gif'))).toEqual([
+      expect.stringMatching(/^explore\/a\.md:1: z\.gif: animations are looping videos now/),
+    ]);
+  });
+});
+
+describe('docs lint: videos', () => {
+  const zoom = onDisk(...videoFiles('zoom'));
+  const tag = '<DocsVideo name="zoom" alt="Zooming" width="1280" height="720" />';
+
+  it('names both themes of a video', () => {
+    expect(videoFiles('zoom')).toEqual([
+      'zoom.webm',
+      'zoom.mp4',
+      'zoom.jpg',
+      'zoom-dark.webm',
+      'zoom-dark.mp4',
+      'zoom-dark.jpg',
+    ]);
+  });
+
+  it('reads a tag and the six files it shows', () => {
+    const page = lintPage('explore/a.md', '# A', tag);
+    expect(videoTags(page)).toEqual([
+      { page: 'explore/a.md', name: 'zoom', alt: 'Zooming', width: 1280, height: 720, line: 2 },
+    ]);
+    expect(imageRefs(page).map((ref) => [ref.file, ref.line, ref.video])).toEqual(
+      videoFiles('zoom').map((file) => [file, 2, { width: 1280, height: 720 }]),
+    );
+  });
+
+  it('passes a tag whose files are all on disk', () => {
+    expect(lintDocs([lintPage('explore/a.md', tag)], zoom)).toEqual([]);
+  });
+
+  it('fails a missing file, and a light file without its dark twin', () => {
+    const files = onDisk('zoom.webm', 'zoom.mp4', 'zoom.jpg');
+    expect(lintDocs([lintPage('explore/a.md', tag)], files)).toEqual([
+      'zoom.webm: no dark twin zoom-dark.webm; every docs image and video comes in light and dark',
+      'zoom.mp4: no dark twin zoom-dark.mp4; every docs image and video comes in light and dark',
+      'zoom.jpg: no dark twin zoom-dark.jpg; every docs image and video comes in light and dark',
+      'explore/a.md:1: zoom-dark.webm does not exist',
+      'explore/a.md:1: zoom-dark.mp4 does not exist',
+      'explore/a.md:1: zoom-dark.jpg does not exist',
+    ]);
+  });
+
+  it.each([
+    ['no name', '<DocsVideo alt="Z" width="1" height="1" />', 'needs a name'],
+    ['no alt text', '<DocsVideo name="zoom" width="1280" height="720" />', 'needs alt text'],
+    ['no height', '<DocsVideo name="zoom" alt="Z" width="1280" />', 'needs a width and a height'],
+  ])('fails a tag with %s', (_, line, why) => {
+    const files = line.includes('name=') ? zoom : [];
+    expect(lintDocs([lintPage('explore/a.md', line)], files)).toEqual([
+      expect.stringContaining(why),
+    ]);
+  });
+
+  it('fails a video file shown as an image', () => {
+    const page = lintPage('explore/a.md', tag, '![Poster](./images/zoom.jpg)');
+    expect(lintDocs([page], zoom)).toEqual([
+      'explore/a.md:2: zoom.jpg is part of a video: show it with <DocsVideo name="…">',
     ]);
   });
 });
 
 describe('docs lint: image size', () => {
   it('fails a raw image with a width but no height, which shifts the page as it loads', () => {
-    const page = lintPage('explore/a.md', '<img src="./images/a.png" alt="A" width="240" />');
-    expect(lintDocs([page], onDisk('a.png'))).toEqual([
+    const page = lintPage(
+      'explore/a.md',
+      '<img src="./images/a.png" class="light-only" alt="A" width="240" />',
+      '<img src="./images/a-dark.png" class="dark-only" alt="A" width="240" height="480" loading="lazy" />',
+    );
+    expect(lintDocs([page], onDisk('a.png', 'a-dark.png'))).toEqual([
       'explore/a.md:1: a.png sets a width but no height; give both, or the page shifts as it loads',
     ]);
   });
 
   it('passes a raw image with both, or with neither', () => {
-    const both = '<img src="./images/a.png" alt="A" width="240" height="480" />';
-    const neither = '<img src="./images/b.png" alt="B" />';
-    expect(lintDocs([lintPage('explore/a.md', both, neither)], onDisk('a.png', 'b.png'))).toEqual(
-      [],
-    );
+    const both = '<img src="./images/a.png" class="light-only" alt="A" width="240" height="480" />';
+    const neither = '<img src="./images/a-dark.png" class="dark-only" alt="A" loading="lazy" />';
+    expect(
+      lintDocs([lintPage('explore/a.md', both, neither)], onDisk('a.png', 'a-dark.png')),
+    ).toEqual([]);
   });
 });
 
 describe('docs lint: files', () => {
   it('fails a file no page shows', () => {
-    expect(lintDocs([], onDisk('a.png'))).toEqual([
+    expect(lintDocs([], onDisk('a.png', 'a-dark.png'))).toEqual([
       'a.png: no docs page shows it; delete it or show it on a page',
+      'a-dark.png: no docs page shows it; delete it or show it on a page',
     ]);
   });
 
@@ -477,8 +541,6 @@ describe('docs lint: stale terms', () => {
 describe('docs lint: manifest', () => {
   const output = (file: string, extra: Partial<MediaOutput> = {}): MediaOutput => ({
     file,
-    kind: 'png',
-    budgetBytes: 3 * 1024 * 1024,
     docs: ['explore/a.md'],
     ...extra,
   });
@@ -486,12 +548,13 @@ describe('docs lint: manifest', () => {
     lintPage('explore/a.md', ...files.map((file) => `![x](./images/${file})`));
 
   it('passes outputs on disk, shown by their page, within budget', () => {
-    const gif = output('z.gif', { kind: 'gif', budgetBytes: 100 });
+    const webm = output('z.webm', { budgetBytes: 100 });
     const files = [
       { file: 'a.png', bytes: 5 },
-      { file: 'z.gif', bytes: 100 },
+      { file: 'z.webm', bytes: 100 },
     ];
-    expect(lintManifest([output('a.png'), gif], files, [shows('a.png', 'z.gif')])).toEqual([]);
+    const page = lintPage('explore/a.md', '![x](./images/a.png)', '<DocsVideo name="z" />');
+    expect(lintManifest([output('a.png'), webm], files, [page])).toEqual([]);
   });
 
   it('fails an output missing on disk', () => {
@@ -506,10 +569,22 @@ describe('docs lint: manifest', () => {
     ]);
   });
 
-  it('fails a GIF one byte over its budget', () => {
-    const gif = output('z.gif', { kind: 'gif', budgetBytes: 100 });
-    expect(lintManifest([gif], [{ file: 'z.gif', bytes: 101 }], [shows('z.gif')])).toEqual([
-      'z.gif: 101 bytes, over its 100-byte budget',
+  it('fails a video one byte over its budget', () => {
+    const mp4 = output('z.mp4', { budgetBytes: 100 });
+    const page = lintPage('explore/a.md', '<DocsVideo name="z" />');
+    expect(lintManifest([mp4], [{ file: 'z.mp4', bytes: 101 }], [page])).toEqual([
+      'z.mp4: 101 bytes, over its 100-byte budget',
+    ]);
+  });
+
+  it("fails a <DocsVideo> whose size is not the video's", () => {
+    const webm = output('z.webm', { size: { width: 1280, height: 720 } });
+    const page = lintPage(
+      'explore/a.md',
+      '<DocsVideo name="z" alt="Z" width="1000" height="563" />',
+    );
+    expect(lintManifest([webm], [{ file: 'z.webm' }], [page])).toEqual([
+      'explore/a.md:1: the video is 1280×720, but its <DocsVideo> says 1000×563',
     ]);
   });
 
@@ -524,6 +599,25 @@ describe('docs lint: manifest', () => {
     expect(lintManifest([lost], [{ file: 'a.png' }], [])).toEqual([
       'a.png: its docs page explore/none.md does not exist',
     ]);
+  });
+});
+
+describe('docs lint: manifestOutputs', () => {
+  const entries = [entry({ name: 'shot' }), entry({ name: 'zoom', kind: 'video' })];
+
+  it("lists every entry's light and dark files, a video's budget and its frame size", () => {
+    const outputs = manifestOutputs(entries);
+    expect(outputs.map((output) => output.file)).toEqual([
+      'shot.png',
+      'shot-dark.png',
+      ...videoFiles('zoom'),
+    ]);
+    const zoom = outputs.find((output) => output.file === 'zoom.webm');
+    expect(zoom).toMatchObject({
+      budgetBytes: DEFAULT_VIDEO_BUDGET,
+      size: { width: 1280, height: 720 },
+    });
+    expect(outputs.find((output) => output.file === 'zoom.jpg')?.budgetBytes).toBeUndefined();
   });
 });
 
@@ -542,7 +636,7 @@ const REAL_PAGES: DocsPage[] = Object.entries(realPageTexts)
   .filter(([key]) => !key.startsWith(`${DOCS_ROOT}superpowers/`))
   .map(([key, text]) => ({ path: key.slice(DOCS_ROOT.length), text }));
 const REAL_FILES: ImageFile[] = Object.keys(
-  import.meta.glob('../../../../docs/explore/images/**/*.{png,gif}'),
+  import.meta.glob('../../../../docs/explore/images/**/*.{png,gif,webm,mp4,jpg}'),
 ).map((key) => ({ file: key.slice(IMAGES_ROOT.length) }));
 
 describe('docs lint: the real docs', () => {

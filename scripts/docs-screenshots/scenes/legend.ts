@@ -79,7 +79,7 @@ async function toggleSteps(page: Page, cap: CaptureApi): Promise<void> {
 async function reorderSteps(page: Page, cap: CaptureApi): Promise<void> {
   const values = (await legendRowValues(page)).filter((v) => v !== OTHER);
   if (values.length < 3) throw new Error(`Too few legend rows to reorder: ${values.join(', ')}`);
-  // N/A to the top, as the old GIF did; the last row if N/A is missing or already first.
+  // N/A to the top, as the old animation did; the last row if N/A is missing or already first.
   const moving = values.includes(NA) && values[0] !== NA ? NA : values[values.length - 1];
   const top = values[0];
 
@@ -156,7 +156,7 @@ async function othersSteps(page: Page, cap: CaptureApi): Promise<void> {
 export const LEGEND_CAPTURES: CaptureEntry[] = [
   {
     name: 'legend-toggle',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     steps: toggleSteps,
     timeoutMs: 120_000,
@@ -164,7 +164,7 @@ export const LEGEND_CAPTURES: CaptureEntry[] = [
   },
   {
     name: 'legend-reorder',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     steps: reorderSteps,
     timeoutMs: 120_000,
@@ -172,7 +172,7 @@ export const LEGEND_CAPTURES: CaptureEntry[] = [
   },
   {
     name: 'legend-others',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     steps: othersSteps,
     timeoutMs: 120_000,
@@ -182,7 +182,6 @@ export const LEGEND_CAPTURES: CaptureEntry[] = [
     name: 'legend-settings',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     steps: async (page) => {
       await openLegendSettings(page);
     },
@@ -193,7 +192,6 @@ export const LEGEND_CAPTURES: CaptureEntry[] = [
     name: 'legend-other-popover',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     steps: async (page) => {
       await openLegendOther(page);
     },

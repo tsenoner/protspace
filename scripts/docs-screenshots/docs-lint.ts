@@ -4,9 +4,18 @@
  * Vitest runs them against the pages it globs (`apps/web/src/explore/docs-images.test.ts`). So
  * this module imports nothing from Node or Playwright.
  *
- * A page is named relative to `docs/` (`explore/index.md`); an image file relative to
- * `docs/explore/images/` (`zoom.gif`, `examples/demo.png`).
+ * A page is named relative to `docs/` (`explore/index.md`); a media file relative to
+ * `docs/explore/images/` (`zoom.webm`, `examples/demo.png`).
  */
+import {
+  captureVariants,
+  DEFAULT_VIDEO_BUDGET,
+  THEMES,
+  VIDEO_FILES,
+  variantStem,
+  viewportSize,
+  type CaptureEntry,
+} from './capture-plan';
 
 /** A docs page: its path relative to `docs/` and its markdown. */
 export interface DocsPage {
@@ -14,7 +23,7 @@ export interface DocsPage {
   text: string;
 }
 
-/** One image a page shows from `docs/explore/images/`. */
+/** One file a page shows from `docs/explore/images/`: an image, or one file of a video. */
 export interface ImageRef {
   page: string;
   /** Relative to `docs/explore/images/`. */
@@ -31,13 +40,32 @@ export interface ImageRef {
   inlineDisplay?: true;
   /** A raw `<img>` with a `width` and no `height`: it has no box until it loads. */
   heightless?: true;
+  /** Shown by a `<DocsVideo>`, which renders both themes itself: the tag's stated frame size. */
+  video?: { width: number | null; height: number | null };
+}
+
+/**
+ * A `<DocsVideo name="zoom" alt="…" width="1280" height="720" />` on a page: the theme's
+ * component (docs/.vitepress/theme/docs-video.ts) shows `<name>.webm` or `<name>-dark.webm`, with
+ * their MP4s and posters, whichever matches the docs' mode.
+ */
+export interface VideoTag {
+  page: string;
+  /** Relative to `docs/explore/images/`, without extension or `-dark`. */
+  name: string | null;
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  line: number;
 }
 
 /** One file the capture manifest writes, and the pages that must show it. */
 export interface MediaOutput {
   file: string;
-  kind: 'png' | 'gif';
-  budgetBytes: number;
+  /** The largest the file may be: a video's WebM and MP4. */
+  budgetBytes?: number;
+  /** The frame size a video's tag must state; on the light WebM, one per video. */
+  size?: { width: number; height: number };
   /** Relative to `docs/`. */
   docs: readonly string[];
 }
@@ -72,11 +100,13 @@ const STALE_TERMS: readonly RegExp[] = [
 /** The pages the stale-term check reads: the user guide, not the developer docs. */
 const USER_GUIDE = /^(index\.md|explore\/.+\.md|guide\/.+\.md)$/;
 const IMAGES_DIR = 'explore/images/';
-const DARK = /-dark\.(png|gif)$/;
+const DARK = /-dark\.(png|gif|webm|mp4|jpg)$/;
+/** The files a page shows through `<DocsVideo>`, never as an image. */
+const VIDEO_FILE = /\.(webm|mp4|jpg)$/;
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
-const lightTwinOf = (file: string): string => file.replace(/-dark(\.[a-z]+)$/, '$1');
-const darkTwinOf = (file: string): string => file.replace(/(\.[a-z]+)$/, '-dark$1');
+const lightTwinOf = (file: string): string => file.replace(/-dark(\.[a-z0-9]+)$/, '$1');
+const darkTwinOf = (file: string): string => file.replace(/(\.[a-z0-9]+)$/, '-dark$1');
 
 /** The page's lines with front matter and fenced code blanked, so line numbers still count. */
 function prose(text: string): string[] {
@@ -122,6 +152,7 @@ function resolve(fromPage: string, target: string): string | null {
 
 const MD_IMAGE = /!\[[^\]]*\]\(\s*<?([^\s)>]+)>?(?:\s+"[^"]*")?\s*\)(\{[^}\n]*\})?/g;
 const HTML_IMG = /<img\b[^>]*>/gi;
+const DOCS_VIDEO = /<DocsVideo\b[^>]*>/g;
 
 function attribute(tag: string, name: string): string | null {
   return new RegExp(`\\s${name}\\s*=\\s*"([^"]*)"`, 'i').exec(tag)?.[1] ?? null;
@@ -134,12 +165,62 @@ function imageFile(page: string, src: string): string | null {
   return path !== null && path.startsWith(IMAGES_DIR) ? path.slice(IMAGES_DIR.length) : null;
 }
 
-/** The images `page` shows from `docs/explore/images/`, in page order. */
+const pixels = (value: string | null): number | null =>
+  value !== null && /^\d+$/.test(value) ? Number(value) : null;
+
+/** The `<DocsVideo>` tags on `page`, in page order. */
+export function videoTags(page: DocsPage): VideoTag[] {
+  const tags: VideoTag[] = [];
+  prose(page.text).forEach((raw, index) => {
+    for (const match of withoutInlineCode(raw).matchAll(DOCS_VIDEO)) {
+      tags.push({
+        page: page.path,
+        name: attribute(match[0], 'name'),
+        alt: attribute(match[0], 'alt'),
+        width: pixels(attribute(match[0], 'width')),
+        height: pixels(attribute(match[0], 'height')),
+        line: index + 1,
+      });
+    }
+  });
+  return tags;
+}
+
+/** A video's files for both themes: `zoom.webm`, `zoom.mp4`, `zoom.jpg`, `zoom-dark.webm`, … */
+export function videoFiles(name: string): string[] {
+  return THEMES.flatMap((theme) =>
+    VIDEO_FILES.map((extension) => `${variantStem(name, theme)}.${extension}`),
+  );
+}
+
+/**
+ * The files `page` shows from `docs/explore/images/`, in page order: each image, and each file of
+ * each `<DocsVideo>`.
+ */
 export function imageRefs(page: DocsPage): ImageRef[] {
   const refs: ImageRef[] = [];
   prose(page.text).forEach((raw, index) => {
     const text = withoutInlineCode(raw);
     const found: Array<{ at: number; ref: ImageRef }> = [];
+    for (const match of text.matchAll(DOCS_VIDEO)) {
+      const name = attribute(match[0], 'name');
+      if (name === null) continue;
+      const video = {
+        width: pixels(attribute(match[0], 'width')),
+        height: pixels(attribute(match[0], 'height')),
+      };
+      for (const file of videoFiles(name)) {
+        const ref: ImageRef = {
+          page: page.path,
+          file,
+          classes: [],
+          lazy: true,
+          line: index + 1,
+          video,
+        };
+        found.push({ at: match.index ?? 0, ref });
+      }
+    }
     for (const match of text.matchAll(MD_IMAGE)) {
       const file = imageFile(page.path, match[1]);
       if (file === null) continue;
@@ -292,6 +373,20 @@ function staleProblems(pages: readonly DocsPage[]): string[] {
   return problems;
 }
 
+/** The problems of one `<DocsVideo>` tag that need no files: a name, alt text and a frame size. */
+function videoTagProblems(tag: VideoTag): string[] {
+  const at = `${tag.page}:${tag.line}`;
+  if (tag.name === null) return [`${at}: <DocsVideo> needs a name, its file stem in images/`];
+  const problems: string[] = [];
+  if (!tag.alt) problems.push(`${at}: <DocsVideo name="${tag.name}"> needs alt text`);
+  if (tag.width === null || tag.height === null) {
+    problems.push(
+      `${at}: <DocsVideo name="${tag.name}"> needs a width and a height in pixels, or the page shifts as it loads`,
+    );
+  }
+  return problems;
+}
+
 function imageProblems(pages: readonly DocsPage[], files: readonly ImageFile[]): string[] {
   const problems: string[] = [];
   const onDisk = new Set(files.map((file) => file.file));
@@ -299,10 +394,17 @@ function imageProblems(pages: readonly DocsPage[], files: readonly ImageFile[]):
     [...onDisk].filter((file) => DARK.test(file) && !onDisk.has(lightTwinOf(file))),
   );
   for (const file of twinless) {
-    problems.push(`${file}: a -dark image needs its light twin ${lightTwinOf(file)}`);
+    problems.push(`${file}: a -dark file needs its light twin ${lightTwinOf(file)}`);
+  }
+  for (const file of onDisk) {
+    if (DARK.test(file) || onDisk.has(darkTwinOf(file))) continue;
+    problems.push(
+      `${file}: no dark twin ${darkTwinOf(file)}; every docs image and video comes in light and dark`,
+    );
   }
   const shown = new Set<string>();
   for (const page of pages) {
+    for (const tag of videoTags(page)) problems.push(...videoTagProblems(tag));
     const refs = imageRefs(page);
     // One message per image and its twin: a pair written backwards is one mistake, not two.
     const pairProblems = new Map<string, string>();
@@ -322,6 +424,16 @@ function imageProblems(pages: readonly DocsPage[], files: readonly ImageFile[]):
     }
     for (let i = 0; i < refs.length; i++) {
       const ref = refs[i];
+      // A <DocsVideo> shows its own twins.
+      if (ref.video) continue;
+      if (VIDEO_FILE.test(ref.file)) {
+        note(ref, `${ref.file} is part of a video: show it with <DocsVideo name="…">`);
+        continue;
+      }
+      if (ref.file.endsWith('.gif')) {
+        note(ref, `${ref.file}: animations are looping videos now; show one with <DocsVideo>`);
+        continue;
+      }
       if (!onDisk.has(ref.file) || twinless.has(ref.file)) continue;
       if (DARK.test(ref.file)) {
         note(
@@ -332,6 +444,7 @@ function imageProblems(pages: readonly DocsPage[], files: readonly ImageFile[]):
       }
       const twin = darkTwinOf(ref.file);
       if (!onDisk.has(twin)) {
+        // The file check above reports the missing twin.
         if (ref.classes.includes('light-only')) {
           note(
             ref,
@@ -377,17 +490,36 @@ function imageProblems(pages: readonly DocsPage[], files: readonly ImageFile[]):
 }
 
 /**
- * The checks that need only the pages and the image files: refs to missing files, orphans, the
- * light/dark pair rules, raw images with a width but no height, `#anchor` links, and names of
- * removed UI in the user guide.
+ * The checks that need only the pages and the media files: refs to missing files, orphans, files
+ * without their dark twin, the light/dark pair rules, `<DocsVideo>` tags, raw images with a width
+ * but no height, `#anchor` links, and names of removed UI in the user guide.
  */
 export function lintDocs(pages: readonly DocsPage[], files: readonly ImageFile[]): string[] {
   return [...imageProblems(pages, files), ...anchorProblems(pages), ...staleProblems(pages)];
 }
 
+/** The files the manifest writes, with each one's budget, frame size and pages. */
+export function manifestOutputs(entries: readonly CaptureEntry[]): MediaOutput[] {
+  return entries.flatMap((entry) =>
+    captureVariants([entry]).flatMap((variant) =>
+      variant.files.map((file) => {
+        const output: MediaOutput = { file, docs: entry.docs };
+        if (entry.kind === 'video' && !file.endsWith('.jpg')) {
+          output.budgetBytes = entry.budgetBytes ?? DEFAULT_VIDEO_BUDGET;
+        }
+        if (entry.kind === 'video' && file === `${entry.name}.webm`) {
+          output.size = viewportSize(entry.viewport);
+        }
+        return output;
+      }),
+    ),
+  );
+}
+
 /**
  * The checks that need the capture manifest: every output on disk, within its budget and shown by
- * each page its entry names; every image file made by an entry.
+ * each page its entry names, a video's tag stating its frame size; every media file made by an
+ * entry.
  */
 export function lintManifest(
   outputs: readonly MediaOutput[],
@@ -402,7 +534,7 @@ export function lintManifest(
     if (!file) {
       problems.push(`${output.file}: in the manifest but not on disk; capture it`);
     } else if (
-      output.kind === 'gif' &&
+      output.budgetBytes !== undefined &&
       file.bytes !== undefined &&
       file.bytes > output.budgetBytes
     ) {
@@ -412,9 +544,22 @@ export function lintManifest(
     }
     for (const doc of output.docs) {
       const page = byPath.get(doc);
-      if (!page) problems.push(`${output.file}: its docs page ${doc} does not exist`);
-      else if (!imageRefs(page).some((ref) => ref.file === output.file)) {
-        problems.push(`${output.file}: ${doc} does not show it`);
+      if (!page) {
+        problems.push(`${output.file}: its docs page ${doc} does not exist`);
+        continue;
+      }
+      const refs = imageRefs(page).filter((ref) => ref.file === output.file);
+      if (refs.length === 0) problems.push(`${output.file}: ${doc} does not show it`);
+      const { size } = output;
+      if (!size) continue;
+      for (const ref of refs) {
+        const stated = ref.video;
+        if (!stated || stated.width === null || stated.height === null) continue;
+        if (stated.width !== size.width || stated.height !== size.height) {
+          problems.push(
+            `${doc}:${ref.line}: the video is ${size.width}×${size.height}, but its <DocsVideo> says ${stated.width}×${stated.height}`,
+          );
+        }
       }
     }
   }

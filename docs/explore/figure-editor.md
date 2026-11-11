@@ -33,7 +33,8 @@ preview or the exported figure yet; see [Exporting Results](/explore/exporting#d
 
 ## Journal Presets
 
-![Journal preset grid in the Figure Editor sidebar, Nature, Science, Cell, PNAS, PLOS, Slide and Flexible options with their column widths](./images/figure-editor-presets.png)
+![Journal preset grid in the Figure Editor sidebar, Nature, Science, Cell, PNAS, PLOS, Slide and Flexible options with their column widths](./images/figure-editor-presets.png){.light-only}
+![Journal preset grid in the Figure Editor sidebar, Nature, Science, Cell, PNAS, PLOS, Slide and Flexible options with their column widths](./images/figure-editor-presets-dark.png){.dark-only}
 
 The presets grid configures dimensions and DPI for specific journals:
 
@@ -156,7 +157,8 @@ While focus is inside an editable input (e.g. a label's text field), Delete/Back
 
 ## Overlay tools
 
-![The Figure Editor with four overlays on the demo map: a circle with the label "Cluster 1" beside it, and an arrow with the label "Cluster 2"; the sidebar lists them under Overlays (4)](./images/figure-editor-overlays.png)
+![The Figure Editor with four overlays on the demo map: a circle with the label "Cluster 1" beside it, and an arrow with the label "Cluster 2"; the sidebar lists them under Overlays (4)](./images/figure-editor-overlays.png){.light-only}
+![The Figure Editor with four overlays on the demo map: a circle with the label "Cluster 1" beside it, and an arrow with the label "Cluster 2"; the sidebar lists them under Overlays (4)](./images/figure-editor-overlays-dark.png){.dark-only}
 
 The toolbar at the bottom of the preview switches between drawing tools.
 
@@ -188,7 +190,8 @@ Click to place a text label. Default text is "Label" and can be renamed in the s
 
 ### Zoom-inset tool
 
-![The Figure Editor with a zoom inset: a dashed source rectangle around a small cluster, the magnified target rectangle in the lower left with a solid border and connector lines, and Zoom Insets (1) in the sidebar with its Dot size and Border controls](./images/figure-editor-zoom-inset.png)
+![The Figure Editor with a zoom inset: a dashed source rectangle around a small cluster, the magnified target rectangle in the lower left with a solid border and connector lines, and Zoom Insets (1) in the sidebar with its Dot size and Border controls](./images/figure-editor-zoom-inset.png){.light-only}
+![The Figure Editor with a zoom inset: a dashed source rectangle around a small cluster, the magnified target rectangle in the lower left with a solid border and connector lines, and Zoom Insets (1) in the sidebar with its Dot size and Border controls](./images/figure-editor-zoom-inset-dark.png){.dark-only}
 
 Creates a magnified view of a region. Two-phase workflow:
 

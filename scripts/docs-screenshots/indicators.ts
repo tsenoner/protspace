@@ -1,8 +1,8 @@
 /**
- * The GIF overlays: a dot that follows the pointer, a ripple where it clicks or starts a drag, a
+ * The video overlays: a dot that follows the pointer, a ripple where it clicks or starts a drag, a
  * key cap for each key press, and a caption. Page-side elements styled with the app's `--ps-*`
  * tokens only, so they follow the page's theme. Their root is a manual popover, raised on each use,
- * so it shows above open menus and dialogs in the top layer. Only `runner.ts` uses them, for GIFs:
+ * so it shows above open menus and dialogs in the top layer. Only `runner.ts` uses them, for videos:
  * screenshots never show them.
  */
 import type { Page } from '@playwright/test';

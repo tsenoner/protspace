@@ -266,11 +266,37 @@ export const publishModalStyles = [
       font-size: var(--ps-text-xs);
     }
 
+    /*
+     * Drawn by the page, not the platform: a native arrow differs between macOS, Windows and
+     * headless Chrome (where the docs are captured) and ignores the theme. The arrow is the kit
+     * select's chevron, two strokes in the muted text colour, each a diagonal band across one of
+     * two side-by-side squares.
+     */
     .publish-select {
-      padding: var(--ps-space-0-5) var(--ps-space-1-5);
+      appearance: none;
+      padding: var(--ps-space-0-5) calc(var(--ps-space-1-5) + 14px) var(--ps-space-0-5)
+        var(--ps-space-1-5);
       border: 1px solid var(--ps-border-control);
       border-radius: var(--ps-radius);
-      background: var(--ps-surface);
+      background-color: var(--ps-surface);
+      background-image:
+        linear-gradient(
+          45deg,
+          transparent calc(50% - 0.75px),
+          var(--ps-text-muted) calc(50% - 0.75px) calc(50% + 0.75px),
+          transparent calc(50% + 0.75px)
+        ),
+        linear-gradient(
+          -45deg,
+          transparent calc(50% - 0.75px),
+          var(--ps-text-muted) calc(50% - 0.75px) calc(50% + 0.75px),
+          transparent calc(50% + 0.75px)
+        );
+      background-position:
+        right calc(var(--ps-space-1-5) + 5px) center,
+        right var(--ps-space-1-5) center;
+      background-size: 5px 5px;
+      background-repeat: no-repeat;
       color: var(--ps-text);
       font-family: inherit;
       font-size: var(--ps-text-sm);

@@ -315,3 +315,17 @@ html:not(.dark) .site-theme-moon {
   font-weight: 400;
   color: var(--vp-c-text-2);
 }
+
+/*
+ * A docs animation (theme/docs-video.ts): as wide as the column, its height from the width and
+ * height it states, framed like the screenshots.
+ */
+.vp-doc .docs-video {
+  margin: 16px 0;
+}
+
+.vp-doc .docs-video video {
+  width: 100%;
+  height: auto;
+  vertical-align: top;
+}

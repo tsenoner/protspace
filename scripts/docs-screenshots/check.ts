@@ -1,25 +1,25 @@
 /**
  * `pnpm docs:images:check`, in the pre-commit hook: the docs-lint rules against the disk. Every
- * image under docs/explore/images/ must come from the capture manifest, be shown by the pages its
- * entry names, and keep GIFs within their budget; the pages' image refs, light/dark pairs, #anchor
- * links and user-guide wording must hold. Reads files only; runs no browser.
+ * file under docs/explore/images/ must come from the capture manifest, have its dark twin, be
+ * shown by the pages its entry names, and keep a video within its budget; the pages' image refs,
+ * light/dark pairs, `<DocsVideo>` tags, #anchor links and user-guide wording must hold. Reads
+ * files only; runs no browser.
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { captureVariants, DEFAULT_GIF_BUDGET } from './capture-plan';
 import {
   lintDocs,
   lintManifest,
+  manifestOutputs,
   type DocsPage,
   type ImageFile,
-  type MediaOutput,
 } from './docs-lint';
 import { MANIFEST } from './manifest';
 import { IMAGES_DIR } from './paths';
 
 const DOCS_DIR = path.join(__dirname, '../../docs');
-/** Every image format, so a stray JPEG or SVG fails as uncovered instead of slipping past. */
-const IMAGE_FILE = /\.(png|gif|jpe?g|webp|svg)$/i;
+/** Every image and video format, so a stray JPEG or SVG fails as uncovered instead of slipping past. */
+const MEDIA_FILE = /\.(png|gif|jpe?g|webp|svg|webm|mp4|mov)$/i;
 
 /** Every file under `dir`, skipping dot folders (`.vitepress`) and node_modules. */
 function walk(dir: string): string[] {
@@ -42,16 +42,10 @@ const pages: DocsPage[] = walk(DOCS_DIR)
   }));
 
 const files: ImageFile[] = walk(IMAGES_DIR)
-  .filter((file) => IMAGE_FILE.test(file))
+  .filter((file) => MEDIA_FILE.test(file))
   .map((file) => ({ file: posix(path.relative(IMAGES_DIR, file)), bytes: fs.statSync(file).size }));
 
-const outputs: MediaOutput[] = captureVariants(MANIFEST).map(({ entry, file }) => ({
-  file,
-  kind: entry.kind,
-  budgetBytes: entry.budgetBytes ?? DEFAULT_GIF_BUDGET,
-  docs: entry.docs,
-}));
-
+const outputs = manifestOutputs(MANIFEST);
 const manifestProblems = lintManifest(outputs, files, pages);
 const problems = [...lintDocs(pages, files), ...manifestProblems];
 if (problems.length > 0) {
@@ -59,11 +53,11 @@ if (problems.length > 0) {
   for (const problem of problems) console.error(`  ${problem}`);
   if (manifestProblems.length > 0)
     console.error(
-      'Capture an image with `pnpm docs:screenshots -g "<file>"` or ' +
-        '`pnpm docs:animations -g "<file>" && pnpm docs:gifs <name>`; see docs/explore/images/README.md.',
+      'Capture an image with `pnpm docs:screenshots -g "<name>"` or a video with ' +
+        '`pnpm docs:animations -g "<name>" && pnpm docs:videos <name>`; see docs/explore/images/README.md.',
     );
   process.exit(1);
 }
 console.log(
-  `✓ ${files.length} docs images match the manifest (${outputs.length} outputs) and ${pages.length} pages.`,
+  `✓ ${files.length} docs media files match the manifest (${outputs.length} outputs) and ${pages.length} pages.`,
 );

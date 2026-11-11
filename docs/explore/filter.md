@@ -89,7 +89,8 @@ these?**:
 - **Use "or" for all** (or "and") uses the same joiner for the whole list.
 - **Cancel** keeps the joiner as it was.
 
-![A group card, Any of these, holding two Protein family cards joined by or, then and, then a Sequence length card](./images/filter-group.png)
+![A group card, Any of these, holding two Protein family cards joined by or, then and, then a Sequence length card](./images/filter-group.png){.light-only}
+![A group card, Any of these, holding two Protein family cards joined by or, then and, then a Sequence length card](./images/filter-group-dark.png){.dark-only}
 
 A group is a card of its own, named **Any of these** (joined by or) or **All of these** (joined by
 and), or **Group** when its cards are joined in different ways or one has **and not**.
@@ -170,7 +171,8 @@ For a dataset with transferred annotations, the reliability range in the [EAT pa
 writes one condition into this filter while it hides the predictions outside the range (**Hide**).
 The condition shows here as a locked row, such as `Toxin class — reliability ≥ 50 %`:
 
-![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row.png)
+![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row.png){.light-only}
+![The Filter panel's locked row: Toxin class — reliability ≥ 50 %, with Edit in EAT and a remove button](./images/eat-filter-row-dark.png){.dark-only}
 
 You cannot edit it here, or join it with **and not**. **Edit in EAT ›** opens the EAT panel, and
 the ✕ puts the range back to 0–100 %. **Fade** writes no condition. See

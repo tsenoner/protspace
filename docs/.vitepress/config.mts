@@ -25,9 +25,9 @@ export default defineConfig({
     },
   },
 
-  // The Explore pages carry several multi-megabyte GIFs — scatterplot.md alone
-  // references four totalling ~22 MB. Without this they all fetch on page load,
-  // including the ones below the fold that most readers never scroll to.
+  // The Explore pages carry many screenshots, each in light and dark. Lazy, an image below the
+  // fold loads only once a reader scrolls to it, and the twin the other mode hides never does.
+  // The animations are <DocsVideo>s (theme/docs-video.ts), which load as they near the viewport.
   markdown: {
     image: {
       lazyLoading: true,
@@ -44,9 +44,14 @@ export default defineConfig({
     // the app's old key, before VitePress's own head script (added after these) reads the shared
     // key for its .dark class.
     ['script', { id: 'theme-boot' }, THEME_BOOT_SCRIPT],
-    // Docs images come in light/dark pairs ({.light-only} then {.dark-only}, the dark twin lazy);
-    // VitePress's appearance toggle puts .dark on <html>, so only one of each pair shows.
-    ['style', {}, 'html.dark img.light-only,html:not(.dark) img.dark-only{display:none}'],
+    // Docs images come in light/dark pairs ({.light-only} then {.dark-only}, the dark twin lazy),
+    // and each <DocsVideo> renders both its videos the same way; VitePress's appearance toggle
+    // puts .dark on <html>, so only the one matching the mode shows.
+    [
+      'style',
+      {},
+      'html.dark :is(img,video).light-only,html:not(.dark) :is(img,video).dark-only{display:none}',
+    ],
   ],
 
   themeConfig: {

@@ -3,14 +3,15 @@
 ### Requirement: Every documentation image comes from one capture manifest
 
 Every file under `docs/explore/images/` SHALL be made by exactly one entry of the capture manifest;
-no image is added or edited by hand. Each entry SHALL carry a unique lowercase kebab-case name,
-optionally under `examples/`, with no file extension and not ending in `-dark`, its kind (PNG or
-GIF), its viewport (`desktop` 1280 × 720, `tablet` 800 × 1280, `phone` 412 × 839, or a custom
-size), its themes, its dataset and steps, what to crop, and the documentation pages that show it.
-`pnpm docs:images` SHALL regenerate every image, and `pnpm docs:screenshots -g "<name>"` and
-`pnpm docs:animations -g "<name>"` SHALL capture the entries whose file names match. Screenshots
-SHALL be taken at device scale 2 with reduced motion (a desktop entry may set its own scale); GIFs
-SHALL be recorded at scale 1.
+no image or video is added or edited by hand. Each entry SHALL carry a unique lowercase kebab-case
+name, optionally under `examples/`, with no file extension and not ending in `-dark`, its kind (a
+PNG screenshot or a video), its viewport (`desktop` 1280 × 720, `tablet` 800 × 1280, `phone`
+412 × 839, or a custom size), its dataset and steps, what to crop (screenshots only), and the
+documentation pages that show it. `pnpm docs:images` SHALL regenerate every file, and
+`pnpm docs:screenshots -g "<name>"` and `pnpm docs:animations -g "<name>"` SHALL capture the
+entries whose file names match. Every capture SHALL run in a headless browser, so a run takes no
+window focus. Screenshots SHALL be taken at device scale 2 with reduced motion (a desktop entry may
+set its own scale); videos SHALL be recorded at scale 1, over the whole viewport.
 
 #### Scenario: A name used twice
 
@@ -52,14 +53,17 @@ the data and for the plot to settle, park the pointer and check that no tooltip 
 - **WHEN** a helper a scene imports gains a timer
 - **THEN** the docs image tests fail until the counted timers are updated
 
-### Requirement: A screenshot's dark twin is shown as a pair
+### Requirement: Every documentation image and video has a dark twin
 
-Only a screenshot entry SHALL have a dark variant, and only when it asks for one: captured with the
-browser in dark mode and the app's theme on System, and saved as the light file's twin
-`<name>-dark.png`. GIFs and the example thumbnails SHALL be light only. A page SHALL show a pair as
-two images on consecutive lines, the light one first and marked `{.light-only}`, the dark one marked
-`{.dark-only}`; written as raw HTML, the dark twin SHALL load lazily and neither image SHALL carry
-an inline `display` style. A raw image with a width SHALL also give its height.
+Every entry SHALL be captured twice, with the browser in light and in dark mode and the app's theme
+on System, the dark files named as the light ones' twins with `-dark` before the extension; there is
+no per-entry opt-out. The docs SHALL show the twin matching their own appearance, including after a
+manual toggle, by hiding the other with a rule keyed on VitePress's `html.dark`, never with a
+`prefers-color-scheme` media query. A page SHALL show a screenshot pair as two images on consecutive
+lines, the light one first and marked `{.light-only}`, the dark one marked `{.dark-only}`; written
+as raw HTML, the dark twin SHALL load lazily and neither image SHALL carry an inline `display`
+style. A raw image with a width SHALL also give its height. The hand-made chart under
+`docs/guide/images/` is outside the manifest and stays light only.
 
 #### Scenario: A pair written as the docs expect
 
@@ -77,53 +81,80 @@ an inline `display` style. A raw image with a width SHALL also give its height.
 - **WHEN** a raw HTML pair gives an image an inline `display` style
 - **THEN** the docs lint fails, because both twins would show
 
-#### Scenario: A dark GIF entry
+#### Scenario: An entry yields light and dark outputs
 
-- **WHEN** a GIF entry asks for the dark theme
-- **THEN** the manifest's validation reports that a GIF is light only
+- **WHEN** the manifest holds a screenshot entry `shot` and a video entry `zoom`
+- **THEN** its outputs are `shot.png`, `shot-dark.png`, and `zoom.webm`, `zoom.mp4` and `zoom.jpg`
+  with their `-dark` twins
 
-### Requirement: GIFs fit a size budget
+#### Scenario: A file without its dark twin
 
-Each GIF SHALL fit its entry's budget, 3 MiB (3,145,728 bytes) unless the entry sets its own.
-`pnpm docs:gifs` SHALL convert each recording with a two-pass palette and step down a fixed ladder
-until the file fits: 25 fps at 1000 px wide, then 20 and 15 fps, then 800 and 640 px at 15 fps. A
-GIF still over budget at the last step SHALL fail the run, keep its recording and leave the
-previous GIF in place.
+- **WHEN** a light file under `docs/explore/images/` has no `-dark` twin
+- **THEN** `pnpm docs:images:check` fails naming the file
+
+#### Scenario: The reader toggles the docs to dark
+
+- **WHEN** a reader whose system is light switches the docs to dark
+- **THEN** every screenshot and video shows its dark twin, and the light twins are hidden
+
+### Requirement: Animations are looping videos within a size budget
+
+Every docs animation SHALL be a muted, looping video: per theme a VP9 WebM, an H.264 MP4 for
+browsers without VP9, and a JPEG poster of its first frame, cut where the scene starts.
+`pnpm docs:videos` SHALL encode each recording at a fixed quality, and each WebM and MP4 SHALL fit
+its entry's budget, 1.25 MiB (1,310,720 bytes) unless the entry sets its own; a file still over
+budget SHALL fail the run, keep its recording and leave the previous files in place. A page SHALL
+show an animation with `<DocsVideo name alt width height>`, which renders both themes' videos and
+shows the one matching the docs' appearance. A video SHALL load nothing until it nears the viewport,
+SHALL play only while on screen, and SHALL NOT autoplay under `prefers-reduced-motion`, where it
+shows its poster with controls. No page SHALL show a GIF.
 
 #### Scenario: The default budget
 
-- **WHEN** a GIF entry sets no budget
-- **THEN** its budget is 3 MiB
-
-#### Scenario: The ladder
-
-- **WHEN** a recording converts over its budget
-- **THEN** the converter tries a lower frame rate first, then a narrower width at 15 fps
+- **WHEN** a video entry sets no budget
+- **THEN** its budget is 1.25 MiB for its WebM and for its MP4
 
 #### Scenario: One byte over
 
-- **WHEN** a GIF on disk is one byte over its budget
+- **WHEN** a WebM or MP4 on disk is one byte over its budget
 - **THEN** `pnpm docs:images:check` fails naming it
+
+#### Scenario: A light reader never fetches the dark video
+
+- **WHEN** a reader in light mode scrolls to a `<DocsVideo>`
+- **THEN** the light video and its poster load and play, and no file of the dark twin is fetched
+
+#### Scenario: Reduced motion
+
+- **WHEN** a reader who prefers reduced motion scrolls to a `<DocsVideo>`
+- **THEN** its poster shows with controls and the video does not play until started
+
+#### Scenario: A tag that states the wrong size
+
+- **WHEN** a `<DocsVideo>` states a width and height other than its recording's viewport
+- **THEN** `pnpm docs:images:check` fails naming the page and line
 
 ### Requirement: The example thumbnails come from the capture pipeline
 
-The Example datasets page's thumbnails, `examples/<id>.png`, SHALL be manifest entries like every
-other image: one per catalog example in menu order, each the workbench body on the example's curated
-view, light only, at scale 1. No end-to-end project SHALL write them.
+The Example datasets page's thumbnails, `examples/<id>.png` and `examples/<id>-dark.png`, SHALL be
+manifest entries like every other image: one per catalog example in menu order, each the workbench
+body on the example's curated view, in both themes, at scale 1. No end-to-end project SHALL write
+them.
 
 #### Scenario: Every example has a thumbnail
 
 - **WHEN** the docs lint reads the real docs
-- **THEN** every catalog example's thumbnail exists, is made by an entry and is shown by the Example
-  datasets page
+- **THEN** every catalog example's thumbnail and its dark twin exist, are made by an entry and are
+  shown by the Example datasets page
 
 ### Requirement: The image check runs before every commit
 
 `pnpm docs:images:check` SHALL run in `pnpm precommit`, reading only files and starting no browser.
-It SHALL fail when a manifest output is missing or a file has no entry; when a GIF is over its
-budget; when a page shows a file that does not exist, a file is shown by no page, or a page an entry
-names does not show it; when a dark twin is written or stored wrongly; when a link's `#anchor`
-matches no heading on its page; and when the user guide names removed UI. The same rules SHALL run
+It SHALL fail when a manifest output is missing or a file has no entry; when a file has no dark
+twin; when a video is over its budget or its `<DocsVideo>` lacks a name, alt text or its size; when
+a page shows a file that does not exist, a file is shown by no page, or a page an entry names does
+not show it; when a pair is written wrongly or a page shows a GIF; when a link's `#anchor` matches
+no heading on its page; and when the user guide names removed UI. The same rules SHALL run
 as unit tests on small cases and on the real docs.
 
 #### Scenario: An anchor no heading has

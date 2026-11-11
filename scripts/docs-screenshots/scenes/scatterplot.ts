@@ -28,7 +28,7 @@ import {
 } from '../../../apps/web/tests/helpers/plot';
 
 /**
- * Where the zoom GIF zooms: empty plot next to the centre of the demo's three-finger toxins, so
+ * Where the zoom video zooms: empty plot next to the centre of the demo's three-finger toxins, so
  * the wheel anchors on the cluster and the pointer opens no protein tooltip over it.
  */
 async function zoomTarget(page: Page): Promise<{ x: number; y: number }> {
@@ -92,7 +92,7 @@ async function expectSelected(page: Page, text: string): Promise<void> {
 const ADD_KEY = process.platform === 'darwin' ? 'Meta' : 'Control';
 /**
  * One neutral caption: the page runs Desktop Chrome's Windows user agent, so the app's own keycaps
- * read Ctrl, while a GIF made on a Mac would otherwise say ⌘.
+ * read Ctrl, while a video made on a Mac would otherwise say ⌘.
  */
 const ADD_LABEL = 'Ctrl/⌘ + click';
 
@@ -285,7 +285,7 @@ export const SCATTERPLOT_CAPTURES: CaptureEntry[] = [
   {
     // Zoom in on a cluster with the wheel, drag to pan, and zoom back out.
     name: 'zoom',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     // The pointer starts on the target, before the trim: it never flies in from the corner.
     setup: async (page, cap) => {
@@ -309,7 +309,7 @@ export const SCATTERPLOT_CAPTURES: CaptureEntry[] = [
   },
   {
     name: 'select-single',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     steps: selectSingleSteps,
     timeoutMs: 120_000,
@@ -317,7 +317,7 @@ export const SCATTERPLOT_CAPTURES: CaptureEntry[] = [
   },
   {
     name: 'select-box',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     steps: selectBoxSteps,
     timeoutMs: 120_000,
@@ -325,9 +325,8 @@ export const SCATTERPLOT_CAPTURES: CaptureEntry[] = [
   },
   {
     name: 'duplicate-badges',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
-    gif: { fps: 20, width: 800 },
     setup: duplicateBadgesSetup,
     steps: duplicateBadgesSteps,
     timeoutMs: 120_000,
@@ -337,7 +336,6 @@ export const SCATTERPLOT_CAPTURES: CaptureEntry[] = [
     name: 'plot-tools-selection-bar',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     steps: plotChromeSteps,
     target: (page) => plotArea(page),
     docs: ['explore/scatterplot.md'],
@@ -346,7 +344,6 @@ export const SCATTERPLOT_CAPTURES: CaptureEntry[] = [
     name: 'tooltip-projection-card',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     layout: { sidebarOpen: false },
     steps: tooltipCardSteps,
     target: (page) =>

@@ -1,6 +1,6 @@
 /**
  * The interface overview (`docs/explore/index.md`): the whole workbench, each bar, the plot, the
- * legend, the docked structure, the Theme button, and a GIF of the sidebar folding and resizing.
+ * legend, the docked structure, the Theme button, and a video of the sidebar folding and resizing.
  * Ported from the old static captures (interface-overview 177, scatterplot-example 186,
  * legend-panel 195, structure-viewer 204 at a8cb13ca), on the workbench's helpers.
  */
@@ -58,7 +58,6 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     name: 'interface-overview',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     timeoutMs: STRUCTURE_TIMEOUT_MS,
     steps: showStructure,
     docs: ['explore/index.md'],
@@ -67,7 +66,6 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     name: 'app-bar-start',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     // The logo, the dataset name and the search.
     target: (page) =>
       barSpan(
@@ -81,7 +79,6 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     name: 'app-bar-actions',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     // Export and the Figure editor, then past the divider Theme, Help, Feedback and GitHub.
     target: (page) => {
       const actions = appBar(page).locator('[data-workbench="app-bar-actions"]');
@@ -93,7 +90,6 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     name: 'view-bar',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     target: (page) => barSpan(viewBar(page), projectionTrigger(page), contoursTrigger(page)),
     docs: ['explore/index.md'],
   },
@@ -108,7 +104,6 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     name: 'legend-panel',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     target: (page) => legend(page),
     docs: ['explore/index.md'],
   },
@@ -116,7 +111,6 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     name: 'structure-viewer',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     timeoutMs: STRUCTURE_TIMEOUT_MS,
     steps: showStructure,
     // From the viewer's header down: the panel's box also holds the divider and a sliver of the
@@ -132,18 +126,19 @@ export const OVERVIEW_CAPTURES: CaptureEntry[] = [
     name: 'theme-switch',
     kind: 'png',
     viewport: 'desktop',
-    themes: ['light', 'dark'],
     // The button with its tooltip, which names the mode and what a press does.
     steps: async (page) => {
       await themeButton(page).hover();
       await expect(themeTooltip(page)).toBeVisible();
     },
+    // The tooltip shows only while the pointer stays on the button.
+    keepPointer: true,
     target: (page) => around([themeButton(page), themeTooltip(page)]),
     docs: ['explore/index.md'],
   },
   {
     name: 'sidebar-fold-resize',
-    kind: 'gif',
+    kind: 'video',
     viewport: 'desktop',
     steps: async (page, cap) => {
       const workbench = workbenchRoot(page);

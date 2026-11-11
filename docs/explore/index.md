@@ -46,7 +46,8 @@ The bar never wraps. In a narrow window the labels shorten first, then Contours 
 
 The plot shows your proteins as points in 2D. Points close together have similar embeddings. The plot always fills its area: each axis stretches to the plot's width or height.
 
-![The scatterplot, with the tool strip in its top-left corner and the protein count in its bottom-left corner](./images/scatterplot-example.png)
+![The scatterplot, with the tool strip in its top-left corner and the protein count in its bottom-left corner](./images/scatterplot-example.png){.light-only}
+![The scatterplot, with the tool strip in its top-left corner and the protein count in its bottom-left corner](./images/scatterplot-example-dark.png){.dark-only}
 
 - **Scroll** to zoom and **drag** to pan; **double-click** the background to reset the zoom.
 - **Click** a point to select it and see its structure; **⌘/Ctrl + click** adds a point to the selection or takes it out.
@@ -68,7 +69,7 @@ The rail on the sidebar's right edge folds the sidebar away and switches between
 
 Drag the sidebar's left edge to make it wider or narrower.
 
-![Folding the sidebar to the rail, bringing it back, then dragging its left edge](./images/sidebar-fold-resize.gif)
+<DocsVideo name="sidebar-fold-resize" alt="Folding the sidebar to the rail, bringing it back, then dragging its left edge" width="1280" height="720" />
 
 ### Legend
 
@@ -146,8 +147,8 @@ ProtSpace picks a layout from the window's size, and the same page works with to
 <p style="display:flex;gap:8px;flex-wrap:wrap">
 <img src="./images/phone-layout.png" alt="ProtSpace on a phone: the bars, the plot and the legend panel" width="224" height="456" class="light-only" loading="lazy" />
 <img src="./images/phone-layout-dark.png" alt="ProtSpace on a phone: the bars, the plot and the legend panel" width="224" height="456" class="dark-only" loading="lazy" />
-<img src="./images/phone-more-sheet.png" alt="The More sheet on a phone" width="224" height="456" class="light-only" loading="lazy" />
-<img src="./images/phone-more-sheet-dark.png" alt="The More sheet on a phone" width="224" height="456" class="dark-only" loading="lazy" />
+<img src="./images/phone-more-sheet.png" alt="The More sheet on a phone: Contours, Filter, Import data, Export, Figure editor, Theme as a Light | Dark switch, Help &amp; shortcuts and Feedback" width="224" height="456" class="light-only" loading="lazy" />
+<img src="./images/phone-more-sheet-dark.png" alt="The More sheet on a phone: Contours, Filter, Import data, Export, Figure editor, Theme as a Light | Dark switch, Help &amp; shortcuts and Feedback" width="224" height="456" class="dark-only" loading="lazy" />
 <img src="./images/phone-structure-sheet.png" alt="A pinned tooltip and the folded structure sheet on a phone" width="224" height="456" class="light-only" loading="lazy" />
 <img src="./images/phone-structure-sheet-dark.png" alt="A pinned tooltip and the folded structure sheet on a phone" width="224" height="456" class="dark-only" loading="lazy" />
 </p>
@@ -169,7 +170,8 @@ On a phone:
   folded to its header so the plot and the tooltip stay in view; the header's chevron, or **View
   structure** in the tooltip, expands it. While it is expanded, a tap on the plot opens no tooltip.
 
-<img src="./images/tablet-layout.png" alt="ProtSpace on a tablet: the plot above the legend and the structure" width="320" height="512" loading="lazy" />
+<img src="./images/tablet-layout.png" class="light-only" alt="ProtSpace on a tablet: the plot above the legend and the structure" width="320" height="512" loading="lazy" />
+<img src="./images/tablet-layout-dark.png" class="dark-only" alt="ProtSpace on a tablet: the plot above the legend and the structure" width="320" height="512" loading="lazy" />
 
 On every touch screen:
 

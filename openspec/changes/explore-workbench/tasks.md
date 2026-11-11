@@ -176,3 +176,7 @@ previous phase left. A phase ends with the app working and every test green.
 
 - [x] Filter panel: "Add condition" and "Add group" side by side below the cards; the header's ⋯
       keeps only Clear all
+- [x] Docs media: every image and animation captured in light and dark, headless; animations as
+      looping videos (`<DocsVideo>`), the GIF tooling removed; the figure editor's selects draw
+      their own arrow
+- [x] Docs media: the full recapture on the new layout, every page showing light/dark pairs
