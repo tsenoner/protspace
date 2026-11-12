@@ -28,6 +28,11 @@ Generate `.parquetbundle` files directly in your browser:
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ProtSpace_Preparation.ipynb)
 
+**Just need embeddings?** The Embeddings notebook turns a FASTA into an `.h5` of per-protein or
+per-residue embeddings (ProtT5, ProstT5, Ankh, ESM2, ESM C) on a free Colab GPU, for any use:
+
+[![Open Embeddings In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
+
 **Option 2: ProtSpace Python package** _(local installation)_
 
 ```bash

@@ -17,6 +17,7 @@ from protspace.utils.constants import (  # noqa: F401
     TSNE_NAME,
     UMAP_NAME,
     DimensionReductionConfig,
+    tsne_perplexity_problem,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,9 @@ class TSNEReducer(DimensionReducer):
     """t-SNE (t-Distributed Stochastic Neighbor Embedding) reduction."""
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
+        problem = tsne_perplexity_problem(self.config.perplexity, data.shape[0])
+        if problem:
+            raise ValueError(problem)
         return TSNE(
             n_components=self.config.n_components,
             perplexity=self.config.perplexity,
