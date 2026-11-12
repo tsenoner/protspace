@@ -1,0 +1,238 @@
+import { execSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  CORE_COUNTERS,
+  GL_COUNTERS,
+  type CountKey,
+  type SegmentResult,
+  type TimingSample,
+} from './probes';
+import { segmentTraits } from './scenarios';
+
+/**
+ * The per-segment numbers a budget can cap: every count but glide frames, which the
+ * invariants check, and `gl.is*` calls, capped per render as `glIsPerRender`.
+ */
+const BUDGET_KEYS = [
+  ...[...CORE_COUNTERS, ...GL_COUNTERS].filter(
+    (key): key is Exclude<CountKey, 'morphFrame' | 'glIs'> =>
+      key !== 'morphFrame' && key !== 'glIs',
+  ),
+  'glIsPerRender' as const,
+];
+export type BudgetKey = (typeof BUDGET_KEYS)[number];
+type Measured = Record<BudgetKey, number>;
+type SegmentBudget = Partial<Record<BudgetKey, number | null>>;
+
+export interface BudgetsFile {
+  $comment: string;
+  recordedAt: string;
+  segments: Record<string, SegmentBudget>;
+}
+
+const BUDGETS_COMMENT =
+  'Max allowed per segment on data.parquetbundle. null = report only. ' +
+  'Update: PERF_UPDATE_BUDGETS=1 pnpm perf:counts, review the diff, commit.';
+
+function measure({ delta }: SegmentResult): Measured {
+  const glIsPerRender = delta.render > 0 ? Math.round((delta.glIs / delta.render) * 10) / 10 : 0;
+  return Object.fromEntries(
+    BUDGET_KEYS.map((key) => [key, key === 'glIsPerRender' ? glIsPerRender : delta[key]]),
+  ) as Measured;
+}
+
+/** The checked-out commit, abbreviated. */
+export function gitHead(): string {
+  return execSync('git rev-parse --short HEAD', {
+    cwd: path.dirname(fileURLToPath(import.meta.url)),
+    encoding: 'utf8',
+  }).trim();
+}
+
+export function readBudgets(file: string): BudgetsFile {
+  return JSON.parse(fs.readFileSync(file, 'utf8')) as BudgetsFile;
+}
+
+/**
+ * Budgets from several recordings: the max of each count. A count that differed
+ * between recordings depends on timing (how many frames a load or gesture spans),
+ * so it would flake as a gate and is recorded as null (report only), as are the
+ * segment's frame-bound counts and any key the previous file set to null. Bytes are
+ * budgeted only at 0: any other byte count is a property of the dataset.
+ */
+export function recordBudgets(
+  runs: SegmentResult[][],
+  previous: BudgetsFile | null,
+  recordedAt: string,
+): BudgetsFile {
+  const seen: Record<string, Partial<Record<BudgetKey, number[]>>> = {};
+  for (const run of runs) {
+    for (const result of run) {
+      const measured = measure(result);
+      const values = (seen[result.name] ??= {});
+      for (const key of BUDGET_KEYS) (values[key] ??= []).push(measured[key]);
+    }
+  }
+  const segments: Record<string, SegmentBudget> = {};
+  for (const [name, values] of Object.entries(seen)) {
+    const old = previous?.segments[name] ?? {};
+    const frameBound = segmentTraits(name).frameBound ?? [];
+    const budget: SegmentBudget = {};
+    for (const key of BUDGET_KEYS) {
+      const recorded = values[key] ?? [];
+      const max = Math.max(...recorded);
+      const varied = recorded.some((v) => v !== recorded[0]);
+      if (old[key] === null || varied || frameBound.includes(key)) budget[key] = null;
+      else if (key === 'bufferBytes') budget[key] = max === 0 ? 0 : null;
+      else if (key === 'glIsPerRender') budget[key] = Math.ceil(max);
+      else budget[key] = max;
+    }
+    segments[name] = budget;
+  }
+  return { $comment: BUDGETS_COMMENT, recordedAt, segments };
+}
+
+interface BudgetCheck {
+  failures: string[];
+  tighten: string[];
+}
+
+export function checkBudgets(results: SegmentResult[], budgets: BudgetsFile): BudgetCheck {
+  const failures: string[] = [];
+  const tighten: string[] = [];
+  for (const result of results) {
+    const budget = budgets.segments[result.name];
+    if (!budget) {
+      failures.push(`${result.name}: no budget; record one with PERF_UPDATE_BUDGETS=1`);
+      continue;
+    }
+    const measured = measure(result);
+    for (const key of BUDGET_KEYS) {
+      const limit = budget[key];
+      if (limit === null || limit === undefined) continue;
+      if (measured[key] > limit)
+        failures.push(`${result.name}.${key}: ${measured[key]} > ${limit}`);
+      else if (measured[key] < limit)
+        tighten.push(`${result.name}.${key}: ${measured[key]} < ${limit}`);
+    }
+  }
+  return { failures, tighten };
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+/** Each budget key's column, in table order. */
+const COLUMNS: Record<BudgetKey, string> = {
+  restage: 'restage',
+  restagePos: 'pos',
+  restageStyle: 'style',
+  render: 'render',
+  glIsPerRender: 'glIs/r',
+  glSync: 'sync',
+  processData: 'proc',
+  legendUpdate: 'legU',
+  legendRebuild: 'legR',
+  gridRebuild: 'grid',
+  bufferBytes: 'upload',
+};
+
+function table(rows: string[][]): string {
+  const widths = rows[0].map((_, i) => Math.max(...rows.map((r) => r[i].length)));
+  return rows.map((r) => r.map((cell, i) => cell.padEnd(widths[i])).join('  ')).join('\n');
+}
+
+/** value/budget per cell, `!` on a cell over budget. */
+export function formatCountsTable(results: SegmentResult[], budgets: BudgetsFile | null): string {
+  const keys = Object.keys(COLUMNS) as BudgetKey[];
+  const header = ['segment', ...keys.map((key) => COLUMNS[key]), 'pixels'];
+  const rows = results.map((result) => {
+    const measured = measure(result);
+    const budget = budgets?.segments[result.name] ?? {};
+    const cell = (key: BudgetKey) => {
+      const format: (value: number) => string = key === 'bufferBytes' ? formatBytes : String;
+      const limit = budget[key];
+      if (limit === null || limit === undefined) return format(measured[key]);
+      return `${format(measured[key])}/${format(limit)}${measured[key] > limit ? '!' : ''}`;
+    };
+    const pixels = result.pixelsSame === null ? '-' : result.pixelsSame ? 'same' : 'DIFF!';
+    return [result.name, ...keys.map(cell), pixels];
+  });
+  return table([header, ...rows]);
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return NaN;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+type TimingKey = 'inp' | 'loaf' | 'busy' | 'restageMs' | 'p95Frame';
+export type TimingMedians = Record<TimingKey, number | null> & { loafScript: string };
+
+export function timingMedians(samples: TimingSample[]): TimingMedians {
+  const pick = (key: TimingKey) => {
+    const values = samples.map((s) => s[key]).filter((v): v is number => v !== null);
+    return values.length ? median(values) : null;
+  };
+  const longest = samples.reduce<TimingSample | null>(
+    (best, s) => (!best || s.loaf > best.loaf ? s : best),
+    null,
+  );
+  return {
+    inp: pick('inp'),
+    loaf: pick('loaf'),
+    busy: pick('busy'),
+    restageMs: pick('restageMs'),
+    p95Frame: pick('p95Frame'),
+    loafScript: longest?.loafScript ?? '',
+  };
+}
+
+/** `412→118 .29` when there is a reference, else `412`. No ratio when a side has no value. */
+function timingCell(a: number | null, b: number | null | undefined): string {
+  const round = (v: number) => String(Math.round(v));
+  if (a === null) return b === null || b === undefined ? '-' : `-→${round(b)}`;
+  if (b === undefined) return round(a);
+  if (b === null) return `${round(a)}→-`;
+  const ratio = a > 0 ? (b / a).toFixed(2).replace(/^0/, '') : '-';
+  return `${round(a)}→${round(b)} ${ratio}`;
+}
+
+export interface TimingRow {
+  segment: string;
+  a: TimingMedians;
+  /** Second build in --compare, or the stored baseline (then `a` is the reference). */
+  b?: TimingMedians;
+  pixelsAB?: boolean | null;
+}
+
+export function formatTimingTable(title: string, rows: TimingRow[]): string {
+  const header = [
+    'segment',
+    'INP ms',
+    'LoAF ms',
+    'top script',
+    'busy ms',
+    'restage ms',
+    'p95 frame',
+    'pixels A=B',
+  ];
+  const body = rows.map((row) => [
+    row.segment,
+    timingCell(row.a.inp, row.b?.inp),
+    timingCell(row.a.loaf, row.b?.loaf),
+    (row.b?.loafScript || row.a.loafScript || '-').slice(0, 40),
+    timingCell(row.a.busy, row.b?.busy),
+    timingCell(row.a.restageMs, row.b?.restageMs),
+    timingCell(row.a.p95Frame, row.b?.p95Frame),
+    row.pixelsAB === undefined || row.pixelsAB === null ? '-' : row.pixelsAB ? 'same' : 'DIFF',
+  ]);
+  return `${title}\n${table([header, ...body])}`;
+}

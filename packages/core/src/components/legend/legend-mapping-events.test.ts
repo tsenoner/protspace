@@ -6,12 +6,11 @@ import {
   type LegendZOrderDetail,
 } from './legend-mapping-events';
 
-describe('legend-mapping-events guards (INV-07)', () => {
+describe('legend-mapping-events guards', () => {
   it('accepts a full color-mapping detail', () => {
     const d: LegendColorMappingDetail = {
       colorMapping: { A: '#ff0000' },
       shapeMapping: { A: 'circle' },
-      colorOnly: false,
     };
     expect(isLegendColorMappingDetail(d)).toBe(true);
   });

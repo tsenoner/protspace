@@ -5,39 +5,10 @@
 // it, the in-place coordinate copy on a projection switch, which has to fall back to a
 // rebuild when the new projection is missing a point. Driven through `_processData()`
 // on a never-appended element (the scales-cache.test.ts pattern), so no WebGL runs.
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { PlotData, VisualizationData } from '@protspace/utils';
-import type { ScalePair } from './webgl/types';
 
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-import './scatter-plot';
-
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  selectedProjectionIndex: number;
-  _plotData: PlotData;
-  _processData(): void;
-  _buildPointGridIndex(): void;
-  _pointGridIndex: {
-    queryByPixels(minX: number, minY: number, maxX: number, maxY: number): number[];
-    queryByPolygon(vertices: ReadonlyArray<[number, number]>): number[];
-  };
-  readonly _scales: ScalePair | null;
-  getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
-  selectedProteinIds: string[];
-  isolateSelection(): void;
-  getIsolationHistory(): string[][];
-  getCurrentData(): VisualizationData | null;
-};
+import { createPlot, type PlotInternals } from './test-support/plot-fixture';
 
 // `complete` places every protein; `gappy` does not cover p1. Every coordinate is far
 // from the origin, so a missing point drawn at (0, 0) would stretch the domain.
@@ -61,11 +32,8 @@ const plottedIds = (pd: PlotData) =>
     pd.originalIndices ? pd.proteinIds[pd.originalIndices[slot]] : pd.proteinIds[slot],
   );
 
-function scatter(): Internals {
-  const sp = document.createElement('protspace-scatterplot') as Internals;
-  sp.data = data();
-  sp.selectedAnnotation = 'fam';
-  sp.selectedProjectionIndex = 0;
+function scatter(): PlotInternals {
+  const sp = createPlot({ data: data(), selectedAnnotation: 'fam', selectedProjectionIndex: 0 });
   sp._processData();
   return sp;
 }
@@ -88,7 +56,7 @@ describe('scatter plot: missing coordinates', () => {
     const sp = scatter();
     sp.selectedProjectionIndex = 1;
     sp._processData();
-    sp._buildPointGridIndex();
+    sp._pointGrid.rebuildNow();
 
     const idsOf = (slots: number[]) => slots.map((slot) => plottedIds(sp._plotData)[slot]).sort();
     const far = 1e9;
@@ -132,7 +100,7 @@ describe('scatter plot: missing coordinates', () => {
 
   it('still takes the in-place path between two complete projections', () => {
     const sp = scatter();
-    sp.data.projections[1].data.set([40, 40, 50, 50, 60, 60]);
+    sp.data!.projections[1].data.set([40, 40, 50, 50, 60, 60]);
     const { xs } = sp._plotData;
 
     sp.selectedProjectionIndex = 1;
@@ -146,11 +114,11 @@ describe('scatter plot: missing coordinates', () => {
   // drawn. The current data (the .parquetbundle export, the legend counts) and a new
   // isolation layer must not lose a protein the selected projection merely does not place.
   describe('in isolation mode', () => {
-    const isolate = (sp: Internals, ids: string[]) => {
+    const isolate = (sp: PlotInternals, ids: string[]) => {
       sp.selectedProteinIds = ids;
       sp.isolateSelection();
     };
-    const switchTo = (sp: Internals, index: number) => {
+    const switchTo = (sp: PlotInternals, index: number) => {
       sp.selectedProjectionIndex = index;
       sp._processData();
     };

@@ -11,6 +11,7 @@ import { describe, it, expect } from 'vitest';
 import * as d3 from 'd3';
 import { PointGridIndex, pointInPolygon } from './point-grid-index';
 import type { PlotData } from '@protspace/utils';
+import { seededRandom } from '../../../test-support/seeded-random';
 
 // ── legacy implementation (verbatim), used as the reference ────
 
@@ -115,15 +116,6 @@ class LegacyQuadtreeIndex {
 
 // ── fixtures ───────────────────────────────────────────────────
 
-/** Deterministic PRNG so any failure is reproducible. */
-function makeRng(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
-
 const LATTICE = 1 << 22;
 /** A data value whose screen coordinate (x * 1024) is exact in both float64 and float32. */
 function latticeValue(rng: () => number): number {
@@ -162,7 +154,7 @@ const sorted = (a: number[]) => [...a].sort((x, y) => x - y);
 
 /** A random cloud, optionally with `dupes` extra points coincident with earlier ones. */
 function randomCloud(n: number, seed: number, dupes = 0) {
-  const rng = makeRng(seed);
+  const rng = seededRandom(seed);
   const xs: number[] = [];
   const ys: number[] = [];
   for (let i = 0; i < n; i++) {
@@ -184,7 +176,7 @@ describe('PointGridIndex findNearest parity with d3', () => {
     const pd = randomCloud(3000, 20260906);
     const slots = Array.from({ length: pd.length }, (_, i) => i);
     const { grid, legacy } = buildBoth(pd, slots);
-    const rng = makeRng(31337);
+    const rng = seededRandom(31337);
     const mismatches: string[] = [];
     for (let t = 0; t < 4000; t++) {
       const x = rng() * 1100 - 40;
@@ -201,7 +193,7 @@ describe('PointGridIndex findNearest parity with d3', () => {
     const pd = randomCloud(400, 5150, 600);
     const slots = Array.from({ length: pd.length }, (_, i) => i);
     const { grid, legacy } = buildBoth(pd, slots);
-    const rng = makeRng(24680);
+    const rng = seededRandom(24680);
     const mismatches: string[] = [];
     // Probe exactly on top of every point, plus random offsets.
     for (let i = 0; i < pd.length; i++) {
@@ -225,7 +217,7 @@ describe('PointGridIndex findNearest parity with d3', () => {
   });
 
   it('matches d3 on a tightly clustered cloud (many points per cell)', () => {
-    const rng = makeRng(8080);
+    const rng = seededRandom(8080);
     const xs: number[] = [];
     const ys: number[] = [];
     for (let i = 0; i < 2000; i++) {
@@ -235,7 +227,7 @@ describe('PointGridIndex findNearest parity with d3', () => {
     const pd = makePD(xs, ys);
     const slots = Array.from({ length: pd.length }, (_, i) => i);
     const { grid, legacy } = buildBoth(pd, slots);
-    const probe = makeRng(1212);
+    const probe = seededRandom(1212);
     const mismatches: string[] = [];
     for (let t = 0; t < 2000; t++) {
       const x = 512 + probe() * 4 - 2;
@@ -252,7 +244,7 @@ describe('PointGridIndex findNearest parity with d3', () => {
     const pd = randomCloud(20, 909090);
     const slots = Array.from({ length: pd.length }, (_, i) => i);
     const { grid, legacy } = buildBoth(pd, slots);
-    const rng = makeRng(474747);
+    const rng = seededRandom(474747);
     for (let t = 0; t < 2000; t++) {
       const x = rng() * 1024;
       const y = rng() * 1024;
@@ -269,7 +261,7 @@ describe('PointGridIndex queryByPixels parity with d3', () => {
     const pd = randomCloud(4000, 606060, 300);
     const slots = Array.from({ length: pd.length }, (_, i) => i);
     const { grid, legacy } = buildBoth(pd, slots);
-    const rng = makeRng(112233);
+    const rng = seededRandom(112233);
     for (let t = 0; t < 600; t++) {
       const x0 = rng() * 1200 - 100;
       const y0 = rng() * 1200 - 100;
@@ -305,7 +297,7 @@ describe('PointGridIndex queryByPixels parity with d3', () => {
     const slots: number[] = [];
     for (let i = 0; i < pd.length; i += 3) slots.push(i);
     const { grid, legacy } = buildBoth(pd, slots);
-    const rng = makeRng(8642);
+    const rng = seededRandom(8642);
     for (let t = 0; t < 200; t++) {
       const x0 = rng() * 1024;
       const y0 = rng() * 1024;
@@ -322,7 +314,7 @@ describe('PointGridIndex queryByPolygon parity with d3', () => {
     const pd = randomCloud(4000, 191919, 200);
     const slots = Array.from({ length: pd.length }, (_, i) => i);
     const { grid, legacy } = buildBoth(pd, slots);
-    const rng = makeRng(565656);
+    const rng = seededRandom(565656);
     for (let t = 0; t < 200; t++) {
       const cx = rng() * 1024;
       const cy = rng() * 1024;

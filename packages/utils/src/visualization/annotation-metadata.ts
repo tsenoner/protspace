@@ -8,7 +8,7 @@
  * `data/annotations/configuration.py`; `source` mirrors the fetch API. The `isPredicted` flag,
  * by contrast, marks *computational predictions* — de-novo machine-learning, topology, and
  * structure-based predictors (the Biocentral `predicted_*` models, the Phobius `signal_peptide`,
- * and TED `ted_domains`) — so the app can caveat them with a ⚡ Predicted badge. This is
+ * and TED `ted_domains`) — so the app can caveat them with a PRED badge. This is
  * intentionally broader than the backend's `predicted_` naming: reference signature-database
  * matches (Pfam, CATH-Gene3D, SUPERFAMILY, …) and curated/factual data (UniProt, Taxonomy) are
  * NOT flagged. Any unknown column starting with `predicted_` is still treated as a prediction.
@@ -17,6 +17,7 @@
 
 import type { Annotation } from '../types.js';
 import { getEatBaseAnnotationKey, getEatNeighborBaseKey } from './eat-overlay.js';
+import { toDisplayValue } from './shapes.js';
 
 export type AnnotationSource = 'UniProt' | 'InterPro' | 'Taxonomy' | 'TED' | 'Biocentral' | 'Other';
 
@@ -28,13 +29,18 @@ export interface AnnotationMeta {
   /**
    * Whether the values are a computational prediction — de-novo ML, topology, or structure-based —
    * rather than curated/experimental data or a reference signature-database match. Drives the
-   * ⚡ Predicted badge in the legend, dropdown, and docs.
+   * PRED badge in the legend, dropdown, and docs.
    */
   isPredicted: boolean;
   /** Short human-readable description for the documentation popover. */
   description: string;
   /** Optional link to the fuller documentation entry (site-relative). */
   docsUrl?: string;
+  /**
+   * Words for values that are real categories but read badly as written, by raw value. Display
+   * only: filters, settings and exports keep the raw value.
+   */
+  valueLabels?: Readonly<Record<string, string>>;
 }
 
 /** Prefix marking ML-predicted annotation columns (backend convention). */
@@ -327,6 +333,8 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
     description:
       'Structure-based domains with CATH classification and pLDDT confidence, from TED (AlphaFold).',
     docsUrl: docs('ted_domains'),
+    // TED's own mark for a domain it found but could not assign a CATH superfamily: not missing.
+    valueLabels: { '-': 'No CATH label' },
   },
 
   // --- Biocentral (ML predictions) ---
@@ -457,4 +465,38 @@ export function annotationSource(
   annotation?: Pick<Annotation, 'runtime'>,
 ): AnnotationSource {
   return getAnnotationMeta(column, annotation).source;
+}
+
+/**
+ * The words an annotation shows for one of its values, when its registry entry names them (TED's
+ * `-` reads "No CATH label"); undefined otherwise. `value` is the internal value.
+ */
+export function annotationValueLabel(column: string, value: string): string | undefined {
+  return ANNOTATION_METADATA[column]?.valueLabels?.[value];
+}
+
+/**
+ * A value as the app shows it for this annotation: its registry label when there is one, else
+ * {@link toDisplayValue} (N/A, the Other count). `value` is the internal value.
+ */
+export function displayAnnotationValue(
+  column: string,
+  value: string,
+  otherItemsCount?: number,
+): string {
+  return annotationValueLabel(column, value) ?? toDisplayValue(value, otherItemsCount);
+}
+
+/**
+ * What a search for this value matches, lower-cased: the name it is shown under, and, for a
+ * value the registry names, the value itself too (TED's `-` is found by "No CATH label" and by
+ * `-`). `name` is that shown name, {@link displayAnnotationValue} unless given.
+ */
+export function annotationValueSearchKey(
+  column: string,
+  value: string,
+  name: string = displayAnnotationValue(column, value),
+): string {
+  const named = annotationValueLabel(column, value) !== undefined;
+  return (named ? `${name}\n${value}` : name).toLowerCase();
 }

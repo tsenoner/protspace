@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { AnnotationData } from '@protspace/utils';
-import { getFirstAnnotationIndex, getProteinAnnotationIndices } from '@protspace/utils';
+import {
+  getColorSchemeStops,
+  getFirstAnnotationIndex,
+  getProteinAnnotationIndices,
+} from '@protspace/utils';
 import {
   LegendDataProcessor,
   createProcessorContext,
@@ -8,7 +12,7 @@ import {
 } from './legend-data-processor';
 import { getVisualEncoding } from './visual-encoding';
 import type { LegendItem } from './types';
-import { NA_VALUE, NA_DEFAULT_COLOR, toInternalValue } from './config';
+import { LEGEND_VALUES, NA_VALUE, NA_DEFAULT_COLOR, toInternalValue } from './config';
 
 /**
  * The pre-bincount path, kept here as the equality reference: materialise a flat
@@ -38,6 +42,12 @@ function legacyCounts(
 }
 
 const asObject = (counts: ReadonlyMap<string, number>) => Object.fromEntries(counts);
+
+/** Each row's colour, Other left out. */
+const colorsOf = (items: LegendItem[]) =>
+  Object.fromEntries(
+    items.filter((i) => i.value !== LEGEND_VALUES.OTHER).map((i) => [i.value, i.color]),
+  );
 
 /**
  * What the legend hands the processor: a per-protein value list counted once, with the
@@ -183,9 +193,10 @@ describe('legend-data-processor', () => {
           'B',
           'Z',
         ]);
-        expect(asObject(counts)).toEqual(
-          asObject(legacyCounts(colData, VALUES, PROTEINS, null, ['A', 'B', 'Z'])),
-        );
+        // Entries, not an object: the key order (ties keep it) must match too.
+        expect([...counts]).toEqual([
+          ...legacyCounts(colData, VALUES, PROTEINS, null, ['A', 'B', 'Z']),
+        ]);
         // Explicit shape so a change to BOTH paths cannot pass unnoticed.
         expect(asObject(counts)).toEqual(totals);
       },
@@ -200,9 +211,10 @@ describe('legend-data-processor', () => {
           'B',
           'Z',
         ]);
-        expect(asObject(counts)).toEqual(
-          asObject(legacyCounts(colData, VALUES, PROTEINS, filtered, ['A', 'B', 'Z'])),
-        );
+        // Entries, not an object: the key order (ties keep it) must match too.
+        expect([...counts]).toEqual([
+          ...legacyCounts(colData, VALUES, PROTEINS, filtered, ['A', 'B', 'Z']),
+        ]);
         expect(asObject(counts)).toEqual({ A: 1, B: 2, Z: 0 });
       },
     );
@@ -242,6 +254,79 @@ describe('legend-data-processor', () => {
       expect(asObject(counts)).toEqual({ A: 1 });
     });
 
+    // ─── key order ──────────────────────────────────────────────────────────
+    // Storage lists A, B, C. The proteins meet them out of that order, with an
+    // out-of-range code ('__NA__') in between: p0 -> C, p1 -> A + code 9, p2 -> nothing,
+    // p3 -> B + C. Int32Array holds one code per protein, so it spreads those hits out.
+    const ORDER_VALUES = ['A', 'B', 'C'];
+    const orderKinds: Array<[string, AnnotationData, string[]]> = [
+      ['Int32Array', new Int32Array([2, 0, 9, -1, 1, 2]), ['C', 'A', NA_VALUE, 'B']],
+      [
+        'sparse-multi',
+        {
+          kind: 'sparse-multi',
+          base: new Int32Array([2, -1, -1, -1]),
+          overrides: new Map<number, readonly number[]>([
+            [1, [0, 9]],
+            [3, [1, 2]],
+          ]),
+          length: 4,
+        },
+        ['C', 'A', NA_VALUE, 'B'],
+      ],
+      ['dense number[][]', [[2], [0, 9], [], [1, 2]], ['C', 'A', NA_VALUE, 'B']],
+      [
+        'csr',
+        {
+          kind: 'csr',
+          offsets: new Int32Array([0, 1, 3, 3, 5]),
+          codes: new Int32Array([2, 0, 9, 1, 2]),
+          length: 4,
+        },
+        ['C', 'A', NA_VALUE, 'B'],
+      ],
+    ];
+
+    it.each(orderKinds)(
+      'lists values as the legacy per-protein list did on %s storage',
+      (_name, colData, order) => {
+        const proteins = colData.length;
+        const counts = LegendDataProcessor.countFromStorage(colData, ORDER_VALUES, proteins, null, [
+          'B',
+        ]);
+        // Known values stay first, as in the legacy count.
+        expect([...counts.keys()]).toEqual(['B', ...order.filter((key) => key !== 'B')]);
+        expect([...counts]).toEqual([
+          ...legacyCounts(colData, ORDER_VALUES, proteins, null, ['B']),
+        ]);
+      },
+    );
+
+    it('lists values in the order the isolated proteins meet them', () => {
+      // Unfiltered the proteins meet C, A, B; the isolated ones (p3..p5) meet A, C, B.
+      const counts = LegendDataProcessor.countFromStorage(
+        new Int32Array([2, 0, 1, 0, 2, 1]),
+        ORDER_VALUES,
+        6,
+        new Set([3, 4, 5]),
+      );
+      expect([...counts.keys()]).toEqual(['A', 'C', 'B']);
+    });
+
+    it('lists a lone filled value after the known values', () => {
+      const counts = LegendDataProcessor.countFromStorage(
+        new Int32Array([-1, 2, 2]),
+        ORDER_VALUES,
+        3,
+        null,
+        ['A'],
+      );
+      expect([...counts]).toEqual([
+        ['A', 0],
+        ['C', 2],
+      ]);
+    });
+
     // ─── isolation misalignment the flat-array path had ─────────────────────
     // The legacy list held one entry per HIT, not per protein, while
     // filteredIndices holds PROTEIN indices. Any storage that compacts (a
@@ -256,12 +341,11 @@ describe('legend-data-processor', () => {
       const colData = new Int32Array([-1, 0, 1, 0]);
       const isolated = new Set([0, 1]); // proteins p0 (unbinned) and p1 ('low')
 
+      // Legacy list was ['low', 'high', 'low'] for proteins p1, p2, p3, so index
+      // 1 resolved to p2's 'high' -- a protein that is not isolated at all.
       expect(asObject(LegendDataProcessor.countFromStorage(colData, bins, 4, isolated))).toEqual({
         low: 1,
       });
-      // Legacy list was ['low', 'high', 'low'] for proteins p1, p2, p3, so index
-      // 1 resolved to p2's 'high' -- a protein that is not isolated at all.
-      expect(asObject(legacyCounts(colData, bins, 4, isolated))).toEqual({ low: 1, high: 1 });
     });
 
     it('counts every label of an isolated multi-valued protein', () => {
@@ -269,13 +353,12 @@ describe('legend-data-processor', () => {
       const colData: readonly (readonly number[])[] = [[0, 1], [0], [1]];
       const isolated = new Set([0]); // protein p0, which carries both labels
 
+      // Legacy list was ['A', 'B', 'A', 'B'], so index 0 kept only 'A' and p0's
+      // second label was attributed to a protein that was filtered out.
       expect(asObject(LegendDataProcessor.countFromStorage(colData, labels, 3, isolated))).toEqual({
         A: 1,
         B: 1,
       });
-      // Legacy list was ['A', 'B', 'A', 'B'], so index 0 kept only 'A' and p0's
-      // second label was attributed to a protein that was filtered out.
-      expect(asObject(legacyCounts(colData, labels, 3, isolated))).toEqual({ A: 1 });
     });
   });
 
@@ -317,6 +400,25 @@ describe('legend-data-processor', () => {
       expect(result.topItems[0][0]).toBe('large');
       expect(result.topItems[1][0]).toBe('medium');
       expect(result.topItems[2][0]).toBe('small');
+    });
+
+    it('lists rows promoted from Other in the sort order, not after the visible ones', () => {
+      // A visible set smaller than the cap (a bundle saved with fewer rows): the slots left go
+      // to the largest of the rest, and By count must still list the largest first.
+      const freq = new Map<string, number>([
+        ['big', 20],
+        ['kept', 2],
+        ['mid', 10],
+      ]);
+      const result = LegendDataProcessor.sortAndLimitItems(
+        freq,
+        3,
+        false,
+        'size-desc',
+        new Map(),
+        new Set(['kept']),
+      );
+      expect(result.topItems.map(([value]) => value)).toEqual(['big', 'mid', 'kept']);
     });
 
     it('limits items to maxVisibleValues', () => {
@@ -905,10 +1007,40 @@ describe('legend-data-processor', () => {
           zOrder: 99,
         },
       ];
-      // In manual mode, existing zOrders should be preserved
+      // In manual mode a row keeps its place; the places are numbered from 0 without gaps.
       const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, existing, 'manual');
-      const cat2 = items.find((i) => i.value === 'category2');
-      expect(cat2?.zOrder).toBe(99);
+      expect(items.map((i) => [i.value, i.zOrder])).toEqual([
+        ['category1', 0],
+        ['category2', 1],
+      ]);
+    });
+
+    it('in manual mode closes the gaps a merge leaves and keeps Other last', () => {
+      // B went into Other, so the kept rows hold 0, 2 and 3; X and Y come out of Other.
+      const existing: LegendItem[] = [
+        { value: 'A', color: '#a00', shape: 'circle', count: 9, isVisible: true, zOrder: 0 },
+        { value: 'C', color: '#c00', shape: 'circle', count: 7, isVisible: true, zOrder: 2 },
+        { value: 'D', color: '#d00', shape: 'circle', count: 6, isVisible: true, zOrder: 3 },
+        { value: 'Other', color: '#888', shape: 'circle', count: 9, isVisible: true, zOrder: 4 },
+      ];
+      const topItems: Array<[string, number]> = [
+        ['A', 9],
+        ['C', 7],
+        ['D', 6],
+        ['X', 2],
+        ['Y', 1],
+      ];
+      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 3, existing, 'manual');
+      expect(
+        [...items].sort((a, b) => a.zOrder - b.zOrder).map((i) => [i.value, i.zOrder]),
+      ).toEqual([
+        ['A', 0],
+        ['C', 1],
+        ['D', 2],
+        ['X', 3],
+        ['Y', 4],
+        ['Other', 5],
+      ]);
     });
 
     it('uses sorted index for z-order in non-manual modes', () => {
@@ -934,7 +1066,7 @@ describe('legend-data-processor', () => {
       expect(cat2?.zOrder).toBe(1); // Second in sorted order
     });
 
-    it('reassigns z-order based on reversed position in manual-reverse mode', () => {
+    it('reassigns z-order based on reversed position in numeric manual-reverse mode', () => {
       // Items are passed in reverse order (as sortAndLimitItems would sort them)
       const topItems: Array<[string, number]> = [
         ['category2', 5], // Was at zOrder 1, now first
@@ -958,13 +1090,16 @@ describe('legend-data-processor', () => {
           zOrder: 1,
         },
       ];
-      // In manual-reverse mode, zOrder should be based on sorted index (reversed position)
+      // Numeric manual-reverse orders from the manual bin ids each pass: zOrder is the reversed position
       const items = LegendDataProcessor.createLegendItems(
         ctx,
         topItems,
         0,
         existing,
         'manual-reverse',
+        new Map(),
+        {},
+        true,
       );
       const cat1 = items.find((i) => i.value === 'category1');
       const cat2 = items.find((i) => i.value === 'category2');
@@ -1223,6 +1358,84 @@ describe('legend-data-processor', () => {
   });
 
   describe('processLegendItems', () => {
+    it('keeps z-order in categorical manual-reverse mode, which the reverse already wrote', () => {
+      // The legend's reverse renumbers the rows itself; renumbering again would flip them back.
+      const existing: LegendItem[] = [
+        {
+          value: 'category1',
+          color: '#000',
+          shape: 'circle',
+          count: 10,
+          isVisible: true,
+          zOrder: 0,
+        },
+        {
+          value: 'category2',
+          color: '#000',
+          shape: 'circle',
+          count: 5,
+          isVisible: true,
+          zOrder: 1,
+        },
+      ];
+      const { legendItems } = LegendDataProcessor.processLegendItems(
+        ctx,
+        'f',
+        new Map([
+          ['category1', 10],
+          ['category2', 5],
+        ]),
+        10,
+        false,
+        existing,
+        'manual-reverse',
+      );
+      expect(legendItems.find((i) => i.value === 'category1')?.zOrder).toBe(0);
+      expect(legendItems.find((i) => i.value === 'category2')?.zOrder).toBe(1);
+    });
+
+    it('categorical manual-reverse keeps the top rows and Other last when the cap shrinks and grows', () => {
+      const freq = new Map([...'ABCDEFGHI'].map((v, i) => [v, 100 - i] as [string, number]));
+      const shown: LegendItem[] = [...'HGFEDCBA'].map((value, zOrder) => ({
+        value,
+        color: '#000',
+        shape: 'circle',
+        count: 1,
+        isVisible: true,
+        zOrder,
+      }));
+      const order = (items: LegendItem[]) =>
+        [...items].sort((a, b) => a.zOrder - b.zOrder).map((i) => i.value);
+      const five = LegendDataProcessor.processLegendItems(
+        ctx,
+        'f',
+        freq,
+        5,
+        false,
+        shown,
+        'manual-reverse',
+        {},
+        new Set('ABCDEFGH'),
+      );
+      expect(order(five.legendItems)).toEqual(['H', 'G', 'F', 'E', 'D', LEGEND_VALUES.OTHER]);
+      const eight = LegendDataProcessor.processLegendItems(
+        ctx,
+        'f',
+        freq,
+        8,
+        false,
+        five.legendItems,
+        'manual-reverse',
+        {},
+        new Set('HGFED'),
+      );
+      const z = eight.legendItems.map((i) => i.zOrder);
+      expect(new Set(z).size).toBe(z.length);
+      const eightOrder = order(eight.legendItems);
+      expect(eightOrder.slice(0, 5)).toEqual(['H', 'G', 'F', 'E', 'D']);
+      expect(eightOrder.at(-1)).toBe(LEGEND_VALUES.OTHER);
+    });
+
     it('processes basic annotation values', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
@@ -1313,8 +1526,6 @@ describe('legend-data-processor', () => {
           ['10 - 20', 10],
         ]),
         false,
-        undefined,
-        undefined,
       );
 
       expect(result.legendItems).toEqual([
@@ -1355,7 +1566,7 @@ describe('legend-data-processor', () => {
           zOrder: 99,
         },
       ];
-      // In manual mode, existing zOrders should be preserved
+      // In manual mode a row keeps its place behind the new ones; places are numbered from 0.
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
@@ -1365,7 +1576,61 @@ describe('legend-data-processor', () => {
         existing,
         'manual',
       );
-      expect(result.legendItems.find((i) => i.value === 'a')?.zOrder).toBe(99);
+      const byZOrder = [...result.legendItems].sort((x, y) => x.zOrder - y.zOrder);
+      expect(byZOrder.map((i) => [i.value, i.zOrder])).toEqual([
+        ['b', 0],
+        ['c', 1],
+        ['a', 2],
+      ]);
+    });
+
+    it('keeps Other last in manual mode through merges into it and take-outs from it', () => {
+      // Fourteen categories, counts 14 down to 1; ten rows and Other (K to N) to start with.
+      const counts = new Map(
+        'ABCDEFGHIJKLMN'.split('').map((value, index) => [value, 14 - index] as const),
+      );
+      const run = (
+        existing: LegendItem[],
+        max: number,
+        pending: { extract?: string; merge?: string } = {},
+      ) => {
+        const visible = new Set(existing.filter((i) => i.value !== 'Other').map((i) => i.value));
+        return LegendDataProcessor.processLegendItems(
+          ctx,
+          'annotation1',
+          counts,
+          max,
+          false,
+          existing,
+          'manual',
+          {},
+          visible,
+          new Map(),
+          true,
+          { pendingExtract: pending.extract, pendingMerge: pending.merge },
+        ).legendItems;
+      };
+      const order = (items: LegendItem[]) =>
+        [...items].sort((a, b) => a.zOrder - b.zOrder).map((i) => i.value);
+
+      let items = run([], 10);
+      // Two rows go into Other, then four come out of it. Before Other was pinned, the gaps the
+      // merges left let the last row taken out number past Other and list below it.
+      items = run(items, 9, { merge: 'B' });
+      items = run(items, 8, { merge: 'E' });
+      items = run(items, 9, { extract: 'K' });
+      items = run(items, 10, { extract: 'B' });
+      items = run(items, 11, { extract: 'L' });
+      items = run(items, 12, { extract: 'M' });
+
+      expect(order(items)).toEqual([
+        ...['A', 'C', 'D', 'F', 'G', 'H', 'I', 'J'],
+        ...['K', 'B', 'L', 'M'],
+        'Other',
+      ]);
+      expect(items.map((i) => i.zOrder).sort((a, b) => a - b)).toEqual(
+        Array.from({ length: items.length }, (_, index) => index),
+      );
     });
 
     it('uses sorted index for z-order across processing in non-manual modes', () => {
@@ -1456,7 +1721,7 @@ describe('legend-data-processor', () => {
         visibleValues,
         new Map(),
         true,
-        'c',
+        { pendingExtract: 'c' },
       );
       const legendValues = result.legendItems
         .filter((i) => i.value !== 'Other')
@@ -1480,8 +1745,7 @@ describe('legend-data-processor', () => {
         visibleValues,
         new Map(),
         true,
-        undefined,
-        'b',
+        { pendingMerge: 'b' },
       );
       const legendValues = result.legendItems
         .filter((i) => i.value !== 'Other')
@@ -1691,6 +1955,284 @@ describe('legend-data-processor', () => {
         .filter((i) => i.value !== 'Other')
         .map((i) => i.value);
       expect(legendValues.length).toBe(3);
+    });
+  });
+
+  describe('colours through filters and isolation', () => {
+    const COUNTS: Record<string, number> = { a: 50, b: 40, c: 30, d: 20, e: 10 };
+    const counts = (keys: string[] = Object.keys(COUNTS)) =>
+      new Map(keys.map((key) => [key, COUNTS[key]] as const));
+    /** One pass of the legend: `keys` are the counted values, `constrained` a filter. */
+    const pass = (
+      keys: string[] | undefined,
+      constrained: boolean,
+      existing: LegendItem[],
+      visible: Set<string> = new Set(),
+      extra: { max?: number; paletteId?: string; persisted?: Record<string, never> } = {},
+    ) =>
+      LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(keys),
+        extra.max ?? 10,
+        constrained,
+        existing,
+        'size-desc',
+        extra.persisted ?? {},
+        visible,
+        new Map(),
+        true,
+        { paletteId: extra.paletteId, unfilteredFrequencies: () => counts() },
+      ).legendItems;
+
+    it('unfiltered, isolate [a], isolate [b..e], unfiltered: every category ends in its colour', () => {
+      let items = pass(undefined, false, []);
+      const original = colorsOf(items);
+      const shown = new Set(Object.keys(original));
+
+      items = pass(['a'], true, items, shown);
+      expect(colorsOf(items)).toEqual({ a: original.a });
+      items = pass(['b', 'c', 'd', 'e'], true, items, shown);
+      const { a: _a, ...rest } = original;
+      expect(colorsOf(items)).toEqual(rest);
+      // Back unfiltered from the filtered rows alone: a is promoted again, in its own colour.
+      items = pass(undefined, false, items, new Set(['b', 'c', 'd', 'e']));
+
+      expect(colorsOf(items)).toEqual(original);
+    });
+
+    it('keeps the colours by slot under a non-default palette', () => {
+      const okabeIto = getColorSchemeStops('okabeIto');
+      let items = pass(undefined, false, [], new Set(), { paletteId: 'okabeIto' });
+      const original = colorsOf(items);
+      expect(Object.values(original)).toEqual(okabeIto.slice(0, 5));
+
+      items = pass(['a'], true, items, new Set(Object.keys(original)), { paletteId: 'okabeIto' });
+      items = pass(['c', 'e'], true, items, new Set(Object.keys(original)), {
+        paletteId: 'okabeIto',
+      });
+      expect(colorsOf(items)).toEqual({ c: original.c, e: original.e });
+      items = pass(undefined, false, items, new Set(['c', 'e']), { paletteId: 'okabeIto' });
+
+      expect(colorsOf(items)).toEqual(original);
+    });
+
+    it('merging a row into Other while unfiltered frees its slot for the next category taken out', () => {
+      let items = pass(undefined, false, [], new Set(), { max: 3 });
+      const original = colorsOf(items);
+      expect(Object.keys(original)).toEqual(['a', 'b', 'c']);
+
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(),
+        2,
+        false,
+        items,
+        'size-desc',
+        {},
+        new Set(['a', 'b', 'c']),
+        new Map(),
+        true,
+        { pendingMerge: 'b' },
+      ).legendItems;
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(),
+        3,
+        false,
+        items,
+        'size-desc',
+        {},
+        new Set(['a', 'c']),
+        new Map(),
+        true,
+        { pendingExtract: 'e' },
+      ).legendItems;
+
+      expect(colorsOf(items)).toEqual({ a: original.a, c: original.c, e: original.b });
+    });
+
+    it('a constrained view frees no slot, even for a row merged into Other', () => {
+      let items = pass(undefined, false, [], new Set(), { max: 3 });
+      const original = colorsOf(items);
+
+      items = pass(['a', 'c'], true, items, new Set(['a', 'b', 'c']), { max: 3 });
+      // Taken out of Other under the filter: d may not take the colour b keeps.
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(['a', 'c', 'd']),
+        4,
+        true,
+        items,
+        'size-desc',
+        {},
+        new Set(['a', 'b', 'c', 'd']),
+        new Map(),
+        true,
+      ).legendItems;
+
+      const d = colorsOf(items).d;
+      expect(Object.values(original)).not.toContain(d);
+      items = pass(undefined, false, items, new Set(['a', 'b', 'c', 'd']), { max: 4 });
+      expect(colorsOf(items)).toEqual({ ...original, d });
+    });
+
+    it('keeps the colours of categories the view leaves out claimed when a new one probes', () => {
+      // a's stored colour is the one slot 3 would give; a is filtered out when d is taken out.
+      const slot3 = getVisualEncoding(3).color;
+      const persisted = { a: { zOrder: 0, color: slot3, shape: '' } };
+      let items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(['a', 'b', 'c']),
+        3,
+        false,
+        [],
+        'size-desc',
+        persisted,
+      ).legendItems;
+      expect(colorsOf(items).a).toBe(slot3);
+
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'existence',
+        counts(['b', 'c', 'd']),
+        4,
+        true,
+        items,
+        'size-desc',
+        persisted,
+        new Set(['a', 'b', 'c', 'd']),
+      ).legendItems;
+
+      expect(colorsOf(items).d).not.toBe(slot3);
+    });
+
+    it('a constrained first pass takes its slots from the unfiltered counts', () => {
+      const unfiltered = colorsOf(pass(undefined, false, []));
+      ctx = createProcessorContext();
+
+      // An annotation picked, or Reset, while a filter keeps only d and e.
+      const items = pass(['d', 'e'], true, []);
+
+      expect(colorsOf(items)).toEqual({ d: unfiltered.d, e: unfiltered.e });
+    });
+  });
+
+  describe('recolorBySlot', () => {
+    it("gives each row its slot's palette colour and leaves Other and N/A alone", () => {
+      const items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'annotation1',
+        new Map([
+          ['a', 5],
+          [NA_VALUE, 4],
+          ['b', 3],
+        ]),
+        2,
+        false,
+        [],
+        'size-desc',
+      ).legendItems;
+      const reversed = [...items].reverse();
+
+      const recolored = LegendDataProcessor.recolorBySlot(ctx, reversed, 'okabeIto');
+
+      const okabeIto = getColorSchemeStops('okabeIto');
+      expect(colorsOf(recolored)).toEqual({ a: okabeIto[0], [NA_VALUE]: NA_DEFAULT_COLOR });
+      expect(recolored.find((i) => i.value === LEGEND_VALUES.OTHER)?.color).toBe(
+        items.find((i) => i.value === LEGEND_VALUES.OTHER)?.color,
+      );
+    });
+
+    it('a category the view leaves out takes the new palette when it comes back', () => {
+      let items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'annotation1',
+        new Map([
+          ['a', 5],
+          ['b', 3],
+        ]),
+        10,
+        false,
+        [],
+        'size-desc',
+      ).legendItems;
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'annotation1',
+        new Map([['b', 3]]),
+        10,
+        true,
+        items,
+        'size-desc',
+        {},
+        new Set(['a', 'b']),
+      ).legendItems;
+      items = LegendDataProcessor.recolorBySlot(ctx, items, 'okabeIto');
+      expect(LegendDataProcessor.pickedColor(ctx, 'a')).toBe(getColorSchemeStops('okabeIto')[0]);
+
+      items = LegendDataProcessor.processLegendItems(
+        ctx,
+        'annotation1',
+        new Map([
+          ['a', 5],
+          ['b', 3],
+        ]),
+        10,
+        false,
+        items,
+        'size-desc',
+        {},
+        new Set(['b']),
+        new Map(),
+        true,
+        { paletteId: 'okabeIto' },
+      ).legendItems;
+
+      expect(colorsOf(items)).toEqual({
+        a: getColorSchemeStops('okabeIto')[0],
+        b: getColorSchemeStops('okabeIto')[1],
+      });
+    });
+
+    it('keeps the rows distinct once a filter has pushed slots past the palette length', () => {
+      const kellys = getColorSchemeStops('kellys');
+      const names = Array.from({ length: 28 }, (_, i) => `c${i}`);
+      const counts = (values: string[]) =>
+        new Map(values.map((v) => [v, 100 - Number(v.slice(1))]));
+      // A filter frees no slot, so each new view's categories take fresh, growing slots.
+      const views = [names.slice(0, 10), ['c0', ...names.slice(10, 19)]];
+      views.push(['c0', ...names.slice(19, 28)]);
+      let items: LegendItem[] = [];
+      for (const view of views) {
+        items = LegendDataProcessor.processLegendItems(
+          ctx,
+          'annotation1',
+          counts(view),
+          10,
+          true,
+          items,
+          'size-desc',
+        ).legendItems;
+      }
+      expect(ctx.slotTracker.assignedCategories()).toEqual(expect.arrayContaining(['c0', 'c21']));
+      expect(ctx.slotTracker.getSlot('c21') % kellys.length).toBe(ctx.slotTracker.getSlot('c0'));
+      const before = Object.values(colorsOf(items));
+      expect(new Set(before).size).toBe(10);
+
+      const recolored = LegendDataProcessor.recolorBySlot(ctx, items, 'kellys');
+
+      const after = colorsOf(recolored);
+      expect(new Set(Object.values(after)).size).toBe(10);
+      expect(after.c0).toBe(kellys[0]);
+      // The categories the view leaves out remember colours apart from the rows' too.
+      for (const hidden of names.filter((n) => !(n in after)).slice(0, 10)) {
+        expect(Object.values(after)).not.toContain(LegendDataProcessor.pickedColor(ctx, hidden));
+      }
     });
   });
 });

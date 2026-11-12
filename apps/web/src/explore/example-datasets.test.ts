@@ -10,6 +10,8 @@ import {
   type ExampleDataset,
 } from './example-datasets';
 import { EXAMPLE_MANIFEST } from './example-manifest';
+// The annotations Color by never offers.
+import { TOOLTIP_ONLY_ANNOTATIONS } from './view-bar-controller';
 
 // Every bundle committed under apps/web/public/. Found by glob rather than
 // fs/path/url (which would leak Node types into the browser tsconfig; see
@@ -222,9 +224,6 @@ describe('toExampleDatasetSummary', () => {
   });
 });
 
-// Mirrors `TOOLTIP_ONLY_ANNOTATIONS` in packages/core/src/components/control-bar/control-bar.ts,
-// which the colour-by dropdown never offers.
-const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
 const EAT_COMPANION_PATTERN = /__pred_(value|confidence|source)$/;
 
 describe('example datasets curated default view', () => {

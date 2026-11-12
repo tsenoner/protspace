@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { waitForExploreDataLoad, dismissTourIfPresent } from './helpers/explore';
+import { dismissTourIfPresent, waitForExploreDataLoad } from './helpers/explore';
+import { openFigureEditor } from './helpers/figure';
 
 /**
  * E2E coverage for the Publish (Figure Editor) modal — specifically the
@@ -22,44 +23,22 @@ interface Inset {
   pointSizeScale?: number;
 }
 
-async function openFigureEditor(page: Page): Promise<void> {
-  // Trigger the open-publish-editor event directly — the same handler the
-  // Export → Figure Editor button click goes through. Skips the dropdown
-  // animation and possible viewport-clipping headaches.
-  await page.evaluate(() => {
-    const cb = document.querySelector('protspace-control-bar');
-    cb?.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true }));
-  });
-  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), undefined, {
-    timeout: 5_000,
-  });
-  // Wait for the preview canvas to be created and have non-zero pixels.
-  await page.waitForFunction(
-    () => {
-      const m = document.querySelector('protspace-publish-modal') as
-        | (HTMLElement & { shadowRoot: ShadowRoot })
-        | null;
-      const c = m?.shadowRoot?.querySelector('.publish-preview-canvas') as HTMLCanvasElement | null;
-      return !!c && c.width > 0 && c.height > 0;
-    },
-    undefined,
-    { timeout: 5_000 },
-  );
-}
-
 /**
  * Wait until the preview shows the modal's current state. The state change has
  * already queued a redraw (`_redrawHandle`). A redraw that lands within 80 ms of
  * the previous fresh inset render stretches that stale render and arms
- * `_settleTimer` for a fresh one, so wait for both to clear.
+ * the inset cache's settle timer for a fresh one, so wait for both to clear.
  */
 async function waitForPreviewRedraw(page: Page): Promise<void> {
   await page.waitForFunction(
     () => {
       const m = document.querySelector('protspace-publish-modal') as unknown as
-        | (HTMLElement & { _redrawHandle: number | null; _settleTimer: unknown })
+        | (HTMLElement & {
+            _redrawHandle: number | null;
+            _insetRenders: { settleTimer: unknown };
+          })
         | null;
-      return !!m && m._redrawHandle === null && m._settleTimer === null;
+      return !!m && m._redrawHandle === null && m._insetRenders.settleTimer === null;
     },
     undefined,
     { timeout: 5_000, polling: 100 },
@@ -317,6 +296,7 @@ test.describe('figure editor — geometric inset zoom', () => {
     // no preview redraw first.
     const downloadPromise = page.waitForEvent('download', { timeout: 15_000 });
 
+    // Export is the footer's primary ps-button inside the editor's dialog.
     await page
       .locator('protspace-publish-modal')
       .getByRole('button', { name: 'Export', exact: true })
@@ -358,9 +338,9 @@ test.describe('figure editor — geometric inset zoom', () => {
 
     const initialInsetRenderSize = await page.evaluate(() => {
       const modal = document.querySelector('protspace-publish-modal') as unknown as
-        | (HTMLElement & { _lastInsetCanvases: HTMLCanvasElement[] })
+        | (HTMLElement & { _insetRenders: { lastCanvases: HTMLCanvasElement[] } })
         | null;
-      const insetCanvas = modal?._lastInsetCanvases[0];
+      const insetCanvas = modal?._insetRenders.lastCanvases[0];
       if (!insetCanvas) throw new Error('initial inset render missing');
       return { width: insetCanvas.width, height: insetCanvas.height };
     });
@@ -405,17 +385,19 @@ test.describe('figure editor — geometric inset zoom', () => {
           const modal = document.querySelector('protspace-publish-modal') as unknown as
             | (HTMLElement & {
                 shadowRoot: ShadowRoot;
-                _lastInsetCanvases: HTMLCanvasElement[];
-                _settleTimer: ReturnType<typeof setTimeout> | null;
+                _insetRenders: {
+                  lastCanvases: HTMLCanvasElement[];
+                  settleTimer: ReturnType<typeof setTimeout> | null;
+                };
               })
             | null;
           const canvas = modal?.shadowRoot?.querySelector(
             '.publish-preview-canvas',
           ) as HTMLCanvasElement | null;
-          const insetCanvas = modal?._lastInsetCanvases[0];
+          const insetCanvas = modal?._insetRenders.lastCanvases[0];
           return {
             previewReady: Boolean(canvas && canvas.width > 0 && canvas.height > 0),
-            settled: modal?._settleTimer === null,
+            settled: modal?._insetRenders.settleTimer === null,
             finalInsetRendered: Boolean(
               insetCanvas &&
               insetCanvas.width > initialSize.width * 1.4 &&
@@ -442,5 +424,53 @@ test.describe('figure editor — geometric inset zoom', () => {
     expect(finalRect.y).toBeCloseTo(0.55);
     expect(finalRect.w).toBeCloseTo(0.295);
     expect(finalRect.h).toBeCloseTo(0.295);
+  });
+});
+
+test.describe('figure editor — a state saved on another projection', () => {
+  test('warns about its overlays, and Clear overlays clears them', async ({ page }) => {
+    // Each test gets a fresh browser context, so seed the stored state before the app reads it.
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem(
+          'protspace_publishState',
+          JSON.stringify({
+            overlays: [
+              {
+                type: 'circle',
+                cx: 0.5,
+                cy: 0.5,
+                rx: 0.1,
+                ry: 0.1,
+                rotation: 0,
+                color: '#000',
+                strokeWidth: 2,
+              },
+            ],
+            viewFingerprint: { projection: 'not-this-one', dimensionality: 2 },
+          }),
+        );
+      } catch {
+        /* a document without storage, such as about:blank */
+      }
+    });
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await openFigureEditor(page);
+
+    const warning = page.locator('protspace-publish-modal .publish-warning');
+    await expect(warning).toContainText('not-this-one');
+    await warning.getByText('Clear overlays').click();
+    await expect(warning).toHaveCount(0);
+    const overlays = await page.evaluate(
+      () =>
+        (
+          document.querySelector('protspace-publish-modal') as unknown as {
+            _state: { overlays: unknown[] };
+          }
+        )._state.overlays.length,
+    );
+    expect(overlays).toBe(0);
   });
 });

@@ -2,9 +2,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeRenderer, plotDataFrom } from './test-support/renderer-fixture';
 
-// B1 renderer lifecycle: destroy() disposes the GPU resources (F-43), a
-// programmatic context loss reaches onContextLost (F-01), and syncGpu's guards.
-// The DOM webglcontextlost path and the absent restore listener (F-39) are in
+// Renderer lifecycle: destroy() disposes the GPU resources, a programmatic
+// context loss reaches onContextLost, and syncGpu's guards. The DOM
+// webglcontextlost path and the absent restore listener are in
 // webgl-renderer.context-loss.test.ts and context-loss-controller.test.ts.
 //
 // The shared mock-webgl2 harness provides the full gl.* surface the render path
@@ -14,7 +14,7 @@ import { makeRenderer, plotDataFrom } from './test-support/renderer-fixture';
 /** Three points along the diagonal of the unit square. */
 const pd = plotDataFrom([0, 0.5, 1], [0, 0.5, 1]);
 
-describe('WebGLRenderer lifecycle (B1: F-43 / F-01)', () => {
+describe('WebGLRenderer lifecycle', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
     rafQueue = [];
@@ -28,8 +28,8 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-01)', () => {
     vi.restoreAllMocks();
   });
 
-  // F-43 — destroy() becomes the single GPU-teardown owner.
-  it('F-43: destroy() deletes GPU resources via dispose()', () => {
+  // destroy() becomes the single GPU-teardown owner.
+  it('destroy() deletes GPU resources via dispose()', () => {
     const { renderer, gl } = makeRenderer();
     // Force lazy resource creation so there are handles to delete.
     renderer.render(pd); // ensureGL() -> createBuffer/VAO/texture/program
@@ -49,10 +49,10 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-01)', () => {
     expect(del.program.mock.calls.length).toBeGreaterThanOrEqual(1); // pointProgram (+gamma if available)
   });
 
-  // F-01 — route programmatic context loss to recovery (sanctioned visible change).
-  it('F-01: programmatic loss (gl.isContextLost) routes to onContextLost once', () => {
+  // Route programmatic context loss to recovery (sanctioned visible change).
+  it('programmatic loss (gl.isContextLost) routes to onContextLost once', () => {
     const onContextLost = vi.fn();
-    const { renderer: r, gl } = makeRenderer({}, undefined, { onContextLost });
+    const { renderer: r, gl } = makeRenderer({ onContextLost });
     r.render(pd); // acquire context
     // Simulate a driver reset with NO webglcontextlost DOM event:
     vi.spyOn(gl, 'isContextLost').mockReturnValue(true);

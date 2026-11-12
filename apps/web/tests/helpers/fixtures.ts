@@ -19,9 +19,10 @@ const fixture = (name: string) => fileURLToPath(new URL(`../fixtures/${name}`, i
 const STARTUP_FIXTURE = fixture('demo_toxprot_7831.parquetbundle');
 
 /**
- * The URL the app loads the startup demo from during E2E: Vite's dev-only
- * `/@fs/` route to the fixture, handed to the app as `VITE_STARTUP_DATASET_URL`
- * by the web server in `playwright.config.ts`.
+ * The URL the app loads the startup demo from during E2E: Vite's `/@fs/` route
+ * to the fixture (the dev server's; `vite.e2e.config.ts` serves it under
+ * `vite preview`), handed to the app as `VITE_STARTUP_DATASET_URL` by the web
+ * server in `playwright.config.ts`.
  */
 export const STARTUP_DATASET_URL = `/@fs${STARTUP_FIXTURE}`;
 

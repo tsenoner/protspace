@@ -1,3 +1,6 @@
+import { countNoun } from '@protspace/utils';
+import type { DatasetLoadKind } from './types';
+
 export interface OverlayNote {
   text: string;
   href?: string;
@@ -30,13 +33,94 @@ export function progressAfterExampleDownload(progress: number): number {
   return EXAMPLE_DOWNLOAD_SHARE + (clamped * (100 - EXAMPLE_DOWNLOAD_SHARE)) / 100;
 }
 
+/**
+ * What the overlay says (design decision 15). It tells the truth about the data: a local file is
+ * read in the browser, and only a FASTA file is sent to the server, for embedding.
+ */
+export const LOADING_COPY = {
+  readingTitle: 'Reading your file in the browser',
+  readingFile: (name: string) => `Reading ${name}…`,
+  openingExample: (label: string) => `Opening ${label}`,
+  reopeningStored: (name: string) => `Reopening ${name} from this browser`,
+  saving: 'Saving a copy in this browser',
+  drawing: (count: number) => `Drawing ${countNoun(count, 'protein', 'proteins')}`,
+  fastaTitle: 'Preparing FASTA…',
+  fastaUploading: 'Uploading to the embedding server…',
+} as const;
+
+/** The overlay's title and detail line while the data loader decodes, by where the data came from. */
+export function loadingCopyFor(
+  meta: { kind: DatasetLoadKind; example?: { entry: { label: string } }; fileName?: string } | null,
+): { title: string; detail: string } {
+  if (meta?.example) {
+    // An example's label reads "name · proteins · size"; the name is enough, as in the app bar.
+    return {
+      title: LOADING_COPY.openingExample(meta.example.entry.label.split(' · ')[0]),
+      detail: '',
+    };
+  }
+  if (meta?.kind === 'opfs' && meta.fileName) {
+    return { title: LOADING_COPY.reopeningStored(meta.fileName), detail: '' };
+  }
+  return {
+    title: LOADING_COPY.readingTitle,
+    detail: meta?.fileName ? LOADING_COPY.readingFile(meta.fileName) : '',
+  };
+}
+
+const OVERLAY_ID = 'progressive-loading';
 const CANCEL_BUTTON_ID = 'progressive-loading-cancel';
 const CANCEL_DEFAULT_LABEL = 'Cancel';
+const LIVE_ID = 'progressive-loading-status';
 
+/**
+ * The full-page loading overlay. It blocks the page while a load runs; the runtime also makes the
+ * workbench inert meanwhile, so the keyboard cannot reach what the overlay covers. Built with
+ * `createElement` and `textContent` only: a file name or a server message is never parsed as
+ * markup. `workbench.css` styles its classes from the tokens. `subMessage` is the title,
+ * `message` the line under the bar.
+ */
 export function createLoadingOverlayController(doc: Document = document): LoadingOverlayController {
   let cancelHandler: (() => void) | null = null;
   let cancelLabel = CANCEL_DEFAULT_LABEL;
   let currentNote: OverlayNote | null = null;
+
+  const element = <K extends keyof HTMLElementTagNameMap>(
+    tag: K,
+    className: string,
+    id?: string,
+  ): HTMLElementTagNameMap[K] => {
+    const el = doc.createElement(tag);
+    el.className = className;
+    if (id) el.id = id;
+    return el;
+  };
+
+  // One live region for the controller's lifetime, there before any text is put in it: a region
+  // inserted together with its text is often not announced. It says the title only, so a progress
+  // tick is not read out.
+  const live = element('p', 'sr-only', LIVE_ID);
+  live.setAttribute('role', 'status');
+  doc.body.appendChild(live);
+  const setText = (el: HTMLElement | null, text: string) => {
+    if (el && el.textContent !== text) el.textContent = text;
+  };
+
+  const build = (): HTMLElement => {
+    const overlay = element('div', 'ps-loading', OVERLAY_ID);
+    const card = element('div', 'ps-loading__card');
+    const bar = element('div', 'ps-loading__bar', 'progress-track');
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', 'Loading');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', '100');
+    bar.appendChild(element('div', 'ps-loading__fill', 'progress-bar'));
+    card.appendChild(element('p', 'ps-loading__title', 'processing-text'));
+    card.appendChild(bar);
+    card.appendChild(element('p', 'ps-loading__detail', 'progress-text'));
+    overlay.appendChild(card);
+    return overlay;
+  };
 
   const renderCancelButton = (overlay: HTMLElement) => {
     let button = overlay.querySelector<HTMLButtonElement>(`#${CANCEL_BUTTON_ID}`);
@@ -47,29 +131,19 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
     }
 
     if (!button) {
-      button = doc.createElement('button');
-      button.id = CANCEL_BUTTON_ID;
+      button = element('button', 'ps-loading__cancel', CANCEL_BUTTON_ID);
       button.type = 'button';
-      button.style.cssText = `
-        margin-top: 24px; padding: 8px 20px; font-size: 14px;
-        background: rgba(255,255,255,0.08); color: white;
-        border: 1px solid rgba(255,255,255,0.35); border-radius: 4px;
-        cursor: pointer; font-family: inherit;
-      `;
       button.addEventListener('click', () => cancelHandler?.());
-      const inner = overlay.firstElementChild;
-      (inner ?? overlay).appendChild(button);
+      (overlay.firstElementChild ?? overlay).appendChild(button);
     }
 
-    button.textContent = cancelLabel;
+    setText(button, cancelLabel);
   };
 
   const renderNote = (overlay: HTMLElement) => {
     overlay.querySelector('#loading-note')?.remove();
     if (!currentNote) return;
-    const noteEl = doc.createElement('div');
-    noteEl.id = 'loading-note';
-    noteEl.style.cssText = 'font-size: 13px; opacity: 0.75; margin-top: 16px;';
+    const noteEl = element('div', 'ps-loading__note', 'loading-note');
     const textSpan = doc.createElement('span');
     textSpan.textContent = currentNote.text;
     noteEl.appendChild(textSpan);
@@ -79,7 +153,6 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
       anchor.target = '_blank';
       anchor.rel = 'noopener noreferrer';
       anchor.textContent = currentNote.linkText || currentNote.href;
-      anchor.style.cssText = 'color: #06b6d4; text-decoration: underline; margin-left: 4px;';
       noteEl.appendChild(anchor);
     }
     const progressText = overlay.querySelector('#progress-text');
@@ -97,10 +170,12 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
     subMessage: string = '',
     note?: OverlayNote | null,
   ) => {
-    let overlay = doc.getElementById('progressive-loading');
+    let overlay = doc.getElementById(OVERLAY_ID);
 
     if (!show) {
       currentNote = null;
+      // Emptied, so the next load's title is announced even when it reads the same.
+      setText(live, '');
       // Removed at once, with no fade: callers dismiss only when the load has settled,
       // and a fading overlay still covers (and blocks clicks on) the page meanwhile.
       overlay?.remove();
@@ -108,58 +183,31 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
     }
 
     if (!overlay) {
-      overlay = doc.createElement('div');
-      overlay.id = 'progressive-loading';
-      overlay.setAttribute('role', 'status');
-      overlay.setAttribute('aria-live', 'polite');
-      overlay.setAttribute('aria-atomic', 'true');
-      overlay.setAttribute('aria-busy', 'true');
-      overlay.style.cssText = `
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: linear-gradient(135deg, rgba(0,0,0,0.9), rgba(20,20,40,0.9));
-        color: white; z-index: 9999;
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      `;
-
-      overlay.innerHTML = `
-        <div style="text-align: center; max-width: 500px;">
-          <div style="font-size: 24px; margin-bottom: 10px;">🚀 Loading ProtSpace</div>
-          <div id="processing-text" style="font-size: 18px; margin-bottom: 20px;">
-            ${subMessage}
-          </div>
-          <div style="width: 300px; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; margin: 20px auto;">
-            <div id="progress-bar" style="height: 100%; background: linear-gradient(90deg, #3b82f6, #06b6d4); border-radius: 2px; width: 0%; transition: width 0.3s ease;"></div>
-          </div>
-          <div id="progress-text" style="font-size: 14px; opacity: 0.8; margin-top: 10px;">
-            ${message}
-          </div>
-        </div>
-      `;
+      overlay = build();
       doc.body.appendChild(overlay);
     }
 
-    overlay.setAttribute('aria-label', [subMessage, message].filter(Boolean).join('. '));
-
     const progressBar = overlay.querySelector<HTMLElement>('#progress-bar');
-    const progressText = overlay.querySelector<HTMLElement>('#progress-text');
-    const processingText = overlay.querySelector<HTMLElement>('#processing-text');
-
     if (progressBar) progressBar.style.width = `${progress}%`;
-    if (progressText) progressText.textContent = message;
-    if (processingText) processingText.textContent = subMessage;
+    overlay
+      .querySelector('#progress-track')
+      ?.setAttribute('aria-valuenow', String(Math.round(progress)));
+    setText(overlay.querySelector<HTMLElement>('#progress-text'), message);
+    setText(overlay.querySelector<HTMLElement>('#processing-text'), subMessage);
+    setText(live, subMessage);
 
+    // A progress tick leaves the note alone; only a call that passes one (or null) changes it.
     if (note !== undefined) {
       currentNote = note;
+      renderNote(overlay);
     }
-    renderNote(overlay);
     renderCancelButton(overlay);
   };
 
   const setCancelHandler = (handler: (() => void) | null, label?: string) => {
     cancelHandler = handler;
     cancelLabel = label ?? CANCEL_DEFAULT_LABEL;
-    const overlay = doc.getElementById('progressive-loading');
+    const overlay = doc.getElementById(OVERLAY_ID);
     if (overlay) renderCancelButton(overlay);
   };
 
@@ -169,7 +217,58 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
     dispose() {
       cancelHandler = null;
       currentNote = null;
-      doc.getElementById('progressive-loading')?.remove();
+      doc.getElementById(OVERLAY_ID)?.remove();
+      live.remove();
+    },
+  };
+}
+
+/** The focused element, looking through open shadow roots. */
+function deepActiveElement(doc: Document): HTMLElement | null {
+  let el: Element | null = doc.activeElement;
+  while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+  return el as HTMLElement | null;
+}
+
+interface LoadFocusReturn {
+  /** Notes the focused element as a load begins (the workbench goes inert and drops focus). */
+  remember(): void;
+  /** Puts focus back once the load has ended, or on `fallback` when that element is gone. */
+  restore(): void;
+}
+
+/**
+ * Hands focus back after a load. The workbench is inert while the overlay shows, so focus falls
+ * to `<body>`, and a keyboard user would start again from the top of the page after every dataset
+ * switch. `restore` waits a frame, until React has lifted `inert`; it does nothing when focus was
+ * on `<body>` before the load or has moved since.
+ */
+export function createLoadFocusReturn(
+  fallback: () => HTMLElement | null,
+  doc: Document = document,
+  nextFrame: (callback: () => void) => void = (callback) => requestAnimationFrame(callback),
+): LoadFocusReturn {
+  let remembered: HTMLElement | null = null;
+  const focusLost = () => doc.activeElement === null || doc.activeElement === doc.body;
+  // Focusing a removed, hidden or inert element does nothing: whether focus moved says so.
+  const tryFocus = (el: HTMLElement | null) => {
+    if (!el?.isConnected) return false;
+    el.focus();
+    return !focusLost();
+  };
+  return {
+    remember() {
+      const active = deepActiveElement(doc);
+      remembered = active === doc.body ? null : active;
+    },
+    restore() {
+      const target = remembered;
+      remembered = null;
+      if (!target) return;
+      nextFrame(() => {
+        if (!focusLost()) return;
+        if (!tryFocus(target)) tryFocus(fallback());
+      });
     },
   };
 }

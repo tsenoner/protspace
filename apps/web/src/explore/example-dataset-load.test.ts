@@ -27,6 +27,12 @@ const notifyMock = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
+// The OPFS copy of a user import (`beginSaveImportedFile`), kept by `commit`.
+const importSave = vi.hoisted(() => ({
+  commit: vi.fn(async () => {}),
+  abort: vi.fn(async () => {}),
+}));
+
 const mocks = vi.hoisted(() => ({
   loadData: vi.fn(),
 }));
@@ -49,7 +55,7 @@ vi.mock('./opfs-dataset-store', () => ({
   loadLastImportedFile: vi.fn().mockResolvedValue(null),
   markLastLoadStatus: vi.fn().mockResolvedValue(undefined),
   readLastLoadStatus: vi.fn().mockResolvedValue(null),
-  saveLastImportedFile: vi.fn().mockResolvedValue(undefined),
+  beginSaveImportedFile: vi.fn(() => importSave),
 }));
 
 vi.mock('./tooltip-annotations-store', () => ({
@@ -63,8 +69,8 @@ import {
   clearLastImportedFile,
   loadLastImportedFile,
   markLastLoadStatus,
+  beginSaveImportedFile,
   readLastLoadStatus,
-  saveLastImportedFile,
 } from './opfs-dataset-store';
 
 const DEMO = TEST_DEMO;
@@ -140,7 +146,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
 
     const changes = recordDatasetChanges(controller);
 
-    const result = await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu');
+    const result = await controller.loadChosenExample(DEMO, 'menu');
 
     expect(result).toBe('loaded');
     expect(setCurrentDatasetName).toHaveBeenCalledWith(DEMO.label);
@@ -155,7 +161,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
 
     const changes = recordDatasetChanges(controller);
 
-    const result = await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu');
+    const result = await controller.loadChosenExample(DEMO, 'menu');
 
     expect(result).toBe('failed');
     expect(setCurrentDatasetName).not.toHaveBeenCalled();
@@ -184,46 +190,52 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
   });
 });
 
-describe('example load: the stored import is replaced only once the example has decoded', () => {
-  it('a successful menu choice clears the stored import', async () => {
+describe('example load: a menu choice keeps the stored import; "Load default" replaces it only once decoded', () => {
+  it('a successful menu choice keeps the stored import', async () => {
     const { controller } = createRealController(loadSucceeds);
     stubOkFetch();
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe('loaded');
-    expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
+    expect(await controller.loadChosenExample(DEMO, 'menu')).toBe('loaded');
+    expect(clearLastImportedFile).not.toHaveBeenCalled();
   });
 
-  it('a menu choice whose download fails keeps the stored import', async () => {
+  it('"Load default" clears the stored import once the demo has decoded', async () => {
+    const { controller, setCurrentExampleId } = createRealController(loadSucceeds);
+    stubOkFetch();
+
+    await controller.loadDefaultDatasetAndClearPersistedFile();
+    expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
+    expect(setCurrentExampleId).toHaveBeenLastCalledWith(DEMO.id);
+  });
+
+  it('"Load default" whose download fails keeps the stored import', async () => {
     const { controller } = createRealController(loadSucceeds);
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response(null, { status: 500, statusText: 'Server Error' })),
     );
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe('failed');
+    await controller.loadDefaultDatasetAndClearPersistedFile();
     expect(clearLastImportedFile).not.toHaveBeenCalled();
   });
 
-  it('a menu choice whose bundle fails to parse keeps the stored import', async () => {
+  it('"Load default" whose bundle fails to parse keeps the stored import', async () => {
     const { controller } = createRealController(parseFails);
     stubOkFetch();
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe('failed');
+    await controller.loadDefaultDatasetAndClearPersistedFile();
     expect(clearLastImportedFile).not.toHaveBeenCalled();
   });
 
-  it('a menu choice superseded before it renders keeps the stored import', async () => {
+  it('"Load default" superseded before it renders keeps the stored import', async () => {
     const { controller } = createRealController(async (file, ctrl) => {
-      // A newer request (a user import, another menu choice) lands while
-      // this one is still decoding.
+      // A newer request (a user import, a menu choice) lands while this one is still decoding.
       ctrl.beginUserRequest();
       await loadSucceeds(file, ctrl);
     });
     stubOkFetch();
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe(
-      'superseded',
-    );
+    await controller.loadDefaultDatasetAndClearPersistedFile();
     expect(clearLastImportedFile).not.toHaveBeenCalled();
   });
 
@@ -259,7 +271,7 @@ describe('example load: the stored import is replaced only once the example has 
     const busy = dataLoader.loadFromFile(new File(['x'], 'busy.parquetbundle'), {
       source: 'auto',
     });
-    const choice = controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu');
+    const choice = controller.loadChosenExample(DEMO, 'menu');
     await vi.waitFor(() => expect(loadQueue.getLatestSequence()).toBe(2));
     controller.beginUserRequest();
     releaseBusy();
@@ -277,9 +289,7 @@ describe('example load: the stored import is replaced only once the example has 
     });
     stubOkFetch();
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe(
-      'superseded',
-    );
+    expect(await controller.loadChosenExample(DEMO, 'menu')).toBe('superseded');
     // No toast, and the overlay the newer request owns is left alone.
     expect(notifyMock.error).not.toHaveBeenCalled();
     expect(overlayController.update).not.toHaveBeenCalledWith(false);
@@ -309,10 +319,10 @@ describe('a load a newer user request supersedes after it has started', () => {
     stubOkFetch();
     const changes = recordDatasetChanges(controller);
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe('loaded');
+    expect(await controller.loadChosenExample(DEMO, 'menu')).toBe('loaded');
     expect(cancelDuringRender).toBe('committed');
     expect(changes).toEqual([[DEMO.id, 'menu']]);
-    expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
+    expect(clearLastImportedFile).not.toHaveBeenCalled();
   });
 
   it('a menu example still decoding is cancelled by a Back, and nothing of it lands', async () => {
@@ -323,9 +333,7 @@ describe('a load a newer user request supersedes after it has started', () => {
     stubOkFetch();
     const changes = recordDatasetChanges(controller);
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe(
-      'superseded',
-    );
+    expect(await controller.loadChosenExample(DEMO, 'menu')).toBe('superseded');
     expect(mocks.loadData).not.toHaveBeenCalled();
     expect(changes).toEqual([]);
     expect(clearLastImportedFile).not.toHaveBeenCalled();
@@ -374,7 +382,7 @@ describe('a load a newer user request supersedes after it has started', () => {
     expect(lastStatusMark()).toEqual(['success']);
   });
 
-  it('a menu example superseded while it clears the stored import still renders, so the store matches the screen', async () => {
+  it('"Load default" superseded while it clears the stored import still renders, so the store matches the screen', async () => {
     const { controller, setCurrentExampleId, viewController } = createRealController(
       async (file, ctrl) => {
         // A Back/Forward lands while the stored import is being deleted.
@@ -387,11 +395,9 @@ describe('a load a newer user request supersedes after it has started', () => {
     stubOkFetch();
     const changes = recordDatasetChanges(controller);
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe(
-      'superseded',
-    );
-    // The import it replaced is gone, so the example, not the import's old
-    // plot, is what the screen shows until the newer request replaces it.
+    await controller.loadDefaultDatasetAndClearPersistedFile();
+    // The import it replaced is gone, so the demo, not the import's old plot, is what the screen
+    // shows until the newer request replaces it.
     expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
     expect(mocks.loadData).toHaveBeenCalledTimes(1);
     expect(setCurrentExampleId).toHaveBeenLastCalledWith(DEMO.id);
@@ -403,7 +409,7 @@ describe('a load a newer user request supersedes after it has started', () => {
 
   it('a user import superseded while it is saved still renders and records its success', async () => {
     const { controller, dataLoader, loadQueue } = createRealController(async (file, ctrl) => {
-      vi.mocked(saveLastImportedFile).mockImplementationOnce(async () => {
+      importSave.commit.mockImplementationOnce(async () => {
         ctrl.beginUserRequest();
       });
       await ctrl.handleDataLoaded(dataLoadedEvent({ settings: null, source: 'user', file }));
@@ -416,7 +422,8 @@ describe('a load a newer user request supersedes after it has started', () => {
 
     // Saved, it is the stored import: shown and marked loaded, never left
     // 'pending' for the next visit to offer recovery for.
-    expect(saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(beginSaveImportedFile).toHaveBeenCalledWith(file);
+    expect(importSave.commit).toHaveBeenCalledOnce();
     expect(mocks.loadData).toHaveBeenCalledTimes(1);
     expect(changes).toEqual([[null, 'superseded']]);
     expect(lastStatusMark()).toEqual(['success']);
@@ -434,7 +441,7 @@ describe('a load a newer user request supersedes after it has started', () => {
     loadQueue.registerFileLoad(file, 'user', undefined, controller.beginUserRequest());
     await dataLoader.loadFromFile(file, { source: 'user' });
 
-    expect(saveLastImportedFile).not.toHaveBeenCalled();
+    expect(beginSaveImportedFile).not.toHaveBeenCalled();
     expect(mocks.loadData).not.toHaveBeenCalled();
     expect(changes).toEqual([]);
   });
@@ -449,7 +456,8 @@ describe('a load a newer user request supersedes after it has started', () => {
     loadQueue.registerFileLoad(file, 'user', undefined, controller.beginUserRequest());
     await dataLoader.loadFromFile(file, { source: 'user' });
 
-    expect(saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(beginSaveImportedFile).toHaveBeenCalledWith(file);
+    expect(importSave.commit).toHaveBeenCalledOnce();
     expect(mocks.loadData).toHaveBeenCalledTimes(1);
     expect(changes).toEqual([[null, 'user']]);
   });

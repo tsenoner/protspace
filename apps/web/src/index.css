@@ -1,6 +1,20 @@
 @import 'tailwindcss';
+/* The top bar geometry the landing, Explore and the docs share. */
+@import '../../../config/site-bar.css';
+/* Core's --ps-* tokens, light and dark: the landing, Explore and the docs share one palette. */
+@import '../../../packages/core/src/styles/tokens.css';
 
 @plugin 'tailwindcss-animate';
+
+/* Arial sized to Inter's metrics, so text barely moves when Inter swaps in. */
+@font-face {
+  font-family: 'Inter Fallback';
+  src: local('Arial');
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0%;
+  size-adjust: 107.12%;
+}
 
 @utility container {
   margin-inline: auto;
@@ -14,8 +28,10 @@
 }
 
 /*
-  These tokens map Tailwind utilities (bg-primary, rounded-lg, …)
-  onto the runtime design-system CSS variables defined in `:root` below.
+  These tokens map Tailwind utilities (bg-primary, text-muted-foreground, …) onto core's --ps-*
+  tokens (packages/core/src/styles/tokens.css), so every page follows the theme on <html
+  data-theme> and uses the app's palette and accent. Alpha modifiers (bg-background/85) still
+  work: Tailwind mixes the token with transparent.
 
   `@theme inline` is required because every value references another CSS
   variable. Without `inline`, Tailwind v4 would also emit each token into
@@ -24,39 +40,52 @@
   directly into each utility and skips that emission, per the Tailwind v4 docs.
 */
 @theme inline {
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
+  --color-border: var(--ps-border);
+  --color-input: var(--ps-border);
+  --color-ring: var(--ps-focus);
+  --color-background: var(--ps-surface);
+  --color-foreground: var(--ps-text);
 
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary: var(--ps-accent);
+  --color-primary-foreground: var(--ps-text-on-accent);
 
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-secondary: var(--ps-surface-hover);
+  --color-secondary-foreground: var(--ps-text);
 
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-destructive: var(--ps-danger);
+  --color-destructive-foreground: var(--ps-text-on-accent);
 
-  --color-warning: hsl(var(--warning));
-  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-warning: var(--ps-warning);
+  --color-warning-foreground: var(--ps-surface);
 
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-muted: var(--ps-surface-hover);
+  --color-muted-foreground: var(--ps-text-muted);
 
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent: var(--ps-surface-hover);
+  --color-accent-foreground: var(--ps-text);
 
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover: var(--ps-surface-raised);
+  --color-popover-foreground: var(--ps-text);
 
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card: var(--ps-surface-raised);
+  --color-card-foreground: var(--ps-text);
+
+  /* Link and current-page text: the accent at text contrast, as in Explore and the docs. */
+  --color-link: var(--ps-accent-text);
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  /* Core's --ps-* tokens as utilities by their own names, for the kit gallery
+     (src/dev/KitGallery.tsx); the explore shell reads the tokens in workbench.css. */
+  --color-ps-surface: var(--ps-surface);
+  --color-ps-text: var(--ps-text);
+  --color-ps-text-muted: var(--ps-text-muted);
+  --font-ps: var(--ps-font-sans);
+  --text-ps-sm: var(--ps-text-sm);
+  --text-ps-base: var(--ps-text-base);
+  --text-ps-xl: var(--ps-text-xl);
 }
 
 /*
@@ -88,46 +117,9 @@
   }
 }
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
+/* The landing's corner radius; its colours are the --ps-* tokens mapped above. */
 @layer base {
   :root {
-    /* Light, quiet surfaces: the protein-space visualizations provide the color. */
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
-
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-
-    --primary: 217 91% 60%;
-    --primary-foreground: 210 40% 98%;
-
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 40%;
-
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
-
-    /* Severity token: non-fatal warnings that need user attention.
-       Amber-500 base — convention across all major design systems. */
-    --warning: 38 92% 50%;
-    --warning-foreground: 48 96% 89%;
-
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 217 91% 60%;
-
     --radius: 0.75rem;
   }
 }
@@ -139,13 +131,6 @@ All colors MUST be HSL.
 
   html {
     scroll-behavior: smooth;
-  }
-
-  /* The explorer scales its dense UI with the viewport; text pages keep the browser default. */
-  @media (min-width: 1380px) {
-    html:has(.explore-wrapper) {
-      font-size: clamp(0.75rem, 0.87vw, 1.125rem);
-    }
   }
 
   body {

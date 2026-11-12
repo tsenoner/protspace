@@ -1,5 +1,6 @@
 import { LitElement, html, svg, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
+import { classMap } from 'lit/directives/class-map.js';
 import { formatStatValue } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import { categoryScoreStripStyles } from './category-score-strip.styles';
@@ -8,6 +9,8 @@ import '../common/info-popover';
 /** One category's position on a score axis, painted in its legend colour. */
 export interface ScoreStripPoint {
   category: string;
+  /** The category as the legend names it (N/A, TED's "No CATH label"); the raw value if unset. */
+  label?: string;
   value: number;
   color: string;
   /**
@@ -15,6 +18,20 @@ export interface ScoreStripPoint {
    * is read against, shown in the tooltip.
    */
   embedding?: number | null;
+  /**
+   * The category has no legend row (it sits in Other). Its `color` stays the data grey; on screen
+   * the dot takes the themed --ps-plot-other.
+   */
+  other?: true;
+}
+
+/**
+ * `strip-hover`: the dot's category, or null once the pointer leaves the strip; `touch` when a
+ * tap entered the dot.
+ */
+export interface StripHoverDetail {
+  category: string | null;
+  touch: boolean;
 }
 
 const STRIP_HEIGHT = 44;
@@ -45,7 +62,7 @@ const NO_VALUE = '—';
 @customElement('protspace-score-strip')
 class ProtspaceScoreStrip extends LitElement {
   @property({ type: Array }) points: ScoreStripPoint[] = [];
-  /** Category to emphasise, driven by the legend's hover state. */
+  /** Category to emphasise: the legend's hover, or the plot's Shift + hover focus. */
   @property({ type: String }) highlighted: string | null = null;
   @property({ type: String }) label = '';
   /**
@@ -106,16 +123,20 @@ class ProtspaceScoreStrip extends LitElement {
           ${this.points.map(
             (point) =>
               svg`<circle
-            class="${point.category === this.highlighted ? 'is-highlighted' : ''}"
+            class=${classMap({
+              'is-highlighted': point.category === this.highlighted,
+              other: !!point.other,
+            })}
             data-category="${point.category}"
             cx="${position(point.value)}%"
             cy="${AXIS_Y}"
             r="${DOT_RADIUS}"
             fill="${point.color}"
-            @mouseenter=${() => this._emitHover(point.category)}
-            @mouseleave=${() => this._emitHover(null)}
+            @pointerenter=${(event: PointerEvent) =>
+              this._enterDot(point.category, event.pointerType === 'touch')}
+            @mouseleave=${this._leaveDot}
             @click=${() => this._emitClick(point.category)}
-          ><title>${point.category}: ${formatStatValue(point.value)}${
+          ><title>${point.label ?? point.category}: ${formatStatValue(point.value)}${
             point.embedding == null
               ? ''
               : ` (embedding reference ${formatStatValue(point.embedding)})`
@@ -142,7 +163,8 @@ class ProtspaceScoreStrip extends LitElement {
            scores — the entire point of the strip — are unreachable to assistive tech. -->
       <ul class="sr-only">
         ${this.points.map(
-          (point) => html`<li>${point.category}: ${formatStatValue(point.value)}</li>`,
+          (point) =>
+            html`<li>${point.label ?? point.category}: ${formatStatValue(point.value)}</li>`,
         )}
       </ul>
     `;
@@ -153,10 +175,40 @@ class ProtspaceScoreStrip extends LitElement {
     return Number.isInteger(value) ? String(value) : value.toFixed(2);
   }
 
-  private _emitHover(category: string | null): void {
+  /** The clear that leaving a dot schedules for the next frame, if it has not run yet. */
+  private _pendingClear = 0;
+
+  /**
+   * A dot reports its category on `pointerenter`, which says whether a tap began it. Leaving a dot
+   * clears it a frame later, and entering the next dot cancels that clear, so moving dot to dot is
+   * one hover, not a clear and a hover, while resting on the axis between dots clears it. The
+   * clear listens for `mouseleave`: a tap's compatibility mouse events keep its hover until the
+   * next tap elsewhere, where a touch `pointerleave` would end it on lift.
+   */
+  private _enterDot(category: string, touch: boolean): void {
+    cancelAnimationFrame(this._pendingClear);
+    this._pendingClear = 0;
+    this._emitHover(category, touch);
+  }
+
+  private _leaveDot = (): void => {
+    cancelAnimationFrame(this._pendingClear);
+    this._pendingClear = requestAnimationFrame(() => {
+      this._pendingClear = 0;
+      this._emitHover(null, false);
+    });
+  };
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    cancelAnimationFrame(this._pendingClear);
+    this._pendingClear = 0;
+  }
+
+  private _emitHover(category: string | null, touch: boolean): void {
     this.dispatchEvent(
-      new CustomEvent<{ category: string | null }>('strip-hover', {
-        detail: { category },
+      new CustomEvent<StripHoverDetail>('strip-hover', {
+        detail: { category, touch },
         bubbles: true,
       }),
     );

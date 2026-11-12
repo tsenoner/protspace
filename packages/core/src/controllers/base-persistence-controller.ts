@@ -26,7 +26,7 @@ export abstract class BasePersistenceController<
   protected _fileSettings: TSettingsMap | null = null;
   protected _appliedFileAnnotations: Set<string> = new Set();
 
-  /** Storage key prefix (e.g. 'legend' or 'control-bar') */
+  /** Storage key prefix (e.g. 'legend') */
   protected abstract readonly storageKeyPrefix: string;
 
   /** Create default settings for a given annotation */

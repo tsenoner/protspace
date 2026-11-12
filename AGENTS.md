@@ -38,7 +38,7 @@ One-time CLI setup is in [CONTRIBUTING.md](CONTRIBUTING.md#openspec-one-time-per
 
 Always run `pnpm precommit` before any git commit. It is
 `lint-staged && quality && shared-constants:check && docs:annotations:check &&
-docs:examples:check && docs:build`:
+docs:examples:check && docs:images:check && docs:build`:
 
 - ESLint `--fix` and Prettier `--write`, on staged files only (lint-staged)
 - TypeScript typecheck, Knip, and Knip dependency validation (`pnpm quality`)
@@ -47,6 +47,10 @@ docs:examples:check && docs:build`:
 - `docs:annotations:check` — the generated annotation reference must match its source
 - `docs:examples:check` — the generated Example datasets page must match the example catalog,
   the bundle manifest and its prose (`docs/scripts/example-details.ts`)
+- `docs:images:check` — every image and video under `docs/explore/images/` must come from the
+  capture manifest (`scripts/docs-screenshots/`), have its `-dark` twin and be shown by the pages
+  its entry names; images are written as light/dark pairs, animations as `<DocsVideo>` within
+  their size budget, every `#anchor` link resolves, and the user guide names no removed UI
 - `docs:build`, a full VitePress build (a dead internal link fails it)
 
 **It runs no tests at all.** Run `pnpm test` yourself; `pnpm test:e2e` (below) and
@@ -97,7 +101,7 @@ nothing.
 
 ```bash
 gh workflow run e2e.yml --ref <branch>   # in CI, any branch
-pnpm test:e2e                            # locally
+pnpm test:e2e && pnpm perf:counts        # locally
 ```
 
 **Never dismiss a red run as flaky on the strength of local passes.** The regression behind

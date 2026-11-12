@@ -1,6 +1,7 @@
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
 import {
   buildStorageKey,
+  generateLegacyDatasetHash,
   getStorageItem,
   setStorageItem,
   removeStorageItem,
@@ -44,6 +45,10 @@ export interface PersistenceCallbacks {
   shouldPersistCategoryEncodings: () => boolean;
   /** Returns true when the currently selected annotation is numeric (NA visuals are locked). */
   isNumericAnnotation?: () => boolean;
+  /** True while a filter or an isolation narrows the view, so some categories have no row. */
+  isViewConstrained?: () => boolean;
+  /** The values in the Other bucket of the current view. */
+  getOtherValues?: () => string[];
   getCurrentSettings: () => {
     maxVisibleValues: number;
     shapeSize: number;
@@ -66,6 +71,8 @@ export class PersistenceController
   protected readonly storageKeyPrefix = 'legend';
   private callbacks: PersistenceCallbacks;
   private _pendingCategories: Record<string, PersistedCategoryData> = {};
+  /** The hash the last `clearForNewDataset` cleared, if it cleared. */
+  private _clearedDatasetHash = '';
 
   constructor(host: ReactiveControllerHost, callbacks: PersistenceCallbacks) {
     super();
@@ -89,13 +96,47 @@ export class PersistenceController
     this._pendingCategories = {};
   }
 
-  /** Also migrates the legacy shape size key when the hash changes, before any settings load. */
+  override clearForNewDataset(datasetHash: string, clearPersistedState: boolean = true): void {
+    super.clearForNewDataset(datasetHash, clearPersistedState);
+    this._clearedDatasetHash = clearPersistedState ? datasetHash : '';
+  }
+
+  /** Also migrates the legacy keys when the hash changes, before any settings load. */
   override updateDatasetHash(data: DatasetHashData): boolean {
     const changed = super.updateDatasetHash(data);
     if (changed) {
-      this._migrateLegacyShapeSize(Array.isArray(data) ? [] : Object.keys(data.annotations ?? {}));
+      const annotationNames = Array.isArray(data) ? [] : Object.keys(data.annotations ?? {});
+      this._moveLegacyHashState(generateLegacyDatasetHash(data), annotationNames);
+      this._migrateLegacyShapeSize(annotationNames);
     }
     return changed;
+  }
+
+  /**
+   * Move the legend's state off the dataset's hash without predictions, which keyed it until
+   * the legend took the full hash, once: each old key is removed. An old value replaces the
+   * new one: a bundle import writes its settings under the full hash, but every edit since
+   * was saved under the old one, and a bundle can be imported again where an edit cannot.
+   * After a clearing load the old state is dropped. Without predictions the hashes are equal
+   * and nothing is read.
+   */
+  private _moveLegacyHashState(legacyHash: string, annotationNames: string[]): void {
+    if (legacyHash === this._datasetHash) return;
+    const drop = this._clearedDatasetHash === this._datasetHash;
+    const keys: Array<[component: string, annotation?: string]> = [
+      [SHAPE_SIZE_KEY],
+      [LEGACY_SHAPE_SIZE_KEY],
+      ...annotationNames.map((annotation): [string, string] => [this.storageKeyPrefix, annotation]),
+    ];
+    for (const [component, annotation] of keys) {
+      const legacyKey = buildStorageKey(component, legacyHash, annotation);
+      if (!hasStorageItem(legacyKey)) continue;
+      const value = getStorageItem<unknown>(legacyKey, null);
+      if (!drop && value !== null) {
+        setStorageItem(buildStorageKey(component, this._datasetHash, annotation), value);
+      }
+      removeStorageItem(legacyKey);
+    }
   }
 
   /**
@@ -254,7 +295,43 @@ export class PersistenceController
     if (!this.callbacks.shouldPersistCategories()) {
       return {};
     }
+    return this.withHeldBackCategories(this._categoriesFromItems());
+  }
 
+  /**
+   * The stored categories a constrained view leaves out (neither a row nor in Other), kept with
+   * their colours and places next to `categories`, the ones it shows. Without them a save under
+   * a filter would forget the colour and place of every category the filter hides. The kept
+   * ones hold their places in the stored order, the shown ones fill the rest in their own order,
+   * and the places are numbered 0..n-1. Outside a constrained view `categories` is returned.
+   */
+  withHeldBackCategories(
+    categories: Record<string, PersistedCategoryData>,
+  ): Record<string, PersistedCategoryData> {
+    if (!this.callbacks.isViewConstrained?.() || !this.callbacks.shouldPersistCategories()) {
+      return categories;
+    }
+    const inOther = new Set(this.callbacks.getOtherValues?.() ?? []);
+    const isHeldBack = (value: string) => !(value in categories) && !inOther.has(value);
+    const byPlace = (
+      a: [string, PersistedCategoryData],
+      b: [string, PersistedCategoryData],
+    ): number => a[1].zOrder - b[1].zOrder;
+    if (!Object.keys(this._pendingCategories).some(isHeldBack)) return categories;
+    const stored = Object.entries(this._pendingCategories).sort(byPlace);
+
+    const shown = Object.entries(categories).sort(byPlace);
+    const merged: Array<[string, PersistedCategoryData]> = [];
+    let next = 0;
+    for (const entry of stored) {
+      if (isHeldBack(entry[0])) merged.push(entry);
+      else if (entry[0] in categories && next < shown.length) merged.push(shown[next++]);
+    }
+    merged.push(...shown.slice(next));
+    return Object.fromEntries(merged.map(([value, data], zOrder) => [value, { ...data, zOrder }]));
+  }
+
+  private _categoriesFromItems(): Record<string, PersistedCategoryData> {
     const legendItems = this.callbacks.getLegendItems();
     const persistCategoryEncodings = this.callbacks.shouldPersistCategoryEncodings();
     const isNumeric = this.callbacks.isNumericAnnotation?.() ?? false;
@@ -342,8 +419,8 @@ export class PersistenceController
    * N/A items use '__NA__' as their value.
    *
    * Note: This method does NOT clear pendingCategories because subsequent update
-   * cycles (triggered by property changes in _applyPersistedSettings) need them
-   * for _visibleValues to work correctly. Categories are naturally overwritten
+   * cycles (triggered by property changes in `LegendDataController.applyPersistedSettings`)
+   * need them for _visibleValues to work correctly. Categories are naturally overwritten
    * when loadSettings() is called for a different annotation.
    */
   applyPendingZOrder(legendItems: LegendItem[]): LegendItem[] {
@@ -359,12 +436,21 @@ export class PersistenceController
       return legendItems;
     }
 
+    // A row with no stored place (just taken out of Other) goes after every stored place, in its
+    // own order: its zOrder counts the rows shown, which an isolation or a filter narrows, so read
+    // against the stored places it could land between them. The caller renumbers from 0.
+    let after = -Infinity;
+    for (const category of Object.values(this._pendingCategories)) {
+      after = Math.max(after, category.zOrder);
+    }
     return legendItems.map((item) => {
       const persisted = this._pendingCategories[item.value];
       if (persisted !== undefined) {
         return { ...item, zOrder: persisted.zOrder };
       }
-      return item;
+      return item.value === LEGEND_VALUES.OTHER
+        ? item
+        : { ...item, zOrder: after + 1 + item.zOrder };
     });
   }
 }

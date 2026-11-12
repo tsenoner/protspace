@@ -4,19 +4,25 @@ import type {
   LegendErrorEventDetail,
   RendererDegradedDetail,
   RendererDegradedReason,
-  SelectionDisabledNotificationDetail,
 } from '@protspace/core';
 import type { NotifyOptions } from '../lib/notify';
 import * as notificationMappers from './notifications';
 import {
+  getClearStoredDataConfirm,
   getCorruptedPersistedDatasetNotification,
   getDataLoadFailureNotification,
   getDatasetPersistenceFailureNotification,
   getExampleLoadFailureNotification,
   getExportFailureNotification,
   getExportSuccessNotification,
+  getFilterRemovedNotification,
+  getLastFileRemovedNotification,
+  getLastFileReplacedNotification,
   getLegendErrorNotification,
+  getRemoveLastFileConfirm,
   getRendererDegradedNotification,
+  getSelectionCopiedNotification,
+  getSelectionCopyFailedNotification,
   getThreeDProjectionNotification,
   getSelectionDisabledNotification,
 } from './notifications';
@@ -58,21 +64,32 @@ describe('explore notifications', () => {
     expect(notification.description).toMatch(/does not support the Origin Private File System/i);
   });
 
-  it('maps normalized selection-disabled events to a warning notification', () => {
-    const detail: SelectionDisabledNotificationDetail = {
-      message: 'Selection mode disabled: Only 1 point remaining',
-      severity: 'warning',
-      source: 'control-bar',
-      context: {
-        reason: 'insufficient-data',
-        dataSize: 1,
-      },
-    };
-
-    expect(getSelectionDisabledNotification(detail)).toMatchObject({
+  it('says why selection was turned off', () => {
+    expect(
+      getSelectionDisabledNotification({ reason: 'insufficient-data', dataSize: 1 }),
+    ).toMatchObject({
       title: 'Selection mode disabled.',
-      description: 'Selection mode disabled: Only 1 point remaining',
+      description: 'Selection mode disabled: Only 1 protein remaining',
+      dedupeKey: 'selection-disabled:insufficient-data:1',
     });
+    expect(
+      getSelectionDisabledNotification({ reason: 'insufficient-data', dataSize: 0 }).description,
+    ).toBe('Selection mode disabled: Only 0 proteins remaining');
+    expect(getSelectionDisabledNotification({ reason: 'other', dataSize: 5 }).description).toBe(
+      'Selection mode disabled',
+    );
+  });
+
+  it('groups and pluralises its counts', () => {
+    expect(
+      getSelectionDisabledNotification({ reason: 'insufficient-data', dataSize: 1234 }).description,
+    ).toBe('Selection mode disabled: Only 1,234 proteins remaining');
+    expect(getExportSuccessNotification('a.parquetbundle', 1).description).toContain(
+      'the 1 protein without coordinates',
+    );
+    expect(getExportSuccessNotification('a.parquetbundle', 1234).description).toContain(
+      'the 1,234 proteins without coordinates',
+    );
   });
 
   it('maps normalized data errors to a dataset import failure notification', () => {
@@ -288,11 +305,74 @@ describe('getRendererDegradedNotification', () => {
     );
   });
 
+  it('says a dataset past the point limit is not drawn, rather than drawn worse', () => {
+    const n = getRendererDegradedNotification(degraded('point-limit-exceeded'));
+
+    expect(n.title).toBe('Too many points to draw.');
+    expect(n.dedupeKey).toBe('renderer-degraded:point-limit-exceeded');
+  });
+
   it('keeps the quality title for every other reduction', () => {
     const n = getRendererDegradedNotification(degraded('gamma-pipeline-unavailable'));
 
     expect(n.title).toBe('Rendering quality reduced.');
     expect(n.dedupeKey).toBe('renderer-degraded:gamma-pipeline-unavailable');
+  });
+});
+
+describe('selection copy notifications', () => {
+  it('counts the copied IDs, plural-aware', () => {
+    expect(getSelectionCopiedNotification(1).title).toBe('Copied 1 protein ID');
+    expect(getSelectionCopiedNotification(1234).title).toBe('Copied 1,234 protein IDs');
+  });
+
+  it('says when the clipboard refused', () => {
+    expect(getSelectionCopyFailedNotification()).toEqual({
+      title: 'Could not copy the IDs',
+      description: 'The browser did not allow access to the clipboard.',
+    });
+  });
+});
+
+describe('undo and confirmation copy', () => {
+  it('names a removed filter', () => {
+    expect(getFilterRemovedNotification()).toEqual({ title: 'Filter removed' });
+  });
+
+  it('asks before clearing the stored copy, naming the file and that it cannot be undone', () => {
+    expect(getClearStoredDataConfirm('mine.parquetbundle', 'clear')).toEqual({
+      heading: 'Clear stored data?',
+      body: 'This deletes the copy of "mine.parquetbundle" saved in this browser. It cannot be undone.',
+      confirmLabel: 'Clear data',
+      danger: true,
+    });
+  });
+
+  it('asks before "Load default" replaces the stored copy', () => {
+    expect(getClearStoredDataConfirm('mine.parquetbundle', 'load-default')).toEqual({
+      heading: 'Load the default dataset?',
+      body: 'Loading the default deletes the copy of "mine.parquetbundle" saved in this browser. It cannot be undone.',
+      confirmLabel: 'Load default',
+      danger: true,
+    });
+  });
+
+  it("asks before Last file's × removes the stored copy, and says the legend settings stay", () => {
+    expect(getRemoveLastFileConfirm('mine.parquetbundle')).toEqual({
+      heading: 'Remove last file?',
+      body: 'This deletes the copy of "mine.parquetbundle" saved in this browser. Your legend settings for it are kept. It cannot be undone.',
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+  });
+
+  it('names the removed file, and a newer one kept in its place', () => {
+    expect(getLastFileRemovedNotification('mine.parquetbundle')).toEqual({
+      title: 'Removed "mine.parquetbundle" from this browser',
+    });
+    expect(getLastFileReplacedNotification('mine.parquetbundle')).toEqual({
+      title: 'Kept the stored file: a newer import replaced "mine.parquetbundle"',
+    });
   });
 });
 

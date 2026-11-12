@@ -212,7 +212,9 @@ export function createPersistedDatasetController({
     // sub-message. The overlay, a polite live region, updates only once both
     // that text and the whole percent downloaded have changed: at most a
     // hundred times per download, never per chunk.
-    const downloadMessage = `Downloading ${entry.label}…`;
+    // The title names the example (its label reads "name · proteins · size"); the line under the
+    // bar holds the amounts, so the size is said once.
+    const downloadTitle = `Downloading ${entry.label.split(' · ')[0]}…`;
     const totalLabel = formatMegabytes(entry.sizeBytes);
     let shownAmount = '';
     let shownPercent = -1;
@@ -231,7 +233,7 @@ export function createPersistedDatasetController({
       }
       shownAmount = amount;
       shownPercent = percent;
-      overlayController.update(true, fraction * EXAMPLE_DOWNLOAD_SHARE, downloadMessage, amount);
+      overlayController.update(true, fraction * EXAMPLE_DOWNLOAD_SHARE, amount, downloadTitle);
     };
     showDownloadProgress(0);
     const pending: PendingExample = {
@@ -557,17 +559,14 @@ export function createPersistedDatasetController({
   };
 
   /**
-   * Loads an example in place of the stored import (a menu choice, or the
-   * recovery banner's "Load default"). The stored import is cleared by
-   * `handleDataLoaded` once this example has actually decoded, not up front:
-   * clearing before the fetch deleted the import still on screen whenever the
-   * download or parse failed or the request was superseded.
+   * An example chosen from the Import menu: a user request that keeps the stored import, so the
+   * menu's "Last file" can reopen it. Only the recovery banner's "Load default" and "Clear stored
+   * data" replace it (`loadDefaultDatasetAndClearPersistedFile` in dataset-controller.ts).
    */
-  const loadExampleDatasetAndClearPersistedFile = (
+  const loadChosenExample = (
     entry: ExampleDataset,
     source: DatasetChangeSource,
-  ): Promise<ExampleLoadOutcome> =>
-    loadExampleDataset(entry, source, { replacesStoredImport: true });
+  ): Promise<ExampleLoadOutcome> => loadExampleDataset(entry, source);
 
   return {
     /** Takes a new request epoch for a user request (see `requestEpoch` above). */
@@ -587,7 +586,7 @@ export function createPersistedDatasetController({
     isCurrentRequest,
     loadExampleDataset,
     loadPersistedOrDefaultDataset,
-    loadExampleDatasetAndClearPersistedFile,
+    loadChosenExample,
     recoverFromCorruptedPersistedDataset,
     tryLoadPersistedAgain,
   };

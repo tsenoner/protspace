@@ -205,7 +205,7 @@ describe('explore url state', () => {
 
   it('preserves unrelated params for user-driven writes', () => {
     const next = buildSearchParamsWithExploreView(
-      new URLSearchParams('webglPerf=1&dataset=demo'),
+      new URLSearchParams('perfCounters=1&dataset=demo'),
       {
         annotation: 'pfam',
         projection: 'PCA',
@@ -215,12 +215,12 @@ describe('explore url state', () => {
       { mode: 'user' },
     );
 
-    expect(next.toString()).toBe('webglPerf=1&dataset=demo&annotation=pfam&projection=PCA');
+    expect(next.toString()).toBe('perfCounters=1&dataset=demo&annotation=pfam&projection=PCA');
   });
 
   it('normalizes only invalid keys during replace writes', () => {
     const next = buildSearchParamsWithExploreView(
-      new URLSearchParams('annotation=pfam&projection=UNKNOWN&webglPerf=1'),
+      new URLSearchParams('annotation=pfam&projection=UNKNOWN&perfCounters=1'),
       {
         annotation: 'pfam',
         projection: 'UMAP',
@@ -233,7 +233,7 @@ describe('explore url state', () => {
       },
     );
 
-    expect(next.toString()).toBe('annotation=pfam&projection=UMAP&webglPerf=1');
+    expect(next.toString()).toBe('annotation=pfam&projection=UMAP&perfCounters=1');
   });
 
   describe('dataset defaults', () => {

@@ -18,6 +18,7 @@ function createTestItem(value: string, zOrder: number): LegendItem {
 vi.mock('@protspace/utils', () => ({
   DEFAULT_CATEGORICAL_PALETTE_ID: 'kellys',
   generateDatasetHash: vi.fn((ids: string[]) => `hash_${ids.join('_')}`),
+  generateLegacyDatasetHash: vi.fn((ids: string[]) => `hash_${ids.join('_')}`),
   buildStorageKey: vi.fn(
     (prefix: string, hash: string, annotation: string) => `${prefix}_${hash}_${annotation}`,
   ),
@@ -195,6 +196,60 @@ describe('PersistenceController', () => {
       controller.loadSettings();
 
       expect(controller.pendingCategories).toEqual({});
+    });
+  });
+
+  describe('saving while a filter hides categories', () => {
+    const stored = {
+      a: { zOrder: 0, color: '#aa0000', shape: 'circle' },
+      b: { zOrder: 1, color: '#bb0000', shape: 'square' },
+      c: { zOrder: 2, color: '#cc0000', shape: 'circle' },
+      d: { zOrder: 3, color: '#dd0000', shape: 'circle' },
+    };
+
+    beforeEach(() => {
+      controller.updateDatasetHash(['protein1']);
+      controller.updateSelectedAnnotation('annotation1');
+      controller.setPendingCategories({ ...stored });
+    });
+
+    const save = (items: LegendItem[], constrained: boolean, other: string[] = []) => {
+      mockCallbacks.getLegendItems = vi.fn().mockReturnValue(items);
+      mockCallbacks.isViewConstrained = () => constrained;
+      mockCallbacks.getOtherValues = () => other;
+      controller.saveSettings();
+      return vi.mocked(setStorageItem).mock.lastCall?.[1] as {
+        categories: Record<string, { zOrder: number; color: string }>;
+      };
+    };
+
+    it('keeps the colour, shape and place of each category the filter hides', () => {
+      // The filter shows c and a, c first; b and d have no row.
+      const saved = save(
+        [
+          { ...createTestItem('c', 0), color: '#123456' },
+          { ...createTestItem('a', 1), color: '#aa0000' },
+        ],
+        true,
+      );
+
+      expect(saved.categories).toEqual({
+        c: { zOrder: 0, color: '#123456', shape: 'circle' },
+        b: stored.b,
+        a: { zOrder: 2, color: '#aa0000', shape: 'circle' },
+        d: stored.d,
+      });
+      expect(controller.pendingCategories).toEqual(saved.categories);
+    });
+
+    it('drops a category the filtered view holds in Other', () => {
+      const saved = save([createTestItem('a', 0)], true, ['b']);
+      expect(Object.keys(saved.categories)).toEqual(['a', 'c', 'd']);
+    });
+
+    it('stores only the rows outside a filter, as before', () => {
+      const saved = save([createTestItem('a', 0)], false);
+      expect(Object.keys(saved.categories)).toEqual(['a']);
     });
   });
 
@@ -437,8 +492,9 @@ describe('PersistenceController', () => {
 
       expect(result[0].zOrder).toBe(2); // cat1: 0 -> 2
       expect(result[1].zOrder).toBe(0); // cat2: 1 -> 0
-      expect(result[2].zOrder).toBe(2); // cat3: unchanged
-      expect(result[3].zOrder).toBe(3); // N/A: unchanged (not in persisted categories)
+      // Not stored: after every stored place (2), in their own order. The caller renumbers.
+      expect(result[2].zOrder).toBe(5); // cat3: 2 + 1 + 2
+      expect(result[3].zOrder).toBe(6); // N/A: 2 + 1 + 3
       // pendingCategories are NOT cleared - they're needed for _visibleValues in subsequent updates
       expect(controller.hasPendingCategories()).toBe(true);
     });

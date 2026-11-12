@@ -37,42 +37,35 @@ export function getEatNeighborBaseKey(key: string): string | null {
 }
 
 /**
- * Which side(s) of the reliability scale the EAT filter constrains (#380).
+ * The EAT reliability filter: the range of reliabilities it keeps, both ends included (#380).
+ * `0..1` keeps every prediction and is the default.
  *
  * Lives here rather than beside the query-condition translation in `core` because
- * both the legend control and the control bar need the vocabulary, and neither
- * should have to import from the other.
+ * the EAT panel, the legend and the app's EAT panel controller all need the
+ * vocabulary, and none should have to import from another.
  */
-export type EatReliabilityMode = 'atLeast' | 'atMost' | 'between';
-
 export interface EatReliabilityState {
-  mode: EatReliabilityMode;
-  /** Lower bound, used by `atLeast` and `between`. 0 means "no lower bound". */
+  /** Lower bound. 0 means "no lower bound". */
   min: number;
-  /** Upper bound, used by `atMost` and `between`. 1 means "no upper bound". */
+  /** Upper bound. 1 means "no upper bound". */
   max: number;
 }
 
 /**
- * Each bound's "constrains nothing" position. Named once because it is the answer to
- * three separate questions — what an unused bound is blanked to, what an emptied
- * input box falls back to, and below which value a bound is worth stating as a query
- * condition at all — and every place that spelled it out by hand was a place the two
- * ends of the mirror could drift apart on what "no constraint" means.
+ * The control once had three modes, `atLeast`, `atMost` and `between`, and a state could carry
+ * the one it was in along with a bound that mode ignored. A state written then (by a test, a
+ * caller or a saved view) still loads: `normalizeReliability` reads the mode's bounds and drops
+ * the mode.
  */
-export const NEUTRAL_BOUND = { min: 0, max: 1 } as const;
+type LegacyReliabilityMode = 'atLeast' | 'atMost' | 'between';
+export type EatReliabilityInput = EatReliabilityState & { mode?: LegacyReliabilityMode };
 
 /**
- * Which bounds each mode actually filters on. Stated once: `normalizeReliability`
- * blanks the bound a mode does not use, the legend renders one thumb and one percent
- * box per bound it does, and the query translation picks its operator from the pair.
- * A fourth mode is then one entry here rather than four coordinated edits.
+ * Each bound's "constrains nothing" position. Named once because it is the answer to
+ * three separate questions — what an emptied input box falls back to, what the default
+ * range is, and past which value a bound is worth stating as a query condition at all.
  */
-export const RELIABILITY_BOUNDS: Record<EatReliabilityMode, { min: boolean; max: boolean }> = {
-  atLeast: { min: true, max: false },
-  atMost: { min: false, max: true },
-  between: { min: true, max: true },
-};
+export const NEUTRAL_BOUND = { min: 0, max: 1 } as const;
 
 /**
  * Default reliability-slider position. `0` means "show everything": the slider
@@ -83,11 +76,10 @@ export const RELIABILITY_BOUNDS: Record<EatReliabilityMode, { min: boolean; max:
 export const DEFAULT_EAT_CONFIDENCE_THRESHOLD = NEUTRAL_BOUND.min;
 
 /**
- * "Show everything." Constrains nothing, so it emits no query condition at all and a
- * fresh dataset — or a bundle with no saved position — leaves the filter box clean.
+ * "Show everything": the full range. Constrains nothing, so it emits no query condition at
+ * all and a fresh dataset — or a bundle with no saved position — leaves the filter box clean.
  */
 export const DEFAULT_EAT_RELIABILITY: EatReliabilityState = {
-  mode: 'atLeast',
   min: NEUTRAL_BOUND.min,
   max: NEUTRAL_BOUND.max,
 };
@@ -104,38 +96,37 @@ export function clampReliabilityBound(value: number, fallback: number = NEUTRAL_
 }
 
 /**
- * Canonical form: clamp each bound the mode uses and blank the one it does not.
+ * Canonical form: both bounds clamped to 0..1 and in order, and no legacy mode.
  *
- * A mode carries a bound it ignores (`atLeast` has no upper bound, `atMost` no
- * lower), and the query round-trip always returns the canonical spelling. Without
- * this, a caller that leaves the unused bound at its previous value hands over a
- * state that is equal in meaning but unequal by `isSameReliability`, so the mirror's
- * de-dupe guard never fires and every repeat call rewrites the query.
+ * The query round-trip always returns the canonical spelling; without this a caller handing
+ * over an equal-in-meaning state unequal by `isSameReliability` defeats the mirror's de-dupe
+ * guard, and every repeat call rewrites the query.
  *
  * Lives beside the type rather than beside the query translation because both ends
- * of the mirror — the legend control and the control bar — have to agree on what a
- * state means, and a second hand-rolled copy is exactly how they drifted apart.
+ * of the mirror — the EAT panel and the filter controller's reliability condition —
+ * have to agree on what a state means, and a second hand-rolled copy is exactly how they drifted apart.
  */
-export function normalizeReliability(state: EatReliabilityState): EatReliabilityState {
-  const uses = RELIABILITY_BOUNDS[state.mode];
+export function normalizeReliability(state: EatReliabilityInput): EatReliabilityState {
+  // An old one-sided mode ignored its other bound, whatever value it carried.
   // Each bound falls back to its OWN neutral position. Defaulting both to 0 blanked an
   // emptied upper box into `<= 0`, which hides every prediction — the opposite of the
   // "no constraint on this side" the fallback exists to express.
-  const min = uses.min ? clampReliabilityBound(state.min, NEUTRAL_BOUND.min) : NEUTRAL_BOUND.min;
-  const max = uses.max ? clampReliabilityBound(state.max, NEUTRAL_BOUND.max) : NEUTRAL_BOUND.max;
-  // Order the bounds whenever the mode holds both. The two thumbs move independently,
-  // so dragging the lower one past the upper produced `between 0.8 .. 0.5`, which the
-  // numeric matcher reads as `v >= 0.8 && v <= 0.5` — unsatisfiable, collapsing the
-  // plot to the curated points (or, with none, tripping the empty-result guard and
-  // showing everything). Neither is the band on screen.
-  return uses.min && uses.max
-    ? { mode: state.mode, min: Math.min(min, max), max: Math.max(min, max) }
-    : { mode: state.mode, min, max };
+  const min =
+    state.mode === 'atMost'
+      ? NEUTRAL_BOUND.min
+      : clampReliabilityBound(state.min, NEUTRAL_BOUND.min);
+  const max =
+    state.mode === 'atLeast'
+      ? NEUTRAL_BOUND.max
+      : clampReliabilityBound(state.max, NEUTRAL_BOUND.max);
+  // The two handles move independently, so a crossed pair (`0.8 .. 0.5`) would be read by
+  // the numeric matcher as `v >= 0.8 && v <= 0.5` — unsatisfiable. Order them.
+  return { min: Math.min(min, max), max: Math.max(min, max) };
 }
 
 /** Structural equality over the reliability model. */
 export function isSameReliability(a: EatReliabilityState, b: EatReliabilityState): boolean {
-  return a.mode === b.mode && a.min === b.min && a.max === b.max;
+  return a.min === b.min && a.max === b.max;
 }
 
 const EAT_COMPANION_RE = /^(.*)__pred_(value|confidence|source)$/;

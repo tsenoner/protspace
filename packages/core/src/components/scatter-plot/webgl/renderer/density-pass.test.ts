@@ -7,11 +7,14 @@ import {
   resizeDensityTargets,
   accumulateAndBlurDensity,
   compositeDensity,
+  densityFieldsKey,
+  neutralKeyOf,
   type ColorTarget,
   type DensityFrame,
   type DensityResources,
   type SlotPalette,
 } from './density-pass';
+import { NEUTRAL_VALUE_COLOR } from '../../config';
 
 function mockGL(opts: { framebufferComplete?: boolean } = {}) {
   const calls: string[] = [];
@@ -76,6 +79,8 @@ function mockGL(opts: { framebufferComplete?: boolean } = {}) {
     uniform2f: (loc: { n: string }, a: number, b: number) => calls.push(`u2f:${loc?.n}:${a},${b}`),
     uniform3f: (loc: { n: string }, a: number, b: number, c: number) =>
       calls.push(`u3f:${loc?.n}:${a},${b},${c}`),
+    uniform4f: (loc: { n: string }, a: number, b: number, c: number, d: number) =>
+      calls.push(`u4f:${loc?.n}:${a},${b},${c},${d}`),
     uniform3fv: (loc: { n: string }, v: unknown) => {
       calls.push(`u3fv:${loc?.n}`);
       uploads3fv.push(v);
@@ -120,6 +125,7 @@ function resources(fieldCount = 4): DensityResources {
       resolution: named('resolution'),
       transform: named('transform'),
       dpr: named('dpr'),
+      morph: named('morph'),
       slotKeys: named('slotKeys'),
       slotCount: named('slotCount'),
       tailSlot: named('tailSlot'),
@@ -167,6 +173,28 @@ function stagedReds(runs: Array<[number, number]>): Float32Array {
 const redBytes = (p: SlotPalette) =>
   Array.from({ length: p.count }, (_, s) => Math.round(p.keys[s * 3] * 255));
 
+/** `n` staged points of one colour, given as 0–255 channels. */
+const stagedRgb = (r: number, g: number, b: number, n: number): number[] =>
+  Array.from({ length: n }, () => [r / 255, g / 255, b / 255, 1]).flat();
+
+const slotRgb = (p: SlotPalette, s: number) =>
+  [0, 1, 2].map((c) => Math.round(p.keys[s * 3 + c] * 255));
+
+/** Sixteen reds, red k with 17 - k points, then 50 points of the dark Other grey #64748b. */
+const redsAndDarkGrey = () =>
+  new Float32Array([
+    ...stagedReds(Array.from({ length: 16 }, (_, i) => [i + 1, 16 - i] as [number, number])),
+    ...stagedRgb(0x64, 0x74, 0x8b, 50),
+  ]);
+
+describe('neutralKeyOf', () => {
+  it("neutralKeyOf('#888888') equals the default key", () => {
+    expect(neutralKeyOf(NEUTRAL_VALUE_COLOR)).toBe(0x888888);
+    expect(neutralKeyOf('#64748B')).toBe(0x64748b);
+    expect(neutralKeyOf(' #2a3547 ')).toBe(0x2a3547);
+  });
+});
+
 describe('computeDensityGrid', () => {
   it('puts 512 cells on the long side, never more than the canvas has pixels', () => {
     expect(computeDensityGrid(1920, 1080)).toEqual({ width: 512, height: 288 });
@@ -195,6 +223,17 @@ describe('buildSlotPalette', () => {
     expect(Array.from(p.colors.slice(0, 6))).toEqual([
       1, 0.15000000596046448, 0.15000000596046448, 0.15000000596046448, 0.15000000596046448, 1,
     ]);
+  });
+
+  it('orders marked points after every other point', () => {
+    const staged = stagedReds([
+      [1, 2],
+      [2, 1],
+      [3, 2],
+    ]);
+    const marked = Uint8Array.of(1, 0, 1, 1, 0);
+    expect(redBytes(buildSlotPalette(staged, 5, 2.2, marked))).toEqual([1, 3, 2]);
+    expect(redBytes(buildSlotPalette(staged, 5, 2.2))).toEqual([1, 2, 3]);
   });
 
   it('has no slot when nothing is visible', () => {
@@ -247,6 +286,29 @@ describe('buildSlotPalette', () => {
     const p = buildSlotPalette(new Float32Array([v, v, v, 1]), 1, 2.2);
     expect(p.keys[0]).toBe(0.8666666746139526);
     expect(p.colors[0]).toBe(0.7704310417175293);
+  });
+
+  it('a passed neutral key takes the tail slot over the cap', () => {
+    const staged = redsAndDarkGrey();
+    const p = buildSlotPalette(staged, staged.length / 4, 2.2, null, neutralKeyOf('#64748b'));
+    expect(p.count).toBe(16);
+    expect(p.tailSlot).toBe(0);
+    expect(slotRgb(p, 0)).toEqual([0x64, 0x74, 0x8b]);
+    // The fifteen most populous reds keep their own slots; the dark grey has none of its own.
+    expect(redBytes(p).slice(1)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  });
+
+  it("the default key keeps today's palettes", () => {
+    const staged = redsAndDarkGrey();
+    const count = staged.length / 4;
+    const p = buildSlotPalette(staged, count, 2.2);
+    expect(p.tailSlot).toBe(0);
+    expect(slotRgb(p, 0)).toEqual([0x88, 0x88, 0x88]);
+    // Without its key the dark grey is just another colour: the most populous, so its own slot.
+    expect(redBytes(p)).toEqual([136, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0x64]);
+    expect(buildSlotPalette(staged, count, 2.2, null, neutralKeyOf(NEUTRAL_VALUE_COLOR))).toEqual(
+      p,
+    );
   });
 });
 
@@ -309,6 +371,31 @@ describe('resizeDensityTargets', () => {
   });
 });
 
+describe('densityFieldsKey', () => {
+  const camera = { width: 800, height: 600, dpr: 2, transform: { x: 1, y: 2, k: 3 } };
+  const rescale = { x: { scale: 1, offset: 0 }, y: { scale: 1, offset: 0 } };
+
+  it('takes an omitted rescale and glide as the identity and 0', () => {
+    expect(densityFieldsKey(4, 10, camera)).toBe(
+      densityFieldsKey(4, 10, { ...camera, rescale, morph: 0 }),
+    );
+  });
+
+  it('changes with the points, the camera, its rescale and the glide', () => {
+    const base = densityFieldsKey(4, 10, camera);
+    const changed = [
+      densityFieldsKey(5, 10, camera),
+      densityFieldsKey(4, 11, camera),
+      densityFieldsKey(4, 10, { ...camera, width: 801 }),
+      densityFieldsKey(4, 10, { ...camera, dpr: 1 }),
+      densityFieldsKey(4, 10, { ...camera, transform: { x: 1, y: 2, k: 4 } }),
+      densityFieldsKey(4, 10, { ...camera, rescale: { ...rescale, y: { scale: 2, offset: 0 } } }),
+      densityFieldsKey(4, 10, { ...camera, morph: 0.5 }),
+    ];
+    for (const key of changed) expect(key).not.toBe(base);
+  });
+});
+
 describe('accumulateAndBlurDensity', () => {
   const pointVao = { k: 'pointVao' } as unknown as WebGLVertexArrayObject;
 
@@ -323,6 +410,8 @@ describe('accumulateAndBlurDensity', () => {
 
     expect(calls).toContain('viewport:0,0,400,300');
     expect(calls).toContain('u2f:resolution:800,600');
+    expect(calls.indexOf('u1f:morph:0')).toBeGreaterThan(-1);
+    expect(calls.indexOf('u1f:morph:0')).toBeLessThan(firstPointDraw);
 
     expect(calls.filter((c) => c === 'drawArrays:4,0,6')).toHaveLength(2);
     expect(calls).toContain('u2f:direction:0.0025,0');
@@ -331,6 +420,13 @@ describe('accumulateAndBlurDensity', () => {
 
     expect(calls).not.toContain('getError');
     expect(calls).not.toContain('checkFramebufferStatus');
+  });
+
+  it('accumulates at the morph weight the camera carries', () => {
+    const { gl, calls } = mockGL();
+    const frame = contourFrame(paletteOf(1));
+    accumulateAndBlurDensity(gl, { ...frame, camera: { ...camera, morph: 0.5 } }, pointVao, 1000);
+    expect(calls.filter((c) => c.startsWith('u1f:morph'))).toEqual(['u1f:morph:0.5']);
   });
 
   it('runs one accumulate and blur per group of four slots', () => {

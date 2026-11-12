@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { sliceVisualizationDataByIndices } from './slice-visualization-data';
+import {
+  sliceVisualizationDataByIndices,
+  viewVisualizationDataByIndices,
+} from './slice-visualization-data';
 import { getProteinAnnotationIndices, isCsrAnnotationData } from './annotation-data-access';
 import { getProteinEvidence, getProteinScores } from './plot-data-accessors';
 import type { Annotation, VisualizationData } from '../types';
@@ -141,5 +144,77 @@ describe('sliceVisualizationDataByIndices over CSR storage (bundle format v3)', 
     expect(getProteinScores(src, 2, 'fam')).toEqual([null, [1.5, 2.5]]);
     expect(getProteinEvidence(src, 2, 'fam')).toEqual([null, 'IEA']);
     expect(getProteinEvidence(src, 3, 'fam')).toEqual(['IPI']);
+  });
+});
+
+describe('viewVisualizationDataByIndices', () => {
+  it('equals the eager slice', () => {
+    const src = baseViz();
+    expect(viewVisualizationDataByIndices(src, [3, 1])).toEqual(
+      sliceVisualizationDataByIndices(src, [3, 1]),
+    );
+  });
+
+  it('slices a column on its first read and keeps it', () => {
+    const src = baseViz();
+    const view = viewVisualizationDataByIndices(src, [1, 3]);
+    // Reading the column again hands back the same slice, not a fresh one.
+    expect(view.annotation_data.fam).toBe(view.annotation_data.fam);
+    expect(view.numeric_annotation_data!.plddt).toBe(view.numeric_annotation_data!.plddt);
+    expect(Object.keys(view.annotation_scores!)).toEqual(['fam']);
+  });
+
+  it('slices projection coordinates equal to the eager slice, once', () => {
+    const src = baseViz();
+    const view = viewVisualizationDataByIndices(src, [3, 1]);
+    const eager = sliceVisualizationDataByIndices(src, [3, 1]);
+    view.projections.forEach((projection, p) => {
+      expect(projection.data).toEqual(eager.projections[p].data);
+      expect(projection.data).toBe(projection.data);
+      expect(projection.data).not.toBe(src.projections[p].data);
+      expect({ name: projection.name, dimension: projection.dimension }).toEqual({
+        name: eager.projections[p].name,
+        dimension: eager.projections[p].dimension,
+      });
+    });
+    expect(Object.keys(view.projections[0])).toEqual(Object.keys(eager.projections[0]));
+  });
+
+  it('never reads the coordinates of a projection nobody reads', () => {
+    const src = baseViz();
+    // Count the coordinate reads each source projection serves.
+    const reads = src.projections.map(() => 0);
+    src.projections.forEach((projection, p) => {
+      projection.data = new Proxy(projection.data, {
+        get: (target, key) => {
+          if (typeof key === 'string' && /^\d+$/.test(key)) reads[p]++;
+          return Reflect.get(target, key);
+        },
+      });
+    });
+    const view = viewVisualizationDataByIndices(src, [1, 3]);
+    expect(view.projections[1].name).toBe('pca3');
+    expect(view.projections[1].dimension).toBe(3);
+    expect(reads).toEqual([0, 0]);
+
+    expect(Array.from(view.projections[1].data)).toEqual([1, 1, 1, 3, 3, 3]);
+    void view.projections[1].data;
+    // One gather of 2 points x 3 axes; the second read hits the cache.
+    expect(reads).toEqual([0, 6]);
+  });
+
+  it('takes an assigned projection over the slice', () => {
+    const view = viewVisualizationDataByIndices(baseViz(), [1, 3]);
+    const replacement = new Float32Array([9, 9, 9, 9]);
+    view.projections[0].data = replacement;
+    expect(view.projections[0].data).toBe(replacement);
+  });
+
+  it('takes an assigned column over the slice', () => {
+    const view = viewVisualizationDataByIndices(baseViz(), [1, 3]);
+    const replacement = new Float64Array([1, 2]);
+    view.numeric_annotation_data!.plddt = replacement;
+    expect(view.numeric_annotation_data!.plddt).toBe(replacement);
+    expect({ ...view.numeric_annotation_data }).toEqual({ plddt: replacement });
   });
 });

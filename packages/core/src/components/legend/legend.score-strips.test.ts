@@ -140,16 +140,16 @@ describe('legend score strips', () => {
     document.body.innerHTML = '';
   });
 
-  it('re-syncs the strips to the new projection when the control bar reports a projection change', async () => {
-    const { legend, plot, controlBar } = await setup();
+  it('re-syncs the strips to the new projection when the view bar reports a projection change', async () => {
+    const { legend, plot, picker } = await setup();
 
     const before = legend.shadowRoot!.querySelector('protspace-score-strip') as StripElement;
     expect(before.points.find((point) => point.category === 'A')?.value).toBe(0.5);
 
-    // Mirrors what protspace-control-bar's applyProjectionSelection does in production:
-    // it sets the scatterplot's index directly, then dispatches projection-change.
+    // As the view bar's projection picker does in production: the app sets the scatterplot's
+    // index on the picker's own event, then the event bubbles to the legend's document.
     plot.selectedProjectionIndex = 1;
-    controlBar.dispatchEvent(
+    picker.dispatchEvent(
       new CustomEvent('projection-change', {
         detail: { projection: 'PCA 2' },
         bubbles: true,
@@ -191,52 +191,36 @@ describe('legend score strips', () => {
     expect(daviesBouldin.points.every((point) => point.embedding == null)).toBe(true);
   });
 
-  it('re-sorts by separation after a projection switch, not just a data resync', async () => {
-    // _sortedLegendItems is only re-derived in updated() when _legendItems or
-    // _categoryScores changes. A projection switch changes only the scores (same
-    // two categories stay visible), so this is the one path that exercises the
-    // `|| changedProperties.has('_categoryScores')` half of that guard. Silhouette
-    // ranks A above B on UMAP 2 and B above A on PCA 2 (see makeData), so a stale
-    // sort would still show the UMAP 2 order after switching.
-    const { legend, plot, controlBar } = await setup();
-
-    const internals = legend as unknown as {
-      _dialogSettings: { annotationSortModes: Record<string, string> } & Record<string, unknown>;
-      _handleSettingsSave: () => void;
-    };
-    internals._dialogSettings = {
-      ...internals._dialogSettings,
-      annotationSortModes: { family: 'silhouette-desc' },
-    };
-    internals._handleSettingsSave();
-    // Same two-cycle wait legend.score-sync.test.ts documents: _handleSettingsSave
-    // sets _legendItems; _sortedLegendItems only re-derives from it in the next
-    // updated().
-    await legend.updateComplete;
-    await legend.updateComplete;
-
+  it('a projection switch moves the dots, not the rows', async () => {
+    // Silhouette ranks A above B on UMAP 2 and B above A on PCA 2 (see makeData): the strips
+    // follow the projection, while the rows keep the order the plot draws them in.
+    const { legend, plot, picker } = await setup();
     const rowOrder = () =>
       [...legend.shadowRoot!.querySelectorAll('[data-value]')].map((row) =>
         row.getAttribute('data-value'),
       );
-    // UMAP 2: A (0.5) outranks B (0.2).
-    expect(rowOrder().indexOf('A')).toBeLessThan(rowOrder().indexOf('B'));
+    const before = rowOrder();
+    const silhouette = () =>
+      ([...legend.shadowRoot!.querySelectorAll('protspace-score-strip')] as StripElement[]).find(
+        (strip) => strip.label === SILHOUETTE_LABEL,
+      )!;
+    const valueOf = (category: string) =>
+      silhouette().points.find((point) => point.category === category)?.value;
+    expect(valueOf('A')).toBe(0.5);
 
     plot.selectedProjectionIndex = 1;
-    controlBar.dispatchEvent(
+    picker.dispatchEvent(
       new CustomEvent('projection-change', {
         detail: { projection: 'PCA 2' },
         bubbles: true,
         composed: true,
       }),
     );
-    // Same two-cycle wait as above: _categoryScores changes in the first cycle,
-    // and updated() only re-derives _sortedLegendItems from it in the next one.
     await legend.updateComplete;
     await legend.updateComplete;
 
-    // PCA 2: B (-0.1) outranks A (-0.3) -- the ranking must invert, not stay stale.
-    expect(rowOrder().indexOf('B')).toBeLessThan(rowOrder().indexOf('A'));
+    expect(valueOf('A')).toBe(-0.3);
+    expect(rowOrder()).toEqual(before);
   });
 
   it('fills both strips’ value gutters when a legend row is hovered', async () => {
@@ -253,14 +237,29 @@ describe('legend score strips', () => {
     expect(gutters()).toBe('— / —');
 
     const rowA = legend.shadowRoot!.querySelector('[data-value="A"]')!;
-    rowA.dispatchEvent(new Event('mouseenter'));
+    rowA.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
     await legend.updateComplete;
     // Category A on UMAP 2: silhouette 0.5, Davies-Bouldin 1.2 (see makeData).
     expect(gutters()).toBe('0.50 / 1.20');
 
-    rowA.dispatchEvent(new Event('mouseleave'));
+    rowA.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
     await legend.updateComplete;
     expect(gutters()).toBe('— / —');
+  });
+
+  it('a touch pointerenter on a row fills no strip gutter', async () => {
+    // A finger never sends the pointerleave that would clear a hover, so touch must not start one.
+    const { legend } = await setup();
+    const gutters = () =>
+      (Array.from(legend.shadowRoot!.querySelectorAll('protspace-score-strip')) as StripElement[])
+        .map((strip) => strip.shadowRoot!.querySelector('.strip-value')!.textContent!.trim())
+        .join(' / ');
+
+    const rowA = legend.shadowRoot!.querySelector('[data-value="A"]')!;
+    rowA.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'touch' }));
+    await legend.updateComplete;
+    expect(gutters()).toBe('— / —');
+    expect(rowA.classList.contains('legend-item-score-hover')).toBe(false);
   });
 
   it('caveats the strips for an auto-clustering, and only for one', async () => {

@@ -8,6 +8,7 @@ import {
   buildColorShapeMappings,
   calculatePointSize,
   defaultShapeSize,
+  maxShapeSize,
   explicitShapeSize,
   createDefaultSettings,
   getDefaultSortMode,
@@ -16,8 +17,13 @@ import {
   createItemActionEvent,
   updateItemsVisibility,
   isolateItem,
+  isSecondClickOfDouble,
+  isolationBase,
+  isDoubleTap,
+  clickPointerType,
+  DOUBLE_TAP_MS,
+  type FirstClick,
 } from './legend-helpers';
-import { initializeAnnotationSortMode } from './legend-settings-dialog';
 
 describe('legend-helpers', () => {
   describe('expandHiddenValues', () => {
@@ -142,10 +148,30 @@ describe('legend-helpers', () => {
   });
 
   describe('defaultShapeSize', () => {
-    it('keeps 10 up to 10,000 proteins', () => {
-      expect(defaultShapeSize(1)).toBe(10);
-      expect(defaultShapeSize(5_000)).toBe(10);
+    it('grows below 10,000 proteins as (10,000 / N)^(1/4), up to 40', () => {
+      expect(defaultShapeSize(10)).toBe(40);
+      expect(defaultShapeSize(50)).toBe(38);
+      expect(defaultShapeSize(100)).toBe(32);
+      expect(defaultShapeSize(500)).toBe(21);
+      expect(defaultShapeSize(1_000)).toBe(18);
+      expect(defaultShapeSize(1_089)).toBe(17);
+      expect(defaultShapeSize(5_000)).toBe(12);
+      expect(defaultShapeSize(7_831)).toBe(11);
       expect(defaultShapeSize(10_000)).toBe(10);
+    });
+
+    it('caps the default for a tiny dataset at 40', () => {
+      expect(defaultShapeSize(1)).toBe(40);
+      expect(defaultShapeSize(2)).toBe(40);
+    });
+
+    it('never shrinks as the dataset gets smaller', () => {
+      let previous = defaultShapeSize(600_000);
+      for (let n = 600_000; n >= 1; n = Math.floor(n * 0.9)) {
+        const size = defaultShapeSize(n);
+        expect(size).toBeGreaterThanOrEqual(previous);
+        previous = size;
+      }
     });
 
     it('shrinks with the protein count as (10,000 / N)^(2/3)', () => {
@@ -173,6 +199,38 @@ describe('legend-helpers', () => {
     it('returns whole sizes', () => {
       for (const n of [12_345, 33_333, 77_777, 250_000]) {
         expect(Number.isInteger(defaultShapeSize(n))).toBe(true);
+      }
+    });
+  });
+
+  describe('maxShapeSize', () => {
+    it('keeps 64 from 10,000 proteins up', () => {
+      expect(maxShapeSize(10_000)).toBe(64);
+      expect(maxShapeSize(100_000)).toBe(64);
+      expect(maxShapeSize(573_649)).toBe(64);
+    });
+
+    it('lets a smaller dataset go larger, up to 128', () => {
+      expect(maxShapeSize(10)).toBe(128);
+      expect(maxShapeSize(1_000)).toBe(128);
+      expect(maxShapeSize(5_000)).toBe(128);
+      expect(maxShapeSize(7_831)).toBe(81);
+    });
+
+    it('keeps the ink of the largest dots at what 10,000 proteins at 64 draw', () => {
+      for (const n of [5_000, 6_000, 8_000, 9_999]) {
+        expect(n * maxShapeSize(n)).toBeLessThanOrEqual(10_000 * 64);
+      }
+    });
+
+    it('gives the ceiling 128 while the count is unknown', () => {
+      expect(maxShapeSize(0)).toBe(128);
+      expect(maxShapeSize(Number.NaN)).toBe(128);
+    });
+
+    it('is never below the default', () => {
+      for (const n of [1, 10, 100, 1_000, 10_000, 100_000]) {
+        expect(maxShapeSize(n)).toBeGreaterThanOrEqual(defaultShapeSize(n));
       }
     });
   });
@@ -241,13 +299,13 @@ describe('legend-helpers', () => {
       expect(getItemClasses(baseItem, true, false)).toBe('legend-item selected');
     });
 
-    it('adds dragging class when dragging', () => {
-      expect(getItemClasses(baseItem, false, true)).toBe('legend-item dragging');
+    it('adds picked class while the item is picked up for a keyboard reorder', () => {
+      expect(getItemClasses(baseItem, false, true)).toBe('legend-item picked');
     });
 
     it('combines multiple classes', () => {
       const item = { ...baseItem, isVisible: false };
-      expect(getItemClasses(item, true, true)).toBe('legend-item hidden dragging selected');
+      expect(getItemClasses(item, true, true)).toBe('legend-item hidden picked selected');
     });
   });
 
@@ -286,32 +344,6 @@ describe('legend-helpers', () => {
         zOrder: 0,
       };
       expect(isItemSelected(item, ['Other'])).toBe(false);
-    });
-  });
-
-  describe('initializeAnnotationSortMode', () => {
-    it('returns unchanged modes if annotation already has a mode', () => {
-      const existing = { annotation1: 'alpha-asc' as const };
-      const result = initializeAnnotationSortMode(existing, 'annotation1', {});
-      expect(result).toEqual({ annotation1: 'alpha-asc' });
-    });
-
-    it('returns unchanged modes if no selected annotation', () => {
-      const existing = { annotation1: 'size-desc' as const };
-      const result = initializeAnnotationSortMode(existing, '', {});
-      expect(result).toEqual({ annotation1: 'size-desc' });
-    });
-
-    it('uses existing mode from current modes if exists', () => {
-      const existing = {};
-      const current = { newAnnotation: 'alpha-desc' as const };
-      const result = initializeAnnotationSortMode(existing, 'newAnnotation', current);
-      expect(result).toEqual({ newAnnotation: 'alpha-desc' });
-    });
-
-    it('defaults to size-desc for regular annotations', () => {
-      const result = initializeAnnotationSortMode({}, 'some_annotation', {});
-      expect(result).toEqual({ some_annotation: 'size-desc' });
     });
   });
 
@@ -423,6 +455,105 @@ describe('legend-helpers', () => {
       expect(result.items[0].isVisible).toBe(true);
       expect(result.items[1].isVisible).toBe(false);
       expect(result.hiddenValues).toEqual(['a']);
+    });
+  });
+
+  describe('isSecondClickOfDouble', () => {
+    const first: FirstClick = { valueKey: 'a', itemsBefore: [], itemsAfter: [] };
+
+    it('leaves the second mouse click on the toggled item to the dblclick', () => {
+      expect(isSecondClickOfDouble(first, 'a', { detail: 2 })).toBe(true);
+      expect(isSecondClickOfDouble(first, 'a', { detail: 2, pointerType: 'mouse' })).toBe(true);
+    });
+
+    it('toggles a first click, a click on another item and a click with no toggle before it', () => {
+      expect(isSecondClickOfDouble(first, 'a', { detail: 1 })).toBe(false);
+      expect(isSecondClickOfDouble(first, 'b', { detail: 2 })).toBe(false);
+      expect(isSecondClickOfDouble(null, 'a', { detail: 2 })).toBe(false);
+    });
+
+    it('toggles touch and pen taps, which may never get a dblclick', () => {
+      expect(isSecondClickOfDouble(first, 'a', { detail: 2, pointerType: 'touch' })).toBe(false);
+      expect(isSecondClickOfDouble(first, 'a', { detail: 2, pointerType: 'pen' })).toBe(false);
+    });
+  });
+
+  describe('isolationBase', () => {
+    const item = (value: string, isVisible: boolean): LegendItem => ({
+      value,
+      color: '#000',
+      shape: 'circle',
+      count: 1,
+      isVisible,
+      zOrder: 0,
+    });
+    const before = [item('a', true), item('b', true)];
+    const after = [item('a', false), item('b', true)];
+    const first: FirstClick = { valueKey: 'a', itemsBefore: before, itemsAfter: after };
+
+    it('is the legend before the first click while nothing else has moved it', () => {
+      expect(isolationBase(first, 'a', after)).toBe(before);
+    });
+
+    it('is the current legend once something else has replaced it', () => {
+      const rebuilt = after.map((entry) => ({ ...entry }));
+      expect(isolationBase(first, 'a', rebuilt)).toBe(rebuilt);
+    });
+
+    it('is the current legend for another item or without a first click', () => {
+      expect(isolationBase(first, 'b', after)).toBe(after);
+      expect(isolationBase(null, 'a', after)).toBe(after);
+    });
+  });
+  describe('isDoubleTap', () => {
+    const first = { valueKey: 'a', time: 1000 };
+    const tap = (valueKey: string, after: number, pointerType = 'touch') => ({
+      valueKey,
+      time: 1000 + after,
+      pointerType,
+    });
+
+    it('is the second touch or pen tap on the same row within DOUBLE_TAP_MS', () => {
+      expect(DOUBLE_TAP_MS).toBe(300);
+      expect(isDoubleTap(first, tap('a', 250))).toBe(true);
+      expect(isDoubleTap(first, tap('a', 300))).toBe(true);
+      expect(isDoubleTap(first, tap('a', 250, 'pen'))).toBe(true);
+    });
+
+    it('is not a slow tap, a tap on another row, a mouse click or a first tap', () => {
+      expect(isDoubleTap(first, tap('a', 350))).toBe(false);
+      expect(isDoubleTap(first, tap('b', 100))).toBe(false);
+      expect(isDoubleTap(first, tap('a', 100, 'mouse'))).toBe(false);
+      expect(isDoubleTap(null, tap('a', 100))).toBe(false);
+    });
+  });
+
+  describe('clickPointerType', () => {
+    it("is the click's own pointer type", () => {
+      expect(clickPointerType({ pointerType: 'touch', timeStamp: 5000 }, null)).toBe('touch');
+      expect(
+        clickPointerType(
+          { pointerType: 'mouse', timeStamp: 5000 },
+          { pointerType: 'touch', time: 4900 },
+        ),
+      ).toBe('mouse');
+    });
+
+    it('falls back to the press just before a click that has none, as older Safari sends', () => {
+      expect(
+        clickPointerType(
+          { pointerType: '', timeStamp: 5000 },
+          { pointerType: 'touch', time: 4800 },
+        ),
+      ).toBe('touch');
+      expect(clickPointerType({ timeStamp: 5000 }, { pointerType: 'pen', time: 4800 })).toBe('pen');
+    });
+
+    it("is a mouse for a script's or a screen reader's click", () => {
+      expect(clickPointerType({ timeStamp: 5000 }, null)).toBe('mouse');
+      expect(clickPointerType({ timeStamp: 5000 }, { pointerType: 'touch', time: 3500 })).toBe(
+        'mouse',
+      );
     });
   });
 });

@@ -6,6 +6,12 @@ function makeFile(name: string) {
 }
 
 describe('createLoadQueue', () => {
+  it("registerFileLoad records the file's name", () => {
+    const queue = createLoadQueue({ isDisposed: () => false });
+    const meta = queue.registerFileLoad(makeFile('mine.parquetbundle'), 'user');
+    expect(meta.fileName).toBe('mine.parquetbundle');
+  });
+
   it('runs a single enqueued load to completion', async () => {
     const queue = createLoadQueue({ isDisposed: () => false });
     const loadFn = vi.fn(async () => {});

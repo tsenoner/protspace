@@ -6,7 +6,10 @@ import {
   annotationLabel,
   annotationMatchesQuery,
   annotationSource,
+  annotationValueLabel,
   compareTaxonomyRank,
+  displayAnnotationValue,
+  annotationValueSearchKey,
   getAnnotationMeta,
   isPredictedAnnotation,
   prettifyAnnotationName,
@@ -208,5 +211,32 @@ describe('annotationMatchesQuery', () => {
     expect(annotationMatchesQuery('my_custom_score', 'core')).toBe(true);
     expect(annotationMatchesQuery('my_custom_score', 'custom score')).toBe(true);
     expect(annotationMatchesQuery('my_custom_score', 'zzz')).toBe(false);
+  });
+});
+
+describe('annotation value labels', () => {
+  it("names TED's domain without a CATH superfamily", () => {
+    expect(annotationValueLabel('ted_domains', '-')).toBe('No CATH label');
+    expect(displayAnnotationValue('ted_domains', '-')).toBe('No CATH label');
+  });
+
+  it('keeps a real missing value as N/A, also for TED', () => {
+    expect(displayAnnotationValue('ted_domains', '__NA__')).toBe('N/A');
+  });
+
+  it("leaves every other annotation's '-' and TED's real labels as they are", () => {
+    expect(annotationValueLabel('pfam', '-')).toBeUndefined();
+    expect(displayAnnotationValue('pfam', '-')).toBe('-');
+    expect(displayAnnotationValue('ted_domains', '3.40.50.300')).toBe('3.40.50.300');
+  });
+
+  it('searches a named value by its name and by the value itself', () => {
+    expect(annotationValueSearchKey('ted_domains', '-')).toBe('no cath label\n-');
+    expect(annotationValueSearchKey('pfam', 'PF00001')).toBe('pf00001');
+    expect(annotationValueSearchKey('ted_domains', '-', 'Shown')).toBe('shown\n-');
+  });
+
+  it('still counts the Other bucket', () => {
+    expect(displayAnnotationValue('ted_domains', 'Other', 4)).toBe('Other (4 categories)');
   });
 });

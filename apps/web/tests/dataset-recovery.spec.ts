@@ -29,10 +29,35 @@ test.describe('dataset recovery banner', () => {
 
     const banner = page.locator('#protspace-recovery-banner');
     await expect(banner).toBeVisible({ timeout: 10_000 });
+    // In the plot area, announced once as an alert.
+    await expect(page.locator('[data-workbench="plot"] #protspace-recovery-banner')).toHaveCount(1);
+    await expect(banner).toHaveAttribute('role', 'alert');
+    await expect(banner).not.toHaveAttribute('aria-live');
     await expect(banner).toContainText('did not finish loading');
     await expect(banner.getByRole('button', { name: 'Try again' })).toBeEnabled();
     await expect(banner.getByRole('button', { name: 'Load default' })).toBeVisible();
     await expect(banner.getByRole('button', { name: 'Clear stored data' })).toBeVisible();
+  });
+
+  test('Dismiss removes the banner and hands focus to the tool strip', async ({ page }) => {
+    await seedOpfsState(page, {
+      fileName: 'fake.parquetbundle',
+      status: 'pending',
+      failedAttempts: 1,
+    });
+
+    await page.reload();
+    await dismissTourIfPresent(page);
+
+    const banner = page.locator('#protspace-recovery-banner');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await banner.getByRole('button', { name: 'Dismiss', exact: true }).click();
+
+    await expect(banner).toHaveCount(0);
+    // The button that held focus went with the banner: focus lands on the tool strip, not <body>.
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.closest('#myPlotTools')?.id ?? null))
+      .toBe('myPlotTools');
   });
 
   test('does not show banner when persisted dataset is in success state', async ({ page }) => {
@@ -100,6 +125,12 @@ test.describe('dataset recovery banner', () => {
     await expect(banner).toBeVisible({ timeout: 10_000 });
 
     await banner.getByRole('button', { name: 'Clear stored data' }).click();
+    // The copy cannot be restored, so it asks first. The buttons are the dialog's slotted content,
+    // found through the ps-dialog host.
+    await page
+      .locator('ps-dialog', { has: page.getByRole('dialog', { name: 'Clear stored data?' }) })
+      .getByRole('button', { name: 'Clear data', exact: true })
+      .click();
 
     await expect(banner).toHaveCount(0);
     await waitForExploreDataLoad(page);
@@ -110,5 +141,29 @@ test.describe('dataset recovery banner', () => {
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
     await expect(page.locator('#protspace-recovery-banner')).toHaveCount(0);
+  });
+
+  test('Load default asks first; Cancel keeps the banner', async ({ page }) => {
+    await seedOpfsState(page, {
+      fileName: 'kept.parquetbundle',
+      status: 'pending',
+      failedAttempts: 1,
+    });
+    await page.reload();
+    await dismissTourIfPresent(page);
+    const banner = page.locator('#protspace-recovery-banner');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+
+    // "Load default" deletes the stored copy too, so it asks like "Clear stored data".
+    await banner.getByRole('button', { name: 'Load default' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Load the default dataset?' });
+    await expect(dialog).toBeVisible();
+    await page
+      .locator('ps-dialog', { has: dialog })
+      .getByRole('button', { name: 'Cancel', exact: true })
+      .click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(banner).toBeVisible();
   });
 });

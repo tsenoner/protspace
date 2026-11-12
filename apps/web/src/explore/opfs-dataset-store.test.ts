@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   StoredDatasetCorruptError,
+  beginSaveImportedFile,
   clearLastImportedFile,
   isSupported,
   loadLastImportedFile,
   markLastLoadStatus,
   readLastLoadStatus,
+  readStoredImportSummary,
+  removeLastImportedFile,
   restoreLastLoadStatus,
-  saveLastImportedFile,
 } from './opfs-dataset-store';
 import { getDatasetPersistenceFailureNotification } from './notifications';
 
@@ -25,6 +27,10 @@ class MockWritableFileStream {
 
   async close() {
     this.onClose(new Blob(this.chunks));
+  }
+
+  async abort() {
+    this.chunks = [];
   }
 }
 
@@ -91,7 +97,7 @@ class MockDirectoryHandle {
       return;
     }
 
-    throw new Error(`Entry not found: ${name}`);
+    throw new DOMException(`Entry not found: ${name}`, 'NotFoundError');
   }
 
   hasDirectory(name: string) {
@@ -124,6 +130,21 @@ afterEach(() => {
 });
 
 describe('opfs-dataset-store', () => {
+  it('stores a pending copy only on commit, and an aborted one never', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['first'], 'first.parquetbundle')).commit();
+
+    const failed = beginSaveImportedFile(new File(['second'], 'second.parquetbundle'));
+    let stored = await loadLastImportedFile();
+    expect(stored?.name).toBe('first.parquetbundle');
+    await failed.abort();
+
+    stored = await loadLastImportedFile();
+    expect(stored?.name).toBe('first.parquetbundle');
+    expect(await stored?.text()).toBe('first');
+  });
+
   it('saves and loads an imported file round-trip', async () => {
     const root = new MockDirectoryHandle();
     stubNavigator(root);
@@ -133,7 +154,7 @@ describe('opfs-dataset-store', () => {
       lastModified: 123,
     });
 
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     const loaded = await loadLastImportedFile();
 
     expect(loaded).not.toBeNull();
@@ -181,9 +202,9 @@ describe('opfs-dataset-store', () => {
     expect(isSupported()).toBe(false);
     await expect(loadLastImportedFile()).resolves.toBeNull();
     await expect(clearLastImportedFile()).resolves.toBeUndefined();
-    await expect(saveLastImportedFile(new File(['x'], 'custom.parquetbundle'))).rejects.toThrow(
-      /not supported/i,
-    );
+    await expect(
+      beginSaveImportedFile(new File(['x'], 'custom.parquetbundle')).commit(),
+    ).rejects.toThrow(/not supported/i);
   });
 
   // The persistence toast recognises this error by its exact message, a copy of the
@@ -191,9 +212,9 @@ describe('opfs-dataset-store', () => {
   it('rejects a save with the error the persistence toast names as unsupported', async () => {
     stubNavigator();
 
-    const error = await saveLastImportedFile(new File(['x'], 'custom.parquetbundle')).catch(
-      (e: unknown) => e,
-    );
+    const error = await beginSaveImportedFile(new File(['x'], 'custom.parquetbundle'))
+      .commit()
+      .catch((e: unknown) => e);
 
     expect(getDatasetPersistenceFailureNotification(error)).toMatchObject({
       description: expect.stringMatching(/does not support the Origin Private File System/),
@@ -215,7 +236,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('pending');
     expect(await readLastLoadStatus()).toEqual({
       status: 'pending',
@@ -229,7 +250,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('pending');
     await markLastLoadStatus('pending');
     await markLastLoadStatus('pending');
@@ -241,7 +262,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('pending');
     await markLastLoadStatus('pending');
     await markLastLoadStatus('success');
@@ -257,7 +278,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('error', { error: 'boom' });
     expect(await readLastLoadStatus()).toEqual({
       status: 'error',
@@ -271,7 +292,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     const dir = await root.getDirectoryHandle('protspace-last-import');
     const handle = await dir.getFileHandle('metadata.json');
     const writable = await handle.createWritable();
@@ -297,7 +318,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('success'); // failedAttempts = 0
     await markLastLoadStatus('pending'); // prev was success → counter stays 0
     expect((await readLastLoadStatus())?.failedAttempts).toBe(0);
@@ -316,7 +337,7 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('error', { error: 'boom' });
     const before = await readLastLoadStatus();
     await markLastLoadStatus('pending');
@@ -343,9 +364,98 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     const file = new File(['x'], 'a.parquetbundle');
-    await saveLastImportedFile(file);
+    await beginSaveImportedFile(file).commit();
     await markLastLoadStatus('pending');
     await clearLastImportedFile();
     expect(await readLastLoadStatus()).toBeNull();
+  });
+});
+
+describe('readStoredImportSummary', () => {
+  it('returns the name, size and time without reading dataset.bin', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['protein-data'], 'mine.parquetbundle')).commit();
+    const store = await root.getDirectoryHandle('protspace-last-import');
+    const opened = vi.spyOn(store, 'getFileHandle');
+
+    const summary = await readStoredImportSummary();
+
+    expect(summary).toEqual({
+      name: 'mine.parquetbundle',
+      size: 12,
+      storedAt: expect.any(String),
+    });
+    expect(opened.mock.calls.map(([name]) => name)).toEqual(['metadata.json']);
+  });
+
+  it('returns null when nothing is stored', async () => {
+    stubNavigator(new MockDirectoryHandle());
+    await expect(readStoredImportSummary()).resolves.toBeNull();
+    stubNavigator();
+    await expect(readStoredImportSummary()).resolves.toBeNull();
+  });
+
+  it('returns null for corrupt metadata', async () => {
+    const root = new MockDirectoryHandle();
+    const store = await root.getDirectoryHandle('protspace-last-import', { create: true });
+    await store.writeTextFile('metadata.json', '{not-json');
+    stubNavigator(root);
+
+    await expect(readStoredImportSummary()).resolves.toBeNull();
+  });
+
+  it('leaves a corrupt store for the startup restore to clear and report', async () => {
+    const root = new MockDirectoryHandle();
+    const store = await root.getDirectoryHandle('protspace-last-import', { create: true });
+    await store.writeTextFile('metadata.json', '{not-json');
+    stubNavigator(root);
+
+    await expect(readStoredImportSummary()).resolves.toBeNull();
+    expect(root.hasDirectory('protspace-last-import')).toBe(true);
+    await expect(loadLastImportedFile()).rejects.toBeInstanceOf(StoredDatasetCorruptError);
+    expect(root.hasDirectory('protspace-last-import')).toBe(false);
+  });
+});
+
+describe('removeLastImportedFile', () => {
+  it('removes the stored import it names by its save time', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['x'], 'mine.parquetbundle')).commit();
+    const { storedAt } = (await readStoredImportSummary())!;
+
+    await expect(removeLastImportedFile(storedAt)).resolves.toBe(true);
+    expect(root.hasDirectory('protspace-last-import')).toBe(false);
+  });
+
+  it('keeps a newer import saved over it since', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['x'], 'newer.parquetbundle')).commit();
+
+    await expect(removeLastImportedFile('2000-01-01T00:00:00.000Z')).resolves.toBe(false);
+    expect((await readStoredImportSummary())?.name).toBe('newer.parquetbundle');
+  });
+
+  it('has nothing to keep when nothing is stored', async () => {
+    stubNavigator(new MockDirectoryHandle());
+    await expect(removeLastImportedFile('2000-01-01T00:00:00.000Z')).resolves.toBe(true);
+  });
+
+  it('rejects when the stored copy could not be removed, and keeps it', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['x'], 'mine.parquetbundle')).commit();
+    const { storedAt } = (await readStoredImportSummary())!;
+    // A copy still being written holds the store's directory.
+    vi.spyOn(root, 'removeEntry').mockRejectedValueOnce(
+      new DOMException('The entry is in use', 'NoModificationAllowedError'),
+    );
+
+    await expect(removeLastImportedFile(storedAt)).rejects.toMatchObject({
+      name: 'NoModificationAllowedError',
+    });
+    expect((await readStoredImportSummary())?.name).toBe('mine.parquetbundle');
   });
 });

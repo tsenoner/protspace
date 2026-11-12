@@ -11,6 +11,8 @@ function mockGL() {
     'a_labelCount',
     'a_shape',
     'a_predicted',
+    'a_record',
+    'a_prevPosition',
   ];
   return {
     program,
@@ -34,6 +36,8 @@ describe('resolvePointLocations', () => {
       labelCount: 4,
       shape: 5,
       predicted: 6,
+      record: 7,
+      prevPosition: 8,
     });
   });
 
@@ -43,20 +47,34 @@ describe('resolvePointLocations', () => {
     expect(Object.keys(uniforms).sort()).toEqual(
       [
         'dpr',
+        'morph',
         'pointScale',
         'gamma',
         'labelColors',
         'labelTextureSize',
         'maxLabels',
         'knockoutColor',
+        'maxPointSize',
+        'hollowFadeGain',
+        'lightRimBound',
         'labelAtlasCapacity',
         'resolution',
         'transform',
+        'recordStyle',
+        'recordStyleOn',
+        'marks',
+        'marksOn',
+        'markPass',
+        'markedOpacity',
+        'unmarkedOpacity',
       ].sort(),
     );
+    expect((uniforms.markPass as unknown as { name: string }).name).toBe('u_markPass');
+    expect((uniforms.recordStyle as unknown as { name: string }).name).toBe('u_recordStyle');
     expect((uniforms.resolution as unknown as { name: string }).name).toBe('u_resolution');
     expect((uniforms.maxLabels as unknown as { name: string }).name).toBe('u_maxLabels');
     expect((uniforms.knockoutColor as unknown as { name: string }).name).toBe('u_knockoutColor');
     expect((uniforms.pointScale as unknown as { name: string }).name).toBe('u_pointScale');
+    expect((uniforms.morph as unknown as { name: string }).name).toBe('u_morph');
   });
 });

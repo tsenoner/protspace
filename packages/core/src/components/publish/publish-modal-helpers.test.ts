@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   getActivePresetConstraints,
   computeWidthPxUpdate,
@@ -8,8 +8,11 @@ import {
   computeDpiUpdate,
   computePresetApplication,
   shouldShowFingerprintWarning,
+  readLegendExportState,
+  isFormControlEventPath,
 } from './publish-modal-helpers';
 import { createDefaultPublishState, type PublishState } from './publish-state';
+import { MAX_EXPORT_DIMENSION } from '../scatter-plot/webgl/renderer/device-limits';
 
 function makeState(overrides: Partial<PublishState> = {}): PublishState {
   return { ...createDefaultPublishState(), ...overrides };
@@ -226,6 +229,59 @@ describe('publish-modal-helpers', () => {
     });
   });
 
+  describe('the export cap (MAX_EXPORT_DIMENSION a side)', () => {
+    const MAX = MAX_EXPORT_DIMENSION;
+
+    it('a typed px width or height past the cap is held to it', () => {
+      const free = makeState({ widthPx: 2048, heightPx: 1024, aspectLocked: false });
+      expect(computeWidthPxUpdate(free, 100000)).toMatchObject({ widthPx: MAX });
+      expect(computeWidthPxUpdate(free, 100000).heightPx).toBeUndefined();
+      expect(computeHeightPxUpdate(free, 100000)).toMatchObject({ heightPx: MAX });
+      expect(computeHeightPxUpdate(free, 100000).widthPx).toBeUndefined();
+    });
+
+    it('with the aspect linked, both sides shrink by one factor so the ratio holds', () => {
+      const linked = makeState({ widthPx: 2048, heightPx: 1024, aspectLocked: true });
+      expect(computeWidthPxUpdate(linked, 100000)).toMatchObject({
+        widthPx: MAX,
+        heightPx: MAX / 2,
+      });
+      // The height alone is under the cap, but the width it drags along is not.
+      expect(computeHeightPxUpdate(linked, 6000)).toMatchObject({
+        widthPx: MAX,
+        heightPx: MAX / 2,
+      });
+    });
+
+    it('a size typed in mm, in or cm with Resample on is held to the cap in pixels', () => {
+      const state = makeState({ widthPx: 2048, heightPx: 1024, dpi: 300, resample: true });
+      expect(computeWidthMmUpdate(state, 10000)).toMatchObject({
+        widthPx: MAX,
+        heightPx: MAX / 2,
+      });
+      expect(computeHeightMmUpdate({ ...state, aspectLocked: false }, 10000)).toMatchObject({
+        heightPx: MAX,
+      });
+    });
+
+    it('a dpi with Resample on stops where the longer side reaches the cap', () => {
+      const state = makeState({ widthPx: 2048, heightPx: 1024, dpi: 300, resample: true });
+      const patch = computeDpiUpdate(state, 2400);
+      // 2048 px at 300 dpi is 173.4 mm; 8192 px over 173.4 mm is 1200 dpi.
+      expect(patch).toEqual({ dpi: 1200, widthPx: MAX, heightPx: MAX / 2 });
+    });
+
+    it('sizes under the cap are unchanged', () => {
+      const state = makeState({ widthPx: 2048, heightPx: 1024, aspectLocked: true });
+      expect(computeWidthPxUpdate(state, MAX)).toMatchObject({ widthPx: MAX, heightPx: MAX / 2 });
+      expect(computeDpiUpdate({ ...state, resample: true }, 600)).toEqual({
+        dpi: 600,
+        widthPx: 4096,
+        heightPx: 2048,
+      });
+    });
+  });
+
   describe('computePresetApplication', () => {
     it('resolves a mm-based preset to pixel dimensions', () => {
       const patch = computePresetApplication('nature-1col');
@@ -285,5 +341,54 @@ describe('publish-modal-helpers', () => {
       const saved = { projection: 'UMAP', dimensionality: 2 };
       expect(shouldShowFingerprintWarning(saved, null)).toBe(false);
     });
+  });
+});
+
+describe('readLegendExportState', () => {
+  const state = {
+    annotation: 'family',
+    otherItemsCount: 0,
+    items: [{ value: 'A', color: '#fff', shape: 'circle', count: 1, isVisible: true, zOrder: 0 }],
+  };
+
+  it('reads the legend, and returns null without the method, with no items, or when it throws', () => {
+    const legend = { getLegendExportData: () => state } as unknown as Element;
+    expect(readLegendExportState(legend)).toBe(state);
+    expect(readLegendExportState(null)).toBeNull();
+    expect(readLegendExportState({} as Element)).toBeNull();
+    const noItems = { getLegendExportData: () => ({ annotation: 'family' }) } as unknown as Element;
+    expect(readLegendExportState(noItems)).toBeNull();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const throwing = {
+      getLegendExportData: () => {
+        throw new Error('not ready');
+      },
+    } as unknown as Element;
+    expect(readLegendExportState(throwing)).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+});
+
+describe('isFormControlEventPath', () => {
+  const path = (...nodes: object[]) => nodes as unknown as EventTarget[];
+
+  it('counts every form control, whatever its input type, and contentEditable', () => {
+    for (const type of ['text', 'number', 'range', 'checkbox']) {
+      expect(isFormControlEventPath(path({ tagName: 'INPUT', type }, { tagName: 'BODY' }))).toBe(
+        true,
+      );
+    }
+    for (const tagName of ['SELECT', 'TEXTAREA', 'BUTTON']) {
+      expect(isFormControlEventPath(path({ tagName }))).toBe(true);
+    }
+    expect(isFormControlEventPath(path({ tagName: 'DIV', isContentEditable: true }))).toBe(true);
+  });
+
+  it('ignores the rest of the page', () => {
+    expect(isFormControlEventPath(path({ tagName: 'CANVAS' }, { tagName: 'BODY' }, {}))).toBe(
+      false,
+    );
+    expect(isFormControlEventPath([])).toBe(false);
   });
 });

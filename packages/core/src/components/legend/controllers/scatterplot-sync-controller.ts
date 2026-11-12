@@ -24,7 +24,7 @@ import type {
 } from '../legend-mapping-events';
 
 /**
- * Same members in the same order.
+ * Same members, in any order. `next` holds each value once, as both lists the legend builds do.
  *
  * `hiddenAnnotationValues` and `otherAnnotationValues` are `@property({ type: Array })` on the
  * scatterplot, so Lit's default `hasChanged` compares them by reference: assigning a freshly
@@ -33,9 +33,15 @@ import type {
  * `hiddenAnnotationValues` as "the user changed what is visible" and drops the EAT provenance
  * connectors, and `_visibilityModelKey` compares the same array by reference, so the whole
  * visibility model is rebuilt. Both must fire on a real edit and neither on a no-op resync.
+ *
+ * Order is left out because nothing reads it: the style getters, the visibility model and
+ * export all turn these arrays into sets. A legend recount can list the same "Other" values in
+ * another order, and a change to `otherAnnotationValues` re-stages every point.
  */
-function sameOrder(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((value, index) => value === b[index]);
+function sameMembers(current: readonly string[], next: readonly string[]): boolean {
+  if (current.length !== next.length) return false;
+  const members = new Set(current);
+  return next.every((value) => members.has(value));
 }
 
 /** Maximum number of retries when looking for scatterplot element */
@@ -53,10 +59,13 @@ export interface ScatterplotSyncCallbacks {
     selectedProjectionName: string,
   ) => void;
   onAnnotationChange: (annotation: string) => void;
+  /** The plot's Shift + hover focus: the focused values, or null once it ends. */
+  onCategoryFocus?: (values: readonly string[] | null) => void;
   getHiddenValues: () => string[];
   getOtherItems: () => OtherItem[];
   getLegendItems: () => LegendItem[];
   getOtherConcreteValues: () => string[];
+  getAutoHide: () => boolean;
   getNumericAnnotationSettings?: () => NumericAnnotationDisplaySettingsMap;
   getAnnotationSortModes?: () => Record<string, LegendSortMode>;
   getNumericManualOrderIds?: () => Record<string, string[]>;
@@ -71,17 +80,17 @@ export class ScatterplotSyncController implements ReactiveController {
   private callbacks: ScatterplotSyncCallbacks;
 
   private _scatterplotElement: IScatterplotElement | null = null;
-  private _controlBarElement: Element | null = null;
+  /** The legend's root node, where the view pickers' bubbling, composed events arrive. */
+  private _eventRoot: Document | ShadowRoot | null = null;
   private _boundHandleDataChange: (e: Event) => void;
   private _boundHandleAnnotationChange: (e: Event) => void;
   private _boundHandleProjectionChange: () => void;
+  private _boundHandleCategoryFocus: (e: Event) => void;
   private _discoveryRetryCount = 0;
   private _discoveryTimeoutId: number | null = null;
   private _mutationObserver: MutationObserver | null = null;
 
   scatterplotSelector: string = 'protspace-scatterplot';
-  autoSync: boolean = true;
-  autoHide: boolean = true;
 
   constructor(host: ReactiveControllerHost & Element, callbacks: ScatterplotSyncCallbacks) {
     this.host = host;
@@ -91,12 +100,11 @@ export class ScatterplotSyncController implements ReactiveController {
     this._boundHandleDataChange = this._handleDataChange.bind(this);
     this._boundHandleAnnotationChange = this._handleAnnotationChange.bind(this);
     this._boundHandleProjectionChange = this._handleProjectionChange.bind(this);
+    this._boundHandleCategoryFocus = this._handleCategoryFocus.bind(this);
   }
 
   hostConnected(): void {
-    if (this.autoSync) {
-      this._setupAutoSync();
-    }
+    this._setupAutoSync();
   }
 
   hostDisconnected(): void {
@@ -117,7 +125,7 @@ export class ScatterplotSyncController implements ReactiveController {
     const currentData = this._scatterplotElement?.getCurrentData?.();
     const annotationData = currentData?.annotation_data?.[selectedAnnotation];
 
-    // Cached: this runs from `_renderColorPicker`, i.e. on every legend re-render
+    // Cached: this runs from `ColorPickerController.render`, i.e. on every legend re-render
     // while the picker is open, and dense storage makes the uncached form an O(N)
     // sweep over 573K proteins for an answer that cannot change without the
     // storage object changing.
@@ -135,21 +143,21 @@ export class ScatterplotSyncController implements ReactiveController {
    * Sync hidden values to scatterplot
    */
   syncHiddenValues(): void {
-    if (!this.autoHide || !this._scatterplotElement) return;
+    if (!this.callbacks.getAutoHide() || !this._scatterplotElement) return;
 
     if (supportsHiddenValues(this._scatterplotElement)) {
       const expandedHidden = expandHiddenValues(
         this.callbacks.getHiddenValues(),
         this.callbacks.getOtherItems(),
       );
-      if (!sameOrder(this._scatterplotElement.hiddenAnnotationValues ?? [], expandedHidden)) {
+      if (!sameMembers(this._scatterplotElement.hiddenAnnotationValues ?? [], expandedHidden)) {
         this._scatterplotElement.hiddenAnnotationValues = [...expandedHidden];
       }
     }
 
     if (supportsOtherValues(this._scatterplotElement)) {
       const otherValues = this.callbacks.getOtherConcreteValues();
-      if (!sameOrder(this._scatterplotElement.otherAnnotationValues ?? [], otherValues)) {
+      if (!sameMembers(this._scatterplotElement.otherAnnotationValues ?? [], otherValues)) {
         this._scatterplotElement.otherAnnotationValues = otherValues;
       }
     }
@@ -162,7 +170,7 @@ export class ScatterplotSyncController implements ReactiveController {
     if (!this._scatterplotElement || !supportsOtherValues(this._scatterplotElement)) return;
 
     const otherValues = this.callbacks.getOtherConcreteValues();
-    if (!sameOrder(this._scatterplotElement.otherAnnotationValues ?? [], otherValues)) {
+    if (!sameMembers(this._scatterplotElement.otherAnnotationValues ?? [], otherValues)) {
       this._scatterplotElement.otherAnnotationValues = otherValues;
     }
   }
@@ -223,15 +231,15 @@ export class ScatterplotSyncController implements ReactiveController {
 
   /**
    * Dispatch color/shape mapping change event
-   * @param colorOnly - If true, indicates only colors changed (not z-order), allowing optimization
+   * The plot restyles whole categories from it; z-order travels in its own event.
    */
-  dispatchColorMappingChange(colorOnly: boolean = false): void {
+  dispatchColorMappingChange(): void {
     const { colorMapping, shapeMapping } = buildColorShapeMappings(this.callbacks.getLegendItems());
 
     const event: LegendColorMappingChangeEvent = new CustomEvent(
       LEGEND_EVENTS.COLORMAPPING_CHANGE,
       {
-        detail: { colorMapping, shapeMapping, colorOnly },
+        detail: { colorMapping, shapeMapping },
         bubbles: !this._scatterplotElement,
       },
     );
@@ -249,7 +257,7 @@ export class ScatterplotSyncController implements ReactiveController {
    * Both manual isolation AND an active query filter are constrained views: the
    * plot shows a kept subset of proteins. The legend treats them identically —
    * counts reflect the kept set while the visible-category structure is preserved
-   * (see legend `_handleScatterplotDataChange` / `processLegendItems`). So an active
+   * (see `LegendDataController.onDataChange` / `processLegendItems`). So an active
    * query filter is reported here as `isolationMode: true` with the kept id set
    * appended as an extra history layer; when isolation is ALSO active the layers
    * intersect, matching the plot's own combined cull. This does NOT couple the
@@ -302,29 +310,19 @@ export class ScatterplotSyncController implements ReactiveController {
 
     this._scatterplotElement = element;
     element.addEventListener(LEGEND_EVENTS.DATA_CHANGE, this._boundHandleDataChange);
-    const escapedSelector =
-      typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
-        ? CSS.escape(this.scatterplotSelector)
-        : this.scatterplotSelector.replace(/["\\]/g, '\\$&');
-
+    element.addEventListener(LEGEND_EVENTS.CATEGORY_FOCUS, this._boundHandleCategoryFocus);
+    // The view bar's pickers dispatch annotation-change and projection-change, bubbling and
+    // composed, wherever they sit: listen on the legend's own root (the document in the app).
     const root = this.host.getRootNode();
-    const queryRoot = root instanceof ShadowRoot || root instanceof Document ? root : document;
-    const matchingControlBar = queryRoot.querySelector(
-      `protspace-control-bar[scatterplot-selector="${escapedSelector}"]`,
+    this._eventRoot = root instanceof ShadowRoot || root instanceof Document ? root : document;
+    this._eventRoot.addEventListener(
+      LEGEND_EVENTS.ANNOTATION_CHANGE,
+      this._boundHandleAnnotationChange,
     );
-    const controlBars = Array.from(queryRoot.querySelectorAll('protspace-control-bar'));
-    this._controlBarElement =
-      matchingControlBar ?? (controlBars.length === 1 ? controlBars[0] : null);
-    if (this._controlBarElement) {
-      this._controlBarElement.addEventListener(
-        LEGEND_EVENTS.ANNOTATION_CHANGE,
-        this._boundHandleAnnotationChange,
-      );
-      this._controlBarElement.addEventListener(
-        LEGEND_EVENTS.PROJECTION_CHANGE,
-        this._boundHandleProjectionChange,
-      );
-    }
+    this._eventRoot.addEventListener(
+      LEGEND_EVENTS.PROJECTION_CHANGE,
+      this._boundHandleProjectionChange,
+    );
 
     this._syncWithScatterplot();
   }
@@ -405,6 +403,11 @@ export class ScatterplotSyncController implements ReactiveController {
     }
   }
 
+  private _handleCategoryFocus(event: Event): void {
+    const values = (event as CustomEvent<{ values?: readonly string[] | null }>).detail?.values;
+    this.callbacks.onCategoryFocus?.(Array.isArray(values) ? values : null);
+  }
+
   private _handleAnnotationChange(event: Event): void {
     const customEvent = event as CustomEvent;
     const { annotation } = customEvent.detail;
@@ -448,16 +451,23 @@ export class ScatterplotSyncController implements ReactiveController {
         LEGEND_EVENTS.DATA_CHANGE,
         this._boundHandleDataChange,
       );
+      this._scatterplotElement.removeEventListener(
+        LEGEND_EVENTS.CATEGORY_FOCUS,
+        this._boundHandleCategoryFocus,
+      );
+      // No longer listening, so no end of the focus would arrive: drop it now.
+      this.callbacks.onCategoryFocus?.(null);
     }
-    if (this._controlBarElement) {
-      this._controlBarElement.removeEventListener(
+    if (this._eventRoot) {
+      this._eventRoot.removeEventListener(
         LEGEND_EVENTS.ANNOTATION_CHANGE,
         this._boundHandleAnnotationChange,
       );
-      this._controlBarElement.removeEventListener(
+      this._eventRoot.removeEventListener(
         LEGEND_EVENTS.PROJECTION_CHANGE,
         this._boundHandleProjectionChange,
       );
+      this._eventRoot = null;
     }
   }
 }

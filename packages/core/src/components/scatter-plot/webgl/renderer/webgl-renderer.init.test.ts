@@ -4,7 +4,7 @@ import { makeRenderer, plotDataFrom } from './test-support/renderer-fixture';
 
 const pd = plotDataFrom([0, 1], [0, 1]);
 
-describe('WebGLRenderer init failure (F-03 characterization lock)', () => {
+describe('WebGLRenderer init failure (characterization lock)', () => {
   // Per-test cleanup: restores every vi.spyOn (console.error below + the
   // getContext spy createMockCanvas installs) even if a test throws before any
   // inline restore. Inline mockRestore() can be skipped by an exception and leak

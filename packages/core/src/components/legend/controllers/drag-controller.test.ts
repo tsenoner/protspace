@@ -30,7 +30,7 @@ describe('DragController', () => {
     };
 
     mockCallbacks = {
-      getLegendItems: vi.fn().mockReturnValue(mockLegendItems),
+      getDisplayedItems: vi.fn().mockReturnValue(mockLegendItems),
       setLegendItems: vi.fn(),
       onReorder: vi.fn(),
       onMergeToOther: vi.fn(),
@@ -90,6 +90,82 @@ describe('DragController', () => {
       const secondInstance = controller.getInstance();
 
       expect(firstInstance).not.toBe(secondInstance);
+    });
+  });
+
+  describe('touch drag', () => {
+    it('delays a drag only for touch, so a swipe over a handle scrolls the list', () => {
+      controller.initialize(mockContainer);
+      const sortable = controller.getInstance()!;
+      expect(sortable.option('handle')).toBe('.drag-handle:not(:disabled)');
+      expect(sortable.option('delay')).toBe(250);
+      expect(sortable.option('delayOnTouchOnly')).toBe(true);
+      // Sortable keeps 5 where it drags by touch itself (Chrome for Android, iOS); where it uses
+      // native drag and drop, as in jsdom, it forces 1.
+      const native = (sortable as unknown as { nativeDraggable: boolean }).nativeDraggable;
+      expect(sortable.option('touchStartThreshold')).toBe(native ? 1 : 5);
+      expect(sortable.option('fallbackClass')).toBe('sortable-fallback');
+    });
+
+    it('does not put the floating row copy back when it restores the rows', () => {
+      controller.initialize(mockContainer);
+      const sortable = controller.getInstance()!;
+      const ghost = document.createElement('div');
+      ghost.className = 'legend-item sortable-fallback';
+      mockContainer.appendChild(ghost);
+
+      sortable.option('onStart')!({ from: mockContainer } as Sortable.SortableEvent);
+      // Sortable takes the copy away on drop, before `onEnd`.
+      ghost.remove();
+      sortable.option('onEnd')!({
+        from: mockContainer,
+        item: mockContainer.children[0] as HTMLElement,
+        oldIndex: 0,
+        newIndex: 0,
+      } as Sortable.SortableEvent);
+
+      expect(mockContainer.querySelector('.sortable-fallback')).toBeNull();
+      expect(mockContainer.children).toHaveLength(mockLegendItems.length);
+    });
+
+    it('removes a leftover .sortable-fallback on end', () => {
+      controller.initialize(mockContainer);
+      const sortable = controller.getInstance()!;
+      const ghost = document.createElement('div');
+      ghost.className = 'legend-item sortable-fallback';
+      mockContainer.appendChild(ghost);
+
+      sortable.option('onStart')!({ from: mockContainer } as Sortable.SortableEvent);
+      sortable.option('onEnd')!({
+        from: mockContainer,
+        item: mockContainer.children[0] as HTMLElement,
+        oldIndex: 0,
+        newIndex: 0,
+      } as Sortable.SortableEvent);
+
+      expect(mockContainer.querySelector('.sortable-fallback')).toBeNull();
+      expect(mockContainer.children).toHaveLength(mockLegendItems.length);
+    });
+
+    it('keeps a finger move from scrolling the list only while a row is lifted', () => {
+      controller.initialize(mockContainer);
+      const sortable = controller.getInstance()!;
+      const move = () => {
+        const event = new Event('touchmove', { bubbles: true, cancelable: true });
+        mockContainer.children[0].dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+
+      expect(move()).toBe(false);
+      sortable.option('onStart')!({ from: mockContainer } as Sortable.SortableEvent);
+      expect(move()).toBe(true);
+      sortable.option('onEnd')!({
+        from: mockContainer,
+        item: mockContainer.children[0] as HTMLElement,
+        oldIndex: 0,
+        newIndex: 0,
+      } as Sortable.SortableEvent);
+      expect(move()).toBe(false);
     });
   });
 
@@ -166,6 +242,27 @@ describe('DragController', () => {
       expect(mockHost.requestUpdate).toHaveBeenCalled();
     });
 
+    it('reorders by the drawn order, the indices Sortable counts, not by zOrder', () => {
+      // Drawn cat3, cat1, cat2, Other while the zOrder says cat1, cat2, cat3.
+      const drawn = ['cat3', 'cat1', 'cat2', 'Other'].map(
+        (value) => mockLegendItems.find((item) => item.value === value)!,
+      );
+      vi.mocked(mockCallbacks.getDisplayedItems).mockReturnValue(drawn);
+      for (const item of drawn) mockContainer.appendChild(row(item.value));
+
+      // Drag the third row (cat2) to the top.
+      drag('cat2', 2, 0);
+
+      const items = vi.mocked(mockCallbacks.setLegendItems).mock.calls[0][0];
+      expect(items.map((i) => [i.value, i.zOrder])).toEqual([
+        ['cat2', 0],
+        ['cat3', 1],
+        ['cat1', 2],
+        ['Other', 3],
+      ]);
+      expect(mockCallbacks.onSortModeChange).toHaveBeenCalledWith('manual');
+    });
+
     it('highlights Other and refuses the move while hovering it', () => {
       const result = options().onMove!(
         { related: row('Other') } as Sortable.MoveEvent,
@@ -211,6 +308,41 @@ describe('DragController', () => {
 
       for (const callback of stateCallbacks()) expect(callback).not.toHaveBeenCalled();
       expect(rowOrder()).toEqual(['cat1', 'cat2', 'cat3', 'Other']);
+    });
+
+    it("refuses a drop past a numeric legend's pinned N/A row, and the move over it", () => {
+      // A numeric legend: bins, then N/A pinned last, no Other.
+      const na = { ...mockLegendItems[2], value: '__NA__' };
+      const items = [mockLegendItems[0], mockLegendItems[1], na];
+      vi.mocked(mockCallbacks.getDisplayedItems).mockReturnValue(items);
+      mockCallbacks.canDrag = (item) => item.value !== '__NA__';
+      mockContainer.replaceChildren(
+        ...items.map((item) => {
+          const el = document.createElement('div');
+          el.className = 'legend-item';
+          el.setAttribute('data-value', item.value);
+          const handle = document.createElement('button');
+          handle.className = 'drag-handle';
+          handle.disabled = item.value === '__NA__';
+          el.append(handle);
+          return el;
+        }),
+      );
+
+      expect(
+        options().onMove!({ related: row('__NA__') } as Sortable.MoveEvent, new MouseEvent('m')),
+      ).toBe(false);
+      expect(
+        options().onMove!({ related: row('cat2') } as Sortable.MoveEvent, new MouseEvent('m')),
+      ).toBeUndefined();
+
+      drag('cat1', 0, 2);
+      for (const callback of stateCallbacks()) expect(callback).not.toHaveBeenCalled();
+      expect(rowOrder()).toEqual(['cat1', 'cat2', '__NA__']);
+
+      drag('cat1', 0, 1);
+      const reordered = vi.mocked(mockCallbacks.setLegendItems).mock.calls[0][0];
+      expect(reordered.map((i) => i.value)).toEqual(['cat2', 'cat1', '__NA__']);
     });
 
     it.each([

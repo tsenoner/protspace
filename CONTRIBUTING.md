@@ -140,13 +140,14 @@ packages/
 │   └── src/components/
 │       ├── scatter-plot/     # WebGL2 renderer, interaction, tooltips
 │       ├── legend/
-│       ├── control-bar/
+│       ├── kit/              # ps-* elements: buttons, menus, popovers, dialogs
 │       ├── data-loader/
 │       └── structure-viewer/ # Mol* integration
 └── utils/         # Color, data-processing, export utilities
 config/            # Shared URLs, ports, and navigation config
 docs/              # Documentation site (VitePress)
-scripts/           # Repo tooling (documentation screenshot capture)
+perf/              # Benchmarks: harness, datasets.manifest.json, scale/generate.py, baselines/
+scripts/           # Repo tooling: docs screenshots, examples/ (perf:fetch, examples:fetch), landing-data/
 ```
 
 ### Technology Stack
@@ -266,7 +267,21 @@ pnpm test          # Run tests in watch mode
 pnpm test:ci       # Run the non-watch CI test suite
 pnpm test:e2e      # Run Playwright browser coverage
 pnpm test:contract # Bundle format contract: Python producer vs TypeScript reader
+pnpm perf:counts   # Work counts per interaction (CI gate); needs a free port (PLAYWRIGHT_PORT, default 8310)
+pnpm perf          # Timings per interaction, headed Chromium on a real GPU
+pnpm perf:scale    # Timings and memory over the number of points
+pnpm perf:webgl    # Cross-browser WebGL render passes
 ```
+
+`pnpm test` and `pnpm test:ci` also run core's `*.browser.test.ts` files in headless Chromium.
+Install it once:
+
+```bash
+pnpm exec playwright install --only-shell chromium
+```
+
+The perf commands read their datasets from `perf/datasets/`, so run `pnpm perf:fetch` first. See
+[perf/README.md](perf/README.md) for each command and its flags.
 
 `pnpm test:contract` shells out to the real `protspace bundle` CLI, so it needs `uv` on your
 PATH and a synced Python workspace. Without them it fails rather than skipping (deliberately, a
@@ -276,11 +291,44 @@ missing producer must not read as a pass):
 uv sync --package protspace --no-dev --locked   # what bundle-contract.yml does
 ```
 
-**E2E:** the Playwright web server starts `pnpm dev:app` with `VITE_STARTUP_DATASET_URL`
-pointing the startup demo at a pinned fixture, so no scenario depends on the product's demo.
-Locally Playwright reuses a dev server already listening on :8080, and one you started yourself
-lacks that variable: stop it first (`lsof -iTCP:8080 -sTCP:LISTEN`), or the suite fails its
-"pinned startup demo" check.
+**E2E:** the Playwright web server builds the app (`apps/web/tests/vite.e2e.config.ts`, into
+the gitignored `apps/web/dist-e2e/<port>/`) with `VITE_STARTUP_DATASET_URL` pointing the startup
+demo at a pinned fixture, so no scenario depends on the product's demo, and serves the build
+with `vite preview` on :8080. It is a development-mode build, so `/dev/kit` and the other
+`import.meta.env.DEV` paths are in it. `PLAYWRIGHT_PORT=<port>` starts the same server on another
+port, with its own build. Locally Playwright reuses any server already listening on :8080, a dev server included,
+and one you started yourself lacks that variable: stop it first (`lsof -iTCP:8080 -sTCP:LISTEN`),
+or the suite fails its "pinned startup demo" check.
+
+To iterate on app code without a rebuild per run, keep one pinned dev server running and point
+the suite at it. `PLAYWRIGHT_BASE_URL` skips the web server entirely: nothing is started, built
+or stopped, so it also works for a server on another port. A plain `pnpm dev:app` (no pin)
+serves the product demo, and these fail against it: `example-datasets.spec.ts` (its pinned-demo
+check), `workbench-loading.spec.ts` (the empty-state tests, which abort the fixture's request)
+and `url-view-state.spec.ts` (it expects the fixture's columns and legend). Start the server
+with the pin and every spec runs:
+
+```bash
+# in one terminal, from the repo root
+VITE_STARTUP_DATASET_URL="/@fs$PWD/apps/web/tests/fixtures/demo_toxprot_7831.parquetbundle" pnpm dev:app
+# in another
+PLAYWRIGHT_BASE_URL=http://localhost:8080 pnpm test:e2e workbench-legend
+```
+
+Narrowing a run:
+
+- `pnpm test:e2e <file substring>` or `-g "<test title regex>"` picks tests;
+  `--project=<name>` picks a project (one per spec group, named in `playwright.config.ts`).
+- `--last-failed` reruns only what failed last time.
+- `--only-changed[=<ref>]` runs spec files changed since `<ref>` (default: uncommitted changes)
+  and specs importing a changed helper or module. A change to app or package source the spec
+  does not import (components, styles, anything reached only through the browser) selects
+  nothing, so it is for test edits, not app changes.
+- `E2E_BROWSERS=chromium` skips the Firefox/WebKit projects.
+- Workers default to 50% of your cores: headless WebGL (SwiftShader) is CPU-bound, so more
+  workers make every test slower. `--workers=2` gives a CI runner's per-test load, and
+  `E2E_BROWSERS=chromium pnpm test:e2e --shard=2/4 --workers=2` reproduces one of CI's four
+  Chromium shards.
 
 **Fixtures, examples and perf data are three different things:**
 
@@ -316,7 +364,7 @@ to exercise the large-dataset path.
 pnpm dev:docs      # Start dev server (localhost:5174)
 pnpm docs:build    # Build static site
 pnpm docs:preview  # Preview production build
-pnpm docs:images   # Generate all documentation images (screenshots, animations, GIFs)
+pnpm docs:images   # Generate all documentation images (starts its own app server on :8096)
 ```
 
 **Generated pages:** two pages are written by scripts, so edit their sources and regenerate
@@ -328,8 +376,15 @@ rather than editing the page. `pnpm precommit` and CI fail when either is stale.
 - `docs/explore/example-datasets.md`: from the example catalog
   (`apps/web/src/explore/example-datasets.ts`), the bundle manifest
   (`apps/web/src/explore/example-manifest.ts`) and `docs/scripts/example-details.ts`; regenerate
-  with `pnpm docs:examples`. Its thumbnails come from the opt-in `examples-live` E2E project
-  (see `docs/explore/images/README.md`).
+  with `pnpm docs:examples`. Its thumbnails come from the docs captures
+  (`pnpm docs:screenshots -g "examples/"`; see `docs/explore/images/README.md`).
+
+**Docs images:** every image under `docs/explore/images/` comes from one capture manifest, its
+entries grouped by docs page in `scripts/docs-screenshots/scenes/`
+(`docs/explore/images/README.md` describes the pipeline). The captures start their own app server
+on port 8096 (`DOCS_CAPTURE_PORT` changes it) and a headed Chromium; the examples other than the
+startup demo need `pnpm examples:fetch` first. `pnpm docs:images` makes them all and
+`pnpm docs:images:check` is the pre-commit lint; the README has the commands for one image.
 
 **Documentation standards:**
 

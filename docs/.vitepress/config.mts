@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitepress';
 import { getUrls, PORTS } from '../../config/urls';
 import { getNavigation } from '../../config/navigation';
+import { THEME_BOOT_SCRIPT } from '../../config/theme';
 
 const isDev = process.env.NODE_ENV !== 'production';
 const mode = isDev ? 'development' : 'production';
@@ -24,9 +25,9 @@ export default defineConfig({
     },
   },
 
-  // The Explore pages carry several multi-megabyte GIFs — scatterplot.md alone
-  // references four totalling ~22 MB. Without this they all fetch on page load,
-  // including the ones below the fold that most readers never scroll to.
+  // The Explore pages carry many screenshots, each in light and dark. Lazy, an image below the
+  // fold loads only once a reader scrolls to it, and the twin the other mode hides never does.
+  // The animations are <DocsVideo>s (theme/docs-video.ts), which load as they near the viewport.
   markdown: {
     image: {
       lazyLoading: true,
@@ -37,47 +38,61 @@ export default defineConfig({
   // of the user-facing docs site.
   srcExclude: ['superpowers/**', '**/README.md'],
 
-  head: [['link', { rel: 'icon', href: '/docs/favicon.svg' }]],
+  head: [
+    ['link', { rel: 'icon', href: '/docs/favicon.svg' }],
+    // The app's theme boot (config/theme.ts): data-theme for the shared --ps-* tokens, and a move of
+    // the app's old key, before VitePress's own head script (added after these) reads the shared
+    // key for its .dark class.
+    ['script', { id: 'theme-boot' }, THEME_BOOT_SCRIPT],
+    // Docs images come in light/dark pairs ({.light-only} then {.dark-only}, the dark twin lazy),
+    // and each <DocsVideo> renders both its videos the same way; VitePress's appearance toggle
+    // puts .dark on <html>, so only the one matching the mode shows.
+    [
+      'style',
+      {},
+      'html.dark :is(img,video).light-only,html:not(.dark) :is(img,video).dark-only{display:none}',
+    ],
+  ],
 
   themeConfig: {
-    logo: {
-      light: '/wordmark.svg',
-      dark: '/wordmark-black.svg',
-      alt: 'ProtSpace',
-    },
+    // One wordmark; custom.css inverts it in dark with the app's --ps-logo-filter.
+    logo: { src: '/wordmark.svg', alt: 'ProtSpace' },
     siteTitle: false,
 
-    nav: navItems
-      .filter((item) => item.icon !== 'github') // Exclude GitHub icon (it's in socialLinks)
-      .map((item) => {
-        // When in VitePress (base is /docs/), map "Docs" link to root '/'
-        // to avoid /docs/docs/ issue. App links are relative paths, which VitePress would
-        // prefix with its base, so point them at the app's origin instead.
-        const link =
-          item.text === 'Docs'
-            ? '/'
-            : item.internal && item.link
-              ? `${urls.base}${item.link}`
-              : item.link || '';
+    // Feedback and GitHub end the bar as icons (theme/end-links.ts), not as nav or social links.
+    nav: navItems.map((item) => {
+      // When in VitePress (base is /docs/), map "Docs" link to root '/'
+      // to avoid /docs/docs/ issue. App links are relative paths, which VitePress would
+      // prefix with its base, so point them at the app's origin instead.
+      const link =
+        item.text === 'Docs'
+          ? '/'
+          : item.internal && item.link
+            ? `${urls.base}${item.link}`
+            : item.link || '';
 
-        // Handle items with dropdown menus
-        if (item.items) {
-          return {
-            text: item.text,
-            items: item.items.map((subItem) => ({
-              text: subItem.text,
-              link: subItem.link,
-              target: subItem.link.startsWith('http') ? '_blank' : undefined,
-            })),
-          };
-        }
-
+      // Handle items with dropdown menus
+      if (item.items) {
         return {
           text: item.text,
-          link,
-          ...(item.link && item.text !== 'Docs' && { target: '_self' }), // Only set target for non-Docs items
+          items: item.items.map((subItem) => ({
+            text: subItem.text,
+            link: subItem.link,
+            target: subItem.link.startsWith('http') ? '_blank' : undefined,
+          })),
         };
-      }),
+      }
+
+      return {
+        text: item.text,
+        link,
+        ...(item.link && item.text !== 'Docs' && { target: '_self' }), // Only set target for non-Docs items
+        // Every docs page is under Docs: it stays marked, as Home's header marks its current page.
+        ...(item.text === 'Docs' && { activeMatch: '^/' }),
+        // Home and Explore are the site's own pages, opened in the same tab: no ↗ (as on Home).
+        noIcon: true,
+      };
+    }),
 
     sidebar: [
       {
@@ -108,7 +123,8 @@ export default defineConfig({
           { text: 'Using the Legend', link: '/explore/legend' },
           { text: 'Separation Scores', link: '/explore/separation-scores' },
           { text: 'Transferred Annotations (EAT)', link: '/explore/eat' },
-          { text: 'Control Bar Features', link: '/explore/control-bar' },
+          { text: 'Bars and Tools', link: '/explore/controls' },
+          { text: 'Filtering', link: '/explore/filter' },
           { text: 'Viewing 3D Structures', link: '/explore/structures' },
           { text: 'Exporting Results', link: '/explore/exporting' },
           { text: 'Figure Editor', link: '/explore/figure-editor' },
@@ -116,7 +132,10 @@ export default defineConfig({
       },
       {
         text: 'Help',
-        items: [{ text: 'FAQ', link: '/guide/faq' }],
+        items: [
+          { text: 'FAQ', link: '/guide/faq' },
+          { text: 'Performance', link: '/guide/performance' },
+        ],
       },
       // Developer docs hidden until npm package is published
       // {
@@ -132,8 +151,6 @@ export default defineConfig({
       //   ],
       // },
     ],
-
-    socialLinks: [{ icon: 'github', link: 'https://github.com/tsenoner/protspace' }],
 
     footer: {
       message: 'Released under the MIT License.',

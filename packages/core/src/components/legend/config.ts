@@ -15,9 +15,13 @@ export const LEGEND_DEFAULTS = {
   maxVisibleValues: 10,
   symbolSize: DEFAULT_CONFIG.pointSize / SYMBOL_SIZE_MULTIPLIER,
   symbolSizeMultiplier: SYMBOL_SIZE_MULTIPLIER,
-  // A UX bound from the original spinner, not a GPU limit: with zoom (<=4x) and plot-area (<=1.5x)
-  // growth the largest live sprite at dpr 3 is ~340 device px, inside ANGLE/Metal's 511 px limit.
+  // The largest size from 10,000 proteins up: a UX bound from the original spinner.
   maxSymbolSize: 64,
+  // The largest size a small dataset may pick (see maxShapeSize). A UX rule, not a GPU bound: the
+  // point shader clamps every sprite to the context's ALIASED_POINT_SIZE_RANGE itself. With zoom
+  // (<=4x), plot-area (<=1.5x) and diamond (1.25x) growth the largest live sprite at dpr 3 is
+  // ~480 device px, so it still fits ANGLE/Metal's 511 px range and is never cut down there.
+  smallDatasetMaxSymbolSize: 128,
   dragTimeout: 100,
   scatterplotSelector: 'protspace-scatterplot',
   autoSyncDelay: 100,
@@ -27,15 +31,14 @@ export const LEGEND_DEFAULTS = {
 export const LEGEND_STYLES = {
   strokeWidth: {
     default: 1,
-    selected: 2,
     outline: 2,
   },
   colors: {
     defaultStroke: '#394150',
-    selectedStroke: '#00A3E0',
   },
   outlineShapes: new Set<string>([]),
-  legendDisplaySize: 16,
+  // The row symbol's size in px: a 10 px mark in a 16 px box (3 px padding), as the mockups draw it.
+  legendDisplaySize: 10,
 } as const;
 
 // Re-export legend utilities so existing imports from './config' keep working
@@ -60,4 +63,6 @@ export const LEGEND_EVENTS = {
   DATA_CHANGE: 'data-change',
   ANNOTATION_CHANGE: 'annotation-change',
   PROJECTION_CHANGE: 'projection-change',
+  /** The plot's Shift + hover focus (scatter-plot.events.ts, `CategoryFocusDetail`). */
+  CATEGORY_FOCUS: 'category-focus',
 } as const;
