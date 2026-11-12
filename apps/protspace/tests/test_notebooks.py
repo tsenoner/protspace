@@ -882,6 +882,9 @@ def _load_h5_tab(namespace, tmp_path: Path, name="results.h5", n=40) -> Path:
     return h5
 
 
+_ONE_ROW_CSV = "identifier,group\nprot000,a\n"
+
+
 def _only_methods(namespace, *methods: str) -> None:
     for method, toggle in namespace["method_toggles"].items():
         toggle.value = method in methods
@@ -997,7 +1000,7 @@ def test_preparation_names_an_unnamed_h5_and_generates(monkeypatch, tmp_path, ca
 def test_preparation_uses_the_embedder_picked_for_an_h5(monkeypatch, tmp_path):
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     csv = tmp_path / "custom.csv"
-    csv.write_text("identifier,group\nprot000,a\n")
+    csv.write_text(_ONE_ROW_CSV)
     _load_h5_tab(namespace, tmp_path)
     namespace["h5_name"].value = "prot_t5"
     _generate_from_csv(namespace, csv)
@@ -1074,7 +1077,7 @@ def test_preparation_auto_detect_without_the_resolver_matches_it(
 def test_preparation_disables_generate_while_it_runs(monkeypatch, tmp_path):
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     csv = tmp_path / "custom.csv"
-    csv.write_text("identifier,group\nprot000,a\n")
+    csv.write_text(_ONE_ROW_CSV)
     _load_h5_tab(namespace, tmp_path)
 
     seen, real_load_h5 = [], namespace["load_h5"]
@@ -1106,7 +1109,7 @@ def test_preparation_reads_a_gzipped_csv(monkeypatch, tmp_path):
 
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     csv = tmp_path / "custom.csv.gz"
-    csv.write_bytes(gzip.compress(b"identifier,group\nprot000,a\n"))
+    csv.write_bytes(gzip.compress(_ONE_ROW_CSV.encode()))
     _load_h5_tab(namespace, tmp_path)
     _generate_from_csv(namespace, csv)
 
@@ -1351,7 +1354,7 @@ def test_preparation_skips_uniprot_when_no_id_is_an_accession(
     _only_methods(namespace, "PCA")
     if with_csv:
         csv = tmp_path / "custom.csv"
-        csv.write_text("identifier,group\nprot000,a\n")
+        csv.write_text(_ONE_ROW_CSV)
         namespace["csv_path_field"].value = str(csv)
     namespace["_on_gen"](None)
 
@@ -1375,7 +1378,7 @@ def test_preparation_restores_its_settings_after_a_restart(monkeypatch, tmp_path
     """A restart (the install cell may ask for one) cleared every field."""
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
     csv = tmp_path / "custom.csv"
-    csv.write_text("identifier,group\nprot000,a\n")
+    csv.write_text(_ONE_ROW_CSV)
     h5 = _load_h5_tab(namespace, tmp_path, name="results_esm2_650m.h5")
     namespace["pw"]["n_neighbors"].value = 40
     _generate_from_csv(namespace, csv)
@@ -1411,7 +1414,7 @@ def test_preparation_rerun_keeps_settings_newer_than_an_upload(monkeypatch, tmp_
     assert namespace["h5_path_field"].value.endswith("old_prot_t5.h5")
 
     csv = tmp_path / "custom.csv"
-    csv.write_text("identifier,group\nprot000,a\n")
+    csv.write_text(_ONE_ROW_CSV)
     later = _clickthrough_h5(tmp_path / "later_esm2_650m.h5")
     namespace["h5_path_field"].value = str(later)
     _generate_from_csv(namespace, csv)
@@ -1489,7 +1492,7 @@ def test_preparation_generate_refreshes_the_eat_columns(monkeypatch, tmp_path):
     exec(compile(_preparation_cell("# @title 3."), "prep:3", "exec"), namespace)
     assert namespace["eat_col"].options == ()
     csv = tmp_path / "custom.csv"
-    csv.write_text("identifier,group\nprot000,a\n")
+    csv.write_text(_ONE_ROW_CSV)
     _load_h5_tab(namespace, tmp_path)
     _generate_from_csv(namespace, csv)
 
@@ -1515,7 +1518,7 @@ def test_preparation_shows_each_step_and_ends_full(monkeypatch, tmp_path):
     """From click to file, the run says which step of how many it is on."""
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     csv = tmp_path / "custom.csv"
-    csv.write_text("identifier,group\nprot000,a\n")
+    csv.write_text(_ONE_ROW_CSV)
     _load_h5_tab(namespace, tmp_path)
     _only_methods(namespace, "PCA", "t-SNE")
     namespace["ann_preset"].value = namespace["_CSV_ONLY"]
@@ -1555,7 +1558,7 @@ def test_preparation_offers_every_bundle_for_download(monkeypatch, tmp_path):
     namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
     assert namespace["bundles_box"].layout.display == "none"
     csv = tmp_path / "custom.csv"
-    csv.write_text("identifier,group\nprot000,a\n")
+    csv.write_text(_ONE_ROW_CSV)
     _load_h5_tab(namespace, tmp_path)
     _generate_from_csv(namespace, csv)
 
@@ -1625,8 +1628,7 @@ def test_preparation_refuses_a_query_perplexity_before_embedding(monkeypatch, tm
     namespace["query_input"].value = "(family:globin)"
     namespace["_on_query_set"]()
     namespace["tabs"].selected_index = 3
-    for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method == "t-SNE"
+    _only_methods(namespace, "t-SNE")
     namespace["_on_gen"](None)
 
     status = namespace["gen_status"].value
@@ -1648,8 +1650,7 @@ def test_preparation_perplexity_fallback_words_it_as_the_package(
     monkeypatch.delattr(pipeline, "check_method_params")
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
     assert namespace["check_method_params"].__module__ == "__notebook__"
-    for method, toggle in namespace["method_toggles"].items():
-        toggle.value = method == "t-SNE"
+    _only_methods(namespace, "t-SNE")
     perplexity = namespace["pw"]["perplexity"].value
     expected = tsne_perplexity_problem(perplexity, n_proteins)
     assert namespace["_param_problem"](n_proteins) == expected
@@ -1760,7 +1761,7 @@ def test_preparation_csv_upload_fills_the_path_field(monkeypatch, tmp_path):
     import ipywidgets
 
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
-    upload, content = namespace["csv_upload"], b"identifier,group\nprot000,a\n"
+    upload, content = namespace["csv_upload"], _ONE_ROW_CSV.encode()
     if ipywidgets.__version__.startswith("7."):
         meta = {"name": "ann.csv", "type": "", "size": len(content), "lastModified": 0}
         upload.set_trait("metadata", [meta])
@@ -2114,7 +2115,7 @@ def test_clickthrough_stops_esm_c_6b_where_ram_is_short(monkeypatch, gpu_gb, nee
     the download and name the fix."""
     _fake_gpu(monkeypatch, gpu_gb)
     namespace = _clickthrough_namespace(model_name="biohub/ESMC-6B")
-    namespace["_accelerate_available"] = lambda: gpu_gb is None
+    namespace["_accelerate_available"] = lambda: False
     namespace["_ram_below_gb"] = lambda gb: gb == need
     namespace["_choose_fasta"] = lambda: pytest.fail("read the FASTA first")
 

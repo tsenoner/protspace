@@ -93,3 +93,24 @@ class DimensionReductionConfig:
                     raise ValueError(
                         f"{data_field.name} must be less than or equal to {metadata['lte']}"
                     )
+
+
+def tsne_perplexity_problem(perplexity: float, n_proteins: int) -> str | None:
+    """Why t-SNE cannot run with this perplexity on this many proteins, or None.
+
+    scikit-learn needs perplexity below the number of samples; past about a third
+    of it the neighbourhood (3 * perplexity + 1) already spans every point, and
+    the config's floor is 5.
+    """
+    if perplexity < n_proteins:
+        return None
+    if n_proteins <= 5:
+        return (
+            f"t-SNE needs more than 5 proteins (its perplexity is at least 5); "
+            f"this dataset has {n_proteins}. Leave t-SNE out of the methods."
+        )
+    return (
+        f"t-SNE perplexity {perplexity:g} is not below the number of proteins "
+        f"({n_proteins:,}); it must be smaller, at most about a third of it "
+        f"(here {max(5, n_proteins // 3)}). Lower the t-SNE perplexity."
+    )

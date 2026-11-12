@@ -30,7 +30,7 @@ from protspace.data.processors.custom_annotations import (
 )
 from protspace.deprecations import THREE_D_PROJECTIONS, warn
 from protspace.utils import get_reducers
-from protspace.utils.constants import MDS_NAME, TSNE_NAME
+from protspace.utils.constants import MDS_NAME, TSNE_NAME, tsne_perplexity_problem
 
 logger = logging.getLogger(__name__)
 
@@ -120,9 +120,6 @@ def check_method_params(
     for spec in methods:
         if spec.method != TSNE_NAME:
             continue
-        # Lazy: utils.reducers imports scikit-learn.
-        from protspace.utils.reducers import tsne_perplexity_problem
-
         perplexity = spec.overrides_dict.get("perplexity", reducer_params.perplexity)
         problem = tsne_perplexity_problem(perplexity, n_proteins)
         if problem:

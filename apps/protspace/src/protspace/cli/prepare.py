@@ -212,20 +212,52 @@ def _file_stamp(path: Path | None) -> tuple[int, int] | None:
     return stat.st_mtime_ns, stat.st_size
 
 
+def _count_fasta_ids(paths, cap: int) -> int:
+    """How many distinct protein IDs the FASTA files hold, counting past *cap* no further.
+
+    A header-only scan: the check needs to know only whether the count stays
+    within *cap*, so a large FASTA is read for a few records, not parsed whole.
+    Empty sequences and duplicates are not weeded out, which keeps it an upper
+    bound on what the embedder will see.
+    """
+    from protspace.data.loaders.h5 import parse_identifier
+
+    ids: set[str] = set()
+    for path in paths:
+        with open(path) as fh:
+            for line in fh:
+                if line.startswith(">"):
+                    words = line[1:].split(None, 1)
+                    ids.add(parse_identifier(words[0]) if words else "")
+                    if len(ids) > cap:
+                        return len(ids)
+    return len(ids)
+
+
 def _refuse_before_embedding(method_specs, reducer_params, count_proteins) -> None:
     """Refuse a perplexity that not even every protein to embed could support.
 
     The embedding comes first and can take long, so this runs before it.
-    ``count_proteins()`` is an upper bound on the proteins the run projects:
+    ``count_proteins(cap)`` is an upper bound on the proteins the run projects
+    (it may stop counting past *cap*, the largest t-SNE perplexity requested):
     skipped sequences and intersections only lower it, so refusing here is
     never wrong, and the pipeline checks the exact count again. It is called
-    only when a t-SNE method is requested, so other runs never read the FASTA
-    twice.
+    only when a t-SNE method is requested.
     """
     from protspace.utils.constants import TSNE_NAME
 
-    if any(spec.method == TSNE_NAME for spec in method_specs):
-        refuse_unsupported_method_params(method_specs, reducer_params, count_proteins())
+    tsne = [spec for spec in method_specs if spec.method == TSNE_NAME]
+    if tsne:
+        cap = max(
+            5,
+            *(
+                spec.overrides_dict.get("perplexity", reducer_params.perplexity)
+                for spec in tsne
+            ),
+        )
+        refuse_unsupported_method_params(
+            method_specs, reducer_params, count_proteins(int(cap))
+        )
 
 
 def _embed_all(
@@ -359,9 +391,12 @@ def prepare(
 
     from protspace.data.io.fasta import is_fasta_file
 
-    has_fasta = any(
-        is_fasta_file(spec[0]) for spec in input_specs if not spec[0].is_dir()
-    )
+    fasta_inputs = [
+        spec[0]
+        for spec in input_specs
+        if not spec[0].is_dir() and is_fasta_file(spec[0])
+    ]
+    has_fasta = bool(fasta_inputs)
 
     # Both similarity preconditions are pure argument checks, so they run before
     # anything is read: similarity happens last, and failing here rather than at
@@ -481,7 +516,9 @@ def prepare(
             headers, fasta_path = resolve_query_fasta(query, cache_dir, refetch_stages)
             if not headers:
                 raise typer.BadParameter(f"No sequences for query: '{query}'")
-            _refuse_before_embedding(method_specs, reducer_params, lambda: len(headers))
+            _refuse_before_embedding(
+                method_specs, reducer_params, lambda _cap: len(headers)
+            )
 
             if not embedders:
                 from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
@@ -504,20 +541,11 @@ def prepare(
             # Only an all-FASTA run: counting HDF5 inputs too would mean reading
             # them twice, so a mixed run is left to the pipeline's check. All
             # FASTA inputs count together, as inputs of the same name are merged.
-            fasta_inputs = [
-                path
-                for path, _, _ in named_inputs
-                if not path.is_dir() and is_fasta_file(path)
-            ]
-            if fasta_inputs and len(fasta_inputs) == len(named_inputs):
-                from protspace.data.loaders.fasta import parse_fasta_normalized
-
+            if has_fasta and len(fasta_inputs) == len(named_inputs):
                 _refuse_before_embedding(
                     method_specs,
                     reducer_params,
-                    lambda: len(
-                        set().union(*(parse_fasta_normalized(p) for p in fasta_inputs))
-                    ),
+                    lambda cap: _count_fasta_ids(fasta_inputs, cap),
                 )
             for path, name_override, _ in named_inputs:
                 if path.is_dir():

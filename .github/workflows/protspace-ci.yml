@@ -141,4 +141,4 @@ jobs:
         if: matrix.python-version == '3.13'
         env:
           PROTSPACE_COLAB_RESOLVE: '1'
-        run: uv run pytest tests/test_colab_compat.py -q -rs
+        run: uv run pytest tests/test_colab_compat.py -m integration -q -rs
