@@ -31,6 +31,7 @@ SHORTCUT_TO_HF_NAME = {
     "ankh3_large": "ElnaggarLab/ankh3-large",
     "esmc_300m": "biohub/ESMC-300M",
     "esmc_600m": "biohub/ESMC-600M",
+    "esmc_6b": "biohub/ESMC-6B",
 }
 
 
