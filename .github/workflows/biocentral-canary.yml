@@ -8,9 +8,10 @@ name: Biocentral canary
 #
 # It runs the live checks in apps/protspace/tests/test_biocentral_live.py against the
 # client the LOCK pins (the one CI and the prep image use), once a day: a server major the
-# client refuses, or a server that answers in words the package no longer reads. Three
-# small requests, one of them an embedding and one a prediction, to a shared research
-# server.
+# client refuses, or a server that answers in words the package no longer reads, or with
+# another model. Small requests to a shared research server: a version check, one
+# embedding per checked model (ProtT5 and the three ESM-C sizes; ESM-C 6B takes about
+# 30 s) and one prediction.
 #
 # RED MEANS ACT. An unreachable server skips rather than fails, because an outage has its
 # own status page and a monitor that cries wolf gets ignored. GitHub emails the workflow's

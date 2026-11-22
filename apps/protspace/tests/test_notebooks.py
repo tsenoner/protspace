@@ -170,9 +170,8 @@ def test_notebook_fallback_sets_match_the_package(path: Path, transform):
     Cell 1 installs the *released* protspace while the notebook is served from
     `main`, so the panel falls back to inline literals for one release. That
     fallback is deliberate — but nothing else pins it, and it is exactly the
-    copy that runs during the lag it exists for. Left undefended, emptying
-    BIOCENTRAL_INVALID (when Biocentral is fixed) or adding a name to
-    COLAB_OVERSIZED would leave the notebook gating on stale policy silently.
+    copy that runs during the lag it exists for. Left undefended, adding a name
+    to COLAB_OVERSIZED would leave the notebook gating on stale policy silently.
 
     Deliberately structural: it reads the fallback out of the `try`/`except`
     that guards the import, so a fallback that is missing, emptied, or written
@@ -180,13 +179,9 @@ def test_notebook_fallback_sets_match_the_package(path: Path, transform):
     matching nothing. A guard that can silently disarm itself is worse than no
     guard, because the notebook comment claims protection either way.
     """
-    from protspace.data.embedding.biocentral import BIOCENTRAL_INVALID
     from protspace.data.embedding.local import COLAB_OVERSIZED
 
-    expected = {
-        "BIOCENTRAL_INVALID": BIOCENTRAL_INVALID,
-        "COLAB_OVERSIZED": COLAB_OVERSIZED,
-    }
+    expected = {"COLAB_OVERSIZED": COLAB_OVERSIZED}
     # Transform first, for the reason this module exists: cell source is not
     # plain Python, and a `!cmd` line anywhere in a matched cell would otherwise
     # raise SyntaxError from a test that has nothing to say about shell lines.
@@ -915,8 +910,12 @@ def test_preparation_panel_is_built_without_the_network(monkeypatch, tmp_path):
 def test_preparation_blocks_a_local_only_embedder_on_biocentral(
     monkeypatch, tmp_path, capsys
 ):
-    """esmc_6b runs only on the local backend: disabled with its remedy on
-    Biocentral, dropped at Generate as a backstop, enabled on local."""
+    """A released package that lists esmc_6b as local-only (4.18.0-4.19.0): the
+    panel disables it with its remedy on Biocentral, drops it at Generate as a
+    backstop, and enables it on local."""
+    import protspace.cli.common_options as cli_options
+
+    monkeypatch.setattr(cli_options, "LOCAL_ONLY_EMBEDDERS", frozenset({"esmc_6b"}))
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
     labels = {v: k for k, v in namespace["_BACKEND_LABELS"].items()}
     box = namespace["emb_cbs"]["esmc_6b"]
@@ -934,6 +933,17 @@ def test_preparation_blocks_a_local_only_embedder_on_biocentral(
     # Free Colab's RAM blocks it as oversized; this machine's is what decides.
     oversized = namespace["_TOO_BIG_HERE"]
     assert box.disabled is ("esmc_6b" in oversized)
+
+
+def test_preparation_offers_esmc_6b_on_biocentral(monkeypatch, tmp_path):
+    """Biocentral computes ESM-C 6B since v2.1.0 (#561), so this package blocks
+    nothing on the Biocentral backend."""
+    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    labels = {v: k for k, v in namespace["_BACKEND_LABELS"].items()}
+
+    namespace["backend_dropdown"].value = labels["biocentral"]
+    assert not any(box.disabled for box in namespace["emb_cbs"].values())
+    assert namespace["_drop_incompatible"](["esmc_6b"], "biocentral") == ["esmc_6b"]
 
 
 @pytest.mark.parametrize(

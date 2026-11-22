@@ -69,12 +69,14 @@ EMBEDDER_MODELS: tuple[str, ...] = (
     "esmc_600m",
     "esmc_6b",
 )
-# Shortcuts only `--backend local` serves. Biocentral accepts biohub/ESMC-6B but
-# fails to compute it; once it does, move the key to EXTRA_SHORT_KEYS.
-LOCAL_ONLY_EMBEDDERS: frozenset[str] = frozenset({"esmc_6b"})
-EMBEDDER_HELP_MODELS = (
-    f"Models: {', '.join(EMBEDDER_MODELS)} "
-    f"({', '.join(sorted(LOCAL_ONLY_EMBEDDERS))}: --backend local only)."
+# Shortcuts only `--backend local` serves: one Biocentral accepts but cannot
+# compute. Empty today (esmc_6b left it when Biocentral v2.1.0 served it, #561).
+# Once Biocentral serves a key listed here, move it to EXTRA_SHORT_KEYS.
+LOCAL_ONLY_EMBEDDERS: frozenset[str] = frozenset()
+EMBEDDER_HELP_MODELS = f"Models: {', '.join(EMBEDDER_MODELS)}" + (
+    f" ({', '.join(sorted(LOCAL_ONLY_EMBEDDERS))}: --backend local only)."
+    if LOCAL_ONLY_EMBEDDERS
+    else "."
 )
 EMBEDDER_HELP_LICENSE = "Note: ankh_* and ankh3_* are non-commercial (CC-BY-NC-SA-4.0)."
 

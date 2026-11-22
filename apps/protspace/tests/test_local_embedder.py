@@ -11,7 +11,7 @@ import h5py
 import numpy as np
 import pytest
 
-from protspace.data.embedding import biocentral, local, store
+from protspace.data.embedding import local, store
 from protspace.data.embedding.biocentral import ALL_SHORT_KEYS
 
 # ---------------------------------------------------------------------------
@@ -49,27 +49,19 @@ def test_resolve_unknown_raises_with_suggestion():
         local.resolve_local_checkpoint("esm2_8")
 
 
-def test_blocked_sets_name_real_short_keys():
-    """A typo in either set would silently stop gating rather than fail.
+def test_oversized_set_names_real_checkpoints():
+    """A typo in COLAB_OVERSIZED would silently stop gating rather than fail.
 
-    The Colab notebook imports both to disable those checkboxes, so a name that
-    matches no shortcut disables nothing — and the run then fails the way the
-    set exists to prevent, mid-embed, after the input has been paid for.
+    The Colab notebook imports it to disable those checkboxes, so a name that
+    matches no checkpoint disables nothing — and the run then fails the way the
+    set exists to prevent, mid-embed, after the input has been paid for. It is a
+    fact about local checkpoints, so it is pinned to the local registry.
 
-    Each set is pinned to the registry it constrains, not to whichever one is
-    handy: COLAB_OVERSIZED is a fact about local checkpoints, so a local-only
-    model added later must not have to be a Biocentral shortcut to be gated.
-
-    BIOCENTRAL_INVALID may be empty (Biocentral serves every shortcut today);
-    COLAB_OVERSIZED may not, since esm2_3b cannot load through a free runtime's
-    host RAM (a CPU runtime, or a GPU one without accelerate).
+    It may not be empty, since esm2_3b cannot load through a free runtime's host
+    RAM (a CPU runtime, or a GPU one without accelerate).
     """
     assert local.COLAB_OVERSIZED
-    for blocked, registry in (
-        (local.COLAB_OVERSIZED, local.LOCAL_CHECKPOINTS),
-        (biocentral.BIOCENTRAL_INVALID, ALL_SHORT_KEYS),
-    ):
-        assert blocked <= set(registry)
+    assert local.COLAB_OVERSIZED <= set(local.LOCAL_CHECKPOINTS)
 
 
 # The only shortcuts whose local checkpoint is not the id Biocentral is sent: fp16

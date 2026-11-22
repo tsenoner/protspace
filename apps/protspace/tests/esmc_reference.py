@@ -1,9 +1,10 @@
 """Reference ESM-C vectors both embedding backends are held to.
 
 Ubiquitin embedded by the local backend from biohub/ESMC-300M / -600M (transformers
-5.21.0, torch 2.14.1, CPU, float32), mean-pooled as the package pools. One per size:
-the Biocentral server maps each id to a model separately. The live canary checks the
-server against them; the slow local test checks a newer transformers against them.
+5.21.0, torch 2.14.1, CPU, float32) and biohub/ESMC-6B (transformers 5.21.0, torch
+2.13.0, CPU, float32), mean-pooled as the package pools. One per size: the Biocentral
+server maps each id to a model separately. The live canary checks the server against
+all three; the slow local test checks a newer transformers against the 300M one.
 """
 
 from pathlib import Path
@@ -20,6 +21,7 @@ _DATA = Path(__file__).parent / "data"
 ESMC_UBIQUITIN = {
     "esmc_300m": (_DATA / "esmc_300m_ubiquitin.npy", 960),
     "esmc_600m": (_DATA / "esmc_600m_ubiquitin.npy", 1152),
+    "esmc_6b": (_DATA / "esmc_6b_ubiquitin.npy", 2560),
 }
 
 

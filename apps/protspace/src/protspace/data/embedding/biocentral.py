@@ -52,17 +52,12 @@ EXTRA_SHORT_KEYS: dict[str, str] = {
     # embedder matches these exact ids; the server refuses Synthyra's ESM++ ids.
     "esmc_300m": "biohub/ESMC-300M",
     "esmc_600m": "biohub/ESMC-600M",
+    # Served since Biocentral v2.1.0 at the server's default precision (#561).
+    "esmc_6b": "biohub/ESMC-6B",
 }
 
 # Combined lookup for help text and error messages.
 ALL_SHORT_KEYS: dict[str, str] = {**MODEL_SHORT_KEYS, **EXTRA_SHORT_KEYS}
-
-# Shortcuts this API accepts but serves with the wrong model; the Colab notebook
-# disables them on the Biocentral backend (the CLI still accepts them). Empty, but
-# kept by name: the notebook imports it from the *released* package, whose 4.17.1
-# still needs it for ESM-C (removal: #559). Re-add a shortcut here if the live
-# canary (tests/test_biocentral_live.py) catches the server serving another model.
-BIOCENTRAL_INVALID: frozenset[str] = frozenset()
 
 DEFAULT_EMBEDDER = "prot_t5"
 
