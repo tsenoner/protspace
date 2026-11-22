@@ -13,16 +13,15 @@ model.
 
 ## What Changes
 
-- `esmc_6b` → `biohub/ESMC-6B` becomes a Biocentral shortcut (`EXTRA_SHORT_KEYS`) and leaves
-  `LOCAL_ONLY_EMBEDDERS`, which stays as an empty set: the CLI and the panel still refuse a
-  local-only shortcut on Biocentral, but none exists today. Every CLI shortcut is now served by
-  both backends.
-- The CLI help names local-only shortcuts only when there are any.
+- `esmc_6b` → `biohub/ESMC-6B` becomes a Biocentral shortcut (`EXTRA_SHORT_KEYS`). Every CLI
+  shortcut is now served by both backends.
+- **Removed:** `LOCAL_ONLY_EMBEDDERS`, the CLI's refusal of a local-only shortcut on Biocentral
+  (`refuse_local_only_on_biocentral`), `resolve_embedder`'s local-only message, the help suffix
+  and the Preparation panel's Biocentral gate. None has anything left to refuse.
 - The daily canary also compares Biocentral's ubiquitin `esmc_6b` vector with a committed reference
   from the local backend (official weights, fp32).
-- **Removed:** `BIOCENTRAL_INVALID` and the Preparation notebook's import of it (#559). The
-  notebook keeps reading `LOCAL_ONLY_EMBEDDERS` with `getattr`, so a 4.19.0 install keeps
-  disabling `esmc_6b` on Biocentral until a release containing this change is out.
+- **Removed:** `BIOCENTRAL_INVALID` and the Preparation notebook's import of it (#559).
+- Tests no longer name Synthyra's ESM++ reimplementation, which no code path loads.
 - No precision change in the client: the server's default works, so `use_half_precision` is not
   sent.
 
@@ -35,13 +34,15 @@ None.
 ### Modified Capabilities
 
 - `embedding-backend-selection`: Biocentral serves all three ESM-C sizes from the official
-  checkpoints and the live check covers each; the local-only rule no longer names `esmc_6b`; the
-  CLI-compatibility requirement drops the `BIOCENTRAL_INVALID`-era `esmc_*` clause.
+  checkpoints and the live check covers each; the local-only refusal is replaced by "both backends
+  serve every shortcut"; the CLI-compatibility requirement drops its local-only clause.
 
 ## Impact
 
-- `apps/protspace/src/protspace/data/embedding/biocentral.py`, `cli/common_options.py`.
-- `notebooks/ProtSpace_Preparation.ipynb` (cell 3: the `BIOCENTRAL_INVALID` import and fallback).
+- `apps/protspace/src/protspace/data/embedding/biocentral.py`, `local.py`, `cli/common_options.py`,
+  `cli/embed.py`, `cli/prepare.py`.
+- `notebooks/ProtSpace_Preparation.ipynb` (cell 3: the `BIOCENTRAL_INVALID` import and fallback,
+  the `LOCAL_ONLY_EMBEDDERS` read and the Biocentral entry of `_INCOMPATIBLE`).
 - Tests: `test_backend_switch.py`, `test_local_embedder.py`, `test_notebooks.py`,
   `test_cli_no_similarity.py`, `esmc_reference.py` + `tests/data/esmc_6b_ubiquitin.npy`.
 - Docs: `docs/guide/python-cli.md`, `apps/protspace/CLAUDE.md`.

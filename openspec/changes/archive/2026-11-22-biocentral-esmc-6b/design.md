@@ -10,19 +10,22 @@ worked, to send `use_half_precision=True` for that key.
 **No client-side precision flag.** Default precision on v2.1.0 embedded 60/60 and matches local
 fp32, so the client sends what it sends for every other model.
 
-**Keep `LOCAL_ONLY_EMBEDDERS`, empty.** Unlike `BIOCENTRAL_INVALID`, nothing else would catch a
-future model that Biocentral accepts but cannot compute: the CLI would accept it and the user would
-learn mid-embed. The refusal path stays, and its tests patch a local-only key in instead of relying
-on a real one. The help suffix is printed only when the set is non-empty.
+**Remove `LOCAL_ONLY_EMBEDDERS` and its refusal path.** With `esmc_6b` served, the set is empty,
+and no other model is expected to need it: an empty set kept for a hypothetical model is code and
+tests (a patched-in key) that guard nothing. Every CLI shortcut is now served by both backends, and
+the registry test pins that. If a future model again runs only locally, the refusal comes back with
+it.
 
 **Remove `BIOCENTRAL_INVALID` now.** #559 waited for the first release with the official ESM-C ids
 (4.18.0). The notebook installs the latest release (4.19.0), where the set is already empty, so
 dropping its import changes nothing a user sees. The canary (`test_esmc_is_the_official_model`) is
 the guard that replaces it.
 
-**The notebook keeps its `getattr(..., "LOCAL_ONLY_EMBEDDERS", frozenset())`.** Released 4.19.0
-still lists `esmc_6b` there and still refuses it on Biocentral, so the panel must keep disabling it
-until the next release; after that the set comes back empty and the gate disables nothing.
+**The notebook drops its Biocentral gate too.** It installs the latest release, and merging this
+change cuts one (a `feat:` commit on `main` triggers the release), so the 4.19.0 window in which
+the panel would offer `esmc_6b` on Biocentral while the CLI still refuses it is the few minutes
+between the merge and the PyPI upload. Even then the CLI's refusal is a clear usage error, not a
+failed run.
 
 **A 6B reference vector for the canary.** Ubiquitin from the local backend, fp32 on CPU, as the
 300M/600M references were made. One more embedding request a day (~30 s, the model is loaded on
