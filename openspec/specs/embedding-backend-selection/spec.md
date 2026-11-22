@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Which backend computes embeddings — this runtime's own GPU or the remote Biocentral API — how that choice is resolved when it is left to `auto`, and which embedders each backend may actually serve. The pairing is constrained by per-backend blocked sets: today only the local one has a member (an oversized checkpoint cannot load on a small runtime), while the Biocentral set is empty since Biocentral serves ESM-C from the official checkpoints, and is kept so a release can block a shortcut that server answers wrongly. Such rules describe the hosted notebook environment rather than the package, so they are declared centrally, enforced in the Colab panel, and deliberately left unenforced by the CLI, where the same combinations are correct on real hardware.
+Which backend computes embeddings — this runtime's own GPU or the remote Biocentral API — how that choice is resolved when it is left to `auto`, and which embedders each backend may actually serve. The pairing is constrained in two ways. An oversized checkpoint cannot load on a small hosted runtime: that rule describes the notebook environment rather than the package, so it is declared centrally, enforced in the Colab panel, and deliberately left unenforced by the CLI, where the same combination is correct on real hardware. A local-only embedder, one Biocentral accepts but cannot compute, is refused on that backend by both the CLI and the panel; none exists today, since Biocentral serves every shortcut, ESM-C 6B included, from the official checkpoints, which a daily live check holds it to.
 
 ## Requirements
 
@@ -111,11 +111,10 @@ memory SHALL count as staging it.
 
 ### Requirement: The compatibility rules do not constrain the CLI
 
-The CLI SHALL accept both an oversized checkpoint on the local backend and the `esmc_300m` and
-`esmc_600m` shortcuts on either backend, because both rules describe a hosted notebook environment
-rather than the package. The package MAY warn about a checkpoint's size, but SHALL NOT refuse the
-combination. An embedder the Biocentral backend does not serve at all is not such a rule, and the
-CLI refuses it there.
+The CLI SHALL accept an oversized checkpoint on the local backend, because that rule describes a
+hosted notebook environment rather than the package. The package MAY warn about a checkpoint's
+size, but SHALL NOT refuse the combination. An embedder the Biocentral backend does not serve at
+all is not such a rule, and the CLI refuses it there.
 
 #### Scenario: Oversized checkpoint on real hardware
 
@@ -186,11 +185,11 @@ an earlier local run remains owned by the same producer and resumes without bein
 
 ### Requirement: Biocentral serves ESM-C from the official checkpoints
 
-The Biocentral backend SHALL request `esmc_300m` and `esmc_600m` under the official ESM-C
-checkpoint ids, the same checkpoints the local backend loads, so either backend yields the same
-vectors for the same sequence. A scheduled check against the live server SHALL compare an ESM-C
-embedding with a reference computed from the official weights, so a server that answers with
-another model fails the check instead of passing it.
+The Biocentral backend SHALL request `esmc_300m`, `esmc_600m` and `esmc_6b` under the official
+ESM-C checkpoint ids, the same checkpoints the local backend loads, so either backend yields the
+same vectors for the same sequence. A scheduled check against the live server SHALL compare an
+embedding from each of the three with a reference computed from the official weights, so a server
+that answers with another model fails the check instead of passing it.
 
 #### Scenario: ESM-C requested through Biocentral
 
@@ -199,12 +198,12 @@ another model fails the check instead of passing it.
 
 #### Scenario: Both backends agree
 
-- **WHEN** the same sequence is embedded with `esmc_300m` on each backend
-- **THEN** the two vectors agree to within float32 precision
+- **WHEN** the same sequence is embedded with an `esmc_*` shortcut on each backend
+- **THEN** the two vectors agree to a cosine above 0.999
 
 #### Scenario: The server answers with another model
 
-- **WHEN** the live check's ESM-C vector does not match the reference
+- **WHEN** the live check's vector for any ESM-C size does not match its reference
 - **THEN** the check fails
 
 ### Requirement: A local-only embedder is refused on the Biocentral backend
@@ -213,18 +212,20 @@ An embedder that only the local backend serves SHALL be refused when the effecti
 Biocentral API. The CLI SHALL reject it as a usage error that names the local backend as the
 remedy, before any input is fetched or any request is sent, and the Colab panel SHALL disable it
 for that backend. Every embedder the Biocentral backend serves SHALL also be served by the local
-backend.
+backend. Today no embedder is local-only.
 
 #### Scenario: A local-only embedder on the Biocentral backend
 
-- **WHEN** `protspace prepare` or `protspace embed` runs with `--backend biocentral -e esmc_6b`
+- **WHEN** `protspace prepare` or `protspace embed` runs with `--backend biocentral` and a
+  local-only embedder
 - **THEN** it exits with a usage error naming `--backend local`, before fetching sequences or
   contacting the server
 
 #### Scenario: The panel on the Biocentral backend
 
-- **WHEN** the panel's effective backend is the Biocentral API
-- **THEN** `esmc_6b` is disabled, with the reason and the remedy shown
+- **WHEN** the panel's effective backend is the Biocentral API and the installed release lists an
+  embedder as local-only
+- **THEN** that embedder is disabled, with the reason and the remedy shown
 
 #### Scenario: Every Biocentral shortcut runs locally
 
