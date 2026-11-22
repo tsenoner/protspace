@@ -102,16 +102,6 @@ def resolve_embedder(name: str) -> str:
     if name in known_values:
         return name
 
-    from protspace.data.embedding.local import LOCAL_CHECKPOINTS
-
-    if name in LOCAL_CHECKPOINTS:
-        print(
-            f"Embedder '{name}' is served only by the local backend "
-            "(--backend local); Biocentral cannot compute it yet.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     # Unknown — suggest close matches.
     close = get_close_matches(name, ALL_SHORT_KEYS.keys(), n=3, cutoff=0.5)
     msg = f"Unknown embedder shortcut: '{name}'"

@@ -46,7 +46,7 @@ from protspace.data.embedding.store import (
 logger = logging.getLogger(__name__)
 
 # Short key → (HuggingFace checkpoint, model family). Every CLI shortcut
-# (EMBEDDER_MODELS), including the local-only ones (LOCAL_ONLY_EMBEDDERS).
+# (EMBEDDER_MODELS).
 LOCAL_CHECKPOINTS: dict[str, tuple[str, str]] = {
     "prot_t5": ("Rostlab/prot_t5_xl_half_uniref50-enc", "prot_t5"),
     "prost_t5": ("Rostlab/ProstT5_fp16", "prost_t5"),

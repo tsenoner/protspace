@@ -285,13 +285,13 @@ login or remote code. ESM-C embeddings from Biocentral made with protspace 4.17.
 from a different model; a run that finds one of those files refuses to resume from it, and
 `--refetch embed` replaces it.
 
-`esmc_6b` (ESM-C 6B, 2560-dimensional vectors) runs on either backend. Biocentral computes it since
-its v2.1.0 release; protspace 4.18.0 and 4.19.0, written before that, accept it only with
-`--backend local`. Its weights are 25.4 GB in float32. On a GPU they load in half precision (bfloat16 where the GPU
-supports it, float16 otherwise), about 12 GB of GPU memory, so a 16 GB card such as the T4 on free
-Colab is enough: there it peaks at 12.5 GB with sequences up to 2,000 residues, and takes about
-5.5 minutes per 1,000 proteins of typical length (plus about 4 minutes to download the weights and
-2 to load them). On the CPU they stay float32 and need over 26 GB of RAM.
+`esmc_6b` (ESM-C 6B, 2560-dimensional vectors) runs on either backend (protspace 4.18.0 and 4.19.0
+accept it only with `--backend local`). Its weights are 25.4 GB in float32. On a GPU they load in
+half precision (bfloat16 where the GPU supports it, float16 otherwise), about 12 GB of GPU memory,
+so a 16 GB card such as the T4 on free Colab is enough: there it peaks at 12.5 GB with sequences up
+to 2,000 residues, and takes about 5.5 minutes per 1,000 proteins of typical length (plus about 4
+minutes to download the weights and 2 to load them). On the CPU they stay float32 and need over 26
+GB of RAM.
 
 On a GPU the local backend loads every model straight into GPU memory, so a model larger than the
 machine's RAM still loads: on free Colab (12.7 GB of RAM) both `esmc_6b` and `esm2_3b` peak below

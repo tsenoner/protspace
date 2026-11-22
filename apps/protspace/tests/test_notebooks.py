@@ -907,37 +907,9 @@ def test_preparation_panel_is_built_without_the_network(monkeypatch, tmp_path):
     assert namespace["input_args"][0]["type"] == "example"
 
 
-def test_preparation_blocks_a_local_only_embedder_on_biocentral(
-    monkeypatch, tmp_path, capsys
-):
-    """A released package that lists esmc_6b as local-only (4.18.0-4.19.0): the
-    panel disables it with its remedy on Biocentral, drops it at Generate as a
-    backstop, and enables it on local."""
-    import protspace.cli.common_options as cli_options
-
-    monkeypatch.setattr(cli_options, "LOCAL_ONLY_EMBEDDERS", frozenset({"esmc_6b"}))
-    namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
-    labels = {v: k for k, v in namespace["_BACKEND_LABELS"].items()}
-    box = namespace["emb_cbs"]["esmc_6b"]
-
-    namespace["backend_dropdown"].value = labels["biocentral"]
-    assert box.disabled and box.value is False
-    assert "esmc_6b" in namespace["backend_note"].value
-    assert "switch the backend to Local" in namespace["backend_note"].value
-    assert namespace["_drop_incompatible"](["esmc_6b", "prot_t5"], "biocentral") == [
-        "prot_t5"
-    ]
-    assert "Skipping esmc_6b" in capsys.readouterr().out
-
-    namespace["backend_dropdown"].value = labels["local"]
-    # Free Colab's RAM blocks it as oversized; this machine's is what decides.
-    oversized = namespace["_TOO_BIG_HERE"]
-    assert box.disabled is ("esmc_6b" in oversized)
-
-
 def test_preparation_offers_esmc_6b_on_biocentral(monkeypatch, tmp_path):
-    """Biocentral computes ESM-C 6B since v2.1.0 (#561), so this package blocks
-    nothing on the Biocentral backend."""
+    """Biocentral serves every shortcut, ESM-C 6B included since its v2.1.0
+    (#561), so the panel blocks nothing on the Biocentral backend."""
     namespace, _, _ = _run_preparation_panel(monkeypatch, tmp_path)
     labels = {v: k for k, v in namespace["_BACKEND_LABELS"].items()}
 

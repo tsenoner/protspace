@@ -97,17 +97,7 @@ def test_embed_fasta_local_passes_short_key_and_remapped_ids(tmp_path, monkeypat
     assert result is not None
 
 
-@pytest.mark.parametrize(
-    ("key", "model"),
-    [
-        ("prot_t5", "Rostlab/prot_t5_xl_uniref50"),
-        # Local-only until Biocentral v2.1.0 computed it (#561).
-        ("esmc_6b", "biohub/ESMC-6B"),
-    ],
-)
-def test_embed_fasta_biocentral_passes_resolved_full_name(
-    tmp_path, monkeypatch, key, model
-):
+def test_embed_fasta_biocentral_passes_resolved_full_name(tmp_path, monkeypatch):
     fasta = tmp_path / "s.fasta"
     fasta.write_text(">P12345\nMKVLAAG\n")
     captured = {}
@@ -115,9 +105,11 @@ def test_embed_fasta_biocentral_passes_resolved_full_name(
         "protspace.data.embedding.biocentral.embed_sequences", _fake_embed(captured)
     )
 
-    embed_fasta(fasta, key, backend="biocentral", embedding_cache=tmp_path / "e.h5")
+    embed_fasta(
+        fasta, "prot_t5", backend="biocentral", embedding_cache=tmp_path / "e.h5"
+    )
 
-    assert captured["embedder"] == resolve_embedder(key) == model  # full model name
+    assert captured["embedder"] == resolve_embedder("prot_t5")  # full model name
 
 
 def test_embed_fasta_defaults_to_biocentral(tmp_path, monkeypatch):
@@ -206,8 +198,7 @@ def test_embed_fasta_returns_only_the_fastas_proteins(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("key", ["prot_t5", "esmc_6b"])
-def test_embed_cli_backend_local_dispatches_to_local(tmp_path, monkeypatch, key):
+def test_embed_cli_backend_local_dispatches_to_local(tmp_path, monkeypatch):
     fasta = tmp_path / "s.fasta"
     fasta.write_text(">P12345\nMKVLAAG\n")
     captured = {}
@@ -223,7 +214,7 @@ def test_embed_cli_backend_local_dispatches_to_local(tmp_path, monkeypatch, key)
             "-i",
             str(fasta),
             "-e",
-            key,
+            "prot_t5",
             "-o",
             str(tmp_path / "out"),
             "--backend",
@@ -232,7 +223,7 @@ def test_embed_cli_backend_local_dispatches_to_local(tmp_path, monkeypatch, key)
     )
 
     assert result.exit_code == 0, result.output
-    assert captured["embedder"] == key  # local gets the short key
+    assert captured["embedder"] == "prot_t5"  # local gets the short key
     # local backend must build a LocalEmbedConfig, not a Biocentral EmbedConfig
     assert type(captured["config"]).__name__ == "LocalEmbedConfig"
 
@@ -503,87 +494,3 @@ def test_embed_cli_rejects_nonpositive_max_length(tmp_path):
     )
 
     assert result.exit_code != 0
-
-
-# ---------------------------------------------------------------------------
-# Local-only shortcuts: refused on Biocentral before any work. None exists today
-# (esmc_6b was one until Biocentral v2.1.0), so the tests make one.
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def local_only_key(monkeypatch):
-    """Make `esmc_6b` local-only again: listed as such, and not a Biocentral shortcut."""
-    from protspace.data.embedding import biocentral
-
-    key = "esmc_6b"
-    monkeypatch.setattr(
-        "protspace.cli.common_options.LOCAL_ONLY_EMBEDDERS", frozenset({key})
-    )
-    for table in ("ALL_SHORT_KEYS", "EXTRA_SHORT_KEYS"):
-        shortcuts = dict(getattr(biocentral, table))
-        del shortcuts[key]
-        monkeypatch.setattr(biocentral, table, shortcuts)
-    return key
-
-
-def _refuse_work(monkeypatch):
-    """Fail the test if anything is fetched or embedded."""
-
-    def boom(*args, **kwargs):
-        raise AssertionError("work started for a refused embedder")
-
-    for target in (
-        "protspace.data.embedding.biocentral.embed_sequences",
-        "protspace.data.embedding.local.embed_sequences",
-        "protspace.data.loaders.query.query_uniprot",
-        "protspace.data.loaders.query.resolve_query_fasta",
-    ):
-        monkeypatch.setattr(target, boom)
-
-
-@pytest.mark.parametrize(
-    "args",
-    [
-        ["embed", "-i", "{fasta}", "-o", "{out}"],
-        ["prepare", "-i", "{fasta}", "-m", "pca2", "-o", "{out}"],
-        ["prepare", "-q", "(family:globin)", "-m", "pca2", "-o", "{out}"],
-    ],
-    ids=["embed", "prepare-fasta", "prepare-query"],
-)
-def test_cli_refuses_a_local_only_embedder_on_biocentral(
-    tmp_path, monkeypatch, args, local_only_key
-):
-    fasta = tmp_path / "s.fasta"
-    fasta.write_text(">P12345\nMKVLAAG\n")
-    _refuse_work(monkeypatch)
-    argv = [a.format(fasta=fasta, out=tmp_path / "out") for a in args]
-
-    result = CliRunner().invoke(app, [*argv, "-e", local_only_key])
-
-    assert result.exit_code == 2, result.output
-    out = plain(result.output)
-    assert f"{local_only_key} is served only by the local backend" in out
-    assert "--backend local" in out
-
-
-def test_resolve_embedder_points_a_local_only_key_at_the_local_backend(
-    capsys, local_only_key
-):
-    """The library path (`embed_fasta`) resolves through here, not the CLI."""
-    with pytest.raises(SystemExit):
-        resolve_embedder(local_only_key)
-    assert "--backend local" in capsys.readouterr().err
-
-
-def test_no_shortcut_is_local_only_today():
-    """Every CLI shortcut is a Biocentral shortcut too, so nothing is refused there.
-
-    Fails when a local-only key is added: check the refusal message and the
-    panel note still read right for it, then update this test.
-    """
-    from protspace.cli.common_options import EMBEDDER_HELP_MODELS, LOCAL_ONLY_EMBEDDERS
-
-    assert LOCAL_ONLY_EMBEDDERS == frozenset()
-    assert "local only" not in EMBEDDER_HELP_MODELS
-    assert EMBEDDER_HELP_MODELS.endswith("esmc_6b.")

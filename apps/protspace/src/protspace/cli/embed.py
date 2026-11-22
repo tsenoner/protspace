@@ -16,7 +16,6 @@ from protspace.cli.common_options import (
     Opt_MaxLength,
     Opt_Verbose,
     build_embed_config,
-    refuse_local_only_on_biocentral,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,7 +60,6 @@ def embed(
     Biocentral API (default) or on a local GPU/CPU with --backend local.
     """
     setup_logging(verbose)
-    refuse_local_only_on_biocentral(embedder, backend)
 
     import h5py
 

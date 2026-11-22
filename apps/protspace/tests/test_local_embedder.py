@@ -26,7 +26,6 @@ def test_resolve_prot_t5_uses_half_encoder_checkpoint():
 
 
 def test_resolve_esmc_uses_official_biohub_weights():
-    # Native transformers `esmc` model, not Synthyra's ESM++ reimplementation.
     for key, checkpoint in (
         ("esmc_300m", "biohub/ESMC-300M"),
         ("esmc_600m", "biohub/ESMC-600M"),
@@ -50,16 +49,9 @@ def test_resolve_unknown_raises_with_suggestion():
 
 
 def test_oversized_set_names_real_checkpoints():
-    """A typo in COLAB_OVERSIZED would silently stop gating rather than fail.
-
-    The Colab notebook imports it to disable those checkboxes, so a name that
-    matches no checkpoint disables nothing — and the run then fails the way the
-    set exists to prevent, mid-embed, after the input has been paid for. It is a
-    fact about local checkpoints, so it is pinned to the local registry.
-
-    It may not be empty, since esm2_3b cannot load through a free runtime's host
-    RAM (a CPU runtime, or a GPU one without accelerate).
-    """
+    """The Colab notebook disables COLAB_OVERSIZED's checkboxes, so a typo there
+    would silently gate nothing. Not empty: esm2_3b cannot load through a free
+    runtime's host RAM (a CPU runtime, or a GPU one without accelerate)."""
     assert local.COLAB_OVERSIZED
     assert local.COLAB_OVERSIZED <= set(local.LOCAL_CHECKPOINTS)
 
@@ -225,7 +217,7 @@ def _fake_transformers(monkeypatch):
 
 def test_setup_model_loads_esmc_natively_without_remote_code(monkeypatch):
     """ESM-C goes through transformers' own `esmc` model: plain AutoModel and
-    AutoTokenizer, never trust_remote_code (the Synthyra path needed it)."""
+    AutoTokenizer, never trust_remote_code."""
     pytest.importorskip("torch")
     calls, model, tokenizer = _fake_transformers(monkeypatch)
 
