@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v4.20.0 (2026-11-22)
+
+### Features
+
+- **embed**: Serve esmc_6b on the Biocentral backend
+  ([`03f8b8b`](https://github.com/tsenoner/protspace/commit/03f8b8bb8cdd60a0608987a470908e9a85d00f50))
+
+### Refactoring
+
+- **embed**: Remove the local-only embedder machinery
+  ([`54b19fa`](https://github.com/tsenoner/protspace/commit/54b19fadc61079ad9c696509e1bf1a91ed5f0cba))
+
+
 ## v4.19.0 (2026-11-22)
 
 ### Bug Fixes
