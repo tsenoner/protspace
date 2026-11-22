@@ -1,6 +1,199 @@
 # CHANGELOG
 
 
+## v4.19.0 (2026-11-22)
+
+### Bug Fixes
+
+- **cli**: Give n/3 as the perplexity's upper bound, not its best value
+  ([`67b26a2`](https://github.com/tsenoner/protspace/commit/67b26a2044ceec503b1e128f02939cae96e6f1db))
+
+- **cli**: Name -m/--methods when the refused perplexity came from it
+  ([`e0d18a5`](https://github.com/tsenoner/protspace/commit/e0d18a55dd4115eb51766f6d13607ce91e291efe))
+
+- **cli**: Refuse an impossible perplexity before prepare embeds
+  ([`7b176a6`](https://github.com/tsenoner/protspace/commit/7b176a6d51baa5b266b3ca05dfdae549c85f7d43))
+
+- **embed**: Keep the host-RAM path below transformers' accelerate minimum
+  ([`352ac02`](https://github.com/tsenoner/protspace/commit/352ac027455073fcf4818100aae683849f42c0ce))
+
+- **embed**: Say accelerate may be too old, not only missing
+  ([`17eab6a`](https://github.com/tsenoner/protspace/commit/17eab6a09ad7047bcbf429778035ddb264afbd26))
+
+- **notebook**: Check a query's perplexity before embedding it
+  ([`e5f6864`](https://github.com/tsenoner/protspace/commit/e5f6864f69368b248b1ec4db99e38d96e1bb1205))
+
+- **notebook**: Drop an old transfer report when step 2 resets the bundle
+  ([`debff33`](https://github.com/tsenoner/protspace/commit/debff3378ca8a83f26c72f24160e08f4a028da63))
+
+- **notebook**: End a failed EAT transfer on a failure card
+  ([`f87addb`](https://github.com/tsenoner/protspace/commit/f87addb98044a21c30b0e50bcfbd9d9f4adc95d7))
+
+- **notebook**: End the live weights line on its final text
+  ([`dcfa275`](https://github.com/tsenoner/protspace/commit/dcfa27593acd446110e5a492fb819fe39b90f280))
+
+- **notebook**: Fetch nothing when no ID is an accession and no CSV is set
+  ([`cf08252`](https://github.com/tsenoner/protspace/commit/cf0825221689e59116f764df2a6814783c9e8512))
+
+- **notebook**: Free a stopped run's model before loading the next one
+  ([`917a4a8`](https://github.com/tsenoner/protspace/commit/917a4a8e886aa246dcd095bf167d93bf8a590bf5))
+
+- **notebook**: Hide the last run's progress bar on a new Generate
+  ([`d551590`](https://github.com/tsenoner/protspace/commit/d55159054cca5161bb3768f530d9b97e8eadb976))
+
+- **notebook**: Keep restored settings over an older upload on Run all
+  ([`49e4ce3`](https://github.com/tsenoner/protspace/commit/49e4ce38020fe5eaee036c0cc1c2f37544b86928))
+
+- **notebook**: Keep the RAM path below transformers' accelerate minimum
+  ([`3d52736`](https://github.com/tsenoner/protspace/commit/3d52736bb442d6688bea04250c13297b5b732137))
+
+- **notebook**: Refuse to mix accession and header IDs in one .h5
+  ([`7d65e06`](https://github.com/tsenoner/protspace/commit/7d65e065bff9f19168e2c4dc7e968babf0e80900))
+
+- **notebook**: Say to leave t-SNE out on 5 proteins or fewer
+  ([`075ee43`](https://github.com/tsenoner/protspace/commit/075ee43d4ff8e2b43b13565dc2c19b3e20a3cb75))
+
+- **notebook**: Take accessions only from UniProt headers
+  ([`b7f16f1`](https://github.com/tsenoner/protspace/commit/b7f16f12948ca3b03419d8229cbd696f337df21c))
+
+### Chores
+
+- **examples**: Fetch the refreshed annotations again on every run
+  ([`b253deb`](https://github.com/tsenoner/protspace/commit/b253debbe6bd7a317df07a76758ceb80a51cf748))
+
+- **notebook**: Stop the panel harness reporting a stale sweep
+  ([`7c92037`](https://github.com/tsenoner/protspace/commit/7c92037bb43d9149513677d5f1a1ab58e815a83c))
+
+- **protspace**: Point removal notes at the moved legacy web reader
+  ([`d448fbe`](https://github.com/tsenoner/protspace/commit/d448fbe86aed5d6d1baf9059106bccd618809740))
+
+- **protspace**: Read eatConfidenceMax as a settings envelope key
+  ([`b639f96`](https://github.com/tsenoner/protspace/commit/b639f96d8af5ceb05f1468d93db24982ff0a3751))
+
+- **protspace**: Read eatOutcome as a frontend settings envelope key
+  ([`a9e47d8`](https://github.com/tsenoner/protspace/commit/a9e47d850ec1914dd2642fed8a2d37c42449a577))
+
+### Documentation
+
+- Describe the restore rule and perplexity tests as they now are
+  ([`15ee755`](https://github.com/tsenoner/protspace/commit/15ee755347ca836f94abaf17ec701efcd531104e))
+
+- State the Embeddings notebook's real GPU warning threshold
+  ([`29fd0d5`](https://github.com/tsenoner/protspace/commit/29fd0d5af1ca8ddb79f6f961623a385cb803cb5e))
+
+- **claude**: Trim the test_notebooks row and split out CUDA loading
+  ([`af167eb`](https://github.com/tsenoner/protspace/commit/af167eb3627885514ab959cae7147114cab1ca18))
+
+- **embed**: List accelerate in the [local] extra
+  ([`a87cd4c`](https://github.com/tsenoner/protspace/commit/a87cd4ca6e110f7498ead37fe2a8894db42c1967))
+
+- **notebook**: Leave the harness checks to its README
+  ([`605a545`](https://github.com/tsenoner/protspace/commit/605a545765d88e90c958f96f3133632a9b2a4fd4))
+
+- **notebook**: Match the package's n/3 wording and the full RAM gate
+  ([`6e99e18`](https://github.com/tsenoner/protspace/commit/6e99e1876b7cbf6b87cbc24862e66e2bb6f07dee))
+
+- **notebook**: Name 4.18.0 as the last release with the perplexity cap
+  ([`39b13e2`](https://github.com/tsenoner/protspace/commit/39b13e2d0370ba3cefc9d6054adb856bbc196a5d))
+
+- **protspace**: Point the 3D removal note at controls.md
+  ([`4a6271f`](https://github.com/tsenoner/protspace/commit/4a6271f2aa7db4afd50b36578f4744c1c214e4e4))
+
+### Refactoring
+
+- **cli**: Check t-SNE perplexity before embedding without parsing the FASTA
+  ([`e2718ea`](https://github.com/tsenoner/protspace/commit/e2718eaaabeaed05eece7505310dd9c799e64f54))
+
+- **embed**: Ask transformers whether accelerate can take a device_map
+  ([`b0d1303`](https://github.com/tsenoner/protspace/commit/b0d13035b742c04610e75254d8fd2dd0f9e271d0))
+
+- **embed**: Block oversized models only where they load through host RAM
+  ([`cdad379`](https://github.com/tsenoner/protspace/commit/cdad3791eb5da3bc8918686c6b0d53e7c577adad))
+
+- **embed**: Load local checkpoints straight onto the GPU
+  ([`2a1f26b`](https://github.com/tsenoner/protspace/commit/2a1f26b3ebe9b804bb535eb229847531f6c98c1a))
+
+- **embed**: One placement rule for setup_model and the notebook gate
+  ([`8b4678b`](https://github.com/tsenoner/protspace/commit/8b4678bfe4423503d9d2f9a7444c64e06da23da3))
+
+- **embed**: Tidy the esmc_6b change after review
+  ([`553a410`](https://github.com/tsenoner/protspace/commit/553a4101d1ebc4b443387b5eb89ac43cb9710cef))
+
+- **examples**: Check the refreshed bundle with read_bundle_contents
+  ([`3087321`](https://github.com/tsenoner/protspace/commit/3087321e009d36cc91b28fe50a0323a866beaa20))
+
+- **notebook**: Ask transformers about accelerate and name the ID mode once
+  ([`7c588b0`](https://github.com/tsenoner/protspace/commit/7c588b0cf8b466e5787dd2d4f64a9fb817db1a92))
+
+- **notebook**: One host-RAM placement rule in the Embeddings notebook
+  ([`7a99ee1`](https://github.com/tsenoner/protspace/commit/7a99ee165e10995f6cc490eadcc988c097389ea7))
+
+- **notebook**: Pass the harness panel selector into the page
+  ([`869714f`](https://github.com/tsenoner/protspace/commit/869714ffb03abe91283994b67f533d176de256d3))
+
+- **notebook**: Read the Transfer predictions with read_tables
+  ([`77045e5`](https://github.com/tsenoner/protspace/commit/77045e5d898c1db1e159a49fb68464342d6d5651))
+
+- **notebook**: Remove the install helper's override file
+  ([`7abeed2`](https://github.com/tsenoner/protspace/commit/7abeed2898dbbb6cbd0de799c01464e14d97045e))
+
+- **notebook**: Share the Preparation panel's duplicated helpers
+  ([`eb10f73`](https://github.com/tsenoner/protspace/commit/eb10f73b623e2e6a1a815761e3c145d7d3654bc8))
+
+- **notebook**: Tidy the Embeddings notebook's loader and output lines
+  ([`8d3c9b1`](https://github.com/tsenoner/protspace/commit/8d3c9b1f2171349f49287e5688c1e8a7719bccc0))
+
+- **pipeline**: Read the t-SNE perplexity directly in check_method_params
+  ([`1d3abec`](https://github.com/tsenoner/protspace/commit/1d3abec0d3a10ec192eaac04b06475c6374485f8))
+
+### Testing
+
+- **cli**: Drop a duplicated perplexity range test, untangle the message one
+  ([`e10cadd`](https://github.com/tsenoner/protspace/commit/e10cadda72e3d65fdea4b27d139b4665ffbdfcb0))
+
+- **cli**: Read the perplexity usage error without CI's colour codes
+  ([`58ca7da`](https://github.com/tsenoner/protspace/commit/58ca7daf1969b12c97cb62716dbb3ca4164066b2))
+
+- **colab**: Drop the held-version check --override makes unreachable
+  ([`9b44331`](https://github.com/tsenoner/protspace/commit/9b4433126e0cf8b7509111641346321ea08f856c))
+
+- **notebook**: Assert the EAT cell names the columns it leaves out
+  ([`bae627b`](https://github.com/tsenoner/protspace/commit/bae627b1272b063b0eb6517b7b8e30d176e7ea4a))
+
+- **notebook**: Cover the perplexity check Colab runs on the released package
+  ([`2b9b9fc`](https://github.com/tsenoner/protspace/commit/2b9b9fcaeeccb6f7e29f165d9f300f754dc7cd30))
+
+- **notebook**: Fail, not skip, when the size-rule pin loses esmc_6b
+  ([`42bcc13`](https://github.com/tsenoner/protspace/commit/42bcc133cdcf038add058022ce6f82d6c2cbfaff))
+
+- **notebook**: Pin the hidden download prefix to the package's real messages
+  ([`1f17f54`](https://github.com/tsenoner/protspace/commit/1f17f544d016f40df0536b22963ca11eaecf8363))
+
+- **notebook**: Refuse requests as well as urllib in the panel tests
+  ([`21aa9d9`](https://github.com/tsenoner/protspace/commit/21aa9d9bef654eb4363014f4a8652199b1177f2f))
+
+- **notebook**: Restore the global tqdm after every panel test
+  ([`aa50eb0`](https://github.com/tsenoner/protspace/commit/aa50eb095f6c2b67bef1ae0106ace292d164c81a))
+
+- **notebook**: Run t-SNE, not UMAP, in the metric and progress tests
+  ([`a3e4f29`](https://github.com/tsenoner/protspace/commit/a3e4f29ea0ee4926a125f28702e199c54353c1b0))
+
+- **notebook**: Share the H5-tab, method and transformer setup
+  ([`2aa8dcf`](https://github.com/tsenoner/protspace/commit/2aa8dcffd375b179af082ed8f969e38c9a16ad6c))
+
+- **notebook**: Skip the install helper's distribution scans in panel tests
+  ([`07eb7ef`](https://github.com/tsenoner/protspace/commit/07eb7ef36357fada3e95e3ecdf5f834dd1aa4dc5))
+
+- **protspace**: Flatten wrapped convert/style errors before matching
+  ([`21459a9`](https://github.com/tsenoner/protspace/commit/21459a91261fe4fdaef7e03a76629f6f09f1ad9e))
+
+- **protspace**: Pin the removal version in the legacy web reader
+  ([`cb4513d`](https://github.com/tsenoner/protspace/commit/cb4513d484ea7138544a7d928ee4013459c843ff))
+
+- **protspace**: Restore root logging after every test
+  ([`f22a2bb`](https://github.com/tsenoner/protspace/commit/f22a2bbac639b63133ae06a1d0a44df28845fa6a))
+
+
 ## v4.18.0 (2026-10-29)
 
 ### Features
@@ -51,15 +244,127 @@
 - **annotate**: Keep a batch when one inactive-entry record cannot be read
   ([`a00ccbb`](https://github.com/tsenoner/protspace/commit/a00ccbb15dc1686f794b06ea937fde312fecf301))
 
+- **h5**: Name esmc_6b files from their file name
+  ([`b0fdefe`](https://github.com/tsenoner/protspace/commit/b0fdefe14ebafc4c2b5d22a67a17e66d0bc51e77))
+
+- **notebook**: Convert the Transfer example to v3 instead of warning
+  ([`7c3dadb`](https://github.com/tsenoner/protspace/commit/7c3dadb4d08476c1d2ed583fea00f8e9c40fa37e))
+
+- **notebook**: Drop the Embeddings notebook's token field
+  ([`579d91c`](https://github.com/tsenoner/protspace/commit/579d91c9dcd386d0dec7b5a1139a754eeb87586a))
+
+- **notebook**: Give every input field a ready example
+  ([`f22d242`](https://github.com/tsenoner/protspace/commit/f22d242bc0025467e9d8b07bc00625dbd0b3ce38))
+
+- **notebook**: Install without replacing the packages Colab has loaded
+  ([`0f02a74`](https://github.com/tsenoner/protspace/commit/0f02a7447a8934c261af7139bf3e63fc3eca3ae5))
+
+- **notebook**: Keep 120 px slider tracks with every method, readable Load
+  ([`f978d87`](https://github.com/tsenoner/protspace/commit/f978d8739d45f4362d0b88cc5c4aa0a7d1c54cfa))
+
+- **notebook**: Link each Embeddings model's Hugging Face page
+  ([`5706334`](https://github.com/tsenoner/protspace/commit/5706334c867d5b11a6c9083e012ad2691b7d7f3e))
+
+- **notebook**: Mark distant transfers and say why a Transfer step stopped
+  ([`83e7628`](https://github.com/tsenoner/protspace/commit/83e7628c47cbd6bc40939b5c33e67a3bef400a01))
+
+- **notebook**: Name a custom CSV beside Generate, quiet routine lines, example EAT filters
+  ([`02f64b1`](https://github.com/tsenoner/protspace/commit/02f64b18a4d7de2fbfd4227bd382c3bd6dbe3587))
+
+- **notebook**: Name the example each Load an example button loads
+  ([`20f46fa`](https://github.com/tsenoner/protspace/commit/20f46fa1ca331dc752a203bd6ca61f15f7b59769))
+
+- **notebook**: No blank space under the panel, shorter text in every notebook
+  ([`fffe648`](https://github.com/tsenoner/protspace/commit/fffe648c50223d83a198a63ce969716fa15bc06b))
+
+- **notebook**: One-cell Embeddings notebook, official ESM C, no second download
+  ([`40a0790`](https://github.com/tsenoner/protspace/commit/40a0790344742726cbbff7ba1e9a112a429a2bf2))
+
+- **notebook**: Say when the Transfer notebook's downloads start
+  ([`2e6ede2`](https://github.com/tsenoner/protspace/commit/2e6ede2afc7ac500686398914db1f3ea6a936dc5))
+
+- **notebook**: Show each Generate step and keep every bundle downloadable
+  ([`2e9f6d8`](https://github.com/tsenoner/protspace/commit/2e9f6d8f75df708354b040bf78d9dbf64059c98e))
+
+- **notebook**: Show the CLI's learning rate and fit EAT in a narrow pane
+  ([`02a9c65`](https://github.com/tsenoner/protspace/commit/02a9c65bc19ea78cbff9dd841d82b0cc628a0619))
+
+- **notebook**: Stop the Embeddings notebook replacing Colab's transformers
+  ([`c2723f1`](https://github.com/tsenoner/protspace/commit/c2723f19fcdf95cf73a185199fe08c6a2611a214))
+
+- **notebook**: Stop the weights clock when a model fails to load
+  ([`e752bef`](https://github.com/tsenoner/protspace/commit/e752bef79c290cf4d055c57e1889d95f1fbaa594))
+
+- **notebook**: Wrap the Methods sliders before their tracks collapse
+  ([`61cc4e8`](https://github.com/tsenoner/protspace/commit/61cc4e801505432217d8e7c7dc27662eda8bf092))
+
+### Chores
+
+- **examples**: Rebuild the Colab examples' bundles as v3
+  ([`f7c4d69`](https://github.com/tsenoner/protspace/commit/f7c4d69199b39d61962230f7eb1d3e9fa1e5c245))
+
+### Continuous Integration
+
+- Check protspace installs on Colab without replacing its packages
+  ([`7aa860a`](https://github.com/tsenoner/protspace/commit/7aa860aa83dfd23101db87a585b6fc3f320baf0a))
+
+### Documentation
+
+- Describe the EAT example filters and the CSV note beside Generate
+  ([`16cb17a`](https://github.com/tsenoner/protspace/commit/16cb17a5250f3a5ca2b0161094eabcb4011328ca))
+
+- Describe the Embeddings notebook's settings step and esm SDK install
+  ([`0b4fc22`](https://github.com/tsenoner/protspace/commit/0b4fc22846ba7b0b3614eb00a446485eb64af8d3))
+
+- Describe the notebooks' ready examples
+  ([`a79d4fa`](https://github.com/tsenoner/protspace/commit/a79d4fa3f7f933e1f8a400a1d9c05a8c749d6439))
+
+- Describe the panel's progress, downloads, install and harness
+  ([`23c36c1`](https://github.com/tsenoner/protspace/commit/23c36c19a09740c31c39215cc4b9f4e4a73207a6))
+
+- Present the Embeddings notebook as a simple embedding tool
+  ([`292f173`](https://github.com/tsenoner/protspace/commit/292f1736c439aee2a62879a4f5e1502b8e29c839))
+
+- **notebook**: ESM C is in transformers since 5.16, not 5.18
+  ([`23073d8`](https://github.com/tsenoner/protspace/commit/23073d88cb7ec5ffab7df81b2a002ee66d9336b8))
+
+- **openspec**: Archive compact-notebook-output
+  ([`5173557`](https://github.com/tsenoner/protspace/commit/51735576aff98b1f26f5b43646c7c4219a70726d))
+
+### Features
+
+- Accept any t-SNE perplexity below the protein count
+  ([`a84e135`](https://github.com/tsenoner/protspace/commit/a84e135212a5a10666ce6bd8e05777c7a4c683b5))
+
+- **notebook**: Drop ESM3 from the Embeddings notebook
+  ([`d832993`](https://github.com/tsenoner/protspace/commit/d832993addce67fce7a083c663fb52d372c83941))
+
+- **notebook**: Offer ESM C 6B in the Embeddings notebook
+  ([`d3312d3`](https://github.com/tsenoner/protspace/commit/d3312d35f32f607c73177d8e10bf5314ea0f704e))
+
+- **notebook**: Run ESM C 6B on a free Colab T4
+  ([`4d95b9c`](https://github.com/tsenoner/protspace/commit/4d95b9cb030ad3524db206b474c3a891fae1f25f))
+
 ### Performance Improvements
 
 - **annotate**: Resolve inactive UniProt entries per batch, not per entry
   ([`6511f34`](https://github.com/tsenoner/protspace/commit/6511f348cf3ff783c2d39f1ac8d0cbcd36a4099d))
 
+- **notebook**: Take Example-tab annotations from the example's v3 bundle
+  ([`072be13`](https://github.com/tsenoner/protspace/commit/072be1367a63d3011b6e1579b637c91c3f008a3c))
+
 ### Refactoring
 
 - **annotate**: One classification for bulk and per-entry inactive lookups
   ([`d772095`](https://github.com/tsenoner/protspace/commit/d7720958c755b96e531ab2cc4196f61095046b64))
+
+- **notebook**: Tidy the Embeddings notebook's ESM C 6B code
+  ([`d230e5a`](https://github.com/tsenoner/protspace/commit/d230e5a5cb7e869c0af01b1aaab630d137a6a31b))
+
+### Testing
+
+- **notebook**: Add a headless rendering harness for the Preparation panel
+  ([`6dc586b`](https://github.com/tsenoner/protspace/commit/6dc586b7864588c871c3fe9ef7cc763179d3cbdc))
 
 
 ## v4.17.0 (2026-10-16)
@@ -71,6 +376,17 @@
 
 - Say the X/Y view of a 3-D projection is its 2-D fit only for PCA
   ([`43d40ee`](https://github.com/tsenoner/protspace/commit/43d40eef703bd1fd9543b398e765861caade79de))
+
+- **notebook**: Guard EAT and make the Preparation panel self-explaining
+  ([`7194237`](https://github.com/tsenoner/protspace/commit/71942377291ab740708aa943db03543355a5c66b))
+
+- **notebook**: Stop setup when pip replaced a package Colab had loaded
+  ([`ad22ca2`](https://github.com/tsenoner/protspace/commit/ad22ca2bbb0bf5d2e9bd5670a455b50e98d908d1))
+
+### Documentation
+
+- Describe the Preparation panel's status, restore and EAT cutoff
+  ([`0c575b7`](https://github.com/tsenoner/protspace/commit/0c575b79a951462564c6b9d9db5b774e41c4859c))
 
 ### Performance Improvements
 
