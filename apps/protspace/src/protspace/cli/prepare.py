@@ -47,6 +47,7 @@ from protspace.cli.common_options import (
     build_embed_config,
     parse_refetch,
     refuse_local_only_on_biocentral,
+    refuse_unsupported_method_params,
     require_similarity_extra,
     warn_unused_embed_options,
 )
@@ -211,6 +212,54 @@ def _file_stamp(path: Path | None) -> tuple[int, int] | None:
     return stat.st_mtime_ns, stat.st_size
 
 
+def _count_fasta_ids(paths, cap: int) -> int:
+    """How many distinct protein IDs the FASTA files hold, counting past *cap* no further.
+
+    A header-only scan: the check needs to know only whether the count stays
+    within *cap*, so a large FASTA is read for a few records, not parsed whole.
+    Empty sequences and duplicates are not weeded out, which keeps it an upper
+    bound on what the embedder will see.
+    """
+    from protspace.data.loaders.h5 import parse_identifier
+
+    ids: set[str] = set()
+    for path in paths:
+        with open(path) as fh:
+            for line in fh:
+                if line.startswith(">"):
+                    words = line[1:].split(None, 1)
+                    ids.add(parse_identifier(words[0]) if words else "")
+                    if len(ids) > cap:
+                        return len(ids)
+    return len(ids)
+
+
+def _refuse_before_embedding(method_specs, reducer_params, count_proteins) -> None:
+    """Refuse a perplexity that not even every protein to embed could support.
+
+    The embedding comes first and can take long, so this runs before it.
+    ``count_proteins(cap)`` is an upper bound on the proteins the run projects
+    (it may stop counting past *cap*, the largest t-SNE perplexity requested):
+    skipped sequences and intersections only lower it, so refusing here is
+    never wrong, and the pipeline checks the exact count again. It is called
+    only when a t-SNE method is requested.
+    """
+    from protspace.utils.constants import TSNE_NAME
+
+    tsne = [spec for spec in method_specs if spec.method == TSNE_NAME]
+    if tsne:
+        cap = max(
+            5,
+            *(
+                spec.overrides_dict.get("perplexity", reducer_params.perplexity)
+                for spec in tsne
+            ),
+        )
+        refuse_unsupported_method_params(
+            method_specs, reducer_params, count_proteins(int(cap))
+        )
+
+
 def _embed_all(
     embedders: list[str],
     fasta_path: Path,
@@ -342,9 +391,12 @@ def prepare(
 
     from protspace.data.io.fasta import is_fasta_file
 
-    has_fasta = any(
-        is_fasta_file(spec[0]) for spec in input_specs if not spec[0].is_dir()
-    )
+    fasta_inputs = [
+        spec[0]
+        for spec in input_specs
+        if not spec[0].is_dir() and is_fasta_file(spec[0])
+    ]
+    has_fasta = bool(fasta_inputs)
 
     # Both similarity preconditions are pure argument checks, so they run before
     # anything is read: similarity happens last, and failing here rather than at
@@ -420,12 +472,25 @@ def prepare(
     # --- Parse methods ---
     # Before embedding too: a FASTA or -q input is embedded first, so a malformed
     # -m spec, and the 3-D deprecation warning, would otherwise come only after it.
-    from protspace.data.processors.pipeline import parse_methods_arg
+    from protspace.data.processors.pipeline import ReducerParams, parse_methods_arg
 
     try:
         method_specs = parse_methods_arg(methods or ["pca2"])
     except ValueError as e:
         raise typer.BadParameter(str(e), param_hint="'-m/--methods'") from e
+    reducer_params = ReducerParams(
+        metric=metric.value,
+        random_state=random_state,
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        perplexity=perplexity,
+        learning_rate=learning_rate,
+        mn_ratio=mn_ratio,
+        fp_ratio=fp_ratio,
+        n_init=n_init,
+        max_iter=max_iter,
+        eps=eps,
+    )
 
     # --- Build embedding sets ---
     from protspace.data.cache_hits import record_cache_hits
@@ -451,6 +516,9 @@ def prepare(
             headers, fasta_path = resolve_query_fasta(query, cache_dir, refetch_stages)
             if not headers:
                 raise typer.BadParameter(f"No sequences for query: '{query}'")
+            _refuse_before_embedding(
+                method_specs, reducer_params, lambda _cap: len(headers)
+            )
 
             if not embedders:
                 from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
@@ -470,6 +538,15 @@ def prepare(
 
         elif input_specs:
             named_inputs = resolve_input_names(input_specs, command="prepare")
+            # Only an all-FASTA run: counting HDF5 inputs too would mean reading
+            # them twice, so a mixed run is left to the pipeline's check. All
+            # FASTA inputs count together, as inputs of the same name are merged.
+            if has_fasta and len(fasta_inputs) == len(named_inputs):
+                _refuse_before_embedding(
+                    method_specs,
+                    reducer_params,
+                    lambda cap: _count_fasta_ids(fasta_inputs, cap),
+                )
             for path, name_override, _ in named_inputs:
                 if path.is_dir():
                     h5s = embedding_files(path)
@@ -479,7 +556,7 @@ def prepare(
                     emb_set = load_h5(h5s, name_override=name_override)
                 elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
                     emb_set = load_h5([path], name_override=name_override)
-                elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
+                elif is_fasta_file(path):
                     _embed_all(
                         embedders,
                         path,
@@ -533,23 +610,9 @@ def prepare(
         # --- Run pipeline ---
         from protspace.data.processors.pipeline import (
             PipelineConfig,
-            ReducerParams,
             ReductionPipeline,
         )
 
-        reducer_params = ReducerParams(
-            metric=metric.value,
-            random_state=random_state,
-            n_neighbors=n_neighbors,
-            min_dist=min_dist,
-            perplexity=perplexity,
-            learning_rate=learning_rate,
-            mn_ratio=mn_ratio,
-            fp_ratio=fp_ratio,
-            n_init=n_init,
-            max_iter=max_iter,
-            eps=eps,
-        )
         config = PipelineConfig(
             methods=method_specs,
             output_path=output_path,

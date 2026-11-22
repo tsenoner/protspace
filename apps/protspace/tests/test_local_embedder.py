@@ -61,7 +61,8 @@ def test_blocked_sets_name_real_short_keys():
     model added later must not have to be a Biocentral shortcut to be gated.
 
     BIOCENTRAL_INVALID may be empty (Biocentral serves every shortcut today);
-    COLAB_OVERSIZED may not, since esm2_3b cannot load on a free runtime.
+    COLAB_OVERSIZED may not, since esm2_3b cannot load through a free runtime's
+    host RAM (a CPU runtime, or a GPU one without accelerate).
     """
     assert local.COLAB_OVERSIZED
     for blocked, registry in (
@@ -224,8 +225,8 @@ def _fake_transformers(monkeypatch):
     model, tokenizer = FakeModel(), object()
     fake.AutoModel = loader("AutoModel", model)
     fake.AutoTokenizer = loader("AutoTokenizer", tokenizer)
-    for unused in ("T5EncoderModel", "T5Tokenizer"):
-        setattr(fake, unused, loader(unused, None))
+    fake.T5EncoderModel = loader("T5EncoderModel", model)
+    fake.T5Tokenizer = loader("T5Tokenizer", tokenizer)
     monkeypatch.setitem(sys.modules, "transformers", fake)
     return calls, model, tokenizer
 
@@ -272,8 +273,117 @@ def test_setup_model_loads_esmc_6b_in_half_precision_on_gpu(
 
     assert device.type == ("cuda" if cuda else "cpu")
     model_kwargs = next(kw for name, _, kw in calls if name == "AutoModel")
-    want = {} if expected is None else {"dtype": getattr(torch, expected)}
-    assert model_kwargs == want
+    want = None if expected is None else getattr(torch, expected)
+    assert model_kwargs.get("dtype") == want
+
+
+@pytest.mark.parametrize(
+    ("checkpoint", "mod_type", "loader"),
+    [
+        ("biohub/ESMC-6B", "esmc", "AutoModel"),
+        ("ElnaggarLab/ankh-base", "ankh", "T5EncoderModel"),
+        ("Rostlab/prot_t5_xl_half_uniref50-enc", "prot_t5", "T5EncoderModel"),
+    ],
+)
+@pytest.mark.parametrize("staged", [False, True])
+def test_setup_model_loads_straight_onto_the_gpu(
+    monkeypatch, checkpoint, mod_type, loader, staged
+):
+    """On CUDA every family loads with device_map=<the GPU>, so a checkpoint
+    larger than host RAM (ESM-C 6B on free Colab) is never built there whole;
+    where stages_in_host_ram() says otherwise, the load has no device_map."""
+    torch = pytest.importorskip("torch")
+    calls, _, _ = _fake_transformers(monkeypatch)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda **_: True)
+    monkeypatch.setattr(local, "stages_in_host_ram", lambda: staged)
+
+    _, _, device = local.setup_model(checkpoint, mod_type)
+
+    model_kwargs = next(kw for name, _, kw in calls if name == loader)
+    assert model_kwargs.get("device_map") == (None if staged else device)
+
+
+@pytest.mark.parametrize(
+    ("cuda", "accelerate", "staged"),
+    [
+        (True, True, False),  # free T4: weights go straight onto the GPU
+        (True, False, True),  # no accelerate: the old path, not an error
+        (False, True, True),  # CPU runtime: loading unchanged
+    ],
+)
+def test_stages_in_host_ram(monkeypatch, cuda, accelerate, staged):
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(local, "_accelerate_available", lambda: accelerate)
+
+    assert local.stages_in_host_ram() is staged
+
+
+def _fake_transformers_utils(monkeypatch, is_accelerate_available):
+    import sys
+    import types
+
+    utils = types.ModuleType("transformers.utils")
+    utils.is_accelerate_available = is_accelerate_available
+    monkeypatch.setitem(sys.modules, "transformers", types.ModuleType("transformers"))
+    monkeypatch.setitem(sys.modules, "transformers.utils", utils)
+
+
+@pytest.mark.parametrize("usable", [True, False])
+def test_accelerate_is_judged_by_transformers(monkeypatch, usable):
+    """transformers raises on device_map with an accelerate it considers too old,
+    which would fail every GPU load; its own check decides, so such an install
+    loads through host RAM and no copy of its floor can drift."""
+    _fake_transformers_utils(monkeypatch, lambda: usable)
+    assert local._accelerate_available() is usable
+
+
+def test_accelerate_without_a_usable_transformers_keeps_the_old_path(monkeypatch):
+    import sys
+
+    def broken():
+        raise RuntimeError("a half-installed transformers")
+
+    _fake_transformers_utils(monkeypatch, broken)
+    assert local._accelerate_available() is False
+    monkeypatch.setitem(sys.modules, "transformers", None)  # -> ImportError
+    monkeypatch.setitem(sys.modules, "transformers.utils", None)
+    assert local._accelerate_available() is False
+
+
+def test_stages_in_host_ram_when_the_probe_fails(monkeypatch):
+    """No torch (or a broken CUDA probe) counts as staging: a false block beats a
+    killed kernel."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "torch", None)  # import torch -> ImportError
+    assert local.stages_in_host_ram() is True
+
+
+@pytest.mark.parametrize("staged", [True, False])
+def test_oversized_warning_only_where_the_load_stages_in_host_ram(
+    monkeypatch, tmp_path, caplog, staged
+):
+    """On a GPU the 6B load no longer goes through host RAM, so warning that it
+    would kill a free Colab kernel there would be wrong. The warning comes just
+    before the load, so a run with nothing left to embed never probes torch."""
+    pytest.importorskip("torch")
+
+    class Loaded(Exception):
+        pass
+
+    def setup_model(*_args):
+        raise Loaded
+
+    monkeypatch.setattr(local, "stages_in_host_ram", lambda: staged)
+    monkeypatch.setattr(local, "setup_model", setup_model)
+
+    with caplog.at_level("WARNING", logger=local.logger.name):
+        with pytest.raises(Loaded):
+            local.embed_sequences({"p1": "MKV"}, "esmc_6b", tmp_path / "emb.h5")
+
+    assert ("loads through host RAM" in caplog.text) is staged
 
 
 # ---------------------------------------------------------------------------
